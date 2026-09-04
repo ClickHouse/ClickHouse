@@ -149,12 +149,14 @@ namespace
     Map stringToMap(const String & str)
     {
         /// Allow empty string as an empty map
-        if (str.empty())
+        if (str.empty() || str == "{}")
             return {};
 
-        auto type_string = std::make_shared<DataTypeString>();
-        DataTypeMap type_map(type_string, type_string);
-        auto serialization = type_map.getDefaultSerialization();
+        /// The type and its serialization do not depend on the value, and every query parses the settings
+        /// it was sent, so building them per call showed up in profiles.
+        static const DataTypeMap type_map(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
+        static const auto serialization = type_map.getDefaultSerialization();
+
         auto column = type_map.createColumn();
 
         ReadBufferFromString buf(str);
@@ -485,14 +487,26 @@ SettingFieldMap::SettingFieldMap(const Field & f) : value(fieldToMap(f)) {}
 
 String SettingFieldMap::toString() const
 {
-    auto type_string = std::make_shared<DataTypeString>();
-    DataTypeMap type_map(type_string, type_string);
-    auto serialization = type_map.getDefaultSerialization();
-    auto column = type_map.createColumn();
-    column->insert(value);
+    /// `http_response_headers` is changed and empty on a default server, so this is the common case when
+    /// the changed settings of every query are dumped.
+    if (value.empty())
+        return "{}";
 
+    /// The same text as SerializationMap over a Map(String, String), written directly: going through a
+    /// DataTypeMap, its serialization and a temporary column cost more than the formatting itself.
     WriteBufferFromOwnString out;
-    serialization->serializeTextEscaped(*column, 0, out, {});
+    writeChar('{', out);
+    for (const auto & element : value)
+    {
+        if (&element != &value.front())
+            writeChar(',', out);
+
+        const auto & pair = element.safeGet<Tuple>();
+        writeQuotedString(pair.at(0).safeGet<String>(), out);
+        writeChar(':', out);
+        writeQuotedString(pair.at(1).safeGet<String>(), out);
+    }
+    writeChar('}', out);
     return out.str();
 }
 
