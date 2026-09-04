@@ -664,9 +664,9 @@ VirtualColumnsDescription StorageMerge::createVirtuals()
     return desc;
 }
 
-StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
+StorageMetadataHandle StorageMerge::composeInMemoryMetadata(
+    ContextPtr query_context, const StorageMetadataHandle & base_metadata, bool query_cached) const
 {
-    auto base_metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
     if (!query_context)
         return base_metadata;
 
@@ -683,7 +683,9 @@ StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_cont
             return access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name);
         }))
         {
-            const auto source_table_metadata = first_table->getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+            const auto source_table_metadata = query_cached
+                ? first_table->getInMemoryMetadataQueryCached(query_context)
+                : first_table->getInMemoryMetadataUncached(query_context);
             for (const auto & column : source_table_metadata->virtuals)
             {
                 if (virtuals.has(column.name))
@@ -706,6 +708,16 @@ StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_cont
     }
 
     return std::make_shared<StorageInMemoryMetadata>(base_metadata->withVirtuals(std::move(virtuals)));
+}
+
+StorageMetadataHandle StorageMerge::getInMemoryMetadataUncached(ContextPtr query_context) const
+{
+    return composeInMemoryMetadata(query_context, IStorage::getInMemoryMetadataUncached(query_context), /*query_cached=*/false);
+}
+
+StorageMetadataHandle StorageMerge::getInMemoryMetadataQueryCached(ContextPtr query_context) const
+{
+    return composeInMemoryMetadata(query_context, IStorage::getInMemoryMetadataQueryCached(query_context), /*query_cached=*/true);
 }
 
 void StorageMerge::read(

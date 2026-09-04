@@ -101,7 +101,8 @@ public:
     ActionLock getActionLock(StorageActionBlockType type) override;
     void onActionLockRemove(StorageActionBlockType action_type) override;
 
-    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
+    StorageMetadataHandle getInMemoryMetadataUncached(ContextPtr context) const override;
+    StorageMetadataHandle getInMemoryMetadataQueryCached(ContextPtr context) const override;
 
     void readImpl(
         QueryPlan & query_plan,
@@ -137,6 +138,11 @@ public:
     bool isAppendRefreshStrategy() const { return isRefreshable() && fixed_uuid; }
 
 private:
+    /// Shared body of the two metadata accessors: compose the base metadata with the target table's
+    /// virtual columns. `query_cached` selects which target-table accessor to use.
+    StorageMetadataHandle composeInMemoryMetadata(
+        ContextPtr query_context, const StorageMetadataHandle & base_metadata, bool query_cached) const;
+
     mutable std::mutex target_table_id_mutex;
     /// Will be initialized in constructor
     StorageID target_table_id = StorageID::createEmpty();
