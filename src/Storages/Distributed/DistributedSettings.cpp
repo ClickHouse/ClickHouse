@@ -1,4 +1,4 @@
-#include <Storages/enumerateSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/SettingsEnums.h>

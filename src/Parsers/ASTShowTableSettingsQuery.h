@@ -25,6 +25,9 @@ public:
     String getID(char) const override { return "ShowTableSettings"; }
     ASTPtr clone() const override;
     QueryKind getQueryKind() const override { return QueryKind::Show; }
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

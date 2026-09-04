@@ -1,4 +1,4 @@
-#include <Storages/enumerateSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 
 #include <Core/BaseSettings.h>

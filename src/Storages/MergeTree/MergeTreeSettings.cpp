@@ -10,7 +10,7 @@
 #include <Core/MergeSelectorAlgorithm.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <Core/SettingsEnums.h>
-#include <Storages/enumerateSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/SettingsChangesHistory.h>
 #include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>

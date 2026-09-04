@@ -1,4 +1,4 @@
-#include <Storages/enumerateSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 
 #if USE_LIBPQXX

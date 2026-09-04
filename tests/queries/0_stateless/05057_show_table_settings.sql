@@ -28,4 +28,13 @@ SELECT '-- the statements sharing its prefix still parse as themselves';
 SHOW TABLES;
 SHOW SETTINGS LIKE 'add_http_cors_header';
 
+SELECT '-- the AST survives a JSON round trip, as it does for SHOW COLUMNS';
+SELECT formatQueryFromJSON(parseQueryToJSON($$SHOW TABLE SETTINGS FROM tbl$$));
+SELECT formatQueryFromJSON(parseQueryToJSON($$SHOW CHANGED TABLE SETTINGS FROM db.tbl LIKE 'a%'$$));
+SELECT formatQueryFromJSON(parseQueryToJSON($$SHOW TABLE SETTINGS FROM tbl NOT ILIKE 'x%'$$));
+
+SELECT '-- and a payload the parser could never have produced is rejected';
+SELECT formatQueryFromJSON('{"type":"ShowTableSettingsQuery","table":""}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"ShowTableSettingsQuery","table":"t","not_like":true}'); -- { serverError BAD_ARGUMENTS }
+
 DROP TABLE mt;

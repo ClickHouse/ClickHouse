@@ -1,4 +1,4 @@
-#include <Storages/enumerateSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <optional>
 #include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>

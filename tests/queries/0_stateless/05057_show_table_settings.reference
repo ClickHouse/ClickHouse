@@ -13,3 +13,8 @@ min_bytes_for_wide_part	12345	1	definition
 -- the statements sharing its prefix still parse as themselves
 mt
 add_http_cors_header	Bool	0
+-- the AST survives a JSON round trip, as it does for SHOW COLUMNS
+SHOW TABLE SETTINGS FROM tbl
+SHOW CHANGED TABLE SETTINGS FROM db.tbl LIKE \'a%\'
+SHOW TABLE SETTINGS FROM tbl NOT ILIKE \'x%\'
+-- and a payload the parser could never have produced is rejected

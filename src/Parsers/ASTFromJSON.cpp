@@ -58,6 +58,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTShowColumnsQuery.h>
+#include <Parsers/ASTShowTableSettingsQuery.h>
 #include <Parsers/ASTShowIndexesQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
@@ -203,6 +204,7 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         {"SystemQuery", [] { return make_intrusive<ASTSystemQuery>(); }},
         {"ShowTablesQuery", [] { return make_intrusive<ASTShowTablesQuery>(); }},
         {"ShowColumnsQuery", [] { return make_intrusive<ASTShowColumnsQuery>(); }},
+        {"ShowTableSettingsQuery", [] { return make_intrusive<ASTShowTableSettingsQuery>(); }},
         {"ShowIndexesQuery", [] { return make_intrusive<ASTShowIndexesQuery>(); }},
         {"KillQueryQuery", [] { return make_intrusive<ASTKillQueryQuery>(); }},
         {"OptimizeQuery", [] { return make_intrusive<ASTOptimizeQuery>(); }},

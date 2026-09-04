@@ -1,4 +1,4 @@
-#include <Storages/enumerateSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Storages/Hive/HiveSettings.h>
 
 #if USE_HIVE

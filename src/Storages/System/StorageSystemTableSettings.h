@@ -29,8 +29,6 @@ public:
     bool isSystemStorage() const override { return true; }
 
     static ColumnsDescription getColumnsDescription();
-
-private:
     static VirtualColumnsDescription createVirtuals();
 };
 
