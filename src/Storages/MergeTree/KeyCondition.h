@@ -43,7 +43,12 @@ struct ActionsDAGWithInversionPushDown
     /// truthiness-preserving but value-changing rewrites (`tryRewriteCoalesceCondition`, `tryRewriteCoalesceComparison`),
     /// which can differ from the original (e.g. `NULL` vs `false`) on NULL rows but agree on truthiness.
     /// There is no correctness cost to passing false, but it may miss some optimization opportunities.
-    explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context, bool boolean_context);
+    /// `null_subcolumns_to_normalize`: optional set of `.null` subcolumn names (e.g. `value.null`).
+    /// A bare boolean INPUT on one in predicate position is rewritten to a comparison with 0,
+    /// so that KeyCondition can extract a range atom.
+    explicit ActionsDAGWithInversionPushDown(
+        const ActionsDAG::Node * predicate_, const ContextPtr & context, bool boolean_context,
+        const NameSet * null_subcolumns_to_normalize = nullptr);
 };
 
 

@@ -516,6 +516,8 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 
 With `indexes` = 1, the `Indexes` key is added. It contains an array of used indexes. Each index is described as JSON with `Type` key (a string `Partition Min-Max`, `Partition`, `Statistics`, `PrimaryKey` or `Skip`) and optional keys:
 
+The `Statistics` index uses per-part column statistics (min/max values, and the number of `NULL` values for `Nullable` columns) to skip parts that cannot match the query filter.
+
 - `Name` — The index name (currently only used for `Skip` indexes).
 - `Keys` — The array of columns used by the index.
 - `Condition` —  The used condition.

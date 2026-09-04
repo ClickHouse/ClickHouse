@@ -1,0 +1,58 @@
+Test 1: `IS NULL` prunes no-NULL parts via NULL count
+1	1
+4
+Test 2: `IS NOT NULL` prunes all-NULL part via NULL count
+1	1
+6
+Test 3: `LowCardinality(Nullable)` `IS NULL` pruning
+1	1
+4
+Test 4: `LowCardinality(Nullable)` `IS NOT NULL` pruning
+1	1
+6
+Test 5: min/max + NULL count prune all-NULL and below-range parts
+1	1
+4
+Test 6: `NOT (value IS NULL)` matches `IS NOT NULL` pruning
+1	1
+6
+Test 7: `IS NULL OR range` combines NULL count and min/max pruning
+1	1
+8
+Test 8: `optimize_functions_to_subcolumns = 0` prunes via native `IS NULL` atoms
+1	1
+4
+1	1
+6
+Test 8b: `optimize_functions_to_subcolumns = 0` range pruning
+1	1
+4
+Test 8c: `optimize_functions_to_subcolumns = 0` `IS NULL OR range` combination
+1	1
+8
+Test 9: `LowCardinality(Nullable(Int64))` range pruning
+1	1
+4
+Test 10: `LowCardinality(Nullable)` `NOT (IS NULL)` works
+1	1
+6
+Test 11: tightened range (null_count = 0) prunes parts below the predicate
+1	1
+0
+Test 12: upper-bound predicate prunes the all-NULL part
+1	1
+0
+Test 13: `optimize_functions_to_subcolumns = 0` `IS NULL` on `LowCardinality(Nullable(String))`
+1	1
+4
+Test 15: `use_statistics_for_part_pruning = 0` disables pruning
+0
+Test 14a: real +Inf max does not disable tightened-range pruning
+1
+0
+Test 14b: `IS NULL` with real +Inf max
+1
+2
+Test 16: user column literally named `foo.null` is not treated as a virtual key
+1
+2
