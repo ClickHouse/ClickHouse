@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: long, no-tsan, no-debug, no-asan, no-msan, no-ubsan, no-shared-merge-tree, no-parallel, no-replicated-database, no-object-storage
+# Tag no-parallel: floods the shared background merge/mutation executor pool via 20 concurrent connections issuing 20000 throttling-disabled mutations against one table, then asserts exact mutation counts under a 120s execution-time budget; contention from other running tests breaks either the budget or the exact counts
 # no-shared-merge-tree -- this test is too slow
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

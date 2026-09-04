@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Tags: atomic-database, memory-engine, no-parallel
-
-# Uses `SYSTEM ENABLE FAILPOINT infinite_sleep`, which is server-global and would park every
-# other sleeping query on the server, so it cannot run concurrently with other tests.
+# Tag no-parallel: uses `SYSTEM ENABLE FAILPOINT infinite_sleep`, which is server-global and would
+#   park every other sleeping query on the server, so it cannot run concurrently with other tests.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

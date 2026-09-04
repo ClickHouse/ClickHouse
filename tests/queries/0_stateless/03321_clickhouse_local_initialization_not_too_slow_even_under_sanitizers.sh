@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-fasttest
+# Tag no-parallel: asserts a wall-clock throughput threshold for repeated clickhouse-local
+#   startup; CPU contention from concurrently running tests would make this flaky
 # no-fasttest: around 10 seconds of blocking execution
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

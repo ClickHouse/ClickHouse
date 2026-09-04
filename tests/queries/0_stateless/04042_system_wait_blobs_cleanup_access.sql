@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-fasttest
 
 DROP USER IF EXISTS user_test_04042;
 CREATE USER user_test_04042;

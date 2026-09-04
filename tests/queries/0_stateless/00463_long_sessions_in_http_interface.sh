@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel
+# Tags: long
 # shellcheck disable=SC2015
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

@@ -1,4 +1,4 @@
--- Tags: no-ordinary-database, no-parallel
+-- Tags: no-ordinary-database
 -- Tag no-ordinary-database: Requires Atomic database
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};

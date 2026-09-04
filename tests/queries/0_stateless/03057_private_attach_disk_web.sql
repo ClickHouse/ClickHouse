@@ -1,5 +1,5 @@
 -- Tags: no-fasttest, no-parallel
--- Tag no-parallel - uses external data source and a hardcoded table UUID
+-- Tag no-parallel: uses external data source and a hardcoded table UUID
 
 SET send_logs_level='error';
 SET optimize_trivial_count_query = 1;

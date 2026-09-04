@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-msan
+# Tags: no-fasttest, no-msan
 # Int64 widening coercions in ROW_DIRECT and BUFFERED_V1 RowBinary.
 # UInt64 → Int64: same i64 WASM kind → accepted.
 # Int32/smaller (i32) → Int64 (i64): integer widening → accepted.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
-# - no-parallel: uses DETACH/ATTACH which serializes per database
+# Tag no-parallel: uses DETACH/ATTACH which serializes per database
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

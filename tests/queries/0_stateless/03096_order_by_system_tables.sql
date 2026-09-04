@@ -5,7 +5,7 @@
 -- parallel tests that backlog can exceed 180s to drain, producing:
 --   Code: 159. DB::Exception: Timeout exceeded (180 s) while flushing system log
 --   'DB::SystemLogQueue<DB::QueryMetricLogElement>'. (TIMEOUT_EXCEEDED)
--- no-parallel: run in the sequential phase (after the parallel flood ends) so no other
+-- Tag no-parallel: run in the sequential phase (after the parallel flood ends) so no other
 -- test is feeding the shared queues while this test flushes.
 -- no-llvm-coverage: coverage instrumentation slows the flush enough to time out even on
 -- the residual backlog; skip entirely there.

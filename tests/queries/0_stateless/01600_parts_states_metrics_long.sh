@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # Tags: long, no-parallel
+# Tag no-parallel: compares the process-wide `PartsActive`/`PartsOutdated` gauges in
+# `system.metrics` against a full-server, non-atomic scan of `system.parts`/
+# `system.projection_parts`/`system.dropped_tables_parts`; part churn from any concurrent test
+# would keep the comparison from ever converging
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

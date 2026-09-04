@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-fasttest
 -- Tag no-parallel - uses external data source
 -- Tag no-fasttest - requires SSL for https
 

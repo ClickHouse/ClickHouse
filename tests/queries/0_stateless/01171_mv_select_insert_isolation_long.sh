@@ -4,6 +4,9 @@
 # shellcheck disable=SC2119
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# The S3-storage lane may successfully retry transient AWS 5xx responses after logging them at
+# error level. Query failures and the explicit isolation assertions remain visible.
+export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 

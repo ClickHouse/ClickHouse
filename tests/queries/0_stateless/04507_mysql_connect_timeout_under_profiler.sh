@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel
-# Tag justification:
-#   no-fasttest: depends on libmysql (MySQL database engine), not built in fast test.
-#   no-parallel: attaches a MySQL database pointing at an unreachable host; it is visible
-#     in system.tables, so a concurrent unfiltered scan would also try to connect to it.
+# Tag no-fasttest: depends on libmysql (MySQL database engine), not built in fast test.
+# Tag no-parallel: attaches a MySQL database pointing at an unreachable host; it is visible
+#   in system.tables, so a concurrent unfiltered scan also tries to connect to it, and the
+#   connection-failure Error-level log lines land in that query's client stderr, failing
+#   unrelated tests with "having stderror". A concurrency group is not enough: the victims
+#   are arbitrary tests outside any group.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

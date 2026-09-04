@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 # - no-parallel: uses DETACH/ATTACH which serializes per database
 
@@ -29,7 +29,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 TABLE="t_${CLICKHOUSE_DATABASE}_${RANDOM}"
-TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
+TABLE_PATH="${CLICKHOUSE_USER_FILES_UNIQUE}/${TABLE}/"
 
 trap 'rm -rf "${TABLE_PATH}" 2>/dev/null' EXIT
 

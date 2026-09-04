@@ -1,4 +1,4 @@
--- Tags: long, no-parallel
+-- Tags: long
 
 set allow_experimental_parallel_reading_from_replicas=0;
 set cluster_for_parallel_replicas='test_cluster_one_shard_two_replicas';

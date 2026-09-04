@@ -1,4 +1,4 @@
--- Tags: distributed, no-parallel, no-flaky-check
+-- Tags: distributed, no-flaky-check
 
 set send_logs_level = 'error';
 
@@ -30,6 +30,3 @@ drop table if exists shard_0.shard_01231_distributed_aggregation_memory_efficien
 drop table if exists shard_1.shard_01231_distributed_aggregation_memory_efficient;
 
 drop table ma_dist;
-
-drop database shard_0;
-drop database shard_1;

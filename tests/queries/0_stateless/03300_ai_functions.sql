@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-replicated-database
+-- Tags: no-replicated-database
 -- no-parallel: creates and drops global named collections
 -- no-replicated-database: named collections are server-global, not database-scoped
 

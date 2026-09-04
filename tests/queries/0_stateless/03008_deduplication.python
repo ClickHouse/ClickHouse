@@ -129,7 +129,7 @@ def get_logs_statement(args):
 def get_settings_statements(args, extra_settings=""):
     """Session settings shared by the main script and the diagnostics-only script.
 
-    Single source of truth: get_system_debug_statements probes system.settings for these
+    Single source of truth: the diagnostic query probes system.settings for these
     very names, so a diagnostics-only run that did not apply them would report defaults
     (max_block_size 65409, max_insert_threads auto(N), the token setting 0) instead of the
     values the failing run actually used.
@@ -173,106 +173,64 @@ def assert_count_statement(table, expected, phase):
             """
 
 
-def get_basic_debug_statements(phase, src_table, dst_table, expected_src, expected_dst):
-    """Generate basic debug statements for source and destination tables"""
-    return f"""
-                -- DEBUG ({phase}) — only printed when counts mismatch
-                WITH (SELECT count() FROM {src_table}) AS c_src
-                SELECT 'DEBUG {phase}: Checking source table {src_table} counts' WHERE c_src != {expected_src};
-                
-                WITH (SELECT count() FROM {src_table}) AS c_src
-                SELECT 'DEBUG {phase} src expected/actual', toUInt64({expected_src}) AS expected, c_src AS actual
-                WHERE c_src != {expected_src};
-
-                WITH (SELECT count() FROM {dst_table}) AS c_dst
-                SELECT 'DEBUG {phase}: Checking destination table {dst_table} counts' WHERE c_dst != {expected_dst};
-
-                WITH (SELECT count() FROM {dst_table}) AS c_dst
-                SELECT 'DEBUG {phase} dst expected/actual', toUInt64({expected_dst}) AS expected, c_dst AS actual
-                WHERE c_dst != {expected_dst};
-
-                WITH (SELECT count() FROM {dst_table}) AS c_dst
-                SELECT 'DEBUG {phase}: Distribution across parts in {dst_table}' WHERE c_dst != {expected_dst};
-
-                WITH (SELECT count() FROM {dst_table}) AS c_dst
-                SELECT '_part', _part, count() FROM {dst_table} WHERE c_dst != {expected_dst}
-                GROUP BY _part ORDER BY _part;
-    """
-
-
-def get_table_data_debug(dst_table, expected_dst, columns):
-    """Generate debug statements for table data inspection"""
+def get_combined_debug_statement(
+    phase, src_table, dst_table, expected_src, expected_dst, columns, tables_list, mv_list=[]
+):
+    """Generate one consolidated query with all diagnostics for a phase."""
     col_list = ", ".join(columns)
-    return f"""
-                WITH (SELECT count() FROM {dst_table}) AS c_dst
-                SELECT 'DEBUG: Sample rows from {dst_table}' WHERE c_dst != {expected_dst};
+    col_concat = " || ',' || ".join(f"toString({c})" for c in columns)
+    tables_list_str = ", ".join([f"'{t}'" for t in tables_list])
+    all_tables_str = ", ".join([f"'{t}'" for t in tables_list + mv_list])
 
-                WITH (SELECT count() FROM {dst_table}) AS c_dst
-                SELECT {col_list} FROM {dst_table}
-                WHERE c_dst != {expected_dst}
-                ORDER BY {col_list};
-
-                WITH (SELECT count() FROM {dst_table}) AS c_dst
-                SELECT 'DEBUG: Grouped counts in {dst_table} by ({col_list})' WHERE c_dst != {expected_dst};
-
-                WITH (SELECT count() FROM {dst_table}) AS c_dst
-                SELECT {col_list}, count()
-                FROM {dst_table}
-                WHERE c_dst != {expected_dst}
-                GROUP BY {col_list}
-                ORDER BY {col_list};
-    """
-
-
-def get_system_debug_statements(dst_table, expected_dst, tables_list, mv_list=[]):
-    """Generate debug statements for system tables inspection"""
-    all_tables = tables_list + mv_list
-    tables_str = ", ".join([f"'{t}'" for t in all_tables])
-    
-    debug = f"""
-                WITH (SELECT count() FROM {dst_table}) AS c_dst
-                SELECT 'DEBUG: Active parts in system.parts' WHERE c_dst != {expected_dst};
-
-                WITH (SELECT count() FROM {dst_table}) AS c_dst
-                SELECT table, name, rows, bytes_on_disk
-                FROM system.parts
-                WHERE active AND database = currentDatabase()
-                  AND table IN ({", ".join([f"'{t}'" for t in tables_list])})
-                  AND c_dst != {expected_dst}
-                ORDER BY table, name;
-    """
-    
+    table_defs_branch = ""
     if mv_list:
-        debug += f"""
-                WITH (SELECT count() FROM {dst_table}) AS c_dst
-                SELECT 'DEBUG: Table definitions from system.tables' WHERE c_dst != {expected_dst};
-
-                WITH (SELECT count() FROM {dst_table}) AS c_dst
-                SELECT name, engine, create_table_query
-                FROM system.tables
-                WHERE database = currentDatabase()
-                  AND name IN ({tables_str})
-                  AND c_dst != {expected_dst}
-                ORDER BY name;
-        """
-    
-    debug += f"""
-                WITH (SELECT count() FROM {dst_table}) AS c_dst
-                SELECT 'DEBUG: Relevant settings from system.settings' WHERE c_dst != {expected_dst};
-
-                WITH (SELECT count() FROM {dst_table}) AS c_dst
-                SELECT name, value
-                FROM system.settings
-                WHERE name IN (
-                    'max_insert_threads',
-                    'max_block_size',
-                    'update_insert_deduplication_token_in_dependent_materialized_views',
-                    'deduplicate_blocks_in_dependent_materialized_views'
-                )
-                  AND c_dst != {expected_dst}
-                ORDER BY name;
+        table_defs_branch = f"""
+                UNION ALL
+                SELECT 'DEBUG {phase}: table def ' || name, engine || ' :: ' || create_table_query
+                    FROM system.tables
+                    WHERE database = currentDatabase() AND name IN ({all_tables_str}) AND mismatch
     """
-    return debug
+
+    return f"""
+                -- DEBUG ({phase}) — a single query, only produces rows when counts mismatch
+                WITH
+                    (SELECT count() FROM {src_table}) AS c_src,
+                    (SELECT count() FROM {dst_table}) AS c_dst,
+                    (c_src != {expected_src} OR c_dst != {expected_dst}) AS mismatch
+                SELECT 'DEBUG {phase}: src/dst count expected/actual',
+                       toString({expected_src}) || '/' || toString({expected_dst})
+                           || ' expected vs ' || toString(c_src) || '/' || toString(c_dst) || ' actual'
+                WHERE mismatch
+                UNION ALL
+                SELECT 'DEBUG {phase}: {dst_table} by _part ' || _part, toString(count())
+                    FROM {dst_table}
+                    WHERE mismatch
+                    GROUP BY _part
+                UNION ALL
+                SELECT 'DEBUG {phase}: {dst_table} row (' || {col_concat} || ')', toString(count())
+                    FROM {dst_table}
+                    WHERE mismatch
+                    GROUP BY {col_list}
+                UNION ALL
+                SELECT 'DEBUG {phase}: system.parts ' || table || '/' || name,
+                       toString(rows) || ' rows, ' || toString(bytes_on_disk) || ' bytes'
+                    FROM system.parts
+                    WHERE active AND database = currentDatabase()
+                      AND table IN ({tables_list_str}) AND mismatch
+                {table_defs_branch}
+                UNION ALL
+                SELECT 'DEBUG {phase}: setting ' || name, value
+                    FROM system.settings
+                    WHERE name IN (
+                        'max_insert_threads',
+                        'max_block_size',
+                        'update_insert_deduplication_token_in_dependent_materialized_views',
+                        'deduplicate_blocks_in_dependent_materialized_views'
+                    )
+                      AND mismatch
+                ORDER BY 1
+                ;
+    """
 
 
 def str2bool(v):
@@ -395,9 +353,11 @@ def test_insert_several_blocks(parser):
             ["table_a_b", "table_when_b_even", "mv_b_even"]
         )
 
+        # 4 rows is the minimum that still needs >1 block (max_block_size=1 below) and still
+        # exercises both branches of the "b % 2 = 0" filter (rows 0,2 are even; 1,3 are odd).
         insert_statement = instance_insert_statement(
             "table_a_b",
-            10,
+            4,
             args.insert_method,
             args.insert_unique_blocks,
             args.use_insert_token,
@@ -415,17 +375,17 @@ def test_insert_several_blocks(parser):
 
         # Compute expected values once
         if args.insert_unique_blocks:
-            expected_first_src = 10
-            expected_first_dst = 5
-            expected_second_src = 10 if args.deduplicate_src_table else 20
-            expected_second_dst = 5 if args.deduplicate_dst_table else 10
+            expected_first_src = 4
+            expected_first_dst = 2
+            expected_second_src = 4 if args.deduplicate_src_table else 8
+            expected_second_dst = 2 if args.deduplicate_dst_table else 4
         else:
             # new_unified_hash: identical blocks within one insert are kept (distinct source
             # numbers), so these counts no longer depend on insert_deduplication_token.
-            expected_first_src = 10
-            expected_first_dst = 10
-            expected_second_src = 10 if args.deduplicate_src_table else 20
-            expected_second_dst = 10 if args.deduplicate_dst_table else 20
+            expected_first_src = 4
+            expected_first_dst = 4
+            expected_second_src = 4 if args.deduplicate_src_table else 8
+            expected_second_dst = 4 if args.deduplicate_dst_table else 8
 
         # Use the computed values in assertions
         assert_first_insert_statements = assert_count_statement(
@@ -443,12 +403,9 @@ def test_insert_several_blocks(parser):
             expected_dst = (
                 expected_first_dst if phase == "first" else expected_second_dst
             )
-            return (
-                get_basic_debug_statements(phase, "table_a_b", "table_when_b_even",
-                                          expected_src, expected_dst) +
-                get_table_data_debug("table_when_b_even", expected_dst, ["a", "b"]) +
-                get_system_debug_statements("table_when_b_even", expected_dst,
-                                           ["table_a_b", "table_when_b_even"])
+            return get_combined_debug_statement(
+                phase, "table_a_b", "table_when_b_even", expected_src, expected_dst,
+                ["a", "b"], ["table_a_b", "table_when_b_even"],
             )
 
         # Diagnostics-only mode: the drivers use this on the failure path, so the success
@@ -598,14 +555,11 @@ def test_mv_generates_several_blocks(parser):
             expected_dst = (
                 expected_first_dst if phase == "first" else expected_second_dst
             )
-            return (
-                get_basic_debug_statements(phase, "table_a_b", "table_when_b_even_and_joined",
-                                          expected_src, expected_dst) +
-                get_table_data_debug("table_when_b_even_and_joined", expected_dst,
-                                   ["a_src", "a_join", "b"]) +
-                get_system_debug_statements("table_when_b_even_and_joined", expected_dst,
-                                           ["table_a_b", "table_for_join_with", "table_when_b_even_and_joined"],
-                                           ["mv_b_even"])
+            return get_combined_debug_statement(
+                phase, "table_a_b", "table_when_b_even_and_joined", expected_src,
+                expected_dst, ["a_src", "a_join", "b"],
+                ["table_a_b", "table_for_join_with", "table_when_b_even_and_joined"],
+                ["mv_b_even"],
             )
 
         # Diagnostics-only mode: the drivers use this on the failure path, so the success
@@ -705,9 +659,12 @@ def test_several_mv_into_one_table(parser):
             with_deduplication=args.deduplicate_dst_table,
         )
 
+        # 4 rows is the minimum that still needs >1 block (max_block_size=1 below) and still
+        # exercises all three branches of the two MVs' filters: b % 4 = 0 (row 0), b % 4 = 2
+        # i.e. even but not %4 (row 2), and b odd i.e. neither MV fires (rows 1, 3).
         insert_statement = instance_insert_statement(
             "table_src",
-            8,
+            4,
             args.insert_method,
             args.insert_unique_blocks,
             args.use_insert_token,
@@ -722,17 +679,17 @@ def test_several_mv_into_one_table(parser):
 
         # Compute expected values once
         if args.insert_unique_blocks:
-            expected_first_src = 8
-            expected_first_dst = 6
-            expected_second_src = 8 if args.deduplicate_src_table else 16
-            expected_second_dst = 6 if args.deduplicate_dst_table else 12
+            expected_first_src = 4
+            expected_first_dst = 3
+            expected_second_src = 4 if args.deduplicate_src_table else 8
+            expected_second_dst = 3 if args.deduplicate_dst_table else 6
         else:
             # new_unified_hash: identical blocks within one insert are kept (distinct source
             # numbers), so these counts no longer depend on insert_deduplication_token.
-            expected_first_src = 8
-            expected_first_dst = 16
-            expected_second_src = 8 if args.deduplicate_src_table else 16
-            expected_second_dst = 16 if args.deduplicate_dst_table else 32
+            expected_first_src = 4
+            expected_first_dst = 8
+            expected_second_src = 4 if args.deduplicate_src_table else 8
+            expected_second_dst = 8 if args.deduplicate_dst_table else 16
 
         # Use the computed values in assertions
         assert_first_insert_statements = assert_count_statement(
@@ -750,13 +707,10 @@ def test_several_mv_into_one_table(parser):
             expected_dst = (
                 expected_first_dst if phase == "first" else expected_second_dst
             )
-            return (
-                get_basic_debug_statements(phase, "table_src", "table_dst",
-                                          expected_src, expected_dst) +
-                get_table_data_debug("table_dst", expected_dst, ["a", "b"]) +
-                get_system_debug_statements("table_dst", expected_dst,
-                                           ["table_src", "table_dst"],
-                                           ["mv_b_even", "mv_b_even_even"])
+            return get_combined_debug_statement(
+                phase, "table_src", "table_dst", expected_src, expected_dst,
+                ["a", "b"], ["table_src", "table_dst"],
+                ["mv_b_even", "mv_b_even_even"],
             )
 
         # Diagnostics-only mode: the drivers use this on the failure path, so the success

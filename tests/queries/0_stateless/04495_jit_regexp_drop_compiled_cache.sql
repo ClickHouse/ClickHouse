@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-fasttest, no-msan
+-- Tags: no-fasttest, no-msan, no-parallel:misc-caches
+-- Tag no-parallel: serializes tests that mutate or assert the shared `misc-caches` resource
 -- no-parallel: the test runs SYSTEM DROP COMPILED EXPRESSION CACHE, which affects global state.
 -- no-fasttest: the Fast test build has no embedded compiler, so SYSTEM DROP COMPILED EXPRESSION CACHE
 --              raises SUPPORT_IS_DISABLED there (and the regexp JIT path is a no-op).

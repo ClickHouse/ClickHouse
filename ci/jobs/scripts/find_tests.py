@@ -320,6 +320,9 @@ class Targeting:
         returned by `functional_test_hash_batch_file`) is tagged `no-parallel`
         or `sequential`.
 
+        A `no-parallel:<group>` test belongs to the parallel flavor; the runner
+        serializes only tests in that group on each shared server.
+
         Mirrors `clickhouse-test`'s own `is_sequential_test`/tag-parsing logic,
         so the batch-skip check in `functional_tests.py` can tell whether a
         changed test would even be selected by a job invoked with the

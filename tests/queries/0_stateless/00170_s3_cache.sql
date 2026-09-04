@@ -1,5 +1,8 @@
 -- Tags: stateful, no-parallel, no-random-settings
--- no-parallel: Heavy and it drops filesystem cache
+-- Tag no-parallel: heavy full-scan suite over test.hits_s3 (~100 s alone under TSan);
+--   in a loaded parallel pool it exceeds the 180 s per-test budget, and the timeout's
+--   hung-check cascade can take down the whole job. The filesystem-cache clear is
+--   scoped ('s3_cache'), so heaviness is the only reason left.
 
 -- { echo }
 
@@ -7,7 +10,7 @@ SET allow_prefetched_read_pool_for_remote_filesystem=0;
 SET enable_filesystem_cache_on_write_operations=0;
 SET max_memory_usage='20G';
 SET read_through_distributed_cache = 1;
-SYSTEM CLEAR FILESYSTEM CACHE;
+SYSTEM CLEAR FILESYSTEM CACHE 's3_cache';
 SELECT count() FROM test.hits_s3;
 SELECT count() FROM test.hits_s3 WHERE AdvEngineID != 0;
 SELECT sum(AdvEngineID), count(), avg(ResolutionWidth) FROM test.hits_s3 ;

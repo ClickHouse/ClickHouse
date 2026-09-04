@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 INSERT INTO FUNCTION file('data_03198_table_function_directory_path.csv', 'csv') SELECT '1.csv' SETTINGS engine_file_truncate_on_insert=1;
 INSERT INTO FUNCTION file('data_03198_table_function_directory_path/1.csv', 'csv') SELECT '1.csv' SETTINGS engine_file_truncate_on_insert=1;

@@ -1,4 +1,3 @@
--- Tags: no-parallel
 set prefer_localhost_replica = 1;
 
 drop table if exists null_01293;

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: use-xray, no-parallel
+# Tag no-parallel: mutates instrumentation or asserts server-global thread/log state
 # no-parallel: avoid other tests trying to add the same instrumentation to the same symbol
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

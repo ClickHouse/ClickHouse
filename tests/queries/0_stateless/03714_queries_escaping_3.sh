@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 # no-parallel: dealing with an SQLite database makes concurrent SHOW TABLES queries fail sporadically with the "database is locked" error.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 export CURR_DATABASE="test_03714_sqllite_${CLICKHOUSE_DATABASE}"
 
-DB_PATH=${USER_FILES_PATH}/${CURR_DATABASE}_db1
+DB_PATH=${CLICKHOUSE_USER_FILES_UNIQUE}/${CURR_DATABASE}_db1
 
 function cleanup()
 {

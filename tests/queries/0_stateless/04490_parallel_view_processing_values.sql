@@ -1,4 +1,4 @@
--- Tags: no-object-storage, no-parallel, no-fasttest
+-- Tags: no-object-storage, no-fasttest
 -- no-object-storage: extra S3 threads affect peak_threads_usage
 -- no-parallel: peak_threads_usage is sensitive to concurrent queries
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/106845

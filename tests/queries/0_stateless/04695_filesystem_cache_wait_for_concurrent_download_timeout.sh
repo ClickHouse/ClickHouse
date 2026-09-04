@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-random-settings, no-replicated-database, no-object-storage, no-parallel-replicas
-# no-parallel: enables a global pauseable failpoint which pauses every filesystem cache write on the server.
+# Tag no-parallel: enables a global pauseable failpoint which pauses every filesystem cache write on the server.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

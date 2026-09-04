@@ -36,6 +36,7 @@ import sys
 import shlex
 import traceback
 import urllib.parse
+import uuid
 
 # for crc32
 import zlib
@@ -49,6 +50,9 @@ from ssl import SSLEOFError
 from subprocess import PIPE, Popen
 from time import monotonic, sleep, time
 from typing import Dict, List, Optional, Set, Tuple, Union
+
+REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
+sys.path.append(str(REPOSITORY_ROOT))
 
 try:
     import termcolor  # type: ignore
@@ -206,6 +210,123 @@ TEST_FILE_EXTENSIONS = [".sql", ".sql.j2", ".sh", ".py", ".expect"]
 VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
 
 TEST_MAX_RUN_TIME_IN_SECONDS = 180
+
+# `long` tests keep the pre-parallelization 600s budget: the default per-test
+# `--timeout` (300s) is calibrated for ordinary tests on a loaded worker, while
+# `long` tests legitimately run for minutes and slow down further when the rest
+# of the suite runs in parallel around them.
+LONG_TEST_TIMEOUT_SECONDS = 600
+
+
+def get_case_run_timeout(tags: Set[str], default_timeout: int) -> int:
+    if tags and "long" in tags:
+        return max(default_timeout, LONG_TEST_TIMEOUT_SECONDS)
+    return default_timeout
+
+NO_PARALLEL_GROUP_PREFIX = "no-parallel:"
+NO_PARALLEL_GROUPS = {
+    "filesystem-cache",
+    "mark-cache",
+    "metadata-caches",
+    "misc-caches",
+    "primary-index-cache",
+    "query-condition-cache",
+    "stateful",
+    "xml-entities",
+}
+# Maximum number of test names put into one global-entity leak query. A unique
+# name is `<test>_test_<8 chars>`, so 500 of them stay well below the default
+# 1 MiB limit on the length of an HTTP form field value.
+GLOBAL_ENTITY_LEAK_NAMES_PER_QUERY = 500
+GLOBAL_ENTITY_SOURCES = [
+    ("user", "system.users"),
+    ("role", "system.roles"),
+    ("quota", "system.quotas"),
+    ("row policy", "system.row_policies"),
+    ("settings profile", "system.settings_profiles"),
+    ("function", "system.functions"),
+    ("named collection", "system.named_collections"),
+    ("workload", "system.workloads"),
+]
+# Tests that never mention global-entity DDL cannot leak a global entity, so the
+# per-test leak query is skipped for them - it is one extra query over eight
+# system tables per test, which is a measurable cost over a whole shard.  The
+# pattern is deliberately loose (matching more tests than strictly necessary is
+# only a small waste), and a test that composes the DDL dynamically and slips
+# through is still caught by the post-run check over the whole run.
+GLOBAL_ENTITY_DDL_RE = re.compile(
+    r"\b(?:create|attach|replace)\b"
+    r"(?:\s+or\s+replace)?(?:\s+if\s+not\s+exists)?\s+"
+    r"(?:row\s+)?(?:settings\s+)?(?:named\s+)?"
+    r"(?:user|role|quota|policy|profile|function|collection|workload|resource)\b",
+    re.IGNORECASE,
+)
+GLOBAL_ENTITY_DDL_TAG = "may-create-global-entities"
+
+
+def get_no_parallel_group(tags: Set[str]) -> Optional[str]:
+    groups = sorted(
+        tag[len(NO_PARALLEL_GROUP_PREFIX) :]
+        for tag in tags
+        if tag.startswith(NO_PARALLEL_GROUP_PREFIX)
+    )
+
+    if any(not group for group in groups):
+        raise TestException("The 'no-parallel:' tag must specify a group name")
+    if len(groups) > 1:
+        raise TestException(
+            "A test can belong to only one 'no-parallel:<group>' concurrency group"
+        )
+    if groups and ("no-parallel" in tags or "sequential" in tags):
+        raise TestException(
+            "A test cannot use both a concurrency group and a sequential tag"
+        )
+    if groups and groups[0] not in NO_PARALLEL_GROUPS:
+        raise TestException(f"Unknown no-parallel concurrency group: {groups[0]}")
+
+    return groups[0] if groups else None
+
+
+def get_free_tcp_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def find_global_entity_leaks(args, unique_names, timeout, log_comment):
+    if not unique_names:
+        return ""
+
+    union = " UNION ALL ".join(
+        f"SELECT '{entity_type}' AS entity_type, name FROM {table}"
+        for entity_type, table in GLOBAL_ENTITY_SOURCES
+    )
+    # The whole query travels in the URL, and the post-run check passes every
+    # unique name of the run (tens of thousands in a full shard), so the name
+    # list has to be split into chunks that stay below the server's limit on the
+    # length of a single HTTP form field.
+    sorted_names = sorted(set(unique_names))
+    leaks = []
+    for chunk_start in range(0, len(sorted_names), GLOBAL_ENTITY_LEAK_NAMES_PER_QUERY):
+        chunk = sorted_names[
+            chunk_start : chunk_start + GLOBAL_ENTITY_LEAK_NAMES_PER_QUERY
+        ]
+        names = ", ".join(f"'{name}'" for name in chunk)
+        found = (
+            clickhouse_execute(
+                args,
+                f"SELECT entity_type, name FROM ({union}) "
+                f"WHERE arrayExists(test_name -> position(name, test_name) > 0, [{names}]) "
+                "ORDER BY entity_type, name FORMAT TSV",
+                timeout=timeout,
+                settings={"log_comment": log_comment},
+            )
+            .decode()
+            .strip()
+        )
+        if found:
+            leaks.append(found)
+    return "\n".join(leaks)
 
 
 def detect_cgroup_version():
@@ -2389,6 +2510,30 @@ class TestCase:
 
         testcase_args.testcase_start_time = datetime.now()
         testcase_basename = os.path.basename(case_file)
+        testcase_name = testcase_basename.split(".", 1)[0]
+        testcase_uuid = uuid.uuid4()
+
+        def random_str(length=12):
+            # Alternate letters and digits so no two consecutive characters share a class,
+            # hence no word can appear in the name. It is embedded into DDL, paths and table
+            # names, and tests assert substring absence over those (e.g. NOT ILIKE '%auto%');
+            # an 8-char [a-z0-9] name spelled "auto" once in ~340k runs (CI: test_q2autogn).
+            # 26^6 * 10^6 is ~110x the namespace of the previous 36^8, so collisions get rarer.
+            # It is important not to use the default random generator, because it
+            # shares state between test configuration and settings randomization.
+            rng = random.SystemRandom()
+            return "".join(
+                rng.choice(string.ascii_lowercase if i % 2 == 0 else string.digits)
+                for i in range(length)
+            )
+
+        database = testcase_args.database or f"test_{random_str()}"
+        testcase_unique_name = f"{testcase_name}_{database}"
+        testcase_zookeeper_prefix = testcase_unique_name
+        user_files_root = os.environ.get(
+            "CLICKHOUSE_USER_FILES", "/var/lib/clickhouse/user_files"
+        )
+        testcase_user_files = os.path.join(user_files_root, testcase_unique_name)
 
         if args.cloud:
             # Sticky host is used by default
@@ -2405,47 +2550,74 @@ class TestCase:
             )
 
         testcase_args.testcase_basename = testcase_basename
+        port_is_registered = (
+            hasattr(self, "suite")
+            and self.suite.allocated_test_ports is not None
+        )
+        testcase_port = (
+            self.suite.allocate_test_port()
+            if port_is_registered
+            else get_free_tcp_port()
+        )
 
         if testcase_args.database:
-            database = testcase_args.database
-            os.environ.setdefault("CLICKHOUSE_DATABASE", database)
-            os.environ.setdefault("CLICKHOUSE_TMP", suite_tmp_dir)
             testcase_args.test_tmp_dir = suite_tmp_dir
         else:
             # If --database is not specified, we will create temporary database with
             # unique name and we will recreate and drop it for each test
-            def random_str(length=12):
-                # Alternate letters and digits so no two consecutive characters share a class,
-                # hence no word can appear in the name. It is embedded into DDL, paths and table
-                # names, and tests assert substring absence over those (e.g. NOT ILIKE '%auto%');
-                # an 8-char [a-z0-9] name spelled "auto" once in ~340k runs (CI: test_q2autogn).
-                # 26^6 * 10^6 is ~110x the namespace of the previous 36^8, so collisions get rarer.
-                # NOTE: it is important not to use default random generator, since it shares state.
-                rng = random.SystemRandom()
-                return "".join(
-                    rng.choice(string.ascii_lowercase if i % 2 == 0 else string.digits)
-                    for i in range(length)
-                )
-
-            database = f"test_{random_str()}"
-
-            clickhouse_execute(
-                args,
-                "CREATE DATABASE IF NOT EXISTS "
-                + database
-                + get_db_engine(testcase_args, database),
-                settings=get_create_database_settings(args, testcase_args),
-            )
-
-            os.environ["CLICKHOUSE_DATABASE"] = database
             # Set temporary directory to match the randomly generated database,
             # because .sh tests also use it for temporary files and we want to avoid
             # collisions.
             testcase_args.test_tmp_dir = os.path.join(suite_tmp_dir, database)
-            os.mkdir(testcase_args.test_tmp_dir)
-            os.environ["CLICKHOUSE_TMP"] = testcase_args.test_tmp_dir
+
+        created_test_tmp_dir = not testcase_args.database
+        try:
+            if created_test_tmp_dir:
+                os.mkdir(testcase_args.test_tmp_dir)
+            os.makedirs(testcase_user_files, exist_ok=True)
+
+            if not testcase_args.database:
+                clickhouse_execute(
+                    args,
+                    "CREATE DATABASE IF NOT EXISTS "
+                    + database
+                    + get_db_engine(testcase_args, database),
+                    settings=get_create_database_settings(args, testcase_args),
+                    retry_error_codes=True,
+                )
+        except Exception:
+            shutil.rmtree(testcase_user_files, ignore_errors=True)
+            if created_test_tmp_dir:
+                shutil.rmtree(testcase_args.test_tmp_dir, ignore_errors=True)
+            if port_is_registered:
+                try:
+                    self.suite.release_test_port(testcase_port)
+                except Exception as e:
+                    print(
+                        f"WARNING: could not release test port {testcase_port} "
+                        f"after test configuration failed: {e}",
+                        file=sys.stderr,
+                    )
+            raise
+
+        os.environ["CLICKHOUSE_DATABASE"] = database
+        os.environ["CLICKHOUSE_TMP"] = testcase_args.test_tmp_dir
+        os.environ["CLICKHOUSE_TEST_UNIQUE_NAME"] = testcase_unique_name
+        os.environ["CLICKHOUSE_TEST_UUID"] = str(testcase_uuid)
+        os.environ["CLICKHOUSE_TEST_PORT"] = str(testcase_port)
+        os.environ["CLICKHOUSE_TEST_ZOOKEEPER_PREFIX"] = testcase_zookeeper_prefix
+        os.environ["CLICKHOUSE_USER_FILES_UNIQUE"] = testcase_user_files
 
         testcase_args.testcase_database = database
+        testcase_args.testcase_unique_name = testcase_unique_name
+        testcase_args.testcase_uuid = testcase_uuid
+        testcase_args.testcase_port = testcase_port
+        testcase_args.testcase_port_is_registered = port_is_registered
+        testcase_args.testcase_port_released = False
+        testcase_args.testcase_zookeeper_prefix = testcase_zookeeper_prefix
+        testcase_args.testcase_user_files = testcase_user_files
+        if hasattr(self, "suite"):
+            self.suite.record_test_unique_name(testcase_unique_name)
 
         # Printed only in case of failures
         #
@@ -2476,6 +2648,28 @@ class TestCase:
         for k, v in settings_list.items():
             out.extend([f"--{k}", str(v)])
         return " ".join(out)
+
+    @staticmethod
+    def query_parameter_options(args) -> str:
+        database = args.testcase_database
+        query_param_values = {
+            "CLICKHOUSE_DATABASE": database,
+            "CLICKHOUSE_DATABASE_1": f"{database}_1",
+            "CLICKHOUSE_DATABASE_2": f"{database}_2",
+            "CLICKHOUSE_TEST_UNIQUE_NAME": args.testcase_unique_name,
+            "CLICKHOUSE_TEST_UUID": str(args.testcase_uuid),
+            "CLICKHOUSE_TEST_PORT": args.testcase_port,
+            "CLICKHOUSE_TEST_ZOOKEEPER_PREFIX": args.testcase_zookeeper_prefix,
+            # SQL tests get the sandbox directly. Shell tests retain the
+            # `CLICKHOUSE_USER_FILES` root and use
+            # `CLICKHOUSE_USER_FILES_UNIQUE` for their sandbox.
+            "CLICKHOUSE_USER_FILES": args.testcase_user_files,
+            "CLICKHOUSE_USER_FILES_UNIQUE": args.testcase_user_files,
+        }
+        return "".join(
+            f" --param_{name}={shlex.quote(str(value))}"
+            for name, value in query_param_values.items()
+        )
 
     @staticmethod
     def http_format_settings(settings_list) -> str:
@@ -3849,23 +4043,7 @@ class TestCase:
 
         query_params = ""
         if "need-query-parameters" in self.tags:
-            query_params = (
-                " --param_CLICKHOUSE_DATABASE="
-                + database
-                + " --param_CLICKHOUSE_DATABASE_1="
-                + database
-                + "_1"
-                + " --param_CLICKHOUSE_DATABASE_2="
-                + database
-                + "_2"
-            )
-            for env_to_param in [
-                "CLICKHOUSE_USER_FILES",
-                "CLICKHOUSE_USER_FILES_UNIQUE",
-            ]:
-                value = os.environ.get(env_to_param, None)
-                if value:
-                    query_params += f" --param_{env_to_param}={value}"
+            query_params = self.query_parameter_options(args)
 
         params = {
             "client": client + " --database=" + database + query_params,
@@ -3909,7 +4087,7 @@ class TestCase:
         write_text_atomic(_gpid_file, f"{proc.pid}\n")
 
         try:
-            proc.wait(args.timeout)
+            proc.wait(get_case_run_timeout(self.tags, args.timeout))
         except subprocess.TimeoutExpired:
             # Whether the test timed out will be decided later
             pass
@@ -4155,6 +4333,7 @@ class TestCase:
                     result.status = TestStatus.SKIPPED
 
             self._cleanup(result.status == TestStatus.OK)
+            self._cleanup_user_files(result.status == TestStatus.OK)
 
             return result
         except KeyboardInterrupt as e:
@@ -4213,44 +4392,111 @@ class TestCase:
                 self.get_description_from_exception_info(sys.exc_info()),
             )
         finally:
+            self._cleanup_user_files(False)
+            self._release_test_port()
             self.remove_settings_from_env()
+
+    def _release_test_port(self):
+        if self.testcase_args is None:
+            return
+        if not self.testcase_args.testcase_port_is_registered:
+            return
+        if self.testcase_args.testcase_port_released:
+            return
+
+        try:
+            self.suite.release_test_port(self.testcase_args.testcase_port)
+            self.testcase_args.testcase_port_released = True
+        except Exception as e:
+            print(
+                f"WARNING: could not release test port "
+                f"{self.testcase_args.testcase_port} for {self.name}: {e}",
+                file=sys.stderr,
+            )
+
+    def _cleanup_user_files(self, raise_on_error):
+        if self.testcase_args is None:
+            return
+
+        user_files_path = self.testcase_args.testcase_user_files
+        if not os.path.exists(user_files_path):
+            return
+
+        try:
+            shutil.rmtree(user_files_path)
+        except OSError as e:
+            if raise_on_error:
+                raise
+            print(
+                f"WARNING: could not clean the user_files sandbox for {self.name}: {e}",
+                file=sys.stderr,
+            )
 
     def _cleanup(self, passed):
         args = self.testcase_args
 
-        need_cleanup = not args.database
-        if need_cleanup and args.no_drop_if_fail:
-            need_cleanup = passed
+        cleanup_database = not args.database
+        if cleanup_database and args.no_drop_if_fail:
+            cleanup_database = passed
 
-        if not need_cleanup or args.no_drop:
+        if args.no_drop:
             return
 
         time_passed = (datetime.now() - args.testcase_start_time).total_seconds()
         timeout = max(args.timeout - time_passed, 20)
 
+        if cleanup_database:
+            try:
+                self._cleanup_database(args, timeout)
+            except (ConnectionError, http.client.ImproperConnectionState) as e:
+                # Cleanup is best-effort only when the server is actually dead -
+                # positively so: with the hung check's grace a stalled server can
+                # recover and the run continues, and a database left behind by a
+                # DROP that only timed out would then leak into later tests.
+                # If the server is still alive, this was a real cleanup failure
+                # (leftover state, unfinished DROP) and must propagate so the
+                # outer handler in `run` classifies it as CONNECTION_ERROR — a
+                # silent swallow would let a test stay OK while leaving its
+                # database behind, hiding the bug.
+                if not probed_server_is_gone(args):
+                    raise
+                # The server died between the test finishing and cleanup running.
+                # The test's database is moot; the hung-check or the next test
+                # will detect the dead server and stop the run.
+                print(
+                    f"WARNING: cleanup skipped for {self.name}: "
+                    f"{type(e).__name__}: {e}",
+                    file=sys.stderr,
+                )
+
         try:
-            self._cleanup_database(args, timeout)
-        except (ConnectionError, http.client.ImproperConnectionState) as e:
-            # Cleanup is best-effort only when the server is actually dead -
-            # positively so: with the hung check's grace a stalled server can
-            # recover and the run continues, and a database left behind by a
-            # DROP that only timed out would then leak into later tests.
-            # If the server is still alive, this was a real cleanup failure
-            # (leftover state, unfinished DROP) and must propagate so the
-            # outer handler in run() classifies it as CONNECTION_ERROR — a
-            # silent swallow would let a test stay OK while leaving its
-            # database behind, hiding the bug.
-            if not probed_server_is_gone(args):
+            self._check_global_entity_leaks(args, timeout)
+        except Exception as e:
+            if passed:
                 raise
-            # Server died between the test finishing and cleanup running.
-            # The test's database is moot; the hung-check or the next test
-            # will detect the dead server and stop the run.
             print(
-                f"WARNING: cleanup skipped for {self.name}: "
+                f"WARNING: global entity leak check failed for {self.name}: "
                 f"{type(e).__name__}: {e}",
                 file=sys.stderr,
             )
-        shutil.rmtree(args.test_tmp_dir)
+
+        if cleanup_database:
+            shutil.rmtree(args.test_tmp_dir)
+
+    def _check_global_entity_leaks(self, args, timeout):
+        if GLOBAL_ENTITY_DDL_TAG not in self.tags:
+            return
+        leaked_entities = find_global_entity_leaks(
+            args,
+            [args.testcase_unique_name],
+            timeout,
+            f"{args.testcase_basename}-{args.testcase_database}",
+        )
+        if leaked_entities:
+            raise TestException(
+                "The test should explicitly drop its global entities:\n"
+                + leaked_entities
+            )
 
     def _cleanup_database(self, args, timeout):
         database = args.testcase_database
@@ -4456,7 +4702,12 @@ class TestSuite:
                     random_settings_limits_line = find_random_settings_limits_line(lines, comment_sign)
                     memory_limits_line = find_memory_limits_line(lines, comment_sign)
                 except UnicodeDecodeError:
-                    return [], {}, None
+                    # The content cannot be inspected, so assume the worst and keep
+                    # the per-test global entity leak check enabled for this test.
+                    # This must be a set: `TestCase` adds `GLOBAL_TAGS` to whatever
+                    # is stored here, and the empty container the caller substitutes
+                    # for a falsy value would hide a wrong type.
+                    return {GLOBAL_ENTITY_DDL_TAG}, {}, None
                 try:
                     if filepath.endswith(".sql"):
                         for line in lines:
@@ -4465,6 +4716,8 @@ class TestSuite:
                 except UnicodeDecodeError:
                     pass
             parsed_tags = parse_tags_from_line(tag_line, comment_sign)
+            if GLOBAL_ENTITY_DDL_RE.search("".join(lines)):
+                parsed_tags.add(GLOBAL_ENTITY_DDL_TAG)
             if need_query_params:
                 parsed_tags.add("need-query-parameters")
             if filepath.endswith(".expect"):
@@ -4520,10 +4773,19 @@ class TestSuite:
         # to notify PR author that the changes in PR fixes this test.
         self.blacklist_check: List[str] = []
 
+        if (args.run_by_hash_num is None) != (args.run_by_hash_total is None):
+            raise TestException(
+                "--run-by-hash-num and --run-by-hash-total must be specified together"
+            )
+
         if args.run_by_hash_num is not None and args.run_by_hash_total is not None:
-            if args.run_by_hash_num > args.run_by_hash_total:
+            if (
+                args.run_by_hash_num < 0
+                or args.run_by_hash_total <= 0
+                or args.run_by_hash_num >= args.run_by_hash_total
+            ):
                 raise TestException(
-                    f"Incorrect run by hash, value {args.run_by_hash_num} bigger than total {args.run_by_hash_total}"
+                    f"Incorrect run by hash: batch {args.run_by_hash_num}, total {args.run_by_hash_total}"
                 )
 
             def filter_func(x: str) -> bool:
@@ -4545,6 +4807,17 @@ class TestSuite:
         self.all_tags: Dict[str, Set[str]] = all_tags_and_random_settings_limits[0]
         self.all_random_settings_limits: Dict[str, Dict[str, (int, int)]] = (all_tags_and_random_settings_limits[1])
         self.all_memory_limits: Dict[str, int] = (all_tags_and_random_settings_limits[2])
+        self.parallel_groups = {
+            test_name: group
+            for test_name, tags in self.all_tags.items()
+            if (group := get_no_parallel_group(tags)) is not None
+        }
+        self.group_durations = None
+        self.group_test_counts = None
+        self.group_timing_lock = None
+        self.allocated_test_ports = None
+        self.test_port_lock = None
+        self.test_unique_names = None
         self.sequential_tests = []
         self.parallel_tests = []
 
@@ -4568,6 +4841,82 @@ class TestSuite:
                 if not args.no_parallel:
                     self.parallel_tests.append(test_name)
         self.sequential_tests.extend(post_run_check_tests)
+
+    def get_parallel_group(self, test_name):
+        return self.parallel_groups.get(test_name)
+
+    def configure_runtime_state(self, multiprocessing_manager):
+        self.group_durations = multiprocessing_manager.dict()
+        self.group_test_counts = multiprocessing_manager.dict()
+        self.group_timing_lock = multiprocessing_manager.Lock()
+        self.allocated_test_ports = multiprocessing_manager.dict()
+        self.test_port_lock = multiprocessing_manager.Lock()
+        self.test_unique_names = multiprocessing_manager.list()
+
+    def allocate_test_port(self):
+        while True:
+            port = get_free_tcp_port()
+            with self.test_port_lock:
+                if port not in self.allocated_test_ports:
+                    self.allocated_test_ports[port] = True
+                    return port
+
+    def release_test_port(self, port):
+        if self.allocated_test_ports is None:
+            return
+        with self.test_port_lock:
+            self.allocated_test_ports.pop(port, None)
+
+    def record_test_unique_name(self, unique_name):
+        if self.test_unique_names is not None:
+            self.test_unique_names.append(unique_name)
+
+    def report_global_entity_leaks(self, args, exit_code):
+        if not self.test_unique_names:
+            return
+        try:
+            leaked_entities = find_global_entity_leaks(
+                args,
+                list(self.test_unique_names),
+                30,
+                "clickhouse-test-post-run-check",
+            )
+        except Exception as e:
+            print(
+                f"WARNING: post-run global entity leak check failed: "
+                f"{type(e).__name__}: {e}",
+                file=sys.stderr,
+            )
+            return
+        if leaked_entities:
+            print(
+                "ERROR: global entities leaked by completed tests:\n"
+                + leaked_entities,
+                file=sys.stderr,
+            )
+            exit_code.value = 1
+
+    def record_group_duration(self, test_name, duration):
+        group = self.get_parallel_group(test_name)
+        if group is None or self.group_durations is None:
+            return
+
+        with self.group_timing_lock:
+            self.group_durations[group] = (
+                self.group_durations.get(group, 0.0) + duration
+            )
+            self.group_test_counts[group] = self.group_test_counts.get(group, 0) + 1
+
+    def report_group_durations(self):
+        if not self.group_durations:
+            return
+
+        print("Concurrency group runtime totals:")
+        for group, duration in sorted(
+            self.group_durations.items(), key=lambda item: (-item[1], item[0])
+        ):
+            count = self.group_test_counts[group]
+            print(f"  {group}: {duration:.2f} sec. across {count} tests")
 
     def apply_test_runs(self, all_tests):
         test_runs = self.args.test_runs
@@ -4972,6 +5321,9 @@ def run_tests_array(
         print(f"Running {about}{num_tests} {test_suite.suite} tests ({proc_name}).")
 
     while True:
+        if isinstance(all_tests, ParallelTestScheduler):
+            all_tests.finish_previous_test(process_index)
+
         # Check whether this worker has been asked to shed (stop after finishing
         # its previous test). The check happens before popping the next test so
         # no work is lost — the remaining workers will pick up the queue.
@@ -4982,7 +5334,10 @@ def run_tests_array(
 
         if all_tests:
             try:
-                case = all_tests.pop(0)
+                if isinstance(all_tests, ParallelTestScheduler):
+                    case = all_tests.pop_for_worker(process_index)
+                else:
+                    case = all_tests.pop(0)
             except IndexError:
                 break
         else:
@@ -5021,6 +5376,7 @@ def run_tests_array(
                 exit_code=GLOBAL_TIME_LIMIT_EXIT_CODE,
             )
 
+        test_case_start_time = time()
         test_case = TestCase(test_suite, case, args, is_concurrent)
 
         try:
@@ -5064,7 +5420,9 @@ def run_tests_array(
                     raise TimeoutError("Test execution timed out")
 
                 signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(int(args.timeout * 1.1) + 60)
+                signal.alarm(
+                    int(get_case_run_timeout(test_case.tags, args.timeout) * 1.1) + 60
+                )
                 test_result = None
                 try:
                     test_result = test_case.run(args, test_suite, client_options)
@@ -5077,6 +5435,10 @@ def run_tests_array(
                 if not test_result or not test_result.need_retry:
                     break
                 restarted_tests.append(test_result)
+
+            test_suite.record_group_duration(
+                case, time() - test_case_start_time
+            )
 
             # Save failed test info so that diagnostics can be run later
             # via --diagnose-random-settings.
@@ -5909,6 +6271,52 @@ def get_next_test_progress(progress_counter, total_tests: int) -> str:
     return f"[{current_test_number:>{width}} / {total_tests}] "
 
 
+class ParallelTestScheduler:
+    """A shared queue that never hands out two tests from the same group."""
+
+    def __init__(self, multiprocessing_manager, tests, test_groups):
+        self.pending_tests = multiprocessing_manager.list(tests)
+        self.test_groups = test_groups
+        self.active_groups = multiprocessing_manager.dict()
+        self.worker_groups = multiprocessing_manager.dict()
+        self.lock = multiprocessing_manager.Lock()
+
+    def __bool__(self):
+        return bool(self.pending_tests)
+
+    def finish_previous_test(self, worker_index):
+        with self.lock:
+            group = self.worker_groups.get(worker_index)
+            if group is None:
+                return
+            del self.worker_groups[worker_index]
+            self.active_groups.pop(group, None)
+
+    def pop_for_worker(self, worker_index):
+        with self.lock:
+            for index, test_name in enumerate(self.pending_tests):
+                group = self.test_groups.get(test_name)
+                if group is not None and group in self.active_groups:
+                    continue
+
+                del self.pending_tests[index]
+                if group is not None:
+                    self.active_groups[group] = True
+                    self.worker_groups[worker_index] = group
+                return test_name
+
+        raise IndexError
+
+
+def partition_tests_by_serialization_key(test_suite, tests, jobs):
+    worker_queues: List[List[str]] = [[] for _ in range(jobs)]
+    for test_name in tests:
+        group = test_suite.get_parallel_group(test_name)
+        serialization_key = f"group:{group}" if group else f"test:{test_name}"
+        worker_queues[stringhash(serialization_key) % jobs].append(test_name)
+    return worker_queues
+
+
 def do_run_tests(
     jobs,
     test_suite: TestSuite,
@@ -5917,15 +6325,33 @@ def do_run_tests(
     restarted_tests,
     stop_testing,
     runner_process_killed,
+    multiprocessing_manager,
 ):
+    grouped_tests = sum(
+        1
+        for test_name in test_suite.parallel_tests
+        if test_suite.get_parallel_group(test_name) is not None
+    )
+    group_count = len(
+        {
+            test_suite.get_parallel_group(test_name)
+            for test_name in test_suite.parallel_tests
+            if test_suite.get_parallel_group(test_name) is not None
+        }
+    )
     print(
         "Found",
         len(test_suite.parallel_tests),
         "parallel tests and",
         len(test_suite.sequential_tests),
-        "sequential tests",
+        "sequential tests;",
+        grouped_tests,
+        "parallel tests use",
+        group_count,
+        "concurrency groups",
     )
     total_tests = len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
+    test_suite.configure_runtime_state(multiprocessing_manager)
     progress_counter = multiprocessing.Value('i', 0)
     # Exit code the run stops with. A worker raises `StopTesting` inside its own
     # process, so that exception never reaches the parent; the parent only sees
@@ -5949,7 +6375,24 @@ def do_run_tests(
         # of failures will be nearly the same for all tests from the group.
         # TODO: add shuffle for sequential tests
         if jobs > 1:
-            random.shuffle(test_suite.parallel_tests)
+            # Shuffle whole serialization keys rather than individual tests: every
+            # member of one `no-parallel:<group>` gets the same key, so a stable sort
+            # keeps the group's members next to each other and in their original
+            # order, while the groups and the ungrouped tests are shuffled as units.
+            serialization_keys = {
+                test_name: (
+                    f"group:{group}"
+                    if (group := test_suite.get_parallel_group(test_name)) is not None
+                    else f"test:{test_name}"
+                )
+                for test_name in test_suite.parallel_tests
+            }
+            random_order = {
+                key: random.random() for key in set(serialization_keys.values())
+            }
+            test_suite.parallel_tests.sort(
+                key=lambda test_name: random_order[serialization_keys[test_name]]
+            )
 
         workers_to_shed = multiprocessing.Value('i', 0)
         total_failures_shared = multiprocessing.Value('i', 0)
@@ -5959,13 +6402,15 @@ def do_run_tests(
             # same worker.  This prevents the same test from running
             # concurrently on multiple workers, avoiding conflicts when tests
             # use shared resources (tables with fixed names, files, etc.).
-            worker_queues: List[List[str]] = [[] for _ in range(jobs)]
-            for test in test_suite.parallel_tests:
-                worker_queues[stringhash(test) % jobs].append(test)
+            worker_queues = partition_tests_by_serialization_key(
+                test_suite, test_suite.parallel_tests, jobs
+            )
         else:
-            manager = multiprocessing.Manager()
-            shared_queue = manager.list()
-            shared_queue.extend(test_suite.parallel_tests)
+            shared_queue = ParallelTestScheduler(
+                multiprocessing_manager,
+                test_suite.parallel_tests,
+                test_suite.parallel_groups,
+            )
 
         batch_size = len(test_suite.parallel_tests) // jobs
 
@@ -6121,6 +6566,8 @@ def do_run_tests(
         if stop_testing.is_set():
             raise_stop_from_carrier(stop_exit_code)
 
+        test_suite.report_group_durations()
+
     if test_suite.sequential_tests:
         # Sequential runner shares the total_failures_shared counter with parallel workers
         # so that --max-failures counts failures from both groups combined.
@@ -6143,6 +6590,8 @@ def do_run_tests(
                 stop_exit_code,
             )
         )
+
+    test_suite.report_global_entity_leaks(args, exit_code)
 
     return total_tests
 
@@ -6756,6 +7205,7 @@ ORDER BY (test_name, callee_offset)
                 restarted_tests,
                 stop_testing,
                 runner_process_killed,
+                multiprocessing_manager,
             )
 
     if runner_process_killed.is_set():
@@ -7044,7 +7494,7 @@ def parse_args():
         "-t",
         "--timeout",
         type=int,
-        default=600,
+        default=300,
         help="Timeout for each test case in seconds",
     )
     parser.add_argument(
@@ -7288,12 +7738,12 @@ def parse_args():
     parser.add_argument(
         "--run-by-hash-num",
         type=int,
-        help="Run tests matching crc32(test_name) % run_by_hash_total == run_by_hash_num",
+        help="Run one deterministic duration-balanced test batch",
     )
     parser.add_argument(
         "--run-by-hash-total",
         type=int,
-        help="Total test groups for crc32(test_name) % run_by_hash_total == run_by_hash_num",
+        help="Total number of deterministic duration-balanced test batches",
     )
 
     parser.add_argument(
@@ -7393,7 +7843,7 @@ def parse_args():
     parser.add_argument(
         "--no-self-parallel",
         action="store_true",
-        help="Partition tests by name so the same test never runs concurrently on multiple workers. Use with --test-runs to avoid conflicts on shared resources.",
+        help="Partition tests by name or concurrency group so conflicting tests never run on multiple workers. Use with --test-runs to avoid conflicts on shared resources.",
     )
     parser.add_argument(
         "--stress-tests",

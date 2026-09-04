@@ -1,4 +1,4 @@
--- Tags: long, no-fasttest, no-parallel, no-tsan, no-msan, no-asan
+-- Tags: long, no-fasttest, no-tsan, no-msan, no-asan
 
 set optimize_trivial_insert_select = 0;
 set output_format_parquet_row_group_size = 1000;

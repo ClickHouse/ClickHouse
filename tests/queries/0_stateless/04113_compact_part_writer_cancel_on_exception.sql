@@ -1,4 +1,5 @@
 -- Tags: no-parallel, no-random-merge-tree-settings
+-- Tag no-parallel: uses a process-global failpoint
 -- Regression test: `MergeTreeDataPartWriterCompact::cancel` must not dereference
 -- a null `shared_ptr` when `addStreams` fails before fully constructing the stream.
 

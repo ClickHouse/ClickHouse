@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-msan
+# Tags: no-fasttest, no-msan
 # Regression test for BUFFERED_V1 + RowBinary type coercion.
 # Before the fix, passing Int8 to an Int32 parameter caused RowBinary to serialize
 # 1 byte per value instead of 4, making the WASM module read garbage.

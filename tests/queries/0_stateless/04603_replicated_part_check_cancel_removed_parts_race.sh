@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database
-# no-parallel: uses a PAUSEABLE_ONCE failpoint that fires exactly once globally.
+# Tag no-parallel: uses a PAUSEABLE_ONCE failpoint that fires exactly once globally.
 # no-shared-merge-tree: the failpoint is injected in ReplicatedMergeTreePartCheckThread; SharedMergeTree uses a different code path.
 # no-replicated-database: uses explicit ReplicatedMergeTree ZooKeeper paths.
 #

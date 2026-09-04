@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper, no-parallel, long, no-msan
+# Tags: race, zookeeper, long, no-msan, no-flaky-check
+# no-flaky-check: stress test, runs up to ~6 min on sanitizer builds - repeated runs exceed the 180 s per-test budget
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 

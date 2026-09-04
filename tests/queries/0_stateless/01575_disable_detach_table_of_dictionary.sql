@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 

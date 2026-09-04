@@ -1,12 +1,12 @@
--- Tags: no-parallel, no-flaky-check
+-- Tags: no-flaky-check
 
 create database if not exists shard_0;
 create database if not exists shard_1;
-drop table if exists shard_0.test;
-drop table if exists shard_1.test;
+drop table if exists shard_0.test_03525;
+drop table if exists shard_1.test_03525;
 drop table if exists test_dist;
 
-CREATE TABLE shard_0.test
+CREATE TABLE shard_0.test_03525
 (
     `id` UInt32,
     `name` String,
@@ -17,7 +17,7 @@ PARTITION BY dtm
 ORDER BY id
 SETTINGS index_granularity = 8192;
 
-CREATE TABLE shard_1.test
+CREATE TABLE shard_1.test_03525
 (
     `id` UInt32,
     `name` String,
@@ -34,10 +34,10 @@ CREATE TABLE test_dist
     `name` String,
     `dtm` UInt32
 )
-ENGINE = Distributed('test_cluster_two_shards_different_databases', '', 'test');
+ENGINE = Distributed('test_cluster_two_shards_different_databases', '', 'test_03525');
 
-insert into shard_0.test select number, number, number % 3 from numbers(6);
-insert into shard_1.test select number + 3, number, (number + 1) % 3 from numbers(6);
+insert into shard_0.test_03525 select number, number, number % 3 from numbers(6);
+insert into shard_1.test_03525 select number + 3, number, (number + 1) % 3 from numbers(6);
 
 -- { echoOn }
 
@@ -50,3 +50,9 @@ select count() from test_dist a where id in (select id from test_dist where dtm 
 select count() from test_dist a where id in (select id from test_dist where dtm != 1 settings distributed_product_mode='local') and id in (select id from test_dist where dtm != 2 settings distributed_product_mode='allow') settings enable_analyzer=1;
 select count() from test_dist a where id in (select id from test_dist where dtm != 1 settings distributed_product_mode='allow') and id in (select id from test_dist where dtm != 2 settings distributed_product_mode='local') settings enable_analyzer=1;
 select count() from test_dist a where id in (select id from test_dist where dtm != 1 settings distributed_product_mode='allow') and id in (select id from test_dist where dtm != 2 settings distributed_product_mode='allow') settings enable_analyzer=1;
+
+-- { echoOff }
+
+drop table if exists shard_0.test_03525;
+drop table if exists shard_1.test_03525;
+drop table if exists test_dist;

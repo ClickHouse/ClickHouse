@@ -1,12 +1,8 @@
--- Tags: no-parallel, no-fasttest, no-ordinary-database
--- no-parallel: looks at server-wide metrics
+-- Tags: no-fasttest, no-ordinary-database
 
 -- Tests the vector index cache.
 
 SET parallel_replicas_local_plan = 1;
-
-SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE;
-SELECT metric, value FROM system.metrics WHERE metric = 'VectorSimilarityIndexCacheBytes';
 
 DROP TABLE IF EXISTS tab;
 

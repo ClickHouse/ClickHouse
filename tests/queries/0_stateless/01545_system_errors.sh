@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-fasttest
+# Tag no-parallel: asserts exact before/after deltas of the process-wide `system.errors` counters
+# for `FUNCTION_THROW_IF_VALUE_IS_NON_ZERO` (local and remote), which any concurrent query
+# triggering the same error code would perturb
 # Tag no-fasttest: Checks system.errors
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tags: use-xray, no-parallel
-# no-parallel: avoid other tests interfering with the global system.instrumentation table
+# Tag no-parallel: mutates the process-global XRay instrumentation table
+#   (system.instrumentation); concurrent tests would interfere with each other's entries
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

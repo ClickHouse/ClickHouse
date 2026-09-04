@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-fasttest
 
 DROP TABLE IF EXISTS to_insert;
 CREATE TABLE to_insert (value UInt64) ENGINE = Memory();

@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 DROP TABLE IF EXISTS dictionary_decimal_source_table;
 CREATE TABLE dictionary_decimal_source_table

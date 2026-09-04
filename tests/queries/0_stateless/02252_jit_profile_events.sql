@@ -1,4 +1,9 @@
--- Tags: no-fasttest, no-parallel, no-msan, no-random-settings
+-- Tags: no-fasttest, no-msan, no-random-settings, no-parallel
+-- Tag no-parallel: asserts `CompileFunction` profile events, but the compiled-expression
+--   cache is server-global and keyed by function signatures, not query text. Any concurrent
+--   query that JIT-compiles a matching signature (e.g. three `avg(UInt64)` aggregates -
+--   `compile_aggregate_expressions` is on by default) pre-warms the entry and the event
+--   count here drops to 0. A concurrency group cannot cover arbitrary concurrent tests.
 -- JIT CompileFunction counts are sensitive to randomized optimizer/compiler settings
 
 SET compile_expressions = 1;

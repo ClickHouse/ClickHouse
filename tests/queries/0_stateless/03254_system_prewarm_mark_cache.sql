@@ -1,5 +1,5 @@
 -- Tags: no-parallel
-
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 SET parallel_replicas_local_plan = 1;
 
 DROP TABLE IF EXISTS t_prewarm_cache;

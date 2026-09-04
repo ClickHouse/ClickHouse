@@ -1,4 +1,4 @@
--- Tags: no-fasttest, long, no-parallel, no-flaky-check, no-msan, no-tsan
+-- Tags: no-fasttest, long, no-flaky-check, no-msan, no-tsan
 -- - no-fasttest -- S3 is required
 -- - no-flaky-check -- not compatible with ThreadFuzzer
 -- - no-tsan -- merging 1200+ columns on `s3_no_cache` exceeds the 300 s client `receive_timeout` on `OPTIMIZE FINAL` under TSan

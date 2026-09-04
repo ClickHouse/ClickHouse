@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, long, no-object-storage, no-distributed-cache
-# Tag no-parallel: since someone may create table in system database
+# Tag no-parallel: lists every table in the shared `system` database and queries each by name; a concurrent test creating/dropping a table there races the listing
 # Tag no-object-storage: it is slow under S3 (and Azure for sure)
 # Tag no-distributed-cache: times out
 

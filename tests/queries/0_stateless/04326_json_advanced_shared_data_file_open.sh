@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+# Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 # Test that reading the whole JSON column with ADVANCED shared data serialization
 # does not open per-bucket data/marks/substreams files that are not needed for reading.
 # When reading the whole JSON column, only Structure (per bucket) and Copy streams are used;

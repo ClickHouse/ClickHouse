@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 SET allow_suspicious_ttl_expressions = 1;
 

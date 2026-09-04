@@ -1,4 +1,5 @@
 -- Tags: no-parallel, shard
+-- Tag no-parallel: uses a process-global failpoint
 -- - no-parallel: uses a fail point (global server state)
 -- - shard: connects to 127.0.0.2 as a second shard
 

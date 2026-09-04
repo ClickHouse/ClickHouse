@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-fasttest
 # Tag no-fasttest: needs psql
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -7,8 +7,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 echo "
-DROP USER IF EXISTS postgresql_user;
-CREATE USER postgresql_user HOST IP '127.0.0.1' IDENTIFIED WITH no_password;
+DROP USER IF EXISTS postgresql_user_01889;
+CREATE USER postgresql_user_01889 HOST IP '127.0.0.1' IDENTIFIED WITH no_password;
 " | $CLICKHOUSE_CLIENT
 
-psql --host localhost --port ${CLICKHOUSE_PORT_POSTGRESQL} ${CLICKHOUSE_DATABASE} --user postgresql_user -c "SELECT NULL;"
+psql --host localhost --port ${CLICKHOUSE_PORT_POSTGRESQL} ${CLICKHOUSE_DATABASE} --user postgresql_user_01889 -c "SELECT NULL;"
+
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS postgresql_user_01889"

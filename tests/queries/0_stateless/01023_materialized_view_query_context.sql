@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-replicated-database
+-- Tags: no-replicated-database
 
 -- FIXME: old analyzer does not check db exist, new one checks it and test fails. test is suppressed for replicated.
 --    without analyzer:

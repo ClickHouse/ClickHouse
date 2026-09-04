@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 # Tag no-fasttest - requires S3
-# Tag no-parallel - in case of parallel test DROP TABLE execution time is unpredictable (due to other tables can be queued for removal)
 
 # Test from https://github.com/ClickHouse/ClickHouse/issues/68663
 
@@ -15,7 +14,7 @@ $CLICKHOUSE_CLIENT -nm -q "
         test_field String
     )
     ENGINE = S3Queue('http://minio.such-tld-will-never-be-registered-for-clickhose-tests:9000/not-exist-s3-bucket/**.json', JSONEachRow)
-    SETTINGS keeper_path = '/clickhouse/db_name/s3queue/test_s3_issue', mode = 'unordered', after_processing = 'keep', s3queue_loading_retries = 3, s3queue_processing_threads_num = 30, s3queue_enable_logging_to_s3queue_log = 1, s3queue_polling_min_timeout_ms = 1000, s3queue_polling_max_timeout_ms = 5000, s3queue_polling_backoff_ms = 1500, s3queue_tracked_file_ttl_sec = 345600, s3queue_tracked_files_limit = 1000000;
+    SETTINGS keeper_path = '/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/s3queue/test_s3_issue', mode = 'unordered', after_processing = 'keep', s3queue_loading_retries = 3, s3queue_processing_threads_num = 30, s3queue_enable_logging_to_s3queue_log = 1, s3queue_polling_min_timeout_ms = 1000, s3queue_polling_max_timeout_ms = 5000, s3queue_polling_backoff_ms = 1500, s3queue_tracked_file_ttl_sec = 345600, s3queue_tracked_files_limit = 1000000;
 
     CREATE TABLE IF NOT EXISTS test_s3_issue (test_field String) ENGINE = Null;
     CREATE MATERIALIZED VIEW IF NOT EXISTS test_s3_issue_mv TO test_s3_issue AS SELECT * FROM test_s3_issue_queue;

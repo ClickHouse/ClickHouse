@@ -1,4 +1,5 @@
 -- Tags: no-fasttest, no-random-merge-tree-settings, no-random-settings, no-parallel
+-- Tag no-parallel: uses a process-global failpoint
 -- no-parallel - due to usage of fail points
 -- A lot of stars need to align for the issue to reproduce. Thus all the overridden settings are explicitly specified within the test and on top of that settings randomization is disabled.
 

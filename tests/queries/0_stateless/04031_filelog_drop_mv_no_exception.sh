@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 # Tag no-fasttest: FileLog requires inotify
-# Tag no-parallel: uses a shared USER_FILES_PATH directory
 
 # Regression test for DEPENDENCIES_NOT_FOUND exception thrown when a
 # materialized view is dropped while the FileLog background thread is
@@ -16,7 +15,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-DATA_DIR="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+DATA_DIR="${CLICKHOUSE_USER_FILES_UNIQUE}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 mkdir -p "${DATA_DIR}"
 rm -rf "${DATA_DIR:?}"/*
 

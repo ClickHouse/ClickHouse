@@ -3080,6 +3080,13 @@ Strings StorageFile::getDataPaths() const
     return paths;
 }
 
+std::optional<Strings> StorageFile::tryGetDataPaths() const
+{
+    if (paths.empty())
+        return std::nullopt;
+    return paths;
+}
+
 void StorageFile::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     if (!is_db_table)

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel
+# Tag no-parallel: uses a process-global failpoint
 # - no-fasttest: fail points are not available, the secure port is not enabled
 # - no-parallel: the fail point affects every new TCP connection to the server
 # When the connection setup fails (for example, the allocation of the connection buffers

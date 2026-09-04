@@ -16,7 +16,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-TABLE_ROOT="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_malformed_enums"
+set -eu
+
+TABLE_ROOT_BASE="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_malformed_enums"
+TABLE_ROOT=""
+TABLE_NAME=""
+CASE_ID=0
 
 # Rewrites the value of an int field of the first record of an Avro object container file.
 # Usage: patch_avro_int <file> <dotted.field.path> <new_value>
@@ -135,12 +140,22 @@ PY
 
 create_table()
 {
+    if [[ -n "${TABLE_NAME}" ]]; then
+        ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE_NAME};"
+    fi
+    if [[ -n "${TABLE_ROOT}" ]]; then
+        rm -rf "${TABLE_ROOT}"
+    fi
+
+    CASE_ID=$((CASE_ID + 1))
+    TABLE_NAME="t_malformed_enums_${CASE_ID}"
+    TABLE_ROOT="${TABLE_ROOT_BASE}_${CASE_ID}"
     rm -rf "${TABLE_ROOT}"
     ${CLICKHOUSE_CLIENT} --query "
-        DROP TABLE IF EXISTS t_malformed_enums;
+        SET use_iceberg_metadata_files_cache = 0;
         SET allow_experimental_insert_into_iceberg = 1;
-        CREATE TABLE t_malformed_enums (x Int32) ENGINE = IcebergLocal('${TABLE_ROOT}/');
-        INSERT INTO t_malformed_enums VALUES (1), (2), (3);
+        CREATE TABLE ${TABLE_NAME} (x Int32) ENGINE = IcebergLocal('${TABLE_ROOT}/');
+        INSERT INTO ${TABLE_NAME} VALUES (1), (2), (3);
     "
 }
 
@@ -151,12 +166,15 @@ create_table()
 check_throws()
 {
     local output
-    output=$(${CLICKHOUSE_CLIENT} --query "
-        SELECT * FROM t_malformed_enums ORDER BY x
-        SETTINGS use_iceberg_metadata_files_cache = 0;
-    " 2>&1)
-    echo "$output" | grep -oF 'ICEBERG_SPECIFICATION_VIOLATION' | head -1
-    echo "$output" | grep -oF "$1" | head -1
+    if output=$(${CLICKHOUSE_CLIENT} --query "
+        SELECT * FROM ${TABLE_NAME} ORDER BY x
+        SETTINGS use_iceberg_metadata_files_cache = 0, use_query_cache = 0;
+    " 2>&1); then
+        echo "Expected malformed Iceberg metadata to be rejected: $1" >&2
+        return 1
+    fi
+    echo "$output" | grep -m1 -oF 'ICEBERG_SPECIFICATION_VIOLATION'
+    echo "$output" | grep -m1 -oF "$1"
 }
 
 manifest_file() { find "${TABLE_ROOT}/metadata" -name '*.avro' ! -name 'snap-*' | head -1; }
@@ -164,7 +182,7 @@ manifest_list() { find "${TABLE_ROOT}/metadata" -name 'snap-*.avro' | head -1; }
 
 echo "-- the table reads fine before the metadata is patched"
 create_table
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM t_malformed_enums ORDER BY x SETTINGS use_iceberg_metadata_files_cache = 0;"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${TABLE_NAME} ORDER BY x SETTINGS use_iceberg_metadata_files_cache = 0, use_query_cache = 0;"
 
 echo "-- out-of-range 'status' of a manifest entry"
 create_table
@@ -199,5 +217,5 @@ create_table
 patch_avro_int "$(manifest_list)" 'content' -1
 check_throws "unexpected value -1 of the field 'content'"
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_malformed_enums;"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE_NAME};"
 rm -rf "${TABLE_ROOT}"

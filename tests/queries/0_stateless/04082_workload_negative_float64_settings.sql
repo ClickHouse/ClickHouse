@@ -1,5 +1,5 @@
 -- Tags: no-parallel
--- Do not run in parallel: `CREATE WORKLOAD <name>` (without `IN <parent>`) claims the
+-- Tag no-parallel: `CREATE WORKLOAD <name>` (without `IN <parent>`) claims the
 -- single global root-workload slot enforced in `WorkloadEntityStorageBase::storeEntityImpl`,
 -- so a rootless `CREATE WORKLOAD` races with any other test that does the same (e.g.
 -- `03232_workload_create_and_drop`) and one side fails with
