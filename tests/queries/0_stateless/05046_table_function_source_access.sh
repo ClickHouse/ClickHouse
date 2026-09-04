@@ -21,6 +21,8 @@ DROP TABLE IF EXISTS t_alias_src;
 DROP TABLE IF EXISTS t_as_tf;
 DROP TABLE IF EXISTS t_as_tf_p;
 DROP TABLE IF EXISTS t_as_tf_ti;
+DROP TABLE IF EXISTS t_ok_as_tf_p;
+DROP TABLE IF EXISTS t_ok_as_tf_ai;
 DROP USER IF EXISTS $user_name;
 
 CREATE TABLE t_source_access (a UInt64, b UInt64, PROJECTION p_src (SELECT b ORDER BY b))
@@ -92,6 +94,10 @@ $CLICKHOUSE_CLIENT --user "$user_name" -q "SELECT * FROM viewIfPermitted(SELECT 
 # `executable` is the only ELSE engine that requires a `TABLE ENGINE` grant, which resolving its
 # structure owes as well. Printing the type instead means the grant was not required.
 $CLICKHOUSE_CLIENT --user "$user_name" -q "DESCRIBE viewIfPermitted(SELECT 1 AS x ELSE executable('x.sh', 'TSV', 'x UInt8'))" 2>&1 | grep -o "ACCESS_DENIED\|UInt8" | head -1
+# The delegated check must also be satisfiable: with the grant the same DESCRIBE resolves.
+$CLICKHOUSE_CLIENT -q "GRANT TABLE ENGINE ON Executable TO $user_name"
+$CLICKHOUSE_CLIENT --user "$user_name" -q "DESCRIBE viewIfPermitted(SELECT 1 AS x ELSE executable('x.sh', 'TSV', 'x UInt8'))" 2>&1 | grep -o "ACCESS_DENIED\|UInt8" | head -1
+$CLICKHOUSE_CLIENT -q "REVOKE TABLE ENGINE ON Executable FROM $user_name"
 # The primary query must be one this user cannot run, or viewIfPermitted answers with it instead
 # of the ELSE function, so it reads a table this user can see but not read.
 $CLICKHOUSE_CLIENT --user "$user_name" -q "SELECT count() FROM viewIfPermitted(SELECT * FROM t_alias_src ELSE mergeTreeTextIndex(currentDatabase(), t_source_access, 'idx_none'))" 2>&1 | grep -o "ACCESS_DENIED\|There is no index with name 'idx_none'" | uniq
@@ -107,12 +113,20 @@ $CLICKHOUSE_CLIENT -q "
 DROP USER IF EXISTS $user_show_tables;
 CREATE USER $user_show_tables NOT IDENTIFIED;
 GRANT SHOW TABLES ON $CLICKHOUSE_DATABASE.t_source_access TO $user_show_tables;
+GRANT CREATE TABLE ON $CLICKHOUSE_DATABASE.t_ok_as_tf_p TO $user_show_tables;
+GRANT CREATE TABLE ON $CLICKHOUSE_DATABASE.t_ok_as_tf_ai TO $user_show_tables;
 "
 
 echo "=== SHOW TABLES but not SHOW COLUMNS ==="
 $CLICKHOUSE_CLIENT --user "$user_show_tables" -q "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 't_source_access'"
 $CLICKHOUSE_CLIENT --user "$user_show_tables" -q "DESCRIBE t_source_access" 2>&1 | grep -o "ACCESS_DENIED" | uniq
 $CLICKHOUSE_CLIENT --user "$user_show_tables" -q "SELECT count() FROM viewIfPermitted(SELECT 1 ELSE mergeTreeIndex(currentDatabase(), t_source_access))" 2>&1 | grep -o "ACCESS_DENIED\|the table function after 'ELSE' gives" | uniq
+# Naming the source is all the execution seam asks of these two, so exactly SHOW TABLES must
+# suffice. Explicit columns keep the storage lazy, so the seam is the only thing that runs, and
+# the count is 2 unless the seam demands something stronger.
+$CLICKHOUSE_CLIENT --user "$user_show_tables" -q "CREATE TABLE t_ok_as_tf_p (b UInt64) AS mergeTreeProjection(currentDatabase(), t_source_access, p_src)" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+$CLICKHOUSE_CLIENT --user "$user_show_tables" -q "CREATE TABLE t_ok_as_tf_ai (part_name String) AS mergeTreeAnalyzeIndexes(currentDatabase(), t_source_access)" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name IN ('t_ok_as_tf_p', 't_ok_as_tf_ai')"
 
 # A third user holding exactly what a DESCRIBE of the source table requires and nothing more, so the
 # arms below fail if the structure seam demands anything stronger than SHOW COLUMNS.
@@ -177,6 +191,8 @@ $CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS t_as_tf;
 DROP TABLE IF EXISTS t_as_tf_p;
 DROP TABLE IF EXISTS t_as_tf_ti;
+DROP TABLE IF EXISTS t_ok_as_tf_p;
+DROP TABLE IF EXISTS t_ok_as_tf_ai;
 DROP TABLE IF EXISTS t_alias_src;
 DROP TABLE IF EXISTS t_not_mergetree;
 DROP TABLE IF EXISTS t_source_access;
