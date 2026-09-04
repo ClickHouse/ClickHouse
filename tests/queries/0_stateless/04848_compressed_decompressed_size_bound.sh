@@ -66,9 +66,9 @@ frame 2 999 'SELECT 1' | post 2>&1 | grep -c 'does not match size_decompressed (
 echo '-- and neither may the other verbatim codec'
 frame 158 999 'SELECT 1' | post 2>&1 | grep -c 'does not match size_decompressed (999)'
 
-# Rejection has to happen before the buffer sized from the declaration is allocated. The two
-# messages are ordered in the source: this one precedes the allocation, and codec NONE's own
-# source_size check is reached only after it, so observing this one pins the order.
+# The top-level parser never reads a nested header, so only the check inside `Multiple` can
+# produce this message. Observing it pins that the nested layer refuses the frame, not where
+# within that layer the check runs.
 echo '-- and neither may a nested one, which the top-level parser never sees'
 emit "$(multiple_none_frame 999)" | post 2>&1 | grep -c 'does not match size_decompressed (999)'
 
