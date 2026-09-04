@@ -277,6 +277,7 @@ PostgreSQLHandler::PostgreSQLHandler(
     bool ssl_enabled_,
     bool secure_required_,
     Int32 connection_id_,
+    std::optional<String> default_session_user_,
     VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
@@ -290,6 +291,7 @@ PostgreSQLHandler::PostgreSQLHandler(
     , ssl_enabled(ssl_enabled_)
     , secure_required(secure_required_)
     , connection_id(connection_id_)
+    , default_session_user(std::move(default_session_user_))
     , read_event(read_event_)
     , write_event(write_event_)
     , authentication_manager(auth_methods_)
