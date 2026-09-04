@@ -18,6 +18,8 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserIdentifier s_ident;
     ParserKeyword s_as(Keyword::AS);
     ParserKeyword s_materialized(Keyword::MATERIALIZED);
+    ParserKeyword s_using(Keyword::USING);
+    ParserKeyword s_key(Keyword::KEY);
     ParserSubquery s_subquery;
     ParserAliasesExpressionList exp_list_for_aliases;
     ParserToken open_bracket(TokenType::OpeningRoundBracket);
@@ -40,8 +42,8 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     pos = old_pos;
 
-    // Trying to parse structure: identifier [(alias1, alias2, ...)] AS (subquery)
-    if (ASTPtr cte_name, aliases;
+    // Trying to parse structure: identifier [(alias1, alias2, ...)] [USING KEY (key1, key2, ...)] AS (subquery)
+    if (ASTPtr cte_name, aliases, key_columns;
         s_ident.parse(pos, cte_name, expected) &&
         (
             [&]() -> bool {
@@ -60,6 +62,25 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return true;
             }()
         ) &&
+        (
+            [&]() -> bool {
+                if (s_using.ignore(pos, expected))
+                {
+                    if (!s_key.ignore(pos, expected))
+                        return false;
+                    if (!open_bracket.ignore(pos, expected))
+                        return false;
+                    ParserList key_columns_list_parser(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+                    if (ASTPtr key_columns_list; key_columns_list_parser.parse(pos, key_columns_list, expected))
+                    {
+                        key_columns = key_columns_list;
+                        return close_bracket.ignore(pos, expected);
+                    }
+                    return false;
+                }
+                return true;
+            }()
+        ) &&
         s_as.ignore(pos, expected))
     {
         bool has_materialized_keyword = s_materialized.ignore(pos, expected);
@@ -71,6 +92,7 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             tryGetIdentifierNameInto(cte_name, with_element->name);
             with_element->aliases = std::move(aliases);
             with_element->is_materialized = has_materialized_keyword;
+            with_element->key_columns = std::move(key_columns);
             with_element->subquery = std::move(subquery);
             with_element->children.push_back(with_element->subquery);
 
@@ -256,7 +278,7 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
 
 - **Experimental setting required**: The setting `enable_materialized_cte` must be enabled.
 - **Analyzer required**: Materialized CTEs only work with the [analyzer](/guides/clickhouse/performance-and-monitoring/analyzer) enabled (`enable_analyzer = 1`).
-- **Not supported with `RECURSIVE`**: Combining `MATERIALIZED` and `RECURSIVE` keywords is not allowed and results in an `UNSUPPORTED_METHOD` exception.
+- **The recursive CTE itself cannot be materialized**: `MATERIALIZED` on the self-referencing CTE of a `WITH RECURSIVE` query is not allowed and results in an `UNSUPPORTED_METHOD` exception. Other, non-recursive CTEs of the same `WITH RECURSIVE` clause may be materialized: they are evaluated once and every recursive step reads the snapshot.
 - **Correlated CTEs are forbidden**: A materialized CTE cannot reference columns from outer query scopes.
 
 ## Common Scalar Expressions {#common-scalar-expressions}
@@ -615,6 +637,80 @@ SELECT sum(number) FROM (SELECT number FROM test_table LIMIT 100);
 └─────────────┘
 ```
 
+### Keyed recursion {#keyed-recursion}
+
+By default a recursive `CTE` is evaluated naively: every step re-derives rows from the whole working table and the result is the concatenation of all steps, so a recursive query over cyclic data does not terminate on its own and has to be guarded explicitly (see [Cycle detection](#cycle-detection)).
+
+The optional `USING KEY (<key columns>)` modifier switches the `CTE` to keyed (semi-naive) evaluation. It is experimental and requires the setting `allow_experimental_keyed_recursive_cte` to be enabled:
+
+- The recursion accumulates one row per key. A produced row whose key is already accumulated replaces the accumulated row. If several rows with the same key are produced within one step, the last produced one is kept; which row is the last one is only well-defined when the recursive member orders its result with `ORDER BY`, otherwise rows from different recursive members or from parallel streams may be produced in any order.
+- Only rows that actually changed the accumulated state form the working table of the next step, so a row that is re-derived unchanged is not propagated. This is what makes the recursion terminate on cyclic data without a cycle guard.
+- The result of the `CTE` is the accumulated keyed table at convergence, not the concatenation of the steps.
+- The accumulated state is additionally exposed to the recursive members under the name `<cte_name>_settled`, so a recursive member can compare a candidate row against the currently accumulated one and refute rows that are not an improvement.
+
+The key columns must be a subset of the projection columns of the non-recursive term, and the `CTE` must actually be recursive; otherwise `BAD_ARGUMENTS` is raised.
+
+Two further points to keep in mind:
+
+- The name `<cte_name>_settled` is injected into the scope of the recursive members, so within them it shadows any table or `CTE` of that name.
+- Unlike the default evaluation, keyed evaluation produces no rows before it converges, so a `LIMIT` in the outer query cannot stop the recursion early.
+
+**Example:** Reachability over a cyclic graph
+
+```sql
+SET allow_experimental_keyed_recursive_cte = 1;
+
+CREATE TABLE edges (u UInt64, v UInt64) ENGINE = Memory;
+INSERT INTO edges VALUES (1, 2), (2, 3), (3, 1), (3, 4);
+
+WITH RECURSIVE reach USING KEY (node) AS
+(
+    SELECT 1 :: UInt64 AS node
+    UNION ALL
+    SELECT e.v AS node FROM reach r INNER JOIN edges e ON e.u = r.node
+)
+SELECT node FROM reach ORDER BY node;
+```
+
+```text
+┌─node─┐
+│    1 │
+│    2 │
+│    3 │
+│    4 │
+└──────┘
+```
+
+**Example:** Shortest paths, refuting non-improving candidates with `<cte_name>_settled`
+
+```sql
+SET allow_experimental_keyed_recursive_cte = 1;
+
+CREATE TABLE w_edges (u UInt64, v UInt64, w Float64) ENGINE = Memory;
+INSERT INTO w_edges VALUES (1, 2, 1), (2, 3, 1), (1, 3, 5), (3, 4, 1), (1, 4, 10);
+
+WITH RECURSIVE sp USING KEY (node) AS
+(
+    SELECT 1 :: UInt64 AS node, 0 :: Float64 AS cost
+    UNION ALL
+    SELECT e.v AS node, s.cost + e.w AS cost
+    FROM sp s
+    INNER JOIN w_edges e ON e.u = s.node
+    LEFT JOIN sp_settled st ON st.node = e.v
+    WHERE s.cost + e.w < if(st.node = 0, 1e308, st.cost)
+)
+SELECT node, cost FROM sp ORDER BY node;
+```
+
+```text
+┌─node─┬─cost─┐
+│    1 │    0 │
+│    2 │    1 │
+│    3 │    2 │
+│    4 │    3 │
+└──────┴──────┘
+```
+
 ## Trailing Comma {#trailing-comma}
 
 A comma is allowed after the last element in the `WITH` clause:
@@ -630,6 +726,7 @@ SELECT total, doubled;
 WITH <expression> AS <identifier>
 WITH <identifier> AS [MATERIALIZED] <subquery expression>
 WITH RECURSIVE <identifier> AS <subquery expression>
+WITH RECURSIVE <identifier> USING KEY (<key columns>) AS <subquery expression>
 )",
         .parent = "SELECT",
         .related = {"SELECT", "FROM", "CREATE VIEW"},
