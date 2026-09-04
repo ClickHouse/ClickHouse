@@ -2555,7 +2555,7 @@ External sorting works much less effectively than sorting in RAM.
 
  When the `optimize_read_in_order` setting is enabled, the ClickHouse server uses the table index and reads the data in order of the `ORDER BY` key. This allows to avoid reading all data in case of specified [LIMIT](/reference/statements/select/limit). So queries on big data with small limit are processed faster.
 
-Optimization works with both `ASC` and `DESC` and does not work together with [GROUP BY](/reference/statements/select/group-by) clause and [FINAL](/reference/statements/select/from#final-modifier) modifier.
+Optimization works with both `ASC` and `DESC` and does not work together with the [GROUP BY](/reference/statements/select/group-by) clause. With the [FINAL](/reference/statements/select/from#final-modifier) modifier, the optimization works in the direct order of the sorting key, and for [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) tables also in the reverse order, controlled by the `optimize_read_in_reverse_order_final` setting.
 
 When the `optimize_read_in_order` setting is disabled, the ClickHouse server does not use the table index while processing `SELECT` queries.
 
