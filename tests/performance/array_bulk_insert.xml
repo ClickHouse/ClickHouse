@@ -59,7 +59,7 @@
             r.lc_1,
             r.lc_2,
             r.lc_3
-        FROM numbers(50000000) AS l
+        FROM numbers(5000000) AS l
         ANY LEFT JOIN tab AS r ON 1
         FORMAT Null
     </query>
