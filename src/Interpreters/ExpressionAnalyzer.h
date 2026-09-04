@@ -234,8 +234,11 @@ struct ExpressionAnalysisResult
     bool first_stage = false;
     /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
     bool second_stage = false;
-    /// The query starts from the state that remote servers completed after their aggregation, so this
-    /// server executes only the tail of the second stage (`WITH FILL`, `LIMIT AFTER`/`UNTIL`, `LIMIT`).
+    /// Do I run on the initiating server over data the remote servers already aggregated, because they
+    /// processed the query up to `WithMergeableStateAfterAggregation` or further? Neither `first_stage` nor
+    /// `second_stage` is set then, yet the final clauses still run here, so `appendLimitRange` must build the
+    /// `LIMIT AFTER`/`UNTIL` expressions for execution: their `IN (subquery)` sets get created, unlike in the
+    /// types-only analysis that skips them.
     bool from_aggregation_stage = false;
 
     bool need_aggregate = false;
