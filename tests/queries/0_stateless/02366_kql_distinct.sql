@@ -23,8 +23,7 @@ print '--  distinct two column --';
 Customers | distinct Occupation, Education;
 
 print '--  distinct with where --';
--- [removed in the KQL rewrite] Syntax error in KQL query at position 1: 'where' is a pipeline operator, so it must follow a '|', found 'where'
--- Customers where Age <30 | distinct Occupation, Education;
+Customers where Age <30 | distinct Occupation, Education;
 
 print '--  distinct with where, order --';
 Customers |where Age <30 | order by Age| distinct Occupation, Education;

@@ -8,19 +8,8 @@ namespace DB
 class UnionStep : public IQueryPlanStep
 {
 public:
-    /// `max_threads` is used to limit the number of threads for the result pipeline.
-    /// `allow_narrowing` opts this step into the `max_streams_for_union_step` cap from
-    /// `BuildQueryPipelineSettings`. Set it for a step that unites the branches a query asks for -
-    /// SQL `UNION ALL` / `UNION DISTINCT`, and a `Merge` table expanded into the reads of its
-    /// underlying tables (`ReadFromMerge::expandForParallelReplicas`), which is the same thing
-    /// written differently. Other call sites (for example, `ClusterProxy` for distributed queries,
-    /// `StorageBuffer`, `MergeTask`, projection optimizations) reuse `UnionStep` for plumbing and
-    /// must not be narrowed, because shuffling streams via `ConcatProcessor` would break ordering
-    /// invariants of downstream transforms such as `GroupingAggregatedTransform` for
-    /// memory-efficient distributed aggregation.
-    /// The flag is part of the plan, so it is serialized, and every node that executes a shipped
-    /// fragment narrows the same unions the node that built it decided to narrow.
-    explicit UnionStep(SharedHeaders input_headers_, size_t max_threads_ = 0, bool allow_narrowing_ = false);
+    /// max_threads is used to limit the number of threads for result pipeline.
+    explicit UnionStep(SharedHeaders input_headers_, size_t max_threads_ = 0);
 
     String getName() const override { return "Union"; }
 
@@ -29,15 +18,11 @@ public:
     void describePipeline(FormatSettings & settings) const override;
 
     size_t getMaxThreads() const { return max_threads; }
-    bool isNarrowingAllowed() const { return allow_narrowing; }
-    void disableNarrowing() { allow_narrowing = false; }
 
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
-
-    QueryPlanStepPtr clone() const override;
 
     bool hasCorrelatedExpressions() const override { return false; }
 
@@ -45,7 +30,6 @@ private:
     void updateOutputHeader() override;
 
     size_t max_threads;
-    bool allow_narrowing;
 };
 
 }

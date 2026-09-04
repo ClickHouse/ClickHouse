@@ -2,6 +2,7 @@
 
 #include <Access/Common/AccessRightsElement.h>
 #include <QueryPipeline/BlockIO.h>
+#include <Processors/ISource.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>

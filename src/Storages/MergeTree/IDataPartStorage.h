@@ -1,25 +1,23 @@
 #pragma once
-#include <Core/NamesAndTypes.h>
-#include <Disks/WriteMode.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteSettings.h>
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
-#include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <base/types.h>
-#include <Common/TransactionID.h>
+#include <Core/NamesAndTypes.h>
+#include <Interpreters/TransactionVersionMetadata.h>
+#include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <Disks/WriteMode.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 
 #include <memory>
 #include <optional>
 
 #include <boost/core/noncopyable.hpp>
-#include <Poco/Timestamp.h>
 
 namespace DB
 {
 struct ReadSettings;
 class ReadBufferFromFileBase;
-class ReadPipeline;
 class WriteBufferFromFileBase;
 
 struct IDiskTransaction;
@@ -111,12 +109,6 @@ public:
 
     /// Get a storage for projection.
     virtual std::shared_ptr<IDataPartStorage> getProjection(const std::string & name, bool use_parent_transaction = true) = 0; // NOLINT
-
-    virtual std::shared_ptr<IDataPartStorage> getProjectionNoInitialize(const std::string & name, bool use_parent_transaction = true) // NOLINT
-    {
-        return getProjection(name, use_parent_transaction);
-    }
-
     virtual std::shared_ptr<const IDataPartStorage> getProjection(const std::string & name) const = 0;
 
     /// Part directory exists.
@@ -135,9 +127,6 @@ public:
     /// Get metadata for a file inside path dir.
     virtual Poco::Timestamp getFileLastModified(const std::string & file_name) const = 0;
     virtual size_t getFileSize(const std::string & file_name) const = 0;
-    /// Uncompressed size of a packed skip-index substream from the archive index, or nullopt if
-    /// unknown (non-packed file, or v0 archive). Callers fall back to the compressed size.
-    virtual std::optional<UInt64> getPackedFileUncompressedSize(const std::string & /*file_name*/) const { return {}; }
     virtual UInt32 getRefCount(const std::string & file_name) const = 0;
 
     /// Get path on remote filesystem from file name on local filesystem.
@@ -146,19 +135,10 @@ public:
     virtual UInt64 calculateTotalSizeOnDisk() const = 0;
 
     /// Open the file for read and return ReadBufferFromFileBase object.
-    /// Convenience wrapper: calls prepareRead() + pipeline.build().
-    std::unique_ptr<ReadBufferFromFileBase> readFile(
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
         const std::string & name,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const;
-
-    /// Populate a ReadPipeline with the stages needed to read from this part storage.
-    /// Every implementation must override this method.
-    virtual void prepareRead(
-        const std::string & name,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        ReadPipeline & pipeline) const = 0;
+        std::optional<size_t> read_hint) const = 0;
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const std::string & name,
@@ -227,7 +207,7 @@ public:
         struct ReplicatedFileDescription
         {
             InputBufferGetter input_buffer_getter;
-            size_t file_size{};
+            size_t file_size;
         };
 
         std::map<String, ReplicatedFileDescription> files;
@@ -275,20 +255,7 @@ public:
         bool make_source_readonly = false;
         DiskTransactionPtr external_transaction = nullptr;
         std::optional<int32_t> metadata_version_to_write = std::nullopt;
-        NameSet invalidated_columns_to_write = {};
-        /// fsync the cloned/frozen directories (the clone subtree plus the ancestor chain up to
-        /// the disk root) so the new hardlink directory entries survive a power loss. Only honored
-        /// by freeze() on a local disk, outside an external transaction.
-        bool fsync_part_directory = false;
     };
-
-    /// For packed storage the whole data.packed archive is rewritten (copied) during a clone whenever
-    /// any file it contains must be copied instead of hardlinked, the metadata version is overwritten,
-    /// or the version is dropped. When that happens none of the archive's logical members (of the part
-    /// or its packed projections) are hardlinked from the source, so the caller must not record them as
-    /// shared blobs. Full storage hardlinks members individually and has no such archive, so it never
-    /// copies a whole archive.
-    virtual bool cloneCopiesWholeArchive(const ClonePartParams & /*params*/) const { return false; }
 
     virtual std::shared_ptr<IDataPartStorage> freeze(
         const std::string & to,
@@ -325,10 +292,6 @@ public:
     virtual void createDirectories() = 0;
     virtual void createProjection(const std::string & name) = 0;
 
-    /// Hint for the preferred on-disk order of files. Packed storage uses it to lay out the
-    /// single archive; storages that keep files separately can ignore it (default no-op).
-    virtual void setPreferredFileOrder(const Strings & /*file_names*/) {}
-
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & name,
         size_t buf_size,
@@ -346,7 +309,7 @@ public:
     /// A special const method to write transaction file.
     /// It's const, because file with transaction metadata
     /// can be modified after part creation.
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeTransactionFile(const String & txn_file_name, WriteMode mode) const = 0;
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeTransactionFile(WriteMode mode) const = 0;
 
     virtual void createFile(const String & name) = 0;
     virtual void moveFile(const String & from_name, const String & to_name) = 0;
@@ -377,15 +340,6 @@ public:
     virtual void beginTransaction() = 0;
     /// Commits a transaction of mutable operations.
     virtual void commitTransaction() = 0;
-
-    /// Commits the accumulated operations and starts a fresh transaction, keeping the storage
-    /// writable (commit->begin). Used mid-build to bound the volume of a single commit; a storage
-    /// that accumulates no per-file operations may make it a no-op.
-    virtual void checkpointTransaction()
-    {
-        commitTransaction();
-        beginTransaction();
-    }
     /// Prepares transaction to commit.
     /// It may be flush of buffered data or similar.
     virtual void precommitTransaction() = 0;
@@ -423,11 +377,6 @@ private:
 inline bool isFullPartStorage(const IDataPartStorage & storage)
 {
     return storage.getType() == MergeTreeDataPartStorageType::Full;
-}
-
-inline bool isPackedPartStorage(const IDataPartStorage & storage)
-{
-    return storage.getType() == MergeTreeDataPartStorageType::Packed;
 }
 
 }

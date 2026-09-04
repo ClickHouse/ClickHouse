@@ -1,7 +1,5 @@
 #include <DataTypes/Serializations/SerializationCustomSimpleText.h>
 
-#include <Columns/IColumn.h>
-#include <Formats/ParseError.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -44,7 +42,6 @@ SerializationCustomSimpleText::SerializationCustomSimpleText(const Serialization
 
 bool SerializationCustomSimpleText::tryDeserializeText(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, bool whole) const
 {
-    size_t prev_size = column.size();
     try
     {
         deserializeText(column, istr, settings, whole);
@@ -52,11 +49,6 @@ bool SerializationCustomSimpleText::tryDeserializeText(DB::IColumn & column, DB:
     }
     catch (...) // Ok: tryDeserializeText is a try-pattern
     {
-        /// A failed parse must leave the column as it was: deserializeText may have inserted before throwing.
-        if (column.size() > prev_size)
-            column.popBack(column.size() - prev_size);
-        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
-        rethrowIfNotParseError();
         return false;
     }
 }
@@ -96,27 +88,20 @@ bool SerializationCustomSimpleText::tryDeserializeTextEscaped(IColumn & column, 
 
 void SerializationCustomSimpleText::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    auto str = serializeToString(*this, column, row_num, settings);
-    if (settings.values.escape_quote_with_quote)
-        writeQuotedStringPostgreSQL(str, ostr);
-    else
-        writeQuotedString(str, ostr);
+    writeQuotedString(serializeToString(*this, column, row_num, settings), ostr);
 }
 
 void SerializationCustomSimpleText::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    /// Use SQL-style quoted reader so we accept both `\'` and the SQL-standard `''` apostrophe escapes.
-    /// `serializeTextQuoted` above can emit either form depending on `output_format_values_escape_quote_with_quote`,
-    /// and a value written by us via `Values` must be parseable back by the same path.
-    readQuotedStringWithSQLStyle(str, istr);
+    readQuotedString(str, istr);
     deserializeFromString(*this, column, str, settings);
 }
 
 bool SerializationCustomSimpleText::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    if (!tryReadQuotedStringWithSQLStyle(str, istr))
+    if (!tryReadQuotedString(str, istr))
         return false;
     return tryDeserializeFromString(*this, column, str, settings);
 }

@@ -22,7 +22,7 @@ namespace
  * Emulates MySQL's TIMESTAMP() but supports only input format 'yyyy-mm-dd[ hh:mm:ss[.mmmmmm]]' instead of
  * MySQLs possible input formats (https://dev.mysql.com/doc/refman/8.0/en/date-and-time-literals.html).
   */
-class FunctionTimestamp final : public IFunction
+class FunctionTimestamp : public IFunction
 {
 public:
     static constexpr UInt32 DATETIME_SCALE = 6;
@@ -172,7 +172,7 @@ public:
 REGISTER_FUNCTION(Timestamp)
 {
     FunctionDocumentation::Description description = R"(
-Converts the first argument `expr` to type [`DateTime64(6)`](/reference/data-types/datetime64).
+Converts the first argument `expr` to type [`DateTime64(6)`](/sql-reference/data-types/datetime64).
 If a second argument `expr_time` is provided, it adds the specified time to the converted value.
     )";
     FunctionDocumentation::Syntax syntax = R"(
