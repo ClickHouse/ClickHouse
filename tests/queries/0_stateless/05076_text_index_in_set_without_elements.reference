@@ -1,0 +1,11 @@
+-- set elements are stored: index is used
+Parts: 1 | Granules: 1
+Granules: 3/3
+Granules: 1/3
+-- set is above the limit, so its elements are dropped: index is still used
+Parts: 1 | Granules: 1
+Granules: 3/3
+Granules: 1/3
+-- and the answer does not depend on the limit
+0
+0

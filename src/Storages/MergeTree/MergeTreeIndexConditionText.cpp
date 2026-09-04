@@ -1674,8 +1674,13 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
         if (!future_set)
             return false;
 
-        auto prepared_set = future_set->buildOrderedSetInplace(getContext());
-        if (!prepared_set || !prepared_set->hasExplicitSetElements())
+        /// Only the existence of the set matters here: `actions.execute` below evaluates the subDAG on a
+        /// default value and needs `FunctionIn` to find a ready set, but never reads its elements.
+        /// Requiring `hasExplicitSetElements` on top of that gives up on a set that exceeded
+        /// `use_index_for_in_with_subqueries_max_values` and on a `StorageSet` that stores no elements,
+        /// dropping the index for exactly the large `IN` sets it is most worth using on.
+        future_set->buildOrderedSetInplace(getContext());
+        if (!future_set->get())
             return false;
     }
 
@@ -1771,8 +1776,13 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
         if (!future_set)
             return false;
 
-        auto prepared_set = future_set->buildOrderedSetInplace(getContext());
-        if (!prepared_set || !prepared_set->hasExplicitSetElements())
+        /// Only the existence of the set matters here: `actions.execute` below evaluates the subDAG on a
+        /// default value and needs `FunctionIn` to find a ready set, but never reads its elements.
+        /// Requiring `hasExplicitSetElements` on top of that gives up on a set that exceeded
+        /// `use_index_for_in_with_subqueries_max_values` and on a `StorageSet` that stores no elements,
+        /// dropping the index for exactly the large `IN` sets it is most worth using on.
+        future_set->buildOrderedSetInplace(getContext());
+        if (!future_set->get())
             return false;
     }
 
