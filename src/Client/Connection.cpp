@@ -40,7 +40,8 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISink.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/FailPoint.h>
 #include <Client/JWTProvider.h>
@@ -1422,7 +1423,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 
     for (auto & elem : data)
     {
-        PipelineExecutorPtr executor;
+        CompletedPipelineExecutor * executor = nullptr;
         auto on_cancel = [& executor]() { executor->cancel(); };
 
         if (!elem->pipe)
@@ -1438,8 +1439,13 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
                 return nullptr;
             return sink;
         });
-        executor = pipeline.execute();
-        executor->execute(/*num_threads = */ 1, false);
+        auto query_pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
+        query_pipeline.setNumThreads(1);
+        query_pipeline.setConcurrencyControl(false);
+        query_pipeline.disableReadProgress();
+        CompletedPipelineExecutor completed_executor(query_pipeline);
+        executor = &completed_executor;
+        completed_executor.execute();
 
         auto read_rows = sink->getNumReadRows();
         rows += read_rows;

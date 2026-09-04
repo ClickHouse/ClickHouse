@@ -83,6 +83,7 @@ namespace DatabaseMetadataDiskSetting
 {
 extern const DatabaseMetadataDiskSettingsBool lazy_load_tables;
 extern const DatabaseMetadataDiskSettingsString disk;
+extern const DatabaseMetadataDiskSettingsUInt64 max_tables;
 }
 
 
@@ -114,6 +115,8 @@ DatabaseOrdinary::DatabaseOrdinary(
         metadata_disk_ptr = getContext()->getDisk(database_metadata_disk_settings[DatabaseMetadataDiskSetting::disk].value);
     else
         metadata_disk_ptr = getContext()->getDatabaseDisk();
+
+    max_tables = database_metadata_disk_settings[DatabaseMetadataDiskSetting::max_tables].value;
 
     LOG_INFO(log, "Metadata disk {}, path {}", metadata_disk_ptr->getName(), metadata_disk_ptr->getPath());
 }
@@ -203,18 +206,14 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
     create_query.storage->set(create_query.storage->engine, engine->clone());
 }
 
-String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, bool tableStarted)
+String DatabaseOrdinary::getConvertToReplicatedFlagPath(const ASTCreateQuery & create_query)
 {
-    fs::path data_path;
-    if (!tableStarted)
-    {
-        auto create_query = tryGetCreateTableQuery(name, getContext());
-        data_path = getTableDataPath(create_query->as<ASTCreateQuery &>());
-    }
-    else
-        data_path = getTableDataPath(name);
+    return pathToGenericString(fs::path(getTableDataPath(create_query)) / CONVERT_TO_REPLICATED_FLAG_NAME);
+}
 
-    return pathToGenericString((data_path / CONVERT_TO_REPLICATED_FLAG_NAME));
+String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & table_name)
+{
+    return pathToGenericString(fs::path(getTableDataPath(table_name)) / CONVERT_TO_REPLICATED_FLAG_NAME);
 }
 
 void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)
@@ -237,7 +236,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
             policy = getContext()->getStoragePolicy(policy_setting->safeGet<String>());
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, false);
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(create_query);
 
     auto storage_disks = policy->getDisks();
     auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
@@ -539,7 +538,7 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     if (!rmt)
         return;
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, true);
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table);
 
     auto storage_disks = table->getStoragePolicy()->getDisks();
     auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];

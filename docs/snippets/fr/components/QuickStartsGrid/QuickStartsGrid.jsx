@@ -1,7 +1,7 @@
 export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
   const featuredIds = featured.map((f) => f.id)
   const data = quickStartsData || []
-  const assetBase = typeof window !== "undefined" && window.location.pathname.startsWith("/docs") ? "/docs" : ""
+  const assetBase = typeof window === "undefined" || window.location.pathname.startsWith("/docs") ? "/docs" : ""
   const withBase = (p) => (p && p.startsWith("/") ? assetBase + p : p)
 
   // Filter options. `value` is a stable slug matched against the tag slugs in
@@ -15,7 +15,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
     { value: "ai-ml", label: "IA/ML" }
   ]
   const productOptions = [
-    { value: "self-managed", label: "ClickHouse (Open-Source)" },
+    { value: "self-managed", label: "ClickHouse (code source ouvert)" },
     { value: "cloud", label: "ClickHouse Cloud" },
     { value: "clickpipes", label: "ClickPipes" },
     { value: "language-clients", label: "Clients de langage" },
@@ -235,7 +235,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                 {featuredQuickStarts.map((quickStart) => (
                   <a
                     key={quickStart.id}
-                    href={quickStart.href}
+                    href={withBase(quickStart.href)}
                     onClick={(e) => handleCardClick(e, quickStart.href)}
                     className="group block rounded-xl overflow-hidden border border-gray-200 dark:border-white/10 transition-all hover:border-black dark:hover:border-[#FAFF69] hover:shadow-md"
                   >
@@ -345,7 +345,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                         onClick={resetFilters}
                         className="w-full text-sm font-medium px-4 py-2 rounded-lg transition-all cursor-pointer border border-gray-300 dark:border-white/20 hover:border-black dark:hover:border-[#FAFF69] bg-white dark:bg-[#1B1B18] text-black dark:text-white"
                       >
-                        Reset filters
+                        Réinitialiser les filtres
                       </button>
                     )}
                   </div>
@@ -355,7 +355,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
 
             {/* Right content area */}
             <div className="flex-1 min-w-0">
-              <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-6">Explore quickstarts</h2>
+              <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-6">Explorer les guides de démarrage rapide</h2>
 
               {filteredQuickStarts.length > 0 ? (
                 <>
@@ -363,7 +363,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                     {filteredQuickStarts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((quickStart) => (
                       <a
                         key={quickStart.id}
-                        href={quickStart.href}
+                        href={withBase(quickStart.href)}
                         onClick={(e) => handleCardClick(e, quickStart.href)}
                         className="group block rounded-lg border px-4 py-3 transition-all border-gray-200 dark:border-white/10 hover:border-black dark:hover:border-[#FAFF69] bg-white dark:bg-[#1B1B18]"
                       >
