@@ -695,6 +695,19 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
     const auto & merge_tree_settings = global_ctx->data_settings;
 
+    /// Alter conversions must include patch parts before they are cached below. Patch application
+    /// uses these per-part conversions later in both horizontal and vertical merge readers.
+    if (!patch_parts.empty())
+    {
+        LOG_DEBUG(ctx->log, "Will apply {} patches up to version {}", patch_parts.size(), global_ctx->future_part->part_info.getMutationVersion());
+
+        for (const auto & patch : patch_parts)
+            LOG_TRACE(ctx->log, "Applying patch part {} with max data version {}", patch->name, patch->getPatchPartIndex().getMaxDataVersion());
+
+        auto & mutable_snapshot = const_cast<MergeTreeData::IMutationsSnapshot &>(*mutations_snapshot);
+        mutable_snapshot.addPatches(patch_parts);
+    }
+
     struct MissingColumnMergeState
     {
         SerializationInfoByName::MissingColumnInfo marker;
@@ -910,17 +923,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             addMergingColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
         else
             addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
-    }
-
-    if (!patch_parts.empty())
-    {
-        LOG_DEBUG(ctx->log, "Will apply {} patches up to version {}", patch_parts.size(), global_ctx->future_part->part_info.getMutationVersion());
-
-        for (const auto & patch : patch_parts)
-            LOG_TRACE(ctx->log, "Applying patch part {} with max data version {}", patch->name, patch->getPatchPartIndex().getMaxDataVersion());
-
-        auto & mutable_snapshot = const_cast<MergeTreeData::IMutationsSnapshot &>(*mutations_snapshot);
-        mutable_snapshot.addPatches(global_ctx->future_part->patch_parts);
     }
 
     if ((*merge_tree_settings)[MergeTreeSetting::materialize_statistics_on_merge])
