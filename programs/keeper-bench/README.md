@@ -152,7 +152,7 @@ key:
 
 ### `PathGetter`
 
-A set of ZooKeeper paths that requests draw from. The set comes from exactly one source: explicit path(s), the children of one parent, or one tagged set of paths created during setup.
+A set of ZooKeeper paths that requests draw from. The set comes from exactly one kind of source: explicit path(s), the children of one parent, or one or more tagged sets of paths created during setup.
 
 ```yaml
 # explicit paths
@@ -167,6 +167,11 @@ path:
 # paths collected by tag during setup (see Setup section)
 path:
     tagged: "my_tag"
+
+# union of several tagged sets
+path:
+    - tagged: "my_tag"
+    - tagged: "other_tag"
 ```
 
 Notes:
@@ -174,6 +179,7 @@ Notes:
 - Paths must start with `/`.
 - `children_of` is resolved at startup by listing the parent; if it has no children (and no `create` generator adds to it), an exception is raised.
 - `tagged` references a tag name assigned to setup nodes via the `tag` field. All paths created with that tag are included. If the tag is not found (and no `create` generator outputs to it), an exception is raised.
+- Several `tagged` entries draw uniformly from the union of the sets: a set is picked with probability proportional to its current size, then a path within it. For dynamic sets the sizes are read without locking, so the weighting may lag slightly behind concurrent updates.
 
 ### Dynamic path sets
 
@@ -512,7 +518,7 @@ Common configuration exceptions:
 - `--config is required`: generated mode needs a config file; pass `--input-request-log` for replay mode.
 - `Config file must contain a generator section`: define `generator` in the config, or pass `--input-request-log` for replay mode.
 - `Invalid path for request generator`: all paths must start with `/`.
-- `... must draw from exactly one source`: a `path` section mixes explicit paths with `tagged` or `children_of`; use one source per `path`.
+- `... must draw from exactly one kind of source`: a `path` section mixes explicit paths, `tagged` and `children_of`, or lists several `children_of`; use one kind of source per `path` (several `tagged` entries are allowed).
 - `... is empty: check that the children_of target has children or that setup nodes carry the tag`: the referenced path set ended up empty after setup.
 - `Generator weight must be >= 1`: use positive weights only.
 - `remove_factor must be in [0.0, 1.0]`: keep probability in range.

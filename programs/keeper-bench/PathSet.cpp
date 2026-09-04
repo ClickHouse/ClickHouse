@@ -30,7 +30,9 @@ void PathSet::populate(std::string path)
         return;
     }
 
-    shards[next_populate_shard].paths.push_back(std::move(path));
+    Shard & shard = shards[next_populate_shard];
+    shard.paths.push_back(std::move(path));
+    shard.cached_size.store(shard.paths.size(), std::memory_order_relaxed);
     next_populate_shard = (next_populate_shard + 1) % shards.size();
 }
 
@@ -56,6 +58,7 @@ void PathSet::add(std::string path, size_t thread_idx)
     Shard & shard = shards[shardFor(thread_idx)];
     std::lock_guard lock(shard.mutex);
     shard.paths.push_back(std::move(path));
+    shard.cached_size.store(shard.paths.size(), std::memory_order_relaxed);
 }
 
 std::optional<std::string> PathSet::takeRandom(pcg64 & rng, size_t thread_idx)
@@ -70,6 +73,7 @@ std::optional<std::string> PathSet::takeRandom(pcg64 & rng, size_t thread_idx)
     std::string path = std::move(shard.paths[idx]);
     shard.paths[idx] = std::move(shard.paths.back());
     shard.paths.pop_back();
+    shard.cached_size.store(shard.paths.size(), std::memory_order_relaxed);
     return path;
 }
 
@@ -87,6 +91,13 @@ size_t PathSet::shardSize(size_t thread_idx) const
     if (is_dynamic)
         lock.lock();
     return shard.paths.size();
+}
+
+size_t PathSet::approximateShardSize(size_t thread_idx) const
+{
+    if (shards.empty())
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Path set {} is not finalized", name);
+    return shards[shardFor(thread_idx)].cached_size.load(std::memory_order_relaxed);
 }
 
 size_t PathSet::totalSize() const

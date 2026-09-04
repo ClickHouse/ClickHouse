@@ -3,6 +3,7 @@
 #include <pcg-random/pcg_random.hpp>
 #include <Common/CacheLine.h>
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -49,6 +50,9 @@ struct PathSet
     {
         alignas(DB::CH_CACHE_LINE_SIZE) mutable std::mutex mutex;
         std::vector<std::string> paths;
+        /// `paths.size()`, kept in sync under `mutex`, so that readers that only
+        /// need an approximate size (`approximateShardSize`) don't have to lock.
+        std::atomic<size_t> cached_size{0};
     };
 
     /// One shard if `!is_dynamic`, one per worker thread otherwise. Allocated by
@@ -79,6 +83,11 @@ struct PathSet
 
     /// Current size of the calling thread's shard. Thread-safe.
     size_t shardSize(size_t thread_idx) const;
+
+    /// Size of the calling thread's shard read without locking. May be slightly
+    /// stale relative to a concurrent `add`/`takeRandom`. Used to weight sets
+    /// against each other when a `PathGetter` draws from several of them.
+    size_t approximateShardSize(size_t thread_idx) const;
 
     size_t totalSize() const;
 

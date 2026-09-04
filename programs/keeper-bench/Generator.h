@@ -52,25 +52,27 @@ private:
     std::variant<std::string, NumberGetter> value;
 };
 
-/// Draws paths from exactly one `PathSet`: a literal path list, one `tagged`
-/// reference, or one `children_of` reference.
+/// Draws paths from one or more `PathSet`s: a literal path list, one
+/// `children_of` reference, or one or more `tagged` references. With several
+/// sets, a path is drawn uniformly from their union: first a set is picked with
+/// probability proportional to its size, then a path within it.
 struct PathGetter
 {
     static PathGetter fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup);
 
-    /// nullopt if the set (shard) is currently empty, which can happen for
+    /// nullopt if the sets (shards) are currently empty, which can happen for
     /// dynamic sets; the request generator then declines to produce a request.
     std::optional<std::string> getPath(GenerateContext & ctx) const;
-    /// Like getPath, but also removes the path from the set (for generators that
-    /// remove the node).
-    std::optional<std::string> takePath(GenerateContext & ctx) const;
     std::string description() const;
 
-    bool isDynamic() const { return set->is_dynamic; }
-    const PathSetPtr & pathSet() const { return set; }
+    /// True if any of the sets is dynamic.
+    bool isDynamic() const;
+    /// If this draws from a single literal path, returns it. Only meaningful
+    /// before the sets are finalized.
+    std::optional<std::string> singleStagedPath() const;
 
 private:
-    PathSetPtr set;
+    std::vector<PathSetPtr> sets;
 };
 
 /// Default ACLs used throughout keeper-bench (world:anyone with all permissions)

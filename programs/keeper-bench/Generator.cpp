@@ -1,5 +1,6 @@
 #include <Generator.h>
 
+#include <algorithm>
 #include <fmt/ranges.h>
 #include <iostream>
 #include <random>
@@ -179,41 +180,79 @@ PathGetter PathGetter::fromConfig(const std::string & key, const Poco::Util::Abs
         }
     }
 
-    size_t num_sources = (literal_paths.empty() ? 0 : 1) + parent_paths.size() + tag_names.size();
-    if (num_sources == 0)
+    size_t num_source_kinds = (literal_paths.empty() ? 0 : 1) + (parent_paths.empty() ? 0 : 1) + (tag_names.empty() ? 0 : 1);
+    if (num_source_kinds == 0)
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "PathGetter has no paths configured for key '{}'", key);
-    if (num_sources > 1)
+    if (num_source_kinds > 1 || parent_paths.size() > 1)
         throw DB::Exception(
             DB::ErrorCodes::BAD_ARGUMENTS,
-            "`path` for key '{}' must draw from exactly one source: literal path(s), one `tagged`, or one `children_of`",
+            "`path` for key '{}' must draw from exactly one kind of source: literal path(s), one `children_of`, or `tagged` set(s)",
             key);
 
     PathGetter path_getter;
     if (!literal_paths.empty())
-        path_getter.set = nodes_setup.createLiteralSet(std::move(literal_paths));
+        path_getter.sets.push_back(nodes_setup.createLiteralSet(std::move(literal_paths)));
     else if (!parent_paths.empty())
-        path_getter.set = nodes_setup.getOrCreateChildrenOfSet(parent_paths[0]);
+        path_getter.sets.push_back(nodes_setup.getOrCreateChildrenOfSet(parent_paths[0]));
     else
-        path_getter.set = nodes_setup.getOrCreateTagSet(tag_names[0]);
+    {
+        for (const auto & tag_name : tag_names)
+        {
+            auto set = nodes_setup.getOrCreateTagSet(tag_name);
+            if (std::find(path_getter.sets.begin(), path_getter.sets.end(), set) != path_getter.sets.end())
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Tag \"{}\" is referenced twice in `path` for key '{}'", tag_name, key);
+            path_getter.sets.push_back(std::move(set));
+        }
+    }
 
-    path_getter.set->used_as_input = true;
+    for (const auto & set : path_getter.sets)
+        set->used_as_input = true;
 
     return path_getter;
 }
 
 std::optional<std::string> PathGetter::getPath(GenerateContext & ctx) const
 {
-    return set->samplePath(ctx.rng, ctx.thread_idx);
+    /// Pick a set with probability proportional to its size (weighted reservoir
+    /// sampling over the sets, one pass), then a uniformly random path from it.
+    /// Sizes are read without locking, so they may lag slightly behind concurrent
+    /// updates of dynamic sets; that only skews the weights a little. With a
+    /// single set this degenerates to one relaxed load and no extra RNG draws.
+    const PathSet * chosen = nullptr;
+    size_t total = 0;
+    for (const auto & set : sets)
+    {
+        size_t size = set->approximateShardSize(ctx.thread_idx);
+        if (size == 0)
+            continue;
+        total += size;
+        if (!chosen || std::uniform_int_distribution<size_t>(0, total - 1)(ctx.rng) < size)
+            chosen = set.get();
+    }
+
+    if (!chosen)
+        return std::nullopt;
+
+    return chosen->samplePath(ctx.rng, ctx.thread_idx);
 }
 
-std::optional<std::string> PathGetter::takePath(GenerateContext & ctx) const
+bool PathGetter::isDynamic() const
 {
-    return set->takeRandom(ctx.rng, ctx.thread_idx);
+    return std::ranges::any_of(sets, [](const auto & set) { return set->is_dynamic; });
+}
+
+std::optional<std::string> PathGetter::singleStagedPath() const
+{
+    if (sets.size() != 1)
+        return std::nullopt;
+    return sets[0]->singleStagedPath();
 }
 
 std::string PathGetter::description() const
 {
-    return set->name;
+    if (sets.size() == 1)
+        return sets[0]->name;
+    return fmt::format("union of {}", fmt::join(sets | std::views::transform([](const auto & set) { return set->name; }), ", "));
 }
 
 RequestGetter::RequestGetter(std::vector<RequestGeneratorPtr> request_generators_)
@@ -405,7 +444,7 @@ void CreateRequestGenerator::getFromConfigImpl(const std::string & key, const Po
     /// Resolve the set that tracks the created nodes: an explicit output `tag`,
     /// the `children_of` set of a fixed parent, or an anonymous set if the
     /// removes need one.
-    auto fixed_parent = parent_path.pathSet()->singleStagedPath();
+    auto fixed_parent = parent_path.singleStagedPath();
     if (config.has(key + ".tag"))
     {
         auto tag_name = config.getString(key + ".tag");
