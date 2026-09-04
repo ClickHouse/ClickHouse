@@ -127,11 +127,13 @@ public:
         SharedHeader header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
+        ExpressionActionsPtr table_filter_,
         ContextPtr context_)
         : ISource(header)
         , column_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases_cursor(std::move(databases_))
+        , table_filter(std::move(table_filter_))
         , context(Context::createCopy(context_))
     {
     }
@@ -245,7 +247,8 @@ protected:
             const String & database_name = databases_cursor.getDatabaseName();
 
             if (!databases_cursor.hasTablesIterator())
-                databases_cursor.setTablesIterator(databases_cursor.getDatabase()->getTablesIterator(context));
+                databases_cursor.setTablesIterator(
+                    databases_cursor.getDatabase()->getTablesIterator(context, tablesAllowedIn(database_name)));
 
             const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
@@ -286,9 +289,43 @@ protected:
     }
 
 private:
+    /// Which of a database's tables the query can still be about. A table's settings are hundreds of
+    /// rows, so answering `WHERE table = ...` by reading every table and discarding the rest is not
+    /// affordable - and that is the query `SHOW TABLE SETTINGS` generates. Listing the names is far
+    /// cheaper than opening the tables, so the names are filtered first and the iterator is then
+    /// asked only for what survived.
+    IDatabase::FilterByNameFunction tablesAllowedIn(const String & database_name) const
+    {
+        if (!table_filter)
+            return {};
+
+        auto database_column = ColumnString::create();
+        auto table_column = ColumnString::create();
+        for (auto it = databases_cursor.getDatabase()->getTablesIterator(context); it->isValid(); it->next())
+        {
+            database_column->insert(database_name);
+            table_column->insert(it->name());
+        }
+
+        Block block
+        {
+            ColumnWithTypeAndName(std::move(database_column), std::make_shared<DataTypeString>(), "database"),
+            ColumnWithTypeAndName(std::move(table_column), std::make_shared<DataTypeString>(), "table"),
+        };
+        VirtualColumnUtils::filterBlockWithExpression(table_filter, block);
+
+        const auto & surviving = block.getByName("table").column;
+        auto allowed = std::make_shared<NameSet>();
+        for (size_t i = 0; i < surviving->size(); ++i)
+            allowed->insert(String{surviving->getDataAt(i)});
+
+        return [allowed](const String & name) { return allowed->contains(name); };
+    }
+
     std::vector<UInt8> column_mask;
     UInt64 max_block_size;
     DatabaseTablesCursor databases_cursor;
+    ExpressionActionsPtr table_filter;
     ContextPtr context;
     Tables external_tables;
     Tables::const_iterator external_tables_it;
@@ -329,23 +366,33 @@ private:
     std::vector<UInt8> columns_mask;
     const size_t max_block_size;
     ExpressionActionsPtr virtual_columns_filter;
+    ExpressionActionsPtr table_filter;
 };
 
 void ReadFromSystemTableSettings::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
 
-    if (filter_actions_dag)
-    {
-        Block block_to_filter
-        {
-            { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
-        };
+    if (!filter_actions_dag)
+        return;
 
-        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
-        if (dag)
-            virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
-    }
+    /// Two of them: one to skip a database without opening it, and one to skip tables within a
+    /// database. They are split separately because the first is applied to a block that has no
+    /// `table` column, and an expression referring to one could not be evaluated there.
+    Block databases_block
+    {
+        { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
+    };
+    if (auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &databases_block, context))
+        virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
+
+    Block tables_block
+    {
+        { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
+        { ColumnString::create(), std::make_shared<DataTypeString>(), "table" },
+    };
+    if (auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &tables_block, context))
+        table_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
 }
 
 void StorageSystemTableSettings::readImpl(
@@ -392,7 +439,7 @@ void ReadFromSystemTableSettings::initializePipeline(QueryPipelineBuilder & pipe
 
     ColumnPtr & filtered_databases = block.getByPosition(0).column;
     pipeline.init(Pipe(std::make_shared<TableSettingsSource>(
-        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases), context)));
+        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases), table_filter, context)));
 }
 
 }
