@@ -11,6 +11,7 @@ set (CLICKHOUSE_CLIENT_LINK
         clickhouse_common_io
         clickhouse_functions
         clickhouse_parsers
+        clickhouse_table_functions
 )
 
 if (TARGET ch_contrib::jwt-cpp)
