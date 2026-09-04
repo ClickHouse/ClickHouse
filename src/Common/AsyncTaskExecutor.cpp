@@ -141,8 +141,7 @@ struct AsyncTaskExecutor::Routine
     void operator()(SuspendCallback suspend_callback)
     {
         /// Stores the fiber-local tracing context from the thread that created the executor and open one span per task execution.
-        /// A non-zero initial span id continues a span opened before the executor existed: spans created
-        /// during the synchronous send already reference it as their parent, so the fiber span must keep it.
+        /// A non-zero initial span id continues a span opened before the executor existed.
         OpenTelemetry::TracingContextHolder trace_context_holder(
             executor.operation_name,
             executor.parent_trace_context,
