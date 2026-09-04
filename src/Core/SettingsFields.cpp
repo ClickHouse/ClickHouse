@@ -18,6 +18,8 @@
 #include <cctz/time_zone.h>
 #pragma clang diagnostic pop
 
+#include <charconv>
+
 #include <cmath>
 #include <limits>
 
@@ -205,7 +207,21 @@ SettingFieldNumber<T> & SettingFieldNumber<T>::operator=(const Field & f)
 template <typename T>
 String SettingFieldNumber<T>::toString() const
 {
-    return ::DB::toString(value);
+    /// A query that sets an old `compatibility` value changes hundreds of settings, and every one of them
+    /// is formatted whenever the changed settings are dumped (`system.settings`, `system.query_log`).
+    /// std::to_chars writes into the stack and the result fits the small-string buffer, so integers cost
+    /// no allocation at all, while ::DB::toString allocates a WriteBufferFromOwnString per call.
+    if constexpr (std::is_integral_v<T>)
+    {
+        char buffer[32];
+        /// std::to_chars has no bool overload; a setting of that type prints as 1 / 0.
+        const auto number = static_cast<std::conditional_t<std::is_same_v<T, bool>, UInt8, T>>(value);
+        const auto result = std::to_chars(buffer, buffer + sizeof(buffer), number);
+        chassert(result.ec == std::errc());
+        return String(buffer, result.ptr);
+    }
+    else
+        return ::DB::toString(value);
 }
 
 template <typename T>
