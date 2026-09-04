@@ -18,6 +18,7 @@ public:
 
 private:
     size_t rows_removed = 0;
+    size_t rows_seen = 0;
 };
 
 }

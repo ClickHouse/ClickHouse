@@ -38,6 +38,8 @@ private:
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns columns_for_aggregator;
     bool no_more_keys = false;
+    bool any_row_kept_unexpired = false;
+    size_t rows_seen = 0;
 };
 
 }

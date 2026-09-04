@@ -59,29 +59,22 @@ TTLDeleteFilterTransform::build(
         if (force || isTTLExpired(old_ttl_infos.table_ttl.min, current_time))
         {
             auto expressions = buildTTLExpressions(rows_ttl, subqueries, context);
-
-            if (isTTLExpired(old_ttl_infos.table_ttl.max, current_time) && !rows_ttl.where_expression_ast)
-                state->all_data_dropped = true;
-
             state->entries.push_back({std::move(expressions), rows_ttl});
         }
     }
 
-    if (!state->all_data_dropped)
+    for (const auto & where_ttl : metadata_snapshot->getRowsWhereTTLs())
     {
-        for (const auto & where_ttl : metadata_snapshot->getRowsWhereTTLs())
-        {
-            IMergeTreeDataPart::TTLInfo old_ttl_info;
-            auto it = old_ttl_infos.rows_where_ttl.find(where_ttl.result_column);
-            if (it != old_ttl_infos.rows_where_ttl.end())
-                old_ttl_info = it->second;
+        IMergeTreeDataPart::TTLInfo old_ttl_info;
+        auto it = old_ttl_infos.rows_where_ttl.find(where_ttl.result_column);
+        if (it != old_ttl_infos.rows_where_ttl.end())
+            old_ttl_info = it->second;
 
-            if (!force && !isTTLExpired(old_ttl_info.min, current_time))
-                continue;
+        if (!force && !isTTLExpired(old_ttl_info.min, current_time))
+            continue;
 
-            auto expressions = buildTTLExpressions(where_ttl, subqueries, context);
-            state->entries.push_back({std::move(expressions), where_ttl});
-        }
+        auto expressions = buildTTLExpressions(where_ttl, subqueries, context);
+        state->entries.push_back({std::move(expressions), where_ttl});
     }
 
     return {std::move(state), std::move(subqueries)};
@@ -104,12 +97,6 @@ void TTLDeleteFilterTransform::extractTimestamps(const IColumn * ttl_column)
 void TTLDeleteFilterTransform::transform(Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();
-
-    if (shared_state->all_data_dropped)
-    {
-        chunk.addColumn(ColumnUInt8::create(num_rows, UInt8(0)));
-        return;
-    }
 
     if (num_rows == 0)
     {

@@ -32,8 +32,9 @@ public:
     /// Updates TTL metadata of the data_part.
     virtual void finalize(const MutableDataPartPtr & data_part) const = 0;
 
+    /// `old_ttl_info` summarizes a past evaluation of the TTL expression, so it may schedule work
+    /// but must not decide what data survives.
     bool isMinTTLExpired() const { return force || isTTLExpired(old_ttl_info.min); }
-    bool isMaxTTLExpired() const { return isTTLExpired(old_ttl_info.max); }
 
     /// Resolve the column type once and fill `timestamps` for the whole block. Every TTL algorithm
     /// and `TTLDeleteFilterTransform` map a TTL result column to Unix timestamps through here.

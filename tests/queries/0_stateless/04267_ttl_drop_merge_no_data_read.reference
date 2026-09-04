@@ -1,12 +1,12 @@
 -- Case 1: Basic TTLDrop
-TTLDropMerge	0	0	1
+TTLDropMerge	0	200	1
 0
 -- Case 2: TTLDrop with projections
-TTLDropMerge	0	0
+TTLDropMerge	0	200
 0
 []
 -- Case 3: TTLDrop with skip indexes
-TTLDropMerge	0	0
+TTLDropMerge	0	200
 0
 -- Case 4: WHERE-clause TTL is not short-circuited
 TTLDropMerge	0	200

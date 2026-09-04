@@ -7,14 +7,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Test that TTLDrop merges do not open source parts or read any data.
-# This is important because TTLDrop merges know that all rows in all source
-# parts are expired, so the merge should produce an empty part without
-# allocating read buffers for source parts.
+# Test that a TTLDrop merge produces an empty part, over projections, skip indexes, a WHERE-clause
+# TTL, a column TTL and a GROUP BY TTL, and that its memory stays bounded. A TTLDrop merge is
+# assigned from the bounds stored in `ttl.txt`, so it evaluates the current TTL expression over the
+# rows before concluding that nothing survives, and therefore reads its source parts.
 #
-# We avoid OPTIMIZE TABLE FINAL because it always assigns MergeType::Regular,
-# which would bypass our TTLDrop short-circuit. Instead we rely on background
-# TTL merges (merge_with_ttl_timeout = 0) and wait for them to complete.
+# We avoid OPTIMIZE TABLE FINAL because it always assigns MergeType::Regular. Instead we rely on
+# background TTL merges (merge_with_ttl_timeout = 0) and wait for them to complete.
 
 # Helper: wait until the background TTL merge completes (at most 1 active part),
 # then flush logs and wait for the MergeParts entry to appear.
@@ -43,7 +42,7 @@ function wait_for_ttl_merge_and_flush_logs()
 }
 
 # -------------------------------------------------------------------
-# Case 1: Basic TTLDrop — no data should be read
+# Case 1: Basic TTLDrop
 # -------------------------------------------------------------------
 echo "-- Case 1: Basic TTLDrop"
 
@@ -206,10 +205,9 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_drop_idx;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_drop_idx;"
 
 # -------------------------------------------------------------------
-# Case 4: WHERE-clause TTL does NOT short-circuit
+# Case 4: WHERE-clause TTL
 # TTLPartDropMergeSelector assigns TTLDrop based on part_max_ttl even with
-# a WHERE clause. Our short-circuit detects the WHERE clause and falls
-# through to the normal pipeline, so data IS read.
+# a WHERE clause, and the WHERE clause can only be answered per row.
 # -------------------------------------------------------------------
 echo "-- Case 4: WHERE-clause TTL is not short-circuited"
 
@@ -237,8 +235,6 @@ ${CLICKHOUSE_CLIENT} -q "
 
 wait_for_ttl_merge_and_flush_logs "t_ttl_where_no_shortcircuit"
 
-# Data IS read because the short-circuit detected the WHERE clause and
-# fell through to the normal pipeline.
 ${CLICKHOUSE_CLIENT} -q "
     SELECT
         merge_reason,
@@ -301,11 +297,9 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_drop_then_insert;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_drop_then_insert;"
 
 # -------------------------------------------------------------------
-# Case 6: Rows TTL + column TTL — not short-circuited
-# hasOnlyRowsTTL is false when column TTL is present, so data IS read.
-# The rows TTL alone covers every row, so `TTLTransform` closes the read side
-# once the merge emits its first block. How many rows the sources pushed before
-# that depends on the granule size, so assert only that they were read at all.
+# Case 6: Rows TTL + column TTL
+# How many rows the sources pushed depends on the granule size, so assert only
+# that they were read at all.
 # -------------------------------------------------------------------
 echo "-- Case 6: Rows TTL + column TTL is not short-circuited"
 
@@ -352,8 +346,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_col;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_col;"
 
 # -------------------------------------------------------------------
-# Case 7: Rows TTL + GROUP BY TTL — not short-circuited
-# hasOnlyRowsTTL is false when GROUP BY TTL is present, so data IS read.
+# Case 7: Rows TTL + GROUP BY TTL
 # After the first merge, surviving rows still have expired TTL, so
 # TTLPartDropMergeSelector may re-select the single merged part for
 # another TTLDrop merge. Filter by length(merged_from) > 1 to only

@@ -29,7 +29,6 @@ public:
             TTLDescription description;
         };
         std::vector<Entry> entries;
-        bool all_data_dropped = false;
         time_t current_time = 0;
     };
 

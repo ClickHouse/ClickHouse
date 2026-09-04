@@ -75,11 +75,22 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     /// Drop parts - 1 priority
     if (!ctx.merge_constraints.empty())
     {
-        /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space.
-        std::vector<MergeConstraint> ttl_constraints(ctx.merge_constraints.size(), {std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()});
         TTLPartDropMergeSelector drop_ttl_selector(ctx.current_time, ctx.merge_tree_settings[MergeTreeSetting::max_parts_to_merge_at_once]);
 
-        if (auto merge_ranges = drop_ttl_selector.select(ctx.ranges, ttl_constraints, ctx.range_filter); !merge_ranges.empty())
+        if (auto merge_ranges = drop_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
+            return pack(ctx, std::move(merge_ranges), MergeType::TTLDrop);
+
+        /// A part larger than the byte budget is refused by every range, so expired data on a full
+        /// disk could never be freed. Only the byte budget is exempted here: `max_size_rows` is
+        /// finite exactly when a text or vector index would throw while being built above it.
+        std::vector<MergeConstraint> single_part_constraints;
+        single_part_constraints.reserve(ctx.merge_constraints.size());
+        for (const auto & constraint : ctx.merge_constraints)
+            single_part_constraints.emplace_back(std::numeric_limits<size_t>::max(), constraint.max_size_rows);
+
+        TTLPartDropMergeSelector single_part_selector(ctx.current_time, /*max_parts_to_drop_at_once_=*/ 1);
+
+        if (auto merge_ranges = single_part_selector.select(ctx.ranges, single_part_constraints, ctx.range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLDrop);
     }
 

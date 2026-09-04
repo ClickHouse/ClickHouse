@@ -1,0 +1,22 @@
+-- rows TTL, horizontal merge
+1	42
+1
+-- rows TTL, in-range control: the same DDL with the default materialize_ttl_after_modify
+1	42
+-- rows TTL, vertical merge
+2	3
+Vertical
+-- column TTL, wide part
+1	7777
+-- column TTL, compact part
+1	7777
+-- MATERIALIZE TTL repairs a part instead of emptying it
+1	42
+1
+-- genuinely expired rows are still deleted
+0
+-- GROUP BY TTL is not permanently disabled
+2	30
+[1]
+-- a patch part that un-expires rows is honoured
+1	1

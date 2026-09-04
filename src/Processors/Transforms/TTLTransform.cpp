@@ -72,10 +72,6 @@ TTLTransform::TTLTransform(
             getExpressions(rows_ttl, subqueries_for_sets, context), rows_ttl,
             old_ttl_infos.table_ttl, current_time_, force_);
 
-        /// Skip all data if table ttl is expired for part
-        if (algorithm->isMaxTTLExpired() && !rows_ttl.where_expression_ast)
-            all_data_dropped = true;
-
         algorithms.emplace_back(std::move(algorithm));
         delete_algorithm = static_cast<const TTLDeleteAlgorithm *>(algorithms.back().get());
     }
@@ -131,8 +127,7 @@ TTLTransform::TTLTransform(
                     force_,
                     name,
                     default_expression,
-                    default_column_name,
-                    isCompactPart(data_part)));
+                    default_column_name));
             }
         }
     }
@@ -159,12 +154,6 @@ static Block reorderColumns(Block block, const Block & header)
 
 void TTLTransform::consume(Chunk chunk)
 {
-    if (all_data_dropped)
-    {
-        finishConsume();
-        return;
-    }
-
     removeSpecialColumnRepresentations(chunk);
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
@@ -217,12 +206,7 @@ void TTLTransform::finalize()
         algorithm->finalize(data_part);
 
     if (delete_algorithm)
-    {
-        if (all_data_dropped)
-            LOG_DEBUG(log, "Removed all rows from part {} due to expired TTL", data_part->name);
-        else
-            LOG_DEBUG(log, "Removed {} rows with expired TTL from part {}", delete_algorithm->getNumberOfRemovedRows(), data_part->name);
-    }
+        LOG_DEBUG(log, "Removed {} rows with expired TTL from part {}", delete_algorithm->getNumberOfRemovedRows(), data_part->name);
     else
         LOG_DEBUG(log, "No delete algorithm was applied for part {}", data_part->name);
 }

@@ -9,9 +9,6 @@ TTLDeleteAlgorithm::TTLDeleteAlgorithm(
 {
     if (!isMinTTLExpired())
         new_ttl_info = old_ttl_info;
-
-    if (isMaxTTLExpired())
-        new_ttl_info.ttl_finished = true;
 }
 
 void TTLDeleteAlgorithm::execute(Block & block)
@@ -52,6 +49,7 @@ void TTLDeleteAlgorithm::execute(Block & block)
         }
     }
 
+    rows_seen += rows;
     rows_removed += removed;
 
     if (removed == 0)
@@ -63,13 +61,20 @@ void TTLDeleteAlgorithm::execute(Block & block)
 
 void TTLDeleteAlgorithm::finalize(const MutableDataPartPtr & data_part) const
 {
+    auto ttl_info = new_ttl_info;
+
+    /// `ttl_finished` stops the part from being selected for this rule again, so only a pass that
+    /// actually saw rows may set it, and only when none of them survived.
+    if (isMinTTLExpired() && rows_seen)
+        ttl_info.ttl_finished = (rows_removed == rows_seen);
+
     if (ttl_expressions.where_expression)
         /// Rules sharing a time expression share this slot, so merge instead of overwriting.
-        data_part->ttl_infos.rows_where_ttl[description.result_column].update(new_ttl_info);
+        data_part->ttl_infos.rows_where_ttl[description.result_column].update(ttl_info);
     else
-        data_part->ttl_infos.table_ttl = new_ttl_info;
+        data_part->ttl_infos.table_ttl = ttl_info;
 
-    data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info);
+    data_part->ttl_infos.updatePartMinMaxTTL(ttl_info);
 }
 
 }

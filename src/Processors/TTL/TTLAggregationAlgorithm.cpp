@@ -128,9 +128,6 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         /* adaptive_aggregator_freeze_threshold_bytes */ 0);
 
     aggregator = std::make_unique<Aggregator>(header, params);
-
-    if (isMaxTTLExpired())
-        new_ttl_info.ttl_finished = true;
 }
 
 void TTLAggregationAlgorithm::execute(Block & block)
@@ -219,6 +216,13 @@ void TTLAggregationAlgorithm::execute(Block & block)
             }
             else
             {
+                if (where_filter_passed)
+                {
+                    /// Rows that don't pass the filter should not affect TTL.
+                    new_ttl_info.update(cur_ttl);
+                    any_row_kept_unexpired = true;
+                }
+
                 for (const auto & name : column_names)
                 {
                     const IColumn * values_column = block.getByName(name).column.get();
@@ -227,6 +231,8 @@ void TTLAggregationAlgorithm::execute(Block & block)
                 }
             }
         }
+
+        rows_seen += block.rows();
 
         if (rows_with_current_key)
         {
@@ -332,14 +338,15 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
 
 void TTLAggregationAlgorithm::finalize(const MutableDataPartPtr & data_part) const
 {
-    if (new_ttl_info.finished())
-    {
-        data_part->ttl_infos.group_by_ttl[description.result_column] = new_ttl_info;
-        data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info);
-        return;
-    }
-    data_part->ttl_infos.group_by_ttl[description.result_column] = old_ttl_info;
-    data_part->ttl_infos.updatePartMinMaxTTL(old_ttl_info);
+    auto ttl_info = new_ttl_info;
+
+    /// `ttl_finished` stops the part from being selected for this rule again, so only a pass that
+    /// actually saw rows may set it, and only when every one of them was rolled up.
+    if (rows_seen)
+        ttl_info.ttl_finished = !any_row_kept_unexpired;
+
+    data_part->ttl_infos.group_by_ttl[description.result_column] = ttl_info;
+    data_part->ttl_infos.updatePartMinMaxTTL(ttl_info);
 }
 
 }
