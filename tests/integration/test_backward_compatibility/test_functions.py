@@ -81,15 +81,21 @@ def test_aggregate_states(start_cluster):
         "FUNCTION_NOT_ALLOWED",
     ]
 
-    def get_aggregate_state_hex(node, function_name):
-        return node.query(
-            f"select hex(initializeAggregation('{function_name}State', 'foo'))"
-        ).strip()
+    def get_aggregate_state_hex(node, function_name, version=None):
+        state = f"initializeAggregation('{function_name}State', 'foo')"
+        if version is not None:
+            state = (
+                f"{state}::AggregateFunction({version}, {function_name}, String)"
+            )
+        return node.query(f"select hex({state})").strip()
 
     def get_final_value_unhex(node, function_name, value):
         return node.query(
             f"select finalizeAggregation(unhex('{value}')::AggregateFunction({function_name}, String))"
         ).strip()
+
+    # Versioned state changes must still reproduce the old byte representation.
+    compatible_state_versions = {"groupConcat": 0}
 
     def check_aggregate(aggregate_function):
         logging.info("Checking %s", aggregate_function)
@@ -104,7 +110,11 @@ def test_aggregate_states(start_cluster):
             logging.exception("Failed %s", aggregate_function)
             return "failed"
 
-        upstream_state = get_aggregate_state_hex(upstream, aggregate_function)
+        upstream_state = get_aggregate_state_hex(
+            upstream,
+            aggregate_function,
+            compatible_state_versions.get(aggregate_function),
+        )
         if upstream_state != backward_state:
             allowed_changes_if_result_is_the_same = ["anyHeavy"]
 
@@ -159,6 +169,46 @@ def test_aggregate_states(start_cluster):
     assert failed == 0
     assert passed > 0
     assert failed + passed + skipped == len(aggregate_functions)
+
+
+def test_group_concat_state_revision_gate(start_cluster):
+    source_table = "test_group_concat_state_revision_source"
+    current_copy = "test_group_concat_state_revision_current"
+    backward_copy = "test_group_concat_state_revision_backward"
+    table_definition = "(state AggregateFunction(groupConcat(','), String)) ENGINE = Memory"
+
+    try:
+        upstream.query(f"CREATE TABLE {source_table} {table_definition}")
+        upstream.query(f"CREATE TABLE {current_copy} {table_definition}")
+        backward.query(f"CREATE TABLE {backward_copy} {table_definition}")
+
+        upstream.query(
+            f"""
+            INSERT INTO {source_table}
+            SELECT groupConcatState(',')('')
+            FROM numbers(2)
+            GROUP BY number
+            """
+        )
+
+        upstream.query(
+            f"INSERT INTO {current_copy} "
+            f"SELECT * FROM remote('upstream', default, {source_table})"
+        )
+        backward.query(
+            f"INSERT INTO {backward_copy} "
+            f"SELECT * FROM remote('upstream', default, {source_table})"
+        )
+
+        merge = "SELECT length(groupConcatMerge(',')(state)) FROM"
+        # Current peers negotiate v1 and preserve both empty-string states.
+        assert upstream.query(f"{merge} {current_copy}").strip() == "1"
+        # An old initiator makes the current server serialize the states as v0.
+        assert backward.query(f"{merge} {backward_copy}").strip() == "0"
+    finally:
+        upstream.query(f"DROP TABLE IF EXISTS {source_table}")
+        upstream.query(f"DROP TABLE IF EXISTS {current_copy}")
+        backward.query(f"DROP TABLE IF EXISTS {backward_copy}")
 
 
 def test_string_functions(start_cluster):

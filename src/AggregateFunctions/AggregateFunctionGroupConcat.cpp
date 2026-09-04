@@ -1,4 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionGroupConcat.h>
+#include <Core/ProtocolDefines.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -77,6 +79,35 @@ String GroupConcatImpl<has_limit>::getName() const
     return name;
 }
 
+template <bool has_limit>
+bool GroupConcatImpl<has_limit>::isVersioned() const
+{
+    return !has_limit;
+}
+
+template <bool has_limit>
+size_t GroupConcatImpl<has_limit>::getDefaultVersion() const
+{
+    return 0;
+}
+
+template <bool has_limit>
+DataTypePtr GroupConcatImpl<has_limit>::getStateType() const
+{
+    if constexpr (!has_limit)
+        return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), this->argument_types, this->parameters, 1);
+
+    return IAggregateFunction::getStateType();
+}
+
+template <bool has_limit>
+size_t GroupConcatImpl<has_limit>::getVersionFromRevision(size_t revision) const
+{
+    if constexpr (has_limit)
+        return 0;
+
+    return revision >= DBMS_MIN_REVISION_WITH_GROUP_CONCAT_STATE_VERSION ? 1 : 0;
+}
 
 template <bool has_limit>
 void GroupConcatImpl<has_limit>::add(
@@ -91,7 +122,7 @@ void GroupConcatImpl<has_limit>::add(
         if (cur_data.num_rows >= limit)
             return;
 
-    if (cur_data.data_size != 0)
+    if (cur_data.data_size != 0 || cur_data.num_rows != 0)
         cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
 
     if (isFixedString(type))
@@ -112,7 +143,7 @@ void GroupConcatImpl<has_limit>::mergeImpl(AggregateDataPtr __restrict place, Co
     auto & cur_data = this->data(place);
     auto & rhs_data = this->data(rhs);
 
-    if (rhs_data.data_size == 0)
+    if (rhs_data.data_size == 0 && rhs_data.num_rows == 0)
         return;
 
     if constexpr (has_limit)
@@ -120,7 +151,7 @@ void GroupConcatImpl<has_limit>::mergeImpl(AggregateDataPtr __restrict place, Co
         UInt64 new_elems_count = std::min(rhs_data.num_rows, limit - cur_data.num_rows);
         for (UInt64 i = 0; i < new_elems_count; ++i)
         {
-            if (cur_data.data_size != 0)
+            if (cur_data.data_size != 0 || cur_data.num_rows != 0)
                 cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
 
             cur_data.offsets.push_back(cur_data.data_size, arena);
@@ -131,17 +162,21 @@ void GroupConcatImpl<has_limit>::mergeImpl(AggregateDataPtr __restrict place, Co
     }
     else
     {
-        if (cur_data.data_size != 0)
+        if (cur_data.data_size != 0 || cur_data.num_rows != 0)
             cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
 
         cur_data.insertChar(rhs_data.data, rhs_data.data_size, arena);
+        cur_data.num_rows += rhs_data.num_rows;
     }
 }
 
 template <bool has_limit>
-void GroupConcatImpl<has_limit>::serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const
+void GroupConcatImpl<has_limit>::serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const
 {
     auto & cur_data = this->data(place);
+
+    if (!version)
+        version = getDefaultVersion();
 
     writeVarUInt(cur_data.data_size, buf);
 
@@ -153,19 +188,25 @@ void GroupConcatImpl<has_limit>::serialize(ConstAggregateDataPtr __restrict plac
         for (const auto & offset : cur_data.offsets)
             writeVarUInt(offset, buf);
     }
+    else if (*version >= 1)
+        writeVarUInt(cur_data.num_rows != 0, buf);
 }
 
 template <bool has_limit>
-void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const
+void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const
 {
     auto & cur_data = this->data(place);
 
+    if (!version)
+        version = getDefaultVersion();
+
     /// IAggregateFunction::deserialize() must be called only for an empty (just created) state.
-    if (cur_data.data_size != 0)
+    if (cur_data.data_size != 0 || cur_data.num_rows != 0)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "groupConcat deserialize() expects an empty state (data_size = 0), got data_size = {}",
-            cur_data.data_size);
+            "groupConcat deserialize() expects an empty state (data_size = 0, num_rows = 0), got data_size = {}, num_rows = {}",
+            cur_data.data_size,
+            cur_data.num_rows);
 
     UInt64 temp_size = 0;
     readVarUInt(temp_size, buf);
@@ -206,6 +247,30 @@ void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, 
 
         if (cur_data.num_rows != 0 && cur_data.offsets.back() != cur_data.data_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid offsets in groupConcat state: last offset {} is not equal to data size {}", cur_data.offsets.back(), cur_data.data_size);
+    }
+    else if (*version >= 1)
+    {
+        UInt64 has_rows = 0;
+        readVarUInt(has_rows, buf);
+
+        if (has_rows > 1)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid groupConcat state: has_rows must be 0 or 1, got {}",
+                has_rows);
+
+        if (has_rows == 0 && cur_data.data_size != 0)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid groupConcat state: non-empty data has no rows");
+
+        cur_data.num_rows = has_rows;
+    }
+    else
+    {
+        /// Version 0 does not store whether the state has rows, but a non-empty payload proves
+        /// that it does.
+        cur_data.num_rows = cur_data.data_size != 0;
     }
 }
 
