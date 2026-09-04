@@ -1,0 +1,39 @@
+written left to right
+0	0	0	0
+0	0	0	0
+0	2	0	2
+1	1	1	1
+1	1	1	1
+2	2	2	2
+3	0	3	3
+4	1	4	4
+written right to left
+0	0	0	0
+0	0	0	0
+0	2	0	2
+1	1	1	1
+1	1	1	1
+2	2	2	2
+3	0	3	3
+4	1	4	4
+the same, with the tables swapped by the planner
+0	0	0	0
+0	0	0	0
+0	2	0	2
+1	1	1	1
+1	1	1	1
+2	2	2	2
+3	0	3	3
+4	1	4	4
+row count is the same for both swap settings and for several threads
+8	8	8
+with a residual condition: written left to right, written right to left, swapped, 8 threads
+8	8	8	8
+both keys of the shared right row are joined, whatever the probe order
+2
+2
+one row per condition that matches
+1	9
+9	5
+single condition: 2 left rows and 1 right row share the key
+1	9	1

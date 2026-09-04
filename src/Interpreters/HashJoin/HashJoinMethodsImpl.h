@@ -507,7 +507,8 @@ void processMatch(
     size_t ind,
     IColumn::Offset & current_offset,
     KnownRowsHolder<flag_per_row> & known_rows,
-    bool is_last_disjunct)
+    bool is_last_disjunct,
+    size_t clause_idx [[maybe_unused]])
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
 
@@ -552,13 +553,26 @@ void processMatch(
     }
     else if constexpr (join_features.is_any_join && join_features.inner)
     {
-        bool used_once = used_flags.template setUsedOnce<join_features.need_flags, flag_per_row>(find_result);
-
+        /// One row per key of this disjunct, from both sides: the map stores the first right row of the
+        /// key, and the flag of its cell is won by the first left row that reaches it. So the result is
+        /// the union of the single-condition joins, and a pair of rows matching through several
+        /// conditions is joined once per condition. Deduplicating those would make the number of
+        /// result rows depend on which left row claims a key first, and so on the probe order.
+        /// The caller sets the filter, because a left row may claim a key in several disjuncts.
+        if constexpr (flag_per_row)
+        {
+            if (used_flags.template setUsedOncePerClause<join_features.need_flags>(clause_idx, find_result.getOffset()))
+            {
+                added_columns.appendFromBlock(firstRefWord(mapped), join_features.add_missing);
+                ++current_offset;
+            }
+        }
         /// Use first appeared left key only
-        if (used_once)
+        else if (used_flags.template setUsedOnce<join_features.need_flags, flag_per_row>(find_result))
         {
             setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
             added_columns.appendFromBlock(firstRefWord(mapped), join_features.add_missing);
+            ++current_offset;
         }
     }
     else if constexpr (join_features.is_any_join && join_features.full)
@@ -657,7 +671,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
             {
                 right_row_found = true;
                 processMatch<KIND, STRICTNESS, need_filter, flag_per_row, MapsTemplate, Map, KeyGetter>(
-                    find_result, added_columns, used_flags, i, ind, current_offset, dummy_known_rows, /*is_last_disjunct=*/ true);
+                    find_result, added_columns, used_flags, i, ind, current_offset, dummy_known_rows,
+                    /*is_last_disjunct=*/ true, /*clause_idx=*/ 0);
             }
         }
 
@@ -761,6 +776,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
         bool right_row_found = false;
         KnownRowsHolder<flag_per_row> known_rows;
+        const IColumn::Offset offset_before_row = current_offset;
         for (size_t onexpr_idx = 0; onexpr_idx < added_columns.join_on_keys.size(); ++onexpr_idx)
         {
             bool skip_row = false;
@@ -776,12 +792,20 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
                     right_row_found = true;
                     const bool is_last_disjunct = onexpr_idx + 1 == added_columns.join_on_keys.size();
                     processMatch<KIND, STRICTNESS, need_filter, flag_per_row, MapsTemplate, Map, KeyGetter>(
-                        find_result, added_columns, used_flags, i, ind, current_offset, known_rows, is_last_disjunct);
+                        find_result, added_columns, used_flags, i, ind, current_offset, known_rows, is_last_disjunct, onexpr_idx);
 
-                    if constexpr (join_features.is_any_or_semi_join && !(join_features.is_any_join && (join_features.right || join_features.full)))
+                    /// ANY INNER JOIN claims a key of every disjunct, so it visits all of them; the other
+                    /// ANY/SEMI kinds that join a left row at most once stop at the first match.
+                    if constexpr (join_features.is_any_or_semi_join && !(join_features.is_any_join && !join_features.left))
                         break;
                 }
             }
+        }
+
+        if constexpr (join_features.is_any_join && join_features.inner)
+        {
+            if (current_offset != offset_before_row)
+                setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
         }
 
         if (!right_row_found)
@@ -959,6 +983,17 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
     find_results.reserve(left_block_rows);
     IColumn::Offset total_added_rows = 0;
 
+    /// `ANY INNER JOIN` with several disjuncts claims a key of one disjunct, so the candidates of every
+    /// found key are kept apart: `found_keys` names the key each range of `selected_rows` came from.
+    constexpr bool claims_key_per_disjunct = join_features.is_any_join && join_features.inner;
+    struct FoundKey
+    {
+        size_t clause_idx;
+        size_t offset;
+        size_t candidates_end;
+    };
+    std::vector<FoundKey> found_keys;
+
     IColumn::Offsets row_replicate_offset;
     row_replicate_offset.reserve(left_block_rows);
 
@@ -1012,10 +1047,18 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                     /// it's different from `joinRightColumns`.
                     PreSelectedRows selected_rows_view{selected_rows};
                     const bool is_last_disjunct = join_clause_idx + 1 == added_columns.join_on_keys.size();
-                    if (flag_per_row)
+                    /// A key claimed per disjunct needs the candidates of every disjunct, so they are
+                    /// not deduplicated across them.
+                    if (flag_per_row && !claims_key_per_disjunct)
                         addFoundRowAll<Map, false, true>(mapped, selected_rows_view, current_added_rows, all_flag_known_rows, nullptr, is_last_disjunct);
                     else
                         addFoundRowAll<Map, false, false>(mapped, selected_rows_view, current_added_rows, single_flag_know_rows, nullptr, is_last_disjunct);
+
+                    if constexpr (claims_key_per_disjunct)
+                    {
+                        if (flag_per_row)
+                            found_keys.push_back({join_clause_idx, find_result.getOffset(), current_added_rows});
+                    }
                 }
 
             }
@@ -1051,11 +1094,43 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
         size_t prev_replicated_row = 0;
         auto * selected_right_row_it = selected_rows.begin();
         size_t find_result_index = 0;
+        size_t next_found_key = 0;
         for (size_t i = 0, n = row_replicate_offset.size(); i < n; ++i)
         {
             bool any_matched = false;
+            bool joined_per_disjunct_key = false;
+            /// One row per key of every disjunct: the first candidate of the key that passes the filter,
+            /// claimed so that the key is joined for one left row only.
+            if constexpr (claims_key_per_disjunct)
+            {
+                if (flag_per_row)
+                {
+                    joined_per_disjunct_key = true;
+                    size_t candidates_begin = prev_replicated_row;
+                    while (next_found_key < found_keys.size() && found_keys[next_found_key].candidates_end <= row_replicate_offset[i])
+                    {
+                        const auto & found_key = found_keys[next_found_key];
+                        for (size_t candidate = candidates_begin; candidate < found_key.candidates_end; ++candidate)
+                        {
+                            if (!filter_flags[candidate])
+                                continue;
+
+                            if (used_flags.template setUsedOncePerClause<join_features.need_flags>(found_key.clause_idx, found_key.offset))
+                            {
+                                any_matched = true;
+                                total_added_rows += 1;
+                                added_columns.appendFromBlock(selected_rows[candidate], join_features.add_missing);
+                            }
+                            break;
+                        }
+                        candidates_begin = found_key.candidates_end;
+                        ++next_found_key;
+                    }
+                }
+            }
+
             /// right/full join or multiple disjuncts, we need to mark used flags for each row.
-            if (flag_per_row)
+            if (flag_per_row && !joined_per_disjunct_key)
             {
                 for (size_t replicated_row = prev_replicated_row; replicated_row < row_replicate_offset[i]; ++replicated_row)
                 {
@@ -1110,7 +1185,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                     ++selected_right_row_it;
                 }
             }
-            else
+            else if (!joined_per_disjunct_key)
             {
                 for (size_t replicated_row = prev_replicated_row; replicated_row < row_replicate_offset[i]; ++replicated_row)
                 {
@@ -1118,7 +1193,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                     {
                         any_matched |= filter_flags[replicated_row];
                     }
-                    else if constexpr (join_features.need_replication)
+                    else if constexpr (join_features.join_every_match)
                     {
                         if (filter_flags[replicated_row])
                         {

@@ -2078,6 +2078,13 @@ bool HashJoin::isUsed(UInt32 block_no, size_t row_idx) const
     return used_flags->getUsedSafe(block_no, row_idx);
 }
 
+bool HashJoin::needUsedFlagsPerClauseKey() const
+{
+    /// `ANY INNER JOIN` emits one row per key, so the flag is indexed by the cell of a disjunct's map.
+    /// A per-row flag cannot do it: one row is the stored row of a different key in every disjunct.
+    return !table_join->oneDisjunct() && isInner(kind) && strictness == JoinStrictness::Any;
+}
+
 bool HashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const
 {
     if (!table_join_->oneDisjunct())
@@ -2385,10 +2392,29 @@ bool HashJoin::canConvertToFixedHashMap() const
 
 void HashJoin::reinitUsedFlags()
 {
+    const bool prefer_use_maps_all = preferUseMapsAll();
+
+    if (needUsedFlagsPerClauseKey())
+    {
+        std::vector<size_t> sizes;
+        sizes.reserve(data->maps.size());
+        for (auto & map : data->maps)
+        {
+            joinDispatch(
+                kind,
+                strictness,
+                map,
+                prefer_use_maps_all,
+                [&](auto, auto, auto & map_) { sizes.push_back(map_.getBufferSizeInCells(data->type) + 1); });
+        }
+        used_flags->reinitPerClauseOffsets(sizes);
+        return;
+    }
+
+    /// Per-row flags are sized by `addBlockToJoin` for each stored block instead.
     if (needUsedFlagsForPerRightTableRow(table_join))
         return;
 
-    const bool prefer_use_maps_all = preferUseMapsAll();
     for (auto & map : data->maps)
     {
         joinDispatch(
