@@ -106,12 +106,14 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
+    extern const SettingsBool allow_experimental_session_window_frame;
 }
 
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int ILLEGAL_PREWHERE;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
@@ -765,6 +767,23 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
         auto [value, _] = evaluateConstantExpression(definition.frame_begin_offset,
             context_.shared_from_this());
         desc.frame.begin_offset = value;
+    }
+
+    if (definition.frame_type == WindowFrame::FrameType::SESSION)
+    {
+        if (!context_.getSettingsRef()[Setting::allow_experimental_session_window_frame])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "The SESSION window frame is experimental. Set allow_experimental_session_window_frame = 1 to enable it");
+
+        auto [value, type] = evaluateConstantExpression(definition.session_window_threshold,
+                context_.shared_from_this());
+        /// Reject the same thresholds the analyzer path rejects: without this the value is
+        /// silently coerced to the ORDER BY type, so `SESSION '1'` would be accepted here only.
+        if (!type || !isNativeNumber(removeNullable(type)))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Window frame SESSION window threshold must be constant with numeric type. Actual {}",
+                definition.session_window_threshold->formatForErrorMessage());
+        desc.frame.session_window_threshold = value;
     }
 
     desc.checkValid();

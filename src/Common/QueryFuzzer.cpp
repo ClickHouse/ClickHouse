@@ -1318,11 +1318,29 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
 
     switch (fuzz_rand() % 20)
     {
-        case 0: {
-            const auto r = fuzz_rand() % 3;
-            def.frame_type = r == 0 ? WindowFrame::FrameType::ROWS
-                : r == 1            ? WindowFrame::FrameType::RANGE
-                                    : WindowFrame::FrameType::GROUPS;
+        case 0:
+        {
+            // Change the frame type.
+            static const auto frame_types = std::to_array({
+                WindowFrame::FrameType::ROWS,
+                WindowFrame::FrameType::RANGE,
+                WindowFrame::FrameType::GROUPS,
+                WindowFrame::FrameType::SESSION
+            });
+            def.frame_type = frame_types[fuzz_rand() % size(frame_types)];
+            if (def.frame_type == WindowFrame::FrameType::SESSION)
+            {
+                // Have to initialize the window threshold when switching to
+                // SESSION frame, so that we don't get an invalid AST where it
+                // is not initialized.
+                def.setOrReplace(def.session_window_threshold, make_intrusive<ASTLiteral>(getRandomField(0)));
+            }
+            else
+            {
+                // Only a SESSION frame formats the threshold, so one left over from a previous
+                // mutation would not survive a reparse.
+                def.reset(def.session_window_threshold);
+            }
             break;
         }
         case 1: {
@@ -1367,6 +1385,18 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
             break;
         }
         default: break;
+    }
+
+    // A SESSION frame formats only its threshold, so boundary state does not survive a reparse.
+    // Keep the boundary fields at the values the parser leaves for SESSION.
+    if (def.frame_type == WindowFrame::FrameType::SESSION)
+    {
+        def.frame_begin_type = WindowFrame::BoundaryType::Unbounded;
+        def.frame_begin_preceding = true;
+        def.reset(def.frame_begin_offset);
+        def.frame_end_type = WindowFrame::BoundaryType::Current;
+        def.frame_end_preceding = false;
+        def.reset(def.frame_end_offset);
     }
 
     if (def.frame_type == WindowFrame::FrameType::RANGE && def.frame_begin_type == WindowFrame::BoundaryType::Unbounded

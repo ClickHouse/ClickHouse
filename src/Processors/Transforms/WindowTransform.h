@@ -115,6 +115,8 @@ public:
     // `target_group`-th peer group (1-based) or the partition end.
     bool advanceGroupBoundary(RowNumber & pointer, UInt64 & group_counter, RowNumber & scan_frontier, Int64 target_group) const;
 
+    void advanceFrameEndSession();
+
     void updateAggregationState();
     void writeOutCurrentRow();
 

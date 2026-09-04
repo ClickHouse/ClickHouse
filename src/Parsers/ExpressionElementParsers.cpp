@@ -698,6 +698,8 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     ParserKeyword keyword_rows(Keyword::ROWS);
     ParserKeyword keyword_groups(Keyword::GROUPS);
     ParserKeyword keyword_range(Keyword::RANGE);
+    ParserKeyword keyword_session(Keyword::SESSION);
+
 
     node->frame_is_default = false;
     if (keyword_rows.ignore(pos, expected))
@@ -711,6 +713,17 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     else if (keyword_range.ignore(pos, expected))
     {
         node->frame_type = WindowFrame::FrameType::RANGE;
+    }
+    else if (keyword_session.ignore(pos, expected))
+    {
+        node->frame_type = WindowFrame::FrameType::SESSION;
+        ParserExpression parser_expression;
+        if (!parser_expression.parse(pos, node->session_window_threshold, expected))
+            return false;
+        // Generic traversal and tree hashing only visit `children`, so an unattached
+        // threshold would make two windows differing only in it compare equal.
+        node->children.push_back(node->session_window_threshold);
+        return true;
     }
     else
     {
@@ -880,6 +893,7 @@ bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     // We can have a parent window name specified before all other things. No
     // easy way to distinguish identifier from keywords, so just try to parse it
     // both ways.
+    const auto pos_before_parts = pos;
     if (parseWindowDefinitionParts(pos, *result, expected))
     {
         // Successfully parsed without parent window specifier. It can be empty,
@@ -891,6 +905,11 @@ bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             return true;
         }
     }
+
+    // The attempt above may have consumed tokens and populated `result` before
+    // failing, so both have to be restored before retrying.
+    pos = pos_before_parts;
+    result = make_intrusive<ASTWindowDefinition>();
 
     // Try to parse with parent window specifier.
     ParserIdentifier parser_parent_window;

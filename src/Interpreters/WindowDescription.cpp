@@ -52,6 +52,14 @@ std::string WindowFrame::toString() const
 
 void WindowFrame::toString(WriteBuffer & buf) const
 {
+    if (type == FrameType::SESSION)
+    {
+        // A SESSION frame is disjoint (one shared frame per session), so the
+        // BEGIN/END boundaries are meaningless. Print the threshold instead.
+        buf << type << " " << applyVisitor(FieldVisitorToString(), session_window_threshold);
+        return;
+    }
+
     buf << type << " BETWEEN ";
     if (begin_type == BoundaryType::Current)
     {
@@ -90,6 +98,18 @@ void WindowFrame::toString(WriteBuffer & buf) const
 
 void WindowFrame::checkValid() const
 {
+    // A SESSION frame is bounded by its threshold rather than by boundary offsets. NaN is tested
+    // separately because it compares as greater than every value, and negated "less" is used for
+    // the rest because there is no "greater" visitor.
+    if (type == FrameType::SESSION
+        && (session_window_threshold.isNaN() || session_window_threshold.isInf()
+            || !accurateLess(Field(0), session_window_threshold)))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Window frame SESSION threshold must be a positive finite number, '{}' given",
+            applyVisitor(FieldVisitorToString(), session_window_threshold));
+    }
+
     // Check the validity of offsets.
     if (begin_type == BoundaryType::Offset
         && !((begin_offset.getType() == Field::Types::UInt64
@@ -193,15 +213,16 @@ void WindowDescription::checkValid() const
 {
     frame.checkValid();
 
-    // RANGE OFFSET requires exactly one ORDER BY column.
-    if (frame.type == WindowFrame::FrameType::RANGE
+    // Both frames compare each row against a key value, so they need a single ORDER BY column.
+    const bool is_session = frame.type == WindowFrame::FrameType::SESSION;
+    if ((is_session || (frame.type == WindowFrame::FrameType::RANGE
         && (frame.begin_type == WindowFrame::BoundaryType::Offset
-            || frame.end_type == WindowFrame::BoundaryType::Offset)
+            || frame.end_type == WindowFrame::BoundaryType::Offset)))
         && order_by.size() != 1)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The RANGE OFFSET window frame requires exactly one ORDER BY column, {} given",
-           order_by.size());
+            "The {} window frame requires exactly one ORDER BY column, {} given",
+           is_session ? "SESSION" : "RANGE OFFSET", order_by.size());
     }
 }
 

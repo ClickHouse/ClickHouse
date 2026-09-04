@@ -111,6 +111,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsBool allow_experimental_session_window_frame;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool enable_identifier_resolve_cache;
@@ -453,7 +454,8 @@ ProjectionName QueryAnalyzer::calculateWindowProjectionName(const QueryTreeNodeP
     const ProjectionNames & partition_by_projection_names,
     const ProjectionNames & order_by_projection_names,
     const ProjectionName & frame_begin_offset_projection_name,
-    const ProjectionName & frame_end_offset_projection_name)
+    const ProjectionName & frame_end_offset_projection_name,
+    const ProjectionName & frame_session_window_threshold_projection_name)
 {
     const auto & window_node_typed = window_node->as<WindowNode &>();
     const auto & window_frame = window_node_typed.getWindowFrame();
@@ -509,6 +511,14 @@ ProjectionName QueryAnalyzer::calculateWindowProjectionName(const QueryTreeNodeP
     {
         if (!partition_by_projection_names.empty() || !order_by_projection_names.empty() || !parent_window_name.empty())
             buffer << ' ';
+
+        /// A SESSION frame has a threshold instead of boundaries, so it must appear in the name:
+        /// otherwise two windows differing only in threshold collide on one projection name.
+        if (window_frame.type == WindowFrame::FrameType::SESSION)
+        {
+            buffer << window_frame.type << ' ' << frame_session_window_threshold_projection_name;
+            return buffer.str();
+        }
 
         buffer << window_frame.type << " BETWEEN ";
         if (window_frame.begin_type == WindowFrame::BoundaryType::Current)
@@ -2986,6 +2996,7 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
 
     ProjectionNames frame_begin_offset_projection_names;
     ProjectionNames frame_end_offset_projection_names;
+    ProjectionNames frame_session_window_threshold_projection_names;
 
     if (window_node.hasFrameBeginOffset())
     {
@@ -3029,6 +3040,31 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
                 frame_end_offset_projection_names.size());
     }
 
+    if (window_node.hasFrameSessionWindowThreshold())
+    {
+        if (!scope.context->getSettingsRef()[Setting::allow_experimental_session_window_frame])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "The SESSION window frame is experimental. Set allow_experimental_session_window_frame = 1 to enable it");
+
+        frame_session_window_threshold_projection_names = resolveExpressionNode(window_node.getFrameSessionWindowThresholdNode(),
+            scope,
+            false /*allow_lambda_expression*/,
+            false /*allow_table_expression*/);
+
+        const auto * window_frame_session_window_threshold_node = window_node.getFrameSessionWindowThresholdNode()->as<ConstantNode>();
+        if (!window_frame_session_window_threshold_node || !isNativeNumber(removeNullable(window_frame_session_window_threshold_node->getResultType())))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Window frame SESSION window threshold must be constant with numeric type. Actual {}. In scope {}",
+                window_node.getFrameSessionWindowThresholdNode()->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+
+        window_node.getWindowFrame().session_window_threshold = window_frame_session_window_threshold_node->getValue();
+        if (frame_session_window_threshold_projection_names.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Window frame SESSION window threshold expected 1 projection name. Actual {}",
+                frame_session_window_threshold_projection_names.size());
+    }
+
     window_node.getWindowFrame().checkValid();
 
     if (result_projection_name.empty())
@@ -3039,7 +3075,8 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
             partition_by_projection_names,
             order_by_projection_names,
             frame_begin_offset_projection_names.empty() ? "" : frame_begin_offset_projection_names.front(),
-            frame_end_offset_projection_names.empty() ? "" : frame_end_offset_projection_names.front());
+            frame_end_offset_projection_names.empty() ? "" : frame_end_offset_projection_names.front(),
+            frame_session_window_threshold_projection_names.empty() ? "" : frame_session_window_threshold_projection_names.front());
     }
 
     windows_in_resolve_process.erase(parent_window_node.get());

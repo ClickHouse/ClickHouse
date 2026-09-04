@@ -3,6 +3,8 @@
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <DataTypes/IDataType.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
@@ -19,6 +21,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_session_window_frame;
+}
 
 namespace ErrorCodes
 {
@@ -200,6 +207,11 @@ static void serializeWindowFrame(const WindowFrame & frame, WriteBuffer & out)
 
     writeFieldBinary(frame.begin_offset, out);
     writeFieldBinary(frame.end_offset, out);
+
+    /// Only for SESSION, so the byte stream of every other frame type is unchanged and a reader
+    /// that does not know SESSION rejects the type byte before reaching this field.
+    if (frame.type == WindowFrame::FrameType::SESSION)
+        writeFieldBinary(frame.session_window_threshold, out);
 }
 
 static WindowFrame deserializeWindowFrame(ReadBuffer & in)
@@ -217,7 +229,7 @@ static WindowFrame deserializeWindowFrame(ReadBuffer & in)
     /// handle).
     UInt8 type = 0;
     readIntBinary(type, in);
-    if (type > static_cast<UInt8>(WindowFrame::FrameType::RANGE))
+    if (type > static_cast<UInt8>(WindowFrame::FrameType::SESSION))
         throw Exception(ErrorCodes::INCORRECT_DATA, "WindowStep: invalid window frame type {}", static_cast<UInt16>(type));
     frame.type = static_cast<WindowFrame::FrameType>(type);
 
@@ -235,6 +247,9 @@ static WindowFrame deserializeWindowFrame(ReadBuffer & in)
 
     frame.begin_offset = readFieldBinary(in);
     frame.end_offset = readFieldBinary(in);
+
+    if (frame.type == WindowFrame::FrameType::SESSION)
+        frame.session_window_threshold = readFieldBinary(in);
 
     return frame;
 }
@@ -370,6 +385,13 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
     deserializeSortDescription(window_description.order_by, ctx.in);
 
     window_description.frame = deserializeWindowFrame(ctx.in);
+
+    /// The plan may be client-supplied (TCPHandler::receiveQueryPlan), which skips the analysis
+    /// that gates the frame, so the setting is re-checked on this path too.
+    if (window_description.frame.type == WindowFrame::FrameType::SESSION
+        && !ctx.context->getSettingsRef()[Setting::allow_experimental_session_window_frame])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "The SESSION window frame is experimental. Set allow_experimental_session_window_frame = 1 to enable it");
 
     /// `full_sort_description` is not serialized: it is the concatenation of PARTITION BY and
     /// ORDER BY, reconstructed here exactly as the planner builds it (see PlannerWindowFunctions).
