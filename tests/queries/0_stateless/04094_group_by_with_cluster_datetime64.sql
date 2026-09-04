@@ -57,3 +57,48 @@ FROM (
     )
     GROUP BY (ts1, ts2) WITH CLUSTER 3
 );
+
+-- `Time64` goes through the same native-tick path: three microsecond-precision
+-- times 1 tick apart merge into one cluster at `WITH CLUSTER 1`, while at
+-- `WITH CLUSTER 0` they stay three exact groups.
+SELECT count() AS num_clusters, sum(c) AS total_rows
+FROM (
+    SELECT t, count() AS c
+    FROM (
+        SELECT toTime64(concat('00:00:00.00000', toString(number)), 6) AS t
+        FROM numbers(3)
+    )
+    GROUP BY t WITH CLUSTER 1
+);
+
+SELECT count() AS num_clusters
+FROM (
+    SELECT t, count() AS c
+    FROM (
+        SELECT toTime64(concat('00:00:00.00000', toString(number)), 6) AS t
+        FROM numbers(3)
+    )
+    GROUP BY t WITH CLUSTER 0
+);
+
+-- One second apart in `Time64(6)` is 1000000 ticks: distance 999999 keeps
+-- them separate, distance 1000000 chain-merges all three.
+SELECT count() AS num_clusters
+FROM (
+    SELECT t, count() AS c
+    FROM (
+        SELECT toTime64(concat('00:00:0', toString(number)), 6) AS t
+        FROM numbers(3)
+    )
+    GROUP BY t WITH CLUSTER 999999
+);
+
+SELECT count() AS num_clusters
+FROM (
+    SELECT t, count() AS c
+    FROM (
+        SELECT toTime64(concat('00:00:0', toString(number)), 6) AS t
+        FROM numbers(3)
+    )
+    GROUP BY t WITH CLUSTER 1000000
+);
