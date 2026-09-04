@@ -730,8 +730,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     auto query_index = buildDAGIndex(*dag.dag);
     candidates.has_filter = dag.filter_node;
 
-    /// The header is passed through, so a replacement must reproduce all of it, positions included.
-    const Names keys = distinct.getOutputHeader()->getNames();
+    const auto & keys = distinct.getColumnNames();
 
     /// Prefer the user specified projection if any.
     auto it = std::find_if(
@@ -750,7 +749,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     AggregateDescriptions aggregates; // Empty for DISTINCT
     candidates.real.reserve(agg_projections.size());
 
-    /// Only select a projection that can compute every column of the output header.
+    /// Only select the projection where distinct columns are a subset of projection columns.
     for (const auto * projection : agg_projections)
     {
         /// Skip projections whose WHERE condition is not implied by the query's filter.

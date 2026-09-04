@@ -242,9 +242,9 @@ Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings
         "Usage example",
         "SELECT splitByRegexp('\\\\d+', 'a12bc23de345f');",
         R"(
-┌─splitByRegexp('\\d+', 'a12bc23de345f')─┐
-│ ['a','bc','de','f']                    │
-└────────────────────────────────────────┘
+┌─splitByRegex⋯c23de345f')─┐
+│ ['a12bc23de345f']        │
+└──────────────────────────┘
         )"
     },
     {

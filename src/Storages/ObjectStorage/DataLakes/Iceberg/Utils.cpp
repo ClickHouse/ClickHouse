@@ -823,12 +823,12 @@ static Poco::JSON::Object::Ptr getPartitionField(
     }
     else if (partition_function->name == "toRelativeDayNum")
     {
-        result->set(Iceberg::f_transform, "day");
+        result->set(Iceberg::f_transform, "days");
         return result;
     }
     else if (partition_function->name == "toRelativeHourNum")
     {
-        result->set(Iceberg::f_transform, "hour");
+        result->set(Iceberg::f_transform, "hours");
         return result;
     }
     else if (partition_function->name == "icebergTruncate")

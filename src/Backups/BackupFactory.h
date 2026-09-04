@@ -84,7 +84,8 @@ public:
         AccessFlags flags;
     };
 
-    /// `std::nullopt` for engines with no external location (`Memory`, `Null`).
+    /// `std::nullopt` for engines with no external location (`Memory`, `Null`) or whose location is an
+    /// operator-allowlisted disk (`Disk`).
     using SourceAccessFn
         = std::function<std::optional<SourceAccessTarget>(const BackupInfo &, ContextPtr, IBackup::OpenMode)>;
 

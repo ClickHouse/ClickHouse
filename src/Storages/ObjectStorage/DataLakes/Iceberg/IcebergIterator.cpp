@@ -229,7 +229,6 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
             *persistent_components.schema_processor,
             manifest_list_entry.added_sequence_number,
             manifest_list_entry.added_snapshot_id,
-            manifest_list_entry.first_row_id,
             local_context,
             filter_dag,
             table_snapshot->schema_id);
@@ -248,9 +247,11 @@ void SingleThreadIcebergKeysIterator::schedulePrefetchIfPossible()
         if (manifest_list_entry.content_type != manifest_file_content_type)
             continue;
 
-        auto fetch = [this, path = manifest_list_entry.manifest_file_path]()
+        auto fetch = [this,
+                      path = manifest_list_entry.manifest_file_path,
+                      bytes = manifest_list_entry.manifest_file_byte_size]()
         {
-            return Iceberg::getManifestFile(object_storage, persistent_components, local_context, log, path);
+            return Iceberg::getManifestFile(object_storage, persistent_components, local_context, log, path, bytes);
         };
         prefetched_manifest = PrefetchedManifest{index, prefetch_runner(std::move(fetch), Priority{})};
         return;
@@ -417,7 +418,8 @@ void IcebergIterator::decodeDeleteManifests()
                     persistent_components,
                     local_context,
                     logger,
-                    manifest_list_entry.manifest_file_path);
+                    manifest_list_entry.manifest_file_path,
+                    manifest_list_entry.manifest_file_byte_size);
 
                 auto manifest_file_iterator = Iceberg::ManifestFileIterator::create(
                     manifest_file_cacheable_part.deserializer,
@@ -426,7 +428,6 @@ void IcebergIterator::decodeDeleteManifests()
                     *persistent_components.schema_processor,
                     manifest_list_entry.added_sequence_number,
                     manifest_list_entry.added_snapshot_id,
-                    manifest_list_entry.first_row_id,
                     local_context,
                     deletes_filter_dag,
                     table_state_snapshot->schema_id);

@@ -234,7 +234,6 @@ void DatabaseOnDisk::createTable(
     const ASTPtr & query)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::createTable");
-    ensurePopulated();
     auto db_disk = getDisk();
     createDirectories();
 
@@ -476,10 +475,6 @@ void DatabaseOnDisk::renameTable(
 
     createDirectories();
     waitDatabaseStarted();
-
-    ensurePopulated();
-    if (auto * to_database_with_own_tables = dynamic_cast<DatabaseWithOwnTablesBase *>(&to_database))
-        to_database_with_own_tables->ensurePopulated();
 
     auto table_data_relative_path = getTableDataPath(table_name);
     TableExclusiveLockHolder table_lock;

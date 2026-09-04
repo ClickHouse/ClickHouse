@@ -1,6 +1,5 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -103,9 +102,6 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
         optimization_settings.serialize_query_plan,
-        optimization_settings.short_circuit_function_evaluation_disabled,
-        optimization_settings.lower_array_join_function,
-        optimization_settings.enable_lazy_columns_replication,
     };
 
     while (!stack.empty())
@@ -267,13 +263,10 @@ void optimizeTreeSecondPass(
 
     if (!optimization_settings.correlated_subqueries_use_in_memory_buffer)
     {
-        /// Sets taken out of the referenced subplans before they are cloned; re-attached below.
-        PreparedSets::Subqueries materialized_sets;
-
         /// Materialize subplan references before other optimizations.
         traverseQueryPlan(stack, root, [&](auto & frame_node)
         {
-            materializeQueryPlanReferences(frame_node, nodes, materialized_sets);
+            materializeQueryPlanReferences(frame_node, nodes);
         });
 
         /// Remove CommonSubplanSteps (they must be not used at that point).
@@ -281,22 +274,6 @@ void optimizeTreeSecondPass(
         {
             optimizeUnusedCommonSubplans(frame_node);
         });
-
-        /// A single builder above the root dominates every copy of a materialized subplan, so each set
-        /// is ready before any copy's `in()` is evaluated, regardless of join kind, join algorithm or
-        /// scheduling. Every extracted set must be re-attached: a set with no builder left in the plan
-        /// stays unbuilt, and `FunctionIn` then reports it as not ready.
-        if (!materialized_sets.empty())
-        {
-            auto step = std::make_unique<DelayedCreatingSetsStep>(
-                root.step->getOutputHeader(),
-                std::move(materialized_sets),
-                optimization_settings.network_transfer_limits,
-                optimization_settings.prepared_sets_cache);
-
-            auto * child = &nodes.emplace_back(std::move(root));
-            root = QueryPlan::Node{std::move(step), {child}};
-        }
     }
 
     /// Compute aggregation hash-table preallocation keys here, BEFORE join runtime filters are added
@@ -409,17 +386,8 @@ void optimizeTreeSecondPass(
     /// alone (with `make_distributed_plan = 0`) keeps the normal single-node optimizer.
     const bool cascades_active = make_distributed_plan && optimization_settings.enable_cascades_optimizer;
 
-    applyParallelReplicas(query_plan, nodes, optimization_settings);
-
     traverseQueryPlan(stack, root,
-        [&](auto & frame_node)
-        {
-            if (optimization_settings.read_in_order && !make_distributed_plan)
-                optimizeReadInOrder(frame_node, nodes, optimization_settings);
-
-            if (optimization_settings.distinct_in_order && !make_distributed_plan)
-                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
-        },
+        [&](auto &) {},
         [&](auto & frame_node)
         {
             /// After all children were processed, try to apply distributed read, join and aggregation optimizations.
@@ -431,6 +399,8 @@ void optimizeTreeSecondPass(
                 tryMakeDistributedRead(frame_node, nodes, optimization_settings);
             }
         });
+
+    applyParallelReplicas(query_plan, nodes, optimization_settings);
 
     /// Distributed joins now live inside fragments and are converted by each fragment's own
     /// re-optimization. Convert the joins left in the outer plan (non-distributed kinds, or all of them
@@ -597,7 +567,6 @@ void optimizeTreeSecondPass(
                 const QueryPlanOptimizationSettings subquery_optimization_settings(local_context);
                 local_optimization_settings.read_in_order = subquery_optimization_settings.read_in_order;
                 local_optimization_settings.read_in_order_through_join = subquery_optimization_settings.read_in_order_through_join;
-                local_optimization_settings.distributed_plan_read_in_order = subquery_optimization_settings.distributed_plan_read_in_order;
                 local_optimization_settings.aggregation_in_order = subquery_optimization_settings.aggregation_in_order;
                 local_optimization_settings.distinct_in_order = subquery_optimization_settings.distinct_in_order;
                 local_optimization_settings.reuse_storage_ordering_for_window_functions
