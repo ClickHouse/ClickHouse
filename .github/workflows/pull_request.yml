@@ -1212,7 +1212,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (wasm_parser)' --workflow "PR" --ci --timestamp
 
   build_amd_windows:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-amd-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF93aW5kb3dzKQ==') }}
     name: "Build (amd_windows)"
