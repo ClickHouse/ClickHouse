@@ -53,7 +53,8 @@ The same approval-gated escalation can separately grant time-bound access to inf
 
 Engineer activity is visible to you and audited by ClickHouse:
 
-- **Customer-visible**: every query a ClickHouse engineer runs on your instance appears in your own `system.query_log`, including the query text and the certificate identity. You can audit this from your ClickHouse service directly.
+- **Customer-visible (ClickHouse)**: every query a ClickHouse engineer runs on your instance appears in your own `system.query_log`, including the query text and the certificate identity. You can audit this from your ClickHouse service directly.
+- **Customer-visible (infrastructure)**: `system.query_log` cannot show the infrastructure surfaces above. Kubernetes API calls appear in your cluster's Kubernetes audit logs, cloud API calls in your cloud audit trail, and the Tailscale connections themselves in your flow logs where you have them enabled. See [Auditing the boundary](/products/bring-your-own-cloud/reference/network-security#auditing-the-boundary) for where each of these lives per cloud, including which are on by default.
 - **ClickHouse-side**: ClickHouse's security team internally logs and audits all access requests, approvals, and Tailscale connections.
 
 ## Future controls {#future-controls}
