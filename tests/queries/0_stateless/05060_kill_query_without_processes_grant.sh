@@ -10,40 +10,44 @@ P_ALL="pall_${CLICKHOUSE_DATABASE}"
 P_U1="pu1_${CLICKHOUSE_DATABASE}"
 Q1="q1_${CLICKHOUSE_DATABASE}"
 SUFFIX="_${CLICKHOUSE_DATABASE}"
-# The marker keeps the victims out of reach of other tests that kill by query text.
-LONG="SELECT sleep(1) FROM numbers(10000) WHERE ignore('$CLICKHOUSE_DATABASE') = 0 SETTINGS max_block_size = 1, max_rows_to_read = 0"
+# The marker keeps the victims out of reach of other tests that kill by query text. A KILL cannot land
+# while a sleep chunk is in progress, so the interval bounds how long every KILL below waits, and the
+# row count keeps the victim's nominal runtime at 10000 seconds.
+LONG="SELECT sleep(0.05) FROM numbers(200000) WHERE ignore('$CLICKHOUSE_DATABASE') = 0 SETTINGS max_block_size = 1, max_rows_to_read = 0"
 # Two settings nothing else in the test sets, and one that only the caller's own victim sets. None of
 # them is randomized by the test runner, so the two key sets differ in both directions on every run.
 WIDE="$LONG, totals_auto_threshold = 0.123, insert_quorum_timeout = 600001"
 NARROW="$LONG, distributed_connections_pool_size = 1023"
 VICTIMS=""
 
-$CLICKHOUSE_CLIENT -q "
-    DROP ROW POLICY IF EXISTS $P_U1 ON system.processes;
-    DROP ROW POLICY IF EXISTS $P_ALL ON system.processes;
-    DROP QUOTA IF EXISTS $Q1;
-    DROP USER IF EXISTS $U1;
-    DROP USER IF EXISTS $U2;
-    CREATE USER $U1 IDENTIFIED WITH no_password;
-    CREATE USER $U2 IDENTIFIED WITH no_password;
-"
+# The native client is used only for what the test asserts on: the KILL QUERY statements, and the
+# victims whose rows they match. Setup, cleanup and observation go over HTTP, which does not pay a
+# client process startup per statement. HTTP takes one statement per request, so a block is sent as one
+# argument per statement.
+via_http() {
+    local stmt
+    for stmt in "$@"; do
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "$stmt" || return 1
+    done
+}
+
+via_http "DROP ROW POLICY IF EXISTS $P_U1 ON system.processes" \
+         "DROP ROW POLICY IF EXISTS $P_ALL ON system.processes" \
+         "DROP QUOTA IF EXISTS $Q1" \
+         "DROP USER IF EXISTS $U1" \
+         "DROP USER IF EXISTS $U2" \
+         "CREATE USER $U1 IDENTIFIED WITH no_password" \
+         "CREATE USER $U2 IDENTIFIED WITH no_password"
 
 start_victim() { # user, query_id, [query]
     $CLICKHOUSE_CLIENT --user "$1" --query_id "$2" -q "${3:-$LONG}" > /dev/null 2>&1 &
     VICTIMS="$VICTIMS $!"
     # Detach so that the shell does not report the signal when a still running victim is stopped.
     disown %% 2> /dev/null
-    local start=$EPOCHSECONDS
-    while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$2'") == 0 ]]; do
-        if ((EPOCHSECONDS - start > 60)); then
-            echo "Timeout waiting for query $2 to start" >&2
-            exit 1
-        fi
-        sleep 0.1
-    done
+    wait_for_query_to_start "$2" 60
 }
 
-alive() { $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$1'"; }
+alive() { via_http "SELECT count() FROM system.processes WHERE query_id = '$1' SETTINGS use_query_cache = 0"; }
 
 # A killed query leaves the process list asynchronously, so poll rather than sampling once.
 gone() {
@@ -67,20 +71,18 @@ matched() { grep -c -F "$1" | sed 's/^[1-9][0-9]*$/1/'; }
 # Rows the caller's quota has been charged for so far. An interval row only exists once something has
 # been charged, so an absent one reads as 0 rather than as an empty result.
 quota_read_rows() {
-    $CLICKHOUSE_CLIENT -q "SELECT toUInt64(ifNull(max(read_rows), 0)) FROM system.quotas_usage WHERE quota_name = '$Q1'"
+    via_http "SELECT toUInt64(ifNull(max(read_rows), 0)) FROM system.quotas_usage WHERE quota_name = '$Q1'"
 }
 
 reset_arm() {
     for pid in $VICTIMS; do kill -9 "$pid" 2> /dev/null; done
     VICTIMS=""
-    $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id LIKE '%\\$SUFFIX' SYNC" > /dev/null
-    $CLICKHOUSE_CLIENT -q "
-        DROP ROW POLICY IF EXISTS $P_U1 ON system.processes;
-        DROP ROW POLICY IF EXISTS $P_ALL ON system.processes;
-        DROP QUOTA IF EXISTS $Q1;
-        REVOKE ALL ON *.* FROM $U1;
-        REVOKE ALL ON *.* FROM $U2;
-    "
+    via_http "KILL QUERY WHERE query_id LIKE '%\\$SUFFIX' SYNC" \
+             "DROP ROW POLICY IF EXISTS $P_U1 ON system.processes" \
+             "DROP ROW POLICY IF EXISTS $P_ALL ON system.processes" \
+             "DROP QUOTA IF EXISTS $Q1" \
+             "REVOKE ALL ON *.* FROM $U1" \
+             "REVOKE ALL ON *.* FROM $U2" > /dev/null
 }
 
 # A row policy on a system table is server wide, and under
@@ -88,10 +90,8 @@ reset_arm() {
 # to every user no policy applies to. The permissive policy keeps those users unaffected so the
 # restrictive one can single out $U1 while other tests run concurrently.
 policy_on_u1() { # filter expression
-    $CLICKHOUSE_CLIENT -q "
-        CREATE ROW POLICY $P_ALL ON system.processes USING 1 TO ALL;
-        CREATE ROW POLICY $P_U1 ON system.processes AS RESTRICTIVE USING $1 TO $U1;
-    "
+    via_http "CREATE ROW POLICY $P_ALL ON system.processes USING 1 TO ALL" \
+             "CREATE ROW POLICY $P_U1 ON system.processes AS RESTRICTIVE USING $1 TO $U1"
 }
 
 # 1: the fix. Without SELECT on system.processes a user could not kill even their own query.
@@ -102,7 +102,7 @@ gone "own1$SUFFIX"; echo "1 alive=$(alive "own1$SUFFIX")"
 reset_arm
 
 # 2: the same kill by a user who holds the grant keeps taking the unchanged code path.
-$CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.processes TO $U1"
+via_http "GRANT SELECT ON system.processes TO $U1"
 start_victim "$U1" "own2$SUFFIX"
 echo -n "2 killed="
 $CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own2$SUFFIX' SYNC" 2>&1 | killed "own2$SUFFIX"
@@ -127,7 +127,7 @@ reset_arm
 
 # 5: holding KILL QUERY does not widen what a caller who cannot read system.processes reaches. The
 # foreign query is ignored, exactly as in arm 3, rather than killed or reported as an error.
-$CLICKHOUSE_CLIENT -q "GRANT KILL QUERY ON *.* TO $U1"
+via_http "GRANT KILL QUERY ON *.* TO $U1"
 start_victim "$U2" "foreign5$SUFFIX"
 out=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'foreign5$SUFFIX' SYNC" 2>&1)
 echo "5 killed=$(printf '%s\n' "$out" | killed "foreign5$SUFFIX")"
@@ -154,19 +154,19 @@ out=$($CLICKHOUSE_CLIENT --user "$U1" --query_id "kill7$SUFFIX" -q "KILL QUERY W
 echo "7 hidden killed=$(printf '%s\n' "$out" | killed "own7$SUFFIX")"
 echo "7 hidden exception=$(printf '%s\n' "$out" | matched "DB::Exception")"
 echo "7 hidden alive=$(alive "own7$SUFFIX")"
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-echo "7 hidden used_policy=$($CLICKHOUSE_CLIENT -q "
+via_http "SYSTEM FLUSH LOGS query_log"
+echo "7 hidden used_policy=$(via_http "
     SELECT toUInt8(ifNull(max(has(used_row_policies, '$P_U1 ON system.processes')), 0))
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_id = 'kill7$SUFFIX'")"
-$CLICKHOUSE_CLIENT -q "DROP ROW POLICY $P_U1 ON system.processes"
+via_http "DROP ROW POLICY $P_U1 ON system.processes"
 echo -n "7 admitted killed="
 $CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own7$SUFFIX' SYNC" 2>&1 | killed "own7$SUFFIX"
 gone "own7$SUFFIX"; echo "7 admitted alive=$(alive "own7$SUFFIX")"
 reset_arm
 
 # 8: additional_table_filters keeps applying on the path taken by a caller who holds the grant.
-$CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.processes TO $U1"
+via_http "GRANT SELECT ON system.processes TO $U1"
 start_victim "$U1" "own8$SUFFIX"
 echo -n "8 killed="
 $CLICKHOUSE_CLIENT --user "$U1" --additional_table_filters="{'system.processes': '1=0'}" \
@@ -203,7 +203,7 @@ echo "10 control alive=$(alive "own10$SUFFIX")"
 reset_arm
 
 # 12: a grant covering only some of the columns the statement reads still cannot read the table.
-$CLICKHOUSE_CLIENT -q "GRANT SELECT(query_id, user) ON system.processes TO $U1"
+via_http "GRANT SELECT(query_id, user) ON system.processes TO $U1"
 start_victim "$U1" "own12$SUFFIX"
 echo -n "12 killed="
 $CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own12$SUFFIX' SYNC" 2>&1 | killed "own12$SUFFIX"
@@ -218,7 +218,7 @@ out=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own13$SUF
 echo "13 hidden killed=$(printf '%s\n' "$out" | killed "own13$SUFFIX")"
 echo "13 hidden exception=$(printf '%s\n' "$out" | matched "DB::Exception")"
 echo "13 hidden alive=$(alive "own13$SUFFIX")"
-$CLICKHOUSE_CLIENT -q "DROP ROW POLICY $P_U1 ON system.processes"
+via_http "DROP ROW POLICY $P_U1 ON system.processes"
 echo -n "13 admitted killed="
 $CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own13$SUFFIX' SYNC" 2>&1 | killed "own13$SUFFIX"
 gone "own13$SUFFIX"; echo "13 admitted alive=$(alive "own13$SUFFIX")"
@@ -240,7 +240,7 @@ out=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own15$SUF
 echo "15 hidden killed=$(printf '%s\n' "$out" | killed "own15$SUFFIX")"
 echo "15 hidden exception=$(printf '%s\n' "$out" | matched "DB::Exception")"
 echo "15 hidden alive=$(alive "own15$SUFFIX")"
-$CLICKHOUSE_CLIENT -q "DROP ROW POLICY $P_U1 ON system.processes"
+via_http "DROP ROW POLICY $P_U1 ON system.processes"
 echo -n "15 admitted killed="
 $CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own15$SUFFIX' SYNC" 2>&1 | killed "own15$SUFFIX"
 gone "own15$SUFFIX"; echo "15 admitted alive=$(alive "own15$SUFFIX")"
@@ -257,7 +257,7 @@ reset_arm
 # 17: a grant covering exactly the columns the statement reads is enough to keep the caller on the
 # unchanged path, where a match that names only another user's query is still refused. This is what
 # distinguishes the per-column grant check from a table-wide one, which would divert this caller.
-$CLICKHOUSE_CLIENT -q "GRANT SELECT(query_id, user, query) ON system.processes TO $U1"
+via_http "GRANT SELECT(query_id, user, query) ON system.processes TO $U1"
 start_victim "$U2" "foreign17$SUFFIX"
 out=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'foreign17$SUFFIX' SYNC" 2>&1)
 echo "17 killed=$(printf '%s\n' "$out" | killed "foreign17$SUFFIX")"
@@ -271,10 +271,10 @@ reset_arm
 # statement itself, so the charge is exactly one, while the six foreign victims still running would make
 # a leaked scan cost at least eight. That the caller's own read is metered at all is asserted in arm 19,
 # whose counter is per query.
-$CLICKHOUSE_CLIENT -q "CREATE QUOTA $Q1 FOR INTERVAL 1 HOUR MAX READ ROWS = 1000000 TO $U1"
+via_http "CREATE QUOTA $Q1 FOR INTERVAL 1 HOUR MAX READ ROWS = 1000000 TO $U1"
 for n in 1 2 3 4 5 6; do start_victim "$U2" "foreign18$n$SUFFIX"; done
 start_victim "$U1" "own18$SUFFIX"
-echo "18 own=$(alive "own18$SUFFIX") foreign=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id LIKE 'foreign18%\\$SUFFIX'")"
+echo "18 own=$(alive "own18$SUFFIX") foreign=$(via_http "SELECT count() FROM system.processes WHERE query_id LIKE 'foreign18%\\$SUFFIX'")"
 out=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id LIKE '%\\$SUFFIX' SYNC" 2>&1)
 echo "18 killed=$(printf '%s\n' "$out" | killed "own18$SUFFIX")"
 echo "18 exception=$(printf '%s\n' "$out" | matched "DB::Exception")"
@@ -298,9 +298,9 @@ progress_rows=$(${CLICKHOUSE_CURL} -sS -D - -o /dev/null \
     | grep -a -i -m1 '^X-ClickHouse-Summary' | grep -o -m1 '"read_rows":"[0-9]*"' | tr -dc 0-9)
 echo "19 progress_in_band=$(( ${progress_rows:-0} >= 1 && ${progress_rows:-0} <= 6 ? 1 : 0 ))"
 gone "own19$SUFFIX"; echo "19 alive=$(alive "own19$SUFFIX")"
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+via_http "SYSTEM FLUSH LOGS query_log"
 log_start=$EPOCHSECONDS
-while [[ $($CLICKHOUSE_CLIENT -q "
+while [[ $(via_http "
     SELECT count() FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_id = 'kill19$SUFFIX'") == 0 ]]; do
     if ((EPOCHSECONDS - log_start > 60)); then
@@ -308,9 +308,9 @@ while [[ $($CLICKHOUSE_CLIENT -q "
         break
     fi
     sleep 0.5
-    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+    via_http "SYSTEM FLUSH LOGS query_log"
 done
-echo "19 selected_rows_in_band=$($CLICKHOUSE_CLIENT -q "
+echo "19 selected_rows_in_band=$(via_http "
     SELECT toUInt8(ifNull(max(ProfileEvents['SelectedRows']), 0) BETWEEN 1 AND 6)
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_id = 'kill19$SUFFIX'")"
@@ -334,4 +334,4 @@ $CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own20$SUFFIX'
 gone "own20$SUFFIX"; echo "20 control alive=$(alive "own20$SUFFIX")"
 reset_arm
 
-$CLICKHOUSE_CLIENT -q "DROP USER $U1, $U2"
+via_http "DROP USER $U1, $U2"
