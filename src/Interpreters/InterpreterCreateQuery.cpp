@@ -12,6 +12,7 @@
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/stripQuerySettings.h>
+#include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
@@ -385,6 +386,20 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
+    /// A database engine that takes a named collection registers the dependency of this database on the
+    /// collection while `DatabaseFactory` resolves the engine arguments - before the database is attached,
+    /// and before anything that can still fail. Such an entry must not outlive a failed create: it is keyed
+    /// by the database name only, and `DROP NAMED COLLECTION` would take a database created under that name
+    /// later (with another engine, or another collection) for a user of the collection, refusing the drop
+    /// while no metadata references the collection any more. The database-level `DDLGuard` acquired above
+    /// is held until this function returns, so no other create of this name is in flight, and, as the
+    /// database does not exist, every live entry under the name belongs to this or an earlier failed create.
+    bool created = false;
+    SCOPE_EXIT({
+        if (!created)
+            NamedCollectionFactory::instance().removeDependencies(StorageID::createDatabaseOnly(database_name));
+    });
+
     DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext(), mode, internal);
 
     if (create.uuid != UUIDHelpers::Nil)
@@ -455,6 +470,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw;
     }
 
+    created = true;
     return {};
 }
 

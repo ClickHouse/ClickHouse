@@ -93,7 +93,10 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
             {
                 /// A dependency with an empty table name belongs to a database engine. Its metadata
                 /// is replayed on every server start just like table metadata, so it must keep the
-                /// collection alive while that database exists.
+                /// collection alive while that database exists. The entry is keyed by the database name
+                /// only, which suffices: a `CREATE DATABASE` that fails after the engine registered the
+                /// entry removes it again (`InterpreterCreateQuery::createDatabase`), so a database that
+                /// exists under the recorded name is the one the entry was registered for.
                 if (dep.table_name.empty())
                 {
                     if (DatabaseCatalog::instance().tryGetDatabase(dep.database_name))
