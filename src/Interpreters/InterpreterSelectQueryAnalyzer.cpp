@@ -24,6 +24,7 @@
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
@@ -274,9 +275,27 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     if (select_query_options.ignore_ast_optimizations
         || select_query_options.is_create_view
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
         query_tree_pass_manager.runOnlyResolve(query_tree);
+
+        /// Shards of distributed queries run only the resolve passes, and the initiator cannot
+        /// rewrite functions to subcolumns because it does not know the shards' schema and indexes.
+        /// Rewrites inside WHERE/PREWHERE do not change the header, so they are applied here.
+        bool is_query_on_shard = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+            || select_query_options.is_local_plan_for_distributed_query
+            || select_query_options.build_logical_plan;
+
+        if (is_query_on_shard && !select_query_options.is_create_view)
+        {
+            QueryTreePassManager function_to_subcolumns_pass_manager(context);
+            function_to_subcolumns_pass_manager.addPass(std::make_unique<FunctionToSubcolumnsPass>(/*only_filter_clauses=*/ true));
+            function_to_subcolumns_pass_manager.run(query_tree);
+        }
+    }
     else
+    {
         query_tree_pass_manager.run(query_tree);
+    }
 
     if (storage)
         replaceStorageInQueryTree(query_tree, context, storage);

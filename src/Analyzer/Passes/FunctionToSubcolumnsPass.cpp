@@ -1310,8 +1310,16 @@ public:
         if (chain_func && chain_col && chain_source)
         {
             auto column = chain_col->getColumn();
+            auto qualified_name = makeColumnInSource(chain_source, column.name);
 
-            if (!identifiers_to_optimize.everywhere.contains(makeColumnInSource(chain_source, column.name)))
+            bool should_optimize = identifiers_to_optimize.everywhere.contains(qualified_name);
+            if (!should_optimize
+                && identifiers_to_optimize.filter_only.contains(qualified_name)
+                && !in_where_prewhere_stack.empty()
+                && in_where_prewhere_stack.back())
+                should_optimize = true;
+
+            if (!should_optimize)
                 return;
 
             auto it = chained_node_transformers.find({column.type->getTypeId(), chain_func->getFunctionName()});
@@ -1403,6 +1411,13 @@ void FunctionToSubcolumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPt
     FunctionToSubcolumnsVisitorFirstPass first_visitor(context);
     first_visitor.visit(query_tree_node);
     auto identifiers_to_optimize = first_visitor.getIdentifiersToOptimize();
+
+    if (only_filter_clauses)
+    {
+        identifiers_to_optimize.filter_only.insert(
+            identifiers_to_optimize.everywhere.begin(), identifiers_to_optimize.everywhere.end());
+        identifiers_to_optimize.everywhere.clear();
+    }
 
     if (identifiers_to_optimize.empty())
         return;

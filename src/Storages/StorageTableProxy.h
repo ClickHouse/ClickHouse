@@ -52,6 +52,15 @@ public:
         return IStorage::getInMemoryMetadataPtr(context_, bypass_metadata_cache);
     }
 
+    /// Ignore base_metadata: before the nested table is materialized it is the proxy's stub
+    /// (columns only - no keys, no indices, no virtuals), while getNested() materializes anyway.
+    /// Unlike StorageTableFunctionProxy, the stub carries no intentional structure difference.
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr &, ContextPtr query_context) const override
+    {
+        const auto nested_metadata = getNested()->getInMemoryMetadataPtr(query_context, false);
+        return std::make_shared<StorageSnapshot>(*this, nested_metadata);
+    }
+
     StoragePtr getNested() const override
     {
         std::lock_guard lock{nested_mutex};
