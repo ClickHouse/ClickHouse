@@ -1,8 +1,10 @@
 #include <Core/ProtocolDefines.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ClientInfo.h>
+#include <base/EnumReflection.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -16,9 +18,12 @@
 #include <fmt/format.h>
 #include <unistd.h>
 
+#include <array>
 #include <cstdlib>
 #include <cstring>
 #include <optional>
+#include <string_view>
+#include <utility>
 
 
 namespace DB
@@ -627,6 +632,121 @@ String toString(ClientInfo::HTTPMethod method)
         case ClientInfo::HTTPMethod::HEAD:
             return "HEAD";
     }
+}
+
+namespace
+{
+
+template <typename Mapping, typename Values>
+constexpr bool everyValueIsNamed(const Mapping & mapping, const Values & values)
+{
+    for (const auto & value : values)
+    {
+        bool named = false;
+        for (const auto & entry : mapping)
+            named = named || entry.second == value;
+        if (!named)
+            return false;
+    }
+    return true;
+}
+
+template <typename Mapping>
+constexpr bool everyNameIsNonEmptyAndUnique(const Mapping & mapping)
+{
+    for (size_t i = 0; i < mapping.size(); ++i)
+    {
+        if (mapping[i].first.empty())
+            return false;
+        for (size_t j = i + 1; j < mapping.size(); ++j)
+            if (mapping[i].first == mapping[j].first)
+                return false;
+    }
+    return true;
+}
+
+/// The names `system.session_log.interface` publishes; renaming one changes a published value.
+constexpr std::array interface_names
+{
+    std::pair{std::string_view{"TCP"}, ClientInfo::Interface::TCP},
+    std::pair{std::string_view{"HTTP"}, ClientInfo::Interface::HTTP},
+    std::pair{std::string_view{"gRPC"}, ClientInfo::Interface::GRPC},
+    std::pair{std::string_view{"MySQL"}, ClientInfo::Interface::MYSQL},
+    std::pair{std::string_view{"PostgreSQL"}, ClientInfo::Interface::POSTGRESQL},
+    std::pair{std::string_view{"Local"}, ClientInfo::Interface::LOCAL},
+    std::pair{std::string_view{"TCP_Interserver"}, ClientInfo::Interface::TCP_INTERSERVER},
+    std::pair{std::string_view{"Prometheus"}, ClientInfo::Interface::PROMETHEUS},
+    std::pair{std::string_view{"Background"}, ClientInfo::Interface::BACKGROUND},
+    std::pair{std::string_view{"ArrowFlight"}, ClientInfo::Interface::ARROW_FLIGHT},
+};
+
+constexpr std::array http_method_names
+{
+    std::pair{std::string_view{"UNKNOWN"}, ClientInfo::HTTPMethod::UNKNOWN},
+    std::pair{std::string_view{"GET"}, ClientInfo::HTTPMethod::GET},
+    std::pair{std::string_view{"POST"}, ClientInfo::HTTPMethod::POST},
+    std::pair{std::string_view{"OPTIONS"}, ClientInfo::HTTPMethod::OPTIONS},
+    std::pair{std::string_view{"PUT"}, ClientInfo::HTTPMethod::PUT},
+    std::pair{std::string_view{"DELETE"}, ClientInfo::HTTPMethod::DELETE},
+    std::pair{std::string_view{"HEAD"}, ClientInfo::HTTPMethod::HEAD},
+};
+
+/// Assert that the mapping covers the enum rather than that it has some size: a count is satisfiable by editing the count.
+static_assert(interface_names.size() == magic_enum::enum_count<ClientInfo::Interface>());
+static_assert(everyValueIsNamed(interface_names, magic_enum::enum_values<ClientInfo::Interface>()));
+static_assert(everyNameIsNonEmptyAndUnique(interface_names));
+
+static_assert(http_method_names.size() == magic_enum::enum_count<ClientInfo::HTTPMethod>());
+static_assert(everyValueIsNamed(http_method_names, magic_enum::enum_values<ClientInfo::HTTPMethod>()));
+static_assert(everyNameIsNonEmptyAndUnique(http_method_names));
+
+template <typename Mapping>
+DataTypeEnum8::Values enumValues(const Mapping & mapping)
+{
+    DataTypeEnum8::Values values;
+    values.reserve(mapping.size());
+    for (const auto & [name, value] : mapping)
+        values.emplace_back(std::string{name}, static_cast<Int8>(value));
+    return values;
+}
+
+template <typename Mapping, typename Enum>
+constexpr bool isNamed(const Mapping & mapping, Enum value)
+{
+    for (const auto & entry : mapping)
+        if (entry.second == value)
+            return true;
+    return false;
+}
+
+}
+
+DataTypePtr getClientInterfaceEnum()
+{
+    return std::make_shared<DataTypeEnum8>(enumValues(interface_names));
+}
+
+DataTypePtr getReportedClientInterfaceEnum()
+{
+    auto values = enumValues(interface_names);
+    values.emplace_back("Unknown", 0);
+    return std::make_shared<DataTypeEnum8>(std::move(values));
+}
+
+Int8 reportedClientInterfaceEnumValue(ClientInfo::Interface interface)
+{
+    /// `Interface` starts at 1, so 0 is free for `Unknown`.
+    return isNamed(interface_names, interface) ? static_cast<Int8>(interface) : 0;
+}
+
+DataTypePtr getClientHTTPMethodEnum()
+{
+    return std::make_shared<DataTypeEnum8>(enumValues(http_method_names));
+}
+
+Int8 reportedClientHTTPMethodEnumValue(ClientInfo::HTTPMethod method)
+{
+    return isNamed(http_method_names, method) ? static_cast<Int8>(method) : static_cast<Int8>(ClientInfo::HTTPMethod::UNKNOWN);
 }
 
 }
