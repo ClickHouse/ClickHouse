@@ -1039,6 +1039,7 @@ The server successfully detected this situation and will download merged part fr
     M(AdaptiveAggregationDrainedRecords, "How many delayed records the adaptive aggregation drained into the shared table at merge time.", ValueType::Number) \
     M(AdaptiveAggregationPressureSweeps, "How many times the adaptive aggregation drained staged records early because of memory pressure.", ValueType::Number) \
     M(AdaptiveAggregationPressureDrainedRecords, "How many staged records the adaptive aggregation drained early under memory pressure.", ValueType::Number) \
+    M(AdaptiveAggregationSpillDrains, "How many spill requests from the memory scheduler the adaptive aggregation served by draining staged records early instead of leaving the adaptive path.", ValueType::Number) \
     M(AdaptiveAggregationSpillBacklogSheds, "How many times the adaptive aggregation shed the staged backlog because a thread on the baseline algorithm - one the thaw put back there, or one that stood down on its own - was about to spill while staged records were still resident.", ValueType::Number) \
     M(AdaptiveAggregationResidueReleases, "How many times the adaptive aggregation wrote its shared drain table out because a thread back on the baseline algorithm was about to spill on account of it.", ValueType::Number) \
     M(AdaptiveAggregationSharedTableSpills, "How many times the adaptive aggregation wrote its shared drain table out because it reached the part bound under memory pressure.", ValueType::Number) \

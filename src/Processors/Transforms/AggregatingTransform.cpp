@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <utility>
 
 namespace CurrentMetrics
 {
@@ -37,6 +38,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event ExternalAggregationMerge;
+    extern const Event AdaptiveAggregationPressureStandDowns;
     extern const Event AggregationSharedKeptKeysRebuilds;
 }
 
@@ -1229,6 +1231,8 @@ AggregatingTransform::AggregatingTransform(
     /// staged, so the merge-time drains find empty backlogs and do nothing.
     if (many_data->adaptive_session && params->aggregator.getParams().enable_adaptive_aggregator)
         adaptive_context = std::make_unique<AdaptiveAggregationProducer>(many_data->adaptive_session);
+    registerProcessor();
+    spillable_registered = true;
 }
 
 AggregatingTransform::~AggregatingTransform() = default;
@@ -1250,6 +1254,14 @@ size_t AggregatingTransform::getGeneratingStepGroup() const
 }
 
 IProcessor::Status AggregatingTransform::prepare()
+{
+    const auto status = prepareImpl();
+    if (status == Status::Finished && std::exchange(spillable_registered, false))
+        unregisterProcessor();
+    return status;
+}
+
+IProcessor::Status AggregatingTransform::prepareImpl()
 {
     /// There are one or two input ports.
     /// The first one is used at aggregation step, the second one - while reading merged data from ConvertingAggregated
@@ -1484,6 +1496,55 @@ void AggregatingTransform::applySharedKeptKeysCutoff(bool may_freeze)
     rebuildVariantsToKeptKeys(aggregator, variants, shared.seed, std::move(own_chunks), is_cancelled);
     shared.applied[variant_index] = 1;
     no_more_keys = true;
+}
+
+ProcessorMemoryStats AggregatingTransform::getMemoryStats() const
+{
+    /// Reclaimable only while the table is still being filled and can be written out as two-level.
+    if (is_consume_finished || variants.empty() || !params->params.tmp_data_scope)
+        return {};
+    if (!variants.isTwoLevel() && !variants.isConvertibleToTwoLevel())
+        return {};
+    ProcessorMemoryStats res;
+    res.spillable_memory_bytes = variants.memoryUsage();
+    res.need_reserved_memory_bytes = variants.isTwoLevel() ? /* negligible */ 0 : res.spillable_memory_bytes;
+    /// Split the shared backlog estimate among unfinished producers, so their reports take over
+    /// the shares of producers that have finished.
+    if (adaptive_context && adaptive_context->session->initialized.load(std::memory_order_acquire))
+    {
+        const size_t remaining_producers = many_data->num_producers - many_data->num_finished.load(std::memory_order_acquire);
+        chassert(remaining_producers > 0); /// This producer has not reached the finish barrier yet.
+        res.spillable_memory_bytes += adaptive_context->session->backlog.enqueuedBytes() / remaining_producers;
+    }
+    return res;
+}
+
+size_t AggregatingTransform::spill(size_t at_least_bytes)
+{
+    if (!getMemoryStats().spillable_memory_bytes)
+        return 0;
+
+    size_t spilled = 0;
+    if (adaptive_context && adaptive_context->session->initialized.load(std::memory_order_acquire))
+    {
+        /// The staged backlog is the bulk of the memory under the adaptive path, and a frozen
+        /// table is bounded by the freeze threshold, so shed the backlog first, this producer's
+        /// buffered chunks included.
+        params->aggregator.flushPendingChunks(*adaptive_context);
+        spilled = params->aggregator.drainStagedChunksForSpill(*adaptive_context->session, at_least_bytes);
+        if (spilled >= at_least_bytes)
+            return spilled;
+    }
+
+    /// Only the baseline path flushes: a learning or frozen table leaves the adaptive path for good,
+    /// the records it staged so far stay published and are drained by the merge (same as the thaw).
+    if (adaptive_context && !adaptive_context->isBaseline())
+    {
+        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureStandDowns);
+        adaptive_context->standDown(AdaptiveAggregationProducer::BaselineState::Reason::MemoryPressure);
+    }
+
+    return spilled + params->aggregator.spill(variants);
 }
 
 void AggregatingTransform::initGenerate()
