@@ -8,6 +8,7 @@
 #include <Common/Logger.h>
 #include <Common/Macros.h>
 #include <Formats/FormatSettings.h>
+#include <limits>
 
 namespace DB
 {
@@ -115,6 +116,80 @@ private:
     const std::shared_ptr<ExpressionActions> filter_actions;
     const std::function<void(FileProgress)> file_progress_callback;
     LoggerPtr log = getLogger("ObjectIteratorWithPathAndFileFilter");
+};
+
+/// Replays an already-enumerated prefix, then continues delegating to the underlying iterator.
+/// Enumerating a prefix consumes it destructively; this restores what the consumer would
+/// otherwise never see.
+class ObjectIteratorReplayThenDelegate : public IObjectIterator
+{
+public:
+    ObjectIteratorReplayThenDelegate(ObjectInfos replay_, ObjectIterator iterator_)
+        : replay(std::move(replay_)), iterator(std::move(iterator_))
+    {
+    }
+
+    ObjectInfoPtr next(size_t id) override
+    {
+        {
+            std::lock_guard lock(mutex);
+            if (replay_pos < replay.size())
+                return replay[replay_pos++];
+        }
+        return iterator->next(id);
+    }
+
+    /// The un-replayed prefix counts too: a drained delegate can report 0, and a consumer seeing
+    /// <= 1 key collapses to a single stream.
+    size_t estimatedKeysCount() override
+    {
+        const size_t delegate_count = iterator->estimatedKeysCount();
+        if (delegate_count == std::numeric_limits<size_t>::max())
+            return delegate_count;
+
+        std::lock_guard lock(mutex);
+        return (replay.size() - replay_pos) + delegate_count;
+    }
+
+    std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+
+    void setEmitProfileEvents(bool value) override
+    {
+        emit_profile_events = value;
+        iterator->setEmitProfileEvents(value);
+    }
+
+private:
+    std::mutex mutex;
+    const ObjectInfos replay;
+    size_t replay_pos = 0;
+    const ObjectIterator iterator;
+};
+
+/// Hands out exactly one object, then reports exhaustion. Gives a source a private file so
+/// file-to-stream assignment is deterministic rather than a pull race.
+class SingleObjectIterator : public IObjectIterator
+{
+public:
+    SingleObjectIterator(ObjectInfoPtr object_, ObjectIterator snapshot_source_)
+        : object(std::move(object_)), snapshot_source(std::move(snapshot_source_))
+    {
+    }
+
+    ObjectInfoPtr next(size_t) override
+    {
+        if (consumed.exchange(true))
+            return nullptr;
+        return object;
+    }
+
+    size_t estimatedKeysCount() override { return 1; }
+    std::optional<UInt64> getSnapshotVersion() const override { return snapshot_source->getSnapshotVersion(); }
+
+private:
+    const ObjectInfoPtr object;
+    const ObjectIterator snapshot_source;
+    std::atomic_bool consumed = false;
 };
 
 class ObjectIteratorSplitByBuckets : public IObjectIterator, private WithContext
