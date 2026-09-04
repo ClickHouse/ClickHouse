@@ -482,6 +482,34 @@ public:
     }
 
     /**
+     * Remove a value from the set, if it is present.
+     */
+    void remove(T value)
+    {
+        if (isSmall())
+        {
+            if (small.find(value) == small.end())
+                return;
+
+            /// `SmallSet` has no erase, and it holds at most `small_set_size` elements,
+            /// so rebuild it without the removed value.
+            ValueBuffer buffer;
+            buffer.reserve(small.size());
+            for (const auto & x : small)
+                if (x.getValue() != value)
+                    buffer.push_back(x.getValue());
+
+            small.clear();
+            for (const auto & x : buffer)
+                small.insert(x);
+        }
+        else
+        {
+            roaring_bitmap->remove(static_cast<Value>(value));
+        }
+    }
+
+    /**
      * Convert elements to integer array, return number of elements
      */
     template <typename Element>
