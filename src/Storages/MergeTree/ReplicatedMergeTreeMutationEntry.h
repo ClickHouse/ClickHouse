@@ -33,6 +33,7 @@ struct ReplicatedMergeTreeMutationEntry
 
     /// Replica which initiated mutation
     String source_replica;
+    String author;
 
     /// Acquired block numbers
     /// partition_id -> block_number

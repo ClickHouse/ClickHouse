@@ -1281,6 +1281,12 @@ public:
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
+    /// The user to record as the author of a mutation entry created by `query_context`.
+    /// Returns an empty string when the `persist_mutation_author` setting is disabled, which
+    /// keeps the serialized mutation entry byte-for-byte identical to the format used by
+    /// servers that do not know about the `author` field.
+    String getMutationAuthor(const ContextPtr & query_context) const;
+
     /// Returns true if table can create new parts with adaptive granularity
     /// Has additional constraint in replicated version
     virtual bool canUseAdaptiveGranularity() const;

@@ -356,6 +356,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool prewarm_primary_key_cache;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
     extern const MergeTreeSettingsBool primary_key_lazy_load;
+    extern const MergeTreeSettingsBool persist_mutation_author;
     extern const MergeTreeSettingsBool apply_patches_on_merge;
     extern const MergeTreeSettingsMergeTreePatchPartsVersion patch_parts_version;
     extern const MergeTreeSettingsBool enforce_index_structure_match_on_partition_manipulation;
@@ -13301,6 +13302,26 @@ MergeTreeSettingsPtr MergeTreeData::getSettings(const SettingsChanges * settings
     }
 
     return data_settings;
+}
+
+/// The author is only informational, so a very long user name is truncated rather than rejected.
+static constexpr size_t MAX_MUTATION_AUTHOR_SIZE = 256;
+
+String MergeTreeData::getMutationAuthor(const ContextPtr & query_context) const
+{
+    if (!(*getSettings())[MergeTreeSetting::persist_mutation_author])
+        return {};
+
+    /// The mutation is attributed to the user who issued the query, not to the one the query
+    /// arrived as on this node: for a distributed or `ON CLUSTER` query `current_user` is the
+    /// inter-server user, while `initial_user` is the human who started it.
+    const auto & client_info = query_context->getClientInfo();
+    String author = client_info.initial_user.empty() ? client_info.current_user : client_info.initial_user;
+
+    if (author.size() > MAX_MUTATION_AUTHOR_SIZE)
+        author.resize(MAX_MUTATION_AUTHOR_SIZE);
+
+    return author;
 }
 
 StorageMetadataHandle MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const

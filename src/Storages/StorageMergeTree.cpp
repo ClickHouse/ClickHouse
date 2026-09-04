@@ -95,6 +95,7 @@ namespace FailPoints
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_pause_before_register_mutation[];
     extern const char mt_alter_throw_in_durable_rollback[];
+    extern const char alter_settings_throw_before_metadata_write[];
 }
 
 namespace Setting
@@ -502,15 +503,39 @@ void StorageMergeTree::alter(
     {
         changeSettings(new_metadata.settings_changes, table_lock_holder);
 
-        if (statistics_changed)
+        try
         {
-            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
-            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-            setInMemoryMetadata(new_metadata);
-        }
+            if (statistics_changed)
+            {
+                /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+                setInMemoryMetadata(new_metadata);
+            }
 
-        /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+            fiu_do_on(FailPoints::alter_settings_throw_before_metadata_write,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before the metadata write of a settings ALTER");
+            });
+
+            /// Safe because the early max_query_size check already passed.
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            /// The durable metadata was not written, so the in-memory settings must not stay ahead of it.
+            /// This matters for settings that gate the on-disk format, such as `persist_mutation_author`:
+            /// a query that returned an exception must not leave the table writing mutation entries in a
+            /// format that the metadata on disk does not announce.
+            changeSettings(old_metadata.settings_changes, table_lock_holder, /*run_sanity_checks=*/false);
+
+            if (statistics_changed)
+            {
+                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+                setInMemoryMetadata(old_metadata);
+            }
+
+            throw;
+        }
     }
     else if (commands.isCommentAlter())
     {
@@ -931,7 +956,11 @@ StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
         additional_info = fmt::format(" (TID: {}; TIDH: {})", current_tid, current_tid.getHash());
     }
 
-    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
+    /// An empty author keeps the mutation entry format byte-for-byte identical
+    /// to the one used by servers that do not know about the `author` field.
+    const String author = getMutationAuthor(query_context);
+
+    MergeTreeMutationEntry entry(commands, disk, relative_data_path, author, insert_increment.get(), current_tid, getContext()->getWriteSettings());
     auto block_holder = allocateBlockNumber(CommittingBlock::Op::Mutation);
 
     Int64 version = block_holder->block.number;
@@ -1479,6 +1508,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 entry.file_name,
                 command.ast_text,
                 entry.create_time,
+                entry.author,
                 entry.finish_time,
                 block_numbers_map,
                 parts_in_progress_names,
