@@ -409,7 +409,7 @@ ProcessorMemoryStats FillingRightJoinSideTransform::getMemoryStats()
     return {};
 }
 
-size_t FillingRightJoinSideTransform::spillOnSize(size_t /*at_least_bytes*/)
+size_t FillingRightJoinSideTransform::spill(size_t /*at_least_bytes*/)
 {
     if (auto * grace_join = typeid_cast<GraceHashJoin *>(join.get()))
     {

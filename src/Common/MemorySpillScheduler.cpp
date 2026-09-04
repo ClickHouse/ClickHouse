@@ -17,7 +17,7 @@ size_t MemorySpillScheduler::checkAndSpill(ISpillable * processor)
     if (processor == selected_processor)
     {
         /// FIXME: for workloads this is a spill limit, for non-workload this is min bytes to spill (if there is less memory - do not spill)
-        return processor->spillOnSize(stats.spillable_memory_bytes);
+        return processor->spill(stats.spillable_memory_bytes);
     }
 
     return 0;

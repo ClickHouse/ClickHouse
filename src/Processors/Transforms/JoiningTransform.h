@@ -129,7 +129,7 @@ public:
 
     ISpillable * getSpillable() override { return spillable ? this : nullptr; }
     ProcessorMemoryStats getMemoryStats() override;
-    size_t spillOnSize(size_t bytes) override;
+    size_t spill(size_t bytes) override;
 
 private:
     JoinPtr join;

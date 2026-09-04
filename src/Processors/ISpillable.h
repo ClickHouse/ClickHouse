@@ -20,7 +20,7 @@ public:
     virtual ProcessorMemoryStats getMemoryStats() = 0;
 
     /// Request to spill @at_least_bytes and return how many had been spilled
-    virtual size_t spillOnSize(size_t at_least_bytes) = 0;
+    virtual size_t spill(size_t at_least_bytes) = 0;
 };
 
 }
