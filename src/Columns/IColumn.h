@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string_view>
 #include <Columns/IColumn_fwd.h>
 #include <Core/TypeId.h>
@@ -940,10 +941,20 @@ public:
 
     virtual bool hasStatistics() const { return false; }
 
+    /// Optional callback that throws when the query the caller runs in has been cancelled.
+    /// It is polled by the row-wise loops of the statistics calculation below, so that computing
+    /// statistics over a huge column does not make an INSERT uninterruptible.
+    using CheckCancellationCallback = std::function<void()>;
+
+    /// How often (in rows) the row-wise loops poll `CheckCancellationCallback`. The callback is an
+    /// indirect call, so it is not invoked for every row.
+    static constexpr size_t CANCELLATION_CHECK_PERIOD_ROWS = 8192;
+
     /// Merges/takes statistics from source columns. For multiple sources, computes merged statistics.
     /// For ColumnObject/ColumnDynamic, must be called AFTER `chooseDynamicStructureForMerge` or `takeExactDynamicStructureFrom`,
     /// because statistics placement depends on the dynamic structure (e.g. which paths are dynamic vs shared).
-    virtual void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<Ptr> & /*source_columns*/) {}
+    virtual void takeOrCalculateStatisticsFrom(
+        const VectorWithMemoryTracking<Ptr> & /*source_columns*/, const CheckCancellationCallback & /*check_cancellation*/) {}
 
 protected:
     template <typename Compare, typename Sort, typename PartialSort>

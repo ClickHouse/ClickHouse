@@ -1714,7 +1714,7 @@ void ColumnArray::takeExactDynamicStructureFrom(const IColumn & source)
     data->takeExactDynamicStructureFrom(assert_cast<const ColumnArray &>(source).getData());
 }
 
-void ColumnArray::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnArray::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns, const CheckCancellationCallback & check_cancellation)
 {
     VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
@@ -1733,7 +1733,7 @@ void ColumnArray::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<C
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Data column is invalid");
 
-    data->takeOrCalculateStatisticsFrom(nested_source_columns);
+    data->takeOrCalculateStatisticsFrom(nested_source_columns, check_cancellation);
 }
 
 }

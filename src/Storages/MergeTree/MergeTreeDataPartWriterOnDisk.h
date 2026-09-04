@@ -17,6 +17,8 @@
 namespace DB
 {
 
+class QueryStatus;
+
 /// Single unit for writing data to disk. Contains information about
 /// amount of rows to write and marks.
 struct Granule
@@ -89,6 +91,14 @@ protected:
     /// require additional state: skip_indices_aggregators and skip_index_accumulated_marks
     void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write);
 
+    /// Observe query cancellation / time limits while writing column data. Writing a block goes
+    /// granule by granule with no other cancellation point, so a fuzzed/huge block can keep a
+    /// cancelled INSERT running for minutes. Called for every granule: the check is a single atomic
+    /// load of the query's `is_killed` flag, which is negligible next to serializing a granule, and
+    /// any row- or byte-based throttle would leave some shape of block (few but very large rows)
+    /// uninterruptible. No-op outside a query (e.g. merges).
+    void checkWriteCancellation();
+
     /// Finishes primary index serialization: write final primary index row (if required) and compute checksums
     void fillPrimaryIndexChecksums(MergeTreeDataPartChecksums & checksums);
     void finishPrimaryIndexSerialization(bool sync);
@@ -119,8 +129,9 @@ protected:
 
     virtual ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const = 0;
 
-    /// This is useful only for vector codecs (like SZ3).
-    static void setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column);
+    /// This is useful only for vector codecs (like SZ3). Scans every row of the column, so it
+    /// observes query cancellation via checkWriteCancellation (hence not static).
+    void setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column);
 
     const MergeTreeIndices skip_indices;
     const String marks_file_extension;
@@ -195,6 +206,11 @@ private:
 
     ExecutionStatistics execution_stats;
     LoggerPtr log;
+
+    /// Cancellation token of the running query, lazily fetched on first column write (the writer runs
+    /// on the query/merge thread). Null when there is no query in scope (e.g. background merges).
+    std::shared_ptr<QueryStatus> cancellation_query_status;
+    bool cancellation_query_status_initialized = false;
 };
 
 }

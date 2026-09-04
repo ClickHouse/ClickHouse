@@ -223,9 +223,9 @@ public:
     PathToDynamicColumnPtrMap & getDynamicPathsPtrs() { return dynamic_paths_ptrs; }
 
     const StatisticsPtr & getStatistics() const { return statistics; }
-    StatisticsPtr getOrCalculateStatistics() const;
+    StatisticsPtr getOrCalculateStatistics(const CheckCancellationCallback & check_cancellation = {}) const;
     bool hasStatistics() const override { return true; }
-    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
+    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns, const CheckCancellationCallback & check_cancellation) override;
 
     const ColumnPtr & getSharedDataPtr() const { return shared_data; }
     ColumnPtr & getSharedDataPtr() { return shared_data; }

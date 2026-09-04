@@ -959,13 +959,13 @@ void ColumnSparse::takeExactDynamicStructureFrom(const IColumn & source)
     values->takeExactDynamicStructureFrom(assert_cast<const ColumnSparse &>(source).getValuesColumn());
 }
 
-void ColumnSparse::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnSparse::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns, const CheckCancellationCallback & check_cancellation)
 {
     VectorWithMemoryTracking<ColumnPtr> values_source_columns;
     values_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         values_source_columns.push_back(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
-    values->takeOrCalculateStatisticsFrom(values_source_columns);
+    values->takeOrCalculateStatisticsFrom(values_source_columns, check_cancellation);
 }
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)

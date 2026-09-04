@@ -275,6 +275,31 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
         last_index_block = primary_index_block;
 }
 
+void MergeTreeDataPartWriterOnDisk::checkWriteCancellation()
+{
+    if (!cancellation_query_status_initialized)
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            cancellation_query_status = query_context->getProcessListElementSafe();
+        cancellation_query_status_initialized = true;
+    }
+
+    if (!cancellation_query_status)
+        return;
+
+    /// `is_killed` is set by an explicit KILL QUERY and by `CancellationChecker` when
+    /// `max_execution_time` is exceeded in 'throw' mode, so this single check covers both
+    /// cancellation and throw-mode timeouts. In 'break' mode the flag stays unset and the
+    /// writer finishes the current block, yielding the graceful partial INSERT that mode promises.
+    /// `throwIfKilled` preserves the recorded cancel reason: it throws `TIMEOUT_EXCEEDED` for a
+    /// throw-mode `max_execution_time` and `QUERY_WAS_CANCELLED` for an explicit kill, so clients
+    /// keep seeing the right error code when the query stops inside column serialization.
+    /// In the common (not cancelled) case this is a single atomic load, so it is called for every
+    /// granule: a row-count throttle would leave byte-heavy blocks with few very large rows
+    /// uninterruptible, which is exactly the case this cancellation point is for.
+    cancellation_query_status->throwIfKilled();
+}
+
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write)
 {
     /// Building a skip index over many granules (e.g. an unbounded `set(0)` index on a
@@ -623,11 +648,19 @@ Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const
 
 void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
 {
+    /// This setup runs before the granule loop and can do whole-column work: calculating statistics
+    /// walks every row that ended up in the shared variant / shared data of a `Dynamic` / `Object`
+    /// column, and matching the dynamic structure of a block re-inserts the whole column. Poll
+    /// cancellation per column here and hand the same check to the statistics calculation, so a
+    /// `KILL QUERY` that arrives while the writer is still preparing the first block is observed.
+    auto check_cancellation = [this] { checkWriteCancellation(); };
+
     /// If block sample is empty, initialize it using current block (it will be the first block to write).
     if (block_sample.empty())
     {
         for (size_t i = 0; i != block.columns(); ++i)
         {
+            check_cancellation();
             auto & column = block.getByPosition(i);
             ColumnWithTypeAndName sample_column;
             sample_column.name = column.name;
@@ -639,7 +672,7 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
             if (column.column->hasDynamicStructure())
                 mutable_column->takeExactDynamicStructureFrom(*column.column);
             if (column.column->hasStatistics())
-                mutable_column->takeOrCalculateStatisticsFrom({column.column});
+                mutable_column->takeOrCalculateStatisticsFrom({column.column}, check_cancellation);
             sample_column.column = std::move(mutable_column);
             block_sample.insert(std::move(sample_column));
         }
@@ -650,6 +683,7 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
         size_t size = block.columns();
         for (size_t i = 0; i != size; ++i)
         {
+            check_cancellation();
             auto & column = block.getByPosition(i);
             const auto & sample_column = block_sample.getByPosition(i);
 
@@ -662,7 +696,18 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
                 /// of the column in current block.
                 auto new_column = sample_column.type->createColumn();
                 new_column->takeExactDynamicStructureFrom(*sample_column.column);
-                new_column->insertRangeFrom(*column.column, 0, column.column->size());
+                /// The reshape itself is a row-wise operation over the whole column (it can even
+                /// decode every value stored in the shared variant / shared data), so do it in
+                /// chunks and poll cancellation between them. The dynamic structure is already
+                /// fixed by `takeExactDynamicStructureFrom`, so inserting the range in chunks
+                /// gives exactly the same result as inserting it at once.
+                const size_t rows_to_reshape = column.column->size();
+                for (size_t offset = 0; offset < rows_to_reshape; offset += IColumn::CANCELLATION_CHECK_PERIOD_ROWS)
+                {
+                    check_cancellation();
+                    new_column->insertRangeFrom(
+                        *column.column, offset, std::min(IColumn::CANCELLATION_CHECK_PERIOD_ROWS, rows_to_reshape - offset));
+                }
                 column.column = std::move(new_column);
             }
 
@@ -670,7 +715,7 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
             if (column.column->hasStatistics())
             {
                 auto mutable_column = IColumn::mutate(std::move(column.column));
-                mutable_column->takeOrCalculateStatisticsFrom({sample_column.column});
+                mutable_column->takeOrCalculateStatisticsFrom({sample_column.column}, check_cancellation);
                 column.column = std::move(mutable_column);
             }
         }
@@ -748,6 +793,11 @@ void MergeTreeDataPartWriterOnDisk::setVectorDimensionsIfNeeded(CompressionCodec
         {
             for (size_t j = 0; j < column->size(); ++j)
             {
+                /// This upfront scan runs before the granule loop and materializes a Field per row,
+                /// so a large block would otherwise be an uninterruptible writer phase preceding the
+                /// per-granule cancellation points; the check is an atomic load, negligible next to `get`.
+                checkWriteCancellation();
+
                 column->get(j, sample_field);
                 codec->setAndCheckVectorDimension(sample_field.safeGet<Array>().size());
             }
