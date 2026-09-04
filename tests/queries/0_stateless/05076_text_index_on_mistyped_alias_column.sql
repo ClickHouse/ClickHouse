@@ -80,6 +80,39 @@ ALTER TABLE db_05076_ord.t_grandfathered
 ALTER TABLE db_05076_ord.t_grandfathered
     DROP INDEX fts_paths, ADD INDEX fts_paths paths TYPE text(tokenizer = splitByNonAlpha); -- { serverError BAD_ARGUMENTS }
 
+-- The mismatch belongs to the ALIAS column, not to the shape of the index expression, so a wrapper
+-- over a mistyped ALIAS is rejected too. `mapValues(a)` is indexed as `mapValues(m)` while a query
+-- asks for `mapValues(_CAST(m, 'Map(String, FixedString(3))'))`, so the names never meet.
+DROP TABLE IF EXISTS t_wrapped_alias;
+CREATE TABLE t_wrapped_alias
+(
+    m Map(String, String),
+    a Map(String, FixedString(3)) ALIAS m,
+    INDEX fts_wrapped mapValues(a) TYPE text(tokenizer = array)
+) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+-- Retyping a column the ALIAS is written in terms of changes what the index resolves to - here
+-- Array(String) becomes Array(FixedString(2)) - while the index declaration, the ALIAS declaration
+-- and the offending column name all stay put. That is a different unusable index, so inheriting the
+-- old one is no licence for it.
+DROP DATABASE IF EXISTS db_05076_dep;
+CREATE DATABASE db_05076_dep ENGINE = Ordinary;
+
+ATTACH TABLE db_05076_dep.t_dep
+(
+    m Map(String, String),
+    a Array(FixedString(3)) ALIAS mapValues(m),
+    INDEX fts_dep a TYPE text(tokenizer = array)
+) ENGINE = MergeTree ORDER BY tuple();
+
+ALTER TABLE db_05076_dep.t_dep ADD COLUMN y UInt8;
+SELECT count() FROM system.columns WHERE database = 'db_05076_dep' AND table = 't_dep' AND name = 'y';
+
+ALTER TABLE db_05076_dep.t_dep
+    MODIFY COLUMN m Map(String, FixedString(2)); -- { serverError BAD_ARGUMENTS }
+
+DROP DATABASE db_05076_dep;
+
 -- The escape hatch stays open: the index can still be dropped.
 ALTER TABLE db_05076_ord.t_grandfathered DROP INDEX fts_paths;
 SELECT count() FROM system.data_skipping_indices WHERE database = 'db_05076_ord' AND table = 't_grandfathered';
