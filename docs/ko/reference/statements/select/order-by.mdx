@@ -25,18 +25,14 @@ doc_type: 'reference'
 정렬 표현식 값이 동일한 행은 임의적이며 비결정적인 순서로 반환됩니다.
 `SELECT` SQL 문에서 `ORDER BY` 절을 생략한 경우에도 행의 순서는 임의적이며 비결정적입니다.
 
-<div id="sorting-of-special-values">
-  ## 특수 값의 정렬
-</div>
+## 특수 값의 정렬 {#sorting-of-special-values}
 
 `NaN` 및 `NULL`의 정렬 순서에는 두 가지 방식이 있습니다.
 
 * 기본값 또는 `NULLS LAST` 수정자를 사용하는 경우: 일반 값이 먼저 오고, 그다음 `NaN`, 마지막으로 `NULL`이 옵니다.
 * `NULLS FIRST` 수정자를 사용하는 경우: `NULL`이 먼저 오고, 그다음 `NaN`, 마지막으로 다른 값이 옵니다.
 
-<div id="example">
-  ### 예시
-</div>
+### 예시 {#example}
 
 테이블에 대해
 
@@ -74,9 +70,7 @@ doc_type: 'reference'
 
 부동소수점 수를 정렬할 때 NaN은 다른 값과 별도로 취급됩니다. 정렬 순서와 관계없이 NaN은 항상 끝에 위치합니다. 다시 말해, 오름차순 정렬에서는 다른 모든 수보다 큰 것처럼 배치되고, 내림차순 정렬에서는 나머지 값보다 작은 것처럼 배치됩니다.
 
-<div id="collation-support">
-  ## Collation 지원
-</div>
+## Collation 지원 {#collation-support}
 
 [String](/ko/reference/data-types/string) 값으로 정렬할 때는 collation(비교 규칙)을 지정할 수 있습니다. 예시: `ORDER BY SearchPhrase COLLATE 'tr'` - 문자열이 UTF-8 encoded라고 가정할 때, 터키어 알파벳을 사용하여 키워드를 오름차순으로 정렬하며 대소문자는 구분하지 않습니다. `COLLATE`는 ORDER BY의 각 표현식마다 독립적으로 지정하거나 생략할 수 있습니다. `ASC` 또는 `DESC`를 지정하는 경우 `COLLATE`는 그 뒤에 지정합니다. `COLLATE`를 사용하면 정렬은 항상 대소문자를 구분하지 않습니다.
 
@@ -84,9 +78,7 @@ doc_type: 'reference'
 
 `COLLATE`를 사용한 정렬은 일반적인 바이트 기준 정렬보다 효율이 낮으므로, 소수의 행을 최종 정렬할 때만 사용하는 것을 권장합니다.
 
-<div id="collation-examples">
-  ## Collation 예시
-</div>
+## Collation 예시 {#collation-examples}
 
 [String](/ko/reference/data-types/string) 값만 포함된 예시:
 
@@ -242,9 +234,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 └───┴─────────┘
 ```
 
-<div id="implementation-details">
-  ## 구현 세부 사항
-</div>
+## 구현 세부 사항 {#implementation-details}
 
 `ORDER BY`와 함께 충분히 작은 [LIMIT](/ko/reference/statements/select/limit)를 지정하면 RAM 사용량을 줄일 수 있습니다. 그렇지 않으면 정렬에 사용되는 메모리 양은 정렬할 데이터의 양에 비례합니다. 분산 쿼리 처리에서는 [GROUP BY](/ko/reference/statements/select/group-by)를 생략할 경우 정렬의 일부가 원격 서버에서 수행되고, 결과는 요청을 보낸 서버에서 머지됩니다. 즉, 분산 정렬에서는 정렬해야 하는 데이터 양이 단일 서버의 메모리 용량보다 클 수 있습니다.
 
@@ -254,15 +244,13 @@ RAM이 충분하지 않으면 외부 메모리(external memory)에서 정렬을 
 
 외부 정렬은 RAM에서 수행하는 정렬보다 훨씬 덜 효율적입니다.
 
-<div id="optimization-of-data-reading">
-  ## 데이터 읽기 최적화
-</div>
+## 데이터 읽기 최적화 {#optimization-of-data-reading}
 
 `ORDER BY` 표현식에 테이블 정렬 키와 일치하는 접두사가 있으면 [optimize&#95;read&#95;in&#95;order](/ko/reference/settings/session-settings/optimize#optimize_read_in_order) 설정을 사용해 쿼리를 최적화할 수 있습니다.
 
 `optimize_read_in_order` 설정이 활성화되면 ClickHouse 서버는 테이블 인덱스를 사용해 `ORDER BY` 키 순서대로 데이터를 읽습니다. 이렇게 하면 [LIMIT](/ko/reference/statements/select/limit)가 지정된 경우 모든 데이터를 읽지 않아도 됩니다. 따라서 LIMIT가 작은 대용량 데이터 쿼리를 더 빠르게 처리할 수 있습니다.
 
-이 최적화는 `ASC`와 `DESC` 모두에서 동작하며, [GROUP BY](/ko/reference/statements/select/group-by) 절 및 [FINAL](/ko/reference/statements/select/from#final-modifier) 수정자와는 함께 사용할 수 없습니다.
+이 최적화는 `ASC`와 `DESC` 모두에서 동작하며, [GROUP BY](/ko/reference/statements/select/group-by) 절과는 함께 사용할 수 없습니다. [FINAL](/ko/reference/statements/select/from#final-modifier) 수정자를 사용하는 경우, 이 최적화는 정렬 키의 정방향 순서로 동작하며, [ReplacingMergeTree](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree) 테이블에서는 `optimize_read_in_reverse_order_final` 설정으로 제어되는 역방향 순서로도 동작합니다.
 
 `optimize_read_in_order` 설정이 비활성화되면 ClickHouse 서버는 `SELECT` 쿼리를 처리하는 동안 테이블 인덱스를 사용하지 않습니다.
 
@@ -276,9 +264,7 @@ RAM이 충분하지 않으면 외부 메모리(external memory)에서 정렬을 
 
 `MaterializedView` 엔진 테이블에서는 `SELECT ... FROM merge_tree_table ORDER BY pk`와 같은 뷰에서 이 최적화가 동작합니다. 하지만 뷰 쿼리에 `ORDER BY` 절이 없으면 `SELECT ... FROM view ORDER BY pk`와 같은 쿼리에서는 지원되지 않습니다.
 
-<div id="order-by-expr-with-fill-modifier">
-  ## ORDER BY Expr WITH FILL 수정자
-</div>
+## ORDER BY Expr WITH FILL 수정자 {#order-by-expr-with-fill-modifier}
 
 이 수정자는 [LIMIT ... WITH TIES modifier](/ko/reference/statements/select/limit#limit--with-ties-modifier)와 함께 사용할 수도 있습니다.
 
@@ -594,9 +580,7 @@ SELECT n, source, inter FROM (
 └─────┴──────────┴───────┘
 ```
 
-<div id="filling-grouped-by-sorting-prefix">
-  ## 정렬 접두사별 그룹화된 데이터 채우기
-</div>
+## 정렬 접두사별 그룹화된 데이터 채우기 {#filling-grouped-by-sorting-prefix}
 
 특정 컬럼에서 같은 값을 가진 행을 서로 독립적으로 채우는 기능이 유용할 수 있습니다. 대표적인 예로 시계열(time series)에서 누락된 값을 채우는 경우가 있습니다.
 다음과 같은 시계열 테이블이 있다고 가정합니다:
@@ -648,9 +632,7 @@ INTERPOLATE ( value AS 9999 )
 여기서는 채워진 행이 더 잘 눈에 띄도록 `value` 컬럼을 `9999`로 보간했습니다.
 이 동작은 `use_with_fill_by_sorting_prefix` 설정으로 제어되며, 기본적으로 활성화되어 있습니다.
 
-<div id="related-content">
-  ## 관련 콘텐츠
-</div>
+## 관련 콘텐츠 {#related-content}
 
 * 블로그: [ClickHouse에서 시계열 데이터 다루기](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 

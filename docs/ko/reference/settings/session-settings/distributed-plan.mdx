@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 이 설정들은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)로부터 자동 생성됩니다.
 
-<div id="distributed_plan_default_reader_bucket_count">
-  ## distributed_plan_default_reader_bucket_count
-</div>
+## distributed_plan_default_reader_bucket_count {#distributed_plan_default_reader_bucket_count}
 
 <ExperimentalBadge />
 
@@ -27,9 +25,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 분산 쿼리에서 병렬 읽기에 사용되는 기본 작업 수입니다. 작업은 레플리카 간에 분산됩니다.
 규칙 기반 분산 플래너에서 사용됩니다. 비용 기반 최적화기는 추정 비용에 따라 읽기 팬아웃을 선택하며 이 설정을 사용하지 않습니다.
 
-<div id="distributed_plan_default_shuffle_join_bucket_count">
-  ## distributed_plan_default_shuffle_join_bucket_count
-</div>
+## distributed_plan_default_shuffle_join_bucket_count {#distributed_plan_default_shuffle_join_bucket_count}
 
 <ExperimentalBadge />
 
@@ -40,9 +36,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 분산 shuffle-hash join의 기본 버킷 개수입니다.
 규칙 기반 분산 플래너에서 사용됩니다. 비용 기반 최적화기는 추정 비용에 따라 팬아웃을 선택하므로 이 설정을 사용하지 않습니다.
 
-<div id="distributed_plan_execute_locally">
-  ## distributed_plan_execute_locally
-</div>
+## distributed_plan_execute_locally {#distributed_plan_execute_locally}
 
 <ExperimentalBadge />
 
@@ -52,9 +46,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 분산 쿼리 계획의 모든 작업을 로컬에서 실행합니다. 테스트와 디버깅에 유용합니다.
 
-<div id="distributed_plan_force_exchange_kind">
-  ## distributed_plan_force_exchange_kind
-</div>
+## distributed_plan_force_exchange_kind {#distributed_plan_force_exchange_kind}
 
 <ExperimentalBadge />
 
@@ -68,9 +60,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 * &#39;Persisted&#39; - 객체 스토리지의 임시 파일을 사용합니다.
 * &#39;Streaming&#39; - 네트워크를 통해 Exchange 데이터를 스트리밍합니다.
 
-<div id="distributed_plan_force_shuffle_aggregation">
-  ## distributed_plan_force_shuffle_aggregation
-</div>
+## distributed_plan_force_shuffle_aggregation {#distributed_plan_force_shuffle_aggregation}
 
 <ExperimentalBadge />
 
@@ -80,9 +70,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 분산 쿼리 계획에서 PartialAggregation + Merge 대신 Shuffle 집계 전략을 사용합니다.
 
-<div id="distributed_plan_max_rows_to_broadcast">
-  ## distributed_plan_max_rows_to_broadcast
-</div>
+## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
 
 <ExperimentalBadge />
 
@@ -93,9 +81,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 분산 쿼리 계획에서 shuffle join 대신 broadcast join을 사용하기 위한 최대 행 수입니다.
 규칙 기반 분산 플래너를 위한 휴리스틱입니다. 비용 기반 최적화기가 활성화되면 추정 비용에 따라 broadcast와 shuffle 중 하나를 선택하므로 이 설정은 적용되지 않습니다.
 
-<div id="distributed_plan_optimize_exchanges">
-  ## distributed_plan_optimize_exchanges
-</div>
+## distributed_plan_optimize_exchanges {#distributed_plan_optimize_exchanges}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -103,9 +89,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 분산 쿼리 계획에서 불필요한 데이터 교환을 제거합니다. 디버깅을 위해 비활성화하십시오.
 
-<div id="distributed_plan_prefer_replicas_over_workers">
-  ## distributed_plan_prefer_replicas_over_workers
-</div>
+## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
 
 <ExperimentalBadge />
 
@@ -115,9 +99,21 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 레플리카에서 실행할 수 있도록 분산 쿼리 계획을 직렬화합니다.
 
-<div id="distributed_plan_workers_num">
-  ## distributed_plan_workers_num
-</div>
+## distributed_plan_read_in_order {#distributed_plan_read_in_order}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "분산 쿼리 계획에서 `ORDER BY`에 대한 순서 기반 읽기 최적화를 허용하는 새로운 설정입니다. 테이블의 정렬 키를 정렬된 순서로 읽을 경우 정렬을 건너뛰고 조기에 중지할 수 있습니다. 기본값은 비활성화입니다. 현재는 읽기와 정렬 사이에 순서를 보존하지 않는 exchange가 없는 형태만 안전합니다."}]}]} />
+
+분산 쿼리 계획에서 `ORDER BY`에 대한 순서 기반 읽기 최적화를 허용합니다. 테이블의
+정렬 키를 정렬된 순서로 읽을 경우 스캔 후 정렬하는 대신 정렬을 건너뛰고 조기에 중지할 수 있습니다.
+
+기본값은 비활성화입니다. 정렬을 분산하는 재작성은 자신이 감싸는 정렬이 입력이 이미
+정렬되어 있다는 사실에 의존하지 않는다고 가정합니다. 그러나 이러한 의존성이 있는 정렬에는 순서를 보존하지 않는 exchange를 통해 행이 전달될 수 있습니다. 현재는 읽기와 정렬 사이에 exchange가 없는 형태만 안전합니다.
+
+## distributed_plan_workers_num {#distributed_plan_workers_num}
 
 <ExperimentalBadge />
 
@@ -127,9 +123,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 이 쿼리 실행에 사용할 상태 비저장 워커 수입니다. 0이면 분산 계획에 대한 상태 비저장 워커 임대가 비활성화됩니다.
 
-<div id="distributed_plan_workers_provisioning_timeout_ms">
-  ## distributed_plan_workers_provisioning_timeout_ms
-</div>
+## distributed_plan_workers_provisioning_timeout_ms {#distributed_plan_workers_provisioning_timeout_ms}
 
 <ExperimentalBadge />
 

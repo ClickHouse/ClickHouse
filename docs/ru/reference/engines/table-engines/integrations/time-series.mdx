@@ -458,6 +458,7 @@ CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_f
 ```sql
 ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
+ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 ```
 
 Обратите внимание: если изменить `id_generator`, когда данные уже есть в таблице tags, для одной и той же комбинации metric+tag могут создаваться разные идентификаторы — старые строки сохранят прежние идентификаторы, а новые будут использовать новый генератор.

@@ -289,6 +289,19 @@ SELECT * FROM test2;
 
 * [Предложение ORDER BY](/ru/reference/statements/select/order-by#optimization-of-data-reading)
 
+## optimize_read_in_reverse_order_final {#optimize_read_in_reverse_order_final}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Новая настройка, включающая оптимизацию чтения в порядке сортировки при чтении в обратном порядке ключа сортировки с модификатором `FINAL` из таблиц `ReplacingMergeTree`."}]}]} />
+
+Включает чтение данных в обратном порядке ключа сортировки в запросах `SELECT` с модификатором `FINAL` из таблиц [ReplacingMergeTree](/ru/reference/engines/table-engines/mergetree-family/replacingmergetree). Работает, только если также включена настройка [optimize&#95;read&#95;in&#95;order](/ru/reference/settings/session-settings/optimize#optimize_read_in_order).
+
+Возможные значения:
+
+* 0 — Чтение в обратном порядке с `FINAL` отключено.
+* 1 — Чтение в обратном порядке с `FINAL` включено.
+
 ## optimize_respect_aliases {#optimize_respect_aliases}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

@@ -16,9 +16,7 @@ import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnly
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="adaptive_aggregator_freeze_threshold">
-  ## adaptive_aggregator_freeze_threshold
-</div>
+## adaptive_aggregator_freeze_threshold {#adaptive_aggregator_freeze_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="16384" />
 
@@ -26,9 +24,7 @@ import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnly
 
 アダプティブアグリゲータがスレッドのローカルハッシュテーブルを凍結するキー数です (`enable_adaptive_aggregator` を参照) 。値を小さくすると、凍結されたテーブルはキャッシュに収まりやすくなり、大きくすると頻出キーをより多く保持できます。0 を指定すると、最初の機会にテーブルを凍結します。この場合、アルゴリズムはキー hash による純粋な分片と同様に動作します。各キーは hash によってルーティングされ、単一の所有者によって集計されますが、スキャン中にスレッド間で交換されるのではなく、マージフェーズまで処理が延期されます。
 
-<div id="adaptive_aggregator_freeze_threshold_bytes">
-  ## adaptive_aggregator_freeze_threshold_bytes
-</div>
+## adaptive_aggregator_freeze_threshold_bytes {#adaptive_aggregator_freeze_threshold_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
@@ -36,25 +32,19 @@ import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnly
 
 アダプティブアグリゲータがスレッドのローカルハッシュテーブルを凍結するメモリサイズです (`enable_adaptive_aggregator` を参照) 。この値と `adaptive_aggregator_freeze_threshold` のうち、先に達した方でテーブルが凍結されます。サイズは、ローカルテーブル自体が割り当てたバイト数 (ハッシュテーブルの buffer とそのアリーナ) であり、block 間で確認されます。キーまたは aggregation state が wide な場合、このバイト上限が重要になります。キー数のしきい値だけでは、そのようなテーブルが CPU cache を超えるほど大きくなる可能性があります。デフォルト値では、通常のキー幅および state 幅のテーブルは引き続きキー数によって凍結されます。0 を指定するとバイト上限が無効になり、キー数のしきい値のみで決まります。
 
-<div id="add_http_cors_header">
-  ## add_http_cors_header
-</div>
+## add_http_cors_header {#add_http_cors_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 HTTP CORS ヘッダーを追加して書き込みます。
 
-<div id="analyze_index_with_space_filling_curves">
-  ## analyze_index_with_space_filling_curves
-</div>
+## analyze_index_with_space_filling_curves {#analyze_index_with_space_filling_curves}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 テーブルの索引に空間充填曲線が含まれている場合 (例: `ORDER BY mortonEncode(x, y)` や `ORDER BY hilbertEncode(x, y)`) 、クエリにその引数に対する条件 (例: `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`) があるときは、索引解析に空間充填曲線を使用します。
 
-<div id="analyzer_inline_views">
-  ## analyzer_inline_views
-</div>
+## analyzer_inline_views {#analyzer_inline_views}
 
 <ExperimentalBadge />
 
@@ -64,9 +54,7 @@ HTTP CORS ヘッダーを追加して書き込みます。
 
 有効にすると、アナライザは通常の (非マテリアライズドかつ非パラメータ化された) ビューを、それを定義するサブクエリで置き換えます。これにより、述語プッシュダウンやカラムのプルーニングなど、ビュー境界をまたぐ最適化が可能になります。
 
-<div id="any_join_distinct_right_table_keys">
-  ## any_join_distinct_right_table_keys
-</div>
+## any_join_distinct_right_table_keys {#any_join_distinct_right_table_keys}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -97,9 +85,7 @@ HTTP CORS ヘッダーを追加して書き込みます。
 
 * [JOIN strictness](/ja/reference/statements/select/join#settings)
 
-<div id="archive_adaptive_buffer_max_size_bytes">
-  ## archive_adaptive_buffer_max_size_bytes
-</div>
+## archive_adaptive_buffer_max_size_bytes {#archive_adaptive_buffer_max_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="8388608" />
 
@@ -107,9 +93,7 @@ HTTP CORS ヘッダーを追加して書き込みます。
 
 アーカイブファイル (たとえば tar アーカイブ) への書き込み時に使用されるアダプティブバッファの最大サイズを制限します
 
-<div id="arrow_flight_request_descriptor_type">
-  ## arrow_flight_request_descriptor_type
-</div>
+## arrow_flight_request_descriptor_type {#arrow_flight_request_descriptor_type}
 
 <SettingsInfoBlock type="ArrowFlightDescriptorType" default_value="path" />
 
@@ -122,9 +106,7 @@ Arrow Flight リクエストで使用するディスクリプタの種類です�
 * &#39;path&#39; — FlightDescriptor::Path を使用します (デフォルト。ほとんどの Arrow Flight サーバーで動作します)
 * &#39;command&#39; — SELECT クエリとともに FlightDescriptor::Command を使用します (Dremio では必須)
 
-<div id="backup_slow_all_threads_after_retryable_s3_error">
-  ## backup_slow_all_threads_after_retryable_s3_error
-</div>
+## backup_slow_all_threads_after_retryable_s3_error {#backup_slow_all_threads_after_retryable_s3_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -135,9 +117,7 @@ Arrow Flight リクエストで使用するディスクリプタの種類です�
 遅延されます。
 `false` に設定すると、各スレッドは他のスレッドとは独立して、S3 リクエストのバックオフを処理します。
 
-<div id="cache_warmer_threads">
-  ## cache_warmer_threads
-</div>
+## cache_warmer_threads {#cache_warmer_threads}
 
 <CloudOnlyBadge />
 
@@ -145,17 +125,13 @@ Arrow Flight リクエストで使用するディスクリプタの種類です�
 
 ClickHouse Cloudでのみ有効です。[cache&#95;populated&#95;by&#95;fetch](/ja/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch) が有効な場合に、新しいデータパーツをファイルシステムキャッシュへ先読み的にダウンロードするバックグラウンドスレッド数です。無効にするには 0 を指定します。
 
-<div id="calculate_text_stack_trace">
-  ## calculate_text_stack_trace
-</div>
+## calculate_text_stack_trace {#calculate_text_stack_trace}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 クエリ実行中に例外が発生した場合に、テキスト形式のスタックトレースを計算します。これがデフォルトです。これにはシンボルのルックアップが必要なため、大量の不正なクエリが実行されると、ファジングテストが遅くなることがあります。通常、このオプションを無効にすべきではありません。
 
-<div id="cancel_http_readonly_queries_on_client_close">
-  ## cancel_http_readonly_queries_on_client_close
-</div>
+## cancel_http_readonly_queries_on_client_close {#cancel_http_readonly_queries_on_client_close}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -163,17 +139,13 @@ ClickHouse Cloudでのみ有効です。[cache&#95;populated&#95;by&#95;fetch](/
 
 Cloud でのデフォルト値: `1`.
 
-<div id="checksum_on_read">
-  ## checksum_on_read
-</div>
+## checksum_on_read {#checksum_on_read}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 読み取り時にチェックサムを検証します。これはデフォルトで有効になっており、本番環境では常に有効にしておくべきです。この設定を無効にしても、利点が得られることはありません。使用するのは、実験やベンチマークの場合のみにしてください。この設定が適用されるのは、MergeTree family のテーブルのみです。その他のテーブルエンジンや、ネットワーク経由でデータを受信する場合は、チェックサムは常に検証されます。
 
-<div id="compression">
-  ## 圧縮
-</div>
+## 圧縮 {#compression}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "レスポンスボディに汎用圧縮を適用するための新しい設定。"}]}]} />
 
@@ -181,30 +153,27 @@ Cloud でのデフォルト値: `1`.
 
 これは HTTP インターフェイスのレスポンス整形設定です。クエリの実行前に処理され (レスポンスバッファは事前に設定されるため) 、HTTP URL パラメータ、URL パスのファイル拡張子、またはユーザープロファイルを介して指定する必要があります。クエリ内の `SETTINGS` 句で指定しても効果はなく、拒否されます。
 
-<div id="connection_pool_max_wait_ms">
-  ## connection_pool_max_wait_ms
-</div>
+## connection_pool_max_wait_ms {#connection_pool_max_wait_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="0" />
 
-接続プールが満杯のときに、接続の確立を待機する時間をミリ秒単位で指定します。
+接続プールが満杯の場合に、接続を待機する時間 (ミリ秒) 。
+
+接続プールはレプリカごとに1つ存在するため、この待機はレプリカ単位で適用されます。待機時間が経過すると、その試行は `NO_FREE_CONNECTION` で失敗します。分散 `SELECT` が使用するフェイルオーバー経路では、これは使用できないその他のレプリカと同様に扱われます。つまりクエリは残りのレプリカを試行し、そのすべてを試し終えて初めて `ALL_CONNECTION_TRIES_FAILED` で失敗します。したがって、この設定でクエリ全体の時間が制限されるわけではありません。`N` 個のレプリカがあり、それぞれ `T` 回試行する場合、合計の待機時間は `connection_pool_max_wait_ms` × `N` × `T` に達する可能性があります。ここで `T` は [connections&#95;with&#95;failover&#95;max&#95;tries](/ja/reference/settings/session-settings/other#connections_with_failover_max_tries) ですが、レプリカは除外される前に必ず一度は試行されるため、1 を下回ることはありません。クエリ自体を制限するには [max&#95;execution&#95;time](/ja/reference/settings/session-settings/max-execution#max_execution_time) を使用してください。
 
 設定可能な値:
 
 * 正の整数。
-* 0 — タイムアウトなし。
+* 0 — 無制限のタイムアウト。この場合でも待機は `KILL QUERY` によって中断され、また [timeout&#95;overflow&#95;mode](/ja/reference/settings/session-settings/timeout-overflow-mode#timeout_overflow_mode) が既定値の `throw` であれば `max_execution_time` によっても中断されます。
+  `break` の場合は時間制限によってクエリがキャンセルされないため、接続が解放されるまで待機が続きます。`KILL QUERY` による中断は引き続き有効です。
 
-<div id="connections_with_failover_max_tries">
-  ## connections_with_failover_max_tries
-</div>
+## connections_with_failover_max_tries {#connections_with_failover_max_tries}
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
 Distributed テーブルエンジンで、各レプリカに対して行う接続試行の最大回数。
 
-<div id="convert_query_to_cnf">
-  ## convert_query_to_cnf
-</div>
+## convert_query_to_cnf {#convert_query_to_cnf}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -272,9 +241,7 @@ SETTINGS convert_query_to_cnf = true;
 
 設定可能な値: true, false
 
-<div id="count_matches_stop_at_empty_match">
-  ## count_matches_stop_at_empty_match
-</div>
+## count_matches_stop_at_empty_match {#count_matches_stop_at_empty_match}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -282,17 +249,13 @@ SETTINGS convert_query_to_cnf = true;
 
 `countMatches` 関数では、パターンが長さ 0 に一致した時点でカウントを停止します。
 
-<div id="cross_to_inner_join_rewrite">
-  ## cross_to_inner_join_rewrite
-</div>
+## cross_to_inner_join_rewrite {#cross_to_inner_join_rewrite}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
 WHERE 句に結合条件となる式がある場合、comma/cross join の代わりに inner join を使用します。値: 0 - 書き換えなし、1 - 可能な場合は comma/cross に適用、2 - すべての comma join を強制的に書き換え、cross は可能な場合に書き換え
 
-<div id="data_type_default_nullable">
-  ## data_type_default_nullable
-</div>
+## data_type_default_nullable {#data_type_default_nullable}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -303,17 +266,13 @@ WHERE 句に結合条件となる式がある場合、comma/cross join の代わ
 * 1 — カラム定義のデータ型は、デフォルトで `Nullable` に設定されます。
 * 0 — カラム定義のデータ型は、デフォルトで `Nullable` に設定されません。
 
-<div id="decimal_check_overflow">
-  ## decimal_check_overflow
-</div>
+## decimal_check_overflow {#decimal_check_overflow}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Decimal の算術/比較演算でオーバーフローをチェックします
 
-<div id="deduplicate_blocks_in_dependent_materialized_views">
-  ## deduplicate_blocks_in_dependent_materialized_views
-</div>
+## deduplicate_blocks_in_dependent_materialized_views {#deduplicate_blocks_in_dependent_materialized_views}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -333,9 +292,7 @@ Replicated* テーブルからデータを受け取る materialized view に対�
 
 * [IN 演算子における NULL の処理](/ja/concepts/features/operations/insert/deduplicating-inserts-on-retries#insert-deduplication-with-materialized-views)
 
-<div id="defer_partition_pruning_after_final">
-  ## defer_partition_pruning_after_final
-</div>
+## defer_partition_pruning_after_final {#defer_partition_pruning_after_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -360,17 +317,13 @@ Replicated* テーブルからデータを受け取る materialized view に対�
 * 0 — `FINAL` の前にパーティションプルーニングを適用します (26.3 より前の動作。高速ですが、一般的には安全ではありません) 。
 * 1 — `FINAL` の後までパーティションプルーニングを遅らせます (デフォルト。正しさを優先) 。
 
-<div id="describe_compact_output">
-  ## describe_compact_output
-</div>
+## describe_compact_output {#describe_compact_output}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 true の場合、DESCRIBE クエリの結果にはカラム名と型のみが含まれます
 
-<div id="dialect">
-  ## dialect
-</div>
+## dialect {#dialect}
 
 <SettingsInfoBlock type="Dialect" default_value="clickhouse" />
 
@@ -385,9 +338,7 @@ true の場合、DESCRIBE クエリの結果にはカラム名と型のみが含
 * `promql` — `promql_database`、`promql_table`、`promql_evaluation_time`設定で構成されたTimeSeriesテーブルに対して評価されるPromQL (Prometheus Query Language) 。
 * `clickhouse_json` — SQLテキストの代わりに、クエリをJSON AST (`parseQueryToJSON`の出力) として解釈します。dialectを元に戻せるよう、`SET`クエリは引き続き通常の形式で認識されます。実験的設定の`enable_json_ast_dialect`が必要です。
 
-<div id="discard_query_data">
-  ## discard_query_data
-</div>
+## discard_query_data {#discard_query_data}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -401,9 +352,7 @@ true の場合、DESCRIBE クエリの結果にはカラム名と型のみが含
 
 ネイティブ TCP プロトコルにのみ適用されます。
 
-<div id="distinct_overflow_mode">
-  ## distinct_overflow_mode
-</div>
+## distinct_overflow_mode {#distinct_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -415,9 +364,7 @@ true の場合、DESCRIBE クエリの結果にはカラム名と型のみが含
 * `break`: クエリの実行を停止し、データソースが尽きたかのように
   部分的な結果を返します。
 
-<div id="do_not_merge_across_partitions_select_final">
-  ## do_not_merge_across_partitions_select_final
-</div>
+## do_not_merge_across_partitions_select_final {#do_not_merge_across_partitions_select_final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -425,9 +372,7 @@ true の場合、DESCRIBE クエリの結果にはカラム名と型のみが含
 
 有効にすると、SELECT FINAL クエリの実行時に、異なるパーティションのパーツがまとめてマージされることはありません。代わりに、マージは各パーティション内でのみ個別に行われます。これにより、パーティション化されたテーブルを扱う際のクエリパフォーマンスを大幅に向上させることができます。
 
-<div id="dynamic_throw_on_type_mismatch">
-  ## dynamic_throw_on_type_mismatch
-</div>
+## dynamic_throw_on_type_mismatch {#dynamic_throw_on_type_mismatch}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -439,9 +384,7 @@ true の場合、DESCRIBE クエリの結果にはカラム名と型のみが含
 * `true` (デフォルト) — 例外をスローします。
 * `false` — 代わりに、それらの行では `NULL` を返します。
 
-<div id="enforce_strict_identifier_format">
-  ## enforce_strict_identifier_format
-</div>
+## enforce_strict_identifier_format {#enforce_strict_identifier_format}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -449,9 +392,7 @@ true の場合、DESCRIBE クエリの結果にはカラム名と型のみが含
 
 有効にすると、英数字とアンダースコアのみを含む識別子だけが許可されます。
 
-<div id="engine_url_skip_empty_files">
-  ## engine_url_skip_empty_files
-</div>
+## engine_url_skip_empty_files {#engine_url_skip_empty_files}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -462,25 +403,19 @@ true の場合、DESCRIBE クエリの結果にはカラム名と型のみが含
 * 0 — 空のファイルが要求されたフォーマットと互換性がない場合、`SELECT` は例外をスローします。
 * 1 — 空のファイルに対して、`SELECT` は空の結果を返します。
 
-<div id="exact_rows_before_limit">
-  ## exact_rows_before_limit
-</div>
+## exact_rows_before_limit {#exact_rows_before_limit}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 有効にすると、ClickHouse は `rows_before_limit_at_least` 統計の正確な値を返しますが、その代わり、limit より前のデータを最後まで完全に読み取る必要があります
 
-<div id="except_default_mode">
-  ## except_default_mode
-</div>
+## except_default_mode {#except_default_mode}
 
 <SettingsInfoBlock type="SetOperationMode" default_value="ALL" />
 
 EXCEPTクエリのデフォルトモードを設定します。設定可能な値: 空文字列、&#39;ALL&#39;、&#39;DISTINCT&#39;。空文字列の場合、モードを指定しないクエリは例外を返します。
 
-<div id="exclude_materialize_skip_indexes_on_insert">
-  ## exclude_materialize_skip_indexes_on_insert
-</div>
+## exclude_materialize_skip_indexes_on_insert {#exclude_materialize_skip_indexes_on_insert}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": ""},{"label": "新しい設定"}]}]} />
 
@@ -514,9 +449,7 @@ ALTER TABLE tab MATERIALIZE INDEX idx_a; -- this query can be used to explicitly
 SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to default
 ```
 
-<div id="execute_exists_as_scalar_subquery">
-  ## execute_exists_as_scalar_subquery
-</div>
+## execute_exists_as_scalar_subquery {#execute_exists_as_scalar_subquery}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -526,9 +459,7 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
 
 Cloud でのデフォルト値: `0`.
 
-<div id="explain_query_plan_default">
-  ## explain_query_plan_default
-</div>
+## explain_query_plan_default {#explain_query_plan_default}
 
 <SettingsInfoBlock type="ExplainQueryPlanDefault" default_value="pretty" />
 
@@ -545,9 +476,7 @@ Cloud でのデフォルト値: `0`.
 
 `json = 1` または `distributed = 1` を指定した `EXPLAIN PLAN` では、`actions`、`compact`、または `pretty` が明示的に設定されていない限り、この設定に関係なく従来の (26.7 より前の) デフォルトが使われます。pretty 出力では JSON の結果や分片ごとの分散実行プランを表現できないため、これらのモードは `legacy` 形式でのみ正しくレンダリングされます。
 
-<div id="explain_syntax_single_record">
-  ## explain_syntax_single_record
-</div>
+## explain_syntax_single_record {#explain_syntax_single_record}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -559,9 +488,7 @@ Cloud でのデフォルト値: `0`.
 
 26.8 より前の行ごとに 1 レコードを返す出力に戻すには、`false` に設定するか、`compatibility` を `26.8` より前の任意のバージョンに設定します。
 
-<div id="extract_key_value_pairs_max_pairs_per_row">
-  ## extract_key_value_pairs_max_pairs_per_row
-</div>
+## extract_key_value_pairs_max_pairs_per_row {#extract_key_value_pairs_max_pairs_per_row}
 
 **別名**: `extract_kvp_max_pairs_per_row`
 
@@ -571,18 +498,14 @@ Cloud でのデフォルト値: `0`.
 
 `extractKeyValuePairs` 関数で生成可能なペアの最大数。メモリを過剰に消費しないようにするための保護策として使用されます。
 
-<div id="extremes">
-  ## extremes
-</div>
+## extremes {#extremes}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 極値 (クエリ結果の各カラムにおける最小値と最大値) を計算するかどうかを指定します。0 または 1 を指定できます。デフォルトは 0 (無効) です。
 詳細については、「Extreme values」セクションを参照してください。
 
-<div id="fallback_to_stale_replicas_for_distributed_queries">
-  ## fallback_to_stale_replicas_for_distributed_queries
-</div>
+## fallback_to_stale_replicas_for_distributed_queries {#fallback_to_stale_replicas_for_distributed_queries}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -594,9 +517,7 @@ ClickHouse は、テーブルの古いレプリカの中から最も適切なも
 
 デフォルト値は 1 (有効) です。
 
-<div id="file_like_engine_default_partition_strategy">
-  ## file_like_engine_default_partition_strategy
-</div>
+## file_like_engine_default_partition_strategy {#file_like_engine_default_partition_strategy}
 
 <SettingsInfoBlock type="FileLikeEngineDefaultPartitionStrategy" default_value="hive" />
 
@@ -604,17 +525,13 @@ ClickHouse は、テーブルの古いレプリカの中から最も適切なも
 
 ファイル系テーブルエンジンのデフォルトのパーティション方式。glob または `{_partition_id}` プレースホルダーを含まないパスを持つ `CREATE` クエリにのみ適用されます。`{_partition_id}` を含むパスでは常に `wildcard` が使用されます。別の glob を含むパスではパーティション方式は使用されず、`PARTITION BY` は無視されます。この設定が `wildcard` であってもパスに `{_partition_id}` がない場合は、パーティション方式は使用されません。この決定をエンジン引数に永続化できないテーブルエンジン (例: `HDFS`) は、このような `CREATE` を拒否します。
 
-<div id="filesystem_prefetches_limit">
-  ## filesystem_prefetches_limit
-</div>
+## filesystem_prefetches_limit {#filesystem_prefetches_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="200" />
 
 prefetch の最大数です。0 は無制限を意味します。prefetch の数を制限したい場合は、設定 `filesystem_prefetches_max_memory_usage` を使用することを推奨します
 
-<div id="filter">
-  ## filter
-</div>
+## filter {#filter}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "クエリを囲む WHERE 句を追加する新しい設定。"}]}]} />
 
@@ -628,9 +545,7 @@ prefetch の最大数です。0 は無制限を意味します。prefetch の数
   `filter` はアクセス制御の仕組み**ではなく**、[行レベルセキュリティポリシー](/ja/concepts/features/security/access-rights#row-policy-management)や `additional_table_filters` 設定の代替として使用してはなりません。ラップするサブクエリに `WHERE` を追加するだけであるため、フィルターが適用される前に基盤となるデータが読み取られ、処理されます。クエリは処理中にフィルターで除外された行を観測できます (たとえば、`throwIf` を使用してエラーパス経由で情報を漏えいさせることができます) 。ユーザーがアクセスできる行を制限することが目的の場合は、行レベルセキュリティまたは `additional_table_filters` を使用してください。
 </Danger>
 
-<div id="final">
-  ## final
-</div>
+## final {#final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -675,9 +590,7 @@ SELECT * FROM test;
 └─────┴────────┘
 ```
 
-<div id="finalize_projection_parts_synchronously">
-  ## finalize_projection_parts_synchronously
-</div>
+## finalize_projection_parts_synchronously {#finalize_projection_parts_synchronously}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -685,9 +598,7 @@ SELECT * FROM test;
 
 有効にすると、INSERT 中にプロジェクションパーツが同期的にファイナライズされ、S3 アップロードの並列度は下がるものの、ピークメモリ使用量を削減できます。デフォルトでは、各プロジェクションの出力ストリームは、パーツ全体 (すべてのプロジェクションを含む) のファイナライズが完了するまで維持されます。これにより S3 アップロードを並行して実行できますが、ピークメモリはプロジェクション数に比例して増加します。この設定が影響するのは INSERT パスのみで、merge と mutation ではすでにプロジェクションが同期的にファイナライズされます。
 
-<div id="flatten_nested">
-  ## flatten_nested
-</div>
+## flatten_nested {#flatten_nested}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -752,17 +663,13 @@ SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="format">
-  ## format
-</div>
+## format {#format}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "クエリの入力と出力の両方に対する FORMAT をオーバーライドする新しい設定。"}]}]} />
 
 クエリの入力と出力の両方の `FORMAT` をオーバーライドします。クエリまたはファイル拡張子で指定されたフォーマットよりも優先されます。より具体的な `input_format` および `output_format` 設定は、それぞれ入力と出力について、この汎用的な `format` 設定より優先されます。
 
-<div id="framing_output_format">
-  ## framing_output_format
-</div>
+## framing_output_format {#framing_output_format}
 
 <BetaBadge />
 
@@ -809,9 +716,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 {"packet":"progress","progress":{"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1265958"}}
 ```
 
-<div id="fsync_metadata">
-  ## fsync_metadata
-</div>
+## fsync_metadata {#fsync_metadata}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -819,9 +724,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 server に、作成と削除が絶えず行われる非常に小さな table が数百万ある場合は、これを無効にするのが適切です。
 
-<div id="functions_h3_default_if_invalid">
-  ## functions_h3_default_if_invalid
-</div>
+## functions_h3_default_if_invalid {#functions_h3_default_if_invalid}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -829,9 +732,7 @@ server に、作成と削除が絶えず行われる非常に小さな table が
 
 false の場合、h3 関数 (例: h3CellAreaM2) は入力が無効であれば例外を発生させます。true の場合は、0 またはデフォルト値を返します。
 
-<div id="geo_distance_returns_float64_on_float64_arguments">
-  ## geo_distance_returns_float64_on_float64_arguments
-</div>
+## geo_distance_returns_float64_on_float64_arguments {#geo_distance_returns_float64_on_float64_arguments}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -839,9 +740,7 @@ false の場合、h3 関数 (例: h3CellAreaM2) は入力が無効であれば�
 
 `geoDistance`、`greatCircleDistance`、`greatCircleAngle` 関数の4つの引数がすべて Float64 の場合、戻り値は Float64 となり、内部計算には倍精度が使用されます。以前の ClickHouse バージョンでは、これらの関数は常に Float32 を返していました。
 
-<div id="geotoh3_argument_order">
-  ## geotoh3_argument_order
-</div>
+## geotoh3_argument_order {#geotoh3_argument_order}
 
 <BetaBadge />
 
@@ -851,17 +750,13 @@ false の場合、h3 関数 (例: h3CellAreaM2) は入力が無効であれば�
 
 Function &#39;geoToH3&#39; は、&#39;lon&#95;lat&#39; に設定すると (lon, lat) を、&#39;lat&#95;lon&#39; に設定すると (lat, lon) を受け入れます。
 
-<div id="glob_expansion_max_elements">
-  ## glob_expansion_max_elements
-</div>
+## glob_expansion_max_elements {#glob_expansion_max_elements}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 許可されるアドレス数の上限 (external storage、table function など) 。
 
-<div id="h3togeo_lon_lat_result_order">
-  ## h3togeo_lon_lat_result_order
-</div>
+## h3togeo_lon_lat_result_order {#h3togeo_lon_lat_result_order}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -869,17 +764,13 @@ Function &#39;geoToH3&#39; は、&#39;lon&#95;lat&#39; に設定すると (lon, 
 
 関数 &#39;h3ToGeo&#39; は、true の場合は (lon, lat)、それ以外の場合は (lat, lon) を返します。
 
-<div id="handshake_timeout_ms">
-  ## handshake_timeout_ms
-</div>
+## handshake_timeout_ms {#handshake_timeout_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="10000" />
 
 ハンドシェイク中にレプリカから Hello パケットを受信するまでのタイムアウト (ミリ秒) 。
 
-<div id="hedged_connection_timeout_ms">
-  ## hedged_connection_timeout_ms
-</div>
+## hedged_connection_timeout_ms {#hedged_connection_timeout_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="50" />
 
@@ -887,9 +778,7 @@ Function &#39;geoToH3&#39; は、&#39;lon&#95;lat&#39; に設定すると (lon, 
 
 ヘッジドリクエストでレプリカとの接続を確立する際の接続タイムアウト
 
-<div id="highlight_max_matches_per_row">
-  ## highlight_max_matches_per_row
-</div>
+## highlight_max_matches_per_row {#highlight_max_matches_per_row}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -901,9 +790,7 @@ Function &#39;geoToH3&#39; は、&#39;lon&#95;lat&#39; に設定すると (lon, 
 
 * 正の整数。
 
-<div id="hnsw_candidate_list_size_for_search">
-  ## hnsw_candidate_list_size_for_search
-</div>
+## hnsw_candidate_list_size_for_search {#hnsw_candidate_list_size_for_search}
 
 <SettingsInfoBlock type="UInt64" default_value="256" />
 
@@ -911,17 +798,13 @@ Function &#39;geoToH3&#39; は、&#39;lon&#95;lat&#39; に設定すると (lon, 
 
 ベクトル類似度索引の検索時に使用される動的な候補リストのサイズです。`ef_search` とも呼ばれます。
 
-<div id="hsts_max_age">
-  ## hsts_max_age
-</div>
+## hsts_max_age {#hsts_max_age}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 HSTS の有効期限です。0 は HSTS を無効にします。
 
-<div id="idle_connection_timeout">
-  ## idle_connection_timeout
-</div>
+## idle_connection_timeout {#idle_connection_timeout}
 
 <SettingsInfoBlock type="UInt64" default_value="3600" />
 
@@ -931,9 +814,7 @@ HSTS の有効期限です。0 は HSTS を無効にします。
 
 * 正の整数 (0 の場合は 0 秒後、つまり即座に切断されます) 。
 
-<div id="inject_random_order_for_select_without_order_by">
-  ## inject_random_order_for_select_without_order_by
-</div>
+## inject_random_order_for_select_without_order_by {#inject_random_order_for_select_without_order_by}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -944,33 +825,25 @@ HSTS の有効期限です。0 は HSTS を無効にします。
 最上位の構造が UNION の場合、&#39;ORDER BY rand()&#39; はすべての child に個別に挿入されます。
 ORDER BY がないとクエリ結果が非決定論的になるため、主にテストや開発でのみ有用です。
 
-<div id="input_format">
-  ## input_format
-</div>
+## input_format {#input_format}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "クエリの入力フォーマットをオーバーライドする新しい設定。"}]}]} />
 
 クエリの入力フォーマットをオーバーライドします。クエリで指定されたフォーマットよりも優先されます。
 
-<div id="interactive_delay">
-  ## interactive_delay
-</div>
+## interactive_delay {#interactive_delay}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
 リクエストの実行がキャンセルされたかどうかを確認し、Progressを送信する間隔をマイクロ秒単位で指定します。
 
-<div id="intersect_default_mode">
-  ## intersect_default_mode
-</div>
+## intersect_default_mode {#intersect_default_mode}
 
 <SettingsInfoBlock type="SetOperationMode" default_value="ALL" />
 
 INTERSECTクエリのデフォルトモードを設定します。設定可能な値: 空文字列、&#39;ALL&#39;、&#39;DISTINCT&#39;。空の場合、モードを指定しないクエリでは例外がスローされます。
 
-<div id="least_greatest_legacy_null_behavior">
-  ## least_greatest_legacy_null_behavior
-</div>
+## least_greatest_legacy_null_behavior {#least_greatest_legacy_null_behavior}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -978,9 +851,7 @@ INTERSECTクエリのデフォルトモードを設定します。設定可能�
 
 有効にすると、関数 &#39;least&#39; と &#39;greatest&#39; は、いずれかの引数が NULL の場合に NULL を返します。
 
-<div id="legacy_column_name_of_tuple_literal">
-  ## legacy_column_name_of_tuple_literal
-</div>
+## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -988,9 +859,7 @@ INTERSECTクエリのデフォルトモードを設定します。設定可能�
 
 ハッシュではなく、大きなタプルリテラルの要素名をすべてカラム名として列挙します。この設定は互換性のためにのみ存在します。バージョン 21.7 未満から 21.7 以上へクラスターをローリングアップデートする際は、&#39;true&#39; に設定するのが適切です。
 
-<div id="limit">
-  ## limit
-</div>
+## limit {#limit}
 
 <SettingsInfoBlock type="Double" default_value="0" />
 
@@ -1007,9 +876,7 @@ INTERSECTクエリのデフォルトモードを設定します。設定可能�
 
 この設定は、結果を返す`SELECT` / `UNION`クエリに適用されます。書き込みクエリ (`INSERT … SELECT`、`CREATE … AS SELECT`) では、ソースの`SELECT`が自身の`SETTINGS` clauseでこの設定を指定している場合にのみ有効です。プロファイルまたはセッションから継承された値、あるいは`INSERT` / `CREATE`ステートメント自体に設定された値は、ソースの`SELECT`には伝播されません。これは、他のすべての設定にも適用される非伝播ルールと同じです。
 
-<div id="load_marks_asynchronously">
-  ## load_marks_asynchronously
-</div>
+## load_marks_asynchronously {#load_marks_asynchronously}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1017,9 +884,7 @@ MergeTree のマークを非同期に読み込む
 
 Cloud でのデフォルト値: `1`.
 
-<div id="lock_acquire_timeout">
-  ## lock_acquire_timeout
-</div>
+## lock_acquire_timeout {#lock_acquire_timeout}
 
 <SettingsInfoBlock type="Seconds" default_value="120" />
 
@@ -1032,9 +897,7 @@ Cloud でのデフォルト値: `1`.
 * 正の整数 (秒単位) 。
 * 0 — ロックタイムアウトなし。
 
-<div id="low_priority_query_wait_time_ms">
-  ## low_priority_query_wait_time_ms
-</div>
+## low_priority_query_wait_time_ms {#low_priority_query_wait_time_ms}
 
 <BetaBadge />
 
@@ -1044,9 +907,7 @@ Cloud でのデフォルト値: `1`.
 
 クエリの優先度付けの仕組みが使用されている場合 (設定 `priority` を参照) 、低優先度のクエリは高優先度のクエリが完了するまで待機します。この設定では、その待機時間を指定します。
 
-<div id="make_distributed_plan">
-  ## make_distributed_plan
-</div>
+## make_distributed_plan {#make_distributed_plan}
 
 <ExperimentalBadge />
 
@@ -1064,9 +925,7 @@ Cloud でのデフォルト値: `1`.
 * `compile_expressions = 0`;
 * `query_plan_direct_read_from_text_index = 0`.
 
-<div id="merge_table_max_tables_to_look_for_schema_inference">
-  ## merge_table_max_tables_to_look_for_schema_inference
-</div>
+## merge_table_max_tables_to_look_for_schema_inference {#merge_table_max_tables_to_look_for_schema_inference}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -1075,9 +934,7 @@ Cloud でのデフォルト値: `1`.
 明示的なスキーマを指定せずに `Merge` テーブルを作成する場合、または `merge` テーブル関数を使用する場合、スキーマは指定した数以下の一致するテーブルのスキーマのユニオンとして推論されます。
 テーブル数がそれを超える場合は、先頭から指定した数のテーブルに基づいてスキーマが推論されます。
 
-<div id="mongodb_throw_on_unsupported_query">
-  ## mongodb_throw_on_unsupported_query
-</div>
+## mongodb_throw_on_unsupported_query {#mongodb_throw_on_unsupported_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1085,17 +942,13 @@ Cloud でのデフォルト値: `1`.
 
 有効な場合、MongoDBクエリを構築できないとき、MongoDBテーブルはエラーを返します。無効な場合、ClickHouse はテーブル全体を読み込み、ローカルで処理します。このオプションは、&#39;allow&#95;experimental&#95;analyzer=0&#39; の場合は適用されません。
 
-<div id="multiple_joins_try_to_keep_original_names">
-  ## multiple_joins_try_to_keep_original_names
-</div>
+## multiple_joins_try_to_keep_original_names {#multiple_joins_try_to_keep_original_names}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 複数の JOIN の書き換え時に、最上位の式リストへ別名を追加しない
 
-<div id="normalize_function_names">
-  ## normalize_function_names
-</div>
+## normalize_function_names {#normalize_function_names}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1103,9 +956,7 @@ Cloud でのデフォルト値: `1`.
 
 関数名を標準名に正規化します
 
-<div id="offset">
-  ## offset
-</div>
+## offset {#offset}
 
 <SettingsInfoBlock type="Double" default_value="0" />
 
@@ -1149,9 +1000,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 この設定は、結果を返す `SELECT` / `UNION` クエリに影響します。書き込みクエリ (`INSERT … SELECT`、`CREATE … AS SELECT`) では、ソースの `SELECT` 自身の `SETTINGS` 句でこの設定が指定されている場合にのみ有効です。プロファイルまたはセッションから継承された値や、`INSERT` / `CREATE` ステートメント自体に設定された値は、ソースの `SELECT` には伝播しません。これは、他のすべての設定にも適用される非伝播ルールと同じです。
 
-<div id="order">
-  ## order
-</div>
+## order {#order}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "クエリ全体を囲む ORDER BY 句を追加する新しい設定。"}]}]} />
 
@@ -1161,17 +1010,13 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 結果を返す `SELECT` / `UNION` クエリの形を変更します。書き込みクエリ (`INSERT … SELECT`、`CREATE … AS SELECT`) では、ソースの `SELECT` 自身の `SETTINGS` 句で指定した場合にのみ有効です。プロファイルまたはセッションから継承した値、あるいは `INSERT` / `CREATE` ステートメント自体に設定した値は、ソースの `SELECT` には伝播しません。これは、他のすべての設定にも適用される非伝播ルールと同じです。
 
-<div id="output_format">
-  ## output_format
-</div>
+## output_format {#output_format}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "クエリの出力フォーマットを上書きするための新しい設定。"}]}]} />
 
 クエリの出力フォーマットを上書きします。クエリ、ファイル拡張子、または `default_format` で指定されたフォーマットよりも優先されます。
 
-<div id="page">
-  ## ページ
-</div>
+## ページ {#page}
 
 <SettingsInfoBlock type="Double" default_value="0" />
 
@@ -1183,9 +1028,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 結果を返す `SELECT` / `UNION` クエリの形を決定します。書き込みクエリ (`INSERT … SELECT`、`CREATE … AS SELECT`) では、ソース `SELECT` 自体の `SETTINGS` 句にこの設定が指定されている場合にのみ有効です。プロファイルまたはセッションから継承された値、あるいは `INSERT` / `CREATE` ステートメント自体に設定された値は、ソース `SELECT` には伝播しません。これは、ほかのすべての設定にも適用される非伝播ルールと同じです。
 
-<div id="paimon_target_snapshot_id">
-  ## paimon_target_snapshot_id
-</div>
+## paimon_target_snapshot_id {#paimon_target_snapshot_id}
 
 <ExperimentalBadge />
 
@@ -1196,9 +1039,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 Paimon のインクリメンタルモードにおける、クエリレベルで特定のスナップショットを対象にした読み取りです。&gt;0 の場合、リーダーはコミット済みのウォーターマークを進めずに、指定した snapshot&#95;id の差分のみを取得します。
 デフォルト: -1 (無効)
 
-<div id="parallelize_output_from_storages">
-  ## parallelize_output_from_storages
-</div>
+## parallelize_output_from_storages {#parallelize_output_from_storages}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1206,17 +1047,13 @@ Paimon のインクリメンタルモードにおける、クエリレベルで�
 
 ストレージからの読み取りステップの出力を並列化します。これにより、可能な場合はストレージからの読み取り直後にクエリ処理を並列化できます。
 
-<div id="partial_result_on_first_cancel">
-  ## partial_result_on_first_cancel
-</div>
+## partial_result_on_first_cancel {#partial_result_on_first_cancel}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 キャンセル後でも、クエリが部分的な結果を返せるようにします。
 
-<div id="per_part_index_stats">
-  ## per_part_index_stats
-</div>
+## per_part_index_stats {#per_part_index_stats}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1224,17 +1061,13 @@ Paimon のインクリメンタルモードにおける、クエリレベルで�
 
 各パートの索引統計をログに記録します
 
-<div id="poll_interval">
-  ## poll_interval
-</div>
+## poll_interval {#poll_interval}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
 サーバー側のクエリ待機ループを、指定した秒数だけブロックします。
 
-<div id="polyglot_dialect">
-  ## polyglot_dialect
-</div>
+## polyglot_dialect {#polyglot_dialect}
 
 <ExperimentalBadge />
 
@@ -1242,9 +1075,7 @@ Paimon のインクリメンタルモードにおける、クエリレベルで�
 
 polyglotトランスパイラの変換元SQL方言 (例: &#39;sqlite&#39;, &#39;mysql&#39;, &#39;postgresql&#39;, &#39;snowflake&#39;, &#39;duckdb&#39;) 。
 
-<div id="postgresql_fault_injection_probability">
-  ## postgresql_fault_injection_probability
-</div>
+## postgresql_fault_injection_probability {#postgresql_fault_injection_probability}
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
@@ -1252,9 +1083,7 @@ polyglotトランスパイラの変換元SQL方言 (例: &#39;sqlite&#39;, &#39;
 
 内部 (レプリケーション用) の PostgreSQL クエリが失敗するおおよその確率です。有効な値の範囲は [0.0f, 1.0f] です
 
-<div id="predicate_statistics_sample_rate">
-  ## predicate_statistics_sample_rate
-</div>
+## predicate_statistics_sample_rate {#predicate_statistics_sample_rate}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -1262,17 +1091,13 @@ polyglotトランスパイラの変換元SQL方言 (例: &#39;sqlite&#39;, &#39;
 
 述語の選択性統計を `system.predicate_statistics_log` に収集します。N &gt; 0 に設定すると、クエリ ID に基づいて、クエリのおよそ 1/N がサンプリングされます。0 は無効を意味します。
 
-<div id="prefetch_buffer_size">
-  ## prefetch_buffer_size
-</div>
+## prefetch_buffer_size {#prefetch_buffer_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
 filesystem から読み込むための prefetch バッファの最大サイズです。読み取りバッファをそれ以上大きくする必要はないため、256 MiB を超える値は 256 MiB に制限されます。
 
-<div id="print_pretty_type_names">
-  ## print_pretty_type_names
-</div>
+## print_pretty_type_names {#print_pretty_type_names}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1309,17 +1134,13 @@ a   Tuple(
 )
 ```
 
-<div id="priority">
-  ## priority
-</div>
+## priority {#priority}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 クエリの優先度。1 が最も高く、値が大きいほど優先度は低くなります。0 は優先度を使用しません。
 
-<div id="push_external_roles_in_interserver_queries">
-  ## push_external_roles_in_interserver_queries
-</div>
+## push_external_roles_in_interserver_queries {#push_external_roles_in_interserver_queries}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1327,9 +1148,7 @@ a   Tuple(
 
 クエリ実行時に、ユーザーロールをクエリの発行元から他のノードへプッシュすることを有効にします。
 
-<div id="query_metric_log_interval">
-  ## query_metric_log_interval
-</div>
+## query_metric_log_interval {#query_metric_log_interval}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -1343,33 +1162,25 @@ a   Tuple(
 
 デフォルト値: -1
 
-<div id="queue_max_wait_ms">
-  ## queue_max_wait_ms
-</div>
+## queue_max_wait_ms {#queue_max_wait_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="0" />
 
 同時実行リクエスト数が最大値を超えた場合に、リクエストキュー内で待機する時間です。
 
-<div id="rabbitmq_max_wait_ms">
-  ## rabbitmq_max_wait_ms
-</div>
+## rabbitmq_max_wait_ms {#rabbitmq_max_wait_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="5000" />
 
 再試行前にRabbitMQから読み取る際の待機時間。
 
-<div id="readonly">
-  ## readonly
-</div>
+## readonly {#readonly}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 0 - 読み取り専用に関する制限はありません。1 - 閲覧リクエストのみ許可され、明示的に許可された設定の変更も可能です。2 - 閲覧リクエストのみ許可され、&#39;readonly&#39; 設定を除く設定の変更も可能です。
 
-<div id="recursive_cte_max_steps_in_type_inference">
-  ## recursive_cte_max_steps_in_type_inference
-</div>
+## recursive_cte_max_steps_in_type_inference {#recursive_cte_max_steps_in_type_inference}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -1377,9 +1188,7 @@ a   Tuple(
 
 recursive CTE のカラム型を推論する際の最大反復回数です。カラム型は、収束するまで、UNION ALL の非再帰側と再帰側に対して `getLeastSupertype` を繰り返し適用することで決定されます。0 に設定すると型の拡張が無効になり、非再帰部分の型のみが使用されます。
 
-<div id="regexp_max_matches_per_row">
-  ## regexp_max_matches_per_row
-</div>
+## regexp_max_matches_per_row {#regexp_max_matches_per_row}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -1389,33 +1198,25 @@ recursive CTE のカラム型を推論する際の最大反復回数です。カ
 
 * 正の整数。
 
-<div id="reject_expensive_hyperscan_regexps">
-  ## reject_expensive_hyperscan_regexps
-</div>
+## reject_expensive_hyperscan_regexps {#reject_expensive_hyperscan_regexps}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 hyperscan での評価コストが高くなる可能性が高いパターンを拒否します (NFA の状態爆発が原因)
 
-<div id="remerge_sort_lowered_memory_bytes_ratio">
-  ## remerge_sort_lowered_memory_bytes_ratio
-</div>
+## remerge_sort_lowered_memory_bytes_ratio {#remerge_sort_lowered_memory_bytes_ratio}
 
 <SettingsInfoBlock type="Float" default_value="2" />
 
 remerge 後のメモリ使用量がこの比率まで減少しない場合、remerge は無効になります。
 
-<div id="remote_read_min_bytes_for_seek">
-  ## remote_read_min_bytes_for_seek
-</div>
+## remote_read_min_bytes_for_seek {#remote_read_min_bytes_for_seek}
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
 ignore を伴う読み取りではなく seek を行うために、リモート読み取り (url、S3) で必要な最小バイト数。
 
-<div id="rename_files_after_processing">
-  ## rename_files_after_processing
-</div>
+## rename_files_after_processing {#rename_files_after_processing}
 
 * **型:** String
 
@@ -1443,9 +1244,7 @@ ignore を伴う読み取りではなく seek を行うために、リモート�
 
 `sample.csv` の読み取りに成功すると、ファイル名は `processed_sample_1683473210851438.csv` に変更されます
 
-<div id="replication_wait_for_inactive_replica_timeout">
-  ## replication_wait_for_inactive_replica_timeout
-</div>
+## replication_wait_for_inactive_replica_timeout {#replication_wait_for_inactive_replica_timeout}
 
 <SettingsInfoBlock type="Int64" default_value="120" />
 
@@ -1457,9 +1256,7 @@ ignore を伴う読み取りではなく seek を行うために、リモート�
 * 負の整数 — 無制限に待機します。
 * 正の整数 — 待機する秒数。
 
-<div id="reserve_memory">
-  ## reserve_memory
-</div>
+## reserve_memory {#reserve_memory}
 
 <ExperimentalBadge />
 
@@ -1472,9 +1269,7 @@ ignore を伴う読み取りではなく seek を行うために、リモート�
 `0` は予約を行わないことを意味します。
 この設定は、MEMORY RESERVATION リソースが作成されている場合にのみ有効です。
 
-<div id="restore_replicated_merge_tree_to_shared_merge_tree">
-  ## restore_replicated_merge_tree_to_shared_merge_tree
-</div>
+## restore_replicated_merge_tree_to_shared_merge_tree {#restore_replicated_merge_tree_to_shared_merge_tree}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1484,9 +1279,7 @@ RESTORE 時に、テーブルエンジンを Replicated*MergeTree から Shared*
 
 Cloud でのデフォルト値: `1`。
 
-<div id="result_overflow_mode">
-  ## result_overflow_mode
-</div>
+## result_overflow_mode {#result_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -1517,9 +1310,7 @@ FORMAT Null;
 6666 rows in set. ...
 ```
 
-<div id="resumable_backup_from_snapshot">
-  ## resumable_backup_from_snapshot
-</div>
+## resumable_backup_from_snapshot {#resumable_backup_from_snapshot}
 
 <ExperimentalBadge />
 
@@ -1532,9 +1323,7 @@ FORMAT Null;
 `S3` および `AzureBlobStorage` 宛先では、ClickHouse Cloud でのみ利用できます。
 `BACKUP FROM SNAPSHOT` 自体を利用できない ClickHouse オープンソースビルドでこれを有効にすると、`BACKUP` は `WRONG_BACKUP_SETTINGS` で失敗します。
 
-<div id="rows_before_aggregation">
-  ## rows_before_aggregation
-</div>
+## rows_before_aggregation {#rows_before_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1542,9 +1331,7 @@ FORMAT Null;
 
 有効にすると、ClickHouse は rows&#95;before&#95;aggregation 統計値の正確な値を返します。これは、集約前に読み取られた行数を表します
 
-<div id="run_query_in_background">
-  ## run_query_in_background
-</div>
+## run_query_in_background {#run_query_in_background}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1560,9 +1347,7 @@ FORMAT Null;
 
 主なユースケースは、クライアント接続が切断されても失われてはならない、長時間実行される `INSERT ... SELECT` です。
 
-<div id="secondary_indices_enable_bulk_filtering">
-  ## secondary_indices_enable_bulk_filtering
-</div>
+## secondary_indices_enable_bulk_filtering {#secondary_indices_enable_bulk_filtering}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1570,9 +1355,7 @@ FORMAT Null;
 
 インデックスでの一括フィルタリングアルゴリズムを有効にします。通常はこちらのほうが常に優れていると想定されていますが、互換性の確保と制御のためにこの設定を用意しています。
 
-<div id="select">
-  ## select
-</div>
+## select {#select}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "クエリを `SELECT <expr_list> FROM (<query>)` でラップする新しい設定。"}]}]} />
 
@@ -1582,9 +1365,7 @@ FORMAT Null;
 
 結果を返す `SELECT` / `UNION` クエリの形状を決定します。書き込みクエリ (`INSERT … SELECT`、`CREATE … AS SELECT`) では、ソース `SELECT` 自身の `SETTINGS` 句で指定されている場合にのみ有効です。プロファイルまたはセッションから継承された値や、`INSERT` / `CREATE` ステートメント自体に設定された値は、ソース `SELECT` には伝播されません。これは、他のすべての設定にも適用される非伝播ルールと同じです。
 
-<div id="select_sequential_consistency">
-  ## select_sequential_consistency
-</div>
+## select_sequential_consistency {#select_sequential_consistency}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -1611,9 +1392,7 @@ FORMAT Null;
 * [insert&#95;quorum&#95;timeout](/ja/reference/settings/session-settings/insert-quorum#insert_quorum_timeout)
 * [insert&#95;quorum&#95;parallel](/ja/reference/settings/session-settings/insert-quorum#insert_quorum_parallel)
 
-<div id="session_timezone">
-  ## session_timezone
-</div>
+## session_timezone {#session_timezone}
 
 <BetaBadge />
 
@@ -1676,9 +1455,7 @@ SELECT *, timeZone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS sessi
 
 * [timezone](/ja/reference/settings/server-settings/settings/other#timezone)
 
-<div id="set_overflow_mode">
-  ## set_overflow_mode
-</div>
+## set_overflow_mode {#set_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -1690,17 +1467,13 @@ SELECT *, timeZone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS sessi
 * `break`: クエリの実行を停止し、入力データが尽きたかのように
   部分的な結果を返します。
 
-<div id="single_join_prefer_left_table">
-  ## single_join_prefer_left_table
-</div>
+## single_join_prefer_left_table {#single_join_prefer_left_table}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 単一の JOIN で識別子が曖昧な場合は、左テーブルを優先します
 
-<div id="skip_redundant_aliases_in_udf">
-  ## skip_redundant_aliases_in_udf
-</div>
+## skip_redundant_aliases_in_udf {#skip_redundant_aliases_in_udf}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1747,17 +1520,13 @@ EXPLAIN SYNTAX SELECT test_03274(4 + 2);
 SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 ```
 
-<div id="sleep_after_receiving_query_ms">
-  ## sleep_after_receiving_query_ms
-</div>
+## sleep_after_receiving_query_ms {#sleep_after_receiving_query_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="0" />
 
 TCPHandler でクエリを受信した後のスリープ時間
 
-<div id="snappy_mode">
-  ## snappy_mode
-</div>
+## snappy_mode {#snappy_mode}
 
 <SettingsInfoBlock type="SnappyMode" default_value="basic" />
 
@@ -1772,9 +1541,7 @@ TCPHandler でクエリを受信した後のスリープ時間
 * `basic` — Hadoop snappy ブロックフォーマット。Hadoop が読み書きするファイルと互換性があります。読み取りと書き込みの両方をサポートします。
 * `framed` — Snappy framing フォーマット。Google が定義した標準的なストリーミングフォーマットです。読み取りと書き込みの両方をサポートします。
 
-<div id="sort">
-  ## ソート
-</div>
+## ソート {#sort}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "クエリをラップする単純な ORDER BY 句を追加する新しい設定。"}]}]} />
 
@@ -1784,9 +1551,7 @@ TCPHandler でクエリを受信した後のスリープ時間
 
 結果を返す `SELECT` / `UNION` クエリに適用されます。書き込みクエリ (`INSERT … SELECT`、`CREATE … AS SELECT`) では、ソース `SELECT` 自身の `SETTINGS` 句で指定された場合にのみ有効です。プロファイルまたはセッションから継承された値や、`INSERT` / `CREATE` ステートメント自体に設定された値は、ソース `SELECT` には伝播しません。これは、他のすべての設定にも適用される非伝播ルールと同じです。
 
-<div id="sort_overflow_mode">
-  ## sort_overflow_mode
-</div>
+## sort_overflow_mode {#sort_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -1797,9 +1562,7 @@ TCPHandler でクエリを受信した後のスリープ時間
 * `throw`: 例外をスローします。
 * `break`: クエリの実行を停止し、部分的な結果を返します。
 
-<div id="splitby_max_substrings_includes_remaining_string">
-  ## splitby_max_substrings_includes_remaining_string
-</div>
+## splitby_max_substrings_includes_remaining_string {#splitby_max_substrings_includes_remaining_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1810,9 +1573,7 @@ TCPHandler でクエリを受信した後のスリープ時間
 * `0` - 残りの文字列は、結果配列の最後の要素に含まれません。
 * `1` - 残りの文字列は、結果配列の最後の要素に含まれます。これは、Spark の [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) 関数および Python の [`string.split()`](https://docs.python.org/3/library/stdtypes.html#str.split) メソッドと同じ動作です。
 
-<div id="statistics_max_set_size_for_exact_selectivity_estimation">
-  ## statistics_max_set_size_for_exact_selectivity_estimation
-</div>
+## statistics_max_set_size_for_exact_selectivity_estimation {#statistics_max_set_size_for_exact_selectivity_estimation}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -1820,9 +1581,7 @@ TCPHandler でクエリを受信した後のスリープ時間
 
 選択性推定器が集合でカバーされる正確な範囲を導出する対象となる、`IN` 演算子の右辺の集合の最大サイズ。これらの範囲の導出には、要素ごとに `Field` 1 つ、ソート、および統計プローブ 1 回が必要となるため、大きな集合ではクエリプランニングの大半を占めます。この制限を超えると、推定器は代わりに集合のサイズとその境界範囲から選択性を導出します。これはソートや要素ごとの統計プローブを必要とせず、集合を 1 回線形走査するだけで済みます。0 は制限なしを意味します。
 
-<div id="stop_refreshable_materialized_views_on_startup">
-  ## stop_refreshable_materialized_views_on_startup
-</div>
+## stop_refreshable_materialized_views_on_startup {#stop_refreshable_materialized_views_on_startup}
 
 <ExperimentalBadge />
 
@@ -1830,17 +1589,13 @@ TCPHandler でクエリを受信した後のスリープ時間
 
 サーバーの起動時に、SYSTEM STOP VIEWS を実行した場合と同様に、リフレッシャブルmaterialized view がスケジュールされないようにします。その後、`SYSTEM START VIEWS` または `SYSTEM START VIEW <name>` を使用して手動で開始できます。新しく作成されたビューにも適用されます。リフレッシャブルでない materialized view には影響しません。
 
-<div id="tcp_keep_alive_timeout">
-  ## tcp_keep_alive_timeout
-</div>
+## tcp_keep_alive_timeout {#tcp_keep_alive_timeout}
 
 <SettingsInfoBlock type="Seconds" default_value="290" />
 
 TCP が keepalive プローブの送信を開始するまでに、接続がアイドル状態のままである時間 (秒)
 
-<div id="temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds">
-  ## temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds
-</div>
+## temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds {#temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds}
 
 <SettingsInfoBlock type="UInt64" default_value="600000" />
 
@@ -1848,17 +1603,13 @@ TCP が keepalive プローブの送信を開始するまでに、接続がア�
 
 ファイルシステムキャッシュ内の一時データで領域を予約する際に、cache を lock するまでの待機時間
 
-<div id="throw_if_no_data_to_insert">
-  ## throw_if_no_data_to_insert
-</div>
+## throw_if_no_data_to_insert {#throw_if_no_data_to_insert}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 空の INSERT を許可または禁止します。デフォルトで有効になっており、空の INSERT ではエラーが発生します。[`clickhouse-client`](/ja/concepts/features/interfaces/client) を使用する INSERT、または [gRPC インターフェイス](/ja/concepts/features/interfaces/grpc) を使用する INSERT にのみ適用されます。
 
-<div id="time_series_prefer_recent_samples_table">
-  ## time_series_prefer_recent_samples_table
-</div>
+## time_series_prefer_recent_samples_table {#time_series_prefer_recent_samples_table}
 
 <ExperimentalBadge />
 
@@ -1868,17 +1619,13 @@ TCP が keepalive プローブの送信を開始するまでに、接続がア�
 
 要求された時間範囲全体が最近の Samples テーブルの有効期限 (TTL) ウィンドウ内に収まる場合、メインの Samples テーブルではなく、[TimeSeries](/ja/reference/engines/table-engines/integrations/time-series) テーブルの最近の Samples テーブルから読み取ります (TimeSeries テーブルエンジンの `recent_samples_ttl_seconds` 設定を参照) 。
 
-<div id="timeout_before_checking_execution_speed">
-  ## timeout_before_checking_execution_speed
-</div>
+## timeout_before_checking_execution_speed {#timeout_before_checking_execution_speed}
 
 <SettingsInfoBlock type="Seconds" default_value="10" />
 
 指定した秒数の経過後、実行速度が遅すぎないこと (`min_execution_speed` を下回らないこと) を確認します。
 
-<div id="transfer_overflow_mode">
-  ## transfer_overflow_mode
-</div>
+## transfer_overflow_mode {#transfer_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -1890,9 +1637,7 @@ TCP が keepalive プローブの送信を開始するまでに、接続がア�
 * `break`: クエリの実行を停止し、ソースデータが尽きた場合と同様に、
   部分的な結果を返します。
 
-<div id="transform_null_in">
-  ## transform_null_in
-</div>
+## transform_null_in {#transform_null_in}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1950,9 +1695,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 * [IN 演算子での NULL 処理](/ja/reference/statements/in#null-processing)
 
-<div id="traverse_shadow_remote_data_paths">
-  ## traverse_shadow_remote_data_paths
-</div>
+## traverse_shadow_remote_data_paths {#traverse_shadow_remote_data_paths}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1960,9 +1703,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 system.remote&#95;data&#95;paths をクエリする際、実際のテーブルデータに加えて凍結データ (shadow ディレクトリ) も走査します
 
-<div id="union_default_mode">
-  ## union_default_mode
-</div>
+## union_default_mode {#union_default_mode}
 
 `SELECT` クエリ結果を結合するモードを設定します。この設定は、`UNION ALL` または `UNION DISTINCT` を明示的に指定せずに [UNION](/ja/reference/statements/select/union) を使用した場合にのみ適用されます。
 
@@ -1974,17 +1715,13 @@ system.remote&#95;data&#95;paths をクエリする際、実際のテーブル�
 
 例は [UNION](/ja/reference/statements/select/union) を参照してください。
 
-<div id="unknown_packet_in_send_data">
-  ## unknown_packet_in_send_data
-</div>
+## unknown_packet_in_send_data {#unknown_packet_in_send_data}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 N 番目のデータパケットでは、データの代わりに不明なパケットを送信します
 
-<div id="variant_throw_on_type_mismatch">
-  ## variant_throw_on_type_mismatch
-</div>
+## variant_throw_on_type_mismatch {#variant_throw_on_type_mismatch}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1996,9 +1733,7 @@ N 番目のデータパケットでは、データの代わりに不明なパケ
 * `true` (デフォルト) — 例外をスローします。
 * `false` — 代わりにそれらの行には `NULL` を返します。
 
-<div id="wait_changes_become_visible_after_commit_mode">
-  ## wait_changes_become_visible_after_commit_mode
-</div>
+## wait_changes_become_visible_after_commit_mode {#wait_changes_become_visible_after_commit_mode}
 
 <ExperimentalBadge />
 
@@ -2006,17 +1741,13 @@ N 番目のデータパケットでは、データの代わりに不明なパケ
 
 コミット済みの変更が最新のスナップショットで実際に見えるようになるまで待機します
 
-<div id="workload">
-  ## workload
-</div>
+## workload {#workload}
 
 <SettingsInfoBlock type="String" default_value="default" />
 
 リソースへのアクセスに使用するワークロード名
 
-<div id="write_full_path_in_iceberg_metadata">
-  ## write_full_path_in_iceberg_metadata
-</div>
+## write_full_path_in_iceberg_metadata {#write_full_path_in_iceberg_metadata}
 
 <ExperimentalBadge />
 
@@ -2026,9 +1757,7 @@ N 番目のデータパケットでは、データの代わりに不明なパケ
 
 Icebergメタデータファイルに完全なパス (s3:// を含む) を書き込みます。
 
-<div id="zstd_window_log_max">
-  ## zstd_window_log_max
-</div>
+## zstd_window_log_max {#zstd_window_log_max}
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 

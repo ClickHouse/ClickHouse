@@ -448,9 +448,10 @@ CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_f
 ```sql
 ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
+ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 ```
 
-データがすでに Tags テーブルに存在する状態で `id_generator` を変更すると、同じ metric+tag の組み合わせに対して異なる ID が生成される可能性がある点に注意してください。古い行は従来の ID のまま残り、新しい行では新しいジェネレーターが使用されます。
+データがすでに Tags テーブルに存在する状態で `id_generator` を変更すると、同じメトリクス+タグ の組み合わせに対して異なる ID が生成される可能性がある点に注意してください。古い行は従来の ID のまま残り、新しい行では新しいジェネレーターが使用されます。
 
 他の設定は、`CREATE` 時に内部テーブルのスキーマに組み込まれるため、`ALTER ... MODIFY SETTING` では変更できません。
 

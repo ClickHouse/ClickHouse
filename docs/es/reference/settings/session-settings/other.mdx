@@ -16,9 +16,7 @@ import { CloudOnlyBadge } from "/snippets/es/components/CloudOnlyBadge/CloudOnly
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="adaptive_aggregator_freeze_threshold">
-  ## adaptive_aggregator_freeze_threshold
-</div>
+## adaptive_aggregator_freeze_threshold {#adaptive_aggregator_freeze_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="16384" />
 
@@ -26,9 +24,7 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 
 El número de claves a partir del cual el agregador adaptativo congela la tabla hash local de un hilo (consulte `enable_adaptive_aggregator`). Los valores menores mantienen las tablas congeladas en caché, mientras que los valores mayores permiten que absorban más claves frecuentes. El valor 0 congela las tablas en la primera oportunidad, lo que hace que el algoritmo se comporte como una segmentación pura por el hash de la clave: cada clave se enruta según su hash y se agrega en un único propietario, pero se difiere a la fase de fusión en lugar de intercambiarse entre hilos durante el escaneo.
 
-<div id="adaptive_aggregator_freeze_threshold_bytes">
-  ## adaptive_aggregator_freeze_threshold_bytes
-</div>
+## adaptive_aggregator_freeze_threshold_bytes {#adaptive_aggregator_freeze_threshold_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
@@ -36,25 +32,19 @@ El número de claves a partir del cual el agregador adaptativo congela la tabla 
 
 El tamaño de memoria a partir del cual el agregador adaptativo congela la tabla hash local de un hilo (consulta `enable_adaptive_aggregator`). Una tabla se congela al alcanzarse primero este valor o `adaptive_aggregator_freeze_threshold`. El tamaño corresponde a los bytes asignados por la propia tabla local (su búfer de tabla hash más sus arenas) y se comprueba entre bloques. El límite de bytes es relevante cuando las claves o los estados de agregación son anchos: el umbral de recuento de claves por sí solo permitiría que estas tablas superaran la capacidad de las cachés de CPU. Con el valor predeterminado, las tablas con claves y estados de ancho normal siguen congelándose según el recuento de claves. 0 desactiva el límite de bytes, por lo que decide únicamente el umbral de recuento de claves.
 
-<div id="add_http_cors_header">
-  ## add_http_cors_header
-</div>
+## add_http_cors_header {#add_http_cors_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Escribe el encabezado HTTP CORS adicional.
 
-<div id="analyze_index_with_space_filling_curves">
-  ## analyze_index_with_space_filling_curves
-</div>
+## analyze_index_with_space_filling_curves {#analyze_index_with_space_filling_curves}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Si una tabla tiene una curva de llenado de espacio en su índice, por ejemplo, `ORDER BY mortonEncode(x, y)` o `ORDER BY hilbertEncode(x, y)`, y la consulta tiene condiciones sobre sus argumentos, por ejemplo, `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use la curva de llenado de espacio para el análisis de índices.
 
-<div id="analyzer_inline_views">
-  ## analyzer_inline_views
-</div>
+## analyzer_inline_views {#analyzer_inline_views}
 
 <ExperimentalBadge />
 
@@ -64,9 +54,7 @@ Si una tabla tiene una curva de llenado de espacio en su índice, por ejemplo, `
 
 Cuando está habilitada, el analizador reemplaza las vistas ordinarias (no materializadas y no parametrizadas) por las subconsultas que las definen, lo que permite optimizaciones entre límites como el pushdown de predicados y la poda de columnas.
 
-<div id="any_join_distinct_right_table_keys">
-  ## any_join_distinct_right_table_keys
-</div>
+## any_join_distinct_right_table_keys {#any_join_distinct_right_table_keys}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -97,9 +85,7 @@ Véase también:
 
 * [JOIN strictness](/es/reference/statements/select/join#settings)
 
-<div id="archive_adaptive_buffer_max_size_bytes">
-  ## archive_adaptive_buffer_max_size_bytes
-</div>
+## archive_adaptive_buffer_max_size_bytes {#archive_adaptive_buffer_max_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="8388608" />
 
@@ -107,9 +93,7 @@ Véase también:
 
 Limita el tamaño máximo del búfer adaptativo utilizado al escribir en archivos contenedores (por ejemplo, archivos tar
 
-<div id="arrow_flight_request_descriptor_type">
-  ## arrow_flight_request_descriptor_type
-</div>
+## arrow_flight_request_descriptor_type {#arrow_flight_request_descriptor_type}
 
 <SettingsInfoBlock type="ArrowFlightDescriptorType" default_value="path" />
 
@@ -122,9 +106,7 @@ Posibles valores:
 * &#39;path&#39; — Usa FlightDescriptor::Path (predeterminado; funciona con la mayoría de los servidores Arrow Flight)
 * &#39;command&#39; — Usa FlightDescriptor::Command con una consulta SELECT (obligatorio para Dremio)
 
-<div id="backup_slow_all_threads_after_retryable_s3_error">
-  ## backup_slow_all_threads_after_retryable_s3_error
-</div>
+## backup_slow_all_threads_after_retryable_s3_error {#backup_slow_all_threads_after_retryable_s3_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -134,9 +116,7 @@ Cuando se establece en `true`, todos los hilos que ejecutan solicitudes S3 al mi
 después de que una sola solicitud S3 encuentre un error de S3 reintentable, como &#39;Slow Down&#39;.
 Cuando se establece en `false`, cada hilo gestiona el backoff de las solicitudes S3 de forma independiente de los demás.
 
-<div id="cache_warmer_threads">
-  ## cache_warmer_threads
-</div>
+## cache_warmer_threads {#cache_warmer_threads}
 
 <CloudOnlyBadge />
 
@@ -144,17 +124,13 @@ Cuando se establece en `false`, cada hilo gestiona el backoff de las solicitudes
 
 Solo tiene efecto en ClickHouse Cloud. Número de hilos en segundo plano para descargar de forma especulativa nuevas partes de datos a la caché del sistema de archivos cuando [cache&#95;populated&#95;by&#95;fetch](/es/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch) está habilitado. Cero para deshabilitarlo.
 
-<div id="calculate_text_stack_trace">
-  ## calculate_text_stack_trace
-</div>
+## calculate_text_stack_trace {#calculate_text_stack_trace}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Calcula la traza de pila textual en caso de excepciones durante la ejecución de consultas. Este es el valor predeterminado. Requiere búsquedas de símbolos que pueden ralentizar las pruebas de fuzzing cuando se ejecuta una gran cantidad de consultas erróneas. En condiciones normales, no debería desactivar esta opción.
 
-<div id="cancel_http_readonly_queries_on_client_close">
-  ## cancel_http_readonly_queries_on_client_close
-</div>
+## cancel_http_readonly_queries_on_client_close {#cancel_http_readonly_queries_on_client_close}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -162,17 +138,13 @@ Cancela las consultas HTTP de solo lectura (por ejemplo, `SELECT`) cuando un cli
 
 Valor predeterminado en Cloud: `1`.
 
-<div id="checksum_on_read">
-  ## checksum_on_read
-</div>
+## checksum_on_read {#checksum_on_read}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Valida las sumas de comprobación al leer. Está habilitada de forma predeterminada y siempre debe estarlo en producción. No espere obtener ningún beneficio por deshabilitar este ajuste. Solo debería usarse para experimentos y benchmarks. Este ajuste solo se aplica a tablas de la familia MergeTree. Las sumas de comprobación siempre se validan en otros motores de tabla y al recibir datos a través de la red.
 
-<div id="compression">
-  ## compression
-</div>
+## compression {#compression}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración para aplicar compresión genérica al cuerpo de la respuesta."}]}]} />
 
@@ -180,30 +152,38 @@ Aplica compresión genérica al cuerpo de la respuesta, por ejemplo, `compressio
 
 Esta configuración de la interfaz HTTP da forma a la respuesta: se procesa antes de ejecutar la consulta (los búferes de respuesta se configuran de antemano), por lo que debe proporcionarse mediante el parámetro URL de HTTP, la extensión de archivo de la ruta de la URL o un perfil de usuario, y no mediante una cláusula `SETTINGS` dentro de la consulta (donde no tiene efecto y se rechaza).
 
-<div id="connection_pool_max_wait_ms">
-  ## connection_pool_max_wait_ms
-</div>
+## connection_pool_max_wait_ms {#connection_pool_max_wait_ms}
 
-<SettingsInfoBlock type="Milisegundos" default_value="0" />
+<SettingsInfoBlock type="Milliseconds" default_value="0" />
 
-El tiempo de espera en milisegundos de una conexión cuando el grupo de conexiones está lleno.
+El tiempo de espera en milisegundos para obtener una conexión cuando el grupo de conexiones está lleno.
 
-Valores posibles:
+La espera se aplica por réplica, ya que hay un grupo de conexiones por cada réplica. Cuando expira, el
+intento falla con `NO_FREE_CONNECTION`. En la ruta de failover que utilizan los `SELECT` distribuidos, esto
+se trata como cualquier otra réplica inutilizable: la consulta prueba con las réplicas restantes y solo falla con
+`ALL_CONNECTION_TRIES_FAILED` cuando ya se han probado todas. Por tanto, esta configuración no acota
+la consulta completa; con `N` réplicas y `T` intentos cada una, la espera total puede llegar a ser de
+`connection_pool_max_wait_ms` por `N` por `T`, donde `T` es
+[connections&#95;with&#95;failover&#95;max&#95;tries](/es/reference/settings/session-settings/other#connections_with_failover_max_tries), pero nunca menor que uno,
+ya que siempre se prueba una réplica al menos una vez antes de descartarla. Utilice
+[max&#95;execution&#95;time](/es/reference/settings/session-settings/max-execution#max_execution_time) para acotar
+la consulta en sí.
+
+Possible values:
 
 * Entero positivo.
-* 0 — tiempo de espera infinito.
+* 0 — timeout infinito. La espera se puede interrumpir igualmente con `KILL QUERY` y con `max_execution_time` cuando
+  [timeout&#95;overflow&#95;mode](/es/reference/settings/session-settings/timeout-overflow-mode#timeout_overflow_mode) tiene su valor predeterminado `throw`.
+  Con `break`, el límite de tiempo no cancela la consulta, por lo que la espera continúa hasta que se libera una
+  conexión; `KILL QUERY` sigue interrumpiéndola.
 
-<div id="connections_with_failover_max_tries">
-  ## connections_with_failover_max_tries
-</div>
+## connections_with_failover_max_tries {#connections_with_failover_max_tries}
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
 El número máximo de intentos de conexión con cada réplica para el motor de tabla Distributed.
 
-<div id="convert_query_to_cnf">
-  ## convert_query_to_cnf
-</div>
+## convert_query_to_cnf {#convert_query_to_cnf}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -271,9 +251,7 @@ Observa que la cláusula `WHERE` se reescribe en CNF, pero el conjunto de result
 
 Valores posibles: true, false
 
-<div id="count_matches_stop_at_empty_match">
-  ## count_matches_stop_at_empty_match
-</div>
+## count_matches_stop_at_empty_match {#count_matches_stop_at_empty_match}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -281,17 +259,13 @@ Valores posibles: true, false
 
 Deja de contar cuando un patrón tenga una coincidencia de longitud cero en la función `countMatches`.
 
-<div id="cross_to_inner_join_rewrite">
-  ## cross_to_inner_join_rewrite
-</div>
+## cross_to_inner_join_rewrite {#cross_to_inner_join_rewrite}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
 Usa inner join en lugar de comma join/cross join si hay expresiones de join en la sección WHERE. Valores: 0 - sin reescritura, 1 - aplicar si es posible para comma/cross, 2 - forzar la reescritura de todos los joins con coma, cross - si es posible
 
-<div id="data_type_default_nullable">
-  ## data_type_default_nullable
-</div>
+## data_type_default_nullable {#data_type_default_nullable}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -302,17 +276,13 @@ Valores posibles:
 * 1 — Los tipos de datos en las definiciones de columnas se establecen como `Nullable` de forma predeterminada.
 * 0 — Los tipos de datos en las definiciones de columnas se establecen como no `Nullable` de forma predeterminada.
 
-<div id="decimal_check_overflow">
-  ## decimal_check_overflow
-</div>
+## decimal_check_overflow {#decimal_check_overflow}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Comprueba el desbordamiento en las operaciones aritméticas y de comparación de Decimal
 
-<div id="deduplicate_blocks_in_dependent_materialized_views">
-  ## deduplicate_blocks_in_dependent_materialized_views
-</div>
+## deduplicate_blocks_in_dependent_materialized_views {#deduplicate_blocks_in_dependent_materialized_views}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -332,9 +302,7 @@ Esta configuración es útil para garantizar que las vistas materializadas no co
 
 * [Procesamiento de NULL en los operadores IN](/es/concepts/features/operations/insert/deduplicating-inserts-on-retries#insert-deduplication-with-materialized-views)
 
-<div id="defer_partition_pruning_after_final">
-  ## defer_partition_pruning_after_final
-</div>
+## defer_partition_pruning_after_final {#defer_partition_pruning_after_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -360,17 +328,13 @@ Posibles valores:
 * 0 — Aplicar la poda de particiones antes de `FINAL` (comportamiento anterior a la 26.3, más rápido pero inseguro en el caso general).
 * 1 — Aplazar la poda de particiones hasta después de `FINAL` (valor predeterminado, seguro desde el punto de vista de la corrección).
 
-<div id="describe_compact_output">
-  ## describe_compact_output
-</div>
+## describe_compact_output {#describe_compact_output}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Si es true, incluye solo los nombres de las columnas y los tipos en el resultado de la consulta DESCRIBE
 
-<div id="dialect">
-  ## dialect
-</div>
+## dialect {#dialect}
 
 <SettingsInfoBlock type="Dialect" default_value="clickhouse" />
 
@@ -385,9 +349,7 @@ Valores admitidos:
 * `promql` — PromQL (Prometheus Query Language) evaluado sobre una tabla TimeSeries, configurada mediante las opciones `promql_database`, `promql_table` y `promql_evaluation_time`.
 * `clickhouse_json` — en lugar de texto SQL, la consulta se interpreta como un AST JSON (la salida de `parseQueryToJSON`). La consulta `SET` se sigue reconociendo en formato sin procesar para poder volver a cambiar el dialecto. Requiere la configuración experimental `enable_json_ast_dialect`.
 
-<div id="discard_query_data">
-  ## discard_query_data
-</div>
+## discard_query_data {#discard_query_data}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -401,9 +363,7 @@ No tiene efecto en las consultas secundarias.
 
 Afecta solo al protocolo TCP nativo.
 
-<div id="distinct_overflow_mode">
-  ## distinct_overflow_mode
-</div>
+## distinct_overflow_mode {#distinct_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -415,9 +375,7 @@ Valores posibles:
 * `break`: detener la ejecución de la consulta y devolver el resultado parcial, como si los
   datos de origen se hubieran agotado.
 
-<div id="do_not_merge_across_partitions_select_final">
-  ## do_not_merge_across_partitions_select_final
-</div>
+## do_not_merge_across_partitions_select_final {#do_not_merge_across_partitions_select_final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -425,9 +383,7 @@ Mejora las consultas FINAL al evitar las fusiones entre distintas particiones.
 
 Cuando está habilitado, durante las consultas SELECT FINAL, las partes de distintas particiones no se fusionarán entre sí. En su lugar, la fusión solo se producirá por separado dentro de cada partición. Esto puede mejorar significativamente el rendimiento de las consultas al trabajar con tablas particionadas.
 
-<div id="dynamic_throw_on_type_mismatch">
-  ## dynamic_throw_on_type_mismatch
-</div>
+## dynamic_throw_on_type_mismatch {#dynamic_throw_on_type_mismatch}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -439,9 +395,7 @@ controla qué ocurre con las filas cuyo tipo real es incompatible con la funció
 * `true` (predeterminado) — lanzar una excepción.
 * `false` — devolver `NULL` para esas filas.
 
-<div id="enforce_strict_identifier_format">
-  ## enforce_strict_identifier_format
-</div>
+## enforce_strict_identifier_format {#enforce_strict_identifier_format}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -449,9 +403,7 @@ controla qué ocurre con las filas cuyo tipo real es incompatible con la funció
 
 Si está habilitado, solo se permiten identificadores que contengan caracteres alfanuméricos y guiones bajos.
 
-<div id="engine_url_skip_empty_files">
-  ## engine_url_skip_empty_files
-</div>
+## engine_url_skip_empty_files {#engine_url_skip_empty_files}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -462,25 +414,19 @@ Valores posibles:
 * 0 — `SELECT` genera una excepción si el archivo vacío no es compatible con el formato solicitado.
 * 1 — `SELECT` devuelve un resultado vacío cuando el archivo está vacío.
 
-<div id="exact_rows_before_limit">
-  ## exact_rows_before_limit
-</div>
+## exact_rows_before_limit {#exact_rows_before_limit}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Cuando está habilitada, ClickHouse proporcionará el valor exacto de la estadística rows&#95;before&#95;limit&#95;at&#95;least, pero a costa de que los datos anteriores al límite deban leerse por completo
 
-<div id="except_default_mode">
-  ## except_default_mode
-</div>
+## except_default_mode {#except_default_mode}
 
 <SettingsInfoBlock type="SetOperationMode" default_value="ALL" />
 
 Establece el modo predeterminado en la consulta EXCEPT. Posibles valores: cadena vacía, &#39;ALL&#39;, &#39;DISTINCT&#39;. Si está vacío, una consulta sin modo lanzará una excepción.
 
-<div id="exclude_materialize_skip_indexes_on_insert">
-  ## exclude_materialize_skip_indexes_on_insert
-</div>
+## exclude_materialize_skip_indexes_on_insert {#exclude_materialize_skip_indexes_on_insert}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": ""},{"label": "Nueva configuración."}]}]} />
 
@@ -514,9 +460,7 @@ ALTER TABLE tab MATERIALIZE INDEX idx_a; -- this query can be used to explicitly
 SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to default
 ```
 
-<div id="execute_exists_as_scalar_subquery">
-  ## execute_exists_as_scalar_subquery
-</div>
+## execute_exists_as_scalar_subquery {#execute_exists_as_scalar_subquery}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -526,9 +470,7 @@ Ejecuta subconsultas EXISTS no correlacionadas como subconsultas escalares. Al i
 
 Valor predeterminado en Cloud: `0`.
 
-<div id="explain_query_plan_default">
-  ## explain_query_plan_default
-</div>
+## explain_query_plan_default {#explain_query_plan_default}
 
 <SettingsInfoBlock type="ExplainQueryPlanDefault" default_value="pretty" />
 
@@ -545,9 +487,7 @@ Si especificas explícitamente las opciones `actions`, `compact` o `pretty` en l
 
 `EXPLAIN PLAN` con `json = 1` o `distributed = 1` mantiene los valores predeterminados de `legacy` (anteriores a la versión 26.7) independientemente de esta configuración, a menos que `actions`, `compact` o `pretty` se establezcan explícitamente. La salida Pretty no puede representar resultados JSON ni planes distribuidos por segmento, por lo que esos modos solo se muestran correctamente en el formato `legacy`.
 
-<div id="explain_syntax_single_record">
-  ## explain_syntax_single_record
-</div>
+## explain_syntax_single_record {#explain_syntax_single_record}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -559,9 +499,7 @@ Especificar explícitamente la opción `single_record` en la sentencia `EXPLAIN 
 
 Establezca esta opción en `false` para restaurar la salida anterior a la versión 26.8, con un registro por línea, o configure `compatibility` con cualquier versión anterior a `26.8`.
 
-<div id="extract_key_value_pairs_max_pairs_per_row">
-  ## extract_key_value_pairs_max_pairs_per_row
-</div>
+## extract_key_value_pairs_max_pairs_per_row {#extract_key_value_pairs_max_pairs_per_row}
 
 **Alias**: `extract_kvp_max_pairs_per_row`
 
@@ -571,18 +509,14 @@ Establezca esta opción en `false` para restaurar la salida anterior a la versi�
 
 Número máximo de pares que puede generar la función `extractKeyValuePairs`. Se utiliza como medida de protección para evitar un consumo excesivo de memoria.
 
-<div id="extremes">
-  ## extremes
-</div>
+## extremes {#extremes}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Indica si se deben contabilizar los valores extremos (los mínimos y máximos de las columnas del resultado de una consulta). Acepta 0 o 1. El valor predeterminado es 0 (deshabilitado).
 Para obtener más información, consulte la sección &quot;Valores extremos&quot;.
 
-<div id="fallback_to_stale_replicas_for_distributed_queries">
-  ## fallback_to_stale_replicas_for_distributed_queries
-</div>
+## fallback_to_stale_replicas_for_distributed_queries {#fallback_to_stale_replicas_for_distributed_queries}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -594,9 +528,7 @@ Se utiliza al realizar `SELECT` desde una tabla distribuida que apunta a tablas 
 
 De forma predeterminada, 1 (habilitado).
 
-<div id="file_like_engine_default_partition_strategy">
-  ## file_like_engine_default_partition_strategy
-</div>
+## file_like_engine_default_partition_strategy {#file_like_engine_default_partition_strategy}
 
 <SettingsInfoBlock type="FileLikeEngineDefaultPartitionStrategy" default_value="hive" />
 
@@ -604,17 +536,13 @@ De forma predeterminada, 1 (habilitado).
 
 Estrategia de partición predeterminada para motores tipo archivo. Se aplica solo a consultas `CREATE` con una ruta que no contiene ningún patrón glob ni el marcador de posición `{_partition_id}`. Una ruta con `{_partition_id}` siempre usa `wildcard`. Una ruta con otro patrón glob no utiliza ninguna estrategia de partición e ignora `PARTITION BY`. Si esta configuración es `wildcard`, pero la ruta no contiene `{_partition_id}`, no se utiliza ninguna estrategia de partición; los motores de tabla que no pueden persistir esta decisión en sus argumentos de motor (por ejemplo, `HDFS`) rechazan dicho `CREATE`.
 
-<div id="filesystem_prefetches_limit">
-  ## filesystem_prefetches_limit
-</div>
+## filesystem_prefetches_limit {#filesystem_prefetches_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="200" />
 
 Número máximo de prefetches. Cero significa que no hay límite. Se recomienda más la configuración `filesystem_prefetches_max_memory_usage` si desea limitar el número de prefetches
 
-<div id="filter">
-  ## filter
-</div>
+## filter {#filter}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración para añadir una cláusula WHERE alrededor de una consulta."}]}]} />
 
@@ -628,9 +556,7 @@ Afecta a las consultas `SELECT` / `UNION` que producen resultados. En una consul
   `filter` **no** es un mecanismo de control de acceso y no debe utilizarse como sustituto de las [políticas de seguridad a nivel de fila](/es/concepts/features/security/access-rights#row-policy-management) ni de la configuración `additional_table_filters`. Solo añade un `WHERE` a la subconsulta envolvente, por lo que los datos subyacentes se siguen leyendo y procesando antes de aplicar el filtro; una consulta puede observar las filas excluidas por el filtro durante el procesamiento (por ejemplo, con `throwIf` para filtrar información a través de la ruta de error). Use seguridad a nivel de fila o `additional_table_filters` cuando el objetivo sea restringir las filas a las que puede acceder un usuario.
 </Danger>
 
-<div id="final">
-  ## final
-</div>
+## final {#final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -676,9 +602,7 @@ SELECT * FROM test;
 └─────┴────────┘
 ```
 
-<div id="finalize_projection_parts_synchronously">
-  ## finalize_projection_parts_synchronously
-</div>
+## finalize_projection_parts_synchronously {#finalize_projection_parts_synchronously}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -686,9 +610,7 @@ SELECT * FROM test;
 
 Si se habilita, las partes de proyección se finalizan de forma síncrona durante INSERT, lo que reduce el uso máximo de memoria a costa de un menor paralelismo de carga en S3. De forma predeterminada, el flujo de salida de cada proyección se mantiene activo hasta que se finaliza toda la parte (incluidas todas las proyecciones), lo que permite solapar las cargas en S3, pero aumenta el uso máximo de memoria de forma proporcional al número de proyecciones. Esta configuración solo afecta a INSERT; merge y mutation ya finalizan las proyecciones de forma síncrona.
 
-<div id="flatten_nested">
-  ## flatten_nested
-</div>
+## flatten_nested {#flatten_nested}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -753,17 +675,13 @@ SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="format">
-  ## format
-</div>
+## format {#format}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración para sobrescribir el FORMAT de la consulta, tanto de entrada como de salida."}]}]} />
 
 Sobrescribe el `FORMAT` de la consulta, tanto de entrada como de salida. Tiene prioridad sobre el formato especificado en la consulta y en la extensión de archivo. Las configuraciones más específicas `input_format` y `output_format` tienen prioridad sobre esta configuración genérica `format` para sus respectivas direcciones.
 
-<div id="framing_output_format">
-  ## framing_output_format
-</div>
+## framing_output_format {#framing_output_format}
 
 <BetaBadge />
 
@@ -810,9 +728,7 @@ Resultado:
 {"packet":"progress","progress":{"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1265958"}}
 ```
 
-<div id="fsync_metadata">
-  ## fsync_metadata
-</div>
+## fsync_metadata {#fsync_metadata}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -820,9 +736,7 @@ Habilita o deshabilita [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/f
 
 Puede tener sentido deshabilitarlo si el server tiene millones de tablas pequeñas que se crean y eliminan constantemente.
 
-<div id="functions_h3_default_if_invalid">
-  ## functions_h3_default_if_invalid
-</div>
+## functions_h3_default_if_invalid {#functions_h3_default_if_invalid}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -830,9 +744,7 @@ Puede tener sentido deshabilitarlo si el server tiene millones de tablas pequeñ
 
 Si es false, las funciones h3, por ejemplo h3CellAreaM2, lanzan una excepción si la entrada no es válida. Si es true, devuelven 0 o el valor predeterminado.
 
-<div id="geo_distance_returns_float64_on_float64_arguments">
-  ## geo_distance_returns_float64_on_float64_arguments
-</div>
+## geo_distance_returns_float64_on_float64_arguments {#geo_distance_returns_float64_on_float64_arguments}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -840,9 +752,7 @@ Si es false, las funciones h3, por ejemplo h3CellAreaM2, lanzan una excepción s
 
 Si los cuatro argumentos de las funciones `geoDistance`, `greatCircleDistance` y `greatCircleAngle` son Float64, estas devuelven Float64 y emplean doble precisión en los cálculos internos. En versiones anteriores de ClickHouse, las funciones siempre devolvían Float32.
 
-<div id="geotoh3_argument_order">
-  ## geotoh3_argument_order
-</div>
+## geotoh3_argument_order {#geotoh3_argument_order}
 
 <BetaBadge />
 
@@ -852,17 +762,13 @@ Si los cuatro argumentos de las funciones `geoDistance`, `greatCircleDistance` y
 
 La función &#39;geoToH3&#39; acepta (lon, lat) si se establece en &#39;lon&#95;lat&#39; y (lat, lon) si se establece en &#39;lat&#95;lon&#39;.
 
-<div id="glob_expansion_max_elements">
-  ## glob_expansion_max_elements
-</div>
+## glob_expansion_max_elements {#glob_expansion_max_elements}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 Máximo número de direcciones permitidas (para almacenamiento externo, funciones de tabla, etc.).
 
-<div id="h3togeo_lon_lat_result_order">
-  ## h3togeo_lon_lat_result_order
-</div>
+## h3togeo_lon_lat_result_order {#h3togeo_lon_lat_result_order}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -870,17 +776,13 @@ Máximo número de direcciones permitidas (para almacenamiento externo, funcione
 
 La función &#39;h3ToGeo&#39; devuelve (lon, lat) si es true; de lo contrario, (lat, lon).
 
-<div id="handshake_timeout_ms">
-  ## handshake_timeout_ms
-</div>
+## handshake_timeout_ms {#handshake_timeout_ms}
 
 <SettingsInfoBlock type="Milisegundos" default_value="10000" />
 
 Tiempo de espera, en milisegundos, para recibir el paquete Hello de las réplicas durante el handshake.
 
-<div id="hedged_connection_timeout_ms">
-  ## hedged_connection_timeout_ms
-</div>
+## hedged_connection_timeout_ms {#hedged_connection_timeout_ms}
 
 <SettingsInfoBlock type="Milisegundos" default_value="50" />
 
@@ -888,9 +790,7 @@ Tiempo de espera, en milisegundos, para recibir el paquete Hello de las réplica
 
 Tiempo de espera para establecer una conexión con una réplica en solicitudes hedged
 
-<div id="highlight_max_matches_per_row">
-  ## highlight_max_matches_per_row
-</div>
+## highlight_max_matches_per_row {#highlight_max_matches_per_row}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -902,9 +802,7 @@ Valores posibles:
 
 * Entero positivo.
 
-<div id="hnsw_candidate_list_size_for_search">
-  ## hnsw_candidate_list_size_for_search
-</div>
+## hnsw_candidate_list_size_for_search {#hnsw_candidate_list_size_for_search}
 
 <SettingsInfoBlock type="UInt64" default_value="256" />
 
@@ -912,17 +810,13 @@ Valores posibles:
 
 El tamaño de la lista dinámica de candidatos durante la búsqueda en el índice de similitud vectorial, también conocido como &#39;ef&#95;search&#39;.
 
-<div id="hsts_max_age">
-  ## hsts_max_age
-</div>
+## hsts_max_age {#hsts_max_age}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Tiempo de expiración de HSTS. 0 significa desactivar HSTS.
 
-<div id="idle_connection_timeout">
-  ## idle_connection_timeout
-</div>
+## idle_connection_timeout {#idle_connection_timeout}
 
 <SettingsInfoBlock type="UInt64" default_value="3600" />
 
@@ -932,9 +826,7 @@ Valores posibles:
 
 * Entero positivo (0: cerrar inmediatamente, tras 0 segundos).
 
-<div id="inject_random_order_for_select_without_order_by">
-  ## inject_random_order_for_select_without_order_by
-</div>
+## inject_random_order_for_select_without_order_by {#inject_random_order_for_select_without_order_by}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -945,33 +837,25 @@ Se aplica solo cuando la profundidad de la subconsulta = 0. Las subconsultas e I
 Si la estructura de nivel superior es UNION, &#39;ORDER BY rand()&#39; se inserta en cada rama de forma independiente.
 Solo es útil para pruebas y desarrollo (la ausencia de ORDER BY es una fuente de resultados no deterministas en las consultas).
 
-<div id="input_format">
-  ## input_format
-</div>
+## input_format {#input_format}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración para sobrescribir el formato de entrada de la consulta."}]}]} />
 
 Sobrescribe el formato de entrada de la consulta. Tiene prioridad sobre el formato especificado en ella.
 
-<div id="interactive_delay">
-  ## interactive_delay
-</div>
+## interactive_delay {#interactive_delay}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
 El intervalo, en microsegundos, para comprobar si se ha cancelado la ejecución de la solicitud y enviar el progreso.
 
-<div id="intersect_default_mode">
-  ## intersect_default_mode
-</div>
+## intersect_default_mode {#intersect_default_mode}
 
 <SettingsInfoBlock type="SetOperationMode" default_value="ALL" />
 
 Establece el modo predeterminado en la consulta INTERSECT. Valores posibles: cadena vacía, &#39;ALL&#39;, &#39;DISTINCT&#39;. Si está vacío, una consulta sin modo generará una excepción.
 
-<div id="least_greatest_legacy_null_behavior">
-  ## least_greatest_legacy_null_behavior
-</div>
+## least_greatest_legacy_null_behavior {#least_greatest_legacy_null_behavior}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -979,9 +863,7 @@ Establece el modo predeterminado en la consulta INTERSECT. Valores posibles: cad
 
 Si está habilitada, las funciones &#39;least&#39; y &#39;greatest&#39; devuelven NULL si alguno de sus argumentos es NULL.
 
-<div id="legacy_column_name_of_tuple_literal">
-  ## legacy_column_name_of_tuple_literal
-</div>
+## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -989,9 +871,7 @@ Si está habilitada, las funciones &#39;least&#39; y &#39;greatest&#39; devuelve
 
 Enumera todos los nombres de los elementos de los literales de tupla grandes en los nombres de sus columnas en lugar del hash. Esta configuración existe solo por motivos de compatibilidad. Tiene sentido establecerla en &#39;true&#39; al realizar una actualización progresiva del clúster desde una versión anterior a la 21.7 a una posterior.
 
-<div id="limit">
-  ## límite
-</div>
+## límite {#limit}
 
 <SettingsInfoBlock type="Double" default_value="0" />
 
@@ -1008,9 +888,7 @@ Valores posibles:
 
 Esta configuración afecta a las consultas `SELECT` / `UNION` que generan resultados. En una consulta de escritura (`INSERT … SELECT`, `CREATE … AS SELECT`), solo tiene efecto cuando el `SELECT` de origen la incluye en su propia cláusula `SETTINGS`; un valor heredado de un perfil o una sesión, o establecido en la propia sentencia `INSERT` / `CREATE`, no se propaga al `SELECT` de origen: se aplica la misma regla de no propagación que para cualquier otra configuración.
 
-<div id="load_marks_asynchronously">
-  ## load_marks_asynchronously
-</div>
+## load_marks_asynchronously {#load_marks_asynchronously}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1018,9 +896,7 @@ Carga las marcas de MergeTree de forma asíncrona
 
 Valor predeterminado en Cloud: `1`.
 
-<div id="lock_acquire_timeout">
-  ## lock_acquire_timeout
-</div>
+## lock_acquire_timeout {#lock_acquire_timeout}
 
 <SettingsInfoBlock type="Segundos" default_value="120" />
 
@@ -1033,9 +909,7 @@ Valores posibles:
 * Entero positivo (en segundos).
 * 0 — Sin tiempo de espera de bloqueo.
 
-<div id="low_priority_query_wait_time_ms">
-  ## low_priority_query_wait_time_ms
-</div>
+## low_priority_query_wait_time_ms {#low_priority_query_wait_time_ms}
 
 <BetaBadge />
 
@@ -1045,9 +919,7 @@ Valores posibles:
 
 Cuando se utiliza el mecanismo de priorización de consultas (consulte la configuración `priority`), las consultas de baja prioridad esperan a que terminen las consultas de mayor prioridad. Esta configuración especifica cuánto tiempo deben esperar.
 
-<div id="make_distributed_plan">
-  ## make_distributed_plan
-</div>
+## make_distributed_plan {#make_distributed_plan}
 
 <ExperimentalBadge />
 
@@ -1065,9 +937,7 @@ Al habilitarlo, se ajustan automáticamente las configuraciones que controlan fu
 * `compile_expressions = 0`;
 * `query_plan_direct_read_from_text_index = 0`.
 
-<div id="merge_table_max_tables_to_look_for_schema_inference">
-  ## merge_table_max_tables_to_look_for_schema_inference
-</div>
+## merge_table_max_tables_to_look_for_schema_inference {#merge_table_max_tables_to_look_for_schema_inference}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -1076,9 +946,7 @@ Al habilitarlo, se ajustan automáticamente las configuraciones que controlan fu
 Al crear una tabla `Merge` sin un esquema explícito o al usar la función de tabla `merge`, se infiere el esquema como una unión de no más del número especificado de tablas coincidentes.
 Si hay un número mayor de tablas, el esquema se inferirá a partir del primer número especificado de tablas.
 
-<div id="mongodb_throw_on_unsupported_query">
-  ## mongodb_throw_on_unsupported_query
-</div>
+## mongodb_throw_on_unsupported_query {#mongodb_throw_on_unsupported_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1086,17 +954,13 @@ Si hay un número mayor de tablas, el esquema se inferirá a partir del primer n
 
 Si está habilitada, las tablas de MongoDB devolverán un error cuando no se pueda generar una consulta de MongoDB. De lo contrario, ClickHouse lee la tabla completa y la procesa localmente. Esta opción no se aplica cuando &#39;allow&#95;experimental&#95;analyzer=0&#39;.
 
-<div id="multiple_joins_try_to_keep_original_names">
-  ## multiple_joins_try_to_keep_original_names
-</div>
+## multiple_joins_try_to_keep_original_names {#multiple_joins_try_to_keep_original_names}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 No añadir alias a la lista de expresiones de nivel superior al reescribir múltiples joins
 
-<div id="normalize_function_names">
-  ## normalize_function_names
-</div>
+## normalize_function_names {#normalize_function_names}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1104,9 +968,7 @@ No añadir alias a la lista de expresiones de nivel superior al reescribir múlt
 
 Normalizar los nombres de las funciones a su forma canónica
 
-<div id="offset">
-  ## offset
-</div>
+## offset {#offset}
 
 <SettingsInfoBlock type="Double" default_value="0" />
 
@@ -1150,9 +1012,7 @@ Resultado:
 
 Esta configuración define el comportamiento de las consultas `SELECT` / `UNION` que producen resultados. En una consulta de escritura (`INSERT … SELECT`, `CREATE … AS SELECT`), solo surte efecto cuando el `SELECT` de origen la incluye en su propia cláusula `SETTINGS`; un valor heredado de un perfil o una sesión, o establecido en la propia sentencia `INSERT` / `CREATE`, no se propaga al `SELECT` de origen, conforme a la misma regla de no propagación aplicable a cualquier otra configuración.
 
-<div id="order">
-  ## order
-</div>
+## order {#order}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración para añadir una cláusula ORDER BY alrededor de una consulta."}]}]} />
 
@@ -1162,17 +1022,13 @@ Esta es una configuración de construcción de consultas que el engine aplica a 
 
 Da forma a las consultas `SELECT` / `UNION` que generan resultados. En una consulta de escritura (`INSERT … SELECT`, `CREATE … AS SELECT`), solo surte efecto cuando el `SELECT` de origen la incluye en su propia cláusula `SETTINGS`; un valor heredado de un perfil o una sesión, o establecido en la propia sentencia `INSERT` / `CREATE`, no se propaga al `SELECT` de origen, igual que ocurre con cualquier otra configuración.
 
-<div id="output_format">
-  ## output_format
-</div>
+## output_format {#output_format}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración para sobrescribir el formato de salida de la consulta."}]}]} />
 
 Sobrescribe el formato de salida de la consulta. Tiene prioridad sobre el formato especificado en la consulta, la extensión de archivo o mediante `default_format`.
 
-<div id="page">
-  ## página
-</div>
+## página {#page}
 
 <SettingsInfoBlock type="Double" default_value="0" />
 
@@ -1184,9 +1040,7 @@ Es una configuración de construcción de consultas que el engine aplica a la co
 
 Afecta a las consultas `SELECT` / `UNION` que producen resultados. En una consulta de escritura (`INSERT … SELECT`, `CREATE … AS SELECT`), solo surte efecto cuando el `SELECT` de origen la incluye en su propia cláusula `SETTINGS`; un valor heredado de un perfil o una sesión, o establecido en la propia instrucción `INSERT` / `CREATE`, no se propaga al `SELECT` de origen: se aplica la misma regla de no propagación que a cualquier otra configuración.
 
-<div id="paimon_target_snapshot_id">
-  ## paimon_target_snapshot_id
-</div>
+## paimon_target_snapshot_id {#paimon_target_snapshot_id}
 
 <ExperimentalBadge />
 
@@ -1198,9 +1052,7 @@ Lectura de la instantánea de destino a nivel de consulta para el modo increment
 del snapshot&#95;id especificado sin avanzar la marca de agua confirmada.
 Predeterminado: -1 (deshabilitado)
 
-<div id="parallelize_output_from_storages">
-  ## parallelize_output_from_storages
-</div>
+## parallelize_output_from_storages {#parallelize_output_from_storages}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1208,17 +1060,13 @@ Predeterminado: -1 (deshabilitado)
 
 Paraleliza la salida en la etapa de lectura desde el almacenamiento. Permite paralelizar el procesamiento de consultas justo después de la lectura desde el almacenamiento, cuando sea posible
 
-<div id="partial_result_on_first_cancel">
-  ## partial_result_on_first_cancel
-</div>
+## partial_result_on_first_cancel {#partial_result_on_first_cancel}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Permite que la consulta devuelva un resultado parcial después de cancelarse.
 
-<div id="per_part_index_stats">
-  ## per_part_index_stats
-</div>
+## per_part_index_stats {#per_part_index_stats}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1226,17 +1074,13 @@ Permite que la consulta devuelva un resultado parcial después de cancelarse.
 
 Registra estadísticas de índices por parte
 
-<div id="poll_interval">
-  ## poll_interval
-</div>
+## poll_interval {#poll_interval}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
 Bloquea el bucle de espera de la consulta en el servidor durante el número de segundos especificado.
 
-<div id="polyglot_dialect">
-  ## polyglot_dialect
-</div>
+## polyglot_dialect {#polyglot_dialect}
 
 <ExperimentalBadge />
 
@@ -1244,9 +1088,7 @@ Bloquea el bucle de espera de la consulta en el servidor durante el número de s
 
 Dialecto SQL de origen del transpilador polyglot (p. ej., &#39;sqlite&#39;, &#39;mysql&#39;, &#39;postgresql&#39;, &#39;snowflake&#39;, &#39;duckdb&#39;).
 
-<div id="postgresql_fault_injection_probability">
-  ## postgresql_fault_injection_probability
-</div>
+## postgresql_fault_injection_probability {#postgresql_fault_injection_probability}
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
@@ -1254,9 +1096,7 @@ Dialecto SQL de origen del transpilador polyglot (p. ej., &#39;sqlite&#39;, &#39
 
 Probabilidad aproximada de que fallen las consultas internas de PostgreSQL (para la replicación). El valor válido está en el intervalo [0.0f, 1.0f]
 
-<div id="predicate_statistics_sample_rate">
-  ## predicate_statistics_sample_rate
-</div>
+## predicate_statistics_sample_rate {#predicate_statistics_sample_rate}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -1264,17 +1104,13 @@ Probabilidad aproximada de que fallen las consultas internas de PostgreSQL (para
 
 Recopila estadísticas de selectividad de predicados en `system.predicate_statistics_log`. Cuando se establece en N &gt; 0, se toma una muestra de aproximadamente 1/N de las consultas (en función del ID de la consulta). 0 significa que está deshabilitado.
 
-<div id="prefetch_buffer_size">
-  ## prefetch_buffer_size
-</div>
+## prefetch_buffer_size {#prefetch_buffer_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
 El tamaño máximo del búfer de precarga para leer desde el sistema de archivos. Los valores superiores a 256 MiB se ajustan a 256 MiB, ya que un búfer de lectura nunca necesita ser mayor.
 
-<div id="print_pretty_type_names">
-  ## print_pretty_type_names
-</div>
+## print_pretty_type_names {#print_pretty_type_names}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1311,17 +1147,13 @@ a   Tuple(
 )
 ```
 
-<div id="priority">
-  ## priority
-</div>
+## priority {#priority}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Prioridad de la consulta. 1: la más alta; cuanto mayor sea el valor, menor será la prioridad; 0: no usar prioridades.
 
-<div id="push_external_roles_in_interserver_queries">
-  ## push_external_roles_in_interserver_queries
-</div>
+## push_external_roles_in_interserver_queries {#push_external_roles_in_interserver_queries}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1329,9 +1161,7 @@ Prioridad de la consulta. 1: la más alta; cuanto mayor sea el valor, menor ser�
 
 Permite enviar los roles de usuario desde el nodo de origen a otros nodos al ejecutar una consulta.
 
-<div id="query_metric_log_interval">
-  ## query_metric_log_interval
-</div>
+## query_metric_log_interval {#query_metric_log_interval}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -1345,33 +1175,25 @@ Para deshabilitar la recopilación de una sola consulta, establezca `query_metri
 
 Valor predeterminado: -1
 
-<div id="queue_max_wait_ms">
-  ## queue_max_wait_ms
-</div>
+## queue_max_wait_ms {#queue_max_wait_ms}
 
 <SettingsInfoBlock type="Milisegundos" default_value="0" />
 
 El tiempo de espera en la cola de solicitudes si el número de solicitudes concurrentes supera el máximo.
 
-<div id="rabbitmq_max_wait_ms">
-  ## rabbitmq_max_wait_ms
-</div>
+## rabbitmq_max_wait_ms {#rabbitmq_max_wait_ms}
 
 <SettingsInfoBlock type="Milisegundos" default_value="5000" />
 
 El tiempo de espera para leer de RabbitMQ antes de volver a intentarlo.
 
-<div id="readonly">
-  ## readonly
-</div>
+## readonly {#readonly}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 0: sin restricciones de solo lectura. 1: solo solicitudes de lectura, así como el cambio de configuraciones permitidas explícitamente. 2: solo solicitudes de lectura, así como el cambio de configuraciones, excepto la configuración &#39;readonly&#39;.
 
-<div id="recursive_cte_max_steps_in_type_inference">
-  ## recursive_cte_max_steps_in_type_inference
-</div>
+## recursive_cte_max_steps_in_type_inference {#recursive_cte_max_steps_in_type_inference}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -1379,9 +1201,7 @@ El tiempo de espera para leer de RabbitMQ antes de volver a intentarlo.
 
 Número máximo de iteraciones para inferir los tipos de las columnas en CTE recursivas. Los tipos de las columnas se determinan aplicando iterativamente `getLeastSupertype` a las partes no recursiva y recursiva de la UNION ALL hasta alcanzar la convergencia. Establézcalo en 0 para desactivar la ampliación de tipos y usar solo los tipos de la parte no recursiva.
 
-<div id="regexp_max_matches_per_row">
-  ## regexp_max_matches_per_row
-</div>
+## regexp_max_matches_per_row {#regexp_max_matches_per_row}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -1391,33 +1211,25 @@ Posibles valores:
 
 * Entero positivo.
 
-<div id="reject_expensive_hyperscan_regexps">
-  ## reject_expensive_hyperscan_regexps
-</div>
+## reject_expensive_hyperscan_regexps {#reject_expensive_hyperscan_regexps}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Rechaza patrones cuya evaluación con hyperscan probablemente resulte costosa (debido a la explosión de estados del NFA)
 
-<div id="remerge_sort_lowered_memory_bytes_ratio">
-  ## remerge_sort_lowered_memory_bytes_ratio
-</div>
+## remerge_sort_lowered_memory_bytes_ratio {#remerge_sort_lowered_memory_bytes_ratio}
 
 <SettingsInfoBlock type="Float" default_value="2" />
 
 Si el uso de memoria después del remerge no se reduce en esta proporción, el remerge se deshabilitará.
 
-<div id="remote_read_min_bytes_for_seek">
-  ## remote_read_min_bytes_for_seek
-</div>
+## remote_read_min_bytes_for_seek {#remote_read_min_bytes_for_seek}
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
 Cantidad mínima de bytes necesaria para que una lectura remota (url, s3) haga `seek` en lugar de leer ignorando datos.
 
-<div id="rename_files_after_processing">
-  ## rename_files_after_processing
-</div>
+## rename_files_after_processing {#rename_files_after_processing}
 
 * **Type:** String
 
@@ -1445,9 +1257,7 @@ Esta configuración permite especificar un patrón de cambio de nombre para los 
 
 Si `sample.csv` se lee correctamente, el archivo se renombrará a `processed_sample_1683473210851438.csv`
 
-<div id="replication_wait_for_inactive_replica_timeout">
-  ## replication_wait_for_inactive_replica_timeout
-</div>
+## replication_wait_for_inactive_replica_timeout {#replication_wait_for_inactive_replica_timeout}
 
 <SettingsInfoBlock type="Int64" default_value="120" />
 
@@ -1459,9 +1269,7 @@ Valores posibles:
 * Entero negativo — Esperar indefinidamente.
 * Entero positivo — Número de segundos de espera.
 
-<div id="reserve_memory">
-  ## reserve_memory
-</div>
+## reserve_memory {#reserve_memory}
 
 <ExperimentalBadge />
 
@@ -1474,9 +1282,7 @@ Si no hay suficiente memoria disponible para la carga de trabajo, la consulta no
 Un valor de `0` significa que no hay reserva.
 Esta configuración solo tiene efecto si se crea el recurso MEMORY RESERVATION.
 
-<div id="restore_replicated_merge_tree_to_shared_merge_tree">
-  ## restore_replicated_merge_tree_to_shared_merge_tree
-</div>
+## restore_replicated_merge_tree_to_shared_merge_tree {#restore_replicated_merge_tree_to_shared_merge_tree}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1486,9 +1292,7 @@ Sustituye el motor de tabla de Replicated*MergeTree por Shared*MergeTree durante
 
 Valor predeterminado en Cloud: `1`.
 
-<div id="result_overflow_mode">
-  ## result_overflow_mode
-</div>
+## result_overflow_mode {#result_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -1520,9 +1324,7 @@ FORMAT Null;
 6666 rows in set. ...
 ```
 
-<div id="resumable_backup_from_snapshot">
-  ## resumable_backup_from_snapshot
-</div>
+## resumable_backup_from_snapshot {#resumable_backup_from_snapshot}
 
 <ExperimentalBadge />
 
@@ -1535,9 +1337,7 @@ entradas de los lotes ya completados. Solo está disponible en ClickHouse Cloud 
 `AzureBlobStorage` de tipo directorio. Habilitarla en compilaciones de código abierto de ClickHouse, donde
 `BACKUP FROM SNAPSHOT` no está disponible, provoca que `BACKUP` falle con `WRONG_BACKUP_SETTINGS`.
 
-<div id="rows_before_aggregation">
-  ## rows_before_aggregation
-</div>
+## rows_before_aggregation {#rows_before_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1545,9 +1345,7 @@ entradas de los lotes ya completados. Solo está disponible en ClickHouse Cloud 
 
 Si está habilitado, ClickHouse proporcionará el valor exacto de la estadística rows&#95;before&#95;aggregation; representa el número de filas leídas antes de la agregación
 
-<div id="run_query_in_background">
-  ## run_query_in_background
-</div>
+## run_query_in_background {#run_query_in_background}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1563,9 +1361,7 @@ Se aplica a las consultas recibidas mediante los protocolos TCP nativo y HTTP. A
 
 El principal caso de uso es un `INSERT ... SELECT` de larga duración que no debe perderse cuando se interrumpe la conexión del client.
 
-<div id="secondary_indices_enable_bulk_filtering">
-  ## secondary_indices_enable_bulk_filtering
-</div>
+## secondary_indices_enable_bulk_filtering {#secondary_indices_enable_bulk_filtering}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1573,9 +1369,7 @@ El principal caso de uso es un `INSERT ... SELECT` de larga duración que no deb
 
 Activa el algoritmo de filtrado masivo para los índices. Se espera que siempre ofrezca mejores resultados, pero esta configuración se mantiene por compatibilidad y control.
 
-<div id="select">
-  ## select
-</div>
+## select {#select}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración para envolver una consulta en `SELECT <expr_list> FROM (<query>)`."}]}]} />
 
@@ -1585,9 +1379,7 @@ Es una configuración de construcción de consultas que el motor aplica a la con
 
 Da forma a las consultas `SELECT` / `UNION` que producen resultados. En el caso de una consulta de escritura (`INSERT … SELECT`, `CREATE … AS SELECT`), solo surte efecto cuando el `SELECT` de origen la incluye en su propia cláusula `SETTINGS`; un valor heredado de un perfil o una sesión, o establecido en la propia sentencia `INSERT` / `CREATE`, no se propaga al `SELECT` de origen; se aplica la misma regla de no propagación que a cualquier otra configuración.
 
-<div id="select_sequential_consistency">
-  ## select_sequential_consistency
-</div>
+## select_sequential_consistency {#select_sequential_consistency}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -1614,9 +1406,7 @@ Véase también:
 * [insert&#95;quorum&#95;timeout](/es/reference/settings/session-settings/insert-quorum#insert_quorum_timeout)
 * [insert&#95;quorum&#95;parallel](/es/reference/settings/session-settings/insert-quorum#insert_quorum_parallel)
 
-<div id="session_timezone">
-  ## session_timezone
-</div>
+## session_timezone {#session_timezone}
 
 <BetaBadge />
 
@@ -1679,9 +1469,7 @@ Esto sucede debido a distintos flujos de análisis:
 
 * [timezone](/es/reference/settings/server-settings/settings/other#timezone)
 
-<div id="set_overflow_mode">
-  ## set_overflow_mode
-</div>
+## set_overflow_mode {#set_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -1693,17 +1481,13 @@ Valores posibles:
 * `break`: dejar de ejecutar la consulta y devolver el resultado parcial, como si los
   datos de origen se hubieran agotado.
 
-<div id="single_join_prefer_left_table">
-  ## single_join_prefer_left_table
-</div>
+## single_join_prefer_left_table {#single_join_prefer_left_table}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Para un solo JOIN, en caso de ambigüedad de identificadores, se prefiere la tabla de la izquierda
 
-<div id="skip_redundant_aliases_in_udf">
-  ## skip_redundant_aliases_in_udf
-</div>
+## skip_redundant_aliases_in_udf {#skip_redundant_aliases_in_udf}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1750,17 +1534,13 @@ Resultado:
 SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 ```
 
-<div id="sleep_after_receiving_query_ms">
-  ## sleep_after_receiving_query_ms
-</div>
+## sleep_after_receiving_query_ms {#sleep_after_receiving_query_ms}
 
 <SettingsInfoBlock type="Milisegundos" default_value="0" />
 
 Tiempo de espera tras recibir una consulta en TCPHandler
 
-<div id="snappy_mode">
-  ## snappy_mode
-</div>
+## snappy_mode {#snappy_mode}
 
 <SettingsInfoBlock type="SnappyMode" default_value="basic" />
 
@@ -1775,9 +1555,7 @@ Valores posibles:
 * `basic` — Formato de bloques snappy de Hadoop. Compatible con archivos leídos y escritos por Hadoop. Admite lectura y escritura.
 * `framed` — Formato framing de Snappy, el formato estándar de streaming definido por Google. Admite lectura y escritura.
 
-<div id="sort">
-  ## sort
-</div>
+## sort {#sort}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración para añadir una cláusula ORDER BY simple que envuelve una consulta."}]}]} />
 
@@ -1787,9 +1565,7 @@ Esta es una configuración de construcción de consultas que el motor aplica a l
 
 Da forma a las consultas `SELECT` / `UNION` que producen resultados. En una consulta de escritura (`INSERT … SELECT`, `CREATE … AS SELECT`), solo tiene efecto cuando el `SELECT` de origen la incluye en su propia cláusula `SETTINGS`; un valor heredado de un perfil o sesión, o establecido en la propia sentencia `INSERT` / `CREATE`, no se propaga al `SELECT` de origen, igual que ocurre con cualquier otra configuración.
 
-<div id="sort_overflow_mode">
-  ## sort_overflow_mode
-</div>
+## sort_overflow_mode {#sort_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -1800,9 +1576,7 @@ Valores posibles:
 * `throw`: lanzar una excepción.
 * `break`: detener la ejecución de la consulta y devolver el resultado parcial.
 
-<div id="splitby_max_substrings_includes_remaining_string">
-  ## splitby_max_substrings_includes_remaining_string
-</div>
+## splitby_max_substrings_includes_remaining_string {#splitby_max_substrings_includes_remaining_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1813,9 +1587,7 @@ Valores posibles:
 * `0` - La cadena restante no se incluirá en el último elemento del array de resultados.
 * `1` - La cadena restante se incluirá en el último elemento del array de resultados. Este es el comportamiento de la función [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) de Spark y del método [&#39;string.split()&#39;](https://docs.python.org/3/library/stdtypes.html#str.split) de Python.
 
-<div id="statistics_max_set_size_for_exact_selectivity_estimation">
-  ## statistics_max_set_size_for_exact_selectivity_estimation
-</div>
+## statistics_max_set_size_for_exact_selectivity_estimation {#statistics_max_set_size_for_exact_selectivity_estimation}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -1823,9 +1595,7 @@ Valores posibles:
 
 El tamaño máximo del conjunto situado en el lado derecho del operador `IN` para el que el estimador de selectividad determina los rangos exactos que abarca el conjunto. Determinarlos requiere un `Field` por elemento, una ordenación y una sonda de estadísticas por elemento, lo que, en conjuntos grandes, domina la planificación de consultas. Por encima de este límite, el estimador calcula la selectividad a partir del tamaño del conjunto y de su rango acotado, mediante una única pasada lineal por el conjunto, sin ordenación ni sondas de estadísticas por elemento. Cero significa que no hay límite.
 
-<div id="stop_refreshable_materialized_views_on_startup">
-  ## stop_refreshable_materialized_views_on_startup
-</div>
+## stop_refreshable_materialized_views_on_startup {#stop_refreshable_materialized_views_on_startup}
 
 <ExperimentalBadge />
 
@@ -1833,17 +1603,13 @@ El tamaño máximo del conjunto situado en el lado derecho del operador `IN` par
 
 Al iniciar el servidor, impide la planificación de las vistas materializadas actualizables, como si se hubiera ejecutado SYSTEM STOP VIEWS. Después, puedes iniciarlas manualmente con `SYSTEM START VIEWS` o `SYSTEM START VIEW <name>`. También se aplica a las vistas creadas posteriormente. No tiene efecto sobre las vistas materializadas no actualizables.
 
-<div id="tcp_keep_alive_timeout">
-  ## tcp_keep_alive_timeout
-</div>
+## tcp_keep_alive_timeout {#tcp_keep_alive_timeout}
 
 <SettingsInfoBlock type="Seconds" default_value="290" />
 
 El tiempo, en segundos, que debe permanecer inactiva la conexión antes de que TCP comience a enviar sondas de keepalive
 
-<div id="temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds">
-  ## temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds
-</div>
+## temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds {#temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds}
 
 <SettingsInfoBlock type="UInt64" default_value="600000" />
 
@@ -1851,17 +1617,13 @@ El tiempo, en segundos, que debe permanecer inactiva la conexión antes de que T
 
 Tiempo de espera para bloquear la caché al reservar espacio para datos temporales en la caché del sistema de archivos
 
-<div id="throw_if_no_data_to_insert">
-  ## throw_if_no_data_to_insert
-</div>
+## throw_if_no_data_to_insert {#throw_if_no_data_to_insert}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Permite o prohíbe los INSERT vacíos; está habilitada de forma predeterminada (lanza un error si el insert está vacío). Solo se aplica a los INSERT que usan [`clickhouse-client`](/es/concepts/features/interfaces/client) o la [interfaz gRPC](/es/concepts/features/interfaces/grpc).
 
-<div id="time_series_prefer_recent_samples_table">
-  ## time_series_prefer_recent_samples_table
-</div>
+## time_series_prefer_recent_samples_table {#time_series_prefer_recent_samples_table}
 
 <ExperimentalBadge />
 
@@ -1871,18 +1633,14 @@ Permite o prohíbe los INSERT vacíos; está habilitada de forma predeterminada 
 
 Lee de la tabla de muestras recientes de una tabla [TimeSeries](/es/reference/engines/table-engines/integrations/time-series) en lugar de la tabla de muestras principal cuando todo el intervalo de tiempo solicitado se encuentra dentro de la ventana TTL de la tabla de muestras recientes (consulta la configuración `recent_samples_ttl_seconds` del motor de tabla TimeSeries).
 
-<div id="timeout_before_checking_execution_speed">
-  ## timeout_before_checking_execution_speed
-</div>
+## timeout_before_checking_execution_speed {#timeout_before_checking_execution_speed}
 
 <SettingsInfoBlock type="Seconds" default_value="10" />
 
 Comprueba que la velocidad de ejecución no sea demasiado baja (no inferior a `min_execution_speed`)
 una vez transcurrido el tiempo especificado en segundos.
 
-<div id="transfer_overflow_mode">
-  ## transfer_overflow_mode
-</div>
+## transfer_overflow_mode {#transfer_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -1894,9 +1652,7 @@ Valores posibles:
 * `break`: dejar de ejecutar la consulta y devolver el resultado parcial, como si los
   datos de origen se hubieran agotado.
 
-<div id="transform_null_in">
-  ## transform_null_in
-</div>
+## transform_null_in {#transform_null_in}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1954,9 +1710,7 @@ Resultado:
 
 * [Procesamiento de NULL en los operadores IN](/es/reference/statements/in#null-processing)
 
-<div id="traverse_shadow_remote_data_paths">
-  ## traverse_shadow_remote_data_paths
-</div>
+## traverse_shadow_remote_data_paths {#traverse_shadow_remote_data_paths}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1964,9 +1718,7 @@ Resultado:
 
 Recorre los datos congelados (directorio shadow), además de los datos reales de la tabla, al consultar system.remote&#95;data&#95;paths
 
-<div id="union_default_mode">
-  ## union_default_mode
-</div>
+## union_default_mode {#union_default_mode}
 
 Establece un modo para combinar los resultados de las consultas `SELECT`. Esta configuración solo se usa con [UNION](/es/reference/statements/select/union) cuando no se especifica explícitamente `UNION ALL` ni `UNION DISTINCT`.
 
@@ -1978,17 +1730,13 @@ Valores posibles:
 
 Vea ejemplos en [UNION](/es/reference/statements/select/union).
 
-<div id="unknown_packet_in_send_data">
-  ## unknown_packet_in_send_data
-</div>
+## unknown_packet_in_send_data {#unknown_packet_in_send_data}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Envía un paquete desconocido en lugar del enésimo paquete de datos
 
-<div id="variant_throw_on_type_mismatch">
-  ## variant_throw_on_type_mismatch
-</div>
+## variant_throw_on_type_mismatch {#variant_throw_on_type_mismatch}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -2000,9 +1748,7 @@ controla qué ocurre con las filas cuyo tipo real es incompatible con la funció
 * `true` (por defecto) — lanzar una excepción.
 * `false` — devolver `NULL` para esas filas.
 
-<div id="wait_changes_become_visible_after_commit_mode">
-  ## wait_changes_become_visible_after_commit_mode
-</div>
+## wait_changes_become_visible_after_commit_mode {#wait_changes_become_visible_after_commit_mode}
 
 <ExperimentalBadge />
 
@@ -2010,17 +1756,13 @@ controla qué ocurre con las filas cuyo tipo real es incompatible con la funció
 
 Esperar a que los cambios confirmados sean realmente visibles en la instantánea más reciente
 
-<div id="workload">
-  ## workload
-</div>
+## workload {#workload}
 
 <SettingsInfoBlock type="String" default_value="default" />
 
 Nombre del workload que se utilizará para acceder a los recursos
 
-<div id="write_full_path_in_iceberg_metadata">
-  ## write_full_path_in_iceberg_metadata
-</div>
+## write_full_path_in_iceberg_metadata {#write_full_path_in_iceberg_metadata}
 
 <ExperimentalBadge />
 
@@ -2030,9 +1772,7 @@ Nombre del workload que se utilizará para acceder a los recursos
 
 Escribir rutas completas (incluido s3://) en los archivos de metadatos de Iceberg.
 
-<div id="zstd_window_log_max">
-  ## zstd_window_log_max
-</div>
+## zstd_window_log_max {#zstd_window_log_max}
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 

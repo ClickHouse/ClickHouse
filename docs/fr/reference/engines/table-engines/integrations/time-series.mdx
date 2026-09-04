@@ -448,7 +448,7 @@ L&#39;expression du générateur d&#39;identifiant pour une cible de tags extern
 
 ## Modifier les paramètres {#altering-settings}
 
-Deux paramètres peuvent être modifiés après `CREATE` :
+Deux paramètres peuvent être modifiés après `CREATE` :
 
 * `id_generator`
 * `filter_by_min_time_and_max_time`
@@ -456,6 +456,7 @@ Deux paramètres peuvent être modifiés après `CREATE` :
 ```sql
 ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
+ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 ```
 
 Notez que la modification de `id_generator` alors que des données sont déjà présentes dans la table Tags peut produire des ID différents pour la même combinaison métrique+tag — les anciennes lignes conservent leurs anciens ID, les nouvelles lignes utilisent le nouveau générateur.

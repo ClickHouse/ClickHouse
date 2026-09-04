@@ -925,6 +925,7 @@ Contient l’historique des valeurs des métriques des tables `system.metrics` e
 * `ProfileEvent_AdaptiveAggregationDrainedRecords` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’enregistrements différés que l’agrégation adaptative a vidés dans la table partagée lors de la fusion.
 * `ProfileEvent_AdaptiveAggregationPressureSweeps` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de fois où l’agrégation adaptative a vidé prématurément les enregistrements intermédiaires en raison d’une pression mémoire.
 * `ProfileEvent_AdaptiveAggregationPressureDrainedRecords` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’enregistrements intermédiaires que l’agrégation adaptative a vidés prématurément sous pression mémoire.
+* `ProfileEvent_AdaptiveAggregationResidueReleases` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de fois où l’agrégation adaptative a écrit sa table de vidange partagée sur disque parce qu’un thread revenu à l’algorithme de référence était sur le point de déverser des données à cause d’elle.
 * `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de buckets à deux niveaux dont la mémoire de travail (emplacement d’arène, références aux fragments intermédiaires) a été libérée dès la fin de leur fusion et conversion, avant la fin de la fusion complète.
 * `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de buckets à deux niveaux convertis via la sélection Top-K locale au bucket (l’optimisation de plan aggregationBucketTopK).
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de tables de hachage initialisées à deux niveaux pour l’agrégation.
@@ -1825,7 +1826,7 @@ Contient l’historique des valeurs des métriques des tables `system.metrics` e
 * `CurrentMetric_DiskPlainRewritableLocalDirectoryMapSize` ([Int64](/fr/reference/data-types/int-uint)) — Nombre d’entrées de chemin local-vers-distant dans la map en mémoire &#39;plain&#95;rewritable&#39; pour LocalObjectStorage.
 * `CurrentMetric_DiskPlainRewritableLocalFileCount` ([Int64](/fr/reference/data-types/int-uint)) — Nombre d’entrées de fichier dans la map en mémoire &#39;plain&#95;rewritable&#39; pour LocalObjectStorage.
 * `CurrentMetric_DiskPlainRewritableS3DirectoryMapSize` ([Int64](/fr/reference/data-types/int-uint)) — Nombre d’entrées de chemin local-vers-distant dans la map en mémoire &#39;plain&#95;rewritable&#39; pour S3ObjectStorage.
-* `CurrentMetric_DiskPlainRewritableS3FileCount` ([Int64](/fr/reference/data-types/int-uint)) — Nombre d’entrées de fichier dans la map en mémoire `plain_rewritable` de S3ObjectStorage.
+* `CurrentMetric_DiskPlainRewritableS3FileCount` ([Int64](/fr/reference/data-types/int-uint)) — Nombre d’entrées de fichier dans la map en mémoire &#39;plain&#95;rewritable&#39; pour S3ObjectStorage.
 * `CurrentMetric_MergeTreeFetchPartitionThreads` ([Int64](/fr/reference/data-types/int-uint)) — Nombre de threads pour ALTER TABLE FETCH PARTITION
 * `CurrentMetric_MergeTreeFetchPartitionThreadsActive` ([Int64](/fr/reference/data-types/int-uint)) — Nombre de threads pour la récupération d’une part avec ALTER TABLE FETCH PARTITION
 * `CurrentMetric_MergeTreeFetchPartitionThreadsScheduled` ([Int64](/fr/reference/data-types/int-uint)) — Nombre de récupérations de parts en file d’attente ou actives dans ALTER TABLE FETCH PARTITION
@@ -1981,7 +1982,7 @@ Contient l’historique des valeurs des métriques des tables `system.metrics` e
 * `CurrentMetric_DeleteBitmapCacheBytes` ([Int64](/fr/reference/data-types/int-uint)) — Taille totale du cache de bitmaps de suppression UNIQUE KEY en octets
 * `CurrentMetric_DeleteBitmapCacheEntries` ([Int64](/fr/reference/data-types/int-uint)) — Nombre total de bitmaps de suppression UNIQUE KEY mis en cache
 * `CurrentMetric_NamedCollection` ([Int64](/fr/reference/data-types/int-uint)) — Nombre de collections nommées
-* `CurrentMetric_PrimaryIndexCacheBytes` ([Int64](/fr/reference/data-types/int-uint)) — Taille totale du cache d&#39;index primaire en octets. Contient les index de clé primaire chargés à la demande lorsque `primary_key_lazy_load=1` et `use_primary_key_cache=1`. Lorsque le pool d’arènes de métadonnées MergeTree dédié est activé (`jemalloc_merge_tree_arenas` &gt; 0 avec jemalloc), les colonnes d’index y sont allouées (`jemalloc.mergetree_arena.*`), même lorsqu’elles appartiennent à ce cache. NE CHEVAUCHE JAMAIS `system.parts.primary_key_bytes_in_memory[_allocated]` : l’index d’une part se trouve soit dans ce cache (comptabilisé ici), soit dans la part elle-même (comptabilisé là-bas), jamais dans les deux. Pour obtenir la mémoire totale des index primaires de toutes les parts, additionnez les deux.
+* `CurrentMetric_PrimaryIndexCacheBytes` ([Int64](/fr/reference/data-types/int-uint)) — Taille totale du cache d&#39;index primaire en octets. Contient les index de clé primaire chargés à la demande lorsque `primary_key_lazy_load=1` et `use_primary_key_cache=1`. Lorsque le pool d’arènes de métadonnées MergeTree dédié est activé (`jemalloc_merge_tree_arenas` &gt; 0 avec jemalloc), les colonnes d’index y sont allouées (`jemalloc.mergetree_arena.*`), même lorsqu’elles appartiennent à ce cache. NE CHEVAUCHE JAMAIS `system.parts.primary_key_bytes_in_memory[_allocated]` : l’index d’une part se trouve soit dans ce cache (comptabilisé ici), soit dans la part elle-même (comptabilisé là-bas), jamais dans les deux. Pour obtenir la mémoire totale des index primaires de toutes les parts, additionnez les deux.
 * `CurrentMetric_PrimaryIndexCacheFiles` ([Int64](/fr/reference/data-types/int-uint)) — Nombre total de fichiers d&#39;index mis en cache dans le cache d&#39;index primaire
 * `CurrentMetric_PageCacheBytes` ([Int64](/fr/reference/data-types/int-uint)) — Taille totale du cache de pages en espace utilisateur en octets
 * `CurrentMetric_PageCacheCells` ([Int64](/fr/reference/data-types/int-uint)) — Nombre total d&#39;entrées dans le cache de pages en espace utilisateur
@@ -2110,8 +2111,8 @@ Contient l’historique des valeurs des métriques des tables `system.metrics` e
 * `CurrentMetric_SharedCatalogNumberOfObjectsInState` ([Int64](/fr/reference/data-types/int-uint)) — Nombre d’objets dans l’état actuel de Shared Catalog.
 * `CurrentMetric_MetadataFromKeeperCacheObjects` ([Int64](/fr/reference/data-types/int-uint)) — Nombre d’objets dans le cache de métadonnées du disque.
 * `CurrentMetric_LicenseRemainingSeconds` ([Int64](/fr/reference/data-types/int-uint)) — Nombre de secondes restantes avant l’expiration de la licence.
-* `CurrentMetric_StartupScriptsExecutionState` ([Int64](/fr/reference/data-types/int-uint)) — État d’exécution des scripts de démarrage : 0 = non terminé, 1 = succès, 2 = échec.
-* `CurrentMetric_IsServerShuttingDown` ([Int64](/fr/reference/data-types/int-uint)) — Indique si le serveur est en cours d’arrêt : 0 = non, 1 = oui
+* `CurrentMetric_StartupScriptsExecutionState` ([Int64](/fr/reference/data-types/int-uint)) — État d’exécution des scripts de démarrage : 0 = non terminé, 1 = succès, 2 = échec.
+* `CurrentMetric_IsServerShuttingDown` ([Int64](/fr/reference/data-types/int-uint)) — Indique si le serveur est en cours d’arrêt : 0 = non, 1 = oui
 * `CurrentMetric_StatelessWorkerThreads` ([Int64](/fr/reference/data-types/int-uint)) — Nombre de threads dans le pool de threads du worker sans état.
 * `CurrentMetric_StatelessWorkerThreadsActive` ([Int64](/fr/reference/data-types/int-uint)) — Nombre de threads du pool de threads du worker sans état en train d’exécuter une tâche.
 * `CurrentMetric_StatelessWorkerThreadsScheduled` ([Int64](/fr/reference/data-types/int-uint)) — Nombre de jobs en file d’attente ou actifs dans le pool de threads du worker sans état.
@@ -2139,7 +2140,7 @@ Contient l’historique des valeurs des métriques des tables `system.metrics` e
 * `CurrentMetric_MergeTreeSnapshotCommitThreadsScheduled` ([Int64](/fr/reference/data-types/int-uint)) — Nombre de threads planifiés utilisés pour finaliser l’instantané
 * `histograms.metric` ([Array(LowCardinality(String))](/fr/reference/data-types/array)) — Noms des familles d’histogrammes capturées dans cette ligne.
 * `histograms.labels` ([Array(Map(LowCardinality(String), LowCardinality(String)))](/fr/reference/data-types/array)) — Maps de libellés par entrée.
-* `histograms.histogram` ([Array(Map(Float64, UInt64))](/fr/reference/data-types/array)) — Comptes cumulés des buckets par entrée, indexés par borne supérieure ; +Inf est l’entrée finale et correspond au nombre total.
+* `histograms.histogram` ([Array(Map(Float64, UInt64))](/fr/reference/data-types/array)) — Comptes cumulés des buckets par entrée, indexés par borne supérieure ; +Inf est l’entrée finale et correspond au nombre total.
 * `histograms.count` ([Array(UInt64)](/fr/reference/data-types/array)) — Nombre total d’observations par entrée.
 * `histograms.sum` ([Array(Float64)](/fr/reference/data-types/array)) — Sommes des valeurs observées par entrée.
 

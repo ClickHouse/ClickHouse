@@ -174,12 +174,12 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_TextIndexDiscardPatternScan` ([UInt64](/ko/reference/data-types/int-uint)) — 텍스트 인덱스의 패턴 기반 딕셔너리 스캔이, 읽어야 할 포스팅 리스트 수가 임계값을 초과하여 폐기된 횟수입니다.
 * `ProfileEvent_TextIndexGenericExclusionSearchAlgorithm` ([UInt64](/ko/reference/data-types/int-uint)) — 텍스트 인덱스에 대해 일반 제외 검색 알고리즘이 사용된 횟수입니다.
 * `ProfileEvent_TextIndexGenericExclusionSearchStepLimitReached` ([UInt64](/ko/reference/data-types/int-uint)) — 텍스트 인덱스에 대한 일반 제외 검색이 merge&#95;tree&#95;generic&#95;exclusion&#95;search&#95;max&#95;steps에 도달하여 추가 분할 없이 남은 마크 범위를 허용한 횟수입니다.
-* `ProfileEvent_QueryConditionCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 조건 캐시에서 엔트리를 찾은 횟수입니다(따라서 마크 읽기를 건너뛸 수 있습니다). `SETTING use&#95;query&#95;condition&#95;cache = 1`이 설정된 SELECT 쿼리에 대해서만 갱신됩니다.
-* `ProfileEvent_QueryConditionCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 조건 캐시에서 엔트리를 찾지 못한 횟수입니다(따라서 마크 읽기를 건너뛸 수 없습니다). `SETTING use&#95;query&#95;condition&#95;cache = 1`이 설정된 SELECT 쿼리에 대해서만 갱신됩니다.
+* `ProfileEvent_QueryConditionCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 조건 캐시에서 엔트리를 찾은 횟수입니다(따라서 마크 읽기를 건너뛸 수 있습니다). SETTING use&#95;query&#95;condition&#95;cache = 1이 설정된 SELECT 쿼리에 대해서만 갱신됩니다.
+* `ProfileEvent_QueryConditionCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 조건 캐시에서 엔트리를 찾지 못한 횟수입니다(따라서 마크 읽기를 건너뛸 수 없습니다). SETTING use&#95;query&#95;condition&#95;cache = 1이 설정된 SELECT 쿼리에 대해서만 갱신됩니다.
 * `ProfileEvent_EncryptionHeaderCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — 암호화 헤더 캐시에서 암호화 헤더 바이트를 찾아 원본에서 헤더를 읽지 않아도 되었던 횟수입니다.
 * `ProfileEvent_EncryptionHeaderCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — 암호화 헤더 캐시에서 암호화 헤더 바이트를 찾지 못해 소스에서 읽은 횟수입니다.
-* `ProfileEvent_QueryCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 캐시에서 쿼리 결과를 찾은 횟수입니다(따라서 쿼리 계산을 피할 수 있습니다). `SETTING use&#95;query&#95;cache = 1`이 설정된 SELECT 쿼리에 대해서만 갱신됩니다.
-* `ProfileEvent_QueryCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 캐시에서 쿼리 결과를 찾지 못한 횟수입니다(따라서 쿼리 계산이 필요합니다). `SETTING use&#95;query&#95;cache = 1`이 설정된 SELECT 쿼리에 대해서만 갱신됩니다.
+* `ProfileEvent_QueryCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 캐시에서 쿼리 결과를 찾은 횟수입니다(따라서 쿼리 계산을 피할 수 있습니다). SETTING use&#95;query&#95;cache = 1이 설정된 SELECT 쿼리에 대해서만 갱신됩니다.
+* `ProfileEvent_QueryCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 캐시에서 쿼리 결과를 찾지 못한 횟수입니다(따라서 쿼리 계산이 필요합니다). SETTING use&#95;query&#95;cache = 1이 설정된 SELECT 쿼리에 대해서만 갱신됩니다.
 * `ProfileEvent_QueryCacheAgeSeconds` ([UInt64](/ko/reference/data-types/int-uint)) — 찾은 쿼리 캐시 엔트리의 경과 시간을 초 단위로 합산한 값입니다. 이 값은 적중과 실패 모두에 대해 설정됩니다.
 * `ProfileEvent_QueryCacheReadRows` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 캐시에서 읽은 행 수입니다.
 * `ProfileEvent_QueryCacheReadBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 캐시에서 읽은 (압축되지 않은) 바이트 수입니다.
@@ -930,6 +930,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_AdaptiveAggregationDrainedRecords` ([UInt64](/ko/reference/data-types/int-uint)) — 적응형 집계가 머지 시 공유 테이블로 배출한 지연 레코드 수입니다.
 * `ProfileEvent_AdaptiveAggregationPressureSweeps` ([UInt64](/ko/reference/data-types/int-uint)) — 메모리 압박으로 인해 적응형 집계가 스테이징 레코드를 조기에 배출한 횟수입니다.
 * `ProfileEvent_AdaptiveAggregationPressureDrainedRecords` ([UInt64](/ko/reference/data-types/int-uint)) — 메모리 압박 상태에서 적응형 집계가 조기에 배출한 스테이징 레코드 수입니다.
+* `ProfileEvent_AdaptiveAggregationResidueReleases` ([UInt64](/ko/reference/data-types/int-uint)) — 기준 알고리즘으로 되돌아간 스레드가 이로 인해 spill하려는 상황이어서 적응형 집계가 공유 drain 테이블을 기록해 내보낸 횟수입니다.
 * `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/ko/reference/data-types/int-uint)) — 전체 머지가 완료되기 전에 머지 및 변환이 완료된 직후 작업 메모리(arena 슬롯, 스테이징 청크 참조)가 해제된 2단계 버킷 수입니다.
 * `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/ko/reference/data-types/int-uint)) — 버킷 로컬 Top-K 선택(aggregationBucketTopK 계획 최적화)을 통해 변환된 2단계 버킷 수입니다.
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/ko/reference/data-types/int-uint)) — 집계를 위해 2단계로 초기화된 해시 테이블 수입니다.

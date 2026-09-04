@@ -286,6 +286,19 @@ SELECT * FROM test2;
 
 * [ORDER BY 절](/ko/reference/statements/select/order-by#optimization-of-data-reading)
 
+## optimize_read_in_reverse_order_final {#optimize_read_in_reverse_order_final}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`ReplacingMergeTree` 테이블에서 `FINAL` 수정자와 함께 정렬 키의 역순으로 읽을 때 read-in-order 최적화를 활성화하는 새로운 설정."}]}]} />
+
+[ReplacingMergeTree](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree) 테이블에 대해 `FINAL` 수정자를 사용하는 `SELECT` 쿼리에서 정렬 키의 역순으로 데이터를 읽을 수 있도록 합니다. [optimize&#95;read&#95;in&#95;order](/ko/reference/settings/session-settings/optimize#optimize_read_in_order)도 함께 활성화된 경우에만 적용됩니다.
+
+가능한 값:
+
+* 0 — `FINAL`을 사용한 역순 읽기가 비활성화됩니다.
+* 1 — `FINAL`을 사용한 역순 읽기가 활성화됩니다.
+
 ## optimize_respect_aliases {#optimize_respect_aliases}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

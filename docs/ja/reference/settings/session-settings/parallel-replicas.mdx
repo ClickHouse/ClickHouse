@@ -15,9 +15,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="parallel_replicas_allow_in_with_subquery">
-  ## parallel_replicas_allow_in_with_subquery
-</div>
+## parallel_replicas_allow_in_with_subquery {#parallel_replicas_allow_in_with_subquery}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -25,9 +23,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 true の場合、IN のサブクエリは各フォロワー レプリカで実行されます。
 
-<div id="parallel_replicas_allow_materialized_views">
-  ## parallel_replicas_allow_materialized_views
-</div>
+## parallel_replicas_allow_materialized_views {#parallel_replicas_allow_materialized_views}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,9 +31,17 @@ true の場合、IN のサブクエリは各フォロワー レプリカで実�
 
 並列レプリカでのmaterialized viewの使用を許可します
 
-<div id="parallel_replicas_allow_view_over_mergetree">
-  ## parallel_replicas_allow_view_over_mergetree
-</div>
+## parallel_replicas_allow_merge_tables {#parallel_replicas_allow_merge_tables}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`Merge` の読み取りを基になる `MergeTree` テーブルからの読み取りのユニオンに展開することで、プランベースの並列レプリカによる `Merge` テーブルの読み取りを可能にする新しい設定です。`parallel_replicas_plan_based` と組み合わせた場合にのみ有効です。"}]}]} />
+
+並列レプリカによる `Merge` テーブルの読み取りを可能にします。[parallel&#95;replicas&#95;plan&#95;based](/ja/reference/settings/session-settings/parallel-replicas#parallel_replicas_plan_based) と組み合わせた場合にのみ有効です。`Merge` テーブルからの読み取りは、基になる `MergeTree` テーブルからの読み取りのユニオンに展開され、他のユニオンと同様に分散されます。基になるテーブルのいずれかをこの方法で読み取れない場合 (`MergeTree` 以外のテーブル、`FINAL` 読み取り) 、`Merge` テーブルは単一のレプリカで処理されます。サポートが追加される前と同様に、すべての `Merge` テーブルを単一のレプリカで読み取るには、`false` に設定します。実験的機能です。
+
+## parallel_replicas_allow_view_over_mergetree {#parallel_replicas_allow_view_over_mergetree}
 
 <BetaBadge />
 
@@ -47,9 +51,7 @@ true の場合、IN のサブクエリは各フォロワー レプリカで実�
 
 `MergeTree` テーブルに対する単純なビューで、並列レプリカがビューの内部クエリではなく外側のクエリを実行できるようにし、ノード間の並列化を向上させます。これは、すべての分岐が異なる `MergeTree` テーブルを読み取る `UNION ALL` ビューにも適用されます。
 
-<div id="parallel_replicas_connect_timeout_ms">
-  ## parallel_replicas_connect_timeout_ms
-</div>
+## parallel_replicas_connect_timeout_ms {#parallel_replicas_connect_timeout_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="300" />
 
@@ -57,9 +59,7 @@ true の場合、IN のサブクエリは各フォロワー レプリカで実�
 
 並列レプリカでクエリ実行を行う際に、リモートレプリカへの接続に使用するタイムアウトをミリ秒単位で指定します。タイムアウトした場合、該当するレプリカはクエリ実行に使用されません
 
-<div id="parallel_replicas_count">
-  ## parallel_replicas_count
-</div>
+## parallel_replicas_count {#parallel_replicas_count}
 
 <BetaBadge />
 
@@ -67,9 +67,7 @@ true の場合、IN のサブクエリは各フォロワー レプリカで実�
 
 これは内部設定であり、直接使用するものではなく、「並列レプリカ」モードの実装上の詳細を表します。この設定は、クエリ処理に参加する並列レプリカの数に合わせて、分散クエリのためにイニシエーターサーバーによって自動的に設定されます。
 
-<div id="parallel_replicas_custom_key">
-  ## parallel_replicas_custom_key
-</div>
+## parallel_replicas_custom_key {#parallel_replicas_custom_key}
 
 <BetaBadge />
 
@@ -81,9 +79,7 @@ true の場合、IN のサブクエリは各フォロワー レプリカで実�
 この設定を、単一の分片と複数のレプリカで構成されるクラスターで使用した場合、それらのレプリカは仮想分片に変換されます。
 それ以外の場合は、`SAMPLE` キーと同様に動作し、各分片の複数のレプリカを使用します。
 
-<div id="parallel_replicas_custom_key_range_lower">
-  ## parallel_replicas_custom_key_range_lower
-</div>
+## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
 
 <BetaBadge />
 
@@ -97,9 +93,7 @@ true の場合、IN のサブクエリは各フォロワー レプリカで実�
 
 注: この設定によってクエリ処理中に追加のデータがフィルタリングされることはありません。代わりに、並列処理のために範囲フィルターが範囲 `[0, INT_MAX]` を分割する境界点が変更されます。
 
-<div id="parallel_replicas_custom_key_range_upper">
-  ## parallel_replicas_custom_key_range_upper
-</div>
+## parallel_replicas_custom_key_range_upper {#parallel_replicas_custom_key_range_upper}
 
 <BetaBadge />
 
@@ -113,9 +107,7 @@ true の場合、IN のサブクエリは各フォロワー レプリカで実�
 
 注: この設定によってクエリ処理中に追加のデータがフィルターされることはありません。代わりに、並列処理のために範囲フィルターが範囲 `[0, INT_MAX]` を分割する位置が変更されます
 
-<div id="parallel_replicas_filter_pushdown">
-  ## parallel_replicas_filter_pushdown
-</div>
+## parallel_replicas_filter_pushdown {#parallel_replicas_filter_pushdown}
 
 <BetaBadge />
 
@@ -125,9 +117,7 @@ true の場合、IN のサブクエリは各フォロワー レプリカで実�
 
 並列レプリカが実行するよう選択するクエリの一部へのフィルタのプッシュダウンを許可します
 
-<div id="parallel_replicas_for_cluster_engines">
-  ## parallel_replicas_for_cluster_engines
-</div>
+## parallel_replicas_for_cluster_engines {#parallel_replicas_for_cluster_engines}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -135,17 +125,13 @@ true の場合、IN のサブクエリは各フォロワー レプリカで実�
 
 table function エンジンを、対応する -Cluster の代替に置き換えます
 
-<div id="parallel_replicas_for_non_replicated_merge_tree">
-  ## parallel_replicas_for_non_replicated_merge_tree
-</div>
+## parallel_replicas_for_non_replicated_merge_tree {#parallel_replicas_for_non_replicated_merge_tree}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 true の場合、ClickHouse はレプリケートされていない MergeTree テーブルに対しても並列レプリカアルゴリズムを使用します
 
-<div id="parallel_replicas_index_analysis_only_on_coordinator">
-  ## parallel_replicas_index_analysis_only_on_coordinator
-</div>
+## parallel_replicas_index_analysis_only_on_coordinator {#parallel_replicas_index_analysis_only_on_coordinator}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -153,9 +139,7 @@ true の場合、ClickHouse はレプリケートされていない MergeTree �
 
 索引解析は replica-coordinator でのみ実行され、他のレプリカではスキップされます。parallel&#95;replicas&#95;local&#95;pla が有効な場合にのみ適用されます
 
-<div id="parallel_replicas_insert_select_local_pipeline">
-  ## parallel_replicas_insert_select_local_pipeline
-</div>
+## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -163,9 +147,7 @@ true の場合、ClickHouse はレプリケートされていない MergeTree �
 
 並列レプリカを使用する分散 INSERT SELECT でローカルパイプラインを使用します
 
-<div id="parallel_replicas_local_plan">
-  ## parallel_replicas_local_plan
-</div>
+## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -173,9 +155,7 @@ true の場合、ClickHouse はレプリケートされていない MergeTree �
 
 ローカルレプリカ向けにローカルプランを構築します
 
-<div id="parallel_replicas_mark_segment_size">
-  ## parallel_replicas_mark_segment_size
-</div>
+## parallel_replicas_mark_segment_size {#parallel_replicas_mark_segment_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -183,17 +163,13 @@ true の場合、ClickHouse はレプリケートされていない MergeTree �
 
 パーツは、並列読み取りのためにレプリカ間へ分配されるセグメントに仮想的に分割されます。この設定は、それらのセグメントのサイズを制御します。何をしているのかを十分に理解している場合を除き、変更は推奨されません。値は [128; 16384] の範囲である必要があります。
 
-<div id="parallel_replicas_min_number_of_rows_per_replica">
-  ## parallel_replicas_min_number_of_rows_per_replica
-</div>
+## parallel_replicas_min_number_of_rows_per_replica {#parallel_replicas_min_number_of_rows_per_replica}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 クエリで使用するレプリカ数を、 (読み取ると推定される行数 / min&#95;number&#95;of&#95;rows&#95;per&#95;replica) に制限します。なお、最大値は引き続き &#39;max&#95;parallel&#95;replicas&#39; によって制限されます
 
-<div id="parallel_replicas_mode">
-  ## parallel_replicas_mode
-</div>
+## parallel_replicas_mode {#parallel_replicas_mode}
 
 <SettingsInfoBlock type="ParallelReplicasMode" default_value="read_tasks" />
 
@@ -201,9 +177,7 @@ true の場合、ClickHouse はレプリケートされていない MergeTree �
 
 並列レプリカでカスタムキーとともに使用するフィルターの種類。default - カスタムキーに対して剰余演算を使用します。range - カスタムキーの値の型で取り得るすべての値を使って、カスタムキーに範囲フィルターを適用します。
 
-<div id="parallel_replicas_only_with_analyzer">
-  ## parallel_replicas_only_with_analyzer
-</div>
+## parallel_replicas_only_with_analyzer {#parallel_replicas_only_with_analyzer}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -211,9 +185,7 @@ true の場合、ClickHouse はレプリケートされていない MergeTree �
 
 並列レプリカを使用するには、アナライザを有効にする必要があります。アナライザが無効な場合は、レプリカからの並列読み取りが有効になっていても、クエリ実行はローカル実行にフォールバックします。アナライザを有効にせずに並列レプリカを使用することはサポートされていません
 
-<div id="parallel_replicas_plan_based">
-  ## parallel_replicas_plan_based
-</div>
+## parallel_replicas_plan_based {#parallel_replicas_plan_based}
 
 <ExperimentalBadge />
 
@@ -223,9 +195,7 @@ true の場合、ClickHouse はレプリケートされていない MergeTree �
 
 クエリツリーベースの分析ではなくクエリプランを分析し、並列レプリカを使用するかどうか、およびどこで使用するかを決定します。その結果、SQLクエリではなくプランフラグメントがリモートレプリカに送信されます。実験的機能です。
 
-<div id="parallel_replicas_prefer_local_join">
-  ## parallel_replicas_prefer_local_join
-</div>
+## parallel_replicas_prefer_local_join {#parallel_replicas_prefer_local_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -233,9 +203,7 @@ true の場合、ClickHouse はレプリケートされていない MergeTree �
 
 true の場合、JOIN を並列レプリカアルゴリズムで実行でき、かつ JOIN の右側のすべてのストレージが *MergeTree であるときは、GLOBAL JOIN ではなくローカル JOIN が使用されます。
 
-<div id="parallel_replicas_prefer_local_replica">
-  ## parallel_replicas_prefer_local_replica
-</div>
+## parallel_replicas_prefer_local_replica {#parallel_replicas_prefer_local_replica}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -245,9 +213,7 @@ true の場合、JOIN を並列レプリカアルゴリズムで実行でき、�
 無効時には、ローカルレプリカは優先されず、レプリカは負荷分散アルゴリズムのみに基づいて選択されます。
 これにより、`max_parallel_replicas = 1` を指定したクエリを別のホストに送ることができ、多数の短いクエリがクラスター全体に分散される場合のキャッシュ局所性を改善できます。
 
-<div id="parallel_replicas_support_projection">
-  ## parallel_replicas_support_projection
-</div>
+## parallel_replicas_support_projection {#parallel_replicas_support_projection}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

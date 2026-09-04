@@ -453,9 +453,10 @@ CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_f
 ```sql
 ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
+ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 ```
 
-请注意，如果在标签表中已有数据后更改 `id_generator`，同一指标+tag 组合可能会生成不同的 ID——旧行会保留原来的 ID，新行则会使用新的生成器。
+请注意，如果在标签表中已有数据后更改 `id_generator`，同一指标+标签组合可能会生成不同的 ID——旧行会保留原来的 ID，新行则会使用新的生成器。
 
 其他设置不能通过 `ALTER ... MODIFY SETTING` 更改，因为它们在 `CREATE` 时就已经固化在内部表的 schema 中。
 

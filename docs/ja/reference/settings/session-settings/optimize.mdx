@@ -290,6 +290,19 @@ SELECT * FROM test2;
 
 * [ORDER BY 句](/ja/reference/statements/select/order-by#optimization-of-data-reading)
 
+## optimize_read_in_reverse_order_final {#optimize_read_in_reverse_order_final}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "ReplacingMergeTree テーブルから `FINAL` 修飾子を指定した場合に、ソートキーの逆順で読み取る際の順序読み取り最適化を有効にする新しい設定。"}]}]} />
+
+[ReplacingMergeTree](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) テーブルから `FINAL` 修飾子を指定した `SELECT` クエリで、ソートキーの逆順にデータを読み取れるようにします。[optimize&#95;read&#95;in&#95;order](/ja/reference/settings/session-settings/optimize#optimize_read_in_order) も有効な場合にのみ有効になります。
+
+設定可能な値:
+
+* 0 — `FINAL` 指定時の逆順読み取りは無効です。
+* 1 — `FINAL` 指定時の逆順読み取りは有効です。
+
 ## optimize_respect_aliases {#optimize_respect_aliases}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

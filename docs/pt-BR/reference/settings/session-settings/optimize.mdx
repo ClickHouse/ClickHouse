@@ -289,6 +289,19 @@ Valores possíveis:
 
 * [Cláusula ORDER BY](/pt-BR/reference/statements/select/order-by#optimization-of-data-reading)
 
+## optimize_read_in_reverse_order_final {#optimize_read_in_reverse_order_final}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nova configuração para habilitar a otimização de leitura em ordem ao ler na ordem inversa da chave de ordenação com o modificador `FINAL` em tabelas `ReplacingMergeTree`."}]}]} />
+
+Habilita a leitura de dados na ordem inversa da chave de ordenação em queries `SELECT` com o modificador `FINAL` em tabelas [ReplacingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replacingmergetree). Só tem efeito quando [optimize&#95;read&#95;in&#95;order](/pt-BR/reference/settings/session-settings/optimize#optimize_read_in_order) também está habilitado.
+
+Valores possíveis:
+
+* 0 — Leitura na ordem inversa com `FINAL` desabilitada.
+* 1 — Leitura na ordem inversa com `FINAL` habilitada.
+
 ## optimize_respect_aliases {#optimize_respect_aliases}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

@@ -289,6 +289,19 @@ SELECT * FROM test2;
 
 * [عبارة ORDER BY](/ar/reference/statements/select/order-by#optimization-of-data-reading)
 
+## optimize_read_in_reverse_order_final {#optimize_read_in_reverse_order_final}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "إعداد جديد لتفعيل تحسين القراءة بالترتيب عند القراءة بترتيب عكسي لمفتاح الفرز مع المُعدِّل `FINAL` من جداول `ReplacingMergeTree`."}]}]} />
+
+يُفعِّل قراءة البيانات بالترتيب العكسي لمفتاح الفرز في استعلامات `SELECT` المستخدِمة للمُعدِّل `FINAL` من جداول [ReplacingMergeTree](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree). ولا يسري مفعوله إلا إذا كان [optimize&#95;read&#95;in&#95;order](/ar/reference/settings/session-settings/optimize#optimize_read_in_order) مُفعَّلًا أيضًا.
+
+القيم الممكنة:
+
+* 0 — القراءة بالترتيب العكسي مع `FINAL` مُعطَّلة.
+* 1 — القراءة بالترتيب العكسي مع `FINAL` مُفعَّلة.
+
 ## optimize_respect_aliases {#optimize_respect_aliases}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

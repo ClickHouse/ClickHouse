@@ -16,9 +16,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="adaptive_aggregator_freeze_threshold">
-  ## adaptive_aggregator_freeze_threshold
-</div>
+## adaptive_aggregator_freeze_threshold {#adaptive_aggregator_freeze_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="16384" />
 
@@ -26,9 +24,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 自适应聚合器冻结线程本地哈希表时的键数量 (参见 `enable_adaptive_aggregator`) 。较小的值可使冻结后的表保持在缓存中，较大的值则可让其吸收更多高频键。值为 0 时，表会在首次有机会时冻结，这会使该算法的行为类似于按键哈希进行的纯分片：每个键都根据其哈希进行路由，并由单个所有者聚合；区别仅在于，聚合会延后到合并阶段，而不是在扫描期间在线程之间交换。
 
-<div id="adaptive_aggregator_freeze_threshold_bytes">
-  ## adaptive_aggregator_freeze_threshold_bytes
-</div>
+## adaptive_aggregator_freeze_threshold_bytes {#adaptive_aggregator_freeze_threshold_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
@@ -36,25 +32,19 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 自适应聚合器冻结线程本地哈希表时对应的内存大小 (请参阅 `enable_adaptive_aggregator`) 。此设置与 `adaptive_aggregator_freeze_threshold` 中任一阈值先达到时，表即会被冻结。该大小指本地表自身已分配的字节数 (包括其哈希表缓冲区和 Arena) ，在块之间进行检查。当键或聚合状态较宽时，字节限制尤为重要：仅使用键数量阈值会使这类表增长到超出 CPU 缓存容量。使用默认值时，键和状态宽度常规的表仍会按键数量冻结。0 将禁用字节限制，因此仅由键数量阈值决定。
 
-<div id="add_http_cors_header">
-  ## add_http_cors_header
-</div>
+## add_http_cors_header {#add_http_cors_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 写入 HTTP CORS 请求头。
 
-<div id="analyze_index_with_space_filling_curves">
-  ## analyze_index_with_space_filling_curves
-</div>
+## analyze_index_with_space_filling_curves {#analyze_index_with_space_filling_curves}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 如果表的索引中使用了空间填充曲线，例如 `ORDER BY mortonEncode(x, y)` 或 `ORDER BY hilbertEncode(x, y)`，并且查询对其参数指定了条件，例如 `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`，则会使用空间填充曲线进行索引分析。
 
-<div id="analyzer_inline_views">
-  ## analyzer_inline_views
-</div>
+## analyzer_inline_views {#analyzer_inline_views}
 
 <ExperimentalBadge />
 
@@ -64,9 +54,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 启用后，analyzer 会用定义这些普通 (非物化、非参数化) 视图的子查询替换它们，从而实现跨边界优化，例如谓词下推和列裁剪。
 
-<div id="any_join_distinct_right_table_keys">
-  ## any_join_distinct_right_table_keys
-</div>
+## any_join_distinct_right_table_keys {#any_join_distinct_right_table_keys}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -97,9 +85,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 * [JOIN strictness](/zh/reference/statements/select/join#settings)
 
-<div id="archive_adaptive_buffer_max_size_bytes">
-  ## archive_adaptive_buffer_max_size_bytes
-</div>
+## archive_adaptive_buffer_max_size_bytes {#archive_adaptive_buffer_max_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="8388608" />
 
@@ -107,9 +93,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 限制写入归档文件时使用的自适应缓冲区的最大大小 (例如，tar 归档
 
-<div id="arrow_flight_request_descriptor_type">
-  ## arrow_flight_request_descriptor_type
-</div>
+## arrow_flight_request_descriptor_type {#arrow_flight_request_descriptor_type}
 
 <SettingsInfoBlock type="ArrowFlightDescriptorType" default_value="path" />
 
@@ -122,9 +106,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 * &#39;path&#39; — 使用 FlightDescriptor::Path (默认值，适用于大多数 Arrow Flight 服务器)
 * &#39;command&#39; — 使用包含 SELECT 查询的 FlightDescriptor::Command (Dremio 需要这种方式)
 
-<div id="backup_slow_all_threads_after_retryable_s3_error">
-  ## backup_slow_all_threads_after_retryable_s3_error
-</div>
+## backup_slow_all_threads_after_retryable_s3_error {#backup_slow_all_threads_after_retryable_s3_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -134,9 +116,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 所有向同一备份端点发起 S3 请求的线程都会被放慢。
 当设置为 `false` 时，每个线程都会独立处理 S3 请求的退避，而不受其他线程影响。
 
-<div id="cache_warmer_threads">
-  ## cache_warmer_threads
-</div>
+## cache_warmer_threads {#cache_warmer_threads}
 
 <CloudOnlyBadge />
 
@@ -144,17 +124,13 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。启用 [cache&#95;populated&#95;by&#95;fetch](/zh/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch) 时，用于将新的数据分区片段预下载到文件系统缓存中的后台线程数。设为 0 可禁用。
 
-<div id="calculate_text_stack_trace">
-  ## calculate_text_stack_trace
-</div>
+## calculate_text_stack_trace {#calculate_text_stack_trace}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 在查询执行期间发生异常时，计算文本堆栈跟踪。这是默认设置。该功能需要进行符号查找，因此在执行大量错误查询时，可能会降低模糊测试的速度。一般情况下，不应禁用此选项。
 
-<div id="cancel_http_readonly_queries_on_client_close">
-  ## cancel_http_readonly_queries_on_client_close
-</div>
+## cancel_http_readonly_queries_on_client_close {#cancel_http_readonly_queries_on_client_close}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -162,17 +138,13 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 Cloud 默认值：`1`。
 
-<div id="checksum_on_read">
-  ## checksum_on_read
-</div>
+## checksum_on_read {#checksum_on_read}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 在读取时验证校验和。此设置默认启用，并且在生产环境中应始终保持启用。不要期望禁用此设置会带来任何好处。它仅可用于实验和基准测试。该设置仅适用于 MergeTree 家族的表。对于其他表引擎，以及通过网络接收数据时，始终都会验证校验和。
 
-<div id="compression">
-  ## compression
-</div>
+## compression {#compression}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置，可对响应正文应用通用压缩。"}]}]} />
 
@@ -180,30 +152,27 @@ Cloud 默认值：`1`。
 
 这是一个用于调整 HTTP 接口响应的设置：它会在查询执行前被处理 (响应缓冲区会预先设置) ，因此必须通过 HTTP URL 参数、URL 路径中的文件扩展名或用户 profile 提供，不能通过查询内的 `SETTINGS` 子句提供 (在该子句中无效，并且会被拒绝) 。
 
-<div id="connection_pool_max_wait_ms">
-  ## connection_pool_max_wait_ms
-</div>
+## connection_pool_max_wait_ms {#connection_pool_max_wait_ms}
 
-<SettingsInfoBlock type="毫秒" default_value="0" />
+<SettingsInfoBlock type="Milliseconds" default_value="0" />
 
-当连接池已满时，获取连接的等待时间 (以毫秒为单位) 。
+连接池已满时等待连接的时间，单位为毫秒。
 
-可能的取值：
+该等待时间按副本生效，因为每个副本各有一个连接池。等待超时后，本次尝试会以 `NO_FREE_CONNECTION` 失败。在分布式 `SELECT` 所使用的故障转移路径上，这与其他不可用副本的处理方式相同：查询会继续尝试其余副本，只有在所有副本都尝试过之后才会以 `ALL_CONNECTION_TRIES_FAILED` 失败。因此该设置并不限制整个查询的耗时；在有 `N` 个副本、每个副本尝试 `T` 次的情况下，总等待时间可能达到 `connection_pool_max_wait_ms` 乘以 `N` 再乘以 `T`，其中 `T` 为 [connections&#95;with&#95;failover&#95;max&#95;tries](/zh/reference/settings/session-settings/other#connections_with_failover_max_tries)，但不会小于 1，因为在放弃某个副本之前总会先尝试一次。若要限制查询本身的耗时，请使用 [max&#95;execution&#95;time](/zh/reference/settings/session-settings/max-execution#max_execution_time)。
+
+可能的值：
 
 * 正整数。
-* 0 — 无限等待。
+* 0 — 无限超时。该等待仍可被 `KILL QUERY` 中断；在默认的 [timeout&#95;overflow&#95;mode](/zh/reference/settings/session-settings/timeout-overflow-mode#timeout_overflow_mode) `throw` 下，也会被 `max_execution_time` 中断。
+  在 `break` 模式下，时间限制不会取消查询，因此等待会一直持续到有连接被释放为止；此时 `KILL QUERY` 仍可将其中断。
 
-<div id="connections_with_failover_max_tries">
-  ## connections_with_failover_max_tries
-</div>
+## connections_with_failover_max_tries {#connections_with_failover_max_tries}
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
 Distributed 表引擎针对每个副本的最大连接尝试次数。
 
-<div id="convert_query_to_cnf">
-  ## convert_query_to_cnf
-</div>
+## convert_query_to_cnf {#convert_query_to_cnf}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -271,9 +240,7 @@ SETTINGS convert_query_to_cnf = true;
 
 可选值：true、false
 
-<div id="count_matches_stop_at_empty_match">
-  ## count_matches_stop_at_empty_match
-</div>
+## count_matches_stop_at_empty_match {#count_matches_stop_at_empty_match}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -281,17 +248,13 @@ SETTINGS convert_query_to_cnf = true;
 
 在 `countMatches` 函数中，一旦模式匹配到零长度内容，就停止计数。
 
-<div id="cross_to_inner_join_rewrite">
-  ## cross_to_inner_join_rewrite
-</div>
+## cross_to_inner_join_rewrite {#cross_to_inner_join_rewrite}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
 如果 WHERE 子句中存在连接表达式，则使用 INNER JOIN 代替逗号/CROSS JOIN。取值：0 - 不重写，1 - 如果可能，则对逗号/CROSS 应用此重写，2 - 强制重写所有逗号 join，cross - 如果可能
 
-<div id="data_type_default_nullable">
-  ## data_type_default_nullable
-</div>
+## data_type_default_nullable {#data_type_default_nullable}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -302,17 +265,13 @@ SETTINGS convert_query_to_cnf = true;
 * 1 — 列定义中的数据类型默认设置为 `Nullable`。
 * 0 — 列定义中的数据类型默认不设置为 `Nullable`。
 
-<div id="decimal_check_overflow">
-  ## decimal_check_overflow
-</div>
+## decimal_check_overflow {#decimal_check_overflow}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 检查 Decimal 算术/比较操作是否溢出
 
-<div id="deduplicate_blocks_in_dependent_materialized_views">
-  ## deduplicate_blocks_in_dependent_materialized_views
-</div>
+## deduplicate_blocks_in_dependent_materialized_views {#deduplicate_blocks_in_dependent_materialized_views}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -332,9 +291,7 @@ SETTINGS convert_query_to_cnf = true;
 
 * [IN 运算符中的 NULL 处理](/zh/concepts/features/operations/insert/deduplicating-inserts-on-retries#insert-deduplication-with-materialized-views)
 
-<div id="defer_partition_pruning_after_final">
-  ## defer_partition_pruning_after_final
-</div>
+## defer_partition_pruning_after_final {#defer_partition_pruning_after_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -351,17 +308,13 @@ SETTINGS convert_query_to_cnf = true;
 * 0 — 在 `FINAL` 之前应用分区裁剪 (26.3 之前的行为，更快，但一般情况下不安全) 。
 * 1 — 将分区裁剪延后到 `FINAL` 之后 (默认，确保正确性) 。
 
-<div id="describe_compact_output">
-  ## describe_compact_output
-</div>
+## describe_compact_output {#describe_compact_output}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 如果为 true，则 DESCRIBE 查询结果中仅包含列名和类型
 
-<div id="dialect">
-  ## dialect
-</div>
+## dialect {#dialect}
 
 <SettingsInfoBlock type="Dialect" default_value="clickhouse" />
 
@@ -376,9 +329,7 @@ SETTINGS convert_query_to_cnf = true;
 * `promql` — PromQL (Prometheus 查询语言) ，基于由 `promql_database`、`promql_table` 和 `promql_evaluation_time` 设置指定的 TimeSeries 表进行计算。
 * `clickhouse_json` — 查询将不作为 SQL 文本处理，而是解释为 JSON AST (`parseQueryToJSON` 的输出) 。仍可使用普通形式的 `SET` 查询，以便切换回其他方言。需要启用 Experimental 设置 `enable_json_ast_dialect`。
 
-<div id="discard_query_data">
-  ## discard_query_data
-</div>
+## discard_query_data {#discard_query_data}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -392,9 +343,7 @@ SETTINGS convert_query_to_cnf = true;
 
 仅影响原生 TCP 协议。
 
-<div id="distinct_overflow_mode">
-  ## distinct_overflow_mode
-</div>
+## distinct_overflow_mode {#distinct_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -405,9 +354,7 @@ SETTINGS convert_query_to_cnf = true;
 * `throw`：抛出异常 (默认) 。
 * `break`：停止执行查询并返回部分结果，就像源数据已耗尽一样。
 
-<div id="do_not_merge_across_partitions_select_final">
-  ## do_not_merge_across_partitions_select_final
-</div>
+## do_not_merge_across_partitions_select_final {#do_not_merge_across_partitions_select_final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -415,9 +362,7 @@ SETTINGS convert_query_to_cnf = true;
 
 启用后，在 SELECT FINAL 查询期间，来自不同分区的 parts 不会被合并到一起，而是只会在各个分区内分别进行合并。这在处理分区表时可以显著提升查询性能。
 
-<div id="dynamic_throw_on_type_mismatch">
-  ## dynamic_throw_on_type_mismatch
-</div>
+## dynamic_throw_on_type_mismatch {#dynamic_throw_on_type_mismatch}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -429,9 +374,7 @@ SETTINGS convert_query_to_cnf = true;
 * `true` (默认) — 抛出异常。
 * `false` — 对这些行返回 `NULL`。
 
-<div id="enforce_strict_identifier_format">
-  ## enforce_strict_identifier_format
-</div>
+## enforce_strict_identifier_format {#enforce_strict_identifier_format}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -439,9 +382,7 @@ SETTINGS convert_query_to_cnf = true;
 
 启用后，将只允许包含字母、数字和下划线的标识符。
 
-<div id="engine_url_skip_empty_files">
-  ## engine_url_skip_empty_files
-</div>
+## engine_url_skip_empty_files {#engine_url_skip_empty_files}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -452,25 +393,19 @@ SETTINGS convert_query_to_cnf = true;
 * 0 — 如果空文件与所请求的格式不兼容，`SELECT` 会抛出异常。
 * 1 — 对于空文件，`SELECT` 返回空结果。
 
-<div id="exact_rows_before_limit">
-  ## exact_rows_before_limit
-</div>
+## exact_rows_before_limit {#exact_rows_before_limit}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 启用后，ClickHouse 会为 rows&#95;before&#95;limit&#95;at&#95;least 统计信息提供精确值，但代价是必须将 limit 之前的数据全部读取完毕
 
-<div id="except_default_mode">
-  ## except_default_mode
-</div>
+## except_default_mode {#except_default_mode}
 
 <SettingsInfoBlock type="SetOperationMode" default_value="ALL" />
 
 设置 EXCEPT 查询的默认模式。可能的值：空字符串、&#39;ALL&#39;、&#39;DISTINCT&#39;。如果为空，则未指定模式的查询会抛出异常。
 
-<div id="exclude_materialize_skip_indexes_on_insert">
-  ## exclude_materialize_skip_indexes_on_insert
-</div>
+## exclude_materialize_skip_indexes_on_insert {#exclude_materialize_skip_indexes_on_insert}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": ""},{"label": "新设置。"}]}]} />
 
@@ -504,9 +439,7 @@ ALTER TABLE tab MATERIALIZE INDEX idx_a; -- this query can be used to explicitly
 SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to default
 ```
 
-<div id="execute_exists_as_scalar_subquery">
-  ## execute_exists_as_scalar_subquery
-</div>
+## execute_exists_as_scalar_subquery {#execute_exists_as_scalar_subquery}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -516,9 +449,7 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
 
 Cloud 默认值：`0`。
 
-<div id="explain_query_plan_default">
-  ## explain_query_plan_default
-</div>
+## explain_query_plan_default {#explain_query_plan_default}
 
 <SettingsInfoBlock type="ExplainQueryPlanDefault" default_value="pretty" />
 
@@ -535,9 +466,7 @@ Cloud 默认值：`0`。
 
 带有 `json = 1` 或 `distributed = 1` 的 `EXPLAIN PLAN` 无论此设置如何，都会保留 legacy (26.7 之前) 的默认值，除非显式设置了 `actions`、`compact` 或 `pretty`。pretty 输出无法表示 JSON 结果或按分片划分的分布式查询计划，因此这些模式只有以 legacy 形式呈现时才能正确显示。
 
-<div id="explain_syntax_single_record">
-  ## explain_syntax_single_record
-</div>
+## explain_syntax_single_record {#explain_syntax_single_record}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -549,9 +478,7 @@ Cloud 默认值：`0`。
 
 将此设置为 `false` 可恢复 26.8 之前每行一条记录的输出；或者将 `compatibility` 设置为任何早于 `26.8` 的版本。
 
-<div id="extract_key_value_pairs_max_pairs_per_row">
-  ## extract_key_value_pairs_max_pairs_per_row
-</div>
+## extract_key_value_pairs_max_pairs_per_row {#extract_key_value_pairs_max_pairs_per_row}
 
 **别名**: `extract_kvp_max_pairs_per_row`
 
@@ -561,18 +488,14 @@ Cloud 默认值：`0`。
 
 `extractKeyValuePairs` 函数可生成的键值对的最大数量。用于防止占用过多内存。
 
-<div id="extremes">
-  ## extremes
-</div>
+## extremes {#extremes}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 是否统计极值 (即查询结果各列中的最小值和最大值) 。接受 0 或 1。默认值为 0 (已禁用) 。
 更多信息，请参见“极值”一节。
 
-<div id="fallback_to_stale_replicas_for_distributed_queries">
-  ## fallback_to_stale_replicas_for_distributed_queries
-</div>
+## fallback_to_stale_replicas_for_distributed_queries {#fallback_to_stale_replicas_for_distributed_queries}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -584,9 +507,7 @@ ClickHouse 会从该表的过时副本中选择最合适的一个。
 
 默认值为 1 (已启用) 。
 
-<div id="file_like_engine_default_partition_strategy">
-  ## file_like_engine_default_partition_strategy
-</div>
+## file_like_engine_default_partition_strategy {#file_like_engine_default_partition_strategy}
 
 <SettingsInfoBlock type="FileLikeEngineDefaultPartitionStrategy" default_value="hive" />
 
@@ -594,17 +515,13 @@ ClickHouse 会从该表的过时副本中选择最合适的一个。
 
 类文件表引擎的默认分区策略。仅适用于路径中不含 glob 或 `{_partition_id}` 占位符的 `CREATE` 查询。包含 `{_partition_id}` 的路径始终使用 `wildcard`。包含其他 glob 的路径不使用分区策略，并忽略 `PARTITION BY`。如果此设置为 `wildcard`，但路径中没有 `{_partition_id}`，则不使用分区策略；无法将此选择持久化到引擎参数中的表引擎 (例如 `HDFS`) 将拒绝此类 `CREATE`。
 
-<div id="filesystem_prefetches_limit">
-  ## filesystem_prefetches_limit
-</div>
+## filesystem_prefetches_limit {#filesystem_prefetches_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="200" />
 
 最大预取数量。零表示不受限制。如果你想限制预取数量，更推荐使用设置 `filesystem_prefetches_max_memory_usage`
 
-<div id="filter">
-  ## filter
-</div>
+## filter {#filter}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置，用于在查询外层添加 WHERE 子句。"}]}]} />
 
@@ -618,9 +535,7 @@ ClickHouse 会从该表的过时副本中选择最合适的一个。
   `filter` **不是**访问控制机制，不得用作 [行级安全策略](/zh/concepts/features/security/access-rights#row-policy-management) 或 `additional_table_filters` 设置的替代方案。它只会在包装子查询的外层添加 `WHERE`，因此在应用过滤器前，底层数据仍会被读取和处理——查询在处理过程中仍可能观察到被过滤掉的行 (例如，使用 `throwIf` 通过错误路径泄露信息) 。如需限制用户可访问的行，请使用行级安全或 `additional_table_filters`。
 </Danger>
 
-<div id="final">
-  ## final
-</div>
+## final {#final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -666,9 +581,7 @@ SELECT * FROM test;
 └─────┴────────┘
 ```
 
-<div id="finalize_projection_parts_synchronously">
-  ## finalize_projection_parts_synchronously
-</div>
+## finalize_projection_parts_synchronously {#finalize_projection_parts_synchronously}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -676,9 +589,7 @@ SELECT * FROM test;
 
 启用后，projection parts 会在 INSERT 期间同步完成，从而降低峰值内存占用，但代价是 S3 上传并行度会下降。默认情况下，每个 projection 的输出流都会一直保持打开，直到整个 part (包括所有 projections) 都完成，这样可以让 S3 上传相互重叠，但也会使峰值内存随着 projections 的数量成比例增加。此设置仅影响 INSERT 路径；merge 和变更已经会同步完成 projections。
 
-<div id="flatten_nested">
-  ## flatten_nested
-</div>
+## flatten_nested {#flatten_nested}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -743,17 +654,13 @@ SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="format">
-  ## format
-</div>
+## format {#format}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置，可覆盖查询的输入和输出 FORMAT。"}]}]} />
 
 覆盖查询的输入和输出 `FORMAT`。其优先级高于查询中指定的 format 和文件扩展名。对于各自的方向，更具体的 `input_format` 和 `output_format` 设置优先于通用的 `format` 设置。
 
-<div id="framing_output_format">
-  ## framing_output_format
-</div>
+## framing_output_format {#framing_output_format}
 
 <BetaBadge />
 
@@ -800,9 +707,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 {"packet":"progress","progress":{"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1265958"}}
 ```
 
-<div id="fsync_metadata">
-  ## fsync_metadata
-</div>
+## fsync_metadata {#fsync_metadata}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -810,9 +715,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 如果 server 中有数百万个持续创建和删除的小表，禁用此项是合理的。
 
-<div id="functions_h3_default_if_invalid">
-  ## functions_h3_default_if_invalid
-</div>
+## functions_h3_default_if_invalid {#functions_h3_default_if_invalid}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -820,9 +723,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 如果为 false，h3 函数 (例如 h3CellAreaM2) 在输入无效时会抛出异常。如果为 true，则返回 0 或默认值。
 
-<div id="geo_distance_returns_float64_on_float64_arguments">
-  ## geo_distance_returns_float64_on_float64_arguments
-</div>
+## geo_distance_returns_float64_on_float64_arguments {#geo_distance_returns_float64_on_float64_arguments}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -830,9 +731,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 如果 `geoDistance`、`greatCircleDistance` 和 `greatCircleAngle` 这三个函数的四个参数均为 Float64，则返回 Float64，并在内部计算中使用双精度。在此前的 ClickHouse 版本中，这些函数始终返回 Float32。
 
-<div id="geotoh3_argument_order">
-  ## geotoh3_argument_order
-</div>
+## geotoh3_argument_order {#geotoh3_argument_order}
 
 <BetaBadge />
 
@@ -842,17 +741,13 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 函数 `geoToH3` 在设置为 `lon_lat` 时接受 (lon, lat)，在设置为 `lat_lon` 时接受 (lat, lon)。
 
-<div id="glob_expansion_max_elements">
-  ## glob_expansion_max_elements
-</div>
+## glob_expansion_max_elements {#glob_expansion_max_elements}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 允许的地址最大数量 (适用于外部存储、表函数等) 。
 
-<div id="h3togeo_lon_lat_result_order">
-  ## h3togeo_lon_lat_result_order
-</div>
+## h3togeo_lon_lat_result_order {#h3togeo_lon_lat_result_order}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -860,17 +755,13 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 如果为 true，函数 `h3ToGeo` 返回 (lon, lat)；否则返回 (lat, lon)。
 
-<div id="handshake_timeout_ms">
-  ## handshake_timeout_ms
-</div>
+## handshake_timeout_ms {#handshake_timeout_ms}
 
 <SettingsInfoBlock type="毫秒" default_value="10000" />
 
 握手过程中，从副本接收 Hello 数据包的超时时间 (毫秒) 。
 
-<div id="hedged_connection_timeout_ms">
-  ## hedged_connection_timeout_ms
-</div>
+## hedged_connection_timeout_ms {#hedged_connection_timeout_ms}
 
 <SettingsInfoBlock type="毫秒" default_value="50" />
 
@@ -878,9 +769,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 对冲请求中与副本建立连接时的连接超时时间
 
-<div id="highlight_max_matches_per_row">
-  ## highlight_max_matches_per_row
-</div>
+## highlight_max_matches_per_row {#highlight_max_matches_per_row}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -892,9 +781,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 * 正整数。
 
-<div id="hnsw_candidate_list_size_for_search">
-  ## hnsw_candidate_list_size_for_search
-</div>
+## hnsw_candidate_list_size_for_search {#hnsw_candidate_list_size_for_search}
 
 <SettingsInfoBlock type="UInt64" default_value="256" />
 
@@ -902,17 +789,13 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 搜索向量相似度索引时使用的动态候选列表大小，也称为“ef&#95;search”。
 
-<div id="hsts_max_age">
-  ## hsts_max_age
-</div>
+## hsts_max_age {#hsts_max_age}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 HSTS 的过期时长。0 表示禁用 HSTS。
 
-<div id="idle_connection_timeout">
-  ## idle_connection_timeout
-</div>
+## idle_connection_timeout {#idle_connection_timeout}
 
 <SettingsInfoBlock type="UInt64" default_value="3600" />
 
@@ -922,9 +805,7 @@ HSTS 的过期时长。0 表示禁用 HSTS。
 
 * 正整数 (0 表示立即关闭，即 0 秒后关闭) 。
 
-<div id="inject_random_order_for_select_without_order_by">
-  ## inject_random_order_for_select_without_order_by
-</div>
+## inject_random_order_for_select_without_order_by {#inject_random_order_for_select_without_order_by}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -935,33 +816,25 @@ HSTS 的过期时长。0 表示禁用 HSTS。
 如果顶层结构是 UNION，则会分别为其所有子项独立注入 &#39;ORDER BY rand()&#39;。
 仅对测试和开发有用 (缺少 ORDER BY 是非确定性查询结果的一个来源) 。
 
-<div id="input_format">
-  ## input_format
-</div>
+## input_format {#input_format}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置，可覆盖查询的输入格式。"}]}]} />
 
 覆盖查询的输入格式，其优先级高于查询中指定的格式。
 
-<div id="interactive_delay">
-  ## interactive_delay
-</div>
+## interactive_delay {#interactive_delay}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
 以微秒为单位的时间间隔，用于检查请求执行是否已取消，并发送 Progress 信息。
 
-<div id="intersect_default_mode">
-  ## intersect_default_mode
-</div>
+## intersect_default_mode {#intersect_default_mode}
 
 <SettingsInfoBlock type="SetOperationMode" default_value="ALL" />
 
 设置 INTERSECT 查询的默认 mode。可能的值：空字符串、&#39;ALL&#39;、&#39;DISTINCT&#39;。如果为空，未指定 mode 的查询将抛出异常。
 
-<div id="least_greatest_legacy_null_behavior">
-  ## least_greatest_legacy_null_behavior
-</div>
+## least_greatest_legacy_null_behavior {#least_greatest_legacy_null_behavior}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -969,9 +842,7 @@ HSTS 的过期时长。0 表示禁用 HSTS。
 
 如果启用，当函数 `least` 和 `greatest` 的任一参数为 `NULL` 时，将返回 `NULL`。
 
-<div id="legacy_column_name_of_tuple_literal">
-  ## legacy_column_name_of_tuple_literal
-</div>
+## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -979,9 +850,7 @@ HSTS 的过期时长。0 表示禁用 HSTS。
 
 对于大型 Tuple 字面量，在其列名中列出所有元素名称，而不是使用哈希。此设置仅为兼容性而存在。在将集群从低于 21.7 的版本滚动更新到更高版本时，建议将其设为 &#39;true&#39;。
 
-<div id="limit">
-  ## limit
-</div>
+## limit {#limit}
 
 <SettingsInfoBlock type="Double" default_value="0" />
 
@@ -998,9 +867,7 @@ HSTS 的过期时长。0 表示禁用 HSTS。
 
 此设置会影响产生结果的 `SELECT` / `UNION` 查询。对于写入查询 (`INSERT … SELECT`、`CREATE … AS SELECT`) ，只有当源 `SELECT` 在其自身的 `SETTINGS` 子句中指定此设置时才会生效；从 profile 或 session 继承的值，或在 `INSERT` / `CREATE` 语句本身设置的值，都不会传播到源 `SELECT`。这与其他所有设置适用的“不传播”规则相同。
 
-<div id="load_marks_asynchronously">
-  ## load_marks_asynchronously
-</div>
+## load_marks_asynchronously {#load_marks_asynchronously}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1008,9 +875,7 @@ HSTS 的过期时长。0 表示禁用 HSTS。
 
 Cloud 默认值：`1`。
 
-<div id="lock_acquire_timeout">
-  ## lock_acquire_timeout
-</div>
+## lock_acquire_timeout {#lock_acquire_timeout}
 
 <SettingsInfoBlock type="Seconds" default_value="120" />
 
@@ -1023,9 +888,7 @@ Possible values:
 * 正整数 (单位：秒) 。
 * 0 — 不设置锁超时。
 
-<div id="low_priority_query_wait_time_ms">
-  ## low_priority_query_wait_time_ms
-</div>
+## low_priority_query_wait_time_ms {#low_priority_query_wait_time_ms}
 
 <BetaBadge />
 
@@ -1035,9 +898,7 @@ Possible values:
 
 在采用查询优先级机制时 (参见设置 `priority`) ，低优先级查询会等待高优先级查询完成。此设置指定等待时长。
 
-<div id="make_distributed_plan">
-  ## make_distributed_plan
-</div>
+## make_distributed_plan {#make_distributed_plan}
 
 <ExperimentalBadge />
 
@@ -1055,9 +916,7 @@ Possible values:
 * `compile_expressions = 0`；
 * `query_plan_direct_read_from_text_index = 0`。
 
-<div id="merge_table_max_tables_to_look_for_schema_inference">
-  ## merge_table_max_tables_to_look_for_schema_inference
-</div>
+## merge_table_max_tables_to_look_for_schema_inference {#merge_table_max_tables_to_look_for_schema_inference}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -1066,9 +925,7 @@ Possible values:
 创建未显式指定 schema 的 `Merge` 表，或使用 `merge` 表函数时，会将 schema 推断为匹配表的并集，数量不超过指定值。
 如果表的数量更多，则只会基于前面指定数量的表来推断 schema。
 
-<div id="mongodb_throw_on_unsupported_query">
-  ## mongodb_throw_on_unsupported_query
-</div>
+## mongodb_throw_on_unsupported_query {#mongodb_throw_on_unsupported_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1076,17 +933,13 @@ Possible values:
 
 如果启用，当无法构建 MongoDB 查询时，MongoDB 表会报错。否则，ClickHouse 会读取整个表并在本地处理。`allow_experimental_analyzer=0` 时，此选项不适用。
 
-<div id="multiple_joins_try_to_keep_original_names">
-  ## multiple_joins_try_to_keep_original_names
-</div>
+## multiple_joins_try_to_keep_original_names {#multiple_joins_try_to_keep_original_names}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 在多个 JOIN 重写时，不向顶层表达式列表添加别名
 
-<div id="normalize_function_names">
-  ## normalize_function_names
-</div>
+## normalize_function_names {#normalize_function_names}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1094,9 +947,7 @@ Possible values:
 
 将函数名称规范化为其标准名称
 
-<div id="offset">
-  ## offset
-</div>
+## offset {#offset}
 
 <SettingsInfoBlock type="Double" default_value="0" />
 
@@ -1140,9 +991,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 此设置会影响产生结果的 `SELECT` / `UNION` 查询。对于写入查询 (`INSERT … SELECT`、`CREATE … AS SELECT`) ，只有当源 `SELECT` 在自身的 `SETTINGS` 子句中指定了该设置时才会生效；从 profile 或会话继承的值，或在 `INSERT` / `CREATE` 语句本身中设置的值，都不会传播到源 `SELECT`——这与其他任何设置的非传播规则相同。
 
-<div id="order">
-  ## order
-</div>
+## order {#order}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置，可为查询添加外层 ORDER BY 子句。"}]}]} />
 
@@ -1152,17 +1001,13 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 它会作用于产生结果的 `SELECT` / `UNION` 查询。对于写入查询 (`INSERT … SELECT`、`CREATE … AS SELECT`) ，只有源 `SELECT` 在自身的 `SETTINGS` 子句中包含该设置时才会生效；从 profile 或 会话 继承的值，或在 `INSERT` / `CREATE` 语句本身中设置的值，不会传播到源 `SELECT`——这与其他所有设置遵循相同的非传播规则。
 
-<div id="output_format">
-  ## output_format
-</div>
+## output_format {#output_format}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置，可覆盖查询的输出格式。"}]}]} />
 
 覆盖查询的输出格式。其优先级高于查询中指定的格式、文件扩展名指定的格式或通过 `default_format` 指定的格式。
 
-<div id="page">
-  ## 页码
-</div>
+## 页码 {#page}
 
 <SettingsInfoBlock type="Double" default_value="0" />
 
@@ -1174,9 +1019,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 它会影响产生结果的 `SELECT` / `UNION` 查询。对于写入查询 (`INSERT … SELECT`、`CREATE … AS SELECT`) ，仅当源 `SELECT` 在其自身的 `SETTINGS` 子句中包含此设置时才会生效；从 profile 或会话继承的值，或在 `INSERT` / `CREATE` 语句本身中设置的值，都不会传播到源 `SELECT`——这与任何其他设置适用的非传播规则相同。
 
-<div id="paimon_target_snapshot_id">
-  ## paimon_target_snapshot_id
-</div>
+## paimon_target_snapshot_id {#paimon_target_snapshot_id}
 
 <ExperimentalBadge />
 
@@ -1188,9 +1031,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 而不会推进已提交的水位线。
 默认值：-1 (禁用)
 
-<div id="parallelize_output_from_storages">
-  ## parallelize_output_from_storages
-</div>
+## parallelize_output_from_storages {#parallelize_output_from_storages}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1198,17 +1039,13 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 对存储读取步骤的输出进行并行化。如果条件允许，可在从存储读取后立即并行执行查询处理
 
-<div id="partial_result_on_first_cancel">
-  ## partial_result_on_first_cancel
-</div>
+## partial_result_on_first_cancel {#partial_result_on_first_cancel}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 允许查询在被取消后返回部分结果。
 
-<div id="per_part_index_stats">
-  ## per_part_index_stats
-</div>
+## per_part_index_stats {#per_part_index_stats}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1216,17 +1053,13 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 记录各个 part 的索引统计信息
 
-<div id="poll_interval">
-  ## poll_interval
-</div>
+## poll_interval {#poll_interval}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
 在服务器端的查询等待循环中阻塞指定秒数。
 
-<div id="polyglot_dialect">
-  ## polyglot_dialect
-</div>
+## polyglot_dialect {#polyglot_dialect}
 
 <ExperimentalBadge />
 
@@ -1234,9 +1067,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 polyglot 转译器的源 SQL 方言 (例如 &#39;sqlite&#39;、&#39;mysql&#39;、&#39;postgresql&#39;、&#39;snowflake&#39;、&#39;duckdb&#39;) 。
 
-<div id="postgresql_fault_injection_probability">
-  ## postgresql_fault_injection_probability
-</div>
+## postgresql_fault_injection_probability {#postgresql_fault_injection_probability}
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
@@ -1244,9 +1075,7 @@ polyglot 转译器的源 SQL 方言 (例如 &#39;sqlite&#39;、&#39;mysql&#39;�
 
 使内部 (用于复制) 的 PostgreSQL 查询失败的近似概率。有效值范围为区间 [0.0f, 1.0f]
 
-<div id="predicate_statistics_sample_rate">
-  ## predicate_statistics_sample_rate
-</div>
+## predicate_statistics_sample_rate {#predicate_statistics_sample_rate}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -1254,17 +1083,13 @@ polyglot 转译器的源 SQL 方言 (例如 &#39;sqlite&#39;、&#39;mysql&#39;�
 
 将谓词选择性统计信息收集到 `system.predicate_statistics_log`。设置为 N &gt; 0 时，将按查询 ID 对约 1/N 的查询进行采样。0 表示禁用。
 
-<div id="prefetch_buffer_size">
-  ## prefetch_buffer_size
-</div>
+## prefetch_buffer_size {#prefetch_buffer_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
 用于从文件系统读取数据的预取缓冲区最大大小。超过 256 MiB 的值会被限制为 256 MiB，因为读取缓冲区不需要更大。
 
-<div id="print_pretty_type_names">
-  ## print_pretty_type_names
-</div>
+## print_pretty_type_names {#print_pretty_type_names}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1301,17 +1126,13 @@ a   Tuple(
 )
 ```
 
-<div id="priority">
-  ## priority
-</div>
+## priority {#priority}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 查询的priority。1 表示最高priority，值越大priority越低；0 表示不使用priority。
 
-<div id="push_external_roles_in_interserver_queries">
-  ## push_external_roles_in_interserver_queries
-</div>
+## push_external_roles_in_interserver_queries {#push_external_roles_in_interserver_queries}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1319,9 +1140,7 @@ a   Tuple(
 
 启用在执行查询时将用户角色从发起节点推送到其他节点。
 
-<div id="query_metric_log_interval">
-  ## query_metric_log_interval
-</div>
+## query_metric_log_interval {#query_metric_log_interval}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -1335,33 +1154,25 @@ a   Tuple(
 
 默认值：-1
 
-<div id="queue_max_wait_ms">
-  ## queue_max_wait_ms
-</div>
+## queue_max_wait_ms {#queue_max_wait_ms}
 
 <SettingsInfoBlock type="毫秒" default_value="0" />
 
 如果并发请求数超过最大值，请求在队列中的等待时间。
 
-<div id="rabbitmq_max_wait_ms">
-  ## rabbitmq_max_wait_ms
-</div>
+## rabbitmq_max_wait_ms {#rabbitmq_max_wait_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="5000" />
 
 重试前，从 RabbitMQ 读取的等待时间。
 
-<div id="readonly">
-  ## readonly
-</div>
+## readonly {#readonly}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 0 - 无只读限制。1 - 仅允许读取请求，以及修改明确允许更改的设置。2 - 仅允许读取请求，以及修改除 `readonly` 设置外的其他设置。
 
-<div id="recursive_cte_max_steps_in_type_inference">
-  ## recursive_cte_max_steps_in_type_inference
-</div>
+## recursive_cte_max_steps_in_type_inference {#recursive_cte_max_steps_in_type_inference}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -1369,9 +1180,7 @@ a   Tuple(
 
 在递归 CTE 中推断列类型时允许的最大迭代次数。列类型的确定方式是：在 UNION ALL 的非递归部分和递归部分之间反复应用 `getLeastSupertype`，直到结果收敛。设为 0 可禁用类型拓宽，仅使用非递归部分的类型。
 
-<div id="regexp_max_matches_per_row">
-  ## regexp_max_matches_per_row
-</div>
+## regexp_max_matches_per_row {#regexp_max_matches_per_row}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -1381,33 +1190,25 @@ a   Tuple(
 
 * 正整数。
 
-<div id="reject_expensive_hyperscan_regexps">
-  ## reject_expensive_hyperscan_regexps
-</div>
+## reject_expensive_hyperscan_regexps {#reject_expensive_hyperscan_regexps}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 拒绝那些在使用 hyperscan 进行求值时可能导致较高开销的模式 (由于 NFA 状态爆炸)
 
-<div id="remerge_sort_lowered_memory_bytes_ratio">
-  ## remerge_sort_lowered_memory_bytes_ratio
-</div>
+## remerge_sort_lowered_memory_bytes_ratio {#remerge_sort_lowered_memory_bytes_ratio}
 
 <SettingsInfoBlock type="Float" default_value="2" />
 
 如果 remerge 后内存使用量未按该比率降低，则会禁用 remerge。
 
-<div id="remote_read_min_bytes_for_seek">
-  ## remote_read_min_bytes_for_seek
-</div>
+## remote_read_min_bytes_for_seek {#remote_read_min_bytes_for_seek}
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
 远程读取 (URL、S3) 执行寻道而非以 ignore 方式读取时所需的最小字节数。
 
-<div id="rename_files_after_processing">
-  ## rename_files_after_processing
-</div>
+## rename_files_after_processing {#rename_files_after_processing}
 
 * **类型：** String
 
@@ -1435,9 +1236,7 @@ a   Tuple(
 
 如果 `sample.csv` 读取成功，文件将重命名为 `processed_sample_1683473210851438.csv`
 
-<div id="replication_wait_for_inactive_replica_timeout">
-  ## replication_wait_for_inactive_replica_timeout
-</div>
+## replication_wait_for_inactive_replica_timeout {#replication_wait_for_inactive_replica_timeout}
 
 <SettingsInfoBlock type="Int64" default_value="120" />
 
@@ -1449,9 +1248,7 @@ a   Tuple(
 * 负整数 — 无限期等待。
 * 正整数 — 要等待的秒数。
 
-<div id="reserve_memory">
-  ## reserve_memory
-</div>
+## reserve_memory {#reserve_memory}
 
 <ExperimentalBadge />
 
@@ -1464,9 +1261,7 @@ a   Tuple(
 值为 `0` 表示不预留内存。
 仅当创建了 MEMORY RESERVATION 资源时，此设置才会生效。
 
-<div id="restore_replicated_merge_tree_to_shared_merge_tree">
-  ## restore_replicated_merge_tree_to_shared_merge_tree
-</div>
+## restore_replicated_merge_tree_to_shared_merge_tree {#restore_replicated_merge_tree_to_shared_merge_tree}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1476,9 +1271,7 @@ a   Tuple(
 
 Cloud 默认值：`1`。
 
-<div id="result_overflow_mode">
-  ## result_overflow_mode
-</div>
+## result_overflow_mode {#result_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -1510,9 +1303,7 @@ FORMAT Null;
 6666 rows in set. ...
 ```
 
-<div id="resumable_backup_from_snapshot">
-  ## resumable_backup_from_snapshot
-</div>
+## resumable_backup_from_snapshot {#resumable_backup_from_snapshot}
 
 <ExperimentalBadge />
 
@@ -1525,9 +1316,7 @@ FORMAT Null;
 `S3` 和 `AzureBlobStorage` 目标端。在不支持 `BACKUP FROM SNAPSHOT` 的 ClickHouse 开源构建中启用此设置，
 会使 `BACKUP` 因 `WRONG_BACKUP_SETTINGS` 而失败。
 
-<div id="rows_before_aggregation">
-  ## rows_before_aggregation
-</div>
+## rows_before_aggregation {#rows_before_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1535,9 +1324,7 @@ FORMAT Null;
 
 启用后，ClickHouse 将提供 rows&#95;before&#95;aggregation 统计信息的精确值，表示聚合前读取的行
 
-<div id="run_query_in_background">
-  ## run_query_in_background
-</div>
+## run_query_in_background {#run_query_in_background}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1553,9 +1340,7 @@ FORMAT Null;
 
 主要用例是长时间运行的 `INSERT ... SELECT`，以确保客户端连接断开时查询不会丢失。
 
-<div id="secondary_indices_enable_bulk_filtering">
-  ## secondary_indices_enable_bulk_filtering
-</div>
+## secondary_indices_enable_bulk_filtering {#secondary_indices_enable_bulk_filtering}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1563,9 +1348,7 @@ FORMAT Null;
 
 为索引启用批量过滤算法。通常它的效果会更好，但我们保留此设置以便进行兼容性控制。
 
-<div id="select">
-  ## select
-</div>
+## select {#select}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置，可将查询包装为 `SELECT <expr_list> FROM (<query>)`。"}]}]} />
 
@@ -1575,9 +1358,7 @@ FORMAT Null;
 
 它会影响产生结果的 `SELECT` / `UNION` 查询。对于写入查询 (`INSERT … SELECT`、`CREATE … AS SELECT`) ，仅当源 `SELECT` 在其自身的 `SETTINGS` 子句中指定该设置时才会生效；从 profile 或 会话 继承的值，或在 `INSERT` / `CREATE` 语句本身上设置的值，不会传播到源 `SELECT`——这与其他任何设置均适用的不传播规则相同。
 
-<div id="select_sequential_consistency">
-  ## select_sequential_consistency
-</div>
+## select_sequential_consistency {#select_sequential_consistency}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -1604,9 +1385,7 @@ See also:
 * [insert&#95;quorum&#95;timeout](/zh/reference/settings/session-settings/insert-quorum#insert_quorum_timeout)
 * [insert&#95;quorum&#95;parallel](/zh/reference/settings/session-settings/insert-quorum#insert_quorum_parallel)
 
-<div id="session_timezone">
-  ## session_timezone
-</div>
+## session_timezone {#session_timezone}
 
 <BetaBadge />
 
@@ -1669,9 +1448,7 @@ SELECT *, timeZone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS sessi
 
 * [timezone](/zh/reference/settings/server-settings/settings/other#timezone)
 
-<div id="set_overflow_mode">
-  ## set_overflow_mode
-</div>
+## set_overflow_mode {#set_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -1683,17 +1460,13 @@ SELECT *, timeZone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS sessi
 * `break`：停止执行查询并返回部分结果，就像
   源数据已经耗尽一样。
 
-<div id="single_join_prefer_left_table">
-  ## single_join_prefer_left_table
-</div>
+## single_join_prefer_left_table {#single_join_prefer_left_table}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 对于单个 JOIN，标识符存在歧义时优先使用左表
 
-<div id="skip_redundant_aliases_in_udf">
-  ## skip_redundant_aliases_in_udf
-</div>
+## skip_redundant_aliases_in_udf {#skip_redundant_aliases_in_udf}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1740,17 +1513,13 @@ EXPLAIN SYNTAX SELECT test_03274(4 + 2);
 SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 ```
 
-<div id="sleep_after_receiving_query_ms">
-  ## sleep_after_receiving_query_ms
-</div>
+## sleep_after_receiving_query_ms {#sleep_after_receiving_query_ms}
 
 <SettingsInfoBlock type="毫秒" default_value="0" />
 
 TCPHandler 收到查询后休眠的时长
 
-<div id="snappy_mode">
-  ## snappy_mode
-</div>
+## snappy_mode {#snappy_mode}
 
 <SettingsInfoBlock type="SnappyMode" default_value="basic" />
 
@@ -1765,9 +1534,7 @@ TCPHandler 收到查询后休眠的时长
 * `basic` — Hadoop snappy 块格式。兼容 Hadoop 读写的文件。支持读取和写入。
 * `framed` — Snappy framing 格式，即 Google 定义的标准流式格式。支持读取和写入。
 
-<div id="sort">
-  ## sort
-</div>
+## sort {#sort}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置，可在查询外层添加简单的 ORDER BY 子句。"}]}]} />
 
@@ -1777,9 +1544,7 @@ TCPHandler 收到查询后休眠的时长
 
 它会影响产生结果的 `SELECT` / `UNION` 查询。对于写入查询 (`INSERT … SELECT`、`CREATE … AS SELECT`) ，仅当源 `SELECT` 在其自身的 `SETTINGS` 子句中指定该设置时才会生效；从 profile 或会话继承的值，或在 `INSERT` / `CREATE` 语句本身中设置的值，都不会传播到源 `SELECT`——这与其他任何设置适用的非传播规则相同。
 
-<div id="sort_overflow_mode">
-  ## sort_overflow_mode
-</div>
+## sort_overflow_mode {#sort_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -1790,9 +1555,7 @@ TCPHandler 收到查询后休眠的时长
 * `throw`：抛出异常。
 * `break`：停止执行查询并返回部分结果。
 
-<div id="splitby_max_substrings_includes_remaining_string">
-  ## splitby_max_substrings_includes_remaining_string
-</div>
+## splitby_max_substrings_includes_remaining_string {#splitby_max_substrings_includes_remaining_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1803,9 +1566,7 @@ TCPHandler 收到查询后休眠的时长
 * `0` - 剩余字符串不会包含在结果数组的最后一个元素中。
 * `1` - 剩余字符串会包含在结果数组的最后一个元素中。这是 Spark 的 [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) 函数和 Python 的 [`string.split()`](https://docs.python.org/3/library/stdtypes.html#str.split) 方法的行为。
 
-<div id="statistics_max_set_size_for_exact_selectivity_estimation">
-  ## statistics_max_set_size_for_exact_selectivity_estimation
-</div>
+## statistics_max_set_size_for_exact_selectivity_estimation {#statistics_max_set_size_for_exact_selectivity_estimation}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -1813,9 +1574,7 @@ TCPHandler 收到查询后休眠的时长
 
 `IN` 运算符右侧集合的最大大小。对于不超过该大小的集合，选择性估算器会推导出该集合覆盖的精确范围。推导这些范围需要为每个元素分配一个 `Field`、进行一次排序，并对每个元素执行一次统计信息探测；对于大型集合，这些操作会成为查询计划的主要开销。超过此限制后，估算器会改为根据集合大小及其边界范围推导选择性，只需对集合进行一次线性遍历，无需排序或逐元素执行统计信息探测。零表示无限制。
 
-<div id="stop_refreshable_materialized_views_on_startup">
-  ## stop_refreshable_materialized_views_on_startup
-</div>
+## stop_refreshable_materialized_views_on_startup {#stop_refreshable_materialized_views_on_startup}
 
 <ExperimentalBadge />
 
@@ -1823,17 +1582,13 @@ TCPHandler 收到查询后休眠的时长
 
 在服务器启动时，阻止调度可刷新materialized view，效果等同于执行 SYSTEM STOP VIEWS。之后，你可以手动使用 `SYSTEM START VIEWS` 或 `SYSTEM START VIEW <name>` 启动它们。此设置也适用于新创建的视图。对不可刷新的 materialized view 无效。
 
-<div id="tcp_keep_alive_timeout">
-  ## tcp_keep_alive_timeout
-</div>
+## tcp_keep_alive_timeout {#tcp_keep_alive_timeout}
 
 <SettingsInfoBlock type="Seconds" default_value="290" />
 
 连接在 TCP 开始发送 keepalive 探测之前，需保持空闲的时间 (以秒为单位)
 
-<div id="temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds">
-  ## temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds
-</div>
+## temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds {#temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds}
 
 <SettingsInfoBlock type="UInt64" default_value="600000" />
 
@@ -1841,17 +1596,13 @@ TCPHandler 收到查询后休眠的时长
 
 为文件系统缓存中的临时数据预留空间时，锁定缓存的等待时间
 
-<div id="throw_if_no_data_to_insert">
-  ## throw_if_no_data_to_insert
-</div>
+## throw_if_no_data_to_insert {#throw_if_no_data_to_insert}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 允许或禁止空 INSERT，默认启用 (空插入时会抛出错误) 。仅适用于通过 [`ClickHouse 客户端`](/zh/concepts/features/interfaces/client) 或 [gRPC 接口](/zh/concepts/features/interfaces/grpc) 执行的 INSERT。
 
-<div id="time_series_prefer_recent_samples_table">
-  ## time_series_prefer_recent_samples_table
-</div>
+## time_series_prefer_recent_samples_table {#time_series_prefer_recent_samples_table}
 
 <ExperimentalBadge />
 
@@ -1861,17 +1612,13 @@ TCPHandler 收到查询后休眠的时长
 
 当请求的整个时间范围完全落在近期样本表的生存时间 (TTL) 窗口内时，从 [TimeSeries](/zh/reference/engines/table-engines/integrations/time-series) 表的近期样本表而非主样本表读取数据 (请参阅 TimeSeries 表引擎的 `recent_samples_ttl_seconds` 设置) 。
 
-<div id="timeout_before_checking_execution_speed">
-  ## timeout_before_checking_execution_speed
-</div>
+## timeout_before_checking_execution_speed {#timeout_before_checking_execution_speed}
 
 <SettingsInfoBlock type="Seconds" default_value="10" />
 
 在指定的秒数过去后，检查执行速度是否过慢 (不低于 `min_execution_speed`) 。
 
-<div id="transfer_overflow_mode">
-  ## transfer_overflow_mode
-</div>
+## transfer_overflow_mode {#transfer_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -1883,9 +1630,7 @@ TCPHandler 收到查询后休眠的时长
 * `break`：停止执行查询并返回部分结果，仿佛
   源数据已经耗尽。
 
-<div id="transform_null_in">
-  ## transform_null_in
-</div>
+## transform_null_in {#transform_null_in}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1943,9 +1688,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 * [IN 运算符中的 NULL 处理](/zh/reference/statements/in#null-processing)
 
-<div id="traverse_shadow_remote_data_paths">
-  ## traverse_shadow_remote_data_paths
-</div>
+## traverse_shadow_remote_data_paths {#traverse_shadow_remote_data_paths}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1953,9 +1696,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 查询 system.remote&#95;data&#95;paths 时，除实际表数据外，也遍历冻结数据 (shadow 目录)
 
-<div id="union_default_mode">
-  ## union_default_mode
-</div>
+## union_default_mode {#union_default_mode}
 
 设置用于合并 `SELECT` 查询结果的模式。只有在使用 [UNION](/zh/reference/statements/select/union) 且未显式指定 `UNION ALL` 或 `UNION DISTINCT` 时，此设置才会生效。
 
@@ -1967,17 +1708,13 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 示例请参见 [UNION](/zh/reference/statements/select/union)。
 
-<div id="unknown_packet_in_send_data">
-  ## unknown_packet_in_send_data
-</div>
+## unknown_packet_in_send_data {#unknown_packet_in_send_data}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 在第 N 个数据包处发送未知数据包，而不是发送数据
 
-<div id="variant_throw_on_type_mismatch">
-  ## variant_throw_on_type_mismatch
-</div>
+## variant_throw_on_type_mismatch {#variant_throw_on_type_mismatch}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1989,9 +1726,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 * `true` (默认) — 抛出异常。
 * `false` — 改为对这些行返回 `NULL`。
 
-<div id="wait_changes_become_visible_after_commit_mode">
-  ## wait_changes_become_visible_after_commit_mode
-</div>
+## wait_changes_become_visible_after_commit_mode {#wait_changes_become_visible_after_commit_mode}
 
 <ExperimentalBadge />
 
@@ -1999,17 +1734,13 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 等待已提交的更改在最新快照中变为可见
 
-<div id="workload">
-  ## workload
-</div>
+## workload {#workload}
 
 <SettingsInfoBlock type="String" default_value="default" />
 
 访问资源时使用的 workload 名称
 
-<div id="write_full_path_in_iceberg_metadata">
-  ## write_full_path_in_iceberg_metadata
-</div>
+## write_full_path_in_iceberg_metadata {#write_full_path_in_iceberg_metadata}
 
 <ExperimentalBadge />
 
@@ -2019,9 +1750,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 将完整路径 (包括 S3://) 写入 Iceberg 元数据文件。
 
-<div id="zstd_window_log_max">
-  ## zstd_window_log_max
-</div>
+## zstd_window_log_max {#zstd_window_log_max}
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 

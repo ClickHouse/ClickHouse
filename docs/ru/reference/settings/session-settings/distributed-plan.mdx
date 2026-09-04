@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="distributed_plan_default_reader_bucket_count">
-  ## distributed_plan_default_reader_bucket_count
-</div>
+## distributed_plan_default_reader_bucket_count {#distributed_plan_default_reader_bucket_count}
 
 <ExperimentalBadge />
 
@@ -27,9 +25,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 Число задач по умолчанию для параллельного чтения в распределённом запросе. Задачи распределяются между репликами.
 Используется распределённым планировщиком на основе правил. Оптимизатор на основе стоимости выбирает степень распараллеливания чтения на основе оценочной стоимости и не использует эту настройку.
 
-<div id="distributed_plan_default_shuffle_join_bucket_count">
-  ## distributed_plan_default_shuffle_join_bucket_count
-</div>
+## distributed_plan_default_shuffle_join_bucket_count {#distributed_plan_default_shuffle_join_bucket_count}
 
 <ExperimentalBadge />
 
@@ -40,9 +36,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 Число бакетов по умолчанию для распределённого shuffle-hash-join.
 Используется распределённым планировщиком на основе правил. Оптимизатор на основе стоимости выбирает степень распараллеливания на основе оценочной стоимости и не использует эту настройку.
 
-<div id="distributed_plan_execute_locally">
-  ## distributed_plan_execute_locally
-</div>
+## distributed_plan_execute_locally {#distributed_plan_execute_locally}
 
 <ExperimentalBadge />
 
@@ -52,9 +46,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Выполнять локально все задачи распределённого плана запроса. Полезно для тестирования и отладки.
 
-<div id="distributed_plan_force_exchange_kind">
-  ## distributed_plan_force_exchange_kind
-</div>
+## distributed_plan_force_exchange_kind {#distributed_plan_force_exchange_kind}
 
 <ExperimentalBadge />
 
@@ -68,9 +60,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * &#39;Persisted&#39; - использовать временные файлы в Объектном хранилище,
 * &#39;Streaming&#39; - передавать данные Exchange по сети.
 
-<div id="distributed_plan_force_shuffle_aggregation">
-  ## distributed_plan_force_shuffle_aggregation
-</div>
+## distributed_plan_force_shuffle_aggregation {#distributed_plan_force_shuffle_aggregation}
 
 <ExperimentalBadge />
 
@@ -80,9 +70,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Используйте стратегию агрегации Shuffle вместо PartialAggregation + Merge в распределённом плане запроса.
 
-<div id="distributed_plan_max_rows_to_broadcast">
-  ## distributed_plan_max_rows_to_broadcast
-</div>
+## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
 
 <ExperimentalBadge />
 
@@ -93,9 +81,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 Максимальное количество строк, при котором в распределённом плане запроса используется broadcast JOIN вместо shuffle JOIN.
 Эвристика для распределённого планировщика на основе правил. Когда включён оптимизатор на основе стоимости, выбор между broadcast и shuffle определяется оценочной стоимостью, и эта настройка не влияет на него.
 
-<div id="distributed_plan_optimize_exchanges">
-  ## distributed_plan_optimize_exchanges
-</div>
+## distributed_plan_optimize_exchanges {#distributed_plan_optimize_exchanges}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -103,9 +89,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Убирает лишние обмены данными в распределённом плане запроса. Отключите эту настройку для отладки.
 
-<div id="distributed_plan_prefer_replicas_over_workers">
-  ## distributed_plan_prefer_replicas_over_workers
-</div>
+## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
 
 <ExperimentalBadge />
 
@@ -115,9 +99,19 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Сериализует распределённый план запроса для выполнения на репликах.
 
-<div id="distributed_plan_workers_num">
-  ## distributed_plan_workers_num
-</div>
+## distributed_plan_read_in_order {#distributed_plan_read_in_order}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка, разрешающая оптимизацию чтения в порядке сортировки для `ORDER BY` в распределённом плане запроса: отсортированное чтение по ключу сортировки таблицы может пропустить сортировку и завершиться раньше. По умолчанию отключена: в настоящее время безопасны только структуры, в которых между чтением и сортировкой нет EXCHANGE."}]}]} />
+
+Разрешает оптимизацию чтения в порядке сортировки для `ORDER BY` в распределённом плане запроса, чтобы отсортированное чтение по ключу сортировки таблицы могло пропустить сортировку и завершиться раньше вместо сканирования и сортировки.
+
+По умолчанию отключено: преобразование, распределяющее сортировку, предполагает, что оборачиваемая им сортировка не зависит от того, что её входные данные уже упорядочены. Однако сортировка, которая от этого зависит, может получать строки через EXCHANGE, не сохраняющий порядок. В настоящее время безопасны только структуры, в которых между чтением и сортировкой нет EXCHANGE.
+
+## distributed_plan_workers_num {#distributed_plan_workers_num}
 
 <ExperimentalBadge />
 
@@ -127,9 +121,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Сколько воркеров без сохранения состояния будет использовано для выполнения этого запроса. Значение 0 отключает аренду таких воркеров для распределённых планов.
 
-<div id="distributed_plan_workers_provisioning_timeout_ms">
-  ## distributed_plan_workers_provisioning_timeout_ms
-</div>
+## distributed_plan_workers_provisioning_timeout_ms {#distributed_plan_workers_provisioning_timeout_ms}
 
 <ExperimentalBadge />
 

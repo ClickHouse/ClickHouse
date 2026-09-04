@@ -206,17 +206,17 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_LocalThreadPoolJobs` ([UInt64](/ar/reference/data-types/int-uint)) — يحسب عدد المهام التي دُفعت إلى تجمعات خيوط التنفيذ المحلية.
 * `ProfileEvent_LocalThreadPoolBusyMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضته خيوط التنفيذ في تنفيذ العمل الفعلي.
 * `ProfileEvent_LocalThreadPoolJobWaitTimeMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — يقيس الزمن المنقضي منذ جدولة مهمة في تجمع خيوط التنفيذ وحتى يلتقطها خيط تنفيذ عامل للتنفيذ. يساعد هذا المقياس على تحديد حالات التأخير في معالجة المهام، مما يوضح مدى استجابة تجمع خيوط التنفيذ للمهام الجديدة.
-* `ProfileEvent_DiskS3GetRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET وSELECT الخاصة بـ DiskS3 التي مرّت عبر المُقيِّد، سواء المحظورة أو غير المحظورة.
-* `ProfileEvent_DiskS3GetRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET وSELECT الخاصة بـ DiskS3 التي حظرها المُقيِّد.
+* `ProfileEvent_DiskS3GetRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET وSELECT الخاصة بـ DiskS3 التي مرّت عبر المُقيِّد، سواء المحظورة أو غير المحظورة.
+* `ProfileEvent_DiskS3GetRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET وSELECT الخاصة بـ DiskS3 التي حظرها المُقيِّد.
 * `ProfileEvent_DiskS3GetRequestThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي كان فيه الاستعلام في حالة انتظار للامتثال لتقييد طلبات GET وSELECT الخاصة بـ DiskS3.
-* `ProfileEvent_DiskS3PutRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT وCOPY وPOST وLIST الخاصة بـ DiskS3 التي مرّت عبر المُقيِّد، سواء المحظورة أو غير المحظورة.
-* `ProfileEvent_DiskS3PutRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT وCOPY وPOST وLIST الخاصة بـ DiskS3 التي حظرها المُقيِّد.
+* `ProfileEvent_DiskS3PutRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT وCOPY وPOST وLIST الخاصة بـ DiskS3 التي مرّت عبر المُقيِّد، سواء المحظورة أو غير المحظورة.
+* `ProfileEvent_DiskS3PutRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT وCOPY وPOST وLIST الخاصة بـ DiskS3 التي حظرها المُقيِّد.
 * `ProfileEvent_DiskS3PutRequestThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي كان فيه الاستعلام في حالة انتظار للامتثال لتقييد طلبات PUT وCOPY وPOST وLIST الخاصة بـ DiskS3.
-* `ProfileEvent_S3GetRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET وSELECT الخاصة بـ S3 التي مرّت عبر المُقيِّد، سواء المحظورة أو غير المحظورة.
-* `ProfileEvent_S3GetRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET وSELECT الخاصة بـ S3 التي حظرها المُقيِّد.
+* `ProfileEvent_S3GetRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET وSELECT الخاصة بـ S3 التي مرّت عبر المُقيِّد، سواء المحظورة أو غير المحظورة.
+* `ProfileEvent_S3GetRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET وSELECT الخاصة بـ S3 التي حظرها المُقيِّد.
 * `ProfileEvent_S3GetRequestThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي كان فيه الاستعلام في حالة انتظار للامتثال لتقييد طلبات GET وSELECT الخاصة بـ S3.
-* `ProfileEvent_S3PutRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT وCOPY وPOST وLIST الخاصة بـ S3 التي مرّت عبر المُقيِّد، سواء المحظورة أو غير المحظورة.
-* `ProfileEvent_S3PutRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT وCOPY وPOST وLIST الخاصة بـ S3 التي حظرها المُقيِّد.
+* `ProfileEvent_S3PutRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT وCOPY وPOST وLIST الخاصة بـ S3 التي مرّت عبر المُقيِّد، سواء المحظورة أو غير المحظورة.
+* `ProfileEvent_S3PutRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT وCOPY وPOST وLIST الخاصة بـ S3 التي حظرها المُقيِّد.
 * `ProfileEvent_S3PutRequestThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي كان فيه الاستعلام في حالة انتظار للامتثال لتقييد طلبات PUT وCOPY وPOST وLIST الخاصة بـ S3.
 * `ProfileEvent_ACMEAPIRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات واجهة برمجة تطبيقات ACME التي أُرسلت.
 * `ProfileEvent_ACMECertificateOrders` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات شهادات ACME التي أُرسلت.
@@ -925,6 +925,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_AdaptiveAggregationDrainedRecords` ([UInt64](/ar/reference/data-types/int-uint)) — عدد السجلات المؤجلة التي صرّفها التجميع التكيفي إلى الجدول المشترك وقت الدمج.
 * `ProfileEvent_AdaptiveAggregationPressureSweeps` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي صرّف فيها التجميع التكيفي السجلات المرحلية مبكرًا بسبب ضغط الذاكرة.
 * `ProfileEvent_AdaptiveAggregationPressureDrainedRecords` ([UInt64](/ar/reference/data-types/int-uint)) — عدد السجلات المرحلية التي صرّفها التجميع التكيفي مبكرًا تحت ضغط الذاكرة.
+* `ProfileEvent_AdaptiveAggregationResidueReleases` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أخرج فيها التجميع التكيفي جدول التصريف المشترك إلى القرص لأن خيطًا عاد إلى الخوارزمية الأساسية وكان على وشك التفريغ بسببه.
 * `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الحاويات ثنائية المستوى التي حُررت ذاكرتها العاملة (فتحة Arena، ومراجع المقاطع المرحلية) مباشرةً بعد اكتمال دمجها وتحويلها، قبل انتهاء الدمج بالكامل.
 * `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الحاويات ثنائية المستوى التي حُوّلت عبر اختيار Top-K المحلي للحاوية (تحسين خطة aggregationBucketTopK).
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/ar/reference/data-types/int-uint)) — عدد جداول التجزئة التي هُيئت بمستويين لأغراض التجميع.
@@ -1513,8 +1514,8 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_LoadedStatisticsMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المنقضي في تحميل الإحصاءات من الأجزاء
 * `ProfileEvent_SelectivityEstimatorInSetNotBuilt` ([UInt64](/ar/reference/data-types/int-uint)) — عدد شروط `IN` التي لم يتمكن مقدّر الانتقائية من تحليلها لأن المجموعة لم تكن قد بُنيت بعد، ولا ينبغي له تشغيل الاستعلام الفرعي لملئها
 * `ProfileEvent_SelectivityEstimatorInSetEstimatedFromSize` ([UInt64](/ar/reference/data-types/int-uint)) — عدد شروط `IN` التي قُدّرت انتقائيتها بناءً على حجم المجموعة وحدودها بدلًا من نطاقاتها الدقيقة، لأن المجموعة تتجاوز `statistics_max_set_size_for_exact_selectivity_estimation`
-* `ProfileEvent_RuntimeDataflowStatisticsInputBytes` ([UInt64](/ar/reference/data-types/int-uint)) — إحصاءات مجمّعة عن عدد البايتات التي كانت النسخ المتماثلة ستقرأها إذا نُفِّذ الاستعلام باستخدام النسخ المتماثلة المتوازية
-* `ProfileEvent_RuntimeDataflowStatisticsOutputBytes` ([UInt64](/ar/reference/data-types/int-uint)) — إحصاءات مجمّعة عن عدد البايتات التي كانت النسخ المتماثلة سترسلها إلى العقدة البادئة إذا نُفِّذ الاستعلام باستخدام النسخ المتماثلة المتوازية
+* `ProfileEvent_RuntimeDataflowStatisticsInputBytes` ([UInt64](/ar/reference/data-types/int-uint)) — إحصاءات مجمّعة عن عدد البايتات التي كانت النسخ المتماثلة ستقرأها إذا نُفِّذ الاستعلام باستخدام النسخ المتماثلة المتوازية
+* `ProfileEvent_RuntimeDataflowStatisticsOutputBytes` ([UInt64](/ar/reference/data-types/int-uint)) — إحصاءات مجمّعة عن عدد البايتات التي كانت النسخ المتماثلة سترسلها إلى العقدة البادئة إذا نُفِّذ الاستعلام باستخدام النسخ المتماثلة المتوازية
 * `ProfileEvent_S3CachedCredentialsProvidersReused` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لموفري بيانات الاعتماد الذين أُعيد استخدامهم من الذاكرة المؤقتة
 * `ProfileEvent_S3CachedCredentialsProvidersAdded` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لموفري بيانات الاعتماد المضافين حديثًا إلى الذاكرة المؤقتة
 * `ProfileEvent_RuntimeFiltersCreated` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عوامل التصفية المختلفة من JOIN Runtime Filters التي أُنشئت ضمن استعلام
@@ -1533,10 +1534,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_AIRowsProcessed` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الصفوف التي تلقت نتيجة من AI.
 * `ProfileEvent_AIRowsSkipped` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الصفوف التي تلقت قيمة افتراضية بسبب حصة استخدام أو خطأ.
 * `ProfileEvent_StatelessWorkerRequested` ([UInt64](/ar/reference/data-types/int-uint)) — عدد العمال عديمي الحالة الذين طلبتهم الاستعلامات لتنفيذ الاستعلامات الموزعة.
-* `ProfileEvent_StatelessWorkerProvided` ([UInt64](/ar/reference/data-types/int-uint)) — عدد العمال عديمي الحالة الموفَّرين للاستعلامات لتنفيذ الاستعلامات الموزعة.
+* `ProfileEvent_StatelessWorkerProvided` ([UInt64](/ar/reference/data-types/int-uint)) — عدد العمال عديمي الحالة الموفَّرين للاستعلامات لتنفيذ الاستعلامات الموزعة.
 * `ProfileEvent_StatelessWorkerProvisioningMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضته الاستعلامات في انتظار توفير العمال عديمي الحالة.
 * `ProfileEvent_StatelessWorkerProvisioningWaits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي اضطر فيها استعلام إلى انتظار خدمة اكتشاف العمال عديمي الحالة لتوفير عمال.
-* `ProfileEvent_StatelessWorkerNotAccessible` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تبيّن فيها أن عاملًا عديم الحالة مؤجَّرًا لم يكن قابلاً للوصول بعد، فاستُبعد من تخصيص الاستعلام إلى أن يجتاز فحص قابلية الوصول.
+* `ProfileEvent_StatelessWorkerNotAccessible` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تبيّن فيها أن عاملًا عديم الحالة مؤجَّرًا لم يكن قابلاً للوصول بعد، فاستُبعد من تخصيص الاستعلام إلى أن يجتاز فحص قابلية الوصول.
 * `ProfileEvent_StatelessWorkerTimeToAvailableMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت، محسوبًا عبر جميع العمال، بين ظهور عامل عديم الحالة مستأجر لأول مرة من خدمة الاكتشاف واجتيازه فحص قابلية الوصول ليصبح متاحًا لتنفيذ الاستعلامات.
 * `ProfileEvent_StatelessWorkerCreateLeaseRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات create&#95;lease المرسلة إلى خدمة اكتشاف العمال عديمي الحالة للحصول على عمال.
 * `ProfileEvent_StatelessWorkerCreateLeaseMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في طلبات create&#95;lease إلى خدمة اكتشاف العمال عديمي الحالة.
@@ -1588,7 +1589,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_StatelessWorkerDiscoveryWorkersLeaseExpired` ([UInt64](/ar/reference/data-types/int-uint)) — عدد العمال عديمي الحالة الذين استعادتهم خدمة اكتشاف العمال عديمي الحالة لانتهاء مدة تأجيرهم.
 * `ProfileEvent_StatelessWorkerDiscoveryWorkersHeartbeatExpired` ([UInt64](/ar/reference/data-types/int-uint)) — عدد العمال عديمي الحالة الذين استعادتهم خدمة اكتشاف العمال عديمي الحالة لتوقفهم عن إرسال نبضات القلب.
 * `ProfileEvent_StatelessWorkerDiscoveryHeartbeatsRejected` ([UInt64](/ar/reference/data-types/int-uint)) — عدد نبضات القلب التي رفضتها خدمة اكتشاف العمال عديمي الحالة لأن العامل كان قد أُخرج بالفعل.
-* `ProfileEvent_StatelessWorkerDiscoveryKeeperTransactionRetries` ([UInt64](/ar/reference/data-types/int-uint)) — عدد معاملات الكتابة التي أعادت خدمة اكتشاف العمال عديمي الحالة محاولتها لأن حالة مخزن التنسيق الخاص بها (Keeper) عُدِّلت بالتزامن.
+* `ProfileEvent_StatelessWorkerDiscoveryKeeperTransactionRetries` ([UInt64](/ar/reference/data-types/int-uint)) — عدد معاملات الكتابة التي أعادت خدمة اكتشاف العمال عديمي الحالة محاولتها لأن حالة مخزن التنسيق الخاص بها (Keeper) عُدِّلت بالتزامن.
 * `CurrentMetric_Query` ([Int64](/ar/reference/data-types/int-uint)) — عدد الاستعلامات الجاري تنفيذها
 * `CurrentMetric_ASTFuzzerAccumulatedFragments` ([Int64](/ar/reference/data-types/int-uint)) — عدد أجزاء AST التي راكمها AST fuzzer على جانب الخادم لاستخدامها في mutations مستقبلية.
 * `CurrentMetric_QueryNonInternal` ([Int64](/ar/reference/data-types/int-uint)) — عدد الاستعلامات غير الداخلية الجاري تنفيذها (الاستعلامات التي بدأها المستخدمون، باستثناء الاستعلامات الداخلية من ClickHouse)
@@ -1612,7 +1613,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `CurrentMetric_BackgroundSchedulePoolSize` ([Int64](/ar/reference/data-types/int-uint)) — الحد الأقصى لعدد المهام في BackgroundSchedulePool. يُستخدم هذا المجمع للمهام الدورية الخاصة بـ ReplicatedMergeTree، مثل تنظيف أجزاء البيانات القديمة، وتعديل أجزاء البيانات، وإعادة تهيئة النسخة المتماثلة، وما إلى ذلك.
 * `CurrentMetric_BackgroundBufferFlushSchedulePoolTask` ([Int64](/ar/reference/data-types/int-uint)) — عدد المهام النشطة في BackgroundBufferFlushSchedulePool. يُستخدم هذا المجمع لعمليات flush الدورية الخاصة بـ Buffer
 * `CurrentMetric_BackgroundBufferFlushSchedulePoolSize` ([Int64](/ar/reference/data-types/int-uint)) — الحد الأقصى لعدد المهام في BackgroundBufferFlushSchedulePool
-* `CurrentMetric_BackgroundDistributedSchedulePoolTask` ([Int64](/ar/reference/data-types/int-uint)) — عدد المهام النشطة في BackgroundDistributedSchedulePool. يُستخدم هذا المجمع لعمليات الإرسال الموزعة التي تُنفَّذ في الخلفية.
+* `CurrentMetric_BackgroundDistributedSchedulePoolTask` ([Int64](/ar/reference/data-types/int-uint)) — عدد المهام النشطة في BackgroundDistributedSchedulePool. يُستخدم هذا المجمع لعمليات الإرسال الموزعة التي تُنفَّذ في الخلفية.
 * `CurrentMetric_BackgroundDistributedSchedulePoolSize` ([Int64](/ar/reference/data-types/int-uint)) — الحد الأقصى لعدد المهام في BackgroundDistributedSchedulePool
 * `CurrentMetric_BackgroundMessageBrokerSchedulePoolTask` ([Int64](/ar/reference/data-types/int-uint)) — عدد المهام النشطة في BackgroundMessageBrokerSchedulePool لبث الرسائل
 * `CurrentMetric_BackgroundMessageBrokerSchedulePoolSize` ([Int64](/ar/reference/data-types/int-uint)) — الحد الأقصى لعدد المهام في BackgroundMessageBrokerSchedulePool لبث الرسائل
@@ -1669,7 +1670,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `CurrentMetric_StorageBufferBytes` ([Int64](/ar/reference/data-types/int-uint)) — عدد البايتات في المخازن المؤقتة لجداول Buffer
 * `CurrentMetric_DictCacheRequests` ([Int64](/ar/reference/data-types/int-uint)) — عدد الطلبات القيد التنفيذ إلى مصادر البيانات الخاصة بالقواميس من نوع cache.
 * `CurrentMetric_Revision` ([Int64](/ar/reference/data-types/int-uint)) — رقم Revision الخاص بالخادم. وهو رقم يُزاد مع كل إصدار أو إصدار مرشح، باستثناء إصدارات التصحيح.
-* `CurrentMetric_VersionInteger` ([Int64](/ar/reference/data-types/int-uint)) — إصدار الخادم على هيئة عدد صحيح واحد بنظام الأساس 1000. على سبيل المثال، يُحوَّل الإصدار 11.22.33 إلى 11022033.
+* `CurrentMetric_VersionInteger` ([Int64](/ar/reference/data-types/int-uint)) — إصدار الخادم على هيئة عدد صحيح واحد بنظام الأساس 1000. على سبيل المثال، يُحوَّل الإصدار 11.22.33 إلى 11022033.
 * `CurrentMetric_RWLockWaitingReaders` ([Int64](/ar/reference/data-types/int-uint)) — عدد الخيوط التي تنتظر القراءة على RWLock الخاص بالجدول.
 * `CurrentMetric_RWLockWaitingWriters` ([Int64](/ar/reference/data-types/int-uint)) — عدد الخيوط التي تنتظر الكتابة على RWLock الخاص بالجدول.
 * `CurrentMetric_RWLockActiveReaders` ([Int64](/ar/reference/data-types/int-uint)) — عدد الخيوط التي تحتفظ بقفل قراءة في RWLock الخاص بالجدول.
@@ -1981,7 +1982,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `CurrentMetric_DeleteBitmapCacheBytes` ([Int64](/ar/reference/data-types/int-uint)) — الحجم الإجمالي لذاكرة التخزين المؤقت لـ delete-bitmap الخاصة بـ UNIQUE KEY بالبايت
 * `CurrentMetric_DeleteBitmapCacheEntries` ([Int64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لصور delete-bitmap الخاصة بـ UNIQUE KEY المخزنة مؤقتًا
 * `CurrentMetric_NamedCollection` ([Int64](/ar/reference/data-types/int-uint)) — عدد المجموعات المسماة
-* `CurrentMetric_PrimaryIndexCacheBytes` ([Int64](/ar/reference/data-types/int-uint)) — الحجم الإجمالي لذاكرة التخزين المؤقت للفهرس الأساسي بالبايت. تحتفظ بفهارس المفاتيح الأساسية المحمّلة عند الطلب عندما يكون `primary_key_lazy_load=1` و`use_primary_key_cache=1`. عند تفعيل مجمّع Arena المخصّص لبيانات MergeTree الوصفية (`jemalloc_merge_tree_arenas` &gt; 0 مع jemalloc)، تُخصَّص أعمدة الفهرس هناك (`jemalloc.mergetree_arena.*`) حتى عندما تكون مملوكة بواسطة هذه الذاكرة المؤقتة. لا تتداخل أبدًا مع `system.parts.primary_key_bytes_in_memory[_allocated]` — إذ يكون فهرس الجزء إما في هذه الذاكرة المؤقتة (ويُحتسب هنا) أو في الجزء نفسه (ويُحتسب هناك)، وليس كليهما أبدًا. للحصول على إجمالي ذاكرة الفهرس الأساسي عبر جميع الأجزاء، اجمع القيمتين.
+* `CurrentMetric_PrimaryIndexCacheBytes` ([Int64](/ar/reference/data-types/int-uint)) — الحجم الإجمالي لذاكرة التخزين المؤقت للفهرس الأساسي بالبايت. تحتفظ بفهارس المفاتيح الأساسية المحمّلة عند الطلب عندما يكون `primary_key_lazy_load=1` و`use_primary_key_cache=1`. عند تفعيل مجمّع الساحات المخصّص لبيانات MergeTree الوصفية (`jemalloc_merge_tree_arenas` &gt; 0 مع jemalloc)، تُخصَّص أعمدة الفهرس هناك (`jemalloc.mergetree_arena.*`) حتى عندما تكون مملوكة بواسطة هذه الذاكرة المؤقتة. لا تتداخل أبدًا مع `system.parts.primary_key_bytes_in_memory[_allocated]` — إذ يكون فهرس الجزء إما في هذه الذاكرة المؤقتة (ويُحتسب هنا) أو في الجزء نفسه (ويُحتسب هناك)، وليس كليهما أبدًا. للحصول على إجمالي ذاكرة الفهرس الأساسي عبر جميع الأجزاء، اجمع القيمتين.
 * `CurrentMetric_PrimaryIndexCacheFiles` ([Int64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لملفات الفهرس المخزنة مؤقتًا في ذاكرة التخزين المؤقت للفهرس الأساسي
 * `CurrentMetric_PageCacheBytes` ([Int64](/ar/reference/data-types/int-uint)) — الحجم الإجمالي لذاكرة تخزين الصفحات المؤقتة في مساحة المستخدم بالبايت
 * `CurrentMetric_PageCacheCells` ([Int64](/ar/reference/data-types/int-uint)) — العدد الإجمالي للإدخالات في ذاكرة تخزين الصفحات المؤقتة في مساحة المستخدم

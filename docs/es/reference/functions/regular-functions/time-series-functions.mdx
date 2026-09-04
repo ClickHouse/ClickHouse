@@ -597,17 +597,17 @@ Formatea un valor de sample de coma flotante siguiendo la semántica de valores 
 Los valores finite usan notación fija con la representación decimal más corta que hace round-trip al mismo `Float64`.
 Se conserva el cero negativo. Los valores especiales se devuelven como `NaN`, `+Inf` y `-Inf`.
 
-**Syntax**
+**Sintaxis**
 
 ```sql
 timeSeriesPrometheusValueToString(value)
 ```
 
-**Arguments**
+**Argumentos**
 
 * `value` — Un valor de muestra de coma flotante. [`Float32`](/es/reference/data-types/float) o [`Float64`](/es/reference/data-types/float)
 
-**Returned value**
+**Valor devuelto**
 
 La representación en cadena de `value` compatible con Prometheus. [`String`](/es/reference/data-types/string)
 
@@ -621,8 +621,8 @@ SELECT timeSeriesPrometheusValueToString(toFloat64(1e-7))
 
 ```response title=Response
 ┌─timeSeriesPrometheusValueToString(toFloat64(1e-7))─┐
-│ 0.0000001                                           │
-└─────────────────────────────────────────────────────┘
+│ 0.0000001                                          │
+└────────────────────────────────────────────────────┘
 ```
 
 ## timeSeriesRange {#timeSeriesRange}

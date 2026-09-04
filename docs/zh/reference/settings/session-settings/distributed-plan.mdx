@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="distributed_plan_default_reader_bucket_count">
-  ## distributed_plan_default_reader_bucket_count
-</div>
+## distributed_plan_default_reader_bucket_count {#distributed_plan_default_reader_bucket_count}
 
 <ExperimentalBadge />
 
@@ -27,9 +25,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 用于分布式查询并行读取的默认任务数。任务会分配到各个副本之间。
 由基于规则的分布式查询计划器使用。基于成本的优化器会根据估算成本选择读取扇出，不使用此设置。
 
-<div id="distributed_plan_default_shuffle_join_bucket_count">
-  ## distributed_plan_default_shuffle_join_bucket_count
-</div>
+## distributed_plan_default_shuffle_join_bucket_count {#distributed_plan_default_shuffle_join_bucket_count}
 
 <ExperimentalBadge />
 
@@ -40,9 +36,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 分布式 shuffle-hash join 的默认桶数。
 由基于规则的分布式查询计划器使用。基于成本的优化器会根据估算成本选择扇出，不使用此设置。
 
-<div id="distributed_plan_execute_locally">
-  ## distributed_plan_execute_locally
-</div>
+## distributed_plan_execute_locally {#distributed_plan_execute_locally}
 
 <ExperimentalBadge />
 
@@ -52,9 +46,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 在本地运行分布式查询计划的所有任务。适用于测试和调试。
 
-<div id="distributed_plan_force_exchange_kind">
-  ## distributed_plan_force_exchange_kind
-</div>
+## distributed_plan_force_exchange_kind {#distributed_plan_force_exchange_kind}
 
 <ExperimentalBadge />
 
@@ -68,9 +60,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * &#39;Persisted&#39; - 使用对象存储中的临时 File，
 * &#39;Streaming&#39; - 通过网络流式传输 Exchange 数据。
 
-<div id="distributed_plan_force_shuffle_aggregation">
-  ## distributed_plan_force_shuffle_aggregation
-</div>
+## distributed_plan_force_shuffle_aggregation {#distributed_plan_force_shuffle_aggregation}
 
 <ExperimentalBadge />
 
@@ -80,9 +70,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 在分布式查询计划中，采用 Shuffle 聚合策略，而不是 PartialAggregation + Merge。
 
-<div id="distributed_plan_max_rows_to_broadcast">
-  ## distributed_plan_max_rows_to_broadcast
-</div>
+## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
 
 <ExperimentalBadge />
 
@@ -93,9 +81,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 在分布式查询计划中，使用 broadcast join 而非 shuffle join 的最大行数。
 这是基于规则的分布式查询计划器使用的启发式规则。启用基于成本的优化器后，broadcast 与 shuffle 的选择由估算成本决定，此设置不起作用。
 
-<div id="distributed_plan_optimize_exchanges">
-  ## distributed_plan_optimize_exchanges
-</div>
+## distributed_plan_optimize_exchanges {#distributed_plan_optimize_exchanges}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -103,9 +89,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 移除分布式查询计划中不必要的 exchange。调试时请禁用此设置。
 
-<div id="distributed_plan_prefer_replicas_over_workers">
-  ## distributed_plan_prefer_replicas_over_workers
-</div>
+## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
 
 <ExperimentalBadge />
 
@@ -115,9 +99,19 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 将分布式查询计划序列化后在副本上执行。
 
-<div id="distributed_plan_workers_num">
-  ## distributed_plan_workers_num
-</div>
+## distributed_plan_read_in_order {#distributed_plan_read_in_order}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置，用于在分布式查询计划中为 `ORDER BY` 启用 read-in-order 优化，使按表 sorting key 进行的有序读取可以跳过排序并提前结束。默认关闭：目前仅当读取与排序之间不残留 exchange 的形态下才是安全的。"}]}]} />
+
+允许在分布式查询计划中为 `ORDER BY` 启用 read-in-order 优化，使按表 sorting key 进行的有序读取可以跳过排序并提前结束，而无需先扫描再排序。
+
+默认关闭：将排序分布式化的 rewrite 假定其所包裹的排序不依赖输入本身已经有序，而这类依赖有序输入的排序有可能通过不保序的 exchange 获取行。目前仅当读取与排序之间不残留 exchange 的形态下才是安全的。
+
+## distributed_plan_workers_num {#distributed_plan_workers_num}
 
 <ExperimentalBadge />
 
@@ -127,9 +121,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 用于执行此查询的无状态工作线程数量。0 会禁用分布式查询计划的无状态工作线程租用。
 
-<div id="distributed_plan_workers_provisioning_timeout_ms">
-  ## distributed_plan_workers_provisioning_timeout_ms
-</div>
+## distributed_plan_workers_provisioning_timeout_ms {#distributed_plan_workers_provisioning_timeout_ms}
 
 <ExperimentalBadge />
 

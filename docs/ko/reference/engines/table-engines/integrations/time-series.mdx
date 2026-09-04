@@ -451,6 +451,7 @@ CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_f
 ```sql
 ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
+ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 ```
 
 `id_generator`는 데이터가 이미 Tags 테이블에 있는 상태에서 변경하면 동일한 메트릭+태그 조합에 대해 서로 다른 ID가 생성될 수 있습니다. 기존 행은 이전 ID를 유지하고, 새 행은 새 생성기를 사용합니다.

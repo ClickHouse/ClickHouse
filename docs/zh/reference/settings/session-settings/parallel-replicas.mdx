@@ -15,9 +15,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源文件](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="parallel_replicas_allow_in_with_subquery">
-  ## parallel_replicas_allow_in_with_subquery
-</div>
+## parallel_replicas_allow_in_with_subquery {#parallel_replicas_allow_in_with_subquery}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -25,9 +23,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 如果为 true，则 IN 子查询会在每个 follower 副本上执行。
 
-<div id="parallel_replicas_allow_materialized_views">
-  ## parallel_replicas_allow_materialized_views
-</div>
+## parallel_replicas_allow_materialized_views {#parallel_replicas_allow_materialized_views}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,9 +31,17 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 允许并行副本使用 materialized views
 
-<div id="parallel_replicas_allow_view_over_mergetree">
-  ## parallel_replicas_allow_view_over_mergetree
-</div>
+## parallel_replicas_allow_merge_tables {#parallel_replicas_allow_merge_tables}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置，允许在基于计划的并行副本模式下从 `Merge` 表读取：将对 `Merge` 表的读取展开为对底层 `MergeTree` 表读取的 union。仅在与 `parallel_replicas_plan_based` 配合使用时生效。"}]}]} />
+
+允许使用并行副本从 `Merge` 表读取。仅在与 [parallel&#95;replicas&#95;plan&#95;based](/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_plan_based) 配合使用时生效：对 `Merge` 表的读取会展开为对底层 `MergeTree` 表读取的 union，随后像其他 union 一样进行分布式执行。若其中任一底层表无法以这种方式读取 (例如非 `MergeTree` 表、`FINAL` 读取) ，则该 `Merge` 表仍只在单个副本上读取。将其设置为 `false`，则每个 `Merge` 表都在单个副本上读取，与新增该支持之前的行为一致。Experimental。
+
+## parallel_replicas_allow_view_over_mergetree {#parallel_replicas_allow_view_over_mergetree}
 
 <BetaBadge />
 
@@ -47,9 +51,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 允许并行副本在基于 `MergeTree` 表的简单视图上执行外层查询 (而非视图的内部查询) ，从而提高节点间的并行化能力。同样适用于 `UNION ALL` 视图，前提是其所有分支都从不同的 `MergeTree` 表读取。
 
-<div id="parallel_replicas_connect_timeout_ms">
-  ## parallel_replicas_connect_timeout_ms
-</div>
+## parallel_replicas_connect_timeout_ms {#parallel_replicas_connect_timeout_ms}
 
 <SettingsInfoBlock type="毫秒" default_value="300" />
 
@@ -57,9 +59,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 使用并行副本执行查询时，连接远程副本的超时时间，单位为毫秒。如果发生超时，则不会使用相应的副本执行查询
 
-<div id="parallel_replicas_count">
-  ## parallel_replicas_count
-</div>
+## parallel_replicas_count {#parallel_replicas_count}
 
 <BetaBadge />
 
@@ -67,9 +67,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 这是一个不应直接使用的内部设置，用于表示“并行副本”模式的实现细节。对于分布式查询，发起服务器会自动将此设置设为参与查询处理的并行副本数。
 
-<div id="parallel_replicas_custom_key">
-  ## parallel_replicas_custom_key
-</div>
+## parallel_replicas_custom_key {#parallel_replicas_custom_key}
 
 <BetaBadge />
 
@@ -81,9 +79,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 如果该设置用于由单个分片和多个副本组成的集群，这些副本将被转换为虚拟分片。
 否则，其行为将与 `SAMPLE` 键相同，即会使用每个分片的多个副本。
 
-<div id="parallel_replicas_custom_key_range_lower">
-  ## parallel_replicas_custom_key_range_lower
-</div>
+## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
 
 <BetaBadge />
 
@@ -97,9 +93,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 注意：此设置不会在查询处理期间额外过滤任何数据，而只是改变 `range` 过滤器为并行处理拆分范围 `[0, INT_MAX]` 时所使用的分界点。
 
-<div id="parallel_replicas_custom_key_range_upper">
-  ## parallel_replicas_custom_key_range_upper
-</div>
+## parallel_replicas_custom_key_range_upper {#parallel_replicas_custom_key_range_upper}
 
 <BetaBadge />
 
@@ -113,9 +107,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 注意：此设置不会在查询处理期间额外过滤任何数据；它只是改变了 range 过滤器在并行处理时拆分范围 `[0, INT_MAX]` 的分界点。
 
-<div id="parallel_replicas_filter_pushdown">
-  ## parallel_replicas_filter_pushdown
-</div>
+## parallel_replicas_filter_pushdown {#parallel_replicas_filter_pushdown}
 
 <BetaBadge />
 
@@ -125,9 +117,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 允许将过滤器下推到由并行副本选择执行的查询部分
 
-<div id="parallel_replicas_for_cluster_engines">
-  ## parallel_replicas_for_cluster_engines
-</div>
+## parallel_replicas_for_cluster_engines {#parallel_replicas_for_cluster_engines}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -135,17 +125,13 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 将表函数引擎替换为对应的 -Cluster 版本
 
-<div id="parallel_replicas_for_non_replicated_merge_tree">
-  ## parallel_replicas_for_non_replicated_merge_tree
-</div>
+## parallel_replicas_for_non_replicated_merge_tree {#parallel_replicas_for_non_replicated_merge_tree}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 如果为 true，ClickHouse 也会对非复制的 MergeTree 表使用并行副本算法
 
-<div id="parallel_replicas_index_analysis_only_on_coordinator">
-  ## parallel_replicas_index_analysis_only_on_coordinator
-</div>
+## parallel_replicas_index_analysis_only_on_coordinator {#parallel_replicas_index_analysis_only_on_coordinator}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -153,9 +139,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 索引分析仅在副本协调器上执行，其他副本则跳过。仅在启用 parallel&#95;replicas&#95;local&#95;pla 时生效
 
-<div id="parallel_replicas_insert_select_local_pipeline">
-  ## parallel_replicas_insert_select_local_pipeline
-</div>
+## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -163,9 +147,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 在启用并行副本的分布式 INSERT SELECT 中使用本地管道
 
-<div id="parallel_replicas_local_plan">
-  ## parallel_replicas_local_plan
-</div>
+## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -173,9 +155,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 为本地副本构建本地执行计划
 
-<div id="parallel_replicas_mark_segment_size">
-  ## parallel_replicas_mark_segment_size
-</div>
+## parallel_replicas_mark_segment_size {#parallel_replicas_mark_segment_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -183,17 +163,13 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 parts 会在逻辑上划分为多个分段，以便在并行读取时分配给各个副本。此设置用于控制这些分段的大小。除非你非常确定自己在做什么，否则不建议更改。取值范围应为 [128; 16384]
 
-<div id="parallel_replicas_min_number_of_rows_per_replica">
-  ## parallel_replicas_min_number_of_rows_per_replica
-</div>
+## parallel_replicas_min_number_of_rows_per_replica {#parallel_replicas_min_number_of_rows_per_replica}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 将查询中使用的副本数量限制为 (预计读取的行数 / min&#95;number&#95;of&#95;rows&#95;per&#95;replica) 。最大值仍然受 &#39;max&#95;parallel&#95;replicas&#39; 限制
 
-<div id="parallel_replicas_mode">
-  ## parallel_replicas_mode
-</div>
+## parallel_replicas_mode {#parallel_replicas_mode}
 
 <SettingsInfoBlock type="ParallelReplicasMode" default_value="read_tasks" />
 
@@ -201,9 +177,7 @@ parts 会在逻辑上划分为多个分段，以便在并行读取时分配给�
 
 并行副本中 custom key 使用的过滤器类型。default - 对 custom key 使用 modulo 运算，range - 在 custom key 上使用 range filter，并基于 custom key 值类型的所有可能值进行处理。
 
-<div id="parallel_replicas_only_with_analyzer">
-  ## parallel_replicas_only_with_analyzer
-</div>
+## parallel_replicas_only_with_analyzer {#parallel_replicas_only_with_analyzer}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -211,9 +185,7 @@ parts 会在逻辑上划分为多个分段，以便在并行读取时分配给�
 
 要使用并行副本，必须启用 analyzer。如果 analyzer 被禁用，则查询执行会回退到本地执行，即使已启用从副本进行并行读取也是如此。不支持在未启用 analyzer 的情况下使用并行副本。
 
-<div id="parallel_replicas_plan_based">
-  ## parallel_replicas_plan_based
-</div>
+## parallel_replicas_plan_based {#parallel_replicas_plan_based}
 
 <ExperimentalBadge />
 
@@ -223,9 +195,7 @@ parts 会在逻辑上划分为多个分段，以便在并行读取时分配给�
 
 通过分析查询计划，决定是否使用并行副本以及在何处使用，而不是基于查询树进行分析。因此，发送到远程副本的是计划片段而非 SQL 查询。Experimental。
 
-<div id="parallel_replicas_prefer_local_join">
-  ## parallel_replicas_prefer_local_join
-</div>
+## parallel_replicas_prefer_local_join {#parallel_replicas_prefer_local_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -233,9 +203,7 @@ parts 会在逻辑上划分为多个分段，以便在并行读取时分配给�
 
 如果为 true，且 JOIN 可以使用并行副本算法执行，并且 JOIN 右侧部分的所有存储引擎均为 *MergeTree，则会使用本地 JOIN，而不是 GLOBAL JOIN。
 
-<div id="parallel_replicas_prefer_local_replica">
-  ## parallel_replicas_prefer_local_replica
-</div>
+## parallel_replicas_prefer_local_replica {#parallel_replicas_prefer_local_replica}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -245,9 +213,7 @@ parts 会在逻辑上划分为多个分段，以便在并行读取时分配给�
 禁用时，本地副本不再具有任何优先权，副本将完全根据负载均衡算法选择。
 这样一来，带有 `max_parallel_replicas = 1` 的查询可被定向到其他主机；当大量短查询分布在集群中时，这有助于改善缓存局部性。
 
-<div id="parallel_replicas_support_projection">
-  ## parallel_replicas_support_projection
-</div>
+## parallel_replicas_support_projection {#parallel_replicas_support_projection}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

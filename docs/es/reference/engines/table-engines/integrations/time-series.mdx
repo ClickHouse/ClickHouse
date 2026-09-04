@@ -458,6 +458,7 @@ Se pueden modificar dos ajustes después de `CREATE`:
 ```sql
 ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
+ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 ```
 
 Ten en cuenta que cambiar `id_generator` cuando ya hay datos en la tabla de etiquetas puede generar IDs distintos para la misma combinación de métrica+etiqueta: las filas antiguas conservan sus IDs anteriores y las nuevas usan el nuevo generador.

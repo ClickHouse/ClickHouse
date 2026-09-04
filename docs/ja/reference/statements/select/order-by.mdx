@@ -25,18 +25,14 @@ doc_type: 'reference'
 ソート式の値が同じ行は、任意かつ非決定論的な順序で返されます。
 `SELECT` ステートメントで `ORDER BY` 句を省略した場合も、行の順序は任意かつ非決定論的です。
 
-<div id="sorting-of-special-values">
-  ## 特殊な値のソート
-</div>
+## 特殊な値のソート {#sorting-of-special-values}
 
 `NaN` と `NULL` のソート順には、2 つの方法があります。
 
 * デフォルト、または `NULLS LAST` 修飾子を使用する場合: まず値、次に `NaN`、最後に `NULL`。
 * `NULLS FIRST` 修飾子を使用する場合: まず `NULL`、次に `NaN`、その後にその他の値。
 
-<div id="example">
-  ### 例
-</div>
+### 例 {#example}
 
 テーブルについて
 
@@ -74,9 +70,7 @@ doc_type: 'reference'
 
 浮動小数点数をソートすると、NaN は他の値とは別に扱われます。ソート順にかかわらず、NaN は末尾に配置されます。つまり、昇順では他のすべての数値より大きいものとして、降順ではそれ以外の値より小さいものとして配置されます。
 
-<div id="collation-support">
-  ## 照合順序のサポート
-</div>
+## 照合順序のサポート {#collation-support}
 
 [String](/ja/reference/data-types/string) 型の値でソートする場合は、照合順序 (collation) を指定できます。例: `ORDER BY SearchPhrase COLLATE 'tr'` - これは、文字列が UTF-8 でエンコードされていることを前提に、トルコ語アルファベットを使用し、大文字と小文字を区別せずに、キーワードを昇順でソートすることを意味します。`COLLATE` は、ORDER BY 内の各 式 に対して個別に指定することも、指定しないこともできます。`ASC` または `DESC` を指定する場合は、その後に `COLLATE` を指定します。`COLLATE` を使用すると、ソートは常に大文字と小文字を区別しません。
 
@@ -84,9 +78,7 @@ doc_type: 'reference'
 
 `COLLATE` を使ったソートは通常のバイト単位のソートよりも効率が低いため、`COLLATE` は少数の行に対する最終的なソートにのみ使用することを推奨します。
 
-<div id="collation-examples">
-  ## 照合順序の例
-</div>
+## 照合順序の例 {#collation-examples}
 
 [String](/ja/reference/data-types/string) 型の値のみを使った例:
 
@@ -242,9 +234,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 └───┴─────────┘
 ```
 
-<div id="implementation-details">
-  ## 実装の詳細
-</div>
+## 実装の詳細 {#implementation-details}
 
 `ORDER BY` に加えて十分に小さい [LIMIT](/ja/reference/statements/select/limit) を指定すると、使用する RAM を抑えられます。そうでない場合、ソートに必要なメモリ量は、ソート対象のデータ量に比例します。分散クエリ処理では、[GROUP BY](/ja/reference/statements/select/group-by) を省略すると、ソートはリモートサーバー上で部分的に実行され、その結果はリクエスト元のサーバーでマージされます。つまり、分散ソートでは、ソート対象のデータ量が単一サーバーのメモリ量を上回ることがあります。
 
@@ -254,15 +244,13 @@ RAM が不足している場合は、外部メモリを使ってソートを実�
 
 外部ソートは、RAM 内でのソートに比べて大幅に効率が低下します。
 
-<div id="optimization-of-data-reading">
-  ## Data の読み取りの最適化
-</div>
+## Data の読み取りの最適化 {#optimization-of-data-reading}
 
 `ORDER BY` 式にテーブルの sorting key と一致するプレフィックスがある場合は、[optimize&#95;read&#95;in&#95;order](/ja/reference/settings/session-settings/optimize#optimize_read_in_order) 設定を使用してクエリを最適化できます。
 
 `optimize_read_in_order` 設定が有効な場合、ClickHouse server はテーブルの索引を使用し、`ORDER BY` キーの順序でデータを読み取ります。これにより、[LIMIT](/ja/reference/statements/select/limit) が指定されている場合に、すべてのデータを読み取らずに済みます。そのため、少ない limit で大規模なデータを対象とするクエリは、より高速に処理されます。
 
-この最適化は `ASC` と `DESC` の両方で機能しますが、[GROUP BY](/ja/reference/statements/select/group-by) 句および [FINAL](/ja/reference/statements/select/from#final-modifier) 修飾子 とは併用できません。
+この最適化は `ASC` と `DESC` の両方で機能しますが、[GROUP BY](/ja/reference/statements/select/group-by) 句とは併用できません。[FINAL](/ja/reference/statements/select/from#final-modifier) 修飾子を使用する場合、この最適化は sorting key の昇順で機能し、[ReplacingMergeTree](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) テーブルでは逆順でも機能します。これは `optimize_read_in_reverse_order_final` 設定によって制御されます。
 
 `optimize_read_in_order` 設定が無効な場合、ClickHouse server は `SELECT` クエリの処理中にテーブルの索引を使用しません。
 
@@ -276,9 +264,7 @@ RAM が不足している場合は、外部メモリを使ってソートを実�
 
 `MaterializedView`-engine テーブルでは、この最適化は `SELECT ... FROM merge_tree_table ORDER BY pk` のような view で機能します。ただし、view のクエリに `ORDER BY` 句がない場合、`SELECT ... FROM view ORDER BY pk` のようなクエリではサポートされません。
 
-<div id="order-by-expr-with-fill-modifier">
-  ## ORDER BY Expr WITH FILL 修飾子
-</div>
+## ORDER BY Expr WITH FILL 修飾子 {#order-by-expr-with-fill-modifier}
 
 この修飾子は、[LIMIT ... WITH TIES 修飾子](/ja/reference/statements/select/limit#limit--with-ties-modifier) と組み合わせることもできます。
 
@@ -594,9 +580,7 @@ SELECT n, source, inter FROM (
 └─────┴──────────┴───────┘
 ```
 
-<div id="filling-grouped-by-sorting-prefix">
-  ## ソートプレフィックスごとにグループ化して補完する
-</div>
+## ソートプレフィックスごとにグループ化して補完する {#filling-grouped-by-sorting-prefix}
 
 特定のカラムで同じ値を持つ行を、それぞれ独立して補完すると便利な場合があります。代表的な例として、時系列における欠損値の補完が挙げられます。
 次のような時系列テーブルがあるとします。
@@ -648,9 +632,7 @@ INTERPOLATE ( value AS 9999 )
 ここでは、補完された行をより目立たせるためだけに、`value` カラムを `9999` で補間しています。
 この動作は `use_with_fill_by_sorting_prefix` の設定で制御されます (デフォルトで有効です)
 
-<div id="related-content">
-  ## 関連コンテンツ
-</div>
+## 関連コンテンツ {#related-content}
 
 * ブログ: [ClickHouseで時系列データを扱う](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 

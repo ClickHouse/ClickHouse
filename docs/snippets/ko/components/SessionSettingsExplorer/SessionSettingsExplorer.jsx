@@ -1,7 +1,7 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
-  // Mintlify의 프로덕션 렌더러는 내보낸 구성요소를 모듈 범위 바인딩을
-  // 유지하지 않은 채로 평가합니다. 지연 상태는 생성된 데이터를
-  // 해당 평가 스코프에 보관하여 마운트당 한 번만 구성되도록 합니다.
+  // Mintlify의 프로덕션 렌더러는 내보낸 컴포넌트를 모듈 범위 바인딩을
+  // 유지하지 않은 채로 평가합니다. 레이지 상태는 생성된 데이터를
+  // 해당 평가 범위에 보관하여 마운트당 한 번만 구성되도록 합니다.
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -712,7 +712,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "distributed_plan_*",
-      count: 10,
+      count: 11,
       settings: [
         { name: "distributed_plan_default_reader_bucket_count", path: "/distributed-plan#distributed_plan_default_reader_bucket_count", default: "8" },
         { name: "distributed_plan_default_shuffle_join_bucket_count", path: "/distributed-plan#distributed_plan_default_shuffle_join_bucket_count", default: "8" },
@@ -722,6 +722,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "distributed_plan_max_rows_to_broadcast", path: "/distributed-plan#distributed_plan_max_rows_to_broadcast", default: "20000" },
         { name: "distributed_plan_optimize_exchanges", path: "/distributed-plan#distributed_plan_optimize_exchanges", default: "1" },
         { name: "distributed_plan_prefer_replicas_over_workers", path: "/distributed-plan#distributed_plan_prefer_replicas_over_workers", default: "0" },
+        { name: "distributed_plan_read_in_order", path: "/distributed-plan#distributed_plan_read_in_order", default: "0" },
         { name: "distributed_plan_workers_num", path: "/distributed-plan#distributed_plan_workers_num", default: "0" },
         { name: "distributed_plan_workers_provisioning_timeout_ms", path: "/distributed-plan#distributed_plan_workers_provisioning_timeout_ms", default: "10000" }
       ],
@@ -1984,7 +1985,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "optimize_*",
-      count: 29,
+      count: 30,
       settings: [
         { name: "optimize_aggregators_of_group_by_keys", path: "/optimize#optimize_aggregators_of_group_by_keys", default: "1" },
         { name: "optimize_append_index", path: "/optimize#optimize_append_index", default: "0" },
@@ -2006,6 +2007,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "optimize_prewhere_after_pushdown", path: "/optimize#optimize_prewhere_after_pushdown", default: "0" },
         { name: "optimize_qbit_distance_function_reads", path: "/optimize#optimize_qbit_distance_function_reads", default: "1" },
         { name: "optimize_read_in_order", path: "/optimize#optimize_read_in_order", default: "1" },
+        { name: "optimize_read_in_reverse_order_final", path: "/optimize#optimize_read_in_reverse_order_final", default: "1" },
         { name: "optimize_respect_aliases", path: "/optimize#optimize_respect_aliases", default: "1" },
         { name: "optimize_sorting_by_input_stream_properties", path: "/optimize#optimize_sorting_by_input_stream_properties", default: "1" },
         { name: "optimize_substitute_columns", path: "/optimize#optimize_substitute_columns", default: "0" },
@@ -2192,10 +2194,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "parallel_replicas_*",
-      count: 22,
+      count: 23,
       settings: [
         { name: "parallel_replicas_allow_in_with_subquery", path: "/parallel-replicas#parallel_replicas_allow_in_with_subquery", default: "1" },
         { name: "parallel_replicas_allow_materialized_views", path: "/parallel-replicas#parallel_replicas_allow_materialized_views", default: "1" },
+        { name: "parallel_replicas_allow_merge_tables", path: "/parallel-replicas#parallel_replicas_allow_merge_tables", default: "0" },
         { name: "parallel_replicas_allow_view_over_mergetree", path: "/parallel-replicas#parallel_replicas_allow_view_over_mergetree", default: "0" },
         { name: "parallel_replicas_connect_timeout_ms", path: "/parallel-replicas#parallel_replicas_connect_timeout_ms", default: "300" },
         { name: "parallel_replicas_count", path: "/parallel-replicas#parallel_replicas_count", default: "0" },

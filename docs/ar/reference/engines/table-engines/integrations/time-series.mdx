@@ -457,9 +457,10 @@ CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_f
 ```sql
 ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
+ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 ```
 
-لاحظ أن تغيير `id_generator` بعد وجود بيانات بالفعل في جدول Tags قد يؤدي إلى إنشاء معرّفات مختلفة لنفس تركيبة metric+tag — إذ تحتفظ الصفوف القديمة بمعرّفاتها القديمة، بينما تستخدم الصفوف الجديدة المولِّد الجديد.
+لاحظ أن تغيير `id_generator` بعد وجود بيانات بالفعل في جدول الوسوم قد يؤدي إلى إنشاء معرّفات مختلفة لنفس تركيبة metric+tag — إذ تحتفظ الصفوف القديمة بمعرّفاتها القديمة، بينما تستخدم الصفوف الجديدة المولِّد الجديد.
 
 ولا يمكن تغيير الإعدادات الأخرى باستخدام `ALTER ... MODIFY SETTING` لأنها تكون مدمجة في مخطط الجداول الداخلية عند `CREATE`.
 

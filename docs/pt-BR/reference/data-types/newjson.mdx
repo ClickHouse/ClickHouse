@@ -47,15 +47,11 @@ Onde os parâmetros na sintaxe acima são definidos da seguinte forma:
 
 <WhenToUseJson />
 
-<div id="creating-json">
-  ## Criando `JSON`
-</div>
+## Criando `JSON` {#creating-json}
 
 Nesta seção, veremos as várias maneiras de criar `JSON`.
 
-<div id="using-json-in-a-table-column-definition">
-  ### Usando `JSON` na definição de uma coluna de tabela
-</div>
+### Usando `JSON` na definição de uma coluna de tabela {#using-json-in-a-table-column-definition}
 
 ```sql title="Query (Example 1)"
 CREATE TABLE test (json JSON) ENGINE = Memory;
@@ -85,15 +81,11 @@ SELECT json FROM test;
 └───────────────────────────────────┘
 ```
 
-<div id="using-cast-with-json">
-  ### Usando CAST com `::JSON`
-</div>
+### Usando CAST com `::JSON` {#using-cast-with-json}
 
 É possível converter diversos tipos usando a sintaxe especial `::JSON`.
 
-<div id="cast-from-string-to-json">
-  #### CAST de `String` para `JSON`
-</div>
+#### CAST de `String` para `JSON` {#cast-from-string-to-json}
 
 ```sql title="Query"
 SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json;
@@ -105,9 +97,7 @@ SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json
 └────────────────────────────────────────────────────────┘
 ```
 
-<div id="cast-from-tuple-to-json">
-  #### CAST de `Tuple` para `JSON`
-</div>
+#### CAST de `Tuple` para `JSON` {#cast-from-tuple-to-json}
 
 ```sql title="Query"
 SET enable_named_columns_in_function_tuple = 1;
@@ -120,9 +110,7 @@ SELECT (tuple(42 AS b) AS a, [1, 2, 3] AS c, 'Hello, World!' AS d)::JSON AS json
 └────────────────────────────────────────────────────────┘
 ```
 
-<div id="cast-from-map-to-json">
-  #### CAST de `Map` para `JSON`
-</div>
+#### CAST de `Map` para `JSON` {#cast-from-map-to-json}
 
 ```sql title="Query"
 SET use_variant_as_common_type=1;
@@ -163,9 +151,7 @@ SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
   ```
 </Note>
 
-<div id="reading-json-paths-as-sub-columns">
-  ## Leitura de caminhos JSON como subcolunas
-</div>
+## Leitura de caminhos JSON como subcolunas {#reading-json-paths-as-sub-columns}
 
 O tipo `JSON` oferece suporte à leitura de cada caminho como uma subcoluna separada.
 Se o tipo do caminho solicitado não for especificado na declaração do tipo `JSON`,
@@ -296,9 +282,7 @@ while executing 'FUNCTION CAST(__table1.json.a.g :: 2, 'UUID'_String :: 1) -> CA
   Para ler subcolunas com eficiência em partes Compact do MergeTree, certifique-se de que a configuração do MergeTree [write&#95;marks&#95;for&#95;substreams&#95;in&#95;compact&#95;parts](/pt-BR/reference/settings/merge-tree-settings/write#write_marks_for_substreams_in_compact_parts) esteja habilitada.
 </Note>
 
-<div id="reading-json-sub-objects-as-sub-columns">
-  ## Leitura de sub-objetos JSON como subcolunas
-</div>
+## Leitura de sub-objetos JSON como subcolunas {#reading-json-sub-objects-as-sub-columns}
 
 O tipo `JSON` permite ler objetos aninhados como subcolunas do tipo `JSON` usando a sintaxe especial `json.^some.path`:
 
@@ -332,9 +316,7 @@ SELECT json.^a.b, json.^d.e.f FROM test;
   Quando os caminhos são armazenados em [dados compartilhados](#shared-data-structure) básicos (`map`), a leitura de subcolunas de subobjeto pode ser ineficiente, pois exige a varredura de toda a estrutura de dados compartilhados. Com a serialização de dados compartilhados `map_with_buckets` ou `advanced`, a leitura de subcolunas desses dados compartilhados é altamente otimizada.
 </Note>
 
-<div id="reading-json-combined-sub-columns">
-  ## Leitura de subcolunas combinadas de JSON
-</div>
+## Leitura de subcolunas combinadas de JSON {#reading-json-combined-sub-columns}
 
 O tipo `JSON` permite ler um caminho como uma **subcoluna combinada** usando a sintaxe especial `json.@some.path`.
 Uma subcoluna combinada para um determinado caminho retorna:
@@ -388,9 +370,7 @@ FROM test;
   Quando os caminhos são armazenados em [dados compartilhados](#shared-data-structure) básicos (`map`), a leitura de subcolunas combinadas pode ser ineficiente, pois exige varrer toda a estrutura de dados compartilhados. Com a serialização de dados compartilhados `map_with_buckets` ou `advanced`, a leitura de subcolunas a partir de dados compartilhados é altamente otimizada.
 </Note>
 
-<div id="type-inference-for-paths">
-  ## Inferência de tipo para caminhos
-</div>
+## Inferência de tipo para caminhos {#type-inference-for-paths}
 
 Durante a análise de `JSON`, o ClickHouse tenta detectar o tipo de dado mais adequado para cada caminho JSON.
 Isso funciona de forma semelhante à [inferência automática de esquema a partir dos dados de entrada](/pt-BR/concepts/features/interfaces/schema-inference),
@@ -449,9 +429,7 @@ SELECT JSONAllPathsWithTypes('{"a" : [1, 2, 3]}'::JSON) AS paths_with_types sett
 └──────────────────────┘
 ```
 
-<div id="handling-arrays-of-json-objects">
-  ## Como lidar com arrays de objetos JSON
-</div>
+## Como lidar com arrays de objetos JSON {#handling-arrays-of-json-objects}
 
 Caminhos JSON que contêm um array de objetos são interpretados como o tipo `Array(JSON)` e inseridos em uma coluna `Dynamic` para esse caminho.
 Para ler um array de objetos, você pode extraí-lo da coluna `Dynamic` como uma subcoluna:
@@ -562,9 +540,7 @@ SELECT json.a.b[].^k FROM test
 └──────────────────────────────────────┘
 ```
 
-<div id="handling-json-keys-with-nulls">
-  ## Tratamento de chaves JSON com NULL
-</div>
+## Tratamento de chaves JSON com NULL {#handling-json-keys-with-nulls}
 
 Na nossa implementação de JSON, `null` e a ausência de valor são considerados equivalentes:
 
@@ -580,9 +556,7 @@ SELECT '{}'::JSON AS json1, '{"a" : null}'::JSON AS json2, json1 = json2
 
 Isso significa que é impossível determinar se os dados JSON originais continham algum caminho com o valor NULL ou simplesmente não continham esse caminho.
 
-<div id="handling-json-keys-with-dots">
-  ## Tratamento de chaves JSON com pontos
-</div>
+## Tratamento de chaves JSON com pontos {#handling-json-keys-with-dots}
 
 Internamente, a coluna JSON armazena todos os caminhos e valores de forma achatada. Isso significa que, por padrão, estes 2 objetos são considerados iguais:
 
@@ -691,9 +665,7 @@ SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON(SKIP `a%2Eb`) as json,
 └────────────────────────────┴────────────┘
 ```
 
-<div id="reading-json-type-from-data">
-  ## Lendo o tipo JSON a partir de dados
-</div>
+## Lendo o tipo JSON a partir de dados {#reading-json-type-from-data}
 
 Todos os formatos de texto
 ([`JSONEachRow`](/pt-BR/reference/formats/JSON/JSONEachRow),
@@ -745,9 +717,7 @@ SELECT json FROM format(TSV, 'json JSON(a.b.c UInt32, SKIP a.b.d, SKIP REGEXP \'
 └───────────────────────────────────────────────────────────────┘
 ```
 
-<div id="reaching-the-limit-of-dynamic-paths-inside-json">
-  ## Atingindo o limite de caminhos dinâmicos no JSON
-</div>
+## Atingindo o limite de caminhos dinâmicos no JSON {#reaching-the-limit-of-dynamic-paths-inside-json}
 
 O tipo de dados `JSON` pode armazenar internamente apenas um número limitado de caminhos como subcolunas separadas.
 Por padrão, esse limite é `1024`, mas você pode alterá-lo na declaração do tipo usando o parâmetro `max_dynamic_paths`.
@@ -759,9 +729,7 @@ Esse limite é necessário para evitar um número enorme de subcolunas diferente
 
 Vamos ver o que acontece quando o limite é atingido em alguns cenários diferentes.
 
-<div id="reaching-the-limit-during-data-parsing">
-  ### Ao atingir o limite durante o parsing dos dados
-</div>
+### Ao atingir o limite durante o parsing dos dados {#reaching-the-limit-during-data-parsing}
 
 Durante o parsing de objetos `JSON` dos dados, quando o limite é atingido para o bloco de dados atual,
 todos os novos caminhos serão armazenados em uma estrutura de dados compartilhada. Podemos usar as duas funções de introspecção a seguir: `JSONDynamicPaths`, `JSONSharedDataPaths`
@@ -789,9 +757,7 @@ SELECT json, JSONDynamicPaths(json), JSONSharedDataPaths(json) FROM format(JSONE
 Como podemos ver, após inserir os caminhos `e` e `f.g`, o limite foi atingido,
 e eles foram inseridos em uma estrutura de dados compartilhada.
 
-<div id="during-merges-of-data-parts-in-mergetree-table-engines">
-  ### Durante mesclagens de partes de dados em motores de tabela MergeTree
-</div>
+### Durante mesclagens de partes de dados em motores de tabela MergeTree {#during-merges-of-data-parts-in-mergetree-table-engines}
 
 Durante a mesclagem de várias partes de dados em uma tabela `MergeTree`, a coluna `JSON` na parte de dados resultante pode atingir o limite de caminhos dinâmicos
 e não conseguir armazenar todos os caminhos das partes de origem como subcolunas.
@@ -856,25 +822,19 @@ ORDER BY _part ASC
 
 Como podemos ver, o ClickHouse manteve os caminhos `a`, `b` e `c`, que são os mais frequentes, e transferiu os caminhos `d` e `e` para uma estrutura de dados compartilhada.
 
-<div id="shared-data-structure">
-  ## Estrutura de dados compartilhada
-</div>
+## Estrutura de dados compartilhada {#shared-data-structure}
 
 Conforme descrito na seção anterior, quando o limite `max_dynamic_paths` é atingido, todos os novos caminhos são armazenados em uma única estrutura de dados compartilhada.
 Nesta seção, veremos os detalhes da estrutura de dados compartilhada e como lemos as subcolunas de caminhos a partir dela.
 
 Consulte a seção [&quot;funções de introspecção&quot;](/pt-BR/reference/data-types/newjson#introspection-functions) para obter detalhes sobre as funções usadas para inspecionar o conteúdo de uma coluna JSON.
 
-<div id="shared-data-structure-in-memory">
-  ### Estrutura de dados compartilhada em memória
-</div>
+### Estrutura de dados compartilhada em memória {#shared-data-structure-in-memory}
 
 Em memória, a estrutura de dados compartilhada é apenas uma subcoluna do tipo `Map(String, String)` que armazena o mapeamento entre um caminho JSON achatado e um valor codificado em binário.
 Para extrair dela a subcoluna de um caminho, basta iterar por todas as linhas nessa coluna `Map` e tentar encontrar o caminho solicitado e seus valores.
 
-<div id="shared-data-structure-in-merge-tree-parts">
-  ### Estrutura de dados compartilhada em partes do MergeTree
-</div>
+### Estrutura de dados compartilhada em partes do MergeTree {#shared-data-structure-in-merge-tree-parts}
 
 Em tabelas [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree), armazenamos os dados em partes de dados que mantêm tudo em disco (local ou remoto). E os dados em disco podem ser armazenados de uma forma diferente da memória.
 Atualmente, existem 3 serializações diferentes da estrutura de dados compartilhada em partes de dados do MergeTree: `map`, `map_with_buckets`
@@ -888,9 +848,7 @@ e [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95
 Observação: alterar a serialização da estrutura de dados compartilhada é compatível apenas
 com a `v3` [versão de serialização de objeto](/pt-BR/reference/settings/merge-tree-settings/other#object_serialization_version)
 
-<div id="shared-data-map">
-  #### Map
-</div>
+#### Map {#shared-data-map}
 
 Na versão de serialização `map`, os dados compartilhados são serializados como uma única coluna do tipo `Map(String, String)`, da mesma forma que são armazenados na
 memória. Para ler uma subcoluna de caminho desse tipo de serialização, o ClickHouse lê toda a coluna `Map` e
@@ -898,9 +856,7 @@ extrai o caminho solicitado na memória.
 
 Essa serialização é eficiente para gravar dados e ler toda a coluna `JSON`, mas não é eficiente para ler subcolunas de caminhos.
 
-<div id="shared-data-map-with-buckets">
-  #### Map com buckets
-</div>
+#### Map com buckets {#shared-data-map-with-buckets}
 
 Na versão de serialização `map_with_buckets`, os dados compartilhados são serializados como `N` colunas (&quot;buckets&quot;) do tipo `Map(String, String)`.
 Cada bucket desse tipo contém apenas um subconjunto de caminhos. Para ler a subcoluna de um caminho nesse tipo de serialização, o ClickHouse
@@ -913,9 +869,7 @@ O número de buckets `N` é controlado pelas configurações do MergeTree [objec
 e [object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/pt-BR/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part) (32 por padrão).
 O valor máximo permitido para ambas as configurações é 256.
 
-<div id="shared-data-advanced">
-  #### Avançado
-</div>
+#### Avançado {#shared-data-advanced}
 
 Na versão de serialização `advanced`, os dados compartilhados são serializados em uma estrutura de dados especial que maximiza o desempenho
 da leitura de subcolunas de caminhos, armazenando algumas informações adicionais que permitem ler apenas os dados dos caminhos solicitados.
@@ -928,9 +882,7 @@ serializações `map` e `map_with_buckets`.
 
 Para uma visão geral mais detalhada das novas serializações de dados compartilhados e dos detalhes de implementação, leia a [postagem no blog](https://clickhouse.com/blog/json-data-type-gets-even-better).
 
-<div id="controlling-the-number-of-dynamic-paths">
-  ## Controlando o número de caminhos dinâmicos dentro de JSON em partes do MergeTree
-</div>
+## Controlando o número de caminhos dinâmicos dentro de JSON em partes do MergeTree {#controlling-the-number-of-dynamic-paths}
 
 A principal forma de definir um limite para caminhos dinâmicos em JSON é usar o parâmetro `max_dynamic_paths` na declaração do tipo JSON.
 Mas alterar `max_dynamic_paths` em colunas existentes exige executar `ALTER TABLE <table> MODIFY COLUMN <column> JSON(max_dynamic_paths=K)`, o que iniciará uma mutação em segundo plano que reescreverá todas as partes existentes.
@@ -942,9 +894,7 @@ Essa mutação pode ser bastante pesada e pode afetar o desempenho do servidor a
 
 Observação: o limite de caminhos dinâmicos não pode exceder o valor especificado no parâmetro `max_dynamic_paths`, mesmo que os valores das configurações descritas sejam maiores.
 
-<div id="introspection-functions">
-  ## Funções de introspecção
-</div>
+## Funções de introspecção {#introspection-functions}
 
 Há várias funções que podem ajudar a inspecionar o conteúdo da coluna JSON:
 
@@ -1083,9 +1033,7 @@ SETTINGS date_time_input_format = 'best_effort'
 └─arrayJoin(distinctJSONPathsAndTypes(json))──────────────────┘
 ```
 
-<div id="alter-modify-column-to-json-type">
-  ## ALTER MODIFY COLUMN para o tipo JSON
-</div>
+## ALTER MODIFY COLUMN para o tipo JSON {#alter-modify-column-to-json-type}
 
 É possível alterar uma tabela existente e mudar o tipo da coluna para o novo tipo `JSON`. Atualmente, só há suporte a `ALTER` de um tipo `String`.
 
@@ -1107,9 +1055,7 @@ SELECT json, json.a, json.b, json.c FROM test;
 └──────────────────────────────┴────────┴─────────┴────────────┘
 ```
 
-<div id="lazy-type-hints">
-  ## Lazy Type Hints (Experimental)
-</div>
+## Lazy Type Hints (Experimental) {#lazy-type-hints}
 
 <Note>
   Este recurso é experimental e exige que a configuração `allow_experimental_json_lazy_type_hints` esteja habilitada.
@@ -1125,17 +1071,13 @@ Quando você adiciona ou modifica type hints em uma coluna JSON usando `ALTER TA
 
 Isso significa que você pode adicionar type hints instantaneamente, e os dados serão convertidos gradualmente à medida que ocorrerem os merges normais em segundo plano.
 
-<div id="enabling-lazy-type-hints">
-  ### Como habilitar Lazy Type Hints
-</div>
+### Como habilitar Lazy Type Hints {#enabling-lazy-type-hints}
 
 ```sql
 SET allow_experimental_json_lazy_type_hints = 1;
 ```
 
-<div id="lazy-type-hints-example">
-  ### Exemplo
-</div>
+### Exemplo {#lazy-type-hints-example}
 
 ```sql title="Query"
 -- Crie uma tabela e insira os dados
@@ -1158,9 +1100,7 @@ SELECT json.user_id, toTypeName(json.user_id), json.score, toTypeName(json.score
 └──────────────┴──────────────────────────┴────────────┴────────────────────────┘
 ```
 
-<div id="verifying-no-mutation-occurred">
-  ### Verificando se não ocorreu nenhuma mutação
-</div>
+### Verificando se não ocorreu nenhuma mutação {#verifying-no-mutation-occurred}
 
 Você pode verificar se o `ALTER` foi concluído sem gerar uma mutação consultando a tabela `system.mutations`:
 
@@ -1172,9 +1112,7 @@ Com o Lazy Type Hints ativado, esta consulta não retorna nenhuma linha, confirm
 
 Isso se aplica às alterações de type hints descritas acima; consulte [Limitações](#lazy-type-hints-limitations) para os casos que são rejeitados.
 
-<div id="materializing-type-hints">
-  ### Materializando type hints
-</div>
+### Materializando type hints {#materializing-type-hints}
 
 Para materializar type hints em dados existentes, você pode:
 
@@ -1182,9 +1120,7 @@ Para materializar type hints em dados existentes, você pode:
 2. **Forçar a mesclagem**: use `OPTIMIZE TABLE test_lazy FINAL` para mesclar todas as partes imediatamente
 3. **Reescrever as partes**: use `ALTER TABLE test_lazy REWRITE PARTS` para reescrever as partes com os novos metadados
 
-<div id="lazy-type-hints-limitations">
-  ### Limitações
-</div>
+### Limitações {#lazy-type-hints-limitations}
 
 * Este recurso é experimental e pode mudar em versões futuras
 * A conversão de tipos no momento da consulta pode ter um impacto significativo no desempenho em comparação com tipos pré-materializados, especialmente para objetos JSON grandes
@@ -1198,9 +1134,7 @@ Para materializar type hints em dados existentes, você pode:
 
   Adicionar hints a caminhos não usados em nenhuma dessas estruturas, ou fazer alterações que não modifiquem o tipo em disco das subcolunas usadas (por exemplo, adicionar um caminho tipado não relacionado), continua sendo uma operação somente de metadados.
 
-<div id="comparison-between-values-of-the-json-type">
-  ## Comparação entre valores do tipo JSON
-</div>
+## Comparação entre valores do tipo JSON {#comparison-between-values-of-the-json-type}
 
 Os objetos JSON são comparados de forma semelhante aos Maps.
 
@@ -1238,9 +1172,7 @@ SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
 
 **Observação:** quando 2 caminhos contêm valores de tipos de dados distintos, eles são comparados de acordo com a [regra de comparação](/pt-BR/reference/data-types/variant#comparing-values-of-variant-data) do tipo de dado `Variant`.
 
-<div id="data-skipping-indexes-for-json">
-  ## Data skipping indexes para JSON
-</div>
+## Data skipping indexes para JSON {#data-skipping-indexes-for-json}
 
 [Data skipping indexes](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) podem ser usados com colunas `JSON` de três formas:
 
@@ -1248,9 +1180,7 @@ SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
 2. **Índices baseados em caminhos com `JSONAllPaths`** — indexe o *conjunto de caminhos* presentes em cada grânulo para ignorar grânulos que não possam conter o caminho consultado.
 3. **Índices baseados em valores com `JSONAllValues`** — indexe *todos os valores* em todos os caminhos JSON usando um [índice de texto](/pt-BR/reference/engines/table-engines/mergetree-family/textindexes) para acelerar a busca textual completa em qualquer subcoluna JSON com um único índice.
 
-<div id="json-indexes-on-subcolumns">
-  ### Índices em subcolunas específicas
-</div>
+### Índices em subcolunas específicas {#json-indexes-on-subcolumns}
 
 Você pode criar um skip index em qualquer subcoluna JSON usando a mesma sintaxe usada para colunas regulares.
 Qualquer [tipo de índice compatível](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) funciona (`minmax`, `set`, `bloom_filter`, `tokenbf_v1`, `ngrambf_v1`, etc.).
@@ -1262,9 +1192,7 @@ Há duas maneiras de referenciar uma subcoluna JSON em uma expressão de índice
 
 Você também pode usar expressões que combinam várias subcolunas, por exemplo `json.a || json.b::String`.
 
-<div id="json-indexes-on-subcolumns-example">
-  #### Exemplo
-</div>
+#### Exemplo {#json-indexes-on-subcolumns-example}
 
 ```sql title="Query"
 CREATE TABLE sensor_data
@@ -1313,16 +1241,12 @@ EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.location::String = 'roo
         Granules: 1/8
 ```
 
-<div id="json-indexes-jsonallpaths">
-  ### Índices baseados em caminhos com JSONAllPaths
-</div>
+### Índices baseados em caminhos com JSONAllPaths {#json-indexes-jsonallpaths}
 
 [Data skipping indexes](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) também podem ser criados em colunas `JSON` usando a função [`JSONAllPaths`](/pt-BR/reference/functions/regular-functions/json-functions#JSONAllPaths).
 Isso funciona de maneira semelhante à criação de skip indexes em colunas [`Map`](/pt-BR/reference/data-types/map) com `mapKeys` — o índice armazena o conjunto de caminhos JSON presentes em cada grânulo e o utiliza para ignorar os grânulos que não podem conter o caminho consultado.
 
-<div id="json-indexes-jsonallpaths-supported-types">
-  #### Tipos de índice compatíveis
-</div>
+#### Tipos de índice compatíveis {#json-indexes-jsonallpaths-supported-types}
 
 `JSONAllPaths` pode ser usado com os seguintes tipos de skip index:
 
@@ -1331,9 +1255,7 @@ Isso funciona de maneira semelhante à criação de skip indexes em colunas [`Ma
 * [`ngrambf_v1`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) — oferece suporte a `equals` e `IS NOT NULL`.
 * [`text`](/pt-BR/reference/engines/table-engines/mergetree-family/textindexes) (índice invertido) — oferece suporte a `equals`, `in` e `IS NOT NULL`.
 
-<div id="json-indexes-on-subcolumns-example">
-  #### Exemplo
-</div>
+#### Exemplo {#json-indexes-jsonallpaths-example}
 
 ```sql title="Query"
 CREATE TABLE events
@@ -1396,26 +1318,23 @@ EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
         Granules: 1/2
 ```
 
-<div id="json-indexes-jsonallpaths-how-it-works">
-  #### Como funciona
-</div>
+#### Como funciona {#json-indexes-jsonallpaths-how-it-works}
 
 A expressão `JSONAllPaths(json_column)` produz um `Array(String)` que contém todos os caminhos presentes em um valor JSON.
 O skip index armazena essas strings de caminho em sua estrutura de dados (filtro de Bloom ou índice invertido).
 Quando uma consulta filtra por `json.some.path`, o índice verifica se a string `"some.path"` está presente no índice de cada grânulo e ignora os grânulos em que ela está ausente.
 
-<div id="json-indexes-jsonallpaths-safety-with-missing-paths">
-  #### Segurança com caminhos ausentes
-</div>
+Apenas o acesso simples por caminho é comparado com o índice, opcionalmente com uma type hint ou um cast (`json.a.b`, `json.a.b.:Int64`, `json.a.b::String`).
+Filtros sobre a subcoluna de sub-object (`json.^a`) e sobre a subcoluna combinada de literal+sub-object (``json.@`a``) não usam o índice: essas subcolunas não são `NULL` sempre que existir qualquer subcaminho de `a`, portanto a presença do próprio caminho `a` em `JSONAllPaths` não é uma condição equivalente.
+
+#### Segurança com caminhos ausentes {#json-indexes-jsonallpaths-safety-with-missing-paths}
 
 Quando um caminho JSON está ausente de um grânulo, a subcoluna resulta em:
 
 * `NULL` para o tipo `Dynamic` (por exemplo, `json.path`) e subcolunas tipadas como `Nullable` (por exemplo, `json.path.:Int64`) — comparações com `NULL` sempre retornam falso, portanto o skipping é seguro.
 * O valor padrão do tipo para expressões `CAST` não `Nullable` (por exemplo, `json.path::Int64` produz `0` quando o caminho está ausente) — o skipping é seguro apenas quando o valor comparado difere do valor padrão. O índice lida automaticamente com essa distinção.
 
-<div id="json-indexes-jsonallvalues">
-  ### Busca de texto completo com JSONAllValues
-</div>
+### Busca de texto completo com JSONAllValues {#json-indexes-jsonallvalues}
 
 [Índices de texto](/pt-BR/reference/engines/table-engines/mergetree-family/textindexes) podem ser usados para acelerar a busca de texto completo em colunas JSON por meio da função [`JSONAllValues`](/pt-BR/reference/functions/regular-functions/json-functions#JSONAllValues).
 `JSONAllValues` retorna todos os valores de uma coluna JSON como `Array(String)`, que pode ser indexado com um índice de texto.
@@ -1423,9 +1342,7 @@ Um único índice em `JSONAllValues(json_column)` cobre todos os caminhos JSON, 
 
 Consulte [Índices baseados em valores com JSONAllValues](/pt-BR/reference/engines/table-engines/mergetree-family/textindexes#json-indexes-jsonallvalues) na documentação sobre índices de texto para ver detalhes e exemplos.
 
-<div id="tips-for-better-usage-of-the-json-type">
-  ## Dicas para melhorar o uso do tipo JSON
-</div>
+## Dicas para melhorar o uso do tipo JSON {#tips-for-better-usage-of-the-json-type}
 
 Antes de criar a coluna `JSON` e carregar dados nela, considere as seguintes dicas:
 
@@ -1434,9 +1351,7 @@ Antes de criar a coluna `JSON` e carregar dados nela, considere as seguintes dic
 * Não defina o parâmetro `max_dynamic_paths` com valores muito altos, pois isso pode tornar o armazenamento e a leitura menos eficientes.
   Embora isso dependa muito de parâmetros do sistema, como memória, CPU etc., uma regra geral é não definir `max_dynamic_paths` acima de 10 000 para o armazenamento no sistema de arquivos local e 1024 para o armazenamento no sistema de arquivos remoto.
 
-<div id="further-reading">
-  ## Leitura complementar
-</div>
+## Leitura complementar {#further-reading}
 
 * [Como criamos um novo e poderoso tipo de dado JSON para o ClickHouse](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse)
 * [O desafio do JSON com bilhões de documentos: ClickHouse vs. MongoDB, Elasticsearch e outros](https://clickhouse.com/blog/json-bench-clickhouse-vs-mongodb-elasticsearch-duckdb-postgresql)

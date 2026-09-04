@@ -288,6 +288,19 @@ SELECT * FROM test2;
 
 * [ORDER BY 子句](/zh/reference/statements/select/order-by#optimization-of-data-reading)
 
+## optimize_read_in_reverse_order_final {#optimize_read_in_reverse_order_final}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增设置，用于在使用 `FINAL` 修饰符从 `ReplacingMergeTree` 表按 sorting key 逆序读取时启用按序读取（read-in-order）优化。"}]}]} />
+
+允许在带 `FINAL` 修饰符的 `SELECT` 查询中，从 [ReplacingMergeTree](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree) 表按 sorting key 的逆序读取数据。仅在同时启用 [optimize&#95;read&#95;in&#95;order](/zh/reference/settings/session-settings/optimize#optimize_read_in_order) 时生效。
+
+可能的值：
+
+* 0 — 禁用带 `FINAL` 的逆序读取。
+* 1 — 启用带 `FINAL` 的逆序读取。
+
 ## optimize_respect_aliases {#optimize_respect_aliases}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
