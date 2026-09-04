@@ -6,6 +6,7 @@ body:
     attributes:
       value: |
         > Please make sure that the version you're using is still supported (you can find the list [here](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md#scope-and-supported-versions)).
+        > Ask the [ClickHouse Wizard](https://wizard.clickhouse.com/) about related bug reports and fixes before filing.
         > You have to provide the following information whenever possible.
   - type: textarea
     attributes:

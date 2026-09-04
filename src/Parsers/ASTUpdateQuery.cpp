@@ -34,6 +34,7 @@ ASTPtr ASTUpdateQuery::clone() const
     };
 
     add_children_if_needed(partition, res->partition);
+    add_children_if_needed(partitions, res->partitions);
     add_children_if_needed(predicate, res->predicate);
     add_children_if_needed(assignments, res->assignments);
     add_children_if_needed(settings_ast, res->settings_ast);
@@ -62,7 +63,12 @@ void ASTUpdateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     ostr << " SET ";
     assignments->format(ostr, settings, state, frame);
 
-    if (partition)
+    if (partitions)
+    {
+        ostr << " IN PARTITION ";
+        partitions->format(ostr, settings, state, frame);
+    }
+    else if (partition)
     {
         ostr << " IN PARTITION ";
         partition->format(ostr, settings, state, frame);
@@ -81,6 +87,9 @@ void ASTUpdateQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("table", table);
     w.writeChild("assignments", assignments);
     w.writeChild("partition", partition);
+    /// The multi-partition `IN PARTITION p1, p2` form is carried separately from the single-partition
+    /// `partition` slot; without it the round-trip would silently widen the mutation to the whole table.
+    w.writeChild("partitions", partitions);
     w.writeChild("predicate", predicate);
     /// `UPDATE` is parsed by `ParserUpdateQuery`, not `ParserQueryWithOutput`, so the only
     /// supported output-suffix clause is the query-local `SETTINGS`. Do not serialize the
@@ -128,6 +137,15 @@ void ASTUpdateQuery::readJSON(const Poco::JSON::Object & json)
     partition = r.readChildOfType<ASTPartition>("partition");
     if (partition)
         children.push_back(partition);
+    /// The multi-partition form; `ParserUpdateQuery` never fills both slots.
+    partitions = r.readPartitionListChild("partitions");
+    if (partitions)
+    {
+        if (partition)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'partition' and 'partitions' cannot be set at the same time during AST JSON deserialization");
+        children.push_back(partitions);
+    }
     predicate = r.readChild("predicate");
     if (!predicate)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
