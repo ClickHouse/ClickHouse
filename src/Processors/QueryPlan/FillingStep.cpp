@@ -14,14 +14,30 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static ITransformingStep::Traits getTraits()
+/// A generated row carries a default value in every `ORDER BY` key that is neither filled nor part of the
+/// filling sorting prefix, so the output is no longer ordered by that key.
+static bool sortingIsPreserved(const SortDescription & sort_description, bool use_with_fill_by_sorting_prefix)
+{
+    size_t i = 0;
+    if (use_with_fill_by_sorting_prefix)
+        while (i < sort_description.size() && !sort_description[i].with_fill)
+            ++i;
+
+    for (; i < sort_description.size(); ++i)
+        if (!sort_description[i].with_fill)
+            return false;
+
+    return true;
+}
+
+static ITransformingStep::Traits getTraits(bool preserves_sorting)
 {
     return ITransformingStep::Traits
     {
         {
             .returns_single_stream = true,
             .preserves_number_of_streams = true,
-            .preserves_sorting = true,
+            .preserves_sorting = preserves_sorting,
         },
         {
             .preserves_number_of_rows = false,
@@ -35,7 +51,10 @@ FillingStep::FillingStep(
     SortDescription fill_description_,
     InterpolateDescriptionPtr interpolate_description_,
     bool use_with_fill_by_sorting_prefix_)
-    : ITransformingStep(input_header_, std::make_shared<const Block>(FillingTransform::transformHeader(*input_header_, sort_description_)), getTraits())
+    : ITransformingStep(
+          input_header_,
+          std::make_shared<const Block>(FillingTransform::transformHeader(*input_header_, sort_description_)),
+          getTraits(sortingIsPreserved(sort_description_, use_with_fill_by_sorting_prefix_)))
     , sort_description(std::move(sort_description_))
     , fill_description(std::move(fill_description_))
     , interpolate_description(interpolate_description_)
