@@ -9,20 +9,40 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # current TTL expression over the rows before deciding that nothing survives. `OPTIMIZE ... FINAL`
 # always assigns `MergeType::Regular`, so these cases rely on background TTL merges.
 
-function wait_for_ttl_drop_merge()
+function wait_for_ttl_merge_matching()
 {
     local table=$1
+    local reason_pattern=$2
     for _ in $(seq 1 300); do
         ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS part_log"
         local count
         count=$(${CLICKHOUSE_CLIENT} -q "
             SELECT count() FROM system.part_log
             WHERE database = currentDatabase() AND table = '$table'
-              AND event_type = 'MergeParts' AND merge_reason = 'TTLDropMerge'")
+              AND event_type = 'MergeParts' AND merge_reason LIKE '$reason_pattern'")
         if [ "$count" -gt "0" ]; then
             return
         fi
         sleep 0.1
+    done
+}
+
+function wait_for_ttl_drop_merge()
+{
+    wait_for_ttl_merge_matching "$1" "TTLDropMerge"
+}
+
+function wait_for_row_count()
+{
+    local table=$1
+    local want=$2
+    for _ in $(seq 1 120); do
+        local count
+        count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM $table")
+        if [ "$count" = "$want" ]; then
+            return
+        fi
+        sleep 0.5
     done
 }
 
@@ -76,7 +96,7 @@ ${CLICKHOUSE_CLIENT} -q "
 wait_for_ttl_drop_merge "t_ttl_drop_sized"
 
 ${CLICKHOUSE_CLIENT} -q "
-    SELECT max(length(merged_from)) < 3 FROM system.part_log
+    SELECT max(length(merged_from)) = 1 FROM system.part_log
     WHERE database = currentDatabase() AND table = 't_ttl_drop_sized'
       AND event_type = 'MergeParts' AND merge_reason = 'TTLDropMerge'"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_drop_sized"
@@ -101,3 +121,47 @@ wait_for_ttl_drop_merge "t_ttl_drop_oversized"
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_drop_oversized"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_drop_oversized"
+
+echo "-- a GROUP BY TTL whose rows survive stays selectable for a later rollup"
+
+# A rule marked finished sets `part_min_ttl` to 0 and clears `has_any_non_finished_ttls`, so the
+# part is never selected for a TTL merge again. No system table exposes the flag, so it is observed
+# through that consequence: the rollup below can only run if the merge left the rule unfinished.
+#
+# The interval is part of the map key of a GROUP BY rule, so changing it would create a fresh key
+# and recalculate from scratch. Patching the column the expression reads keeps the key, which is
+# what leaves the stored bounds expired while no row is.
+#
+# `ts` lands 15 seconds ahead because the first merge has to run while no row is expired yet.
+#
+# The second merge has to be selector-driven. `OPTIMIZE ... FINAL` would reach the rows through
+# `MergeTreeDataPartTTLInfos::update`, which clears this flag for GROUP BY rules, so a forced merge
+# reports the same result whether or not the flag was set.
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_group_by_stays (k UInt64, ts DateTime, v UInt64)
+    ENGINE = MergeTree ORDER BY k
+    TTL ts + INTERVAL 1 SECOND GROUP BY k SET v = max(v)
+    SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1,
+             enable_block_offset_column = 1, merge_with_ttl_timeout = 0;
+
+    SYSTEM STOP MERGES t_ttl_group_by_stays;
+    INSERT INTO t_ttl_group_by_stays VALUES (1, now() - INTERVAL 1 DAY, 10), (1, now() - INTERVAL 1 DAY, 20);
+    SET enable_lightweight_update = 1;
+    UPDATE t_ttl_group_by_stays SET ts = now() + INTERVAL 15 SECOND WHERE 1;
+    SYSTEM START MERGES t_ttl_group_by_stays;
+"
+
+wait_for_ttl_merge_matching "t_ttl_group_by_stays" "TTL%"
+
+# Both rows survived that merge, so the rollup below is a rule that was kept rather than a fixture
+# that never had rows left to roll up.
+${CLICKHOUSE_CLIENT} -q "
+    SELECT rows FROM system.part_log
+    WHERE database = currentDatabase() AND table = 't_ttl_group_by_stays'
+      AND event_type = 'MergeParts' AND merge_reason LIKE 'TTL%'
+    ORDER BY event_time_microseconds LIMIT 1"
+
+wait_for_row_count "t_ttl_group_by_stays" 1
+
+${CLICKHOUSE_CLIENT} -q "SELECT count(), sum(v) FROM t_ttl_group_by_stays"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_group_by_stays"

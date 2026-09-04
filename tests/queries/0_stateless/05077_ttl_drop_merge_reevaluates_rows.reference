@@ -6,3 +6,6 @@
 1
 -- an expired part larger than the byte budget is still dropped
 0
+-- a GROUP BY TTL whose rows survive stays selectable for a later rollup
+2
+1	20
