@@ -225,23 +225,32 @@ private:
 
     /// Sharding is a runtime property (`SHARDS` layout parameter), not a template parameter:
     /// making it a template parameter would instantiate the whole dictionary twice.
+    /// The per-key lookup loops still dispatch on it once per call (via the `sharded_`
+    /// template parameter below), so that the non-sharded fast path keeps a constant
+    /// shard index and the hash+modulo does not get inlined into the loop body.
     bool sharded() const { return configuration.shards > 1; }
 
+    template <bool sharded_>
     UInt64 getShard(UInt64 key) const
     {
-        if (!sharded())
+        if constexpr (!sharded_)
             return 0;
         /// NOTE: function here should not match with the DefaultHash<> since
         /// it used for the HashMap/sparse_hash_map.
         return intHashCRC32(key) % configuration.shards;
     }
 
+    template <bool sharded_>
     UInt64 getShard(std::string_view key) const
     {
-        if (!sharded())
+        if constexpr (!sharded_)
             return 0;
         return StringViewHash()(key) % configuration.shards;
     }
+
+    UInt64 getShard(UInt64 key) const { return sharded() ? getShard<true>(key) : 0; }
+
+    UInt64 getShard(std::string_view key) const { return sharded() ? getShard<true>(key) : 0; }
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
@@ -250,7 +259,22 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
+    template <typename AttributeType, bool is_nullable, bool sharded_, typename ValueSetter, typename DefaultValueExtractor>
+    void getItemsImpl(
+        const Attribute & attribute,
+        DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
+        ValueSetter && set_value,
+        DefaultValueExtractor & default_value_extractor) const;
+
     template <typename AttributeType, bool is_nullable, typename ValueSetter, typename NullAndDefaultSetter>
+    void getItemsShortCircuitImpl(
+        const Attribute & attribute,
+        DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
+        ValueSetter && set_value,
+        NullAndDefaultSetter && set_null_and_default,
+        IColumn::Filter & default_mask) const;
+
+    template <typename AttributeType, bool is_nullable, bool sharded_, typename ValueSetter, typename NullAndDefaultSetter>
     void getItemsShortCircuitImpl(
         const Attribute & attribute,
         DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
@@ -646,14 +670,22 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
 
     if (unlikely(attributes.empty()))
     {
-        for (size_t requested_key_index = 0; requested_key_index < keys_size; ++requested_key_index)
+        auto has_keys = [&]<bool sharded_>()
         {
-            auto key = extractor.extractCurrentKey();
-            const auto & container = no_attributes_containers[getShard(key)];
-            out[requested_key_index] = container.find(key) != container.end();
-            keys_found += out[requested_key_index];
-            extractor.rollbackCurrentKey();
-        }
+            for (size_t requested_key_index = 0; requested_key_index < keys_size; ++requested_key_index)
+            {
+                auto key = extractor.extractCurrentKey();
+                const auto & container = no_attributes_containers[getShard<sharded_>(key)];
+                out[requested_key_index] = container.find(key) != container.end();
+                keys_found += out[requested_key_index];
+                extractor.rollbackCurrentKey();
+            }
+        };
+
+        if (sharded())
+            has_keys.template operator()<true>();
+        else
+            has_keys.template operator()<false>();
 
         query_count.fetch_add(keys_size, std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -665,20 +697,28 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
 
     getAttributeContainers(0 /*attribute_index*/, [&](const auto & containers)
     {
-        for (size_t requested_key_index = 0; requested_key_index < keys_size; ++requested_key_index)
+        auto has_keys = [&]<bool sharded_>()
         {
-            auto key = extractor.extractCurrentKey();
-            auto shard = getShard(key);
-            const auto & container = containers[shard];
+            for (size_t requested_key_index = 0; requested_key_index < keys_size; ++requested_key_index)
+            {
+                auto key = extractor.extractCurrentKey();
+                auto shard = getShard<sharded_>(key);
+                const auto & container = containers[shard];
 
-            out[requested_key_index] = container.find(key) != container.end();
-            if (is_attribute_nullable && !out[requested_key_index])
-                out[requested_key_index] = (*attribute.is_nullable_sets)[shard].find(key) != nullptr;
+                out[requested_key_index] = container.find(key) != container.end();
+                if (is_attribute_nullable && !out[requested_key_index])
+                    out[requested_key_index] = (*attribute.is_nullable_sets)[shard].find(key) != nullptr;
 
-            keys_found += out[requested_key_index];
+                keys_found += out[requested_key_index];
 
-            extractor.rollbackCurrentKey();
-        }
+                extractor.rollbackCurrentKey();
+            }
+        };
+
+        if (sharded())
+            has_keys.template operator()<true>();
+        else
+            has_keys.template operator()<false>();
     });
 
     query_count.fetch_add(keys_size, std::memory_order_relaxed);
@@ -707,39 +747,45 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
 
         const CollectionsHolder<UInt64> & child_key_to_parent_key_maps = std::get<CollectionsHolder<UInt64>>(hierarchical_attribute.containers);
 
-        auto is_key_valid_func = [&](auto & hierarchy_key)
-        {
-            auto shard = getShard(hierarchy_key);
-
-            if (unlikely(hierarchical_attribute.is_nullable_sets) && (*hierarchical_attribute.is_nullable_sets)[shard].find(hierarchy_key))
-                return true;
-
-            const auto & map = child_key_to_parent_key_maps[shard];
-            return map.find(hierarchy_key) != map.end();
-        };
-
         size_t keys_found = 0;
 
-        auto get_parent_func = [&](auto & hierarchy_key)
+        auto get_hierarchy = [&]<bool sharded_>()
         {
-            std::optional<UInt64> result;
+            auto is_key_valid_func = [&](auto & hierarchy_key)
+            {
+                auto shard = getShard<sharded_>(hierarchy_key);
 
-            const auto & map = child_key_to_parent_key_maps[getShard(hierarchy_key)];
-            auto it = map.find(hierarchy_key);
-            if (it == map.end())
+                if (unlikely(hierarchical_attribute.is_nullable_sets) && (*hierarchical_attribute.is_nullable_sets)[shard].find(hierarchy_key))
+                    return true;
+
+                const auto & map = child_key_to_parent_key_maps[shard];
+                return map.find(hierarchy_key) != map.end();
+            };
+
+            auto get_parent_func = [&](auto & hierarchy_key)
+            {
+                std::optional<UInt64> result;
+
+                const auto & map = child_key_to_parent_key_maps[getShard<sharded_>(hierarchy_key)];
+                auto it = map.find(hierarchy_key);
+                if (it == map.end())
+                    return result;
+
+                UInt64 parent_key = getValueFromCell(it);
+                if (null_value && *null_value == parent_key)
+                    return result;
+
+                result = parent_key;
+                keys_found += 1;
+
                 return result;
+            };
 
-            UInt64 parent_key = getValueFromCell(it);
-            if (null_value && *null_value == parent_key)
-                return result;
-
-            result = parent_key;
-            keys_found += 1;
-
-            return result;
+            return getKeysHierarchyArray(keys, is_key_valid_func, get_parent_func);
         };
 
-        auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, is_key_valid_func, get_parent_func);
+        auto dictionary_hierarchy_array
+            = sharded() ? get_hierarchy.template operator()<true>() : get_hierarchy.template operator()<false>();
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -781,39 +827,44 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
 
         const CollectionsHolder<UInt64> & child_key_to_parent_key_maps = std::get<CollectionsHolder<UInt64>>(hierarchical_attribute.containers);
 
-        auto is_key_valid_func = [&](auto & hierarchy_key)
-        {
-            auto shard = getShard(hierarchy_key);
-
-            if (unlikely(hierarchical_attribute.is_nullable_sets) && (*hierarchical_attribute.is_nullable_sets)[shard].find(hierarchy_key))
-                return true;
-
-            const auto & map = child_key_to_parent_key_maps[shard];
-            return map.find(hierarchy_key) != map.end();
-        };
-
         size_t keys_found = 0;
 
-        auto get_parent_key_func = [&](auto & hierarchy_key)
+        auto is_in_hierarchy = [&]<bool sharded_>()
         {
-            std::optional<UInt64> result;
+            auto is_key_valid_func = [&](auto & hierarchy_key)
+            {
+                auto shard = getShard<sharded_>(hierarchy_key);
 
-            const auto & map = child_key_to_parent_key_maps[getShard(hierarchy_key)];
-            auto it = map.find(hierarchy_key);
-            if (it == map.end())
+                if (unlikely(hierarchical_attribute.is_nullable_sets) && (*hierarchical_attribute.is_nullable_sets)[shard].find(hierarchy_key))
+                    return true;
+
+                const auto & map = child_key_to_parent_key_maps[shard];
+                return map.find(hierarchy_key) != map.end();
+            };
+
+            auto get_parent_key_func = [&](auto & hierarchy_key)
+            {
+                std::optional<UInt64> result;
+
+                const auto & map = child_key_to_parent_key_maps[getShard<sharded_>(hierarchy_key)];
+                auto it = map.find(hierarchy_key);
+                if (it == map.end())
+                    return result;
+
+                UInt64 parent_key = getValueFromCell(it);
+                if (null_value && *null_value == parent_key)
+                    return result;
+
+                result = parent_key;
+                keys_found += 1;
+
                 return result;
+            };
 
-            UInt64 parent_key = getValueFromCell(it);
-            if (null_value && *null_value == parent_key)
-                return result;
-
-            result = parent_key;
-            keys_found += 1;
-
-            return result;
+            return getKeysIsInHierarchyColumn(keys, keys_in, is_key_valid_func, get_parent_key_func);
         };
 
-        auto result = getKeysIsInHierarchyColumn(keys, keys_in, is_key_valid_func, get_parent_key_func);
+        auto result = sharded() ? is_in_hierarchy.template operator()<true>() : is_in_hierarchy.template operator()<false>();
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -1134,6 +1185,22 @@ void HashedDictionary<dictionary_key_type, sparse>::getItemsImpl(
     ValueSetter && set_value,
     DefaultValueExtractor & default_value_extractor) const
 {
+    if (sharded())
+        getItemsImpl<AttributeType, is_nullable, true>(
+            attribute, keys_extractor, std::forward<ValueSetter>(set_value), default_value_extractor);
+    else
+        getItemsImpl<AttributeType, is_nullable, false>(
+            attribute, keys_extractor, std::forward<ValueSetter>(set_value), default_value_extractor);
+}
+
+template <DictionaryKeyType dictionary_key_type, bool sparse>
+template <typename AttributeType, bool is_nullable, bool sharded_, typename ValueSetter, typename DefaultValueExtractor>
+void HashedDictionary<dictionary_key_type, sparse>::getItemsImpl(
+    const Attribute & attribute,
+    DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
+    ValueSetter && set_value,
+    DefaultValueExtractor & default_value_extractor) const
+{
     const auto & attribute_containers = std::get<CollectionsHolder<AttributeType>>(attribute.containers);
     const size_t keys_size = keys_extractor.getKeysSize();
 
@@ -1142,7 +1209,7 @@ void HashedDictionary<dictionary_key_type, sparse>::getItemsImpl(
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
         auto key = keys_extractor.extractCurrentKey();
-        auto shard = getShard(key);
+        auto shard = getShard<sharded_>(key);
 
         const auto & container = attribute_containers[shard];
         const auto it = container.find(key);
@@ -1181,6 +1248,23 @@ void HashedDictionary<dictionary_key_type, sparse>::getItemsShortCircuitImpl(
     NullAndDefaultSetter && set_null_and_default,
     IColumn::Filter & default_mask) const
 {
+    if (sharded())
+        getItemsShortCircuitImpl<AttributeType, is_nullable, true>(
+            attribute, keys_extractor, std::forward<ValueSetter>(set_value), std::forward<NullAndDefaultSetter>(set_null_and_default), default_mask);
+    else
+        getItemsShortCircuitImpl<AttributeType, is_nullable, false>(
+            attribute, keys_extractor, std::forward<ValueSetter>(set_value), std::forward<NullAndDefaultSetter>(set_null_and_default), default_mask);
+}
+
+template <DictionaryKeyType dictionary_key_type, bool sparse>
+template <typename AttributeType, bool is_nullable, bool sharded_, typename ValueSetter, typename NullAndDefaultSetter>
+void HashedDictionary<dictionary_key_type, sparse>::getItemsShortCircuitImpl(
+    const Attribute & attribute,
+    DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
+    ValueSetter && set_value,
+    NullAndDefaultSetter && set_null_and_default,
+    IColumn::Filter & default_mask) const
+{
     const auto & attribute_containers = std::get<CollectionsHolder<AttributeType>>(attribute.containers);
     const size_t keys_size = keys_extractor.getKeysSize();
     default_mask.resize(keys_size);
@@ -1189,7 +1273,7 @@ void HashedDictionary<dictionary_key_type, sparse>::getItemsShortCircuitImpl(
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
         auto key = keys_extractor.extractCurrentKey();
-        auto shard = getShard(key);
+        auto shard = getShard<sharded_>(key);
 
         const auto & container = attribute_containers[shard];
         const auto it = container.find(key);
