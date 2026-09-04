@@ -66,9 +66,7 @@ target_link_libraries (_kvikio PUBLIC
     ch_contrib::rapids_logger
     ch_contrib::nvtx3
     ch_contrib::bs_thread_pool
-    "${GPU_CUDART_LIBRARY}"
-    "${GPU_CULIBOS_LIBRARY}"
-    ${CMAKE_DL_LIBS}
+    ch_gpu::cudart
 )
 
 add_library (ch_contrib::kvikio ALIAS _kvikio)

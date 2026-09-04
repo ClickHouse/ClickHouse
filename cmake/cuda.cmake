@@ -34,10 +34,6 @@ if (ENABLE_GPU)
         set (CMAKE_CUDA_COMPILER "${GPU_NVCC}" CACHE FILEPATH "nvcc to compile .cu with")
     endif ()
 
-    # <root>/bin/nvcc -> <root>
-    get_filename_component (GPU_CUDA_ROOT "${CMAKE_CUDA_COMPILER}" DIRECTORY)
-    get_filename_component (GPU_CUDA_ROOT "${GPU_CUDA_ROOT}" DIRECTORY)
-
     if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
         set (CMAKE_CUDA_ARCHITECTURES "75" CACHE STRING "CUDA architectures to generate code for")
     endif ()
@@ -65,19 +61,32 @@ if (ENABLE_GPU)
             "${GPU_CUDA_MINIMUM_VERSION}.")
     endif ()
 
+    # Both filled in from nvcc itself during enable_language, so distro layouts come out
+    # right: a packaged nvcc lives in /usr/bin, where stripping `bin/` would name /usr and
+    # miss archives that sit in the multiarch libdir. The implicit dirs also carry
+    # lib64/stubs, which is where the driver stub would be found if anything needed it.
+    set (GPU_CUDA_ROOT "${CMAKE_CUDA_COMPILER_TOOLKIT_ROOT}")
+    set (GPU_CUDA_LIBRARY_DIRS
+        ${CMAKE_CUDA_HOST_IMPLICIT_LINK_DIRECTORIES}
+        "${GPU_CUDA_ROOT}/lib64"
+        "${GPU_CUDA_ROOT}/lib")
+    list (REMOVE_DUPLICATES GPU_CUDA_LIBRARY_DIRS)
+
     # Named by explicit path, not searched. ClickHouse forbids find_library in
     # CMakeLists.txt (ci/jobs/scripts/check_style/check_cpp.sh) so a build cannot pick up
     # whatever a machine happens to carry, and the same reasoning applies here even though
-    # this file is not itself scanned. `lib64` is the installer's layout, `lib` the
-    # redistributable tarball's - both are tried by existence rather than by search.
+    # this file is not itself scanned. The candidate dirs are the ones nvcc reports, so
+    # every supported layout is covered by existence rather than by search.
     function (gpu_cuda_library var basename)
-        foreach (_dir "lib64" "lib")
-            if (EXISTS "${GPU_CUDA_ROOT}/${_dir}/lib${basename}.a")
-                set (${var} "${GPU_CUDA_ROOT}/${_dir}/lib${basename}.a" PARENT_SCOPE)
+        foreach (_dir IN LISTS GPU_CUDA_LIBRARY_DIRS)
+            if (EXISTS "${_dir}/lib${basename}.a")
+                set (${var} "${_dir}/lib${basename}.a" PARENT_SCOPE)
                 return ()
             endif ()
         endforeach ()
-        message (FATAL_ERROR "lib${basename}.a is missing from the CUDA toolkit at ${GPU_CUDA_ROOT}")
+        message (FATAL_ERROR
+            "lib${basename}.a is missing from the CUDA toolkit at ${GPU_CUDA_ROOT}. "
+            "Looked in: ${GPU_CUDA_LIBRARY_DIRS}")
     endfunction ()
 
     # The static runtime, so the CUDA runtime lands inside the binary like the rest of
@@ -92,6 +101,15 @@ if (ENABLE_GPU)
     gpu_cuda_library (GPU_NVRTC_BUILTINS_LIBRARY nvrtc-builtins_static)
     gpu_cuda_library (GPU_NVJITLINK_LIBRARY      nvJitLink_static)
     gpu_cuda_library (GPU_NVPTXCOMPILER_LIBRARY  nvptxcompiler_static)
+
+    # What FindCUDAToolkit would have attached to CUDA::cudart_static. Consumers link this
+    # rather than naming the archive, or the first executable to pull one in fails on
+    # pthread_*, dl* and clock_gettime. Threads::Threads arrives with
+    # cmake/linux/default_libs.cmake, later than this file - fine, it is resolved at
+    # generate time.
+    add_library (ch_gpu::cudart INTERFACE IMPORTED GLOBAL)
+    set_target_properties (ch_gpu::cudart PROPERTIES INTERFACE_LINK_LIBRARIES
+        "${GPU_CUDART_LIBRARY};${GPU_CULIBOS_LIBRARY};Threads::Threads;${CMAKE_DL_LIBS};rt")
 
     set (CMAKE_CUDA_RUNTIME_LIBRARY None)
 

@@ -72,8 +72,7 @@ target_include_directories (_rmm SYSTEM PUBLIC
 target_link_libraries (_rmm PUBLIC
     ch_contrib::cccl
     ch_contrib::rapids_logger
-    "${GPU_CUDART_LIBRARY}"
-    "${GPU_CULIBOS_LIBRARY}"
+    ch_gpu::cudart
 )
 
 add_library (ch_contrib::rmm ALIAS _rmm)

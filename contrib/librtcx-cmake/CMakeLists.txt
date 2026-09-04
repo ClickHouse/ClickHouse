@@ -43,8 +43,16 @@ target_link_libraries (_rtcx PUBLIC
     "${GPU_NVRTC_BUILTINS_LIBRARY}"
     "${GPU_NVJITLINK_LIBRARY}"
     "${GPU_NVPTXCOMPILER_LIBRARY}"
-    "${GPU_CUDART_LIBRARY}"
-    "${GPU_CULIBOS_LIBRARY}"
+    ch_gpu::cudart
+)
+
+# Without these two, rtcx.cpp defaults both to 0 and reaches nvrtc and nvJitLink through
+# dlopen("libnvrtc.so.<major>") and dlsym, leaving the archives above unreferenced and the
+# shared libraries a run-time requirement. Upstream sets the same pair from
+# RTCX_STATIC_LINK_{NVRTC,NVJITLINK}; we always link the static ones.
+target_compile_definitions (_rtcx PRIVATE
+    RTCX_STATIC_LINK_LIBNVRTC=1
+    RTCX_STATIC_LINK_LIBNVJITLINK=1
 )
 
 add_library (ch_contrib::rtcx ALIAS _rtcx)
