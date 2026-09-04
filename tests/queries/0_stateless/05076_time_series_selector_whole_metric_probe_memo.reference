@@ -1,0 +1,18 @@
+-- A. the whole-metric verdict is not reused after an out-of-range series appears
+range emitted while the selector matches the whole metric: 1
+the two series have distinct first id components: 1
+range emitted after the out-of-range series appeared: 0
+both series are returned:
+1970-01-01 00:01:40.000	1
+1970-01-01 00:03:20.000	2
+-- B. a reused verdict is retired after a bounded number of uses
+narrow window is whole-metric on its own probe: 1
+wide window falls back: 0
+narrow window reuses that verdict: 1
+reuse returns the same rows: 1
+probed again within 200 queries: 1
+the verdict was reused at least once before that: 1
+rows unchanged after the verdict was retired: 1
+rows in the narrow window:
+1970-01-01 00:01:40.000	1
+1970-01-01 00:02:30.000	10
