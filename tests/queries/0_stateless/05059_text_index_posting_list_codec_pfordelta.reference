@@ -1,0 +1,71 @@
+Before merge, materialize
+10000
+129
+4
+1
+2
+5
+10000
+129
+4
+1
+2
+5
+10000
+129
+4
+1
+2
+5
+Before merge, lazy
+10000
+129
+4
+1
+2
+5
+Intersection
+4
+Row ids
+[10,11,12,9000]
+[1,2,3,4,5]
+After merge, materialize
+10000
+129
+4
+1
+2
+5
+10000
+129
+4
+1
+2
+5
+10000
+129
+4
+1
+2
+5
+After merge, lazy
+10000
+129
+4
+1
+2
+5
+Intersection
+4
+Row ids
+[10,11,12,9000]
+[1,2,3,4,5]
+Table setting
+1429
+8571
+Mixed codec merge
+3000
+1000
+1000
+1000
+Unknown codec
