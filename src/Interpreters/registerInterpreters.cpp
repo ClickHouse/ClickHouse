@@ -61,7 +61,7 @@ void registerInterpreterCreateNamedCollectionQuery(InterpreterFactory & factory)
 void registerInterpreterCreateHandlerQuery(InterpreterFactory & factory);
 void registerInterpreterDropHandlerQuery(InterpreterFactory & factory);
 void registerInterpreterDropIndexQuery(InterpreterFactory & factory);
-void registerInterpreterHypotheticalIndexQuery(InterpreterFactory & factory);
+void registerInterpreterHypotheticalObjectQuery(InterpreterFactory & factory);
 void registerInterpreterBackupQuery(InterpreterFactory & factory);
 void registerInterpreterDeleteQuery(InterpreterFactory & factory);
 void registerInterpreterUpdateQuery(InterpreterFactory & factory);
@@ -131,7 +131,7 @@ void registerInterpreters()
     registerInterpreterCreateHandlerQuery(factory);
     registerInterpreterDropHandlerQuery(factory);
     registerInterpreterDropIndexQuery(factory);
-    registerInterpreterHypotheticalIndexQuery(factory);
+    registerInterpreterHypotheticalObjectQuery(factory);
     registerInterpreterBackupQuery(factory);
     registerInterpreterDeleteQuery(factory);
     registerInterpreterUpdateQuery(factory);
