@@ -13,7 +13,7 @@ CREATE TABLE partition_skip_minmax_folding (a UInt64, b UInt64, c UInt64, INDEX 
 ENGINE = MergeTree
 ORDER BY b
 PARTITION BY a
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO partition_skip_minmax_folding VALUES (1, 1, 100), (1, 2, 200), (1, 3, 300);
 INSERT INTO partition_skip_minmax_folding VALUES (2, 4, 1000), (2, 5, 2000), (2, 6, 3000);

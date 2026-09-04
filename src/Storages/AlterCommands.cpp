@@ -758,7 +758,29 @@ void AlterCommand::apply(
                 || to_remove == RemoveProperty::MATERIALIZED
                 || to_remove == RemoveProperty::ALIAS)
             {
+                /// Whether the column was an ALIAS over a real expression (not a simple column
+                /// reference): only such columns carry an implicit index built over the alias
+                /// expression. Must be checked before the default is cleared below.
+                bool was_expression_alias = column.default_desc.kind == ColumnDefaultKind::Alias
+                    && column.default_desc.expression && !column.default_desc.expression->as<ASTIdentifier>();
+
                 column.default_desc = ColumnDefault{};
+
+                /// Removing ALIAS changes the column kind to physical, so its implicit indices
+                /// change too. REMOVE ALIAS is a metadata-only operation: nothing rewrites the
+                /// existing parts, so index files built while the column was an expression alias
+                /// are stale (existing rows now read the physical default value), and re-creating
+                /// the same-named implicit index would silently reuse them and prune wrong. Drop
+                /// the index and do not re-create it. A simple identifier alias never had an
+                /// implicit index, so there are no stale files and the now-physical column may
+                /// gain one. Removing DEFAULT or MATERIALIZED keeps the stored column data and
+                /// the index eligibility unchanged, so no refresh is needed there.
+                if (to_remove == RemoveProperty::ALIAS)
+                {
+                    metadata.dropImplicitIndicesForColumn(column_name);
+                    if (!was_expression_alias)
+                        metadata.addImplicitIndicesForColumn(column, context);
+                }
             }
             else if (to_remove == RemoveProperty::CODEC)
             {
@@ -794,9 +816,6 @@ void AlterCommand::apply(
                     /// Update statistics data type to match the new column type
                     if (!column.statistics.empty())
                         column.statistics.data_type = data_type;
-                    /// The type changed, so assume that implicit indices may change too
-                    metadata.dropImplicitIndicesForColumn(column_name);
-                    metadata.addImplicitIndicesForColumn(column, context);
                 }
 
                 /// The declared statistics replace the explicit statistics of the column, like the other
@@ -821,12 +840,41 @@ void AlterCommand::apply(
                         column.settings.removeSetting(setting);
                 }
 
+                /// Whether the column was an ALIAS over a real expression (not a simple column
+                /// reference): the implicit index of such a column is built over the alias
+                /// expression rather than over the column's own values. Must be checked before
+                /// the default is replaced below.
+                bool was_expression_alias = column.default_desc.kind == ColumnDefaultKind::Alias
+                    && column.default_desc.expression && !column.default_desc.expression->as<ASTIdentifier>();
+
                 /// User specified default expression or changed
                 /// datatype. We have to replace default.
                 if (default_expression || data_type)
                 {
                     column.default_desc.kind = default_kind;
                     column.default_desc.expression = default_expression;
+                }
+
+                /// The type or the default kind changed, so implicit indices may change too.
+                /// This must run after the default is replaced above: a column turning
+                /// EPHEMERAL or ALIAS must not keep (or re-create) an implicit index,
+                /// and a column turning physical may gain one.
+                if (data_type || default_expression)
+                {
+                    bool is_expression_alias = column.default_desc.kind == ColumnDefaultKind::Alias
+                        && column.default_desc.expression && !column.default_desc.expression->as<ASTIdentifier>();
+
+                    metadata.dropImplicitIndicesForColumn(column_name);
+
+                    /// An implicit index over an alias expression indexes something else than the
+                    /// column's own values, so a transition into or out of an expression alias
+                    /// invalidates the index files of the existing parts. `MODIFY COLUMN` does not
+                    /// rewrite them - not even when it changes the type - and re-creating the
+                    /// same-named implicit index would silently reuse the stale files and prune
+                    /// wrong. Drop the index and do not re-create it, the same way
+                    /// `MODIFY COLUMN ... REMOVE ALIAS` above does.
+                    if (!was_expression_alias && !is_expression_alias)
+                        metadata.addImplicitIndicesForColumn(column, context);
                 }
             }
         });
@@ -1218,16 +1266,53 @@ void AlterCommand::apply(
         }
         if (any_mt_setting)
         {
+            const auto changes_implicit_index_policy = [](const SettingChange & change)
+            {
+                return change.name == "add_minmax_index_for_numeric_columns"
+                    || change.name == "add_minmax_index_for_string_columns"
+                    || change.name == "add_minmax_index_for_temporal_columns"
+                    || change.name == "add_minmax_index_for_block_number_column"
+                    || change.name == "add_minmax_index_for_block_offset_column"
+                    || change.name == "enable_block_number_column"
+                    || change.name == "enable_block_offset_column";
+            };
+
+            const auto changes_column_implicit_index_policy = [](const SettingChange & change)
+            {
+                return change.name == "add_minmax_index_for_numeric_columns"
+                    || change.name == "add_minmax_index_for_string_columns"
+                    || change.name == "add_minmax_index_for_temporal_columns";
+            };
+
+            if (!std::ranges::any_of(settings_changes, changes_implicit_index_policy))
+                return;
+
+            /// Preserve the implicit-index policy stored in the table metadata. It can originate
+            /// from a compatibility setting or server configuration and therefore need not be
+            /// present in settings_from_storage. Starting from a fresh MergeTreeSettings here
+            /// must not turn such a table into an implicit-index table on an unrelated ALTER.
+            effective_settings.applyChange({"add_minmax_index_for_numeric_columns", metadata.add_minmax_index_for_numeric_columns}, context, /*is_loading_from_existing_metadata=*/true);
+            effective_settings.applyChange({"add_minmax_index_for_string_columns", metadata.add_minmax_index_for_string_columns}, context, /*is_loading_from_existing_metadata=*/true);
+            effective_settings.applyChange({"add_minmax_index_for_temporal_columns", metadata.add_minmax_index_for_temporal_columns}, context, /*is_loading_from_existing_metadata=*/true);
+            effective_settings.applyChange({"add_minmax_index_for_block_number_column", metadata.add_minmax_index_for_block_number_column}, context, /*is_loading_from_existing_metadata=*/true);
+            effective_settings.applyChange({"add_minmax_index_for_block_offset_column", metadata.add_minmax_index_for_block_offset_column}, context, /*is_loading_from_existing_metadata=*/true);
+
             metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
             metadata.add_minmax_index_for_string_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
             metadata.add_minmax_index_for_temporal_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
             metadata.add_minmax_index_for_block_number_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_number_column] && effective_settings[MergeTreeSetting::enable_block_number_column];
             metadata.add_minmax_index_for_block_offset_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column] && effective_settings[MergeTreeSetting::enable_block_offset_column];
 
-            for (const auto & column : metadata.columns)
+            /// A settings-only ALTER that changes only virtual-column settings must not rebuild
+            /// physical-column indices. A preceding MODIFY COLUMN may have deliberately removed
+            /// an implicit index because its files were built for the previous column definition.
+            if (std::ranges::any_of(settings_changes, changes_column_implicit_index_policy))
             {
-                metadata.dropImplicitIndicesForColumn(column.name);
-                metadata.addImplicitIndicesForColumn(column, context);
+                for (const auto & column : metadata.columns)
+                {
+                    metadata.dropImplicitIndicesForColumn(column.name);
+                    metadata.addImplicitIndicesForColumn(column, context);
+                }
             }
             metadata.dropImplicitIndicesForVirtualColumns();
             metadata.addImplicitIndicesForVirtualColumns(context);

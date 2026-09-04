@@ -10,7 +10,7 @@ DROP TABLE IF EXISTS t_nullif_pruning;
 CREATE TABLE t_nullif_pruning (team UInt64, k UInt8) 
 ENGINE = MergeTree 
 ORDER BY (team, k) 
-SETTINGS index_granularity = 8192;
+SETTINGS index_granularity = 8192, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_nullif_pruning SELECT 1, number % 200 FROM numbers(2000000);
 OPTIMIZE TABLE t_nullif_pruning FINAL;
@@ -37,7 +37,7 @@ DROP TABLE IF EXISTS t_nullif_fixedstring;
 
 -- Regression test for Partition Pruning
 DROP TABLE IF EXISTS t_nullif_partition;
-CREATE TABLE t_nullif_partition (p UInt8, v UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY v SETTINGS index_granularity = 8192;
+CREATE TABLE t_nullif_partition (p UInt8, v UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY v SETTINGS index_granularity = 8192, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_nullif_partition SELECT number % 10, number FROM numbers(2000000);
 OPTIMIZE TABLE t_nullif_partition FINAL;
 
@@ -46,7 +46,7 @@ DROP TABLE t_nullif_partition;
 
 -- Regression test for MinMax Skip Index Pruning
 DROP TABLE IF EXISTS t_nullif_skip_index;
-CREATE TABLE t_nullif_skip_index (id UInt64, s UInt8, INDEX idx_s s TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
+CREATE TABLE t_nullif_skip_index (id UInt64, s UInt8, INDEX idx_s s TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192, add_minmax_index_for_numeric_columns = 0;
 -- Shape data monotonically so each granule contains a distinct narrow minmax range
 INSERT INTO t_nullif_skip_index SELECT number, toUInt8(number / 8192) FROM numbers(2000000);
 OPTIMIZE TABLE t_nullif_skip_index FINAL;
@@ -58,7 +58,7 @@ DROP TABLE IF EXISTS t_nullif_skip_index;
 -- and prune granules. This fails if tryRewriteNullIfComparison is removed.
 DROP TABLE IF EXISTS t_nullif_coalesce;
 CREATE TABLE t_nullif_coalesce (a Nullable(UInt8), b UInt8, INDEX idx_b b TYPE minmax GRANULARITY 1)
-ENGINE = MergeTree ORDER BY b SETTINGS index_granularity = 3;
+ENGINE = MergeTree ORDER BY b SETTINGS index_granularity = 3, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_nullif_coalesce VALUES (NULL,1),(NULL,2),(NULL,3),(NULL,5),(NULL,6),(NULL,7),(NULL,250),(NULL,251),(NULL,252);
 SET use_skip_indexes_for_disjunctions = 1;
 -- nullIf(b, 255) = 5 must prune via idx_b (non-trivial condition, reduced granules)

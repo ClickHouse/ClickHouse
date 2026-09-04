@@ -6,6 +6,7 @@
 #include <DataTypes/IDataType.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
@@ -648,13 +649,34 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         new_metadata.secondary_indices = std::move(new_indices);
     }
 
+    /// An implicit index of an expression alias contains values of the alias expression rather
+    /// than those of the physical column. A metadata-only ALTER that transitions into or out of
+    /// such an alias leaves existing part files stale, so do not recreate the identically named
+    /// index on a replica either. This mirrors the local ALTER path in `AlterCommand`.
+    const auto is_expression_alias = [](const ColumnDescription & column)
+    {
+        return column.default_desc.kind == ColumnDefaultKind::Alias
+            && column.default_desc.expression && !column.default_desc.expression->as<ASTIdentifier>();
+    };
+
+    std::unordered_set<String> stale_implicit_index_columns;
+    for (const auto & column : new_metadata.columns)
+    {
+        if (old_metadata.columns.has(column.name)
+            && is_expression_alias(old_metadata.columns.get(column.name)) != is_expression_alias(column))
+            stale_implicit_index_columns.insert(column.name);
+    }
+
     /// Regenerate implicit indices for the new columns regardless of whether indices were explicitly changed.
     /// Implicit indices are not stored in ZooKeeper, so they must be recreated locally based on the current
     /// columns and table settings.
     /// Note: addImplicitIndicesForColumn checks for existing minmax indices on each column and won't create
     /// duplicates if an explicit index already exists.
     for (const auto & column : new_metadata.columns)
-        new_metadata.addImplicitIndicesForColumn(column, context);
+    {
+        if (!stale_implicit_index_columns.contains(column.name))
+            new_metadata.addImplicitIndicesForColumn(column, context);
+    }
     new_metadata.addImplicitIndicesForVirtualColumns(context);
 
     if (!ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)

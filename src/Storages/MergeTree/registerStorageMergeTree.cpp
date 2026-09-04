@@ -991,6 +991,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     || metadata.add_minmax_index_for_temporal_columns
                     || metadata.add_minmax_index_for_block_number_column
                     || metadata.add_minmax_index_for_block_offset_column;
+                const bool has_explicit_implicit_index_setting =
+                       (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns].changed
+                    || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns].changed
+                    || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_temporal_columns].changed
+                    || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_block_number_column].changed
+                    || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_block_offset_column].changed;
                 if (using_auto_minmax_index && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
                 {
                     if (args.mode <= LoadingStrictnessLevel::CREATE)
@@ -998,15 +1004,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
                     /// Backward compatibility: older versions (before 25.12) stored implicit indices
                     /// on disk as regular indices. Re-mark them so `explicitToString` excludes them.
-                    auto & added = metadata.secondary_indices.back();
-                    String col_name = index_name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
-                    if (columns.has(col_name))
+                    if (has_explicit_implicit_index_setting)
                     {
-                        const auto & col_type = columns.get(col_name).type;
-                        if ((metadata.add_minmax_index_for_numeric_columns && isNumber(col_type))
-                            || (metadata.add_minmax_index_for_string_columns && isString(col_type))
-                            || (metadata.add_minmax_index_for_temporal_columns && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(col_type)))
-                            added.is_implicitly_created = true;
+                        auto & added = metadata.secondary_indices.back();
+                        String col_name = index_name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
+                        if (columns.has(col_name))
+                        {
+                            const auto & col_type = columns.get(col_name).type;
+                            if ((metadata.add_minmax_index_for_numeric_columns && isNumber(col_type))
+                                || (metadata.add_minmax_index_for_string_columns && isString(col_type))
+                                || (metadata.add_minmax_index_for_temporal_columns && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(col_type)))
+                                added.is_implicitly_created = true;
+                        }
                     }
                 }
             }

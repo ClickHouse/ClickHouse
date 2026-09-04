@@ -12,7 +12,9 @@
 
 DROP TABLE IF EXISTS t_merge_dp;
 DROP TABLE IF EXISTS m_merge_dp;
-CREATE TABLE t_merge_dp (x UInt64) ENGINE = MergeTree ORDER BY tuple();
+-- The size heuristic below counts the rows that survive index analysis, so the implicit minmax
+-- index on `x` would prune `WHERE x = 3` down to a single granule and keep the read local.
+CREATE TABLE t_merge_dp (x UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS add_minmax_index_for_numeric_columns = 0;
 -- Large enough that the distributed conversion does not keep the read local by the size heuristic.
 INSERT INTO t_merge_dp SELECT number FROM numbers(100000);
 CREATE TABLE m_merge_dp (x UInt64) ENGINE = Merge(currentDatabase(), '^t_merge_dp$');

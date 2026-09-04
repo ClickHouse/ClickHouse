@@ -75,7 +75,11 @@ def test_default_codec_single(start_cluster):
         CREATE TABLE compression_table (
             key UInt64,
             data1 String CODEC(Default)
-        ) ENGINE = ReplicatedMergeTree('/t', '{}') ORDER BY tuple() PARTITION BY key;
+        ) ENGINE = ReplicatedMergeTree('/t', '{}') ORDER BY tuple() PARTITION BY key
+        -- The test pins the codec chosen by the `<compression>` size cases; an implicit
+        -- minmax index on `key` adds files to the part and pushes a tiny part over the
+        -- `min_part_size = 1024` boundary, so opt out of it here.
+        SETTINGS add_minmax_index_for_numeric_columns = 0;
         """.format(
                 i
             )
@@ -240,7 +244,9 @@ def test_default_codec_multiple(start_cluster):
         CREATE TABLE compression_table_multiple (
             key UInt64,
             data1 String CODEC(NONE, Default)
-        ) ENGINE = ReplicatedMergeTree('/d', '{}') ORDER BY tuple() PARTITION BY key;
+        ) ENGINE = ReplicatedMergeTree('/d', '{}') ORDER BY tuple() PARTITION BY key
+        -- See the comment in `test_default_codec_single`.
+        SETTINGS add_minmax_index_for_numeric_columns = 0;
         """.format(
                 i
             ),

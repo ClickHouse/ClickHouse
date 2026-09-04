@@ -16,7 +16,7 @@ DROP TABLE IF EXISTS t_commit_order_snapshot SYNC;
 CREATE TABLE t_commit_order_snapshot
 (
     a UInt64,
-    PROJECTION commit_order INDEX * TYPE commit_order
+    PROJECTION commit_order INDEX * TYPE commit_order WITH SETTINGS (add_minmax_index_for_numeric_columns = 0)
 )
 ENGINE = MergeTree
 ORDER BY a
@@ -27,7 +27,8 @@ SETTINGS enable_block_number_column = 1,
          add_minmax_index_for_block_number_column = 1,
          add_minmax_index_for_block_offset_column = 1,
          index_granularity = 1,
-         merge_selector_algorithm = 'Manual';
+         merge_selector_algorithm = 'Manual',
+         add_minmax_index_for_numeric_columns = 0; -- the plan below pins the exact set of skip indices
 
 INSERT INTO t_commit_order_snapshot SELECT number FROM numbers(16); -- all_1_1_0
 INSERT INTO t_commit_order_snapshot SELECT number FROM numbers(16); -- all_2_2_0

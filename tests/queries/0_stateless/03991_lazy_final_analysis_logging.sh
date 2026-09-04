@@ -13,7 +13,7 @@ settings="--enable_analyzer=1"
 $CLICKHOUSE_CLIENT $settings -q "
     DROP TABLE IF EXISTS t_lazy_log;
     CREATE TABLE t_lazy_log (key UInt64, version UInt64, category UInt8, payload String)
-    ENGINE = ReplacingMergeTree(version) ORDER BY key SETTINGS index_granularity = 64;
+    ENGINE = ReplacingMergeTree(version) ORDER BY key SETTINGS index_granularity = 64, add_minmax_index_for_numeric_columns = 0;
     SYSTEM STOP MERGES t_lazy_log;
 
     -- Concentrated: category=1 only for keys 0..49

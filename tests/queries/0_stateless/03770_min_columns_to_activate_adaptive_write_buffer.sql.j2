@@ -15,7 +15,7 @@ create table metric_log_{{ v }}
     m{{i}} UInt64,
 {% endfor %}
 )
-engine=MergeTree order by () settings min_columns_to_activate_adaptive_write_buffer={{ v }}, min_bytes_for_wide_part=1e9, enable_vertical_merge_algorithm=0, auto_statistics_types='';
+engine=MergeTree order by () settings min_columns_to_activate_adaptive_write_buffer={{ v }}, min_bytes_for_wide_part=1e9, enable_vertical_merge_algorithm=0, auto_statistics_types='', add_minmax_index_for_numeric_columns=0;
 
 insert into metric_log_{{ v }} select * from generateRandom() limit 1 settings max_memory_usage = '50Mi' /* usually few 10MiB */;
 optimize table metric_log_{{ v }} final;

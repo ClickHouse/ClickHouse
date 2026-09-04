@@ -119,7 +119,7 @@ def test_system_logs_recreate():
             )
             assert "ENGINE = MergeTree" in create_table_sql
             assert "ENGINE = `Null`" not in create_table_sql
-            assert "SETTINGS storage_policy = 'system_tables'" in create_table_sql
+            assert "storage_policy = 'system_tables'" in create_table_sql
             assert (
                 len(
                     node.query(f"SHOW TABLES FROM system LIKE '{table}%'")

@@ -34,7 +34,7 @@ SELECT count() FROM system.primes WHERE ifNull(prime < 100, 1) SETTINGS max_rows
 -- Partition pruning: granularity 1 so each row is its own granule. The bare predicate selects 1 of 4
 -- parts; the falsy-fallback wrappers prune identically; the truthy fallback does not (keeps 4/4).
 DROP TABLE IF EXISTS t_ifnull_part;
-CREATE TABLE t_ifnull_part (p UInt8, v UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY v SETTINGS index_granularity = 1;
+CREATE TABLE t_ifnull_part (p UInt8, v UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY v SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_ifnull_part SELECT number % 4, number FROM numbers(40);
 
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_ifnull_part WHERE p = 1) WHERE explain LIKE '%Parts%' OR explain LIKE '%Granules%';
@@ -46,7 +46,7 @@ DROP TABLE t_ifnull_part;
 
 -- Minmax skip index: the wrapped comparison must prune through the index exactly like the bare one.
 DROP TABLE IF EXISTS t_ifnull_mm;
-CREATE TABLE t_ifnull_mm (k UInt64, x UInt64, INDEX idx x TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+CREATE TABLE t_ifnull_mm (k UInt64, x UInt64, INDEX idx x TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_ifnull_mm SELECT number, number FROM numbers(40);
 
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_ifnull_mm WHERE x = 7) WHERE explain LIKE '%Name%' OR explain LIKE '%Granules%';

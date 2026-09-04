@@ -10,7 +10,7 @@ SET allow_key_condition_coalesce_rewrite = 1;
 
 DROP TABLE IF EXISTS t_ifnull_keycond;
 CREATE TABLE t_ifnull_keycond (team_id UInt64, k UInt8, s String)
-ENGINE = MergeTree ORDER BY (team_id, k, s) SETTINGS index_granularity = 8192;
+ENGINE = MergeTree ORDER BY (team_id, k, s) SETTINGS index_granularity = 8192, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_ifnull_keycond SELECT 1, number % 5, toString(number) FROM numbers(200000);
 
 -- Bare comparison: the primary key builds a `k in [0, 0]` range.
@@ -58,7 +58,7 @@ DROP TABLE t_ifnull_keycond;
 -- kept (2 rows).
 DROP TABLE IF EXISTS t_ifnull_nullable;
 CREATE TABLE t_ifnull_nullable (k Nullable(UInt8)) ENGINE = MergeTree ORDER BY k
-SETTINGS allow_nullable_key = 1, index_granularity = 1;
+SETTINGS allow_nullable_key = 1, index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_ifnull_nullable VALUES (0)(1)(NULL);
 
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_nullable WHERE ifNull(equals(k, 0), 0)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
@@ -75,7 +75,7 @@ DROP TABLE t_ifnull_nullable;
 -- (2 rows); a wrongly-dropped wrapper could prune the `NULL` granule on the functional key and lose it.
 DROP TABLE IF EXISTS t_ifnull_value_ctx;
 CREATE TABLE t_ifnull_value_ctx (k Nullable(UInt8)) ENGINE = MergeTree ORDER BY equals(k, 0)
-SETTINGS allow_nullable_key = 1, index_granularity = 1;
+SETTINGS allow_nullable_key = 1, index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_ifnull_value_ctx VALUES (0)(1)(NULL);
 
 SELECT count() FROM t_ifnull_value_ctx WHERE equals(ifNull(equals(k, 0), 0), 0);
