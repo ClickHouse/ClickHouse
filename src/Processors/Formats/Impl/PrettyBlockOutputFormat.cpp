@@ -426,7 +426,11 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     : 0,
                 format_settings.pretty.max_column_name_width_min_chars_to_cut,
                 ascii);
-            width = std::min<UInt64>(format_settings.pretty.max_column_pad_width, width);
+
+            /// The recorded width must match the rendered name exactly, otherwise the group cell overruns its border:
+            /// `truncateName` keeps valid identifiers intact and may return a name that fits inside `combined` but is wider
+            /// than `output_format_pretty_max_column_pad_width` (the subcolumns combined can legitimately exceed that limit).
+            /// So the width is not clamped here; like a single column name, a tuple name widens its cell to fit.
 
             /// If the tuple name is wider than its subcolumns combined, distribute the extra width among them.
             if (width > combined)

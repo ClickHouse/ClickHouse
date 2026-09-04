@@ -71,3 +71,8 @@ FROM numbers(3) FORMAT PrettyCompact;
 
 -- A Nullable tuple with an element that cannot represent NULL keeps the single-cell rendering.
 SELECT materialize((1, (2, 3)))::Nullable(Tuple(a UInt8, inner Tuple(m UInt8, n UInt8))) AS t FORMAT PrettyCompact;
+
+-- A long non-identifier tuple name that fits inside the combined width of wide subcolumns, but exceeds
+-- output_format_pretty_max_column_pad_width, is rendered exactly as accounted: the header and footer stay aligned.
+SELECT (repeat('x', 130), repeat('y', 130))::Tuple(a String, b String) AS `the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces end`
+FORMAT PrettyCompact SETTINGS output_format_pretty_display_footer_column_names_min_rows = 1;

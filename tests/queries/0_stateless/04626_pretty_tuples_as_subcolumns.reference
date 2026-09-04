@@ -169,3 +169,8 @@ t: (1,'world')
    │↳  }         ↴│
    │↳}            │
    └──────────────┘
+   ┌─the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces end─────────┐
+   ├─a──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─b──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+1. │ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx │ yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy │
+   ├─a──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴─b──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+   └─the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces end─────────┘
