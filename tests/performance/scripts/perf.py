@@ -1135,6 +1135,9 @@ for query_index in queries_to_run:
 
     # Perform profile runs for fixed amount of time. Don't limit the number
     # of runs, because we also have short queries.
+    # These runs are for observability only (CPU/memory flamegraphs of queries
+    # already classified as changed); their timings never enter the comparison,
+    # so the profiling overhead does not affect the results above.
     profile_start_seconds = time.perf_counter()
     run = 0
     profile_budget_reached = False
