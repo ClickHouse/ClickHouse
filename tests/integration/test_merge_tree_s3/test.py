@@ -216,6 +216,7 @@ def s3_cancellation_table(cluster):
     node = cluster.instances["node"]
     table = f"s3_cancellation_{uuid.uuid4().hex}"
     create_table(node, table, min_bytes_for_wide_part=0)
+    node.query(f"ALTER TABLE {table} ADD PROJECTION id_projection INDEX id TYPE basic")
     node.query(
         f"INSERT INTO {table} SELECT toDate('2020-01-01'), number, repeat('x', 1024) FROM numbers(4096)"
     )
@@ -231,6 +232,11 @@ S3_CANCELLATION_SETTINGS = (
 REFINER_SETTINGS = (
     "max_rows_to_read=0, max_rows_to_read_leaf=0, use_query_condition_cache=0, "
     "use_skip_indexes=1, use_skip_indexes_on_data_read=1, use_indexes_refiner_in_read_pools=1"
+)
+PROJECTION_INDEX_SETTINGS = (
+    "max_rows_to_read=0, max_rows_to_read_leaf=0, use_query_condition_cache=0, "
+    "use_skip_indexes=0, use_skip_indexes_on_data_read=0, use_indexes_refiner_in_read_pools=1, "
+    "optimize_use_projections=1, optimize_use_projection_filtering=1, min_table_rows_to_use_projection_index=0"
 )
 
 
@@ -362,7 +368,27 @@ def test_prefetch_stops_after_native_client_cancel(s3_cancellation_table):
     )
 
 
-def test_prefetch_stops_after_partial_result_cancel(s3_cancellation_table):
+@pytest.mark.parametrize(
+    "predicate,index_settings",
+    [
+        (
+            "",
+            "use_skip_indexes=0, use_skip_indexes_on_data_read=0, optimize_use_projection_filtering=0",
+        ),
+        (
+            " WHERE id < 2048",
+            f"{REFINER_SETTINGS}, optimize_use_projection_filtering=0",
+        ),
+        (
+            " WHERE id < 2048",
+            PROJECTION_INDEX_SETTINGS,
+        ),
+    ],
+    ids=["prefetched", "skip-index", "projection-index"],
+)
+def test_prefetch_stops_after_partial_result_cancel(
+    s3_cancellation_table, predicate, index_settings
+):
     node, table = s3_cancellation_table
     query_id = uuid.uuid4().hex
     s3_failpoint = "s3_read_before_get_object"
@@ -373,7 +399,8 @@ def test_prefetch_stops_after_partial_result_cancel(s3_cancellation_table):
     query_request = node.get_query_request(
         make_s3_cancellation_query(
             table,
-            extra_settings="allow_prefetched_read_pool_for_remote_filesystem=1, "
+            predicate,
+            extra_settings=f"{index_settings}, allow_prefetched_read_pool_for_remote_filesystem=1, "
             "partial_result_on_first_cancel=1",
         ),
         query_id=query_id,

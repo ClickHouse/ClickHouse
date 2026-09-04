@@ -44,6 +44,14 @@ namespace FailPoints
 
 namespace
 {
+std::shared_ptr<std::atomic_bool> getOrCreateReadCancellation(const MergeTreeReaderSettings & reader_settings)
+{
+    if (reader_settings.read_settings.read_cancelled)
+        return reader_settings.read_settings.read_cancelled;
+
+    return std::make_shared<std::atomic_bool>(false);
+}
+
 MergeTreeReaderSettings withReadCancellation(
     const MergeTreeReaderSettings & reader_settings, const std::shared_ptr<std::atomic_bool> & read_cancelled)
 {
@@ -77,7 +85,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , row_level_filter(row_level_filter_)
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
-    , read_cancelled(std::make_shared<std::atomic_bool>(false))
+    , read_cancelled(getOrCreateReadCancellation(reader_settings_))
     , reader_settings(withReadCancellation(reader_settings_, read_cancelled))
     , column_names(column_names_)
     , pool_settings(pool_settings_)
@@ -107,7 +115,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , mutations_snapshot(std::move(mutations_snapshot_))
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
-    , read_cancelled(std::make_shared<std::atomic_bool>(false))
+    , read_cancelled(getOrCreateReadCancellation(reader_settings_))
     , reader_settings(withReadCancellation(reader_settings_, read_cancelled))
     , column_names(column_names_)
     , pool_settings(pool_settings_)

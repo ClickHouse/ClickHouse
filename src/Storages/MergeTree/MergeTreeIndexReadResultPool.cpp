@@ -544,6 +544,7 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
 
 void SingleProjectionIndexReader::cancel() noexcept
 {
+    projection_index_read_pool->cancelReading();
     processor->cancel();
 }
 

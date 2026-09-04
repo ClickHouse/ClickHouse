@@ -140,9 +140,9 @@ struct ReadSettings
     /// For 'pread_threadpool'/'io_uring' method and async prefetch. Lower value is higher priority.
     Priority priority;
 
-    /// Stops reads owned by one read pool without cancelling the whole query. This is used when
+    /// Stops reads owned by one `MergeTree` read step without cancelling the whole query. This is used when
     /// the client requests a partial result and the processors already in flight must be drained.
-    std::shared_ptr<const std::atomic_bool> read_cancelled;
+    std::shared_ptr<std::atomic_bool> read_cancelled;
 
     bool isReadCancelled() const
     {
