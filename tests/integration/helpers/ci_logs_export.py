@@ -503,18 +503,44 @@ def _setup_for_instance(cluster, instance):
     test_name = _test_name(cluster)
     expression = _extra_columns_expression(test_name, instance.name)
 
-    # Materialize all configured system log tables before reading their structure
-    instance.query("SYSTEM FLUSH LOGS", timeout=120)
+    # Every `instance.query` starts its own `clickhouse-client` process, which
+    # costs about half a second regardless of the work the statement does. The
+    # setup runs for every server of every test, so it is two round trips
+    # (discovery, then all the DDL at once) rather than one round trip per log
+    # table: with the ~17 log tables of a default instance, the latter added
+    # ~11 s per server, which is most of an integration test job's wall clock.
+    tables = _discover_log_tables(instance)
 
-    tables = []
+    exportable = _ensure_remote_tables(cluster.client_bin_path, tables)
+    if not exportable:
+        return
+
+    active = _create_senders_and_watchers(instance, tables, exportable, expression)
+
+    instance.ci_logs_export_tables = active
+    logging.info(
+        "CI logs export: enabled on %s/%s for tables: %s",
+        test_name,
+        instance.name,
+        ", ".join(active),
+    )
+
+
+def _discover_log_tables(instance):
+    """The system log tables of an instance: their names, the structure hashes
+    of their destination tables and the statements that create those. The log
+    tables are materialized first: most of them are created lazily on the first
+    flush, and a table that does not exist yet has neither a structure to hash
+    nor anything for a materialized view to attach to."""
     output = instance.query(
-        LOG_TABLES_QUERY,
+        "SYSTEM FLUSH LOGS;\n" + LOG_TABLES_QUERY,
         # formatQuery throws on statements longer than max_query_size, and the
         # CREATE statement of a wide log table (e.g. system.metric_log with
         # per-column comments) exceeds the default of 256 KiB
         settings={"param_extra_columns": EXTRA_COLUMNS, "max_query_size": "33554432"},
         timeout=120,
     )
+    tables = []
     for line in output.splitlines():
         if not line.strip():
             continue
@@ -526,47 +552,53 @@ def _setup_for_instance(cluster, instance):
                 _adapt_create_statement(row["table"], row["hash"], row["statement"]),
             )
         )
+    return tables
 
-    exportable = _ensure_remote_tables(cluster.client_bin_path, tables)
-    if not exportable:
-        return
 
+# The names of the `_watcher` views that exist on the instance, i.e. the tables
+# whose export is actually running. It is appended to the DDL batch instead of
+# assuming that every statement of the batch succeeded, so that a partial
+# failure gives a correct list rather than one that makes the shutdown flush
+# fail on a `_sender` table which was never created.
+ACTIVE_TABLES_QUERY = (
+    "SELECT name FROM system.tables WHERE database = 'system' AND endsWith(name, '_watcher')"
+)
+
+
+def _create_senders_and_watchers(instance, tables, exportable, expression):
     cluster_name = _cluster_name()
-    active = []
+    statements = []
     for table, hash_value, _ in tables:
         if table not in exportable:
             continue
-        try:
-            instance.query(
-                f"""
-                CREATE TABLE IF NOT EXISTS system.{table}_sender
-                ENGINE = Distributed({cluster_name}, 'default', '{table}_{hash_value}')
-                SETTINGS flush_on_detach = 0
-                EMPTY AS SELECT {expression}, * FROM system.{table};
+        statements.append(
+            f"""
+            CREATE TABLE IF NOT EXISTS system.{table}_sender
+            ENGINE = Distributed({cluster_name}, 'default', '{table}_{hash_value}')
+            SETTINGS flush_on_detach = 0
+            EMPTY AS SELECT {expression}, * FROM system.{table};
 
-                CREATE MATERIALIZED VIEW IF NOT EXISTS system.{table}_watcher
-                TO system.{table}_sender
-                DEFINER = {SENDER_USER}
-                AS SELECT {expression}, * FROM system.{table};
-                """,
-                timeout=60,
-            )
-        except Exception:
-            logging.warning(
-                "CI logs export: failed to create the sender/watcher for %s on %s",
-                table,
-                instance.name,
-                exc_info=True,
-            )
-            continue
-        active.append(table)
-
-    instance.ci_logs_export_tables = active
-    logging.info(
-        "CI logs export: enabled on %s/%s for tables: %s",
-        test_name,
-        instance.name,
-        ", ".join(active),
+            CREATE MATERIALIZED VIEW IF NOT EXISTS system.{table}_watcher
+            TO system.{table}_sender
+            DEFINER = {SENDER_USER}
+            AS SELECT {expression}, * FROM system.{table};
+            """
+        )
+    if not statements:
+        return []
+    try:
+        output = instance.query("".join(statements) + ACTIVE_TABLES_QUERY, timeout=300)
+    except Exception:
+        logging.warning(
+            "CI logs export: failed to create the sender/watcher tables on %s",
+            instance.name,
+            exc_info=True,
+        )
+        # The statements before the failing one did take effect
+        output = instance.query(ACTIVE_TABLES_QUERY, timeout=60)
+    suffix = "_watcher"
+    return sorted(
+        line[: -len(suffix)] for line in output.split() if line.endswith(suffix)
     )
 
 
