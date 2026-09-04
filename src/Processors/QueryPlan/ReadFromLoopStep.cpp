@@ -166,10 +166,9 @@ public:
             ///
             /// The scope names this `loop` and not the relation it wraps: one query can hold several
             /// `loop` of the same table or view, for instance in two `UNION ALL` branches, and those are
-            /// different joins that must be counted apart. `ReadFromLoopStep::getUniqID` names the step
-            /// that made this source, which is built once for the query and lives across every pass, so
-            /// it is the same name for all the passes of one `loop` and a different one for every other
-            /// `loop` of the query.
+            /// different joins that must be counted apart. The name was taken while the pipeline that
+            /// holds this `loop` was assembled, so it also stays the same when that pipeline is itself
+            /// assembled again, e.g. a `loop` in the `SELECT` of a materialized view.
             QueryExecutionCounters::RepeatedPipelineBuildScope repeated_build_scope(repeated_build_scope_name);
 
             auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
@@ -278,7 +277,7 @@ Pipe ReadFromLoopStep::makePipe()
 {
     return Pipe(std::make_shared<LoopSource>(
             column_names, query_info, storage_snapshot, context, processed_stage, inner_storage, inner_table_function_ast, max_block_size,
-            num_streams, getUniqID()));
+            num_streams, QueryExecutionCounters::makeScopeForPipelineBuiltLater("loop")));
 }
 
 void ReadFromLoopStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

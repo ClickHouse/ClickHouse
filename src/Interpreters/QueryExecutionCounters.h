@@ -36,6 +36,20 @@ struct QueryExecutionCounters
     /// like `ie_join`. `kind` and `strictness` must be the ones the query asked for.
     static void addExecutedJoin(JoinKind kind, JoinStrictness strictness, std::string_view algorithm);
 
+    /// Names a pipeline that is not assembled here, but will be assembled - and assembled again - while
+    /// the query runs: the relation of a `loop` and the recursive member of a recursive CTE are built by
+    /// their source, long after the pipeline that holds them was put together. The name is meant for the
+    /// `RepeatedPipelineBuildScope` that the source opens around each of those builds.
+    ///
+    /// Must be called while the pipeline that holds the operator is being assembled, because the name is
+    /// taken from where the operator sits in that assembly: two operators of one query are given
+    /// different names, and one operator is given the same name every time the holding pipeline is
+    /// assembled again. That is what keeps the joins rebuilt by the source counted once even when the
+    /// pipeline around them is itself rebuilt, e.g. a `loop` in the `SELECT` of a materialized view.
+    ///
+    /// `kind` only makes the name readable, it does not have to be unique.
+    static String makeScopeForPipelineBuiltLater(std::string_view kind);
+
     /// Records an algorithm a join switched to while the query was already running, so that both the
     /// original one and this one are reported.
     static void addUsedJoinAlgorithm(JoinAlgorithm algorithm);
@@ -63,6 +77,7 @@ struct QueryExecutionCounters
     private:
         String scope_to_restore;
         size_t registered_joins_to_restore;
+        size_t named_pipelines_to_restore;
     };
 
     /// A consistent copy of all the counters. `join_kinds` and `join_strictness` are positionally aligned

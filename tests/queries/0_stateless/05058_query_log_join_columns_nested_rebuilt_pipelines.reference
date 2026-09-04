@@ -1,0 +1,4 @@
+a recursive CTE with one join, in the SELECT of a materialized view
+4
+1
+05058_nested_recursive_cte_in_a_view	1	['HASH']

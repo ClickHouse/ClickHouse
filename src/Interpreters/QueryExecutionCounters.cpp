@@ -5,6 +5,8 @@
 #include <Interpreters/TableJoin.h>
 #include <Common/CurrentThread.h>
 
+#include <fmt/format.h>
+
 #include <utility>
 
 namespace DB
@@ -29,11 +31,22 @@ thread_local String repeated_pipeline_build_scope;
 /// only the left side.
 thread_local size_t joins_registered_by_current_build = 0;
 
+/// How many pipelines that are assembled later the build running on this thread has named so far, see
+/// `makeScopeForPipelineBuiltLater`. A counter of its own, so that naming one does not move the ordinals
+/// of the joins around it.
+///
+/// It is reset by a scope, exactly like the ordinals of the joins, which is what makes the names stable
+/// when a pipeline is assembled more than once. Outside a scope it simply keeps counting: there the
+/// holding pipeline is assembled once, so the only thing the name has to do is tell the operators of
+/// that one assembly apart.
+thread_local size_t pipelines_named_by_current_build = 0;
+
 }
 
 QueryExecutionCounters::RepeatedPipelineBuildScope::RepeatedPipelineBuildScope(String scope)
     : scope_to_restore(std::exchange(repeated_pipeline_build_scope, std::move(scope)))
     , registered_joins_to_restore(std::exchange(joins_registered_by_current_build, 0))
+    , named_pipelines_to_restore(std::exchange(pipelines_named_by_current_build, 0))
 {
 }
 
@@ -41,6 +54,19 @@ QueryExecutionCounters::RepeatedPipelineBuildScope::~RepeatedPipelineBuildScope(
 {
     repeated_pipeline_build_scope = std::move(scope_to_restore);
     joins_registered_by_current_build = registered_joins_to_restore;
+    pipelines_named_by_current_build = named_pipelines_to_restore;
+}
+
+String QueryExecutionCounters::makeScopeForPipelineBuiltLater(std::string_view kind)
+{
+    const size_t ordinal = pipelines_named_by_current_build++;
+
+    /// Inside a scope the name is qualified by it, so that a `loop` of one materialized view is not the
+    /// `loop` of another one that happens to sit in the same position of its own pipeline.
+    if (repeated_pipeline_build_scope.empty())
+        return fmt::format("{}#{}", kind, ordinal);
+
+    return fmt::format("{}/{}#{}", repeated_pipeline_build_scope, kind, ordinal);
 }
 
 void QueryExecutionCounters::addExecutedJoin(const IJoin & join)

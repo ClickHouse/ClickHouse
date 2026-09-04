@@ -199,6 +199,12 @@ private:
             /// counted once instead of once per iteration, which would otherwise make
             /// `used_number_of_joins` grow with the recursion depth.
             ///
+            /// `repeated_build_scope_name` names this recursive CTE and not the name the query gave it:
+            /// that is only an alias, and one query may hold several independent `WITH RECURSIVE` that
+            /// chose the same one. The name was taken while the pipeline that holds this CTE was
+            /// assembled, so it also stays the same when that pipeline is itself assembled again, e.g. a
+            /// recursive CTE in the `SELECT` of a materialized view.
+            ///
             /// The non-recursive member is left outside the scope on purpose: it is built exactly once,
             /// so it needs no deduplication, and it is a different subquery, so sharing the scope of the
             /// recursive member would make the two sets of joins share ordinals and hide one of them.
@@ -278,12 +284,12 @@ private:
     bool finished = false;
 };
 
-RecursiveCTESource::RecursiveCTESource(SharedHeader header, QueryTreeNodePtr recursive_cte_union_node_)
+RecursiveCTESource::RecursiveCTESource(
+    SharedHeader header, QueryTreeNodePtr recursive_cte_union_node_, String repeated_build_scope_name_)
     : ISource(header)
-{
-    generator = std::make_unique<RecursiveCTEChunkGenerator>(
-        std::move(header), std::move(recursive_cte_union_node_), getUniqID());
-}
+    , generator(std::make_unique<RecursiveCTEChunkGenerator>(
+          std::move(header), std::move(recursive_cte_union_node_), std::move(repeated_build_scope_name_)))
+{}
 
 RecursiveCTESource::~RecursiveCTESource() = default;
 
