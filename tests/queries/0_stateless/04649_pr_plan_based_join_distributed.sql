@@ -35,15 +35,19 @@ SELECT 'LEFT', count() FROM jd_l LEFT JOIN jd_r ON jd_l.id = jd_r.id SETTINGS pa
 SELECT 'RIGHT', count() FROM jd_l RIGHT JOIN jd_r ON jd_l.id = jd_r.id SETTINGS parallel_replicas_local_plan = 0;
 SELECT 'RIGHT', count() FROM jd_l RIGHT JOIN jd_r ON jd_l.id = jd_r.id SETTINGS parallel_replicas_local_plan = 1;
 
--- The initiator's own copy of the shipped fragment is a clone, every replica's copy arrives over the
--- wire. Both must be in the same optimizer state: a replica that re-orders an already-ordered join
--- can pick a different join algorithm, hence a different read type for the coordinated side than the
--- one the initiator registered with the coordinator. A fixed join-order randomization seed makes the
--- two build the query graph in opposite orders; the algorithm list has to offer both a sorting and a
--- hash algorithm for the sides to be able to disagree, and one thread keeps the read to one split.
+-- The initiator keeps its own copy of the shipped fragment as a clone while every replica receives a
+-- serialized copy, and both have to arrive in the same optimizer state: a replica that re-orders an
+-- already ordered join can pick a different join algorithm, hence a different read type for the
+-- coordinated side than the one the initiator registered with the coordinator. Every setting below is
+-- pinned because the runner randomizes it and the disagreement needs all of them: the seed makes the
+-- two sides build the query graph in opposite orders, the algorithm list lets them disagree about
+-- sorting, one thread keeps the coordinated read to a single split, and the last four hold the swap,
+-- the in-order read, the reordering and the runtime filter the disagreement is built out of.
 SELECT 'RIGHT seeded', count() FROM jd_l RIGHT JOIN jd_r ON jd_l.id = jd_r.id
 SETTINGS parallel_replicas_local_plan = 1, query_plan_optimize_join_order_randomize = 906884,
-         join_algorithm = 'full_sorting_merge,grace_hash', max_threads = 1;
+         join_algorithm = 'full_sorting_merge,grace_hash', max_threads = 1,
+         query_plan_join_swap_table = 'auto', optimize_read_in_order = 1,
+         query_plan_optimize_join_order_limit = 10, enable_join_runtime_filters = 1;
 
 -- LEFT SEMI / ANTI: distributed, correct.
 SELECT 'LEFT SEMI', count() FROM jd_l LEFT SEMI JOIN jd_r ON jd_l.id = jd_r.id SETTINGS parallel_replicas_local_plan = 0;

@@ -2263,10 +2263,9 @@ void JoinStepLogical::serialize(Serialization & ctx) const
     join_operator.serialize(ctx.out, actions_dag.get());
     serializeNodeList(ctx.out, actions_dag->getNodeToIdMap(), actions_after_join);
 
-    /// The optimizer state that `clone` preserves, minus `disjunctions_optimization_applied`. It is
-    /// omitted for a cache key: `right_hash_table_cache_key` is the output of that hashing, and
-    /// `optimized` and the estimates differ between the single-node and the distributed plan build,
-    /// which is the hash matching that mode exists to keep intact.
+    /// A step that crosses the wire arrives in the same optimizer state as one produced by `clone`.
+    /// The state is left out of a plan cache key because `optimized` and the estimates differ between
+    /// the single-node and the parallel-replicas plan build, and those two builds have to hash alike.
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_OPTIMIZER_STATE && !ctx.for_cache_key)
     {
         UInt8 optimizer_flags = 0;
@@ -2281,12 +2280,23 @@ void JoinStepLogical::serialize(Serialization & ctx) const
         if (result_rows_estimation.has_value())
             writeVarUInt(*result_rows_estimation, ctx.out);
 
-        writeVarUInt(result_column_stats.size(), ctx.out);
+        /// `result_column_stats` is unordered, and the serialized bytes of one plan are a function of
+        /// the plan alone.
+        std::vector<std::pair<std::string_view, const ColumnStats *>> sorted_column_stats;
+        sorted_column_stats.reserve(result_column_stats.size());
         for (const auto & [column_name, column_stats] : result_column_stats)
+            sorted_column_stats.emplace_back(column_name, &column_stats);
+        std::sort(sorted_column_stats.begin(), sorted_column_stats.end(), [](const auto & lhs, const auto & rhs)
+        {
+            return lhs.first < rhs.first;
+        });
+
+        writeVarUInt(sorted_column_stats.size(), ctx.out);
+        for (const auto & [column_name, column_stats] : sorted_column_stats)
         {
             writeStringBinary(column_name, ctx.out);
-            writeVarUInt(column_stats.num_distinct_values, ctx.out);
-            writeFloatBinary(column_stats.avg_bytes, ctx.out);
+            writeVarUInt(column_stats->num_distinct_values, ctx.out);
+            writeFloatBinary(column_stats->avg_bytes, ctx.out);
         }
 
         writeIntBinary(right_hash_table_cache_key, ctx.out);
@@ -2349,7 +2359,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     SortingStep::Settings sort_settings(ctx.settings);
     JoinSettings join_settings(ctx.settings);
 
-    auto result_step = std::make_unique<JoinStepLogical>(
+    auto step = std::make_unique<JoinStepLogical>(
         std::move(left_header),
         std::move(right_header),
         std::move(join_operator),
@@ -2367,7 +2377,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         {
             UInt64 result_rows_estimation = 0;
             readVarUInt(result_rows_estimation, ctx.in);
-            result_step->result_rows_estimation = result_rows_estimation;
+            step->result_rows_estimation = result_rows_estimation;
         }
 
         size_t num_column_stats = 0;
@@ -2379,22 +2389,22 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
             ColumnStats column_stats;
             readVarUInt(column_stats.num_distinct_values, ctx.in);
             readFloatBinary(column_stats.avg_bytes, ctx.in);
-            result_step->result_column_stats.emplace(std::move(column_name), column_stats);
+            step->result_column_stats.emplace(std::move(column_name), column_stats);
         }
 
-        readIntBinary(result_step->right_hash_table_cache_key, ctx.in);
-        readIntBinary(result_step->join_output_cache_key, ctx.in);
+        readIntBinary(step->right_hash_table_cache_key, ctx.in);
+        readIntBinary(step->join_output_cache_key, ctx.in);
 
-        result_step->left_relation = deserializeRelationEstimateInfo(ctx.in);
-        result_step->right_relation = deserializeRelationEstimateInfo(ctx.in);
+        step->left_relation = deserializeRelationEstimateInfo(ctx.in);
+        step->right_relation = deserializeRelationEstimateInfo(ctx.in);
 
-        readStringBinary(result_step->table_stats_hint, ctx.in);
+        readStringBinary(step->table_stats_hint, ctx.in);
 
-        result_step->optimized = bool(optimizer_flags & 1);
-        result_step->imprecise_estimate = bool(optimizer_flags & 2);
+        step->optimized = bool(optimizer_flags & 1);
+        step->imprecise_estimate = bool(optimizer_flags & 2);
     }
 
-    return result_step;
+    return step;
 }
 
 QueryPlanStepPtr JoinStepLogical::clone() const

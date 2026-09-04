@@ -215,7 +215,8 @@ protected:
     JoinSettings join_settings;
     SortingStep::Settings sorting_settings;
 
-    /// Runtime info, do not serialize
+    /// Join optimizer state. A copy of this step, whether made by `clone` or taken over the wire,
+    /// carries it, so that whoever receives the copy does not optimize an already optimized join.
 
     bool optimized = false;
     std::optional<UInt64> result_rows_estimation = {};
@@ -233,6 +234,7 @@ protected:
     /// Table statistics hint passed via query parameter, consumed by the Cascades optimizer.
     String table_stats_hint;
 
+    /// Runtime info, do not serialize
 
     std::unique_ptr<JoinAlgorithmParams> join_algorithm_params;
     VolumePtr tmp_volume;
