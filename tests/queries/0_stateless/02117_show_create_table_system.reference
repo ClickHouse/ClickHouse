@@ -168,6 +168,7 @@ CREATE TABLE system.databases
     `engine_full` String,
     `comment` String,
     `is_external` UInt8,
+    `rows` Nullable(UInt64),
     `database` String ALIAS name
 )
 ENGINE = SystemDatabases

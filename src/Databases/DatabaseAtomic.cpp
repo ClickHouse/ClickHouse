@@ -47,6 +47,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int UNFINISHED;
+    extern const int TOO_MANY_ROWS;
 }
 
 
@@ -276,7 +277,12 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         other_db.ensurePopulated();
 
     if (!inside_database)
+    {
         other_db.createDirectories();
+        /// Row-limit checks below use the exact table total of both databases.
+        /// Wait before taking either database mutex because startup itself takes it.
+        other_db.waitDatabaseStarted();
+    }
 
     String old_metadata_path = getObjectMetadataPath(table_name);
     String new_metadata_path = to_database.getObjectMetadataPath(to_table_name);
@@ -319,6 +325,24 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         if (const auto * ts = dynamic_cast<const StorageTimeSeries *>(table_.get()))
             if (ts->hasInnerTables())
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move TimeSeries table with inner tables to other database");
+    };
+
+    /// RENAME/EXCHANGE bypasses createTable's checkRowsLimit, so enforce `max_rows` on the
+    /// destination here. Callers already hold `moved_into_db.mutex`.
+    auto check_rows_limit_after_move = [](DatabaseAtomic & moved_into_db, const String & moved_table_name, UInt64 outgoing_rows, UInt64 incoming_rows)
+        TSA_REQUIRES(moved_into_db.mutex)
+    {
+        if (incoming_rows <= outgoing_rows)
+            return;
+        const UInt64 limit = moved_into_db.getMaxRows();
+        if (limit == 0)
+            return;
+        const UInt64 new_rows = moved_into_db.getCurrentRowCountUnlocked() - outgoing_rows + incoming_rows;
+        if (new_rows > limit)
+            throw Exception(
+                ErrorCodes::TOO_MANY_ROWS,
+                "Moving table {}.{} would exceed the row limit (database setting `max_rows`) of {}: it would have {} rows",
+                backQuote(moved_into_db.database_name), backQuote(moved_table_name), limit, new_rows);
     };
 
     String table_data_path;
@@ -364,6 +388,14 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         other_table_new_id = {database_name, table_name, other_table->getStorageID().uuid};
         other_table->checkTableCanBeRenamed(other_table_new_id);
         assert_can_move_mat_view(other_table);
+    }
+
+    if (!inside_database)
+    {
+        const UInt64 table_rows = table->rowsForDatabaseLimit();
+        const UInt64 other_table_rows = exchange ? other_table->rowsForDatabaseLimit() : 0;
+        check_rows_limit_after_move(*this, table_name, table_rows, other_table_rows);
+        check_rows_limit_after_move(other_db, to_table_name, other_table_rows, table_rows);
     }
 
     /// Table renaming actually begins here

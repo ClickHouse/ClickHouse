@@ -3029,6 +3029,11 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, local_context, renamed_parts);
 
+    UInt64 incoming_rows = 0;
+    for (const auto & part : loaded_parts)
+        incoming_rows += part->rows_count;
+    checkDatabaseRowsLimit(incoming_rows);
+
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
         LOG_INFO(log, "Attaching part {} from {}", loaded_parts[i]->name, renamed_parts.old_and_new_names[i].new_dir);
@@ -3176,6 +3181,19 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             "or use `ALTER TABLE ... DROP PARTITION` if you intend to drop the destination data.",
             source_table->getStorageID().getNameForLogs(), partition_id);
     }
+
+    UInt64 incoming_rows = 0;
+    for (const auto & part : src_parts)
+        incoming_rows += part->rows_count;
+
+    UInt64 outgoing_rows = 0;
+    if (replace)
+    {
+        const auto destination_parts = getVisibleDataPartsVectorInPartition(local_context, partition_id);
+        for (const auto & part : destination_parts)
+            outgoing_rows += part->rows_count;
+    }
+    checkDatabaseRowsLimit(incoming_rows, outgoing_rows);
 
     MutableDataPartsVector dst_parts;
     std::vector<scope_guard> dst_parts_locks;
@@ -3334,8 +3352,9 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             dest_table_storage->getStorageID().getNameForLogs(),
             dest_table_storage->getStoragePolicy()->getName());
 
-    // Use the same back-pressure (delay/throw) logic as for INSERTs to be consistent and avoid possibility of exceeding part limits using MOVE PARTITION queries
-    dest_table_storage->delayInsertOrThrowIfNeeded(nullptr, local_context, true);
+    // Preserve the part-count and dead-blob back-pressure used by INSERTs. The database row
+    // limit is checked below with the moved rows and its corresponding outgoing rows.
+    dest_table_storage->delayInsertOrThrowIfNeeded(nullptr, local_context, true, true, false);
     const auto & settings = local_context->getSettingsRef();
     auto lock1 = lockForShare(local_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
     auto lock2 = dest_table->lockForShare(local_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
@@ -3371,6 +3390,12 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     }
 
     src_data.assertNoPatchesForParts(src_parts, src_patch_parts, "MOVE PARTITION " + partition_id);
+
+    UInt64 moved_rows = 0;
+    for (const auto & part : src_parts)
+        moved_rows += part->rows_count;
+    const UInt64 outgoing_rows = getStorageID().getDatabaseName() == dest_table_storage->getStorageID().getDatabaseName() ? moved_rows : 0;
+    dest_table_storage->checkDatabaseRowsLimit(moved_rows, outgoing_rows);
 
     if (src_parts.size() > settings[Setting::max_parts_to_move])
     {

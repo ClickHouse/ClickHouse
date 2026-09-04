@@ -823,6 +823,8 @@ public:
     size_t getTotalActiveSizeInRows() const;
     size_t getTotalUncompressedBytesInPatches() const;
 
+    UInt64 rowsForDatabaseLimit() const override { return getTotalActiveSizeInRows(); }
+
     /// All-or-nothing aggregate of per-part `SerializationInfo::Data` for `column_name`:
     /// returns nullopt unless every visible part has exact stats (see `SparsityFilter.h`).
     std::optional<ColumnDefaultnessStats>
@@ -879,7 +881,20 @@ public:
     /// With allow_delay = false, only the throw checks are performed and the function never sleeps:
     /// this is for a check on the query thread before the insert pipeline is built, where a sleep
     /// would run once per parallel sink stream instead of once per query.
-    void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay = true) const;
+    void delayInsertOrThrowIfNeeded(
+        Poco::Event * until,
+        const ContextPtr & query_context,
+        bool allow_throw,
+        bool allow_delay = true,
+        bool check_database_rows_limit = true) const;
+
+    /// Whether the owning database has a non-zero `max_rows` limit. Cheap guard for callers that
+    /// would otherwise do extra work (e.g. ZooKeeper lookups) just to prepare the check below.
+    bool hasDatabaseRowsLimit() const;
+
+    /// Throw if adding `incoming_rows` to this table's database, after removing
+    /// `outgoing_rows` from the same database, would exceed `max_rows`.
+    void checkDatabaseRowsLimit(UInt64 incoming_rows, UInt64 outgoing_rows = 0) const;
 
     /// If the table contains too many unfinished mutations, sleep for a while to give them time to execute.
     /// If until is non-null, wake up from the sleep earlier if the event happened.

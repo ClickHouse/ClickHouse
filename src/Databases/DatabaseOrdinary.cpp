@@ -44,6 +44,15 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+
+std::optional<UInt64> DatabaseOrdinary::getCurrentRowCount() const
+{
+    /// Async database startup keeps not-yet-loaded tables outside `tables`. Complete it
+    /// before calculating an exact total for the row-accounted engines.
+    waitDatabaseStarted();
+    std::lock_guard lock(mutex);
+    return getCurrentRowCountUnlocked();
+}
 namespace Setting
 {
     extern const SettingsBool allow_deprecated_database_ordinary;
@@ -75,6 +84,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNKNOWN_TABLE;
+    extern const int BAD_ARGUMENTS;
     extern const int QUERY_IS_TOO_LARGE;
 }
 
@@ -82,6 +92,20 @@ namespace DatabaseMetadataDiskSetting
 {
 extern const DatabaseMetadataDiskSettingsBool lazy_load_tables;
 extern const DatabaseMetadataDiskSettingsString disk;
+extern const DatabaseMetadataDiskSettingsUInt64 max_rows;
+}
+
+namespace
+{
+/// `max_rows` needs table row counts, which lazy loading defers until first access.
+void checkMaxRowsNotLazy(UInt64 max_rows, bool lazy_load_tables)
+{
+    if (max_rows != 0 && lazy_load_tables)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Database settings `max_rows` and `lazy_load_tables` cannot be enabled together: a lazily-loaded "
+            "table's row count is unknown until it is accessed");
+}
 }
 
 
@@ -113,6 +137,11 @@ DatabaseOrdinary::DatabaseOrdinary(
         metadata_disk_ptr = getContext()->getDisk(database_metadata_disk_settings[DatabaseMetadataDiskSetting::disk].value);
     else
         metadata_disk_ptr = getContext()->getDatabaseDisk();
+
+    /// Publish the `max_rows` limit, read by the ATTACH and INSERT checks.
+    const UInt64 max_rows_setting = database_metadata_disk_settings[DatabaseMetadataDiskSetting::max_rows].value;
+    checkMaxRowsNotLazy(max_rows_setting, database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables]);
+    max_rows.store(max_rows_setting, std::memory_order_relaxed);
 
     LOG_INFO(log, "Metadata disk {}, path {}", metadata_disk_ptr->getName(), metadata_disk_ptr->getPath());
 }
@@ -745,6 +774,36 @@ StoragePtr DatabaseOrdinary::detachTableUnlocked(const String & table_name)
     auto table = DatabaseWithOwnTablesBase::detachTableUnlocked(table_name);
     eraseAsyncLoadState(table_name);
     return table;
+}
+
+void DatabaseOrdinary::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context)
+{
+    auto component_guard = Coordination::setCurrentComponent("DatabaseOrdinary::applySettingsChanges");
+
+    /// Only `Atomic`/`Ordinary` populate these settings; `Replicated` keeps metadata in ZooKeeper.
+    if (getEngineName() != "Atomic" && getEngineName() != "Ordinary")
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "ALTER DATABASE ... MODIFY SETTING is not supported for the {} database engine", getEngineName());
+
+    for (const auto & change : settings_changes)
+        if (change.name != "max_rows")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Database engine {} does not support altering setting `{}`; only `max_rows` can be altered",
+                getEngineName(), change.name);
+
+    /// Validate/convert on a copy first (type-checks, e.g. rejects a negative `max_rows`) so nothing
+    /// is mutated if the change is invalid or the guard below fails.
+    DatabaseMetadataDiskSettings validated = database_metadata_disk_settings;
+    validated.applyChanges(settings_changes);
+    const UInt64 new_max_rows = validated[DatabaseMetadataDiskSetting::max_rows].value;
+    checkMaxRowsNotLazy(new_max_rows, database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables]);
+
+    /// Persist to disk first, then publish in memory, so a write failure leaves them consistent.
+    modifySettingsMetadata(settings_changes, query_context);
+    database_metadata_disk_settings.applyChanges(settings_changes);
+    max_rows.store(new_max_rows, std::memory_order_relaxed);
 }
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)

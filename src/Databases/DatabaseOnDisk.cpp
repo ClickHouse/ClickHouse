@@ -27,6 +27,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageTimeSeries.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -77,6 +78,7 @@ namespace ErrorCodes
     extern const int DATABASE_NOT_EMPTY;
     extern const int INCORRECT_QUERY;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int TOO_MANY_ROWS;
 }
 
 
@@ -233,6 +235,16 @@ void DatabaseOnDisk::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
+    createTableImpl(local_context, table_name, table, query, true);
+}
+
+void DatabaseOnDisk::createTableImpl(
+    ContextPtr local_context,
+    const String & table_name,
+    const StoragePtr & table,
+    const ASTPtr & query,
+    bool check_rows_limit)
+{
     auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::createTable");
     ensurePopulated();
     auto db_disk = getDisk();
@@ -258,6 +270,12 @@ void DatabaseOnDisk::createTable(
             ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists", backQuote(getDatabaseName()), backQuote(table_name));
 
     waitDatabaseStarted();
+
+    /// Enforce `max_rows` on ATTACH. After waitDatabaseStarted() so the count sees
+    /// background-loaded tables (async_load_databases); after the name-collision check but
+    /// before the `attach_short_syntax` early return, so a real `ATTACH TABLE t` is covered.
+    if (check_rows_limit)
+        checkRowsLimit(table, table_name);
 
     String table_metadata_path = getObjectMetadataPath(table_name);
 
@@ -304,6 +322,30 @@ void DatabaseOnDisk::createTable(
 
     commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path, local_context);
     removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, false);
+}
+
+void DatabaseOnDisk::checkRowsLimit(const StoragePtr & table, const String & table_name) const
+{
+    /// This is a best-effort snapshot check, not a reservation spanning the commit: concurrent
+    /// operations may each observe free headroom and transiently overshoot the limit together.
+    /// The setting is documented accordingly.
+    const UInt64 limit = getMaxRows();
+    if (limit == 0)
+        return;
+
+    /// An empty table is always allowed, even if the database is already over budget --
+    /// matching the precedent of allowing an empty CREATE.
+    const UInt64 attaching_rows = table->rowsForDatabaseLimit();
+    if (attaching_rows == 0)
+        return;
+
+    const UInt64 current_rows = getCurrentRowCount().value_or(0);
+    if (current_rows + attaching_rows > limit)
+        throw Exception(
+            ErrorCodes::TOO_MANY_ROWS,
+            "Adding table {}.{} would exceed the row limit (database setting `max_rows`) of {}: "
+            "current {} + adding {} rows",
+            backQuote(getDatabaseName()), backQuote(table_name), limit, current_rows, attaching_rows);
 }
 
 /// If the table was detached permanently we will have a flag file with
@@ -476,6 +518,8 @@ void DatabaseOnDisk::renameTable(
 
     createDirectories();
     waitDatabaseStarted();
+    if (this != &to_database)
+        to_database.waitDatabaseStarted();
 
     ensurePopulated();
     if (auto * to_database_with_own_tables = dynamic_cast<DatabaseWithOwnTablesBase *>(&to_database))
@@ -489,6 +533,15 @@ void DatabaseOnDisk::renameTable(
     StoragePtr table = getTable(table_name, local_context);
     if (dictionary && !table->isDictionary())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
+
+    if (this != &to_database)
+    {
+        if (const auto * time_series = dynamic_cast<const StorageTimeSeries *>(table.get()))
+        {
+            if (time_series->hasInnerTables())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move TimeSeries table with inner tables to other database");
+        }
+    }
 
     table_lock = table->lockExclusively(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
@@ -508,8 +561,18 @@ void DatabaseOnDisk::renameTable(
         if (from_atomic_to_ordinary)
             std::swap(create.uuid, prev_uuid);
 
-        if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
-            target_db->checkMetadataFilenameAvailability(to_table_name);
+        if (this != &to_database)
+        {
+            if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
+            {
+                target_db->checkMetadataFilenameAvailability(to_table_name);
+                target_db->checkRowsLimit(table, to_table_name);
+            }
+        }
+        else
+        {
+            checkMetadataFilenameAvailability(to_table_name);
+        }
 
         /// This place is actually quite dangerous. Since data directory is moved to store/
         /// DatabaseCatalog may try to clean it up as unused. We add UUID mapping to avoid this.
@@ -541,7 +604,15 @@ void DatabaseOnDisk::renameTable(
     }
 
     /// Now table data are moved to new database, so we must add metadata and attach table to new database
-    to_database.createTable(local_context, to_table_name, table, attach_query);
+    if (this == &to_database)
+        createTableImpl(local_context, to_table_name, table, attach_query, false);
+    else if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
+        /// The destination was checked before moving table data above. Do not repeat the
+        /// check here: a concurrent INSERT could otherwise turn a successful move into a
+        /// partial rename after the source table has already been detached.
+        target_db->createTableImpl(local_context, to_table_name, table, attach_query, false);
+    else
+        to_database.createTable(local_context, to_table_name, table, attach_query);
 
     db_disk->removeFileIfExists(table_metadata_path);
 

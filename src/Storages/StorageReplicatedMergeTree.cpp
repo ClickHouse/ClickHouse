@@ -113,6 +113,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
@@ -7621,6 +7622,12 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartitionImpl(
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, query_context, renamed_parts);
 
+    /// The database `max_rows` limit is enforced per part inside `ReplicatedMergeTreeSink::commitPart`,
+    /// once ZooKeeper deduplication is known, so that attaching a duplicate part stays a no-op even
+    /// when the database is over the limit. `SYSTEM RESTORE REPLICA` reattaches the first replica's
+    /// existing parts while readonly; those parts are already accounted for, so an over-limit
+    /// database must not prevent metadata recovery, and the check is skipped for that path.
+
     /// TODO Allow to use quorum here.
     ReplicatedMergeTreeSink output(
         /* async_insert */ false,
@@ -7634,6 +7641,45 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartitionImpl(
         query_context,
         /* is_attach */ true,
         /* allow_attach_while_readonly */ allow_attach_while_readonly);
+
+    /// All-or-nothing pre-check for the database `max_rows` limit. The per-part check inside
+    /// `commitPart` cannot roll back: parts committed earlier in the loop are already in ZooKeeper,
+    /// so failing in the middle would leave the command partially applied. Ask ZooKeeper up front
+    /// which parts are already deduplicated -- those add no rows and are excluded from the
+    /// aggregate, so attaching only duplicates stays a no-op even when the database is over the
+    /// limit -- and validate the rest together before anything is committed. The per-part check
+    /// remains the authoritative one for inserts racing with this pre-check.
+    if (deduplicate_part && !allow_attach_while_readonly && hasDatabaseRowsLimit())
+    {
+        const bool deduplicate = (*getSettings())[MergeTreeSetting::replicated_deduplication_window] != 0;
+        auto zookeeper = getZooKeeper();
+
+        UInt64 incoming_rows = 0;
+        std::unordered_set<String> seen_block_id_paths;
+        for (const auto & part : loaded_parts)
+        {
+            bool will_be_deduplicated = false;
+            if (deduplicate)
+            {
+                const std::vector<DeduplicationHash> deduplication_hashes{DeduplicationHash::createUnifiedHash(
+                    part->checksums.getTotalChecksumUInt128(), part->info.getPartitionId())};
+                for (const auto & block_id_path : getDeduplicationPaths(zookeeper_path, deduplication_hashes))
+                {
+                    /// A part that repeats another part of the same batch is deduplicated as well.
+                    if (!seen_block_id_paths.insert(block_id_path).second || zookeeper->exists(block_id_path))
+                    {
+                        will_be_deduplicated = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!will_be_deduplicated)
+                incoming_rows += part->rows_count;
+        }
+
+        checkDatabaseRowsLimit(incoming_rows);
+    }
 
     results.reserve(loaded_parts.size());
 
@@ -9347,7 +9393,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
     const MergeTreeData & src_data,
     const String & partition_id,
     const ZooKeeperPtr & zookeeper,
-    bool replace,
+    bool requested_replace,
     const bool & zero_copy_enabled,
     const bool & always_use_copy_instead_of_hardlinks,
     const ContextPtr & query_context)
@@ -9369,7 +9415,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
     /// silently drop the destination partition's data without writing anything in its place
     /// (see #23727). Reject by default; users who actually want this behavior must opt in via
     /// the `allow_replace_partition_from_empty_source` setting, or use `DROP PARTITION` instead.
-    if (replace && src_all_parts.empty()
+    if (requested_replace && src_all_parts.empty()
         && !query_context->getSettingsRef()[Setting::allow_replace_partition_from_empty_source])
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -9407,6 +9453,12 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
         MergeTreePartInfo drop_range;
         std::optional<EphemeralLockInZooKeeper> delimiting_block_lock;
         bool partition_was_empty = !getFakePartCoveringAllPartsInPartition(partition_id, drop_range, delimiting_block_lock, true);
+
+        /// Whether this attempt drops the destination partition is re-decided on every retry from
+        /// the original request and a fresh snapshot: a `ZBADVERSION` retry commits nothing, and the
+        /// destination may have been filled by a concurrent alter between attempts, in which case a
+        /// previous attempt's degradation to attach semantics must not be carried forward.
+        bool replace = requested_replace;
         if (replace && partition_was_empty)
         {
             /// Nothing to drop, will just attach new parts
@@ -9421,6 +9473,22 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
         }
 
         chassert(replace == !LogEntry::ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range));
+
+        /// For the database `max_rows` limit: rows freed by REPLACE, and rows charged so far for the
+        /// source parts that actually acquired a block number. Parts skipped as already attached
+        /// (deduplicated by their block id below) are not charged, so a duplicate or partially
+        /// duplicated ATTACH PARTITION FROM only pays for the accepted remainder.
+        /// Both counters live inside the retry loop: a `ZBADVERSION` retry commits nothing, so it
+        /// must start from zero charged rows and a fresh snapshot of the destination partition,
+        /// otherwise a benign concurrent alter would make a valid operation fail with `TOO_MANY_ROWS`.
+        UInt64 accepted_rows = 0;
+        UInt64 outgoing_rows = 0;
+        if (replace)
+        {
+            const auto destination_parts = getVisibleDataPartsVectorInPartition(query_context, partition_id);
+            for (const auto & part : destination_parts)
+                outgoing_rows += part->rows_count;
+        }
 
         scope_guard intent_guard;
         if (replace)
@@ -9471,6 +9539,12 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
                 LOG_INFO(log, "Part {} (hash {}) has been already attached", src_part->name, hash_hex);
                 continue;
             }
+
+            /// The part acquired a block number, so it will actually add rows: charge it against
+            /// the database `max_rows` limit before cloning. Throwing here is safe: the block
+            /// number locks are ephemeral and released on unwind, and no rows were added yet.
+            accepted_rows += src_part->rows_count;
+            checkDatabaseRowsLimit(accepted_rows, outgoing_rows);
 
             UInt64 index = lock.getNumber();
             MergeTreePartInfo dst_part_info(partition_id, index, index, getLevelForAdoptedPart(src_data, src_part->info.level));
@@ -9662,8 +9736,9 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                         this->getStoragePolicy()->getName(), getStorageID().getNameForLogs(),
                         dest_table_storage->getStoragePolicy()->getName());
 
-    // Use the same back-pressure (delay/throw) logic as for INSERTs to be consistent and avoid possibility of exceeding part limits using MOVE PARTITION queries
-    dest_table_storage->delayInsertOrThrowIfNeeded(nullptr, query_context, true);
+    // Preserve the part-count and dead-blob back-pressure used by INSERTs. The database row
+    // limit is checked below with the moved rows and its corresponding outgoing rows.
+    dest_table_storage->delayInsertOrThrowIfNeeded(nullptr, query_context, true, true, false);
 
     auto lock1 = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto lock2 = dest_table->lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -9717,6 +9792,12 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         }
 
         assertNoPatchesForParts(src_all_parts, src_patch_parts, "MOVE PARTITION " + partition_id);
+
+        UInt64 moved_rows = 0;
+        for (const auto & part : src_all_parts)
+            moved_rows += part->rows_count;
+        const UInt64 outgoing_rows = getStorageID().getDatabaseName() == dest_table_storage->getStorageID().getDatabaseName() ? moved_rows : 0;
+        dest_table_storage->checkDatabaseRowsLimit(moved_rows, outgoing_rows);
 
         if (covering_part)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got part {} covering drop range {}, it's a bug",

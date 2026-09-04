@@ -91,6 +91,17 @@ public:
     void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
 
 protected:
+    void createTableImpl(
+        ContextPtr context,
+        const String & table_name,
+        const StoragePtr & table,
+        const ASTPtr & query,
+        bool check_rows_limit);
+
+    /// Throw if adding `table` (via ATTACH or as a rename destination) would push this database's
+    /// active-row total past `max_rows`. No-op when `max_rows` is 0 or the engine is not row-accounted.
+    void checkRowsLimit(const StoragePtr & table, const String & table_name) const;
+
     static constexpr const char * create_suffix = ".tmp";
     static constexpr const char * drop_suffix = ".tmp_drop";
     static constexpr const char * detached_suffix = ".detached";
