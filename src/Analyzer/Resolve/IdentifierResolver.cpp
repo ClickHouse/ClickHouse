@@ -1143,10 +1143,11 @@ QueryTreeNodePtr IdentifierResolver::getUnaliasedSubqueryOrTableFunctionSource(c
     return nullptr;
 }
 
-/** An identifier that resolves to different expressions from several table expressions of a join can be disambiguated
-  * only by qualifying it with the name or alias of the table expression. A subquery, union or table function without
-  * an alias has no such name, so with `joined_subquery_requires_alias` enabled the ambiguity is reported as a missing
-  * alias instead of being reported as a plain ambiguity or silently resolved by `single_join_prefer_left_table`.
+/** An identifier that resolves to a column of several table expressions of a join can be pinned to one of them only by
+  * qualifying it with the name or alias of that table expression. A subquery, union or table function without an alias
+  * has no such name, so with `joined_subquery_requires_alias` enabled the ambiguity is reported as a missing alias
+  * instead of being reported as a plain ambiguity or silently resolved by `single_join_prefer_left_table` or by
+  * `choseSideForEqualIdenfifiersFromJoin`.
   *
   * This is the only situation where the missing alias matters: an identifier that resolves from a single table
   * expression does not need to be qualified, so no alias is required for it.
@@ -1217,6 +1218,15 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
 
         if (resolve_result.resolved_identifier->isEqual(*identifier.resolved_identifier, IQueryTreeNode::CompareOptions{.compare_aliases = false}))
         {
+            /** Two structurally equal table expressions still hold different rows of the result: a cross join pairs
+              * every row of one operand with every row of the other, so which operand the identifier binds to is
+              * observable. `choseSideForEqualIdenfifiersFromJoin` below picks that operand by which of the two carries
+              * an alias, so for an unaliased subquery or table function the result would depend on an alias that
+              * cannot be written for it. Require the alias, exactly as for the plainly ambiguous case below.
+              */
+            throwIfAmbiguousIdentifierFromUnaliasedTableExpression(
+                identifier_lookup, table_expression_node, resolve_result.resolved_identifier, identifier.resolved_identifier, scope);
+
             const auto & identifier_path_part = identifier_lookup.identifier.front();
             auto * left_resolved_identifier_column = resolve_result.resolved_identifier->as<ColumnNode>();
             auto * right_resolved_identifier_column = identifier.resolved_identifier->as<ColumnNode>();
@@ -1700,6 +1710,14 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         }
         else if (resolvedIdenfiersFromJoinAreEquals(left_resolved_identifier, right_resolved_identifier, scope))
         {
+            /** Equal lineage is not equal values: an OUTER JOIN default-fills the side that did not match, so the side
+              * chosen below is observable. `choseSideForEqualIdenfifiersFromJoin` picks it by which side carries an
+              * alias, so for an unaliased subquery or table function the result would depend on an alias that cannot
+              * be written for it. Require the alias, exactly as for the plainly ambiguous case below.
+              */
+            throwIfAmbiguousIdentifierFromUnaliasedTableExpression(
+                identifier_lookup, table_expression_node, left_resolved_identifier, right_resolved_identifier, scope);
+
             const auto & identifier_path_part = identifier_lookup.identifier.front();
             auto * left_resolved_identifier_column = left_resolved_identifier->as<ColumnNode>();
             auto * right_resolved_identifier_column = right_resolved_identifier->as<ColumnNode>();
