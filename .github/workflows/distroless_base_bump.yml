@@ -1,0 +1,123 @@
+name: DistrolessBaseDigestBump
+
+# Weekly check that keeps docker/server/Dockerfile.distroless and
+# docker/keeper/Dockerfile.distroless pinned to the current
+# gcr.io/distroless/base-nossl-debian13 digests.
+#
+# When Google publishes a new base image (the usual way a libssl3t64-style base
+# CVE gets patched upstream), this opens a PR bumping the pinned @sha256 digests.
+# Merging that PR triggers DistrolessAutoRebuild, which republishes the fleet on
+# the new base. That closes the loop: the only previously-manual step (noticing
+# an upstream base move and opening the bump PR) is automated here.
+#
+# Light job on ubuntu-latest using the built-in GITHUB_TOKEN. No PAT, and
+# deliberately not the release-maker pool: it resolves digests and opens a PR,
+# it never builds an image.
+#
+# Note: a PR opened by GITHUB_TOKEN does not itself trigger pull_request CI. A
+# reviewer kicks the checks (reopen, or push an empty commit) before merging.
+
+"on":
+  schedule:
+    - cron: '0 0 * * 1'  # Mondays 00:00 UTC, ahead of the Mon/Wed/Fri scanner pass
+  workflow_dispatch: {}
+
+concurrency:
+  group: distroless-base-digest-bump
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  BASE_IMAGE: gcr.io/distroless/base-nossl-debian13
+  DOCKERFILES: docker/server/Dockerfile.distroless docker/keeper/Dockerfile.distroless
+  PR_BRANCH: distroless/base-digest-bump
+
+jobs:
+  BumpBaseDigest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: ClickHouse/checkout@v1
+        with:
+          ref: master
+
+      - name: Bump pinned base digests and open a PR if they moved
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          read -ra dfiles <<< "${DOCKERFILES}"
+
+          changed=0
+          summary=""
+
+          # base-nossl-debian13 ships two tags we pin: nonroot (production stage)
+          # and debug-nonroot (debug stage). Resolve each tag's current multi-arch
+          # index digest and rewrite the pinned @sha256 across both Dockerfiles.
+          for tag in nonroot debug-nonroot; do
+            new_digest=$(docker buildx imagetools inspect "${BASE_IMAGE}:${tag}" --format '{{.Manifest.Digest}}')
+            if [[ ! "$new_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "ERROR: could not resolve a valid digest for ${BASE_IMAGE}:${tag} (got '${new_digest}')"
+              exit 1
+            fi
+
+            # Current pinned digest for this tag (both Dockerfiles share it).
+            old_digest=$(grep -hoE "${BASE_IMAGE}:${tag}@sha256:[0-9a-f]{64}" "${dfiles[@]}" \
+              | head -1 | grep -oE 'sha256:[0-9a-f]{64}')
+            if [ -z "${old_digest}" ]; then
+              echo "ERROR: no pinned digest found for ${BASE_IMAGE}:${tag} in the Dockerfiles"
+              exit 1
+            fi
+
+            if [ "${old_digest}" = "${new_digest}" ]; then
+              echo "${tag}: up to date (${new_digest})"
+              continue
+            fi
+
+            echo "${tag}: ${old_digest} -> ${new_digest}"
+            for f in "${dfiles[@]}"; do
+              sed -i "s|${BASE_IMAGE}:${tag}@${old_digest}|${BASE_IMAGE}:${tag}@${new_digest}|g" "${f}"
+            done
+            summary="${summary}- \`${tag}\`: \`${old_digest}\` -> \`${new_digest}\`"$'\n'
+            changed=1
+          done
+
+          if [ "${changed}" -eq 0 ]; then
+            echo "All base digests already current — nothing to do."
+            exit 0
+          fi
+
+          # Refresh the "# Pinned <date>." breadcrumb the Dockerfiles carry.
+          today=$(date -u +%Y-%m-%d)
+          for f in "${dfiles[@]}"; do
+            sed -i "s|# Pinned [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\.|# Pinned ${today}.|g" "${f}"
+          done
+
+          git config user.name  "robot-clickhouse"
+          git config user.email "robot-clickhouse@users.noreply.github.com"
+          git checkout -B "${PR_BRANCH}"
+          git add "${dfiles[@]}"
+          git commit -m "Bump distroless base image digests"
+
+          # Authenticate the push explicitly so it does not depend on checkout's
+          # credential persistence.
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin "${PR_BRANCH}"
+
+          body=$(printf '%s\n\n%s\n' \
+            "Bumps the pinned \`${BASE_IMAGE}\` base image digests to the latest published upstream. Merging triggers \`DistrolessAutoRebuild\`, which republishes the distroless fleet on the new base." \
+            "${summary}")
+
+          if gh pr view "${PR_BRANCH}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "PR already open for ${PR_BRANCH}; the force-push updated it."
+          else
+            printf '%s' "${body}" | gh pr create \
+              --repo "${GITHUB_REPOSITORY}" \
+              --base master \
+              --head "${PR_BRANCH}" \
+              --title "Bump distroless base image digests" \
+              --body-file -
+          fi
