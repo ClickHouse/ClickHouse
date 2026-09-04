@@ -1464,6 +1464,26 @@ Max size of all broken parts, if more - deny automatic deletion.
 Possible values:
 - Any positive integer.
 )", 0) \
+    DECLARE(Bool, detach_broken_parts_after_failed_merge, false, R"(
+Only for non-replicated MergeTree tables. If a merge or a read fails with an error indicating data corruption
+(`UNKNOWN_CODEC`, `CHECKSUM_DOESNT_MATCH`, `CANNOT_DECOMPRESS`, `CANNOT_READ_ALL_DATA`, etc.),
+validate checksums of the suspicious part in the background (the same check as `CHECK TABLE ... PART`),
+and if the part is confirmed to be broken, detach it: move it to the `detached` directory with the `broken_` prefix.
+
+Without this setting a failed merge is retried indefinitely (the corrupted part is never quarantined and blocks
+merges of the partition forever). Detaching the part does not destroy any data (the files are preserved in `detached`),
+unblocks merges in the affected partition, and makes the damage visible in `system.detached_parts`.
+
+As a safety measure, the number and the total size of automatically detached parts are limited by the
+[max_suspicious_broken_parts](#max_suspicious_broken_parts) and
+[max_suspicious_broken_parts_bytes](#max_suspicious_broken_parts_bytes) settings, so that e.g. whole-disk
+corruption does not silently detach an entire table.
+
+Has no effect on ReplicatedMergeTree tables: they already validate, detach and refetch broken parts from other replicas.
+
+Possible values:
+- true, false
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_max_suspicious_broken_parts, 0, R"(
 Max broken parts for SMT, if more - deny automatic detach.
 )", 0) \
