@@ -1,0 +1,59 @@
+<test>
+    <settings>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+        <enable_join_runtime_filters>1</enable_join_runtime_filters>
+    </settings>
+
+    <!-- The join key is the primary key of the probe side, which is what
+         `enable_join_runtime_filters_index_analysis` needs to prune granules. The queries of
+         join_runtime_filter.xml join on a column that is neither in the primary key nor covered
+         by a skip index, so they never reach this code path. -->
+    <create_query>CREATE TABLE fact (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE dim (k UInt64, tag String) ENGINE = MergeTree ORDER BY k</create_query>
+
+    <fill_query>INSERT INTO fact SELECT number, number % 100 FROM numbers(50000000)</fill_query>
+    <!-- `range`: 100000 contiguous keys, so the recorded [min, max] key range prunes all but a
+         few granules. `sparse`: 10 keys spread over the whole table, kept exactly, so pruning
+         happens by an IN set instead of a range. `all`: every 50th key, too many to keep
+         exactly and the range covers the whole table, so nothing can be pruned and the query
+         only pays for the second index analysis pass. -->
+    <fill_query>INSERT INTO dim SELECT 30000000 + number, 'range' FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO dim SELECT number * 5000000 + 1, 'sparse' FROM numbers(10)</fill_query>
+    <fill_query>INSERT INTO dim SELECT number * 50, 'all' FROM numbers(1000000)</fill_query>
+
+    <!-- Pruning by the recorded key range -->
+    <query>
+        SELECT sum(f.v) FROM fact AS f INNER JOIN dim AS d ON f.k = d.k WHERE d.tag = 'range'
+        SETTINGS enable_join_runtime_filters_index_analysis = 0
+    </query>
+
+    <query>
+        SELECT sum(f.v) FROM fact AS f INNER JOIN dim AS d ON f.k = d.k WHERE d.tag = 'range'
+        SETTINGS enable_join_runtime_filters_index_analysis = 1
+    </query>
+
+    <!-- Pruning by an IN set of the exact recorded key values -->
+    <query>
+        SELECT sum(f.v) FROM fact AS f INNER JOIN dim AS d ON f.k = d.k WHERE d.tag = 'sparse'
+        SETTINGS enable_join_runtime_filters_index_analysis = 0
+    </query>
+
+    <query>
+        SELECT sum(f.v) FROM fact AS f INNER JOIN dim AS d ON f.k = d.k WHERE d.tag = 'sparse'
+        SETTINGS enable_join_runtime_filters_index_analysis = 1
+    </query>
+
+    <!-- Nothing can be pruned: measures the overhead of the pass -->
+    <query>
+        SELECT sum(f.v) FROM fact AS f INNER JOIN dim AS d ON f.k = d.k WHERE d.tag = 'all'
+        SETTINGS enable_join_runtime_filters_index_analysis = 0
+    </query>
+
+    <query>
+        SELECT sum(f.v) FROM fact AS f INNER JOIN dim AS d ON f.k = d.k WHERE d.tag = 'all'
+        SETTINGS enable_join_runtime_filters_index_analysis = 1
+    </query>
+
+    <drop_query>DROP TABLE fact</drop_query>
+    <drop_query>DROP TABLE dim</drop_query>
+</test>

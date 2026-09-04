@@ -9136,9 +9136,11 @@ If, at query planning time, the probe side of a JOIN is estimated to produce no 
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(
 When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.
 )", 0) \
-    DECLARE(Bool, enable_join_runtime_filters_index_analysis, false, R"(
-Run a second pass index analysis (via use_skip_indexes_on_data_read) to prune granules on LHS of a join.
-)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_join_runtime_filters_index_analysis, true, R"(
+Prune granules on the left (probe) side of a JOIN with the runtime filter collected from the right side, see `enable_join_runtime_filters`.
+
+The pruning predicate is an `IN` set of the key values recorded by the filter, or the recorded `[min, max]` key range when there are too many values to keep exactly, see `join_runtime_filter_exact_values_limit`. It is evaluated by the second index analysis pass that runs at data read time, see `use_skip_indexes_on_data_read`, and it applies when the join key is a primary key column or is covered by a `minmax`, `set` or `bloom_filter` skip index. When the filter is not built yet the pass is skipped, so a granule is never pruned by mistake.
+)", BETA) \
     DECLARE(Bool, join_runtime_filter_size_from_hash_table_stats, true, R"(
 Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`.
 )", 0) \
