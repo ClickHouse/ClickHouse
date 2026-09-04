@@ -9709,7 +9709,7 @@ String Settings::toString(bool show_secrets) const
         if (!first)
             out << ", ";
         String value = applyVisitor(FieldVisitorToString(), setting.getValue());
-        CoreSettings::maskSettingValue(String(setting.getName()), value);
+        CoreSettings::maskSettingValue(String(setting.getName()), setting.getValue(), value);
         out << setting.getName() << " = " << value;
         first = false;
     }
@@ -9791,7 +9791,7 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
 
     const auto fill_data_for_setting = [&](std::string_view setting_name, const auto & setting)
     {
-        String value = setting.getValueString();
+        String value = setting.getValueString(show_secrets);
         mask(setting, value);
         res_columns[1]->insert(value);
         res_columns[2]->insert(setting.isValueChanged());

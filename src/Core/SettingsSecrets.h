@@ -6,6 +6,11 @@
 #include <functional>
 #include <unordered_map>
 
+namespace DB
+{
+class Field;
+}
+
 namespace DB::CoreSettings
 {
 
@@ -46,5 +51,10 @@ inline bool maskSettingValue(const String & setting_name, String & value)
     auto it = SETTINGS_TO_HIDE.find(setting_name);
     return it != SETTINGS_TO_HIDE.end() && it->second(value);
 }
+
+/// Same as above, for a sink that also has the raw `Field`. A setting value can be an AST rather
+/// than a literal, e.g. `custom_x = disk(type = 's3', secret_access_key = '...')`, and no plain
+/// `Field` formatter hides that.
+bool maskSettingValue(const String & setting_name, const Field & field, String & value);
 
 }

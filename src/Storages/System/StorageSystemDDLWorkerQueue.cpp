@@ -179,7 +179,7 @@ static void fillCommonColumns(
         {
             String value = fieldToString(change.value);
             if (!show_secrets)
-                CoreSettings::maskSettingValue(change.name, value);
+                CoreSettings::maskSettingValue(change.name, change.value, value);
 
             Tuple pair;
             pair.push_back(change.name);
