@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, use-rocksdb
+# Tags: no-fasttest, use-rocksdb, no-replicated-database
 # no-fasttest: EmbeddedRocksDB requires libraries
-# use-rocksdb: under --replicated-database every test database shares one user_files directory
+# no-replicated-database: on a replicated / shared-catalog database the DDL runs with no user, so the
+# in-storage FILE check every denied arm here relies on is a no-op and the deny path silently allows.
+# Blocked on https://github.com/ClickHouse/ClickHouse/issues/111561 - re-enable when fixed.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -9,7 +11,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # `EmbeddedRocksDB(ttl, rocksdb_dir, read_only)` with an explicit directory opens a directory under
 # `user_files`, so it needs the same `FILE` source grant as `file`: `READ` to open one, and `WRITE` as
-# well for a writable table. The argument-less form touches only the table's own data directory and
+# well whenever the statement could create it — a writable table, or a read_only one whose directory
+# does not exist yet, since the CREATE path runs `fs::create_directories` before the read-only open. The argument-less form touches only the table's own data directory and
 # stays free, and a definition replayed from stored metadata is not re-checked.
 
 # A user, a database, three user_files directories and a backup destination are global names, and the
@@ -25,6 +28,7 @@ VICTIM="${CLICKHOUSE_DATABASE}.victim_${NAME}"
 SECRET_DIR="${NAME}_secret"
 RW_DIR="${NAME}_rw"
 RESTORE_DIR="${NAME}_restore"
+MISSING_DIR="${NAME}_missing"
 BACKUP="Disk('backups', '05054_${NAME}')"
 
 # The denial assertions match the privilege sentence rather than the grant name: the client echoes the
@@ -79,6 +83,18 @@ rc=$?
 if [ "$rc" -eq 0 ] && created leak; then echo "read-only-allowed"; else echo "read-only-FAILED (unexpected): rc=$rc $out"; fi
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "SELECT * FROM ${POC}.leak"
 
+echo "--- a read_only table over a missing directory needs WRITE and does not create it ---"
+# The CREATE path runs `fs::create_directories(rocksdb_dir)` before the read-only open, so authorizing
+# this with READ alone would let a read-only source grant leave a new directory in `user_files`.
+${CLICKHOUSE_CLIENT} --user "${USER}" -q "CREATE TABLE ${POC}.missing (k String, v String) ENGINE = EmbeddedRocksDB(0, '${MISSING_DIR}', 1) PRIMARY KEY k" 2>&1 \
+    | denied_write && echo "missing-dir-denied" || echo "NOT DENIED"
+created missing && echo "CREATED ANYWAY (unexpected)" || echo "not-created"
+if [ -n "${CLICKHOUSE_USER_FILES}" ] && [ -e "${CLICKHOUSE_USER_FILES:?}/${MISSING_DIR}" ]; then
+    echo "DIRECTORY CREATED (unexpected)"
+else
+    echo "dir-absent"
+fi
+
 echo "--- a writable table needs WRITE ON FILE as well ---"
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "CREATE TABLE ${POC}.rw (k String, v String) ENGINE = EmbeddedRocksDB(0, '${RW_DIR}') PRIMARY KEY k" 2>&1 \
     | denied_write && echo "writable-denied" || echo "NOT DENIED"
@@ -116,6 +132,10 @@ echo "--- a RESTORE carries a fresh definition and is checked like CREATE ---"
 # A RESTORE supplies a definition under whoever is restoring, not one this server stored, so it is
 # checked rather than replayed.
 ${CLICKHOUSE_CLIENT} -q "GRANT READ ON FILE TO ${USER}"
+# Reading a Disk(...) backup location needs READ ON DISK, and that check runs before the
+# WRITE ON FILE one this arm asserts on. Grant it up front so the denial below is the
+# EmbeddedRocksDB FILE check and not the backup location's own.
+${CLICKHOUSE_CLIENT} -q "GRANT READ ON DISK TO ${USER}"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${POC}.restore_src (k String, v String) ENGINE = EmbeddedRocksDB(0, '${RESTORE_DIR}') PRIMARY KEY k"
 ${CLICKHOUSE_CLIENT} -q "BACKUP TABLE ${POC}.restore_src TO ${BACKUP} FORMAT Null"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${POC}.restore_src SYNC"
@@ -134,5 +154,5 @@ ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER}"
 # Dropping such a table closes its handle but leaves the directory, so remove the three this test made.
 if [ -n "${CLICKHOUSE_USER_FILES}" ]; then
     rm -rf "${CLICKHOUSE_USER_FILES:?}/${SECRET_DIR}" "${CLICKHOUSE_USER_FILES:?}/${RW_DIR}" \
-        "${CLICKHOUSE_USER_FILES:?}/${RESTORE_DIR}"
+        "${CLICKHOUSE_USER_FILES:?}/${RESTORE_DIR}" "${CLICKHOUSE_USER_FILES:?}/${MISSING_DIR}"
 fi
