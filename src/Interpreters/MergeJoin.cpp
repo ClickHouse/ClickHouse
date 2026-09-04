@@ -607,20 +607,20 @@ void addNotMatchedLeftRange(const Block & left_block, MutableColumns & left_colu
 /// block was probed, and emits every row without a set flag in `left_row_matched`.
 void addNotMatchedLeftRows(const Block & left_block, MutableColumns & left_columns,
                            const Block & right_block, MutableColumns & right_columns,
-                           const IColumn::Filter & left_row_matched)
+                           const MergeJoin::LeftMatchedBitmap & left_row_matched)
 {
-    size_t rows = left_row_matched.size();
+    size_t rows = left_row_matched.empty() ? 0 : left_block.rows();
     size_t i = 0;
     while (i < rows)
     {
-        if (left_row_matched[i])
+        if (left_row_matched.test(i))
         {
             ++i;
             continue;
         }
 
         size_t run_start = i;
-        while (i < rows && !left_row_matched[i])
+        while (i < rows && !left_row_matched.test(i))
             ++i;
         addNotMatchedLeftRange<true>(left_block, left_columns, right_block, right_columns, run_start, i);
     }
@@ -989,7 +989,7 @@ void MergeJoin::joinSortedBlock(Block & block, std::optional<NotProcessed> & not
     /// With a mixed JOIN ON condition: per-row flags of the sorted left block, set once a row
     /// produces a result row. Used to emit the first passing pair only (ANY/SEMI) and to emit
     /// non-matched rows of LEFT/FULL joins after the whole block was probed.
-    IColumn::Filter left_row_matched;
+    MergeJoin::LeftMatchedBitmap left_row_matched;
 
     size_t starting_right_block = 0;
     if (not_processed)
@@ -1018,9 +1018,9 @@ void MergeJoin::joinSortedBlock(Block & block, std::optional<NotProcessed> & not
     bool need_left_row_matched = mixed_join_expression
         && (with_left_inequals || !is_all || table_join->collectAnalyzeStats());
     if (need_left_row_matched && left_row_matched.empty())
-        left_row_matched.resize_fill(block.rows(), 0);
+        left_row_matched.reset(block.rows());
 
-    IColumn::Filter * left_row_matched_ptr = need_left_row_matched ? &left_row_matched : nullptr;
+    MergeJoin::LeftMatchedBitmap * left_row_matched_ptr = need_left_row_matched ? &left_row_matched : nullptr;
 
     if (with_left_inequals)
     {
@@ -1125,7 +1125,7 @@ static size_t maxRangeRows(size_t current_rows, size_t max_rows)
 template <bool is_all>
 bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
                          MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows,
-                         IColumn::Filter * left_row_matched)
+                         MergeJoin::LeftMatchedBitmap * left_row_matched)
 {
     const Block & right_block = *right_block_info.block;
     MergeJoinCursor right_cursor(right_block, right_merge_description);
@@ -1224,7 +1224,7 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
 
 bool MergeJoin::allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
                              MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows,
-                             IColumn::Filter * left_row_matched)
+                             MergeJoin::LeftMatchedBitmap * left_row_matched)
 {
     const Block & right_block = *right_block_info.block;
     MergeJoinCursor right_cursor(right_block, right_merge_description);
@@ -1288,7 +1288,7 @@ bool MergeJoin::allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_b
 
 bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
                              MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail,
-                             size_t & matched_rows, IColumn::Filter * left_row_matched)
+                             size_t & matched_rows, MergeJoin::LeftMatchedBitmap * left_row_matched)
 {
     const Block & right_block = *right_block_info.block;
     MergeJoinCursor right_cursor(right_block, right_merge_description);
@@ -1462,7 +1462,7 @@ ColumnPtr MergeJoin::evaluateMixedJoinExpression(const Block & left_block, size_
 bool MergeJoin::joinEqualsWithMixedCondition(const Block & left_block, RightBlockInfo & right_block_info,
                                              const Columns & right_columns_to_add_, MutableColumns & left_columns,
                                              MutableColumns & right_columns, MergeJoinEqualRange & range, size_t max_rows,
-                                             IColumn::Filter * left_row_matched, size_t & matched_rows)
+                                             MergeJoin::LeftMatchedBitmap * left_row_matched, size_t & matched_rows)
 {
     bool one_more = true;
 
@@ -1505,13 +1505,7 @@ bool MergeJoin::joinEqualsWithMixedCondition(const Block & left_block, RightBloc
             if (left_row_matched)
             {
                 for (size_t j = run_start; j < i; ++j)
-                {
-                    if (!(*left_row_matched)[range.left_start + j])
-                    {
-                        (*left_row_matched)[range.left_start + j] = 1;
-                        ++matched_rows;
-                    }
-                }
+                    matched_rows += left_row_matched->setOnce(range.left_start + j);
             }
             rows_added += i - run_start;
         }
@@ -1529,7 +1523,7 @@ bool MergeJoin::joinEqualsWithMixedCondition(const Block & left_block, RightBloc
 void MergeJoin::joinAnyWithMixedCondition(const Block & left_block, const Block & right_block,
                                           const Columns & right_columns_to_add_, MutableColumns & left_columns,
                                           MutableColumns & right_columns, const MergeJoinEqualRange & range,
-                                          IColumn::Filter & left_row_matched, size_t & matched_rows) const
+                                          MergeJoin::LeftMatchedBitmap & left_row_matched, size_t & matched_rows) const
 {
     size_t left_length = range.left_length;
 
@@ -1542,7 +1536,7 @@ void MergeJoin::joinAnyWithMixedCondition(const Block & left_block, const Block 
     {
         bool any_unmatched = false;
         for (size_t i = 0; i < left_length && !any_unmatched; ++i)
-            any_unmatched = !left_row_matched[range.left_start + i];
+            any_unmatched = !left_row_matched.test(range.left_start + i);
         if (!any_unmatched)
             return;
 
@@ -1553,7 +1547,7 @@ void MergeJoin::joinAnyWithMixedCondition(const Block & left_block, const Block 
 
         for (size_t i = 0; i < left_length; ++i)
         {
-            if (left_row_matched[range.left_start + i])
+            if (left_row_matched.test(range.left_start + i))
                 continue;
 
             for (size_t right_row = 0; right_row < chunk_length; ++right_row)
@@ -1562,7 +1556,7 @@ void MergeJoin::joinAnyWithMixedCondition(const Block & left_block, const Block 
                 {
                     copyLeftRange(left_block, left_columns, range.left_start + i, 1);
                     copyRightRange(right_columns_to_add_, right_columns, range.right_start + chunk_start + right_row, 1);
-                    left_row_matched[range.left_start + i] = 1;
+                    left_row_matched.set(range.left_start + i);
                     ++matched_rows;
                     break;
                 }
@@ -1596,7 +1590,7 @@ template <bool is_all>
 std::optional<MergeJoin::NotProcessed> MergeJoin::extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
                                     size_t left_position [[maybe_unused]], size_t left_key_tail [[maybe_unused]],
                                     size_t right_position [[maybe_unused]], size_t right_block_number [[maybe_unused]],
-                                    IColumn::Filter && left_row_matched [[maybe_unused]])
+                                    MergeJoin::LeftMatchedBitmap && left_row_matched [[maybe_unused]])
 {
     std::optional<NotProcessed> not_processed;
 
