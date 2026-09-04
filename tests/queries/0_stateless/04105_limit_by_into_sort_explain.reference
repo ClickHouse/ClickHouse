@@ -16,16 +16,19 @@ ExpressionTransform
   (LimitBy)
   LimitByTransform
     (Expression)
-    ExpressionTransform
-      (Sorting)
-      MergingSortedTransform 12 → 1
-        MergeSortingTransform × 12
-          LimitsCheckingTransform × 12
-            PartialSortingTransform × 12
-              (Expression)
-              ExpressionTransform × 12
-                (ReadFromSystemNumbers)
-                NumbersRange × 12 0 → 1
+    SortChunksBySequenceNumber 12 → 1
+      ExpressionTransform × 12
+        Resize 1 → 12
+          AddSequenceNumber
+            (Sorting)
+            MergingSortedTransform 12 → 1
+              MergeSortingTransform × 12
+                LimitsCheckingTransform × 12
+                  PartialSortingTransform × 12
+                    (Expression)
+                    ExpressionTransform × 12
+                      (ReadFromSystemNumbers)
+                      NumbersRange × 12 0 → 1
 -- `LIMIT BY` keys are a prefix of the sort keys, so the optimization adds
 -- per-stream `LimitByTransform`s before sorted streams are merged.
 -- The query plan shape stays unchanged; only the `SortingStep` metadata changes.
@@ -115,16 +118,19 @@ ExpressionTransform
   (LimitBy)
   LimitByTransform
     (Expression)
-    ExpressionTransform
-      (Sorting)
-      MergingSortedTransform 12 → 1
-        MergeSortingTransform × 12
-          LimitsCheckingTransform × 12
-            PartialSortingTransform × 12
-              (Expression)
-              ExpressionTransform × 12
-                (ReadFromSystemNumbers)
-                NumbersRange × 12 0 → 1
+    SortChunksBySequenceNumber 12 → 1
+      ExpressionTransform × 12
+        Resize 1 → 12
+          AddSequenceNumber
+            (Sorting)
+            MergingSortedTransform 12 → 1
+              MergeSortingTransform × 12
+                LimitsCheckingTransform × 12
+                  PartialSortingTransform × 12
+                    (Expression)
+                    ExpressionTransform × 12
+                      (ReadFromSystemNumbers)
+                      NumbersRange × 12 0 → 1
 DROP TABLE IF EXISTS test_mt;
 CREATE TABLE test_mt (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY (a, b);
 INSERT INTO test_mt SELECT number % 100, number FROM numbers(10000);

@@ -51,6 +51,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         /// invariant, otherwise `removeUnusedColumns` would prune the inherited inputs and
         /// trigger an infinite loop with re-inserted discarding steps.
         const bool prevent_input_removal = child_expr->isInputRemovalPrevented() || parent_expr->isInputRemovalPrevented();
+        const bool parallelize_single_stream = child_expr->isSingleStreamParallelized() || parent_expr->isSingleStreamParallelized();
 
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
 
@@ -58,6 +59,8 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         expr->setStepDescription(fmt::format("({} + {})", parent_expr->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
         if (prevent_input_removal)
             expr->setPreventInputRemoval();
+        if (parallelize_single_stream)
+            expr->setParallelizeSingleStream();
 
         parent_node->step = std::move(expr);
         parent_node->children.swap(child_node->children);
@@ -65,6 +68,9 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
     }
     if (parent_filter && child_expr)
     {
+        /// `FilterStep` has no `parallelize_single_stream`, so merging into it loses the parallel
+        /// evaluation of a lifted expression. Do not block the merge to keep it: that would also block
+        /// pushing the filter below the `SortingStep`, which saves more.
         auto & child_actions = child_expr->getExpression();
         auto & parent_actions = parent_filter->getExpression();
 

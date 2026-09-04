@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/SortChunksBySequenceNumber.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/ExpressionActions.h>
@@ -75,7 +76,20 @@ ExpressionStep::ExpressionStep(SharedHeader input_header_, ActionsDAG actions_da
 
 void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
+    /// `SortChunksBySequenceNumber` restores the order of the chunks, not the order in which the streams
+    /// reach a function, so a stateful or non-deterministic function would observe an arbitrary
+    /// interleaving.
+    const size_t num_parallel_streams = std::min(settings.max_threads, pipeline.getNumThreads());
+    const bool parallelize = parallelize_single_stream && pipeline.getNumStreams() == 1 && num_parallel_streams > 1
+        && !actions_dag.hasStatefulFunctions() && !actions_dag.hasNonDeterministic();
+
     auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
+
+    if (parallelize)
+    {
+        pipeline.addTransform(std::make_shared<AddSequenceNumber>(pipeline.getSharedHeader()));
+        pipeline.resize(num_parallel_streams);
+    }
 
     /// All streams of the pipe have the same header, so compute the transformed header once
     /// instead of in every ExpressionTransform instance: the computation is linear in the size
@@ -101,6 +115,9 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
             return std::make_shared<ExpressionTransform>(header, converted_header, convert_actions);
         });
     }
+
+    if (parallelize)
+        pipeline.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipeline.getHeader(), num_parallel_streams));
 }
 
 void ExpressionStep::describeActions(FormatSettings & settings) const
@@ -123,6 +140,8 @@ void ExpressionStep::updateOutputHeader()
     output_header = std::make_shared<const Block>(ExpressionTransform::transformHeader(*input_headers.front(), actions_dag));
 }
 
+/// `parallelize_single_stream` is left out of the wire format: it only affects performance, and adding it
+/// would need a `DBMS_QUERY_PLAN_SERIALIZATION_VERSION` bump.
 void ExpressionStep::serialize(Serialization & ctx) const
 {
     actions_dag.serialize(ctx.out, ctx.registry);
