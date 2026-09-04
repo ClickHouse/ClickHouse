@@ -744,7 +744,7 @@ static void predicateOperandsToCommonType(
     JoinActionRef & right_node,
     const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context,
-    std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors,
+    std::vector<SharedRuntimeFilterDescriptor> & shared_runtime_filter_descriptors,
     bool allow_conversion_to_subtype)
 {
     const auto & left_type = left_node.getType();
@@ -825,8 +825,11 @@ static void predicateOperandsToCommonType(
         right_node = JoinActionRef::transform({right_node}, cast_transform);
         for (auto & descriptor : shared_runtime_filter_descriptors)
         {
-            if (descriptor.second == name_before_cast)
-                descriptor.second = right_node.getColumnName();
+            if (descriptor.build_key_name == name_before_cast)
+            {
+                descriptor.build_key_name = right_node.getColumnName();
+                descriptor.common_type = common_type;
+            }
         }
     };
 
@@ -857,7 +860,7 @@ static void predicateOperandsToCommonType(
 
 static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
     std::vector<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context,
-    std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors)
+    std::vector<SharedRuntimeFilterDescriptor> & shared_runtime_filter_descriptors)
 {
     bool has_join_predicates = false;
     std::vector<JoinActionRef> new_predicates;
@@ -1115,7 +1118,7 @@ static bool tryAddDisjunctiveConditions(
     std::vector<JoinActionRef> & used_expressions,
     const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context,
-    std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors,
+    std::vector<SharedRuntimeFilterDescriptor> & shared_runtime_filter_descriptors,
     bool throw_on_error)
 {
     if (join_expressions.size() != 1)

@@ -45,41 +45,45 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     if (!filter_column_target_type->equals(*filter_column_original_type))
         cast_to_target_type = createInternalCast(filter_column, filter_column_target_type, CastType::nonAccurate, {}, nullptr);
 
+    const RuntimeFilterConfig runtime_filter_config{
+        pass_ratio_threshold_for_disabling_,
+        blocks_to_skip_before_reenabling_};
+
     if (allow_to_use_not_exact_filter_)
     {
-        if (ApproximateRuntimeFilter::isDataTypeSupported(filter_column_target_type))
+        if (AdaptiveSetRuntimeFilter::isDataTypeSupported(filter_column_target_type))
         {
-            built_filter = std::make_unique<ApproximateRuntimeFilter>(
+            built_filter = std::make_unique<RuntimeFilter>(
                 filters_to_merge_,
-                filter_column_target_type,
-                pass_ratio_threshold_for_disabling_,
-                blocks_to_skip_before_reenabling_,
-                bloom_filter_bytes_,
-                exact_values_limit_,
-                bloom_filter_hash_functions_,
-                max_ratio_of_set_bits_in_bloom_filter_,
-                distinct_keys_hint_);
+                runtime_filter_config,
+                RuntimeFilter::Adaptive(
+                    filter_column_target_type,
+                    bloom_filter_bytes_,
+                    exact_values_limit_,
+                    bloom_filter_hash_functions_,
+                    max_ratio_of_set_bits_in_bloom_filter_,
+                    distinct_keys_hint_));
         }
         else
         {
-            built_filter = std::make_unique<ExactContainsRuntimeFilter>(
+            built_filter = std::make_unique<RuntimeFilter>(
                 filters_to_merge_,
-                filter_column_target_type,
-                pass_ratio_threshold_for_disabling_,
-                blocks_to_skip_before_reenabling_,
-                bloom_filter_bytes_,
-                exact_values_limit_);
+                runtime_filter_config,
+                RuntimeFilter::ExactContains(
+                    filter_column_target_type,
+                    bloom_filter_bytes_,
+                    exact_values_limit_));
         }
     }
     else
     {
-        built_filter = std::make_unique<ExactNotContainsRuntimeFilter>(
+        built_filter = std::make_unique<RuntimeFilter>(
             filters_to_merge_,
-            filter_column_target_type,
-            pass_ratio_threshold_for_disabling_,
-            blocks_to_skip_before_reenabling_,
-            bloom_filter_bytes_,
-            exact_values_limit_);
+            runtime_filter_config,
+            RuntimeFilter::ExactNotContains(
+                filter_column_target_type,
+                bloom_filter_bytes_,
+                exact_values_limit_));
     }
 
     /// Only pay the extra min/max scan of the build side when the left side will use it for index analysis.

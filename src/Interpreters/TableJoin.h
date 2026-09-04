@@ -354,9 +354,9 @@ public:
     void setRowStoreEnabled(bool value) { enable_row_store = value; }
     bool isRowStoreEnabled() const { return enable_row_store; }
 
-    const std::vector<std::pair<String, String>> & getSharedRuntimeFilterDescriptors() const
+    const std::vector<SharedRuntimeFilterDescriptor> & getSharedRuntimeFilterDescriptors() const
     {
-        static const std::vector<std::pair<String, String>> empty;
+        static const std::vector<SharedRuntimeFilterDescriptor> empty;
         return join_operator ? join_operator->shared_runtime_filter_descriptors : empty;
     }
 
