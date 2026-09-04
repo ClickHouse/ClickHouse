@@ -36,8 +36,8 @@ SELECT 'RIGHT', count() FROM jd_l RIGHT JOIN jd_r ON jd_l.id = jd_r.id SETTINGS 
 SELECT 'RIGHT', count() FROM jd_l RIGHT JOIN jd_r ON jd_l.id = jd_r.id SETTINGS parallel_replicas_local_plan = 1;
 
 -- The initiator keeps its own copy of the shipped fragment as a clone while every replica receives a
--- serialized copy, and both have to arrive in the same optimizer state: a replica that re-orders an
--- already ordered join can pick a different join algorithm, hence a different read type for the
+-- serialized copy, and both have to know that the join order was already chosen: a replica that
+-- re-orders an already ordered join can pick a different join algorithm, hence a different read type for the
 -- coordinated side than the one the initiator registered with the coordinator. The two sides build the
 -- query graph in opposite orders, the initiator having swapped the shipped fragment and not its clone,
 -- and the seed keys the row estimate on a relation's position in that order. The algorithm list lets
