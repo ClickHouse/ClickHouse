@@ -162,12 +162,16 @@ def serializeClientInfo(ba, query_id, interface, http_method):
     ba.append(0)  # jwt: none (>= 54476)
 
 
-def sendQuery(s, query, interface, http_method, query_id):
+def sendQuery(s, query, interface, http_method, query_id, settings):
     ba = bytearray()
     writeVarUInt(1, ba)  # Query
     writeStringBinary(query_id, ba)
     serializeClientInfo(ba, query_id, interface, http_method)
-    writeStringBinary("", ba)  # empty per-query settings (they are set in the query text)
+    for key, value in settings.items():
+        writeStringBinary(key, ba)
+        writeVarUInt(1, ba)  # is_important
+        writeStringBinary(str(value), ba)
+    writeStringBinary("", ba)  # end of per-query settings
     writeStringBinary("", ba)  # interserver externally granted roles (>= 54472)
     writeStringBinary("", ba)  # interserver secret (>= 54441)
     writeVarUInt(2, ba)  # stage = Complete
@@ -203,7 +207,7 @@ def expectQueryAccepted(s):
         raise RuntimeError("Unexpected exception: {}".format(readStringBinary(s)))
 
 
-def runQuery(label, query, interface, http_method, query_id=None):
+def runQuery(label, query, interface, http_method, query_id=None, settings=None):
     query_id = query_id or uuid.uuid4().hex
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(30)
@@ -211,7 +215,7 @@ def runQuery(label, query, interface, http_method, query_id=None):
         sendHello(s)
         receiveHello(s)
         sendAddendum(s)
-        sendQuery(s, query, interface, http_method, query_id)
+        sendQuery(s, query, interface, http_method, query_id, settings or {})
         sendEmptyBlock(s)
         expectQueryAccepted(s)
     print("{}: query accepted".format(label))
@@ -222,6 +226,9 @@ def observeSelfInProcesses(label, interface, http_method):
     # and can persist what the server renders for it. That is the only way to assert on
     # `system.processes`: it holds nothing once the query has ended.
     query_id = uuid.uuid4().hex
+    # With `interactive_delay = 0` the server runs a completed pipeline without a periodic progress
+    # callback, so the first packet it sends is the one after the INSERT has committed. A client that
+    # disconnects while such a pipeline is still running has its query cancelled, losing the row.
     runQuery(
         label,
         "INSERT INTO processes_snapshot "
@@ -230,6 +237,7 @@ def observeSelfInProcesses(label, interface, http_method):
         interface,
         http_method,
         query_id,
+        settings={"interactive_delay": 0},
     )
 
 
