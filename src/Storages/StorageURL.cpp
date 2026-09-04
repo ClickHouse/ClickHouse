@@ -31,7 +31,6 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -758,11 +757,10 @@ Chunk StorageURLSource::generate()
         /// `pull` returns `false` both at the real end of the file and when the read was cancelled -
         /// for example, by the soft `max_execution_time` with the `break` overflow mode, with which
         /// the query succeeds with its partial result - see cancel. The rows read by an interrupted
-        /// read are not the row count of the file and must not poison the count cache.
-        const auto reader_status = reader->getExecutionStatus();
-        const bool read_whole_file = !isCancelled()
-            && reader_status != PipelineExecutor::ExecutionStatus::CancelledByUser
-            && reader_status != PipelineExecutor::ExecutionStatus::CancelledByTimeout;
+        /// read are not the row count of the file and must not poison the count cache. The inner
+        /// pipeline has no process list element of its own, so every cancellation which can reach
+        /// it is recorded either on this source or in its cancellation flag.
+        const bool read_whole_file = !isCancelled() && !cancellation->isCancelled();
 
         if (read_whole_file && input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && (!format_filter_info || !format_filter_info->hasFilter()))
