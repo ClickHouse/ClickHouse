@@ -3,6 +3,7 @@
 #include <Core/SettingsTierType.h>
 #include <base/types.h>
 
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -46,9 +47,17 @@ struct TableSetting
     std::vector<std::string_view> aliases;
     TableSettingOrigin origin = TableSettingOrigin::Other;
     SettingsTierType tier = SettingsTierType::PRODUCTION;
-    /// Whether the engine permits `ALTER TABLE ... MODIFY SETTING` for this setting. The user's
-    /// settings constraints are a separate question, applied by `system.table_settings`.
-    bool alterable = true;
+    /// From the current user's settings constraints. Only `MergeTreeSettings` can be constrained -
+    /// a profile reaches those through the `merge_tree_` name prefix, and there is no equivalent for
+    /// any other engine - so these stay empty elsewhere. That is not a gap peculiar to this table:
+    /// in `system.settings` and `system.merge_tree_settings` they are empty for every row until a
+    /// profile declares a constraint.
+    std::optional<String> min_value;
+    std::optional<String> max_value;
+    std::vector<String> disallowed_values;
+    /// Whether a constraint, or the engine itself, makes the setting read-only. As in the two tables
+    /// above, `false` means only that nothing marks it read-only.
+    bool readonly = false;
 };
 
 using TableSettings = std::vector<TableSetting>;

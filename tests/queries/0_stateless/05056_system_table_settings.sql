@@ -55,6 +55,22 @@ WHERE database = currentDatabase() AND table = 'mt'
   AND name IN ('index_granularity', 'allow_experimental_block_number_column', 'enable_block_number_column')
 ORDER BY name;
 
+SELECT '-- the columns shared with system.merge_tree_settings agree, except where the definition differs';
+-- A `MergeTree` table reports what `system.merge_tree_settings` reports, with the same column
+-- names, types and meanings. The one row that differs is `index_granularity`: the table's stored
+-- definition states it, because `loadFromQuery` writes the immutable settings into the `CREATE`
+-- query, so for the table it is `changed` while for the server it is not.
+SELECT name FROM (
+    SELECT name, value, `default`, changed, description, min, max, disallowed_values, readonly, type, is_obsolete, tier
+    FROM system.table_settings WHERE database = currentDatabase() AND table = 'mt' AND alias_for = ''
+    EXCEPT
+    SELECT name, value, `default`, changed, description, min, max, disallowed_values, readonly, type, is_obsolete, tier
+    FROM system.merge_tree_settings)
+ORDER BY name;
+
+SELECT '-- settings the engine makes read-only are reported as such';
+SELECT countIf(readonly) > 0 FROM system.table_settings WHERE database = currentDatabase() AND table = 'mt';
+
 SELECT '-- filtering by database reaches the scan';
 SELECT count() FROM system.table_settings WHERE database = 'database_that_does_not_exist';
 
