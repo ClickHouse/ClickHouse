@@ -48,15 +48,22 @@ queries (`CREATE`, `ALTER`, `RENAME`, `EXCHANGE`, `ATTACH`, `DETACH`, `DROP`, `T
 statements that require a privilege from the `SYSTEM` group, and `CREATE`, `ALTER` and `DROP` of users,
 roles, row policies, masking policies, quotas and settings profiles are not permitted either.
 
+Granting a privilege with `GRANT` is refused too, but not every access management statement is: `REVOKE`
+and `GRANT CURRENT GRANTS` are not gated by `readonly`, so a read-only session can still revoke a
+privilege it holds with grant option and propagate its own grants to another user.
+
 Temporary tables are exempt: a session that may create one may also insert into it and drop it.
 
 <Note>
-Any HTTP method other than `POST` implies read-only: when the effective value of `readonly` is 0, the
-[HTTP interface](/concepts/features/interfaces/http) raises it to 2 for that request. (`PUT` and
-`DELETE` are mutating only for SQL-defined handlers created with `CREATE HANDLER` that accept them.)
-A value already set by a settings profile or by the user's settings is applied first and is kept, so a
-stricter value stays in force. A `readonly` parameter in the query string is applied after this and
-cannot lower the value. To modify data, use the `POST` method.
+
+Over the [HTTP interface](/concepts/features/interfaces/http), a request whose method is not `POST` runs
+with `readonly = 2` if the effective value would otherwise be 0. A stricter value already set by the
+user's settings or by a settings profile is kept. `PUT` and `DELETE` are exempt when they reach a
+SQL-defined handler created with `CREATE HANDLER` that accepts them, and such a handler can modify data;
+otherwise use the `POST` method to modify data.
+
+On a request raised this way, a `readonly` parameter in the query string is refused with
+`Cannot modify 'readonly' setting in readonly mode` unless it names the value the request already has.
 
 There is a way to prohibit the user from changing only specific settings, and a way to allow changing
 only specific settings under `readonly = 1` restrictions. For details see
@@ -75,7 +82,9 @@ Possible values:
   `DROP VIEW`, `TRUNCATE`, `CREATE DICTIONARY`, `DROP DICTIONARY`, `CREATE FUNCTION`, `DROP FUNCTION`,
   `CREATE WORKLOAD`, `DROP WORKLOAD`, `CREATE RESOURCE`, `DROP RESOURCE`, `CREATE HANDLER`,
   `ALTER HANDLER`, `DROP HANDLER`. `RENAME`, `EXCHANGE`, `ATTACH` and `DETACH` need these privileges
-  too, so they are blocked as well. Granting and revoking these privileges is not blocked.
+  too, so they are blocked as well, except that `ALTER TABLE ... ATTACH PARTITION` needs only `INSERT`
+  and is not blocked by this setting, although `readonly` blocks it. Granting and revoking these
+  privileges is not blocked.
 - 1 — Nothing is blocked by this setting.
 
 Default value: 1
@@ -92,9 +101,10 @@ unaffected too.
 <Info>
 **KILL QUERY**
 
-Killing your own queries needs no privilege, so it works with any combination of `readonly` and
-`allow_ddl`. Killing a query that belongs to another user, and any `KILL QUERY ... ON CLUSTER`, require
-the `KILL QUERY` privilege, which `readonly = 1` and `readonly = 2` refuse.
+Killing your own queries does not require the `KILL QUERY` privilege, so it works with any combination
+of `readonly` and `allow_ddl`. It does require `SELECT` on `system.processes`. Killing a query that
+belongs to another user, and any `KILL QUERY ... ON CLUSTER`, require the `KILL QUERY` privilege, which
+`readonly = 1` and `readonly = 2` refuse.
 </Info>
 
 ## Other relevant settings {#other-relevant-settings}
