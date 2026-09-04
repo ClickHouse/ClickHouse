@@ -10,6 +10,8 @@ WITH 2 AS after SELECT groupArray(number) FROM (SELECT number FROM numbers(6) OR
 WITH 2 AS after SELECT number FROM numbers(5) ORDER BY number LIMIT 1 BY number LIMIT after;
 WITH 2 AS after SELECT number FROM numbers(5) ORDER BY number FETCH FIRST after ROWS ONLY;
 WITH 2 AS after FROM numbers(6) |> ORDER BY number |> LIMIT after;
+WITH 2 AS after SELECT number FROM numbers(5) ORDER BY number LIMIT after AS count_alias;
+WITH 2 AS after SELECT number FROM numbers(5) ORDER BY number LIMIT after FETCH FIRST 3 ROWS ONLY;
 
 -- The count reading formats back to the same query.
 SELECT formatQuery('WITH 2 AS after SELECT number FROM numbers(5) ORDER BY number LIMIT after');

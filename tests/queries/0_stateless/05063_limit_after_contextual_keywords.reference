@@ -13,6 +13,11 @@
 1
 0
 1
+0
+1
+0
+1
+2
 WITH\n    2 AS after\nSELECT number\nFROM numbers(5)\nORDER BY number ASC\nLIMIT after
 WITH\n    2 AS after\nSELECT number\nFROM numbers(5)\nORDER BY number ASC\nLIMIT after, 2
 WITH\n    2 AS after\nSELECT number\nFROM numbers(5)\nORDER BY number ASC\nLIMIT after
