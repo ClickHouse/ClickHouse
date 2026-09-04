@@ -1,0 +1,31 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_aggregate_functions>1</allow_experimental_time_series_aggregate_functions>
+        <max_threads>1</max_threads>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <!--
+        Benchmarks the sorted batch path that calls AggregateFunctionTimeseriesSamples::addMany(). Each series
+        receives timestamps in ascending order at one-second intervals. With a 100-second grid step, a normal bucket
+        receives about 100 samples, so the copy and timestamp-order check run over the same batch.
+    -->
+
+    <create_query>
+        CREATE TABLE ts_addmany (id UInt16, timestamp DateTime, value Float64) ENGINE = MergeTree ORDER BY (id, timestamp)
+    </create_query>
+
+    <!-- 1000 series, 10000 sorted samples per series, 10M rows total. -->
+    <fill_query>
+        INSERT INTO ts_addmany
+        SELECT
+            (number % 1000)::UInt16 AS id,
+            toDateTime(intDiv(number, 1000)) AS timestamp,
+            (intDiv(number, 1000) % 1000)::Float64 AS value
+        FROM numbers(1000 * 10000)
+    </fill_query>
+
+    <query>SELECT id, timeSeriesRateToGrid(0, 10000, 100, 300)(timestamp, value) FROM ts_addmany GROUP BY id FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS ts_addmany</drop_query>
+</test>
