@@ -1046,6 +1046,27 @@ check_if_detached "ALTER TABLE t_reattach_mut_mt REPLACE PARTITION ID 'all' FROM
 # `ALTER` carriers. Neither rejection may detach the source.
 check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_mt SET a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src) SETTINGS enable_lightweight_update = 0" "SUPPORT_IS_DISABLED"
 
+# `MutationsInterpreter::prepare` validates the updated columns against the TARGET's metadata before it
+# resolves the predicate's and the assignments' subqueries, so an update it rejects — of a key column, or of
+# a column the target does not have — never reads the tables those expressions name. That gate sits on the
+# lightweight `UPDATE` carrier and on both the lightweight and the heavy `ALTER ... UPDATE` form, and none of
+# them may detach the source on the way to the rejection.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_lw"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_mut_lw (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO t_reattach_mut_lw VALUES (1, 1)"
+
+check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_lw SET a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src)" "CANNOT_UPDATE_COLUMN"
+check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_lw SET no_such_column = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src)" "NO_SUCH_COLUMN_IN_TABLE"
+check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_lw UPDATE a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src) SETTINGS alter_update_mode = 'lightweight'" "CANNOT_UPDATE_COLUMN"
+check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_lw UPDATE a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src)" "CANNOT_UPDATE_COLUMN"
+
+# Updating an ordinary non-key column instead passes that validation, so the statement does read the source
+# and must randomize it — on the lightweight carrier and on the heavy `ALTER` one.
+check_if_detached "UPDATE t_reattach_mut_lw SET b = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src)" "t_reattach_mut_src"
+check_if_detached "ALTER TABLE t_reattach_mut_lw UPDATE b = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src) SETTINGS mutations_sync = 1" "t_reattach_mut_src"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_lw"
+
 ${CLICKHOUSE_CLIENT} -q "DROP FUNCTION IF EXISTS reattach_recursive_mut_udf"
 ${CLICKHOUSE_CLIENT} -q "CREATE FUNCTION reattach_recursive_mut_udf AS x -> reattach_recursive_mut_udf(x)"
 check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_mt SET a = 1 WHERE reattach_recursive_mut_udf(a) IN (SELECT a FROM t_reattach_mut_src)" "UNSUPPORTED_METHOD"

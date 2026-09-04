@@ -43,6 +43,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
@@ -114,8 +115,10 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Interpreters/IInterpreter.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/QueryMetadataCache.h>
@@ -1985,6 +1988,146 @@ bool deleteQueryStopsBeforeSources(const ASTDeleteQuery & delete_query, const Co
     return true;
 }
 
+/// The columns an update's assignment list writes. Returns `false` for an assignment list of an
+/// unexpected shape, which the caller treats like a possible rejection.
+bool collectUpdatedColumns(const IAST * assignments, NameSet & updated_columns)
+{
+    if (!assignments)
+        return false;
+
+    for (const auto & child : assignments->children)
+    {
+        const auto * assignment = child->as<ASTAssignment>();
+        if (!assignment)
+            return false;
+        updated_columns.insert(assignment->column_name);
+    }
+    return !updated_columns.empty();
+}
+
+/// Whether the target-only column validation that `MutationsInterpreter::prepare` runs
+/// (`validateUpdateColumns`) can reject this update. It runs before the update's predicate and assignment
+/// expressions are resolved, so a statement it rejects never reads the tables they name:
+/// `UPDATE dst SET pk = 1 WHERE id IN (SELECT id FROM src)` fails on `dst` with `CANNOT_UPDATE_COLUMN`
+/// without ever touching `src`, and the hook must not reattach `src` on the way.
+///
+/// Mirrors `validateUpdateColumns`, the key-column set `getKeyColumns` derives from the target's metadata,
+/// and the `column_to_affected_materialized` map `prepare` feeds it (including its transitive closure over
+/// MATERIALIZED columns). Two deliberate deviations, both of which answer "can be rejected" more often than
+/// the real validation does and therefore only suppress randomization: the map is built over every
+/// MATERIALIZED column of the target rather than only those in the mutation task's read set, and metadata
+/// that cannot be inspected answers `true`.
+bool updateColumnsCanBeRejected(const StoragePtr & table, const NameSet & updated_columns, const ContextPtr & context)
+{
+    if (updated_columns.empty())
+        return false;
+
+    try
+    {
+        const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+        const auto & storage_columns = metadata_snapshot->getColumns();
+
+        /// `getKeyColumns`: only a `MergeTree`-family target has key columns to protect.
+        NameSet key_columns;
+        if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(table.get()))
+        {
+            for (const auto & column : metadata_snapshot->getColumnsRequiredForPartitionKey())
+                key_columns.insert(column);
+            for (const auto & column : metadata_snapshot->getColumnsRequiredForSortingKey())
+                key_columns.insert(column);
+            if (!merge_tree_data->merging_params.sign_column.empty())
+                key_columns.insert(merge_tree_data->merging_params.sign_column);
+            if (!merge_tree_data->merging_params.version_column.empty())
+                key_columns.insert(merge_tree_data->merging_params.version_column);
+        }
+
+        /// The MATERIALIZED columns each updated column affects, closed transitively exactly as `prepare`
+        /// closes it.
+        MaterializedColumnDependencies materialized_dependencies(storage_columns, context);
+        std::unordered_map<String, Names> column_to_affected_materialized;
+        std::unordered_map<String, NameSet> materialized_column_dependencies;
+        for (const auto & column : storage_columns)
+        {
+            const auto * materialized = materialized_dependencies.findNode(column.name);
+            /// A MATERIALIZED column reading an EPHEMERAL one is never recomputed, so it is not affected.
+            if (!materialized || materialized->reads_ephemeral)
+                continue;
+            for (const auto & dependency : materialized->dependencies)
+            {
+                materialized_column_dependencies[column.name].insert(dependency);
+                if (updated_columns.contains(dependency))
+                    column_to_affected_materialized[dependency].push_back(column.name);
+            }
+        }
+        for (auto & [updated_column, affected_list] : column_to_affected_materialized)
+        {
+            NameSet in_list(affected_list.begin(), affected_list.end());
+            bool changed = true;
+            while (changed)
+            {
+                changed = false;
+                for (const auto & [materialized_column, dependencies] : materialized_column_dependencies)
+                {
+                    if (in_list.contains(materialized_column))
+                        continue;
+                    if (std::ranges::any_of(dependencies, [&](const auto & dependency) { return in_list.contains(dependency); }))
+                    {
+                        affected_list.push_back(materialized_column);
+                        in_list.insert(materialized_column);
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        for (const auto & column_name : updated_columns)
+        {
+            /// "Cannot UPDATE key column" / "Cannot UPDATE materialized column".
+            if (key_columns.contains(column_name))
+                return true;
+            if (storage_columns.tryGetColumn(GetColumnsOptions::Materialized, column_name))
+                return true;
+
+            /// "Updated column ... affects MATERIALIZED column ..., which is a key column".
+            if (const auto affected = column_to_affected_materialized.find(column_name);
+                affected != column_to_affected_materialized.end())
+            {
+                for (const auto & materialized : affected->second)
+                    if (key_columns.contains(materialized))
+                        return true;
+            }
+
+            const auto ordinary_column = storage_columns.tryGetColumn(GetColumnsOptions::Ordinary, column_name);
+            if (!ordinary_column)
+            {
+                /// The lightweight-delete marker is the one non-ordinary name the validation accepts, and
+                /// only on a target that supports lightweight deletes. Every other virtual name is rejected
+                /// with `NOT_IMPLEMENTED`, and an unknown one with `NO_SUCH_COLUMN_IN_TABLE`.
+                if (column_name != RowExistsColumn::name || !table->supportsLightweightDelete())
+                    return true;
+            }
+            else
+            {
+                /// "Cannot UPDATE column ... because its subcolumn ... is a key column".
+                for (const auto & key_column : key_columns)
+                {
+                    const auto column = storage_columns.getColumnOrSubcolumn(GetColumnsOptions::All, key_column);
+                    if (column.isSubcolumn() && column_name == column.getNameInStorage())
+                        return true;
+                }
+            }
+        }
+
+        return false;
+    }
+    catch (const Exception &)
+    {
+        /// The target's metadata could not be inspected, so the validation's outcome is unknown. Ok to
+        /// answer conservatively: the caller then skips the randomization.
+        return true;
+    }
+}
+
 /// Whether a lightweight `UPDATE` statement stops on its own target before its interpreter reads the
 /// tables its predicate and assignments name, mirroring the fast-fail order of
 /// `InterpreterUpdateQuery::execute`.
@@ -2012,6 +2155,16 @@ bool updateQueryStopsBeforeSources(const ASTUpdateQuery & update_query, const Co
         return true;
 
     if (!table->supportsLightweightUpdate())
+        return true;
+
+    /// `updateLightweight` builds a `MutationsInterpreter`, whose `prepare` validates the updated columns
+    /// against the target's metadata before it resolves the predicate's and the assignments' subqueries
+    /// (see `updateColumnsCanBeRejected`).
+    NameSet updated_columns;
+    if (!collectUpdatedColumns(update_query.assignments.get(), updated_columns))
+        return true;
+
+    if (updateColumnsCanBeRejected(table, updated_columns, context))
         return true;
 
     return false;
@@ -2141,8 +2294,17 @@ bool alterQueryStopsBeforeSources(const ASTAlterQuery & alter, const ContextPtr 
         else if (settings[Setting::enable_lightweight_update] && mutation_commands.hasOnlyUpdateCommands()
                  && table->supportsLightweightUpdate())
         {
-            /// Diverted to `updateLightweight`, which reads the expressions' tables.
-            return false;
+            /// Diverted to `updateLightweight`, which validates the updated columns against the target's
+            /// metadata before it reads the expressions' tables (see `updateColumnsCanBeRejected`).
+            NameSet updated_columns;
+            for (const auto & child : alter.command_list->children)
+            {
+                const auto * command_ast = child->as<ASTAlterCommand>();
+                if (!command_ast || !collectUpdatedColumns(command_ast->update_assignments, updated_columns))
+                    return true;
+            }
+
+            return updateColumnsCanBeRejected(table, updated_columns, context);
         }
         else if (force)
         {
@@ -2170,6 +2332,27 @@ bool alterQueryStopsBeforeSources(const ASTAlterQuery & alter, const ContextPtr 
     catch (const Exception &)
     {
         return true;
+    }
+
+    /// The heavy path reaches the auxiliary tables through `MutationsInterpreter`, whose `prepare`
+    /// validates the updated columns against the target's metadata before it resolves the commands'
+    /// expressions -- exactly as on the lightweight path above (see `updateColumnsCanBeRejected`).
+    if (mutation_commands.hasAnyUpdateCommand())
+    {
+        NameSet updated_columns;
+        for (const auto & child : alter.command_list->children)
+        {
+            const auto * command_ast = child->as<ASTAlterCommand>();
+            if (!command_ast)
+                return true;
+            if (!command_ast->update_assignments)
+                continue;
+            if (!collectUpdatedColumns(command_ast->update_assignments, updated_columns))
+                return true;
+        }
+
+        if (updateColumnsCanBeRejected(table, updated_columns, context))
+            return true;
     }
 
     return false;
