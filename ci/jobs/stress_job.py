@@ -12,6 +12,9 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
+# The runner agent lives on the host, outside this container, so it is only safe if the container cannot take the whole box.
+RUNNER_MEMORY_RESERVE = 8 * 1024**3
+
 
 def sanitize_test_result_line(line: str) -> str:
     # Drop bare CR in addition to escaping NUL. The writer escapes
@@ -169,6 +172,7 @@ def get_run_command(
         "--privileged "
         # azurite-rs (in-process Azure Blob Storage emulator) needs many fds under parallel load
         "--ulimit nofile=1048576:1048576 "
+        f"--memory={Utils.physical_memory() - RUNNER_MEMORY_RESERVE} "
         # a static link, don't use S3_URL or S3_DOWNLOAD
         "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
         "--tmpfs /tmp/clickhouse:mode=1777 "
