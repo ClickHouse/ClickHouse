@@ -29,8 +29,10 @@ size_t getPartLevelFromChunk(const Chunk & chunk);
 
 bool isVirtualRow(const Chunk & chunk);
 
-/// Returns the block the virtual row was built from, i.e. the sort columns it can announce exactly.
-/// Every other column of `header` is filled with a type default and bounds nothing.
+/// Materializes the virtual row into the chunk columns and returns the (converted) pk block,
+/// i.e. the sort columns the row can announce exactly. Header columns missing from the pk block
+/// are filled with defaults: the virtual row does not cover them, and the merge must not
+/// compare them (see SortCursorImpl::sort_prefix_limit).
 Block setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtual_row_conversions);
 
 }

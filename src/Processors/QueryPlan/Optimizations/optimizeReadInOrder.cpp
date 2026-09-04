@@ -546,6 +546,18 @@ SortingInputOrder buildInputOrderFromSortDescription(
 
     bool can_optimize_virtual_row = true;
 
+    /// Whether the index entry at a mark boundary still bounds the values of the next key
+    /// columns in the filtered stream. A skipped (fixed) key column resets it: the entry may
+    /// hold a filtered-out value for that column, and then its later components bound nothing.
+    bool key_index_values_usable = true;
+
+    /// The virtual row conversion outputs form a prefix of the sort description: index values
+    /// while the key prefix is contiguous, plus constants for fixed columns from ORDER BY. The
+    /// first column that is neither ends the prefix; the merge compares the virtual row only up
+    /// to it.
+    size_t num_virtual_row_columns = 0;
+    bool virtual_row_prefix_open = true;
+
     struct MatchInfo
     {
         const ActionsDAG::Node * source = nullptr;
@@ -600,6 +612,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
             //std::cerr << "====== (no dag) Found direct match" << std::endl;
 
             match_infos.push_back({.source = sort_column_node});
+            if (virtual_row_prefix_open)
+                ++num_virtual_row_columns;
             ++next_description_column;
             ++next_sort_key;
         }
@@ -646,8 +660,18 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 {
                     current_direction *= match.monotonicity->direction;
                     strict_monotonic = match.monotonicity->strict;
-                    match_infos.push_back({.source = sort_node, .monotonic = &match});
                 }
+
+                if (virtual_row_prefix_open)
+                {
+                    if (key_index_values_usable)
+                        ++num_virtual_row_columns;
+                    else
+                        virtual_row_prefix_open = false;
+                }
+
+                if (match.monotonicity)
+                    match_infos.push_back({.source = sort_node, .monotonic = &match});
                 else
                     match_infos.push_back({.source = sort_node});
 
@@ -656,15 +680,13 @@ SortingInputOrder buildInputOrderFromSortDescription(
             }
             else if (fixed_key_columns.contains(sort_column_node))
             {
-                // A key column fixed by WHERE is skipped here without emitting a MatchInfo, so the
-                // matched columns after it become non-contiguous in the key. The virtual row builder
-                // and pk_header both assume the required key columns are a contiguous prefix and index
-                // them densely, so a skipped key shifts every later column onto the wrong key column
-                // (wrong value -> boundary violation, wrong type -> "Virtual row has different type").
-                // Disable virtual rows whenever a key column is skipped, e.g. pk (a,b) a=1 order by b:
+                // The skipped key column is constant after filtering, but the index entry at a
+                // mark boundary may hold a filtered-out value for it, e.g. for pk (a, b), a = 1,
+                // order by b:
                 // 1st part (0, 100), (1, 2), (1, 3), (1, 4)
                 // 2nd part (0, 100), (1, 2), (1, 3), (1, 4).
-                can_optimize_virtual_row = false;
+                // So the index entry does not bound the later key columns anymore.
+                key_index_values_usable = false;
 
                 //std::cerr << "+++++++++ Found fixed key by match" << std::endl;
                 ++next_sort_key;
@@ -682,6 +704,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
                     /// But it's better to remove fixed columns from ORDER BY completely, e.g:
                     /// WHERE x = 42 ORDER BY x, y    =>    WHERE x = 42 ORDER BY y
                     can_optimize_virtual_row = false;
+                else if (virtual_row_prefix_open)
+                    ++num_virtual_row_columns;
 
                 match_infos.push_back({.source = sort_node, .fixed_column = sort_node});
                 order_key_prefix_descr.push_back(sort_column_description);
@@ -726,13 +750,14 @@ SortingInputOrder buildInputOrderFromSortDescription(
     auto order_info = std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, read_direction, limit);
 
     std::optional<ActionsDAG> virtual_row_conversion;
-    if (can_optimize_virtual_row)
+    if (can_optimize_virtual_row && num_virtual_row_columns > 0)
     {
         ActionsDAG virtual_row_dag;
-        virtual_row_dag.getOutputs().reserve(match_infos.size());
+        virtual_row_dag.getOutputs().reserve(num_virtual_row_columns);
         size_t next_pk_name = 0;
-        for (const auto & info : match_infos)
+        for (size_t i = 0; i < num_virtual_row_columns; ++i)
         {
+            const auto & info = match_infos[i];
             const ActionsDAG::Node * output = nullptr;
             if (info.fixed_column)
                 output = &virtual_row_dag.addColumn(info.fixed_column->column, info.fixed_column->result_type, info.fixed_column->result_name);
@@ -752,7 +777,10 @@ SortingInputOrder buildInputOrderFromSortDescription(
 
             virtual_row_dag.getOutputs().push_back(output);
         }
-        virtual_row_conversion = std::move(virtual_row_dag);
+
+        /// All outputs are constants: such a virtual row tells nothing about the part.
+        if (next_pk_name > 0)
+            virtual_row_conversion = std::move(virtual_row_dag);
     }
 
     return {std::move(order_info), std::move(virtual_row_conversion)};
@@ -1265,7 +1293,9 @@ InputOrderInfoPtr buildInputOrderInfo(
             bool uses_virtual_row = false;
             if (order_info.virtual_row_conversion)
             {
-                uses_virtual_row = reading->setVirtualRowConversions(std::move(*order_info.virtual_row_conversion));
+                uses_virtual_row = reading->setVirtualRowConversions(
+                    std::move(*order_info.virtual_row_conversion),
+                    order_info.input_order->used_prefix_of_sorting_key_size);
                 virtual_row_reader = reading;
             }
 

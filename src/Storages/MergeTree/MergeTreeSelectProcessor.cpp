@@ -361,8 +361,11 @@ ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
         ? read_mark_ranges.front().begin
         : read_mark_ranges.back().end;
 
-    size_t num_pk_columns = pk_block_header.columns();
-    if (index->size() < num_pk_columns)
+    /// The loaded index may keep only a prefix of the primary key (see optimizeIndexColumns).
+    /// A virtual row over the loaded prefix is still valid — the merges compare it only on the
+    /// covered prefix — as long as the conversion still gets all of its inputs.
+    size_t num_pk_columns = std::min(pk_block_header.columns(), index->size());
+    if (num_pk_columns < virtual_row_conversions->getRequiredColumnsWithTypes().size())
         return {};
 
     bool has_value = std::ranges::all_of(*index, [&](const auto & col) { return col->size() > next_mark; });

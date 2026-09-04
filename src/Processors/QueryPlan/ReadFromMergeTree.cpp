@@ -963,10 +963,18 @@ Pipe ReadFromMergeTree::readInOrder(
         processor->addPartLevelToChunk(isQueryWithFinal());
 
         Block pk_header;
+        size_t virtual_row_min_pk_columns = 0;
         if (use_virtual_row)
         {
             const auto & primary_key = storage_snapshot->metadata->primary_key;
+            /// Take index values for the whole used key prefix: the in-order merges inside this
+            /// step sort by all of it, while the conversion may use only a subset of the columns.
             size_t num_pk_columns_required = virtual_row_conversion->getRequiredColumnsWithTypes().size();
+            virtual_row_min_pk_columns = num_pk_columns_required;
+            if (query_info.input_order_info)
+                num_pk_columns_required = std::max(
+                    num_pk_columns_required,
+                    std::min(query_info.input_order_info->used_prefix_of_sorting_key_size, primary_key.column_names.size()));
 
             ColumnsWithTypeAndName pk_header_columns;
             pk_header_columns.reserve(num_pk_columns_required);
@@ -995,16 +1003,26 @@ Pipe ReadFromMergeTree::readInOrder(
             size_t mark_range_pos = read_in_direct_order ? part_with_ranges.ranges.front().begin : part_with_ranges.ranges.back().end;
             bool has_pk_value = (read_in_direct_order || has_final_mark) && std::ranges::all_of(*index, [&](const auto & col) { return col->size() > mark_range_pos; });
 
-            /// The index may have fewer columns than the primary key if suffix columns were
-            /// removed by optimizeIndexColumns (controlled by primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns).
-            /// In that case, we cannot apply virtual row optimization because we don't have all required columns.
-            auto pk_columns = pk_header.cloneEmptyColumns();
-            if (index->size() >= pk_columns.size() && has_pk_value)
+            /// The loaded index may keep only a prefix of the primary key: optimizeIndexColumns
+            /// (controlled by primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns)
+            /// drops suffix index columns whose values almost never repeat. A virtual row over
+            /// the loaded prefix is still valid — the merges compare it only on the covered
+            /// prefix — as long as the conversion still gets all of its inputs; otherwise skip
+            /// the virtual row for this part.
+            size_t num_index_columns = std::min(index->size(), pk_header.columns());
+            if (num_index_columns >= virtual_row_min_pk_columns && has_pk_value)
             {
-                for (size_t j = 0; j < pk_columns.size(); ++j)
-                    pk_columns[j]->insert((*(*index)[j])[mark_range_pos]);
+                ColumnsWithTypeAndName pk_block_columns;
+                pk_block_columns.reserve(num_index_columns);
+                for (size_t j = 0; j < num_index_columns; ++j)
+                {
+                    const auto & header_col = pk_header.getByPosition(j);
+                    auto column = header_col.type->createColumn();
+                    column->insert((*(*index)[j])[mark_range_pos]);
+                    pk_block_columns.push_back({std::move(column), header_col.type, header_col.name});
+                }
 
-                Block pk_block = pk_header.cloneWithColumns(std::move(pk_columns));
+                Block pk_block(std::move(pk_block_columns));
                 pipe.addSimpleTransform([&](const SharedHeader & header)
                 {
                     return std::make_shared<VirtualRowTransform>(header, pk_block, virtual_row_conversion);
@@ -3785,24 +3803,34 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
             || !context->getSettingsRef()[Setting::optimize_read_in_reverse_order_final]))
         return false;
 
-    /// Only a later request that WIDENS an already-established prefix (distinct/aggregation-in-order
-    /// re-entering after ORDER BY) can strand a too-narrow virtual row conversion. The first,
-    /// conversion-building request may legitimately be narrower than prefix_size (fixed middle key,
-    /// e.g. WHERE b = 1 ORDER BY a, c on key (a, b, c)); dropping it there would defeat the
-    /// optimization and, behind a join, re-enable the path the !uses_virtual_row guard blocks.
-    const bool widened_over_previous_request
-        = query_info.input_order_info && query_info.input_order_info->used_prefix_of_sorting_key_size < prefix_size;
+    /// The virtual row conversion was built for a previously requested key prefix. A wider
+    /// re-request (e.g. from distinct-in-order) keeps it valid: the in-order merges inside this
+    /// step take exact index values for the whole prefix (clamped per part to the loaded index
+    /// prefix, see `readInOrder`), and the merges compare the virtual row only on the sort-key
+    /// prefix it covers. A narrower prefix could leave the conversion without some of its
+    /// inputs, and a prefix beyond the primary key would request index values no part can ever
+    /// provide, so the conversion cannot stay.
+    if (virtual_row_conversion
+        && (prefix_size < virtual_row_key_prefix_size
+            || prefix_size > storage_snapshot->metadata->primary_key.column_names.size()))
+    {
+        /// A re-request cannot revoke the virtual row. The decision to use it is taken in
+        /// `optimizeReadInOrder`, which runs before `optimizeDistinctInOrder` and
+        /// `optimizeLimitByInOrder`: by the time they widen the prefix, the parent `SortingStep`
+        /// may already be converted with `apply_virtual_row_conversions` (buffering disabled),
+        /// and the read-in-order-through-`JOIN` path may have been accepted only because the
+        /// read emits virtual rows. Clearing just the reader-side state here would leave those
+        /// decisions standing on a premise that no longer holds, so reject the re-request and
+        /// keep the order the plan is already set up for.
+        if (readsInOrder())
+            return false;
+
+        resetVirtualRowConversions();
+    }
 
     query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit);
     query_task_size_limit = query_limit ? query_limit : read_limit;
     reader_settings.read_in_order = true;
-
-    /// The conversion only produces its own leading sort columns; the extra merge columns of a
-    /// widened re-request are default-filled by setVirtualRow, so the announced boundary is wrong.
-    /// Drop the virtual row here: the merge then falls back to normal cross-part comparison.
-    if (widened_over_previous_request && virtual_row_conversion
-        && virtual_row_conversion->getSampleBlock().columns() < prefix_size)
-        resetVirtualRowConversions();
 
     /// In case of read-in-order, don't create too many reading streams.
     /// Almost always we are reading from a single stream at a time because of merge sort.
@@ -3826,13 +3854,18 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     return true;
 }
 
-bool ReadFromMergeTree::setVirtualRowConversions(ActionsDAG virtual_row_conversion_)
+bool ReadFromMergeTree::setVirtualRowConversions(ActionsDAG virtual_row_conversion_, size_t key_prefix_size)
 {
     /// Disable virtual row for FINAL.
     if (isQueryWithFinal() || !context->getSettingsRef()[Setting::read_in_order_use_virtual_row])
         return false;
 
-    virtual_row_conversion = std::make_shared<ExpressionActions>(std::move(virtual_row_conversion_));
+    /// Project the inputs away: the pk block may carry more index columns than the conversion
+    /// uses (the whole used key prefix), and a raw key column must not shadow a conversion output
+    /// with the same name when the merge looks the sort columns up by name.
+    virtual_row_conversion = std::make_shared<ExpressionActions>(
+        std::move(virtual_row_conversion_), ExpressionActionsSettings{}, /*project_inputs_=*/ true);
+    virtual_row_key_prefix_size = key_prefix_size;
     return true;
 }
 

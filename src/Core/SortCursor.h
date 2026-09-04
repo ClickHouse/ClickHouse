@@ -37,6 +37,13 @@ struct SortCursorImpl
     size_t sort_columns_size = 0;
     size_t rows = 0;
 
+    /// Number of leading sort columns the current block is comparable on. A read-in-order
+    /// virtual row may cover only a prefix of the sort columns: the columns beyond it hold
+    /// meaningless defaults and must not be compared, and on a covered-prefix tie the more
+    /// truncated cursor sorts first (a virtual row bounds its source's future rows only on
+    /// the covered prefix). See `MergingSortedAlgorithm`.
+    size_t sort_prefix_limit = std::numeric_limits<size_t>::max();
+
     /** Determines order if comparing columns are equal.
       * Order is determined by number of cursor.
       *
@@ -177,8 +184,12 @@ struct SortCursor : SortCursorHelper<SortCursor>
     template <bool consider_order = true>
     bool ALWAYS_INLINE greaterAt(const SortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
+        /// A truncated cursor (read-in-order virtual row) is compared only on its covered prefix
+        /// of the sort columns and sorts first on a tie; see SortCursorImpl::sort_prefix_limit.
+        const size_t prefix_limit = std::min(impl->sort_prefix_limit, rhs.impl->sort_prefix_limit);
+
 #if USE_EMBEDDED_COMPILER
-        if (impl->desc.compiled_sort_description && rhs.impl->desc.compiled_sort_description)
+        if (impl->desc.compiled_sort_description && rhs.impl->desc.compiled_sort_description && prefix_limit >= impl->sort_columns_size)
         {
             chassert(impl->raw_sort_columns_data.size() == rhs.impl->raw_sort_columns_data.size());
 
@@ -201,7 +212,8 @@ struct SortCursor : SortCursorHelper<SortCursor>
         }
 #endif
 
-        for (size_t i = 0; i < impl->sort_columns_size; ++i)
+        const size_t num_sort_columns = std::min(impl->sort_columns_size, prefix_limit);
+        for (size_t i = 0; i < num_sort_columns; ++i)
         {
             const auto & desc = impl->desc[i];
             int direction = desc.direction;
@@ -213,6 +225,9 @@ struct SortCursor : SortCursorHelper<SortCursor>
             if (res < 0)
                 return false;
         }
+
+        if (impl->sort_prefix_limit != rhs.impl->sort_prefix_limit)
+            return impl->sort_prefix_limit > rhs.impl->sort_prefix_limit;
 
         if constexpr (consider_order)
             return impl->order > rhs.impl->order;
