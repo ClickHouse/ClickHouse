@@ -92,6 +92,15 @@ void stripInitiatorOnlySettings(Settings & settings);
 /// mode silently overrides the user's opt-out on that carrier.
 void resolveAutomaticUncompressedCacheOptOut(Settings & settings);
 
+/// The query-text counterpart of `resolveAutomaticUncompressedCacheOptOut`: when the initiator's `settings` carry
+/// the opt-out, bake an explicit `use_uncompressed_cache = 0` into the query-level `SETTINGS` clause of the query
+/// *text* forwarded to the remote server. Stripping the packet alone is not enough, because the remote server
+/// replays the forwarded query's own `SETTINGS` (`InterpreterSetQuery::applySettingsFromQuery`) after it has
+/// clamped the default-valued `use_uncompressed_cache = 0` away, so a `SETTINGS enable_automatic_use_uncompressed_cache = 1`
+/// or a `SETTINGS profile = '...'` in the query text would switch the automatic mode back on there. Every
+/// carrier that forwards query text must call this next to `stripInitiatorOnlySettingsFromQuery`.
+void resolveAutomaticUncompressedCacheOptOutInQuery(IAST & query, const Settings & settings);
+
 /// True for exactly the settings reset by `stripInitiatorOnlySettings`. Used to also strip those
 /// settings from a query's own `SETTINGS` clause before the query *text* is forwarded to a shard (the
 /// optimized `parallel_distributed_insert_select` paths in `StorageDistributed` send a formatted query

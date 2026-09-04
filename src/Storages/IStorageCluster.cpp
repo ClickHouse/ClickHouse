@@ -137,6 +137,8 @@ void IStorageCluster::read(
     /// `formatWithSecretsOneLine()` with its `SETTINGS` clause intact, which would otherwise leak those
     /// names to shards (and trip `UNKNOWN_SETTING` on an older shard in a rolling upgrade).
     ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_send);
+    /// An explicit `use_uncompressed_cache = 0` is lost on the remote server, so bake the opt-out into the query text too.
+    ClusterProxy::resolveAutomaticUncompressedCacheOptOutInQuery(*query_to_send, context->getSettingsRef());
 
     auto this_ptr = std::static_pointer_cast<IStorageCluster>(shared_from_this());
 

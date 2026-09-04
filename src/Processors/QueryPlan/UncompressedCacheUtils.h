@@ -55,7 +55,10 @@ bool resolveUseUncompressedCacheForMergeTreeRead(
 /// flag does not survive a secondary query: the leaf server turns the forwarded settings back into
 /// `SettingsChanges` and clamps them to its constraints, which drops every change whose value already equals
 /// the leaf's current value. So the initiator has to resolve the opt-out itself and switch
-/// `enable_automatic_use_uncompressed_cache` off in the settings it sends to the shards or replicas.
+/// `enable_automatic_use_uncompressed_cache` off in the settings it sends to the shards or replicas
+/// (`ClusterProxy::resolveAutomaticUncompressedCacheOptOut`), and bake an explicit `use_uncompressed_cache = 0`
+/// into the forwarded query text, whose own `SETTINGS` clause the leaf replays after that clamping
+/// (`ClusterProxy::resolveAutomaticUncompressedCacheOptOutInQuery`).
 bool automaticUncompressedCacheIsOverriddenByOptOut(const Settings & settings);
 
 }

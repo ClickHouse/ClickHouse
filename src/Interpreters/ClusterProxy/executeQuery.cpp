@@ -27,6 +27,9 @@
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
@@ -299,6 +302,73 @@ void resolveAutomaticUncompressedCacheOptOut(Settings & settings)
 
     settings[Setting::enable_automatic_use_uncompressed_cache] = false;
     settings[Setting::enable_automatic_use_uncompressed_cache].changed = true;
+}
+
+namespace
+{
+
+/// The query-level `SETTINGS` clause that `InterpreterSetQuery::applySettingsFromQuery` replays on the remote
+/// server before the query is interpreted there, created when the query has none:
+///  - a plain `SELECT` carries its own clause;
+///  - a `SELECT ... UNION ...` gets the trailing clause of `ASTQueryWithOutput`, which the remote server applies
+///    first, so it also covers the arms of an `INTERSECT` / `EXCEPT` chain, which `applySettingsFromSelectWithUnion`
+///    does not look into;
+///  - an `INSERT ... SELECT` carries the clause of the `INSERT` itself.
+/// Returns nullptr for a query shape without such a clause.
+ASTSetQuery * getOrCreateForwardedQuerySettings(IAST & query)
+{
+    auto make_settings_clause = []
+    {
+        auto set_query = make_intrusive<ASTSetQuery>();
+        set_query->is_standalone = false;
+        return set_query;
+    };
+
+    if (auto * select_query = query.as<ASTSelectQuery>())
+    {
+        if (!select_query->settings())
+            select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, make_settings_clause());
+        return select_query->settings()->as<ASTSetQuery>();
+    }
+
+    if (auto * select_with_union_query = query.as<ASTSelectWithUnionQuery>())
+    {
+        if (!select_with_union_query->settings_ast)
+            select_with_union_query->set(select_with_union_query->settings_ast, make_settings_clause());
+        return select_with_union_query->settings_ast->as<ASTSetQuery>();
+    }
+
+    if (auto * insert_query = query.as<ASTInsertQuery>())
+    {
+        if (!insert_query->settings_ast)
+            insert_query->set(insert_query->settings_ast, make_settings_clause());
+        return insert_query->settings_ast->as<ASTSetQuery>();
+    }
+
+    return nullptr;
+}
+
+}
+
+void resolveAutomaticUncompressedCacheOptOutInQuery(IAST & query, const Settings & settings)
+{
+    if (!automaticUncompressedCacheIsOverriddenByOptOut(settings))
+        return;
+
+    auto * set_query = getOrCreateForwardedQuerySettings(query);
+    if (!set_query)
+        return;
+
+    /// The remote server applies a query-level `SETTINGS` clause without clamping default-valued changes away
+    /// (`InterpreterSetQuery::executeForCurrentContext` only checks the constraints), so the `changed` flag of
+    /// this explicit `use_uncompressed_cache = 0` survives there and wins over any `enable_automatic_use_uncompressed_cache = 1`
+    /// the forwarded text replays later, be it written directly or pulled in by a `SETTINGS profile = '...'`.
+    constexpr std::string_view name = "use_uncompressed_cache";
+    std::erase(set_query->default_settings, name);
+    if (auto * value = set_query->changes.tryGet(name))
+        *value = Field(false);
+    else
+        set_query->changes.emplace_back(String(name), Field(false));
 }
 
 
@@ -1074,6 +1144,8 @@ void executeQueryWithParallelReplicas(
     /// (`QueryNode::toAST`). The per-replica context packet is stripped in `updateContextForParallelReplicas`.
     auto forwarded_query_ast = query_ast->clone();
     stripInitiatorOnlySettingsFromQuery(forwarded_query_ast);
+    /// An explicit `use_uncompressed_cache = 0` is lost on the replicas, so bake the opt-out into the query text too.
+    resolveAutomaticUncompressedCacheOptOutInQuery(*forwarded_query_ast, context->getSettingsRef());
 
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
@@ -1643,6 +1715,9 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         /// forwarded query text still carries the INSERT's own `SETTINGS` — strip the initiator-only names
         /// (both `changes` and `default_settings`) from it too.
         stripInitiatorOnlySettingsFromQuery(new_query_ast);
+        /// An explicit `use_uncompressed_cache = 0` is lost on the replicas, so bake the opt-out into the query
+        /// text too (`new_context` already carries the resolved packet, so decide from the initiator's settings).
+        resolveAutomaticUncompressedCacheOptOutInQuery(*new_query_ast, settings);
 
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
