@@ -1248,10 +1248,11 @@ void MergeTreeData::checkProperties(
                         /// loadable but un-alterable, and would wedge the replication queue of an
                         /// upgraded replica behind an entry it can never apply.
                         ///
-                        /// The condition is the violation itself rather than "the index declaration is
-                        /// unchanged": `ALTER TABLE ... MODIFY COLUMN` retypes the ALIAS column without
-                        /// touching the index, and that introduces the mismatch just as surely as
-                        /// declaring it outright.
+                        /// "Inherited" has to mean that the whole violation was carried over, not that
+                        /// some part of it looks familiar: `MODIFY COLUMN` rewrites the column without
+                        /// touching the index, and `DROP INDEX ... , ADD INDEX ...` rewrites the index
+                        /// while keeping its name, and either one introduces the mismatch just as surely
+                        /// as declaring it outright.
                         ///
                         /// On the create path `setProperties` is called with the same metadata as both
                         /// arguments, so there is no older state to inherit from and nothing to exempt.
