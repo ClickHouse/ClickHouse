@@ -13,6 +13,9 @@ DROP TABLE IF EXISTS t_enum_key;
 DROP TABLE IF EXISTS t_wide_key;
 DROP TABLE IF EXISTS t_u32_key;
 
+-- `index_granularity = 1` and `index_granularity_bytes = 0` make one granule per row whatever the runner randomizes.
+-- `min_bytes_for_wide_part = 0` agrees with that: non-adaptive granularity stores only Wide parts, and the server
+-- logs a warning when the runner randomizes the threshold to a non-zero value.
 -- `auto_statistics_types = ''` keeps the primary key the only pruner, so the granule counts below are
 -- attributable to the monotonicity decision rather than to column statistics.
 
