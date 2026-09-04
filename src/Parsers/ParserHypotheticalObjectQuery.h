@@ -10,7 +10,7 @@ namespace DB
   *   DROP HYPOTHETICAL INDEX [IF EXISTS] name ON [db.]table
   *   DROP ALL HYPOTHETICAL INDEXES
   */
-class ParserHypotheticalIndexQuery : public IParserBase
+class ParserHypotheticalObjectQuery : public IParserBase
 {
 protected:
     const char * getName() const override { return "HYPOTHETICAL INDEX query"; }
