@@ -289,7 +289,10 @@ void CPULeaseAllocation::free()
     std::unique_lock lock{mutex};
     if (exception)
         throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "CPU Resource request failed: {}", getExceptionMessage(exception, /* with_stacktrace = */ false));
-    if (granted > 0)
+    // `granted > 0` should already imply a free slot_id (invariant granted == allocated -
+    // leased.count()); the leased-count guard is defence in depth so a future accounting slip can
+    // never make upscale() return an out-of-range slot_id (which would index tasks arrays OOB).
+    if (granted > 0 && threads.leased.count() < max_threads)
         return acquireImpl(lock);
     return {};
 }
@@ -420,8 +423,16 @@ void CPULeaseAllocation::resetPreempted(size_t thread_num)
 
 void CPULeaseAllocation::setParked(size_t thread_num)
 {
-    // Move a running thread to parked (a non-CPU wait: I/O or idle). Mirrors setPreempted, but a
-    // distinct state and lighter (no clock read, no waitForGrant). The freed slot becomes granted.
+    // Move a running thread to parked (a non-CPU wait: I/O or idle). Lighter than setPreempted
+    // (no clock read, no waitForGrant).
+    // Unlike preemption, parking does NOT touch `granted`/`acquirable`: the parked thread keeps its
+    // leased slot_id (reserved for its own unpark), so it frees no slot for another thread of this
+    // lease. The invariant `granted == allocated - leased.count()` must hold so that `granted > 0`
+    // always implies a free slot_id exists (otherwise upscale() would hand out an out-of-range id
+    // and ExecutorTasks::upscale would index out of bounds). The CPU quantum is released for OTHER
+    // leases by parkLease's give-back (requests.finish), not via `granted`.
+    // (setPreempted can `++granted` safely only because it runs after consume(), where `granted` is
+    // already negative; parking does no consume, so `++granted` here would be a real over-grant.)
     chassert(threads.isRunning(thread_num));
     threads.parked.set(thread_num);
     ++threads.parked_count;
@@ -435,21 +446,16 @@ void CPULeaseAllocation::setParked(size_t thread_num)
                 break;
         }
     }
-
-    ++granted;
-    if (granted > 0 && !shutdown)
-        acquirable.store(true, std::memory_order_relaxed);
     LOG_EVENT(K);
 }
 
 void CPULeaseAllocation::resetParked(size_t thread_num)
 {
-    // Borrow a slot back for a resuming thread (may drive granted negative; the next renew()
-    // reconciles). Mirrors resetPreempted minus the cv wake (the thread resumes itself).
-    --granted;
-    if (granted <= 0 && !exception)
-        acquirable.store(false, std::memory_order_relaxed);
-
+    // Symmetric with setParked: the resuming thread already holds its leased slot, so unparking
+    // consumes no granted quantum here and must NOT touch `granted` (keeps the invariant
+    // `granted == allocated - leased.count()`). unparkLease re-requests the CPU quantum that the
+    // give-back released; until it is granted the thread runs on a borrow (allocated < leased →
+    // granted < 0), which the next renew() reconciles.
     chassert(threads.parked[thread_num]);
     threads.parked.reset(thread_num);
     --threads.parked_count;
