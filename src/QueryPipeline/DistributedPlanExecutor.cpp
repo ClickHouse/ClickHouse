@@ -49,6 +49,7 @@
 #include <Server/DistributedQuery/StreamingExchangeLookup.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/executeQuery.h>
@@ -1508,6 +1509,11 @@ protected:
 
             auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, wait_milliseconds, context);
 
+            /// Forward worker log lines to the initiator's send_logs_level stream.
+            if (task_status.logs.rows() != 0 && initiator_logs_queue)
+
+                initiator_logs_queue->pushBlock(std::move(task_status.logs));
+
             auto progress_callback = context->getProgressCallback();
             if (progress_callback)
                 progress_callback(task_status.progress);
@@ -1556,6 +1562,12 @@ protected:
                 try
                 {
                     auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, poll_wait_ms, context, /*for_cleanup*/ true);
+
+                    /// A task cancelled early (e.g. LIMIT satisfied) still delivers its logs
+                    /// through the cleanup polls.
+                    if (task_status.logs.rows() != 0 && initiator_logs_queue)
+                        initiator_logs_queue->pushBlock(std::move(task_status.logs));
+
                     if (task_status.status != "Running")
                         return true;
                 }
@@ -1708,6 +1720,12 @@ protected:
         DistributedQueryCancellationPtr cancellation;
         ThreadPool thread_pool;
         LoggerPtr logger;
+
+        /// The initiator query's send_logs_level queue, captured at construction (which runs
+        /// on the query's own thread): the tracker's poll threads are not part of the query's
+        /// thread group, so a CurrentThread lookup at push time would return null. Null when
+        /// the client did not request logs.
+        InternalTextLogsQueuePtr initiator_logs_queue = CurrentThread::getInternalTextLogsQueue();
     };
 
     RunningTaskInfo buildTaskInfo(const DistributedQueryTaskDescription & task_description) const

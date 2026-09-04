@@ -224,6 +224,10 @@ static constexpr auto DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE 
 /// Send String columns in the native protocol with a separate stream of cumulative byte offsets.
 static constexpr auto DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION = 54492;
 
+/// The distributed-plan task status response (stateless worker control protocol) can carry
+/// worker log lines: a `has_logs` flag and a Native block in the InternalTextLogsQueue
+/// format, after status/error/progress.
+static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_DISTRIBUTED_TASK_LOGS = 54493;
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -232,5 +236,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATI
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54492;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54493;
 }
