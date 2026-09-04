@@ -26,7 +26,12 @@ UInt32 getNumCPUs() noexcept;
 ALWAYS_INLINE inline Int32 getCurrentCPU()
 {
 #if defined(OS_LINUX)
-    /// TLS read via glibc rseq on modern kernels (see glibc-compatibility/musl/sched_getcpu.c).
+    /// An rseq TLS read on modern kernels, so cheap enough to call on every `ProfileEvents`
+    /// increment. The bundled musl registers the rseq area during thread setup
+    /// (see `contrib/musl/src/sched/rseq.c`), following the glibc 2.35+ ABI; the builds still
+    /// linked against glibc reuse its registration (see `base/glibc-rseq`). Without a registered
+    /// area this falls back to the `getcpu` vDSO entry, or to a real syscall on AArch64, which has
+    /// no such entry - see the startup warning driven by `rseq_cpu_id`.
     return sched_getcpu();
 #elif defined(OS_DARWIN) && defined(__aarch64__)
     /// macOS has no `sched_getcpu`. XNU exposes the current CPU number to userspace in the low 12
