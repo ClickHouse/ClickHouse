@@ -37,39 +37,98 @@ struct AggregateFunctionTimeseriesCompensatedSumTraits
     /// Float64 sum with Kahan-Babuska-Neumaier compensation and a sample count. Without compensation a plain sum
     /// would swallow small samples next to a large one, and its rounding would depend on how the two-stacks queue
     /// groups the buckets. No `unmerge`: Float64 subtraction does not undo an addition (1e18 + 2 + 3 + 5 - 1e18 gives 0).
+    ///
+    /// Once the sum of finite samples would overflow, the summary switches to a running mean, which cannot overflow.
+    /// `timeSeriesAvgToGrid` then matches Prometheus, whose `avg_over_time` of two 1e308 samples is 1e308.
+    /// `timeSeriesSumToGrid` returns `mean * count`, which recovers a transient overflow
+    /// (1e308 + 1e308 - 1e308 is 1e308).
     struct Summary
     {
+        /// The compensated sum of the samples, or their compensated mean once `is_mean` is set.
         Float64 sum = 0;
         Float64 compensation = 0;
         UInt64 count = 0;
+        bool is_mean = false;
 
-        void add(TimestampType /*timestamp*/, ValueType value)
+        void add(TimestampType /*timestamp*/, ValueType sample)
         {
-            addCompensated(static_cast<Float64>(value));
-            ++count;
+            const Float64 x = static_cast<Float64>(sample);
+            if (is_mean)
+                addToMean(x, /* other_compensation = */ 0, /* other_count = */ 1, /* other_is_mean = */ true);
+            else
+                addCompensated(x, /* other_compensation = */ 0, /* other_count = */ 1);
         }
 
         void merge(const Summary & added)
         {
-            addCompensated(added.sum);
-            compensation = std::isfinite(sum) ? compensation + added.compensation : 0;
-            count += added.count;
+            if (added.count == 0)
+                return;
+            if (is_mean || added.is_mean)
+                addToMean(added.sum, added.compensation, added.count, added.is_mean);
+            else
+                addCompensated(added.sum, added.compensation, added.count);
         }
 
-        Float64 getSum() const { return sum + compensation; }
+        Float64 getSum() const
+        {
+            const Float64 value = sum + compensation;
+            return is_mean ? value * static_cast<Float64>(count) : value;
+        }
+
+        Float64 getMean() const
+        {
+            const Float64 value = sum + compensation;
+            return is_mean ? value : value / static_cast<Float64>(count);
+        }
 
     private:
-        void addCompensated(Float64 value)
+        /// Kahan-Babuska-Neumaier step: adds `other_sum`, which stands for `other_count` samples and carries its own
+        /// compensation.
+        void addCompensated(Float64 other_sum, Float64 other_compensation, UInt64 other_count)
         {
-            const Float64 t = sum + value;
-            /// A non-finite sum keeps no compensation: `Inf - Inf` is NaN, and Prometheus returns such a sum as is.
+            const Float64 t = sum + other_sum;
             if (!std::isfinite(t))
+            {
+                /// In sum mode, when the sum of finite values would overflow, it continues as a mean instead.
+                if (!is_mean && std::isfinite(sum) && std::isfinite(other_sum))
+                {
+                    addToMean(other_sum, other_compensation, other_count, /* other_is_mean = */ false);
+                    return;
+                }
+                /// An infinite operand is not an overflow and propagates as it is. A non-finite sum keeps no
+                /// compensation: `Inf - Inf` is NaN, and Prometheus returns such a sum as is.
                 compensation = 0;
-            else if (std::abs(sum) >= std::abs(value))
-                compensation += (sum - t) + value;
+            }
+            else if (std::abs(sum) >= std::abs(other_sum))
+                compensation += (sum - t) + other_sum + other_compensation;
             else
-                compensation += (value - t) + sum;
+                compensation += (other_sum - t) + sum + other_compensation;
             sum = t;
+            count += other_count;
+        }
+
+        /// Adds `other_sum`, the mean (or the sum, when `other_is_mean` is false) of `other_count` samples, as a
+        /// weighted mean: mean' = mean * n / (n + other_count) + other_mean * other_count / (n + other_count).
+        /// Each term is at most the magnitude of its side's mean, so this cannot overflow.
+        void addToMean(Float64 other_sum, Float64 other_compensation, UInt64 other_count, bool other_is_mean)
+        {
+            const Float64 n = static_cast<Float64>(count);
+            const Float64 total = n + static_cast<Float64>(other_count);
+            /// A sum of `count` samples divided by `total` is its mean times `n / total`.
+            if (is_mean)
+                scale(n / total);
+            else
+                scale(1 / total);
+            is_mean = true;
+            const Float64 weight = other_is_mean ? static_cast<Float64>(other_count) / total : 1 / total;
+            addCompensated(other_sum * weight, other_compensation * weight, other_count);
+        }
+
+        /// Multiplies the compensated sum by `factor`.
+        void scale(Float64 factor)
+        {
+            sum *= factor;
+            compensation *= factor;
         }
     };
 
@@ -111,7 +170,7 @@ struct AggregateFunctionTimeseriesCompensatedSumTraits
                 return std::nullopt;
 
             if constexpr (is_avg)
-                return static_cast<ResultType>(combined.getSum() / static_cast<Float64>(combined.count));
+                return static_cast<ResultType>(combined.getMean());
             else
                 return static_cast<ResultType>(combined.getSum());
         }
