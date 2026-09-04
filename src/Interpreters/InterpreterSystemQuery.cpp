@@ -348,12 +348,26 @@ void InterpreterSystemQuery::startStopActionInDatabase(StorageActionBlockType ac
 }
 
 
-static String getDictionaryNameForLoader(const ASTSystemQuery & query)
+static void reloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader, const ASTSystemQuery & query, ContextPtr context)
 {
-    if (!query.database)
-        return query.getTable();
+    if (query.database)
+    {
+        loader.reloadDictionary({query.getDatabase(), query.getTable()});
+        return;
+    }
 
-    return backQuoteIfNeed(query.getDatabase()) + "." + backQuoteIfNeed(query.getTable());
+    loader.reloadDictionary(query.getTable(), context);
+}
+
+static void unloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader, const ASTSystemQuery & query, ContextPtr context)
+{
+    if (query.database)
+    {
+        loader.unloadDictionary({query.getDatabase(), query.getTable()});
+        return;
+    }
+
+    loader.unloadDictionary(query.getTable(), context);
 }
 
 
@@ -782,8 +796,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
 
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
-            const String dictionary_name = getDictionaryNameForLoader(query);
-            external_dictionaries_loader.reloadDictionary(dictionary_name, getContext());
+            reloadDictionaryFromSystemQuery(external_dictionaries_loader, query, getContext());
 
             ExternalDictionariesLoader::resetAll();
             break;
@@ -803,8 +816,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
 
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
-            const String dictionary_name = getDictionaryNameForLoader(query);
-            external_dictionaries_loader.unloadDictionary(dictionary_name, getContext());
+            unloadDictionaryFromSystemQuery(external_dictionaries_loader, query, getContext());
             ExternalDictionariesLoader::resetAll();
             break;
         }
