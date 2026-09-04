@@ -276,7 +276,7 @@ public:
     /// remote_fs_zero_copy_zookeeper_path and every zero-copy-capable disk configured on this server, since
     /// neither piece of information is recorded anywhere in ZooKeeper for a table we don't have locally.
     static std::vector<String> getZeroCopyLockPathsForOrphanReplicaDrop(
-        zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info, ContextPtr context, LoggerPtr logger);
+        zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info, ContextPtr local_context, LoggerPtr logger);
 
     /// Removes table from ZooKeeper after the last replica was dropped
     static bool removeTableNodesFromZooKeeper(

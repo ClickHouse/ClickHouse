@@ -1552,12 +1552,12 @@ void StorageReplicatedMergeTree::removeReplicaZeroCopyLocks(
 }
 
 std::vector<String> StorageReplicatedMergeTree::getZeroCopyLockPathsForOrphanReplicaDrop(
-    zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info, ContextPtr context, LoggerPtr logger)
+    zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info, ContextPtr local_context, LoggerPtr logger)
 {
     std::vector<String> roots;
 
     Strings disk_types_with_zero_copy;
-    for (const auto & [_, disk] : context->getDisksMap())
+    for (const auto & [_, disk] : local_context->getDisksMap())
         if (disk->supportZeroCopyReplication())
             disk_types_with_zero_copy.push_back(disk->getDataSourceDescription().name());
 
@@ -1582,7 +1582,7 @@ std::vector<String> StorageReplicatedMergeTree::getZeroCopyLockPathsForOrphanRep
                      "of a replica dropped without a local table for {}; locks under a custom zero-copy path, "
                      "if any, will not be cleaned up here", DEFAULT_ZERO_COPY_ZOOKEEPER_PATH, zookeeper_info.path);
 
-    auto zero_copy_zookeeper_path = fs::path(context->getMacros()->expand(DEFAULT_ZERO_COPY_ZOOKEEPER_PATH));
+    auto zero_copy_zookeeper_path = fs::path(local_context->getMacros()->expand(DEFAULT_ZERO_COPY_ZOOKEEPER_PATH));
     for (const auto & disk_type : disk_types_with_zero_copy)
         roots.push_back(zero_copy_zookeeper_path / fmt::format("zero_copy_{}", disk_type) / table_shared_id);
 
