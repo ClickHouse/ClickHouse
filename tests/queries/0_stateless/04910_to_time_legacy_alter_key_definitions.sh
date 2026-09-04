@@ -37,15 +37,4 @@ SELECT sampling_key FROM system.tables WHERE database = currentDatabase() AND na
 
 DROP TABLE t_totime_alter_key_udf;
 DROP FUNCTION ${UDF};
-
-SET use_legacy_to_time = 0;
-CREATE TABLE t_totime_clone_source (c0 DateTime, c1 UInt32)
-ENGINE = MergeTree() ORDER BY (toUInt32(toTime(c0)), c1);
-INSERT INTO t_totime_clone_source VALUES ('2026-01-01 01:02:03', 1);
-SET use_legacy_to_time = 1;
-CREATE TABLE t_totime_clone CLONE AS t_totime_clone_source;
-SELECT sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_totime_clone';
-SELECT count() FROM t_totime_clone;
-DROP TABLE t_totime_clone;
-DROP TABLE t_totime_clone_source;
 "

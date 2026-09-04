@@ -6334,6 +6334,8 @@ void StorageReplicatedMergeTree::readLocalSequentialConsistencyImpl(
         }
     }
 
+    /// A boundary that binds comes from ZooKeeper and is identical on every replica, so the clamped read can be coordinated.
+    const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower();
     auto plan = MergeTreeDataSelectExecutor(*this).read(
         column_names,
         storage_snapshot,
@@ -6342,7 +6344,7 @@ void StorageReplicatedMergeTree::readLocalSequentialConsistencyImpl(
         max_block_size,
         num_streams,
         std::move(max_added_blocks),
-        /*enable_parallel_reading=*/ false);
+        enable_parallel_reading);
 
     if (plan)
         query_plan = std::move(*plan);

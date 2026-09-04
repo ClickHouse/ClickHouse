@@ -245,9 +245,14 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
             AccessTypeObjects::Source::FILE, "", backupSourceAccessFlagsForWriterUnlock(open_mode)};
     };
 
-    /// An allowlisted disk may be local, S3- or Azure-backed, so no single `Source` describes it.
-    auto disk_source_access_fn = [](const BackupInfo &, ContextPtr, IBackup::OpenMode)
-        -> std::optional<BackupFactory::SourceAccessTarget> { return std::nullopt; };
+    /// A `Disk(...)` locator names an operator-allowlisted backup disk, which is a capability of its
+    /// own: the disk may be backed by local or object storage, and its name is not a URI.
+    auto disk_source_access_fn = [](const BackupInfo &, ContextPtr, IBackup::OpenMode open_mode)
+        -> std::optional<BackupFactory::SourceAccessTarget>
+    {
+        return BackupFactory::SourceAccessTarget{
+            AccessTypeObjects::Source::DISK, "", backupSourceAccessFlagsForWriterUnlock(open_mode)};
+    };
 
     factory.registerBackupEngine("File", creator_fn, getLocalDestinationIdentity, file_source_access_fn);
     factory.registerBackupEngine("Disk", creator_fn, getLocalDestinationIdentity, disk_source_access_fn);

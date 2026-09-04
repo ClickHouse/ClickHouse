@@ -99,7 +99,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 10 serializes the plan-level `max_threads` and `concurrency_control` fields. They are not
 /// properties of individual steps, so a remote plan fragment would otherwise execute with its default
 /// execution limits after deserialization.
-/// Version 11 is the framed format. The head is `[version][format_kind][body_size][min_reader_version]`
+/// Version 11 adds the ReadInOrder info in the reading step in the plan.
+/// Version 12 is the framed format. The head is `[version][format_kind][body_size][min_reader_version]`
 /// and does not change again: every later body layout keeps those four fields, so a reader that does not
 /// know the layout still finds the end of the body, skips it, and rejects the plan without losing the
 /// connection. The body starts with an outline: the plan-level fields, then for each step its name,
@@ -108,18 +109,18 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// bump because older readers skip what they do not know. `min_reader_version` is the oldest version
 /// that can read this plan, computed by the writer from what the plan carries; a reader accepts any
 /// stream whose `min_reader_version` it meets, also from a newer writer.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 11;
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 12;
 /// The version writers use unless a query asks for another one. It can stay below
 /// `DBMS_QUERY_PLAN_SERIALIZATION_VERSION` for a release after a new version lands: the fleet then
 /// reads the new version everywhere before anyone writes it, and users can try it per query with
 /// `query_plan_serialization_version`. Move it up once the new version has proven itself.
-static constexpr auto DBMS_DEFAULT_QUERY_PLAN_SERIALIZATION_VERSION = 11;
+static constexpr auto DBMS_DEFAULT_QUERY_PLAN_SERIALIZATION_VERSION = 12;
 /// Body layout of a framed stream, named in the head so a reader knows what it is looking at instead
 /// of inferring it from the version. 0 is never written. Every new layout takes the next value and
 /// names the plan version that introduced it.
 static constexpr auto DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE = 1;
 /// First version with the framed format.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE = 11;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE = 12;
 /// First query-plan serialization version that carries the parallel-replicas flag (bit 32) on a
 /// serialized `ReadFromMergeTree`. Used to gate the flag and to skip replicas that are too old.
 /// Not tied to `DBMS_QUERY_PLAN_SERIALIZATION_VERSION`: the plan is cached and written per peer
@@ -139,6 +140,8 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRI
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR = 7;
 /// First query-plan serialization version that preserves plan-level `max_threads` and `concurrency_control`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS = 10;
+/// First query-plan serialization version that carries the ReadInOrder info
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER = 11;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;

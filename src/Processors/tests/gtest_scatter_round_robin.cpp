@@ -2,7 +2,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/ISink.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>

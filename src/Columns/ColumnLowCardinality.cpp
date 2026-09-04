@@ -366,11 +366,6 @@ void ColumnLowCardinality::deserializeAndInsertFromArena(ReadBuffer & in, const 
     idx.insertIndex(getDictionary().uniqueDeserializeAndInsertFromArena(in, settings));
 }
 
-void ColumnLowCardinality::skipSerializedInArena(ReadBuffer & in) const
-{
-    getDictionary().skipSerializedInArena(in);
-}
-
 void ColumnLowCardinality::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
     const auto & nested = getDictionary().getNestedColumn();

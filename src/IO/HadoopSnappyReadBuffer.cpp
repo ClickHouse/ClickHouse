@@ -186,16 +186,42 @@ bool HadoopSnappyReadBuffer::nextImpl()
     if (eof)
         return false;
 
-    do
+    /// A block that declares zero uncompressed bytes decodes to nothing. `ReadBuffer::next`
+    /// calls itself when `nextImpl` returns true with an empty `working_buffer`, so returning
+    /// after every such block would let a stream of them exhaust the stack. Keep decoding
+    /// until there is something to return or the input ends, the same way
+    /// `SnappyFramedReadBuffer` skips zero-length chunks.
+    while (true)
     {
-        if (!in_available)
+        do
         {
-            in->nextIfAtEnd();
-            in_available = in->buffer().end() - in->position();
-            in_data = in->position();
-        }
+            if (!in_available)
+            {
+                in->nextIfAtEnd();
+                in_available = in->buffer().end() - in->position();
+                in_data = in->position();
+            }
 
-        if (decoder->result == Status::NEEDS_MORE_INPUT && (!in_available || in->eof()))
+            if (decoder->result == Status::NEEDS_MORE_INPUT && (!in_available || in->eof()))
+            {
+                throw Exception(
+                    ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
+                    "hadoop snappy decode error: {}{}",
+                    statusToString(decoder->result),
+                    getExceptionEntryWithFileName(*in));
+            }
+
+            out_capacity = internal_buffer.size();
+            out_data = internal_buffer.begin();
+            decoder->result = decoder->readBlock(&in_available, &in_data, &out_capacity, &out_data);
+
+            in->position() = in->buffer().end() - in_available;
+        }
+        while (decoder->result == Status::NEEDS_MORE_INPUT);
+
+        working_buffer.resize(internal_buffer.size() - out_capacity);
+
+        if (decoder->result != Status::OK)
         {
             throw Exception(
                 ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
@@ -204,35 +230,19 @@ bool HadoopSnappyReadBuffer::nextImpl()
                 getExceptionEntryWithFileName(*in));
         }
 
-        out_capacity = internal_buffer.size();
-        out_data = internal_buffer.begin();
-        decoder->result = decoder->readBlock(&in_available, &in_data, &out_capacity, &out_data);
-
-        in->position() = in->buffer().end() - in_available;
-    }
-    while (decoder->result == Status::NEEDS_MORE_INPUT);
-
-    working_buffer.resize(internal_buffer.size() - out_capacity);
-
-    if (decoder->result == Status::OK)
-    {
+        /// Spelled through the reference: `decoder->reset()` is ambiguous between resetting the
+        /// decoder and resetting the pointer (`readability-ambiguous-smartptr-reset-call`).
         (*decoder).reset();
+
         if (in->eof())
         {
             eof = true;
             return !working_buffer.empty();
         }
-        return true;
+
+        if (!working_buffer.empty())
+            return true;
     }
-    if (decoder->result != Status::NEEDS_MORE_INPUT)
-    {
-        throw Exception(
-            ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
-            "hadoop snappy decode error: {}{}",
-            statusToString(decoder->result),
-            getExceptionEntryWithFileName(*in));
-    }
-    return true;
 }
 
 }

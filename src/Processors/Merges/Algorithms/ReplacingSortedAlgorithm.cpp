@@ -42,9 +42,10 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes,
     bool cleanup_,
-    bool enable_vertical_final_)
+    bool enable_vertical_final_,
+    bool read_in_reverse_)
     : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs, std::make_unique<MergedData>(use_average_block_sizes, max_block_size_rows, max_block_size_bytes, max_dynamic_subcolumns_))
-    , cleanup(cleanup_), enable_vertical_final(enable_vertical_final_)
+    , cleanup(cleanup_), enable_vertical_final(enable_vertical_final_), read_in_reverse(read_in_reverse_)
 {
     if (!is_deleted_column.empty())
         is_deleted_column_number = header_->getPositionByName(is_deleted_column);
@@ -200,13 +201,41 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect data: is_deleted = {} (must be 1 or 0).", toString(is_deleted));
         }
 
-        /// A non-strict comparison, since we select the last row for the same version values.
-        if (version_column_number == -1
-            || selected_row.empty()
-            || current->all_columns[version_column_number]->compareAt(
-                current->getRow(), selected_row.row_num,
-                *(*selected_row.all_columns)[version_column_number],
-                /* nan_direction_hint = */ 1) >= 0)
+        bool replace_with_current_row = false;
+        if (selected_row.empty())
+        {
+            replace_with_current_row = true;
+        }
+        else
+        {
+            /// Three-way comparison of the current row's version with the selected row's version.
+            /// Without a version column all rows count as having equal versions, so the selection
+            /// falls through to the physical-order rule below.
+            int version_cmp = version_column_number == -1 ? 0
+                : current->all_columns[version_column_number]->compareAt(
+                    current->getRow(), selected_row.row_num,
+                    *(*selected_row.all_columns)[version_column_number],
+                    /* nan_direction_hint = */ 1);
+
+            if (version_cmp > 0)
+            {
+                replace_with_current_row = true;
+            }
+            else if (version_cmp == 0)
+            {
+                /// Rows with equal versions are selected by their physical order: the row written last wins.
+                /// The queue emits rows with equal sort key ordered by source index, i.e. by data part
+                /// (parts are ordered from the oldest to the newest one), and within one source in the reading order.
+                /// In the direct reading order the current row is always "newer", so it replaces the selected one
+                /// (a non-strict comparison in terms of the version). In the reverse reading order rows within
+                /// one source arrive backwards, so the current row replaces the selected one only when
+                /// it comes from a newer data part.
+                chassert(current_row.source_stream_index >= selected_row.source_stream_index);
+                replace_with_current_row = !read_in_reverse || current_row.source_stream_index > selected_row.source_stream_index;
+            }
+        }
+
+        if (replace_with_current_row)
         {
             max_pos = current_pos;
             saveChunkForSkippingFinalFromSelectedRow();
