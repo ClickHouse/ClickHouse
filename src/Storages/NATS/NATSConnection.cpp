@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_CONNECT_NATS;
 }
 
 void loadNATSCertificates(natsOptions * options, const NATSConfiguration & configuration)
@@ -35,6 +36,17 @@ void loadNATSCertificates(natsOptions * options, const NATSConfiguration & confi
                 configuration.client_cert_file, configuration.client_key_file,
                 natsStatus_GetText(status), getNATSLastError());
     }
+}
+
+void validateNATSCertificates(const NATSConfiguration & configuration)
+{
+    natsOptions * options = nullptr;
+    auto status = natsOptions_Create(&options);
+    if (status != NATS_OK)
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Can not initialize NATS options. Nats error: {}", natsStatus_GetText(status));
+
+    NATSOptionsPtr holder(options, &natsOptions_Destroy);
+    loadNATSCertificates(options, configuration);
 }
 
 /// disconnectedCallback may be called after connection destroy

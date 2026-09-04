@@ -45,6 +45,10 @@ using NATSOptionsPtr = std::unique_ptr<natsOptions, decltype(&natsOptions_Destro
 /// cannot be read or parsed is reported here instead of at connect time.
 void loadNATSCertificates(natsOptions * options, const NATSConfiguration & configuration);
 
+/// Loads the TLS material into throwaway options, which reports a file that cannot be read or parsed
+/// without opening a connection.
+void validateNATSCertificates(const NATSConfiguration & configuration);
+
 class NATSConnection
 {
     using Lock = std::lock_guard<std::mutex>;

@@ -176,7 +176,7 @@ StorageNATS::StorageNATS(
     /// The files are checked for a definition the user supplies now, so an unusable one is reported
     /// before the table exists even on a server which never connects to the broker.
     if (fresh_definition && !(configuration.ca_file.empty() && configuration.client_cert_file.empty()))
-        loadNATSCertificates(event_handler.createOptions().get(), configuration);
+        validateNATSCertificates(configuration);
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
