@@ -233,6 +233,7 @@ target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_PROF=1)
 if (ENABLE_JEMALLOC_UAF_SAN)
     target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_UAF_DETECTION)
 endif ()
+target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_EXPERIMENTAL_FIBER_SAFE_TLS)
 
 # jemalloc provides support two unwind flavors:
 # - JEMALLOC_PROF_LIBUNWIND - unw_backtrace() - gnu libunwind (compatible with llvm libunwind)
