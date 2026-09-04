@@ -35,6 +35,7 @@ namespace ProfileEvents
     extern const Event AdaptiveAggregationDrainedRecords;
     extern const Event AdaptiveAggregationPressureSweeps;
     extern const Event AdaptiveAggregationPressureDrainedRecords;
+    extern const Event AdaptiveAggregationResidueReleases;
 }
 
 namespace DB
@@ -1454,6 +1455,7 @@ size_t Aggregator::drainStagedBatch(
         table,
         [&](auto & method)
         {
+            bool no_more_keys = false;
             for (size_t b = 0; b < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++b)
             {
                 if (is_cancelled.load(std::memory_order_relaxed))
@@ -1467,6 +1469,14 @@ size_t Aggregator::drainStagedBatch(
 
                 drained += drainAdaptiveBucketBacklog<AdaptiveKeyStorage::CopyToArena>(
                     method, table.aggregates_pools.at(b).get(), chunks, b, records, places_scratch, is_cancelled);
+
+                /// This drain feeds the external path, which never runs the merge-time group
+                /// accounting, so `max_rows_to_group_by` is held against the drain table as it
+                /// grows, bucket by bucket. The table holds deduplicated keys, so its size is
+                /// a lower bound on the final group count and a throw-mode crossing is
+                /// definite; checking per bucket makes the query abort within one bucket's
+                /// worth of records past the limit instead of after a whole floor-sized batch.
+                checkLimits(table.size(), no_more_keys);
             }
         });
     return drained;
@@ -1476,6 +1486,7 @@ void Aggregator::spillDetachedAdaptiveTable(AdaptiveAggregationSession & shared,
 {
     if (shared.cancelled.load(std::memory_order_relaxed))
         return;
+
     LOG_TRACE(log, "Adaptive aggregation: writing a detached drain table ({} keys) to disk", table.size());
     consumeToTemporaryFile(table);
 }
@@ -1522,8 +1533,9 @@ void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) 
         /// grow into one arbitrarily large table.
         if (shared.early_drain_variants->size() >= adaptive_pressure_spill_min_keys)
         {
+            auto replacement = createAdaptiveDrainTable(shared.early_drain_variants->type);
             auto full = std::move(shared.early_drain_variants);
-            shared.early_drain_variants = createAdaptiveDrainTable(full->type);
+            shared.early_drain_variants = std::move(replacement);
             spillDetachedAdaptiveTable(shared, *full);
         }
 
@@ -1612,8 +1624,9 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
             if (shared.early_drain_variants->size() >= adaptive_pressure_spill_min_keys
                 && reservation.reserveOrWait(shared, shared.early_drain_variants->allocatedBytes()))
             {
+                auto replacement = createAdaptiveDrainTable(shared.early_drain_variants->type);
                 detached_shared = std::move(shared.early_drain_variants);
-                shared.early_drain_variants = createAdaptiveDrainTable(detached_shared->type);
+                shared.early_drain_variants = std::move(replacement);
             }
 
             sweep_lock.unlock();
@@ -1662,6 +1675,52 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
 
     if (drained_records)
         spillDetachedAdaptiveTable(shared, *local);
+}
+
+std::optional<Int64> Aggregator::releaseAdaptiveDrainResidue(AdaptiveAggregationSession & shared) const
+{
+    /// The shared table is created by the first freeze, so in a session where no producer ever
+    /// froze there is none: a learning thread can stand down under memory pressure alone.
+    if (!shared.initialized.load(std::memory_order_acquire))
+        return {};
+
+    std::unique_lock sweep_lock(shared.pressure_sweep_mutex);
+
+    /// Read under the coordinator lock: the sweeps replace this pointer while holding it. They
+    /// detach only at the part floor, so a residue below it is never written by them and stays
+    /// resident until the merge.
+    while (shared.early_drain_variants->hasData())
+    {
+        /// Declared before the table so that reverse-order destruction frees the table first:
+        /// the budget is handed on only once the bytes it stands for are really gone.
+        AdaptiveAggregationSession::SpillReservation reservation;
+        AggregatedDataVariantsPtr detached;
+
+        if (!reservation.reserveOrWait(shared, shared.early_drain_variants->allocatedBytes()))
+            return {};
+
+        auto replacement = createAdaptiveDrainTable(shared.early_drain_variants->type);
+        detached = std::move(shared.early_drain_variants);
+        shared.early_drain_variants = std::move(replacement);
+
+        /// Writing under the coordinator lock would stall every frozen producer's sweep for the
+        /// length of a disk write; only reservations may wait under it.
+        sweep_lock.unlock();
+        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationResidueReleases);
+        spillDetachedAdaptiveTable(shared, *detached);
+        detached.reset();
+        reservation.release();
+        sweep_lock.lock();
+    }
+
+    /// The whole budget is granted only when no detached table or reserved writer is in flight, and
+    /// holding it keeps a new detach from starting, while the coordinator lock keeps a sweep from
+    /// refilling the table, so memory already committed to a write cannot enter the reading.
+    AdaptiveAggregationSession::SpillReservation quiesce;
+    if (!quiesce.reserveOrWait(shared, adaptive_pressure_detached_bytes_budget))
+        return {};
+
+    return getCurrentQueryMemoryUsage();
 }
 
 }
