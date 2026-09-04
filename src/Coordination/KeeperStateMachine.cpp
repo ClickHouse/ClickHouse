@@ -218,7 +218,7 @@ void KeeperStateMachine::preprocessUncommittedLogEntries(uint64_t start_idx, uin
 
         if (entry && entry->get_val_type() == nuraft::log_val_type::app_log)
         {
-            auto batch = parseRequestBatch(entry->get_buf(), /*final=*/false, nullptr, nullptr, entry.get());
+            auto batch = parseRequestBatch(*entry, /*final=*/false, nullptr, nullptr);
             if (batch->first_zxid == 0)
             {
                 /// A legacy entry from an older node that didn't assign zxids;
@@ -261,11 +261,13 @@ union XidHelper
 
 }
 
-nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nuraft::buffer & data)
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit_ext(const nuraft::state_machine::ext_op_params & params)
 {
     LockMemoryExceptionInThread blocker{VariableContext::Global};
 
     const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
+
+    const uint64_t log_idx = params.log_idx;
 
     double sleep_probability = keeper_context->getPrecommitSleepProbabilityForTesting();
     int64_t sleep_ms = keeper_context->getPrecommitSleepMillisecondsForTesting();
@@ -288,8 +290,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nur
     if (!keeper_context->localLogsPreprocessed())
         return result;
 
-    auto log_entry = log_store ? log_store->entry_at_in_memory(log_idx) : nullptr;
-    auto batch = parseRequestBatch(data, /*final=*/false, nullptr, nullptr, log_entry.get());
+    auto batch = parseRequestBatch(*params.log_entry, /*final=*/false, nullptr, nullptr);
     if (batch->first_zxid == 0)
     {
         if (batch->requests.size() != 1)
@@ -378,13 +379,12 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::serializeRequestInOldFormat(cons
 }
 
 KeeperRequestBatchPtr KeeperStateMachine::parseRequestInOldFormat(
-    nuraft::buffer & data,
-    bool final,
+    nuraft::log_entry & entry,
     ZooKeeperLogSerializationVersion * serialization_version,
     size_t * patched_fields_offset,
-    nuraft::log_entry * entry)
+    bool only_patching_info)
 {
-    ReadBufferFromNuraftBuffer buffer(data);
+    ReadBufferFromNuraftBuffer buffer(entry.get_buf());
     int64_t session_id = 0;
     readIntBinary(session_id, buffer);
 
@@ -458,20 +458,10 @@ KeeperRequestBatchPtr KeeperStateMachine::parseRequestInOldFormat(
     if (serialization_version)
         *serialization_version = version;
 
-    const int64_t xid = xid_helper.xid;
+    if (only_patching_info)
+        return nullptr;
 
-    if (entry != nullptr && entry->user_data != nullptr)
-    {
-        auto batch = std::static_pointer_cast<KeeperRequestBatch>(entry->user_data);
-        chassert(batch->requests.size() == 1);
-        /// Reapply the patchable fields on every parse: the leader may have patched the
-        /// buffer in place since the batch was attached.
-        batch->first_zxid = zxid;
-        batch->digest = digest;
-        if (final)
-            entry->user_data.reset();
-        return batch;
-    }
+    const int64_t xid = xid_helper.xid;
 
     buffer.seek(buffer_position, SEEK_SET);
 
@@ -490,9 +480,6 @@ KeeperRequestBatchPtr KeeperStateMachine::parseRequestInOldFormat(
 
     if (tracing_context)
         request_for_session.request->tracing_context = std::move(tracing_context);
-
-    if (entry != nullptr && !final)
-        entry->user_data = batch;
 
     return batch;
 }
@@ -577,18 +564,12 @@ void KeeperStateMachine::patchSerializedRequestBatch(
 }
 
 KeeperRequestBatchPtr KeeperStateMachine::parseRequestBatch(
-    nuraft::buffer & data,
+    nuraft::log_entry & entry,
     bool final,
     ZooKeeperLogSerializationVersion * serialization_version,
-    size_t * patched_fields_offset,
-    nuraft::log_entry * entry)
+    size_t * patched_fields_offset)
 {
-    /// Only attach the parsed batch to `entry` if `data` is really this entry's payload.
-    /// (E.g. during rollback the entry at the rolled back log index may have already been
-    /// overwritten by a different one.)
-    if (entry != nullptr && entry->get_buf_ptr().get() != &data)
-        entry = nullptr;
-
+    nuraft::buffer & data = entry.get_buf();
     ReadBufferFromNuraftBuffer buffer(data);
 
     int64_t marker = 0;
@@ -599,7 +580,20 @@ KeeperRequestBatchPtr KeeperStateMachine::parseRequestBatch(
         /// Legacy format: the entry is a single request, and `marker` is its session id.
         /// For legacy versions `patched_fields_offset` is the request end position; which
         /// patchable fields follow it is determined by `serialization_version`.
-        return parseRequestInOldFormat(data, final, serialization_version, patched_fields_offset, entry);
+        auto batch = parseRequestInOldFormat(entry, serialization_version, patched_fields_offset, /*only_patching_info=*/ entry.user_data != nullptr);
+
+        if (entry.user_data != nullptr)
+        {
+            chassert(!batch);
+            batch = std::static_pointer_cast<KeeperRequestBatch>(entry.user_data);
+            if (final)
+                entry.user_data.reset();
+        }
+        else if (!final)
+        {
+            entry.user_data = batch;
+        }
+        return batch;
     }
 
     if (serialization_version)
@@ -607,21 +601,27 @@ KeeperRequestBatchPtr KeeperStateMachine::parseRequestBatch(
     if (patched_fields_offset)
         *patched_fields_offset = BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET;
 
+    if (entry.user_data != nullptr)
+    {
+        auto batch = std::static_pointer_cast<KeeperRequestBatch>(entry.user_data);
+        if (final)
+            entry.user_data.reset();
+        return batch;
+    }
+
+    auto batch = std::make_shared<KeeperRequestBatch>();
+
     uint32_t header_size = 0;
     readIntBinary(header_size, buffer);
 
-    int64_t committed_log_idx = 0;
-    int64_t first_zxid = 0;
-    KeeperDigest digest;
-    readIntBinary(first_zxid, buffer);
+    readIntBinary(batch->first_zxid, buffer);
     uint8_t digest_version = 0;
     readIntBinary(digest_version, buffer);
-    digest.version = static_cast<KeeperDigestVersion>(digest_version);
-    readIntBinary(digest.value, buffer);
-    readIntBinary(committed_log_idx, buffer);
+    batch->digest.version = static_cast<KeeperDigestVersion>(digest_version);
+    readIntBinary(batch->digest.value, buffer);
+    readIntBinary(batch->committed_log_idx, buffer);
 
-    int32_t dispatcher_server_id = -1;
-    readIntBinary(dispatcher_server_id, buffer);
+    readIntBinary(batch->dispatcher_server_id, buffer);
     uint32_t request_count = 0;
     readIntBinary(request_count, buffer);
 
@@ -638,29 +638,6 @@ KeeperRequestBatchPtr KeeperStateMachine::parseRequestBatch(
         throw Exception(
             ErrorCodes::CORRUPTED_DATA, "Corrupted batch log entry: {} requests don't fit in {} bytes", request_count, data.size());
 
-    /// Reapply the patchable fields on every parse: the leader may have patched the buffer in
-    /// place since a previous parse cached the batch.
-    const auto update_patched_fields = [&](KeeperRequestBatch & batch)
-    {
-        batch.committed_log_idx = committed_log_idx;
-        batch.first_zxid = first_zxid;
-        batch.digest = digest;
-    };
-
-    if (entry != nullptr && entry->user_data != nullptr)
-    {
-        auto batch = std::static_pointer_cast<KeeperRequestBatch>(entry->user_data);
-        chassert(batch->requests.size() == request_count);
-        /// Reapply the patchable fields on every parse: the leader may have patched the buffer
-        /// in place since the batch was attached.
-        update_patched_fields(*batch);
-        if (final)
-            entry->user_data.reset();
-        return batch;
-    }
-
-    auto batch = std::make_shared<KeeperRequestBatch>();
-    batch->dispatcher_server_id = dispatcher_server_id;
     batch->requests.reserve(request_count);
 
     for (uint32_t i = 0; i < request_count; ++i)
@@ -713,10 +690,8 @@ KeeperRequestBatchPtr KeeperStateMachine::parseRequestBatch(
             data.size() - buffer.getPosition(),
             request_count);
 
-    update_patched_fields(*batch);
-
-    if (entry != nullptr && !final)
-        entry->user_data = batch;
+    if (!final)
+        entry.user_data = batch;
 
     return batch;
 }
@@ -831,10 +806,10 @@ KeeperResponseForSession KeeperStateMachine::processReconfiguration(
     return { session_id, std::move(response) };
 }
 
-nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit_ext(const nuraft::state_machine::ext_op_params & params)
 {
-    auto log_entry = log_store ? log_store->entry_at_in_memory(log_idx) : nullptr;
-    auto batch = parseRequestBatch(data, /*final=*/true, nullptr, nullptr, log_entry.get());
+    uint64_t log_idx = params.log_idx;
+    auto batch = parseRequestBatch(*params.log_entry, /*final=*/true, nullptr, nullptr);
     if (batch->first_zxid == 0)
     {
         /// A legacy entry from an older node that didn't assign a zxid; use the log_idx as the zxid.
@@ -1185,14 +1160,14 @@ void KeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraf
     keeper_context->setLastCommitIndex(log_idx);
 }
 
-void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
+void KeeperStateMachine::rollback_ext(const nuraft::state_machine::ext_op_params & params)
 {
     /// Don't rollback anything until the first commit because nothing was preprocessed
     if (!keeper_context->localLogsPreprocessed())
         return;
 
-    auto log_entry = log_store ? log_store->entry_at_in_memory(log_idx) : nullptr;
-    auto batch = parseRequestBatch(data, /*final=*/true, nullptr, nullptr, log_entry.get());
+    uint64_t log_idx = params.log_idx;
+    auto batch = parseRequestBatch(*params.log_entry, /*final=*/true, nullptr, nullptr);
     // If we received a log from an older node, use the log_idx as the zxid
     // log_idx will always be larger or equal to the zxid so we can safely do this
     // (log_idx is increased for all logs, while zxid is only increased for requests)

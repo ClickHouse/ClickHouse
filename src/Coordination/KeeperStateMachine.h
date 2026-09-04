@@ -82,34 +82,30 @@ public:
     /// single-request format (for compatibility with clusters that have older servers).
     static std::vector<nuraft::ptr<nuraft::buffer>> serializeRequestBatch(const KeeperRequestBatch & batch, bool use_batched_format);
 
-    /// Overwrite the patchable header fields of a batch log entry produced by serializeRequestBatch.
+    /// Update serialized log entry in-place to set the few fields (e.g. zxid) that are assigned by
+    /// leader, at a different time than when the batch is first formed.
     static void patchSerializedRequestBatch(nuraft::buffer & data, ZooKeeperLogSerializationVersion serialization_version, size_t patched_fields_offset, const KeeperRequestBatch & batch);
 
-    /// Parses both a batch entry and a legacy single-request entry (returned as a batch of one).
+    /// Parses a raft log entry.
     ///
-    /// Lifetime of a parsed batch is:
-    /// [preprocess/PreAppendLog -> pre_commit -> commit]
-    /// [preprocess/PreAppendLog -> pre_commit -> rollback]
-    /// To avoid re-parsing at each step, the first parse attaches the batch to the in-memory
-    /// nuraft::log_entry (`entry->user_data`), later parses reuse it, and the last one detaches
-    /// it to keep memory usage at minimum.
-    /// No mutex protects `entry->user_data` or the KeeperRequestBatch fields: for a given log
-    /// entry all the steps above are ordered (append happens-before commit/rollback, through
-    /// nuraft's and the log store's locks), and nothing else holds the parsed batch.
-    /// entry - the log entry `data` belongs to, for attaching the parsed batch; nullptr to just
-    /// parse. Only used if it's really `data`'s entry (checked by buffer address; e.g. rollback
-    /// can be handed a buffer whose log index was already overwritten by a different entry).
-    /// final - whether it's the final time we will fetch the batch so we can detach it from the entry
-    /// serialization_version - which format/fields were parsed from the buffer so we can modify the buffer accordingly
-    /// patched_fields_offset - where the leader-patched fields live: for batch entries it is
-    /// BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET; for legacy entries it is the request end position
-    /// (which of the fields are present there follows from `serialization_version`).
+    /// The same serialized entry goes through multiple callbacks:
+    ///   [preprocess/PreAppendLog -> pre_commit_ext -> commit_ext]
+    ///   [preprocess/PreAppendLog -> pre_commit_ext -> rollback_ext]
+    /// We put the parsed value in log_entry::user_data to avoid re-parsing at each step.
+    ///
+    /// log_entry::user_data can be read and written without synchronization here. (I.e. currently
+    /// no code paths inside or outside nuraft can try to parse one log_entry in multiple threads.)
+    ///
+    /// `final` is true if we don't expect this entry to be parsed again on this server
+    /// (e.g. it's being committed), so the cached parsed value can be freed to save a tiny bit of
+    /// memory (which likely doesn't matter).
+    /// `serialization_version` and `patched_fields_offset` - information to be passed through to
+    /// patchSerializedRequestBatch.
     KeeperRequestBatchPtr parseRequestBatch(
-        nuraft::buffer & data,
+        nuraft::log_entry & log_entry,
         bool final,
         ZooKeeperLogSerializationVersion * serialization_version = nullptr,
-        size_t * patched_fields_offset = nullptr,
-        nuraft::log_entry * entry = nullptr);
+        size_t * patched_fields_offset = nullptr);
 
     /// Preprocess all requests of the batch in order. The batch must have first_zxid assigned.
     /// Returns the digest after the last request, or nullopt if the storage is finalized.
@@ -117,13 +113,13 @@ public:
     /// callback), only stamps batch.log_idx on its transactions.
     std::optional<KeeperDigest> preprocessBatch(const KeeperRequestBatch & batch, bool lock_mutex);
 
-    nuraft::ptr<nuraft::buffer> pre_commit(uint64_t log_idx, nuraft::buffer & data) override;
+    nuraft::ptr<nuraft::buffer> pre_commit_ext(const nuraft::state_machine::ext_op_params & params) override;
 
-    nuraft::ptr<nuraft::buffer> commit(const uint64_t log_idx, nuraft::buffer & data) override; /// NOLINT
+    nuraft::ptr<nuraft::buffer> commit_ext(const nuraft::state_machine::ext_op_params & params) override; /// NOLINT
 
     void commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf) override; /// NOLINT
 
-    void rollback(uint64_t log_idx, nuraft::buffer & data) override;
+    void rollback_ext(const nuraft::state_machine::ext_op_params & params) override;
 
     // Roll back the batch's requests in reverse zxid order.
     // allow_missing - whether the transactions we want to rollback can be missing from storage
@@ -273,11 +269,11 @@ private:
     static nuraft::ptr<nuraft::buffer> serializeRequestInOldFormat(const KeeperRequestForSession & request_for_session);
 
     KeeperRequestBatchPtr parseRequestInOldFormat(
-        nuraft::buffer & data,
-        bool final,
+        nuraft::log_entry & entry,
         ZooKeeperLogSerializationVersion * serialization_version,
         size_t * patched_fields_offset,
-        nuraft::log_entry * entry);
+        /// If true, assigns serialization_version and patched_fields_offset and returns nullptr.
+        bool only_patching_info);
 
     LoggerPtr log;
 
