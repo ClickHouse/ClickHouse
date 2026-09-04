@@ -1230,7 +1230,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
         try
         {
-            state_machine->parseRequestBatch(entry->get_buf(), /*final=*/false, nullptr, nullptr, entry.get());
+            state_machine->parseRequestBatch(*entry, /*final=*/false, nullptr, nullptr);
         }
         catch (...)
         {
@@ -1254,11 +1254,9 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 chassert(entry->get_val_type() == nuraft::app_log);
 
-                auto entry_buf = entry->get_buf_ptr();
-
                 KeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version = {};
                 size_t patched_fields_offset = 0;
-                auto batch = state_machine->parseRequestBatch(*entry_buf, /*final=*/false, &serialization_version, &patched_fields_offset, entry.get());
+                auto batch = state_machine->parseRequestBatch(*entry, /*final=*/false, &serialization_version, &patched_fields_offset);
 
                 /// Take a run of consecutive zxids for the batch; request i gets zxid first_zxid + i.
                 batch->first_zxid = state_machine->getNextZxid();
@@ -1279,6 +1277,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 if (bytes_missing != 0)
                 {
+                    auto entry_buf = entry->get_buf_ptr();
                     auto new_buffer = nuraft::buffer::alloc(entry_buf->size() + bytes_missing);
                     memcpy(new_buffer->data_begin(), entry_buf->data_begin(), entry_buf->size());
                     entry_buf = std::move(new_buffer);
@@ -1287,7 +1286,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                     entry->user_data = batch;
                 }
 
-                KeeperStateMachine::patchSerializedRequestBatch(*entry_buf, serialization_version, patched_fields_offset, *batch);
+                KeeperStateMachine::patchSerializedRequestBatch(entry->get_buf(), serialization_version, patched_fields_offset, *batch);
 
                 return nuraft::cb_func::ReturnCode::Ok;
             }
@@ -1304,8 +1303,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 chassert(entry->get_val_type() == nuraft::app_log);
 
-                auto & entry_buf = entry->get_buf();
-                auto batch = state_machine->parseRequestBatch(entry_buf, /*final=*/true, nullptr, nullptr, entry.get());
+                auto batch = state_machine->parseRequestBatch(*entry, /*final=*/true, nullptr, nullptr);
                 state_machine->rollbackRequestBatch(*batch, true);
                 return nuraft::cb_func::ReturnCode::Ok;
             }

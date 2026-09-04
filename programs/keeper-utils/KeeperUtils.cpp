@@ -703,7 +703,7 @@ int dumpStateMachine(
                 if (debug_mode)
                 {
                     LOG_INFO(logger, "Current digest of state machine: {}", state_machine->getNodesDigest().value);
-                    auto batch = state_machine->parseRequestBatch(entry.get_buf(), true);
+                    auto batch = state_machine->parseRequestBatch(entry, true);
                     for (size_t request_idx = 0; request_idx < batch->requests.size(); ++request_idx)
                     {
                         const auto & req = batch->requests[request_idx];
@@ -864,7 +864,7 @@ int deserializeChangelog(
                         continue;
                     }
 
-                    auto batch = state_machine->parseRequestBatch(entry->get_buf(), true);
+                    auto batch = state_machine->parseRequestBatch(*entry, true);
                     /// The digest is per batch (of the state after the whole batch); show it on every row of the batch.
                     const auto & digest = batch->digest;
 
@@ -966,9 +966,9 @@ int deserializeChangelog(
             {
                 try
                 {
-                    if (auto buffer = entry->get_buf_ptr(); buffer)
+                    if (entry->get_buf_ptr())
                     {
-                        auto batch = state_machine->parseRequestBatch(*buffer, true);
+                        auto batch = state_machine->parseRequestBatch(*entry, true);
                         if (batch->digest.version != KeeperDigestVersion::NO_DIGEST)
                             std::cout << fmt::format("Digest: {} ({})\n", batch->digest.value, batch->digest.version);
                         if (batch->dispatcher_server_id != -1)
