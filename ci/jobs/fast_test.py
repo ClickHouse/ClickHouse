@@ -21,6 +21,9 @@ build_dir = f"{current_directory}/ci/tmp/fast_build"
 temp_dir = Path(current_directory) / "ci" / "tmp"
 build_dir_normalized = str(repo_path / "ci" / "tmp" / "fast_build")
 
+# Must match SQL_STACKTRACES_LOG and C_STACKTRACES_LOG in tests/clickhouse-test.
+STACKTRACE_LOGS = ("sql_stacktraces.log", "c_stacktraces.log")
+
 
 def clone_submodules():
     submodules_to_update = [
@@ -60,6 +63,7 @@ def clone_submodules():
         "contrib/StringZilla",
         "contrib/rust_vendor",
         "contrib/clickstack",
+        "contrib/sql-console",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)
@@ -214,7 +218,7 @@ def main():
     os.environ["SCCACHE_DIR"] = f"{temp_dir}/sccache"
     os.environ["SCCACHE_CACHE_SIZE"] = "40G"
     os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
-    os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
+    os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_BUCKET
     os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
     os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
     os.environ["SCCACHE_LOG"] = "info"
@@ -344,6 +348,13 @@ def main():
     CH.install_configs()
 
     attach_debug = False
+
+    # Not under `res`: a server-start failure reaches the attach below without
+    # running any test, so the clear has to happen even then.
+    if JobStages.TEST in stages:
+        for stacktrace_log in STACKTRACE_LOGS:
+            (temp_dir / stacktrace_log).unlink(missing_ok=True)
+
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
         step_name = "Start ClickHouse Server"
@@ -405,7 +416,7 @@ def main():
         # clickhouse-test runs with cwd=temp_dir, so the full server stacktrace
         # dumps it writes on a timeout / hung check land here. Attach them so
         # the report links the full dumps (stdout keeps only a trimmed preview).
-        for stacktrace_log in ("sql_stacktraces.log", "c_stacktraces.log"):
+        for stacktrace_log in STACKTRACE_LOGS:
             path = temp_dir / stacktrace_log
             if path.exists():
                 attach_files.append(path)

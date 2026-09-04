@@ -83,6 +83,7 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
+                                            | splitByRegexp(re)
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -122,6 +123,7 @@ ALTER TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
+                                            | splitByRegexp(re)
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -161,6 +163,9 @@ ALTER TABLE table DROP INDEX text_idx;
   구분자는 선택적 매개변수로 지정할 수 있습니다. 예: `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
   각 문자열은 여러 문자로 구성될 수 있습니다(예시의 `', '`).
   명시적으로 지정하지 않으면(예: `tokenizer = splitByString`) 기본 구분자 목록은 공백 1개인 `[' ']`입니다.
+* `splitByRegexp(re)`는 사용자가 정의한 정규식 구분자 `re`를 기준으로 문자열을 분할합니다(함수 [splitByRegexp](/ko/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp) 참조).
+  `re` 인수는 필수입니다. 예: `tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')`.
+  `splitByString`의 고정 구분자 문자열과 달리, 정규식 구분자는 다른 토크나이저가 분할하는 `C++` 또는 `C#` 같은 특수 문자가 포함된 토큰을 보존할 수 있습니다.
 * `asciiCJK`는 유니코드 단어 경계 규칙을 사용해 문자열을 토큰으로 분할합니다([Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)와 유사). ASCII 영숫자와 밑줄은 연결 문자와 함께 토큰을 이룹니다(문자의 경우 ASCII `:`, 같은 유형의 문자에는 `.` 및 `'`). [CJK](https://en.wikipedia.org/wiki/CJK_characters) 문자를 포함한 비ASCII 유니코드 문자는 한 글자 토큰이 됩니다.
 * `chinese[(granularity)]`는 딕셔너리와 은닉 마르코프 모델을 사용해 중국어 텍스트를 단어로 세분화합니다(알고리즘은 [jieba](https://github.com/fxsjy/jieba)를 따르며, 내장 딕셔너리와 모델 데이터는 [cppjieba](https://github.com/yanyiwu/cppjieba)에서 파생되었습니다). 모든 비ASCII 문자를 한 글자 토큰으로 처리하는 `asciiCJK`와 달리, `chinese`는 연속된 중국어 문자를 단어로 그룹화합니다(예: `北京大学`는 한 글자 토큰 4개가 아니라 하나의 토큰 `北京大学`가 됩니다). 이를 통해 중국어 텍스트에 더 의미 있는 토큰과 더 높은 검색 품질을 제공합니다. 일반/혼합 텍스트에는 `asciiCJK`를 사용하고, 중국어 전용 텍스트에는 `chinese`를 사용하십시오. 선택적 `granularity` 인수는 `'coarse_grained'`(지정하지 않은 경우 기본값) 또는 `'fine_grained'`입니다. 후자는 겹치는 하위 단어도 추가로 열거하므로, 예를 들어 `北京邮电大学`에서는 `北京`, `邮电`, `大学`도 생성됩니다. 세분화 수준이 높은 토큰화는 더 큰 인덱스를 사용하는 대신 재현율을 높입니다.
   `chinese` 텍스트 인덱스는 ASCII 구분자만 기준으로 분할하는 `hasToken`이 아니라, 니들을 `chinese` 토크나이저로 토큰화하는 [hasAnyTokens](/ko/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/ko/reference/functions/regular-functions/string-search-functions#hasAllTokens)로 검색하십시오.
@@ -176,7 +181,7 @@ ALTER TABLE table DROP INDEX text_idx;
   매개변수 `min_cutoff_length`가 제공되면 길이가 `min_cutoff_length` 이상인 n-그램만 반환됩니다.
   `ngrams(N)`와 비교하면 `sparseGrams` 토크나이저는 가변 길이 N-그램을 생성하므로 원본 텍스트를 더 유연하게 표현할 수 있습니다.
   예를 들어 `tokenizer = sparseGrams(3, 5, 4)`는 내부적으로 입력 문자열에서 3-, 4-, 5-그램을 생성하지만, 실제로는 4-그램과 5-그램만 반환합니다.
-* `array`는 토큰화를 수행하지 않습니다. 즉, 각 행 값 자체가 하나의 토큰입니다(함수 [array](/ko/reference/functions/regular-functions/array-functions#array) 참조).
+* `array`는 토큰화를 수행하지 않습니다. 즉, 각 행 값 자체가 하나의 토큰입니다(함수 [array](/ko/reference/functions/regular-functions/array-functions#array) 참조). 다른 시스템과의 호환성을 위해 `keyword`를 `array`의 별칭으로 사용할 수 있습니다.
 
 사용 가능한 모든 토크나이저는 [system.tokenizers](/ko/reference/system-tables/tokenizers)에 나열되어 있습니다.
 
@@ -410,7 +415,7 @@ SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 
 후처리기는 인덱스 빌드 중 생성된 각 토큰에 적용됩니다(`array` 토크나이저에서는 각 배열 원소가 토큰입니다). 쿼리 시점의 동작은 함수에 따라 달라집니다:
 
-* `hasToken`, `hasAllTokens`, `hasAnyTokens`, `hasPhrase`의 경우(지원되는 모든 토크나이저 사용 시): 후처리기는 헤이스택 토큰과 검색 니들 모두에 적용되어 완전히 정규화된 일치(예: 대소문자를 구분하지 않는 검색)를 지원합니다. `hasPhrase`의 경우 후처리된 토큰은 빈틈없이 배치되므로, 후처리기가 제거한 토큰은 위치 간격을 남기지 않아 해당 토큰을 건너뛰어도 구문이 일치합니다. 예를 들어 `the`를 제거하는 불용어 후처리기를 사용하면 `hasPhrase(col, 'see cat')`는 문서 `see the cat`와 일치합니다.
+* `hasToken`, `hasAllTokens`, `hasAnyTokens`, `hasPhrase`의 경우(지원되는 모든 토크나이저 사용 시): 후처리기는 헤이스택 토큰과 검색 니들 모두에 적용되어 완전히 정규화된 일치(예: 대소문자를 구분하지 않는 검색)를 지원합니다. `hasPhrase`의 경우 후처리된 토큰은 빈틈없이 배치되므로, 후처리기가 제거한 토큰은 위치 간격을 남기지 않아 해당 토큰을 건너뛰어도 구문이 일치합니다. 예를 들어 `the`를 제거하는 불용어 후처리기를 사용하면 `hasPhrase(col, 'see cat')`는 문서 `see the cat`와 일치합니다. 유일한 예외는 후처리기를 지원하지 않는 `splitByRegexp` 인덱스에서의 `hasPhrase`이며(이 조합은 예외와 함께 거부됩니다).
 * 다른 모든 함수(`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`)의 경우: 인덱스 힌트 조회를 위해 검색 니들만 후처리됩니다. 행 수준 프레디케이트는 여전히 원본 컬럼 값과 비교합니다.
 
 예시:
@@ -518,38 +523,40 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 텍스트 인덱스를 참조하는 프레디케이트에서는 인덱스 조회가 인덱스 빌드 시 저장된 것과 동일한 토큰을 사용하도록, granule 수준 검사 전에 검색 값에 전처리기와 후처리기를 적용합니다.
 대부분의 함수(`=`, `IN`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`)에서는 텍스트 인덱스가 관련 없는 데이터 블록을 건너뛰는 데만 사용되며, ClickHouse는 남은 각 행에 대해 원본 컬럼 데이터를 기준으로 원본 프레디케이트를 사용해 계속 검증합니다.
 토큰 검색 함수(`hasToken`, `hasAllTokens`, `hasAnyTokens`)에서는 텍스트 인덱스가 기본 평가 경로입니다. ClickHouse는 인덱스 빌드 시 적용된 것과 동일한 전처리기, 토크나이저, 후처리기를 통해 needle을 정규화하고, 이 정규화된 형태를 인덱스가 있는 테이블 파트와 없는 테이블 파트 모두에 사용합니다. 후처리기가 있으면 haystack 토큰도 쿼리 시점에 정규화되므로(`array`뿐 아니라 모든 토크나이저에 적용됨), 비교 양쪽이 일관되게 변환되며 결과도 인덱스를 직접 읽는지(설정 `query_plan_direct_read_from_text_index`) 또는 특정 파트에 구체화된 인덱스가 있는지와 관계없이 동일합니다. 예를 들어 `lower` 후처리기를 사용하면 `hasAllTokens(col, ['FOO'])`에서 대소문자를 구분하지 않는 매칭을 사용할 수 있습니다.
-`support_phrase_search`가 없으면 `hasPhrase`는 인덱스를 힌트로만 사용하고, 남은 각 행은 원본 프레디케이트로 검증합니다. 또한 후처리기가 있으면 구문과 haystack 토큰 모두를 같은 방식으로 정규화하므로 결과는 읽기 경로와 무관하며, 후처리기가 제거한 토큰 때문에 구문 인접성이 깨지지 않습니다. `support_phrase_search = 1`이면 `hasPhrase`는 정확한 직접 읽기를 사용합니다(후처리기가 있으면 계속 적용됨).
+`support_phrase_search`가 없으면 `hasPhrase`는 인덱스를 힌트로만 사용하고, 남은 각 행은 원본 프레디케이트로 검증합니다. 또한 후처리기가 있으면 구문과 haystack 토큰 모두를 같은 방식으로 정규화하므로 결과는 읽기 경로와 무관하며, 후처리기가 제거한 토큰 때문에 구문 인접성이 깨지지 않습니다. `support_phrase_search = 1`이면 `hasPhrase`는 정확한 직접 읽기를 사용합니다(후처리기가 있으면 계속 적용됨). 이 후처리기 지원은 `splitByRegexp` 토크나이저에는 적용되지 않습니다. 후처리기와 결합된 `splitByRegexp` 인덱스에서의 `hasPhrase`는 거부됩니다(아래 각주 ³ 참조).
 후처리기가 빈 문자열로 매핑하는 검색 토큰은 무시되며, 즉 검색 구문에 없는 것으로 처리됩니다。
 
-| 함수                                                                                                      | 전처리기 지원                      | 호환되는 토크나이저                                                      | 후처리기 지원 |
-| ------------------------------------------------------------------------------------------------------- | ---------------------------- | --------------------------------------------------------------- | ------- |
-| `=`                                                                                                     | 예                            | 모두                                                              | 예       |
-| `IN`                                                                                                    | 예                            | 모두                                                              | 예       |
-| [hasToken](/ko/reference/functions/regular-functions/string-search-functions#hasToken)                     | 예                            | 모두 (`splitByNonAlpha`에 맞게 설계됨)                                  | 예       |
-| [hasAnyTokens(col, str)](/ko/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | 예                            | 모두                                                              | 예       |
-| [hasAllTokens(col, str)](/ko/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | 예                            | 모두                                                              | 예       |
-| [hasAnyTokens(col, arr)](/ko/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | 아니요 (배열 요소가 토큰으로 있는 그대로 사용됨) | 모두                                                              | 예       |
-| [hasAllTokens(col, arr)](/ko/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | 아니요 (배열 요소가 토큰으로 있는 그대로 사용됨) | 모두                                                              | 예       |
-| [hasPhrase](/ko/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | 예                            | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, `icu` | 예       |
-| [startsWith](/ko/reference/functions/regular-functions/string-functions#startsWith)                        | 예                            | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | 예       |
-| [endsWith](/ko/reference/functions/regular-functions/string-functions#endsWith)                            | 예                            | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | 예       |
-| [like](/ko/reference/functions/regular-functions/string-search-functions#like)                             | 예¹                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹         | 예¹      |
-| [match](/ko/reference/functions/regular-functions/string-search-functions#match)                           | 예¹                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹         | 예¹      |
-| [ilike](/ko/reference/functions/regular-functions/string-search-functions#like)                            | 예² (`lower`/`upper`만)        | `splitByNonAlpha`, `array`²                                     | 아니요²    |
-| [mapContainsKey](/ko/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | 예                            | 모두                                                              | 예       |
-| [mapContainsValue](/ko/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | 예                            | 모두                                                              | 예       |
-| [mapContainsKeyLike](/ko/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | 예                            | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | 예       |
-| [mapContainsValueLike](/ko/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | 예                            | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | 예       |
-| [has](/ko/reference/functions/regular-functions/array-functions#has)                                       | 예                            | `array`                                                         | 예       |
-| [hasAny](/ko/reference/functions/regular-functions/array-functions#hasAny)                                 | 예                            | `array`                                                         | 예       |
-| [hasAll](/ko/reference/functions/regular-functions/array-functions#hasAll)                                 | 예                            | `array`                                                         | 예       |
+| 함수                                                                                                      | 전처리기 지원                      | 호환되는 토크나이저                                                                        | 후처리기 지원 |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------- | ------- |
+| `=`                                                                                                     | 예                            | 모두                                                                                | 예       |
+| `IN`                                                                                                    | 예                            | 모두                                                                                | 예       |
+| [hasToken](/ko/reference/functions/regular-functions/string-search-functions#hasToken)                     | 예                            | 모두 (`splitByNonAlpha`에 맞게 설계됨)                                                    | 예       |
+| [hasAnyTokens(col, str)](/ko/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | 예                            | 모두                                                                                | 예       |
+| [hasAllTokens(col, str)](/ko/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | 예                            | 모두                                                                                | 예       |
+| [hasAnyTokens(col, arr)](/ko/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | 아니요 (배열 요소가 토큰으로 있는 그대로 사용됨) | 모두                                                                                | 예       |
+| [hasAllTokens(col, arr)](/ko/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | 아니요 (배열 요소가 토큰으로 있는 그대로 사용됨) | 모두                                                                                | 예       |
+| [hasPhrase](/ko/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | 예                            | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `icu` | 예³      |
+| [startsWith](/ko/reference/functions/regular-functions/string-functions#startsWith)                        | 예                            | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | 예       |
+| [endsWith](/ko/reference/functions/regular-functions/string-functions#endsWith)                            | 예                            | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | 예       |
+| [like](/ko/reference/functions/regular-functions/string-search-functions#like)                             | 예¹                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | 예¹      |
+| [match](/ko/reference/functions/regular-functions/string-search-functions#match)                           | 예¹                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | 예¹      |
+| [ilike](/ko/reference/functions/regular-functions/string-search-functions#like)                            | 예² (`lower`/`upper`만)        | `splitByNonAlpha`, `array`²                                                       | 아니요²    |
+| [mapContainsKey](/ko/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | 예                            | 모두                                                                                | 예       |
+| [mapContainsValue](/ko/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | 예                            | 모두                                                                                | 예       |
+| [mapContainsKeyLike](/ko/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | 예                            | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | 예       |
+| [mapContainsValueLike](/ko/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | 예                            | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | 예       |
+| [has](/ko/reference/functions/regular-functions/array-functions#has)                                       | 예                            | `array`                                                                           | 예       |
+| [hasAny](/ko/reference/functions/regular-functions/array-functions#hasAny)                                 | 예                            | `array`                                                                           | 예       |
+| [hasAll](/ko/reference/functions/regular-functions/array-functions#hasAll)                                 | 예                            | `array`                                                                           | 예       |
 
-¹ `LIKE`와 `match`는 나열된 토크나이저에서 힌트로 직접 읽기를 사용하며, 그렇지 않으면 브루트 포스(전체 스캔) 스캔으로 폴백됩니다.
+¹ `LIKE`와 `match`는 나열된 토크나이저에서 힌트로 직접 읽기를 사용하며, 그렇지 않으면 브루트 포스(전체 스캔)으로 폴백됩니다.
 또한 `LIKE`는 전처리기나 후처리기 없이 `splitByNonAlpha` 및 `array` 토크나이저에 대해 *직접 읽기(힌트 없이)*도 지원합니다(`use_text_index_like_evaluation_by_dictionary_scan`으로 활성화).
 
 ² `ILIKE`는 *직접 읽기(힌트 없이)*를 통해서만 지원됩니다(`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` 또는 `array` 토크나이저).
 인덱스를 힌트로 사용하는 폴백은 지원되지 않습니다. 즉, 설정이 비활성화되어 있거나 토크나이저가 지원되는 집합에 없으면 `ILIKE`에는 인덱스가 사용되지 않습니다.
 전처리기가 있는 경우 `lower` 또는 `upper`여야 하며, 후처리기는 지원되지 않습니다.
+
+³ `splitByRegexp` 텍스트 인덱스에서 `hasPhrase`는 후처리기를 지원하지 **않습니다**. 후처리기 행 수준 재작성은 공백으로 분할하는 `splitByNonAlpha` 스타일 토큰을 전제로 하므로, 이 조합은 예외와 함께 거부됩니다. 후처리기가 없으면 `splitByRegexp`는 `hasPhrase`에서 완전히 지원됩니다.
 
 **실험적: 구문 검색 인수 지원(선택 사항)**.
 
@@ -837,7 +844,7 @@ SELECT count() FROM table WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 모든 토큰이 어딘가에 존재하기만 하면 되는 `hasAllTokens`와 달리, `hasPhrase`는 토큰이 연속된 시퀀스로 나타나야 합니다.
 검색 구는 인덱스 컬럼에 구성된 것과 동일한 토크나이저를 사용해 토큰화됩니다.
 텍스트 인덱스가 후처리기를 사용하는 경우, 검색 구도 인덱스 조회 전에 정규화됩니다.
-이 함수는 `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, `icu` 토크나이저 중 하나를 요구합니다.
+이 함수는 `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, `icu` 토크나이저 중 하나를 요구합니다.
 
 예시:
 
@@ -1276,7 +1283,7 @@ WHERE hasPhrase(col, 'weather in Tokyo')
 이 과정은 비교적 비용이 크며 일반적인 텍스트 검색 쿼리보다 느립니다.
 구문 검색 쿼리의 속도를 높이려면 텍스트 인덱스에서 위치 저장을 활성화하십시오(위의 `Optional parameters` 참고).
 
-`hasPhrase`는 토크나이저 `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, `icu`와 함께 사용할 수 있습니다.
+`hasPhrase`는 토크나이저 `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, `icu`와 함께 사용할 수 있습니다.
 지정된 구문 문자열은 인덱스의 토크나이저를 사용해 토큰화됩니다.
 구문 내 구분자 문자는 무시됩니다. `splitByNonAlpha`를 토크나이저로 사용한다고 가정하면 `hasPhrase(text, 'quick+brown')`는 `hasPhrase(text, 'quick brown')`와 동일합니다.
 
@@ -1557,6 +1564,14 @@ Aggregating
 * 토큰 수가 많은 텍스트 인덱스(예: 100억 개의 토큰)를 머티리얼라이즈하는 과정에서 상당한 양의 메모리를 사용할 수 있습니다. 텍스트
   인덱스 머티리얼라이즈는 직접(`ALTER TABLE <table> MATERIALIZE INDEX <index>`) 수행할 수도 있고, 파트 병합 중에 간접적으로 발생할 수도 있습니다.
 * 4,294,967,296개(= 2^32 = 약 42억)보다 많은 행이 있는 파트에서는 텍스트 인덱스를 구체화할 수 없습니다. 구체화된 텍스트 인덱스가 없으면 쿼리는 해당 파트 내에서 느린 브루트포스 검색으로 폴백됩니다. 최악의 경우를 가정해 보겠습니다. 파트에 String 유형의 단일 컬럼만 포함되어 있고, MergeTree 설정 `max_bytes_to_merge_at_max_space_in_pool`(기본값: 150 GB)이 변경되지 않았다고 가정합니다. 이 경우 해당 컬럼의 행당 평균 문자 수가 29.5자 미만이면 이런 상황이 발생합니다. 실제로는 테이블에 다른 컬럼도 포함되므로 임계값은 이보다 몇 배 더 작아집니다(다른 컬럼의 개수, 유형, 크기에 따라 달라집니다).
+
+<div id="upgrade-notes">
+  ## 업그레이드 참고 사항
+</div>
+
+텍스트 인덱스의 디스크 저장 포맷 버전은 테이블 수준 설정인 [`text_index_serialization_version`](/ko/reference/settings/merge-tree-settings/text-index)(기본값: `v2_with_positions`)으로 제어됩니다.
+이 설정은 엄격한 제약 조건이 아니라 우선순위입니다. 구성된 버전으로 인덱스를 표현할 수 없으면 이를 표현할 수 있는 더 최신 버전이 자동으로 선택되므로, 이 설정으로 인해 텍스트 인덱스 쓰기가 실패하지는 않습니다.
+롤링 업그레이드 중에는 이미 업그레이드된 서버에서 [`compatibility`](/ko/reference/settings/session-settings/compatibility#compatibility) 설정을 사용해 포맷을 고정하십시오. 해당 포맷이 도입된 버전보다 이전 버전으로 설정하면 `text_index_serialization_version`이 자동으로 이전 값으로 되돌아가고, 최신 서버는 이전 서버에서도 계속 읽을 수 있는 포맷으로 기록합니다.
 
 <div id="text-index-vs-bloom-filter-indexes">
   ## 텍스트 인덱스와 블룸 필터 기반 인덱스 비교

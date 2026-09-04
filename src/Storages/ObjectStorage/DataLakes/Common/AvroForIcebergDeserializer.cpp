@@ -54,6 +54,7 @@ try
     }
 
     metadata = manifest_file_reader->metadata();
+    bytes_read = buffer->count();
     parsed_column = std::move(columns[0]);
     parsed_column_data_type = std::dynamic_pointer_cast<const DataTypeTuple>(data_type);
     parsed_manifest_file_entries.resize(parsed_column->size());
@@ -135,50 +136,53 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
             status_value);
     const auto status = ManifestEntryStatus(status_value);
 
-    const auto snapshot_id_value = getValueFromRowByName(row_index, f_snapshot_id);
+    /// Iceberg v2 makes `snapshot_id` optional on the manifest entry: a missing Avro column
+    /// or a null value is inherited from the manifest list (`added_snapshot_id`). Not gated
+    /// on `format_version > 1` because the version comes from the Avro `format-version` key
+    /// or, failing that, from the presence of `sequence_number` -- a writer omitting both
+    /// would be misclassified as v1 and rejected here.
     std::optional<Int64> snapshot_id;
-
-    if (snapshot_id_value.isNull())
+    const bool has_snapshot_id_column = hasPath(f_snapshot_id);
+    if (has_snapshot_id_column)
     {
-        if (status == ManifestEntryStatus::EXISTING)
-        {
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Cannot read Iceberg table: manifest file '{}' has entry with status 'EXISTING' without snapshot id",
-                manifest_file_path);
-        }
+        const auto snapshot_id_value = getValueFromRowByName(row_index, f_snapshot_id);
+        if (!snapshot_id_value.isNull())
+            snapshot_id = snapshot_id_value.safeGet<Int64>();
     }
-    else
-    {
-        snapshot_id = snapshot_id_value.safeGet<Int64>();
-    }
+    /// EXISTING entries must carry an explicit snapshot id: Compaction.cpp restores their
+    /// lineage from `parsed_snapshot_id` and would otherwise substitute this manifest's
+    /// `added_snapshot_id`, which is not the snapshot that originally added the file.
+    if (!snapshot_id.has_value() && status == ManifestEntryStatus::EXISTING)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Cannot read Iceberg table: manifest file '{}' has an EXISTING entry without a snapshot id "
+            "(the snapshot_id column is {})",
+            manifest_file_path,
+            has_snapshot_id_column ? "null" : "absent");
 
+    /// `sequence_number` is optional on a v2 manifest entry for the same reason as `snapshot_id`, so a
+    /// missing column is left unresolved rather than substituted with 0. A literal 0 reads as an assigned
+    /// value, which skips inheritance in ManifestFileIterator and makes an ADDED data file look older than
+    /// it is; a manifest rewrite would then persist that 0 as the entry's explicit data sequence number.
     std::optional<Int64> sequence_number;
-
     if (format_version > 1)
     {
-        if (!hasPath(f_sequence_number))
-        {
-            sequence_number = 0;
-        }
-        else
+        const bool has_sequence_number_column = hasPath(f_sequence_number);
+        if (has_sequence_number_column)
         {
             const auto sequence_number_value = getValueFromRowByName(row_index, f_sequence_number);
-            if (sequence_number_value.isNull())
-            {
-                if (status == ManifestEntryStatus::EXISTING)
-                {
-                    throw Exception(
-                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                        "Cannot read Iceberg table: manifest file '{}' has entry with status 'EXISTING' without sequence number",
-                        manifest_file_path);
-                }
-            }
-            else
-            {
+            if (!sequence_number_value.isNull())
                 sequence_number = sequence_number_value.safeGet<Int64>();
-            }
         }
+        /// The spec inherits data and file sequence numbers only for ADDED entries; EXISTING and DELETED
+        /// must carry them explicitly (https://iceberg.apache.org/spec/#sequence-number-inheritance).
+        if (!sequence_number.has_value() && status == ManifestEntryStatus::EXISTING)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot read Iceberg table: manifest file '{}' has an EXISTING entry without a data "
+                "sequence number (the sequence_number column is {})",
+                manifest_file_path,
+                has_sequence_number_column ? "null" : "absent");
     }
 
     /// `file_sequence_number` can differ from the data `sequence_number` and, like it, is inherited from the
@@ -190,6 +194,17 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
         const auto file_sequence_number_value = getValueFromRowByName(row_index, f_file_sequence_number);
         if (!file_sequence_number_value.isNull())
             file_sequence_number = file_sequence_number_value.safeGet<Int64>();
+    }
+
+    std::optional<UInt64> first_row_id;
+
+    if (format_version > 2 && hasPath(c_data_file_first_row_id))
+    {
+        const auto first_row_id_value = getValueFromRowByName(row_index, c_data_file_first_row_id);
+        if (!first_row_id_value.isNull())
+        {
+            first_row_id = first_row_id_value.safeGet<Int64>();
+        }
     }
 
     const auto file_path_key = IcebergPathFromMetadata::deserialize(
@@ -287,6 +302,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 sequence_number,
                 file_sequence_number,
                 snapshot_id,
+                first_row_id,
                 partition_key_value,
                 columns_infos,
                 value_for_bounds,
@@ -335,6 +351,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 sequence_number,
                 file_sequence_number,
                 snapshot_id,
+                first_row_id,
                 partition_key_value,
                 columns_infos,
                 value_for_bounds,
@@ -359,6 +376,11 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                     DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                     "Couldn't find field {} in equality delete file entry",
                     c_data_file_equality_ids);
+            if (equality_ids.empty())
+                throw Exception(
+                    DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Field {} is empty in equality delete file entry, but at least one equality field id is required",
+                    c_data_file_equality_ids);
             return std::make_shared<const ParsedManifestFileEntry>(
                 FileContentType::EQUALITY_DELETE,
                 file_path_key,
@@ -367,6 +389,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 sequence_number,
                 file_sequence_number,
                 snapshot_id,
+                first_row_id,
                 partition_key_value,
                 columns_infos,
                 value_for_bounds,
