@@ -1291,6 +1291,26 @@ void AggregatingTransform::consume(Chunk chunk)
     }
 }
 
+ProcessorMemoryStats AggregatingTransform::getMemoryStats() const
+{
+    /// Reclaimable only while the table is still being filled and can be written out as two-level.
+    if (is_consume_finished || variants.empty() || !params->params.tmp_data_scope)
+        return {};
+    if (!variants.isTwoLevel() && !variants.isConvertibleToTwoLevel())
+        return {};
+
+    ProcessorMemoryStats res;
+    res.spillable_memory_bytes = variants.memoryUsage();
+    return res;
+}
+
+size_t AggregatingTransform::spill(size_t /*at_least_bytes*/)
+{
+    if (!getMemoryStats().spillable_memory_bytes)
+        return 0;
+    return params->aggregator.spill(variants);
+}
+
 void AggregatingTransform::initGenerate()
 {
     if (is_generate_initialized.test_and_set())

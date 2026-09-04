@@ -2218,13 +2218,8 @@ bool Aggregator::executeOnBlock(Columns columns,
     bool & no_more_keys,
     AdaptiveAggregationProducer * adaptive) const
 {
-    /// When tracking the aggregation memory, the aggregator memory tracker is inserted between the thread
-    /// and query memory trackers, and accounts for the aggregation state across all threads.
-    const bool use_own_tracker = memory_tracker && CurrentThread::getMemoryTracker()
-        && CurrentThread::getMemoryTracker()->getParent() == memory_tracker->getParent();
     std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
-    if (use_own_tracker)
-        memory_tracker_switcher.emplace(memory_tracker.get());
+    const bool use_own_tracker = switchToOwnTracker(result, memory_tracker_switcher);
 
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
@@ -2503,9 +2498,36 @@ bool Aggregator::executeOnBlock(Columns columns,
     return true;
 }
 
+bool Aggregator::switchToOwnTracker(AggregatedDataVariants & result, std::optional<MemoryTrackerSwitcher> & switcher) const
+{
+    /// The aggregator tracker is inserted between the thread and query trackers and accounts for the
+    /// aggregation state across all threads; the per-table tracker under it accounts for one table only.
+    if (!memory_tracker || !CurrentThread::getMemoryTracker()
+        || CurrentThread::getMemoryTracker()->getParent() != memory_tracker->getParent())
+        return false;
+
+    if (!result.memory_tracker || result.memory_tracker->getParent() != memory_tracker.get())
+        result.memory_tracker = std::make_unique<MemoryTracker>(memory_tracker.get(), VariableContext::Thread);
+    switcher.emplace(result.memory_tracker.get());
+    return true;
+}
+
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const
 {
     flushToTemporaryFile(data_variants, max_temp_file_size, /*reinitialize=*/true);
+}
+
+size_t Aggregator::spill(AggregatedDataVariants & data_variants) const
+{
+    std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
+    switchToOwnTracker(data_variants, memory_tracker_switcher);
+
+    size_t before = data_variants.memoryUsage();
+    if (!data_variants.isTwoLevel())
+        data_variants.convertToTwoLevel();
+    writeToTemporaryFile(data_variants);
+    size_t after = data_variants.memoryUsage();
+    return before > after ? before - after : 0;
 }
 
 void Aggregator::consumeToTemporaryFile(AggregatedDataVariants & data_variants) const
