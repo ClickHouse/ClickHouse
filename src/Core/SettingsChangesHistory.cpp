@@ -1526,6 +1526,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 1800, "Increase default replica set background update interval to 30 minutes"},
             {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
             {"compress_per_column_in_compact_parts", true, true, "New setting"},
+            {"compress_per_substream_in_compact_parts", false, true, "New setting: start a new compressed block per column substream in Compact parts for faster subcolumn reads"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
