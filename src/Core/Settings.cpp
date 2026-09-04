@@ -9548,6 +9548,7 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
         return;
 
     ClickHouseVersion version(compatibility_value);
+    const auto & accessor = Traits::Accessor::instance();
     const auto & settings_changes_history = getSettingsChangesHistory();
     /// Iterate through ClickHouse version in descending order and apply reversed
     /// changes for each version that is higher that version from compatibility setting
@@ -9562,18 +9563,24 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
             /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
             auto final_name = SettingsTraits::resolveName(change.name);
 
-            if (getTier(final_name) == SettingsTierType::OBSOLETE)
+            /// Look the name up once. The history holds thousands of changes to walk for an old
+            /// `compatibility` value, and each of the accessors below would hash the name again.
+            const size_t index = accessor.find(final_name);
+            if (index == static_cast<size_t>(-1))
+                BaseSettingsHelpers::throwSettingNotFound(final_name);
+
+            if (accessor.getTier(index) == SettingsTierType::OBSOLETE)
                 continue;
 
             /// If this setting was changed manually, we don't change it
-            if (isChanged(final_name) && !settings_changed_by_compatibility_setting.contains(final_name))
+            if (accessor.isValueChanged(*this, index) && !settings_changed_by_compatibility_setting.contains(final_name))
                 continue;
 
             /// Don't mark as changed if the value isn't really changed
-            if (get(final_name) == change.previous_value)
+            if (accessor.getValue(*this, index) == change.previous_value)
                 continue;
 
-            BaseSettings::set(final_name, change.previous_value);
+            accessor.setValue(*this, index, change.previous_value);
             settings_changed_by_compatibility_setting.insert(final_name);
         }
     }
