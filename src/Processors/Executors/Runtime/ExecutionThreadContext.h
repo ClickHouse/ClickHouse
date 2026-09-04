@@ -60,6 +60,7 @@ public:
     bool executeTask();
 
     void setException(std::exception_ptr exception_) { exception = exception_; }
+    std::exception_ptr getException() const { return exception; }
     void rethrowExceptionIfHas();
 
     explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, const StepWallClockRegistry * step_wall_clock_registry_, ReadProgressCallback * callback)
