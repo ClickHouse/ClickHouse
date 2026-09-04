@@ -50,7 +50,7 @@ requires a SELECT query with the result columns matching a table function after 
 1
 ACCESS_DENIED
 ACCESS_DENIED
-2
+3
 === SHOW COLUMNS only ===
 a
 b
