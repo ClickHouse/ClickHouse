@@ -81,9 +81,11 @@ SELECT 'parts pruned', count() FROM t_index_hint_part WHERE id < 1000 AND indexH
 SELECT 'parts pruned', count() FROM t_index_hint_part WHERE id < 1000 AND indexHint(_partition_id = '0', 'x');
 SELECT 'parts kept', count() FROM t_index_hint_part WHERE id < 1000 AND indexHint(256);
 SELECT 'parts kept', count() FROM t_index_hint_part WHERE id < 1000 AND indexHint('x');
--- The partition id is one character here, so this hint is a non-constant expression whose value is
--- 256: the argument's type decides how it is read as a condition, not whether it folds to a literal.
+-- The partition id is one character here, so these hints are non-constant expressions with the
+-- values 256 and 0. The pair is what discriminates: a truncating cast answers 0 for both, and an
+-- atom dropped for want of a boolean reading answers 400 for both.
 SELECT 'parts kept', count() FROM t_index_hint_part WHERE id < 1000 AND indexHint(length(_partition_id) + 255);
+SELECT 'all parts pruned', count() FROM t_index_hint_part WHERE id < 1000 AND indexHint(length(_partition_id) - 1);
 
 -- Two hints on an allowed input keep two rewritten children under the enclosing `and`, which reuses
 -- its parent node and so its UInt8 result type. Answering 200 rather than 300 or 400 is what proves
