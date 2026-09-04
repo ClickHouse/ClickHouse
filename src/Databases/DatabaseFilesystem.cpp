@@ -163,17 +163,7 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
         return nullptr;
 
     /// TableFunctionFile throws exceptions, if table cannot be created.
-    ///
-    /// The table is referenced by an identifier and governed by the grants on this database and on the
-    /// source, so the `CREATE TEMPORARY TABLE` privilege of a table function call in a query does not apply.
-    auto table_storage = table_function->execute(
-        ast_function_ptr,
-        context_,
-        name,
-        /* cached_columns_ */ {},
-        /* use_global_context */ false,
-        /* is_insert_query */ false,
-        /* check_create_temporary_table */ false);
+    auto table_storage = table_function->execute(ast_function_ptr, context_, name);
     if (table_storage)
         return addTable(name, table_storage);
 
