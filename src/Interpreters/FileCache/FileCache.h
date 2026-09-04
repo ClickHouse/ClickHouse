@@ -228,6 +228,9 @@ public:
     /// operation).
     FileCacheQueryBudgetPtr getQueryBudget(size_t query_limit_bytes) const;
 
+    /// The budget of the current query if it already has one for this cache.
+    FileCacheQueryBudgetPtr getQueryBudgetIfExists() const;
+
     size_t getReserveGranularity() const { return reserve_granularity.load(std::memory_order_relaxed); }
 
     bool tryReserve(

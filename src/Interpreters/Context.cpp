@@ -3917,6 +3917,13 @@ FileCacheQueryBudgetPtr Context::getFilesystemCacheQueryBudget(const FileCache &
     return budget;
 }
 
+FileCacheQueryBudgetPtr Context::tryGetFilesystemCacheQueryBudget(const FileCache & cache) const
+{
+    std::lock_guard lock(filesystem_cache_query_budgets_mutex);
+    auto it = filesystem_cache_query_budgets.find(&cache);
+    return it == filesystem_cache_query_budgets.end() ? nullptr : it->second;
+}
+
 ContextMutablePtr Context::getQueryContext() const
 {
     auto ptr = query_context.lock();

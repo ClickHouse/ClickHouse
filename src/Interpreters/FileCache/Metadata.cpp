@@ -1001,8 +1001,8 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     if (offset != static_cast<size_t>(buf->getPosition()))
         buf->seek(offset, SEEK_SET);
 
-    /// This thread has no query, so the reservations below are charged to the query which last
-    /// reserved this segment with a limit. It cannot change while this thread is the downloader.
+    /// This thread has no query, so the reservations below are charged to the query which queued
+    /// this download. It cannot change while this thread is the downloader.
     const auto query_budget = file_segment.getQueryBudget();
 
     while (size_to_download && !buf->eof())

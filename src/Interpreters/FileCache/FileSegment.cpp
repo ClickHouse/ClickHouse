@@ -775,16 +775,6 @@ bool FileSegment::reserve(
         return false;
     }
 
-    /// Remembered for the background download, which continues on a thread with no query of its
-    /// own and keeps charging the query which last reserved with a limit.
-    if (query_budget)
-    {
-        auto lk = lock();
-        chassert(download_data || download_state == State::DETACHED);
-        if (download_data)
-            download_data->query_budget = query_budget;
-    }
-
     return true;
 }
 
@@ -1143,6 +1133,9 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
                 {
                     ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundDownloadQueuePush);
                     added_to_download_queue = locked_key->addToDownloadQueue(offset(), segment_lock); /// Finish download in background.
+
+                    if (added_to_download_queue && download_data)
+                        download_data->query_budget = cache->getQueryBudgetIfExists();
                 }
 
                 if (!added_to_download_queue)

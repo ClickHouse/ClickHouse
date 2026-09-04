@@ -325,9 +325,8 @@ private:
     struct DownloadState
     {
         DownloaderId downloader_id; /// The one who prepares the download.
-        /// The budget of the query which last reserved with a limit, so that a background
-        /// continuation charges it too. A reservation by another query with a limit replaces it,
-        /// and each query keeps what its own reservations took.
+        /// The budget of the query which queued the background download, charged by its
+        /// continuation.
         FileCacheQueryBudgetPtr query_budget;
         RemoteFileReaderPtr remote_file_reader;
         LocalCacheWriterPtr cache_writer;

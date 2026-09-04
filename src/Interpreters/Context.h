@@ -1438,6 +1438,7 @@ public:
 
     /// How much this query may still write into `cache`, see `filesystem_cache_query_limit_bytes`.
     FileCacheQueryBudgetPtr getFilesystemCacheQueryBudget(const FileCache & cache, size_t size_limit) const;
+    FileCacheQueryBudgetPtr tryGetFilesystemCacheQueryBudget(const FileCache & cache) const;
     bool isInternalSubquery() const;
 
     ContextMutablePtr getSessionContext() const;
