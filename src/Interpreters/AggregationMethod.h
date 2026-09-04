@@ -265,8 +265,13 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     using Data = typename Base::Data;
     using Key = typename Base::Key;
     using Mapped = typename Base::Mapped;
+    using LowCardinalityCache = ColumnsHashing::LowCardinalityHashMethodCache<Mapped>;
     using Base::data;
     using Base::top_k_heap;
+
+    LowCardinalityCache low_cardinality_cache;
+    /// A `UInt8` fixed hash table lookup is cheaper than persistent-cache indirection.
+    static constexpr bool use_persistent_low_cardinality_cache = !std::is_same_v<Key, UInt8>;
 
     template <bool use_cache>
     using BaseStateImpl = typename Base::template StateImpl<use_cache>;
@@ -276,13 +281,18 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     template <typename Other>
     explicit AggregationMethodSingleLowCardinalityColumn(const Other & other) : Base(other) {}
 
-    template <bool use_cache>
-    using StateImpl = ColumnsHashing::HashMethodSingleLowCardinalityColumn<BaseStateImpl<use_cache>, Mapped, use_cache>;
+    template <bool use_cache, bool cache_mapped_values = true>
+    using StateImpl = ColumnsHashing::HashMethodSingleLowCardinalityColumn<
+        BaseStateImpl<use_cache>, Mapped, use_cache, cache_mapped_values, use_persistent_low_cardinality_cache>;
 
     using State = StateImpl<true>;
     using StateNoCache = StateImpl<false>;
+    using StateNoCacheWithoutMappedCache = StateImpl<false, false>;
 
     static const bool low_cardinality_optimization = true;
+
+    size_t additionalAllocatedBytes() const { return low_cardinality_cache.allocatedBytes(); }
+    void clearCache() { low_cardinality_cache.clear(); }
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
@@ -292,6 +302,63 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
         const Sizes & /*key_sizes*/,
         const IColumn::SerializationSettings * settings);
 };
+
+template <typename Method>
+using AggregationMethodLowCardinalityCache = ColumnsHashing::LowCardinalityHashMethodCache<typename Method::Mapped>;
+
+template <typename Method, bool low_cardinality_optimization = Method::low_cardinality_optimization>
+struct AggregationMethodInlineCountState
+{
+    using Type = typename Method::StateNoCache;
+};
+
+template <typename Method>
+struct AggregationMethodInlineCountState<Method, true>
+{
+    using Type = typename Method::StateNoCacheWithoutMappedCache;
+};
+
+template <typename Method>
+using AggregationMethodInlineCountStateT = typename AggregationMethodInlineCountState<Method>::Type;
+
+template <typename State, typename Method>
+State createAggregationMethodState(
+    Method & method,
+    const ColumnRawPtrs & key_columns,
+    const Sizes & key_sizes,
+    const ColumnsHashing::HashMethodContextPtr & context,
+    AggregationMethodLowCardinalityCache<Method> * low_cardinality_cache_override = nullptr)
+{
+    if constexpr (Method::low_cardinality_optimization)
+    {
+        AggregationMethodLowCardinalityCache<Method> * low_cardinality_cache = nullptr;
+        if constexpr (Method::use_persistent_low_cardinality_cache)
+        {
+            low_cardinality_cache = low_cardinality_cache_override
+                ? low_cardinality_cache_override
+                : &method.low_cardinality_cache;
+        }
+        return State(key_columns, key_sizes, context, low_cardinality_cache);
+    }
+    else
+        return State(key_columns, key_sizes, context);
+}
+
+template <typename Method>
+size_t getAggregationMethodAdditionalAllocatedBytes(const Method & method)
+{
+    if constexpr (Method::low_cardinality_optimization)
+        return method.additionalAllocatedBytes();
+    else
+        return 0;
+}
+
+template <typename Method>
+void clearAggregationMethodCache(Method & method)
+{
+    if constexpr (Method::low_cardinality_optimization)
+        method.clearCache();
+}
 
 /// For the case where all keys are of fixed length, and they fit in N (for example, 128) bits.
 template <typename TData, bool has_nullable_keys_ = false, bool has_low_cardinality_ = false, bool consecutive_keys_optimization = false>

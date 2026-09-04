@@ -489,6 +489,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     bool isConvertibleToTwoLevel() const;
     static bool isConvertibleToTwoLevel(Type type);
     void convertToTwoLevel();
+    void clearLowCardinalityCache() const;
     bool isLowCardinality() const;
     static ColumnsHashing::HashMethodContextPtr createCache(Type type, const ColumnsHashing::HashMethodContextSettings & settings);
     bool topKHeapEverRejected() const;

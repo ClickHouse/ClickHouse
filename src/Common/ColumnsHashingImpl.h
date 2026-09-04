@@ -352,6 +352,11 @@ public:
         }
     }
 
+    ALWAYS_INLINE void resetCacheAfterHashTableChange()
+    {
+        resetCache();
+    }
+
     ALWAYS_INLINE bool hasOnlyOneValueSinceLastReset() const
     {
         if constexpr (consecutive_keys_optimization)
