@@ -9004,7 +9004,7 @@ Default age threshold in seconds for orphan file removal in Iceberg tables. File
 Allow to execute experimental Iceberg command `ALTER TABLE ... EXECUTE expire_snapshots`.
 )", EXPERIMENTAL) \
     DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
-Write fully qualified URIs into the metadata files of an Iceberg table instead of storage-relative paths, so that external readers can resolve them: `s3://bucket/key` for S3 and `file:///path` for a local disk given an absolute path. Qualifying does not by itself make a location resolvable: a relative local path keeps the leading separator of the storage-relative form and so names a directory the table does not occupy, a path containing `#` loses everything from that character because a URI parser reads it as the start of a fragment, Azure keeps ClickHouse's `azure` storage type as the scheme, and HDFS carries no nameservice authority. Read when the table is created; every later write inherits the form chosen then.
+Write fully qualified URIs into Iceberg metadata files instead of storage-relative paths, so external readers can resolve them: `s3://bucket/key`, or `file:///path` for an absolute local path. Relative paths and other backends are qualified but not resolvable. Read at `CREATE`; later writes keep that form.
 )", EXPERIMENTAL) \
     DECLARE(String, iceberg_metadata_compression_method, "", R"(
 Method to compress `.metadata.json` file.

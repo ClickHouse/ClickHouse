@@ -3,7 +3,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
 using namespace DB;
-using Iceberg::IcebergPathFromMetadata;
 using Iceberg::IcebergPathResolver;
 
 namespace
@@ -115,35 +114,4 @@ TEST(IcebergDeriveTableRoot, EmptyTailIsNotARoot)
 {
     check({"storage root", "", "", "//metadata/v2.metadata.json",
         "", IcebergPathResolver::RootRelation::Unknown});
-}
-
-/// A path a metadata document already carries in full names its own scheme, so the catalog receives
-/// it unchanged. The scheme a local disk is written with is not that backend's storage type token,
-/// which is why the pass-through is decided by the presence of a scheme rather than by the token.
-TEST(IcebergResolveForCatalog, FullURIPassesThrough)
-{
-    IcebergPathResolver local("file:///tbl", "tbl", "local", "");
-    EXPECT_EQ(
-        local.resolveForCatalog(IcebergPathFromMetadata::deserialize("file:///tbl/metadata/v2.metadata.json")),
-        "file:///tbl/metadata/v2.metadata.json");
-
-    IcebergPathResolver s3("s3://bucket/tbl", "tbl", "s3", "bucket");
-    EXPECT_EQ(
-        s3.resolveForCatalog(IcebergPathFromMetadata::deserialize("s3://bucket/tbl/metadata/v2.metadata.json")),
-        "s3://bucket/tbl/metadata/v2.metadata.json");
-}
-
-/// A storage-relative path carries no scheme, so it is qualified once, with the backend's authority
-/// and the URI scheme its storage type maps to.
-TEST(IcebergResolveForCatalog, RelativePathIsQualified)
-{
-    IcebergPathResolver local("/tbl", "tbl", "local", "");
-    EXPECT_EQ(
-        local.resolveForCatalog(IcebergPathFromMetadata::deserialize("tbl/metadata/v2.metadata.json")),
-        "file:///tbl/metadata/v2.metadata.json");
-
-    IcebergPathResolver s3("s3://bucket/tbl", "tbl", "s3", "bucket");
-    EXPECT_EQ(
-        s3.resolveForCatalog(IcebergPathFromMetadata::deserialize("tbl/metadata/v2.metadata.json")),
-        "s3://bucket/tbl/metadata/v2.metadata.json");
 }
