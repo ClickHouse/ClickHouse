@@ -36,7 +36,6 @@ export const CsCard = ({ title, img, darkImg, abbr, href, dark }) => {
         backgroundColor: dark ? 'rgba(65,65,65,0.5)' : '#ffffff',
         boxShadow: dark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.1)',
         cursor: 'pointer',
-        transition: 'transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease',
       }}
     >
       {img ? (
@@ -106,28 +105,28 @@ export const SDKS = [
 ];
 
 export const INFRA = [
-  { title: 'Kubernetes',    img: '/images/kubernetes-logo.svg',       href: '/pt-BR/clickstack/integration-examples/kubernetes' },
-  { title: 'Cloudflare',    img: '/images/integrations/logos/cloudflare.svg',      href: '/pt-BR/clickstack/integration-examples/cloudflare' },
-  { title: 'AWS Lambda',    img: '/images/lambda-logo.svg',           href: '/pt-BR/clickstack/integration-examples/aws-lambda' },
-  { title: 'CloudWatch',    img: '/images/cloudwatch-logo.svg',          href: '/pt-BR/clickstack/integration-examples/cloudwatch' },
-  { title: 'Logs de host',     img: '/images/logo-hostlogs.svg',            href: '/pt-BR/clickstack/integration-examples/host-logs' },
-  { title: 'Systemd',       img: '/images/systemd-logomark.svg',               href: '/pt-BR/clickstack/integration-examples/systemd' },
-  { title: 'Métricas da JVM',   img: '/images/logo-java.svg',                 href: '/pt-BR/clickstack/integration-examples/jvm-metrics' },
-  { title: 'Traces do Node.js',img: '/images/logo-nodejs.svg',               href: '/pt-BR/clickstack/integration-examples/nodejs-traces' },
+  { title: 'Kubernetes',    img: '/images/kubernetes-logo.svg',       href: '/clickstack/integration-examples/kubernetes' },
+  { title: 'Cloudflare',    img: '/images/integrations/logos/cloudflare.svg',      href: '/clickstack/integration-examples/cloudflare' },
+  { title: 'AWS Lambda',    img: '/images/lambda-logo.svg',           href: '/clickstack/integration-examples/aws-lambda' },
+  { title: 'CloudWatch',    img: '/images/cloudwatch-logo.svg',          href: '/clickstack/integration-examples/cloudwatch' },
+  { title: 'Logs de host',     img: '/images/logo-hostlogs.svg',            href: '/clickstack/integration-examples/host-logs' },
+  { title: 'Systemd',       img: '/images/systemd-logomark.svg',               href: '/clickstack/integration-examples/systemd' },
+  { title: 'Métricas da JVM',   img: '/images/logo-java.svg',                 href: '/clickstack/integration-examples/jvm-metrics' },
+  { title: 'Traces do Node.js',img: '/images/logo-nodejs.svg',               href: '/clickstack/integration-examples/nodejs-traces' },
 ];
 
 export const DATABASES = [
-  { title: 'Logs do PostgreSQL',    img: '/images/logo-postgres.svg',  href: '/pt-BR/clickstack/integration-examples/postgres-logs' },
-  { title: 'Métricas do PostgreSQL', img: '/images/logo-postgres.svg',  href: '/pt-BR/clickstack/integration-examples/postgres-metrics' },
-  { title: 'MySQL',              img: '/images/logo-mysql.svg',     href: '/pt-BR/clickstack/integration-examples/mysql' },
-  { title: 'Logs do Redis',         img: '/images/icons/redis-logo.svg',          href: '/pt-BR/clickstack/integration-examples/redis-logs' },
-  { title: 'Métricas do Redis',      img: '/images/icons/redis-logo.svg',          href: '/pt-BR/clickstack/integration-examples/redis-metrics' },
-  { title: 'MongoDB',            img: '/images/mongodb-logo.svg',        href: '/pt-BR/clickstack/integration-examples/mongodb-logs' },
-  { title: 'Logs do Kafka',         img: '/images/kafka-logo.svg',  darkImg: '/images/kafka-logo-dark.svg',  href: '/pt-BR/clickstack/integration-examples/kafka-logs' },
-  { title: 'Métricas do Kafka',      img: '/images/kafka-logo.svg',  darkImg: '/images/kafka-logo-dark.svg',  href: '/pt-BR/clickstack/integration-examples/kafka-metrics' },
-  { title: 'Logs do Nginx',         img: '/images/logo-nginx.svg',     href: '/pt-BR/clickstack/integration-examples/nginx-logs' },
-  { title: 'Traces do Nginx',       img: '/images/logo-nginx.svg',     href: '/pt-BR/clickstack/integration-examples/nginx-traces' },
-  { title: 'Temporal',           img: '/images/logo-temporal.svg',  darkImg: '/images/logo-temporal-dark.svg',  href: '/pt-BR/clickstack/integration-examples/temporal' },
+  { title: 'Logs do PostgreSQL',    img: '/images/logo-postgres.svg',  href: '/clickstack/integration-examples/postgres-logs' },
+  { title: 'Métricas do PostgreSQL', img: '/images/logo-postgres.svg',  href: '/clickstack/integration-examples/postgres-metrics' },
+  { title: 'MySQL',              img: '/images/logo-mysql.svg',     href: '/clickstack/integration-examples/mysql' },
+  { title: 'Logs do Redis',         img: '/images/icons/redis-logo.svg',          href: '/clickstack/integration-examples/redis-logs' },
+  { title: 'Métricas do Redis',      img: '/images/icons/redis-logo.svg',          href: '/clickstack/integration-examples/redis-metrics' },
+  { title: 'MongoDB',            img: '/images/mongodb-logo.svg',        href: '/clickstack/integration-examples/mongodb-logs' },
+  { title: 'Logs do Kafka',         img: '/images/kafka-logo.svg',  darkImg: '/images/kafka-logo-dark.svg',  href: '/clickstack/integration-examples/kafka-logs' },
+  { title: 'Métricas do Kafka',      img: '/images/kafka-logo.svg',  darkImg: '/images/kafka-logo-dark.svg',  href: '/clickstack/integration-examples/kafka-metrics' },
+  { title: 'Logs do Nginx',         img: '/images/logo-nginx.svg',     href: '/clickstack/integration-examples/nginx-logs' },
+  { title: 'Traces do Nginx',       img: '/images/logo-nginx.svg',     href: '/clickstack/integration-examples/nginx-traces' },
+  { title: 'Temporal',           img: '/images/logo-temporal.svg',  darkImg: '/images/logo-temporal-dark.svg',  href: '/clickstack/integration-examples/temporal' },
 ];
 
 **ClickStack** é uma plataforma de observabilidade open source, pronta para produção, baseada em ClickHouse e OpenTelemetry. Ela unifica logs, traces, métricas e sessões em uma única stack de alto desempenho.
