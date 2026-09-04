@@ -2,8 +2,7 @@
 
 # A `Filesystem` database caches every table it resolves, keyed on the table name alone, and hands
 # the cached storage back to every later caller. Resolving a table of such a database requires the
-# read source grant, and requires nothing that a `file` table function call written in a query
-# would require, on both the cached and the uncached path.
+# read source grant on the cached path as well as on the uncached one.
 # https://github.com/ClickHouse/ClickHouse/issues/118042
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -40,9 +39,11 @@ ${CLICKHOUSE_CLIENT} --query "SELECT * FROM $fs_db.\`warm.csv\`";
 
 ${CLICKHOUSE_CLIENT} --query "GRANT READ ON FILE TO $user";
 
-# With the grant, both a cached name and a name that was never resolved before are served.
+# With the grant, the cached name is served. A name that was never resolved takes the other path,
+# which still requires `CREATE TEMPORARY TABLE`: the contrast is what shows that the query above was
+# answered from the cache and not by resolving the file again.
 ${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT * FROM $fs_db.\`warm.csv\`";
-${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT * FROM $fs_db.\`cold.csv\`";
+(( $(${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT * FROM $fs_db.\`cold.csv\`" 2>&1 | grep -c "CREATE TEMPORARY TABLE") >= 1 )) && echo "CREATE TEMPORARY TABLE" || echo "UNEXPECTED";
 
 ${CLICKHOUSE_CLIENT} <<EOF
 DROP DATABASE $fs_db;
