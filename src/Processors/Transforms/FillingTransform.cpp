@@ -258,7 +258,8 @@ static bool isNullPrefixSkippable(
 }
 
 /// Under `NULLS FIRST` a `NaN` sorts next to the `NULL`s, before every other value, so it belongs to the
-/// same prefix; `Field` comparison instead places it above every value. False for every non-float type.
+/// same prefix; `Field` comparison instead places it above every value. `Field::isNaN` is type-guarded on
+/// `Float64`, so for any other fill key type this is exactly `isNull`.
 static bool isNullPrefixField(const Field & field)
 {
     return field.isNull() || field.isNaN();
@@ -628,7 +629,10 @@ bool FillingTransform::generateSuffixIfNeeded(
     logDebug("generateSuffixIfNeeded next_row", next_row);
 
     /// Determines if we should insert filling row before start generating next rows
-    bool should_insert_first = (next_row < filling_row && !filling_row_inserted) || (next_row.isNull() && !filling_row.isNull());
+    bool should_insert_first = (next_row < filling_row && !filling_row_inserted) || (next_row.isNull() && !filling_row.isNull())
+        /// The prefix rows the range ended on sort before the filling row, which the comparisons above
+        /// cannot express, so the pending row is still unplaced.
+        || (null_prefix_skippable && isNullPrefixRow(next_row) && !isNullPrefixRow(filling_row) && !filling_row_inserted);
     logDebug("should_insert_first", should_insert_first);
 
     for (size_t i = 0, size = filling_row.size(); i < size; ++i)

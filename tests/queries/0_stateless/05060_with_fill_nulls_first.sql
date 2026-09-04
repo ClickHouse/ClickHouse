@@ -10,17 +10,17 @@ SELECT (countIf(explain ILIKE '%DistinctSortedStreamTransform%') > 0)
    AND (countIf(explain ILIKE '%DistinctTransform%') = 0) FROM
 (
     EXPLAIN PIPELINE
-    SELECT DISTINCT x FROM
+    SELECT DISTINCT p, x FROM
     (
-        SELECT CAST(NULL, 'Nullable(Int32)') AS x FROM numbers(2)
-        ORDER BY x ASC NULLS FIRST WITH FILL FROM 1 TO 3
+        SELECT number AS p, CAST(NULL, 'Nullable(Int32)') AS x FROM numbers(2)
+        ORDER BY p ASC NULLS LAST, x ASC NULLS FIRST WITH FILL FROM 1 TO 3
     )
 )
 SETTINGS optimize_distinct_in_order = 1;
-SELECT DISTINCT x FROM
+SELECT DISTINCT p, x FROM
 (
-    SELECT CAST(NULL, 'Nullable(Int32)') AS x FROM numbers(2)
-    ORDER BY x ASC NULLS FIRST WITH FILL FROM 1 TO 3
+    SELECT number AS p, CAST(NULL, 'Nullable(Int32)') AS x FROM numbers(2)
+    ORDER BY p ASC NULLS LAST, x ASC NULLS FIRST WITH FILL FROM 1 TO 3
 )
 SETTINGS optimize_distinct_in_order = 1;
 SELECT '---';
@@ -31,3 +31,11 @@ SELECT '---';
 
 SELECT if(number = 0, NULL, toNullable(toInt32(0))) AS x FROM numbers(2)
 ORDER BY x DESC NULLS FIRST WITH FILL FROM 3 TO 1 STEP -1;
+SELECT '---';
+
+-- `NULLS FIRST` sorts a `NaN` between the `NULL`s and the values, so it belongs to the same prefix.
+SELECT * FROM values('x Nullable(Float64)', (5), (nan), (NULL))
+ORDER BY x ASC NULLS FIRST WITH FILL FROM 1 TO 3;
+SELECT '---';
+SELECT * FROM values('x Nullable(Float64)', (nan), (NULL))
+ORDER BY x ASC NULLS FIRST WITH FILL FROM 1 TO 3;
