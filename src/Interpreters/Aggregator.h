@@ -542,12 +542,13 @@ private:
 
     /// How many RAM were used to process the query before processing the first block. Use for merge_only mode.
     Int64 memory_usage_before_aggregation = 0;
-    /// Track memory held by the aggreagation state during execution.
-    std::unique_ptr<MemoryTracker> memory_tracker;
+    /// Track memory held by the aggreagation state during execution. Absent for merge-only aggregation.
+    mutable std::mutex memory_tracker_mutex;
+    mutable std::unique_ptr<MemoryTracker> memory_tracker TSA_GUARDED_BY(memory_tracker_mutex);
 
     /// Redirects the thread's accounting to the per-table tracker (created on demand under the
-    /// aggregator tracker). Returns false when there is no tracker to switch to.
-    bool switchToOwnTracker(AggregatedDataVariants & result, std::optional<MemoryTrackerSwitcher> & switcher) const;
+    /// aggregator tracker). Returns the aggregator tracker, nullptr when there is none to switch to.
+    MemoryTracker * switchToOwnTracker(AggregatedDataVariants & result, std::optional<MemoryTrackerSwitcher> & switcher) const;
 
     /// Indicates whether the aggregation is a simple `count()` / `count(*)` / `count(non-nullable_column)`
     ///
