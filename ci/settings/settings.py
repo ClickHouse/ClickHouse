@@ -91,6 +91,9 @@ AWS_PROFILE = "default"
 #       )
 # LIMIT 100;
 TEST_FAILURE_PATTERNS = [
+    # Order is precedence: the first entry found in the output wins, so the specific
+    # ones belong above the generic tokens a log excerpt can also contain.
+    "Unrecognized fatal message:",
     # Common Functional tests failures
     "Timeout",
     "having stderror",
