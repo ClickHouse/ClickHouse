@@ -5,9 +5,10 @@ namespace DB
 {
 
 /// After visitor is applied, ASTSelectIntersectExcept always has two child nodes.
-IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Operator operator_)
+IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Operator operator_, bool read_left_input_first_)
     : IProcessor(InputPorts(2, header_), {header_})
     , current_operator(operator_)
+    , stage(read_left_input_first_ ? Stage::ReadLeftInput : Stage::ReadRightInput)
 {
 }
 
@@ -63,13 +64,43 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
 
             if (stage == Stage::ReadRightInput)
             {
+                auto & left_input = inputs.front();
+
+                /// Only reached when the left input is not read first: that path always arrives here
+                /// with a stashed chunk. An empty left input makes the result empty whatever the right
+                /// input holds, so stop before draining a possibly unbounded one, but sample the left
+                /// port instead of waiting on it, which would deadlock the shared scatters.
+                if (!has_left_input_chunk)
+                {
+                    left_input.setNeeded();
+
+                    if (left_input.isFinished())
+                    {
+                        inputs.back().close();
+                        output.finish();
+                        return Status::Finished;
+                    }
+
+                    if (left_input.hasData())
+                    {
+                        /// An empty chunk says nothing about the left input, keep looking.
+                        Chunk chunk = left_input.pull();
+                        if (chunk.hasRows())
+                        {
+                            left_input_chunk = std::move(chunk);
+                            has_left_input_chunk = true;
+                            left_input.setNotNeeded();
+                        }
+                    }
+                }
+
                 auto & input = inputs.back();
 
                 if (input.isFinished())
                 {
                     if (isIntersectOperator() && !has_right_input_rows)
                     {
-                        inputs.front().close();
+                        left_input.close();
                         output.finish();
                         return Status::Finished;
                     }

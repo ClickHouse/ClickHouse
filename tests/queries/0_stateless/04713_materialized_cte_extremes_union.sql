@@ -1,5 +1,8 @@
 SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
+-- `ORDER BY` applies to the last arm only, and the output order of INTERSECT/EXCEPT depends on the
+-- number of threads.
+SET max_threads = 1;
 
 -- `extremes` is pinned per statement: a runner-injected `extremes = 0` removes the extremes
 -- plumbing entirely and would make every query below pass without exercising the bug.
