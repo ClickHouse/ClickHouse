@@ -30,6 +30,7 @@ DECLARED_EXPORT_RE = re.compile(
 TRANSLATION_DIRS = {"ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh"}
 MINTLIFY_BUILTINS = {
     "Accordion",
+    "Badge",
     "CodeBlock",
     "Frame",
     "Info",
