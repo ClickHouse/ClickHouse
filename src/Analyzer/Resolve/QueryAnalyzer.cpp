@@ -23,6 +23,7 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/traverseQueryTree.h>
 #include <Analyzer/ValidationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/WindowNode.h>
@@ -6011,24 +6012,26 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
             {
                 auto materialized_cte_ptr = table_node->getMaterializedCTE();
 
+                /// Prevent recursive CTE references during subquery resolution: inside the body of the CTE its own
+                /// name refers to a table of that name, not to the CTE. The body is resolved at every reference
+                /// site (each clone gets its own copy), so the CTE is hidden at every site.
+                const auto & cte_name = materialized_cte_ptr->cte_name;
+                QueryTreeNodePtr cte_map_node;
+                for (auto * s = &scope; s; s = s->parent_scope)
+                {
+                    auto it = s->cte_name_to_query_node.find(cte_name);
+                    if (it != s->cte_name_to_query_node.end())
+                    {
+                        cte_map_node = it->second;
+                        break;
+                    }
+                }
+
                 /// Each clone gets a deep-cloned subquery (IQueryTreeNode::clone deep-clones children).
                 /// Use materialized_cte->storage (shared across clones) to distinguish first vs subsequent.
                 if (!materialized_cte_ptr->isStorageInitialized())
                 {
                     auto & subquery = table_node->getMaterializedCTESubquery();
-
-                    /// Prevent recursive CTE references during subquery resolution.
-                    const auto & cte_name = materialized_cte_ptr->cte_name;
-                    QueryTreeNodePtr cte_map_node;
-                    for (auto * s = &scope; s; s = s->parent_scope)
-                    {
-                        auto it = s->cte_name_to_query_node.find(cte_name);
-                        if (it != s->cte_name_to_query_node.end())
-                        {
-                            cte_map_node = it->second;
-                            break;
-                        }
-                    }
 
                     if (cte_map_node)
                         ctes_in_resolve_process.insert(cte_map_node);
@@ -6077,7 +6080,27 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     /// Resolve this clone's own subquery copy for correct EXPLAIN output,
                     /// then reuse the existing storage.
                     auto & subquery = table_node->getMaterializedCTESubquery();
+
+                    if (cte_map_node)
+                        ctes_in_resolve_process.insert(cte_map_node);
+
                     resolveExpressionNode(subquery, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
+
+                    if (cte_map_node)
+                        ctes_in_resolve_process.erase(cte_map_node);
+
+                    /// The snapshot is shared by all reference sites, so the subquery must not depend on the scope
+                    /// of any of them. A clone resolved in a different scope may bind an identifier to an outer
+                    /// column even when the first resolved clone did not, e.g. when this reference is inside
+                    /// a recursive member and the identifier resolves to a column of the recursive CTE.
+                    bool is_correlated = subquery->as<QueryNode>()
+                        ? subquery->as<QueryNode>()->isCorrelated()
+                        : subquery->as<UnionNode>()->isCorrelated();
+                    if (is_correlated)
+                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                            "Materialized CTE '{}' cannot be correlated. In scope {}",
+                            materialized_cte_ptr->cte_name,
+                            scope.scope_node->formatASTForErrorMessage());
 
                     table_node->updateStorage(materialized_cte_ptr->storage, scope.context);
                     verifyMaterializedCTESubqueryMatchesStorage(
@@ -7017,6 +7040,24 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
                         "Recursive CTE '{}' cannot be correlated. In scope {}",
                         union_node_typed.getCTEName(),
                         scope.scope_node->formatASTForErrorMessage());
+
+                /// A materialized CTE referenced from a recursive member is materialized once, before the recursion
+                /// starts, while the working table of this recursive CTE is still empty, so it cannot read the
+                /// working table: fail instead of snapshotting an empty table. Checked after every widening pass,
+                /// because a later pass would otherwise report a schema mismatch of the materialized CTE instead.
+                traverseQueryTree(query_node, Everything{}, [&](const QueryTreeNodePtr & node)
+                {
+                    auto * table_node = node->as<TableNode>();
+                    if (!table_node || !table_node->isMaterializedCTE())
+                        return;
+
+                    if (isStorageUsedInTree(temporary_table_storage, table_node->getMaterializedCTESubquery().get()))
+                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                            "Materialized CTE '{}' cannot read recursive CTE '{}' from its recursive member. In scope {}",
+                            table_node->getMaterializedCTE()->cte_name,
+                            union_node_typed.getCTEName(),
+                            scope.scope_node->formatASTForErrorMessage());
+                });
             }
 
             final_temporary_table_holder = std::move(temporary_table_holder);
@@ -7096,6 +7137,27 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
             "Recursive CTE subquery {} with {} union mode is unsupported, only UNION ALL union mode is supported",
             union_node_typed.formatASTForErrorMessage(),
             toString(union_node_typed.getUnionMode()));
+
+        /// The recursive evaluation itself cannot be materialized.
+        if (union_node_typed.isMaterialized())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "MATERIALIZED is not supported for the recursive CTE '{}' itself in recursive WITH. In scope {}",
+                union_node_typed.getCTEName(),
+                scope.scope_node->formatASTForErrorMessage());
+
+        /// Materialized CTEs referenced from the recursive members are read once per recursion step, so they
+        /// must stay materialized even with a single reference site; otherwise `inlineMaterializedCTEIfNeeded`
+        /// would inline them and the subquery would be re-executed on every step. The non-recursive member
+        /// `queries_nodes[0]` is executed once, so a materialized CTE referenced only from it is not affected.
+        for (size_t i = 1; i < queries_nodes_size; ++i)
+        {
+            traverseQueryTree(queries_nodes[i], Everything{}, [&](const QueryTreeNodePtr & node)
+            {
+                auto * table_node = node->as<TableNode>();
+                if (table_node && table_node->isMaterializedCTE())
+                    table_node->getMaterializedCTE()->is_referenced_from_recursive_cte_member = true;
+            });
+        }
 
         union_node_typed.setRecursiveCTETable(std::move(*recursive_cte_table));
     }
