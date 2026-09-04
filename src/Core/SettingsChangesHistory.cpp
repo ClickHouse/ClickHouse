@@ -69,6 +69,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"parallel_replicas_allow_merge_tables", false, false, "New setting to allow reading from a `Merge` table with plan-based parallel replicas, by expanding the `Merge` read into a union of the reads from the underlying `MergeTree` tables. It only has an effect together with `parallel_replicas_plan_based`."},
             {"optimize_mutations_with_partition_pruning", false, true, "New setting to automatically prune partitions for mutations based on WHERE clause"},
+            {"allow_experimental_time_series_table", false, false, "The `TimeSeries` table engine and the `promql` dialect were moved to the private preview tier."},
+            {"time_series_prefer_recent_samples_table", true, true, "The `TimeSeries` table engine was moved to the private preview tier."},
+            {"allow_experimental_time_series_aggregate_functions", false, false, "The `timeSeries*` aggregate functions were moved to the private preview tier."},
+            {"promql_database", "", "", "The `promql` dialect was moved to the private preview tier."},
+            {"promql_table", "", "", "The `promql` dialect was moved to the private preview tier."},
+            {"promql_evaluation_time", "auto", "auto", "The `promql` dialect was moved to the private preview tier."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {

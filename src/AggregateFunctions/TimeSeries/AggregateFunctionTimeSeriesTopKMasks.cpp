@@ -33,7 +33,7 @@ namespace
             && (*settings)[Setting::allow_experimental_time_series_table] == 0)
             throw Exception(
                 ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
-                "Aggregate function {} is experimental and disabled by default. "
+                "Aggregate function {} is in private preview and disabled by default. "
                 "Enable it with setting allow_experimental_time_series_aggregate_functions",
                 name);
 
