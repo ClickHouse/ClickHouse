@@ -38,7 +38,9 @@ private:
     /// assumption that a table function stores no data.
     bool canBeUsedToCreateTable() const override { return false; }
 
-    StoragePtr getTargetTable(const ContextPtr & context) const;
+    /// Authorizes the target by the name the TimeSeries table configures and by the identity that name
+    /// resolves to, so neither a hidden target nor a rename escapes the check.
+    StoragePtr getAuthorizedTargetTable(const ContextPtr & context, AccessType access_type) const;
 
     StorageID time_series_storage_id = StorageID::createEmpty();
     String target_table_type_name;

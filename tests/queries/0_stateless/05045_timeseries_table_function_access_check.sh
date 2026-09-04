@@ -41,6 +41,20 @@ CREATE TABLE $db.f_samples (id UInt64, timestamp DateTime64(3), value Float64) E
 CREATE TABLE $db.ts_file ENGINE = TimeSeries
     DATA $db.f_samples TAGS $db.ts_tags METRICS $db.ts_metrics;
 
+-- Two TimeSeries tables whose external target is configured and then dropped: one on the data target,
+-- one on the tags target that timeSeriesSelector() reads its id type from.
+CREATE TABLE $db.samples_gone (id UInt64, timestamp DateTime64(3), value Float64)
+    ENGINE = MergeTree ORDER BY (id, timestamp);
+CREATE TABLE $db.ts_gone ENGINE = TimeSeries
+    DATA $db.samples_gone TAGS $db.ts_tags METRICS $db.ts_metrics;
+CREATE TABLE $db.tags_gone (id UInt64, metric_name LowCardinality(String),
+    tags Map(LowCardinality(String), String), min_time DateTime64(3), max_time DateTime64(3))
+    ENGINE = MergeTree ORDER BY id;
+CREATE TABLE $db.ts_tags_gone ENGINE = TimeSeries
+    DATA $db.ts_samples TAGS $db.tags_gone METRICS $db.ts_metrics;
+DROP TABLE $db.samples_gone;
+DROP TABLE $db.tags_gone;
+
 DROP USER IF EXISTS $user;
 CREATE USER $user;
 GRANT CREATE TEMPORARY TABLE ON *.* TO $user;
@@ -189,8 +203,25 @@ ${CLICKHOUSE_CLIENT} <<EOF
 SELECT count() FROM $db.ts_samples;
 -- and symmetrically for the TimeSeries table: holding INSERT on the target alone does not write either.
 REVOKE INSERT ON $db.ts FROM $user;
+GRANT SELECT, INSERT, SHOW COLUMNS ON $db.ts_gone TO $user;
+GRANT SHOW COLUMNS ON $db.ts_tags_gone TO $user;
 EOF
 ${CLIENT_USER} -q "INSERT INTO FUNCTION timeSeriesSamples($db.ts) SELECT toUInt64(3), toDateTime64('2026-01-01 00:00:03.000', 3), toFloat64(9); -- { serverError ACCESS_DENIED }"
+
+# Whether a target exists is that target's own metadata, so a caller holding the TimeSeries table but not
+# the target is refused before the catalog is consulted, and cannot tell a missing target from a hidden one.
+# Nothing here ever grants on samples_gone or tags_gone, which are the dropped targets.
+${CLIENT_USER} <<EOF
+DESCRIBE timeSeriesSamples($db.ts_gone) FORMAT Null; -- { serverError ACCESS_DENIED }
+SELECT * FROM timeSeriesSamples($db.ts_gone) FORMAT Null; -- { serverError ACCESS_DENIED }
+INSERT INTO FUNCTION timeSeriesSamples($db.ts_gone) SELECT toUInt64(1), toDateTime64('2026-01-01 00:00:01.000', 3), toFloat64(1); -- { serverError ACCESS_DENIED }
+DESCRIBE timeSeriesSelector($db.ts_tags_gone, 'up', 0, 9999999999) FORMAT Null; -- { serverError ACCESS_DENIED }
+EOF
+
+# A caller entitled to the target still learns that it is missing: the check narrows what is disclosed
+# rather than hiding breakage from whoever may see it.
+${CLICKHOUSE_CLIENT} -q "GRANT SHOW COLUMNS ON $db.samples_gone TO $user"
+${CLIENT_USER} -q "DESCRIBE timeSeriesSamples($db.ts_gone) FORMAT Null; -- { serverError UNKNOWN_TABLE }"
 
 # These three functions hand back a pre-existing table that stores data on disk, which cannot back a
 # persistent table.

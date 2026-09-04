@@ -139,6 +139,12 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
     auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
         time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
+    /// Before the lookup, because looking a name up reports whether it exists, and that is the target's
+    /// metadata rather than the TimeSeries table's.
+    if (auto configured_tags_target_id = time_series_storage->tryGetConfiguredExternalTargetTableID(ViewTarget::Tags, context);
+        !configured_tags_target_id.empty())
+        checkAccessToTimeSeriesTargetTableID(configured_tags_target_id, context, AccessType::SHOW_COLUMNS);
+
     auto tags_target = time_series_storage->getTargetTable(ViewTarget::Tags, context);
     checkAccessToTimeSeriesTargetTable(tags_target, context, AccessType::SHOW_COLUMNS);
     auto tags_target_metadata = tags_target->getInMemoryMetadataPtr(context, false);

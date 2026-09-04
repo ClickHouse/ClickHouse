@@ -296,6 +296,20 @@ StorageID StorageTimeSeries::tryGetTargetTableID(ViewTarget::Kind target_kind, c
     return StorageID::createEmpty();
 }
 
+StorageID StorageTimeSeries::tryGetConfiguredExternalTargetTableID(ViewTarget::Kind target_kind, const ContextPtr & local_context) const
+{
+    const auto * target = tryGetTarget(target_kind);
+
+    /// An inner target carries a UUID or nothing at all, and the name of a non-Atomic one is derived from
+    /// this table's own identity, so in either case there is no separate name a grant could be written on.
+    if (!target || target->table_id.table_name.empty())
+        return StorageID::createEmpty();
+
+    /// The same resolution getTargetTableImpl() performs, so the two cannot disagree about which table the
+    /// configured name means.
+    return local_context->tryResolveStorageID(target->table_id);
+}
+
 bool StorageTimeSeries::isInnerTable(ViewTarget::Kind target_kind) const
 {
     const auto * target = tryGetTarget(target_kind);
@@ -746,6 +760,12 @@ void checkAccessToTimeSeriesTargetTable(const StoragePtr & target_table, const C
             ErrorCodes::ACCESS_DENIED,
             "Not enough privileges to access the table that {} points to",
             target_table->getStorageID().getNameForLogs());
+}
+
+
+void checkAccessToTimeSeriesTargetTableID(const StorageID & target_table_id, const ContextPtr & context, AccessType access_type)
+{
+    context->checkAccess(access_type, target_table_id);
 }
 
 
