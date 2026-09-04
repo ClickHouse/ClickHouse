@@ -75,7 +75,8 @@ IProcessor::Status JoiningTransform::prepare()
     if (inputs.size() > 1)
     {
         auto & last_in = inputs.back();
-        if (last_in.isFinished() && join->alwaysReturnsEmptySet() && !on_totals)
+        /// A live result may hold `JoinSwitcher`'s exclusive probe lock.
+        if (last_in.isFinished() && !join_result && join->alwaysReturnsEmptySet() && !on_totals)
             stop_reading = true;
     }
 
@@ -279,8 +280,12 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     return std::move(data.block);
 }
 
-FillingRightJoinSideTransform::FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_)
-    : IProcessor({input_header}, {Block()}), join(std::move(join_)), finish_counter(std::move(finish_counter_))
+FillingRightJoinSideTransform::FillingRightJoinSideTransform(
+    SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_, size_t build_worker_id_)
+    : IProcessor({input_header}, {Block()})
+    , join(std::move(join_))
+    , finish_counter(std::move(finish_counter_))
+    , build_worker_id(build_worker_id_)
 {
     spillable = typeid_cast<GraceHashJoin *>(join.get());
 }
@@ -389,7 +394,7 @@ void FillingRightJoinSideTransform::work()
     else
     {
         ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, num_rows);
-        stop_reading = !join->addBlockToJoin(block, num_rows, true);
+        stop_reading = !join->addBlockToJoin(block, num_rows, build_worker_id, true);
     }
 
     set_totals = for_totals;

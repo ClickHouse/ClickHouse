@@ -1,4 +1,5 @@
 -- Tags: long
+-- Random settings limits: joined_block_split_single_row=(1, 1); enable_lazy_columns_replication=(0, 0)
 
 SET query_plan_optimize_join_order_limit = 0;
 SET query_plan_join_swap_table = 0;
@@ -25,28 +26,28 @@ SELECT
 FROM ( SELECT intDiv(number, 3) AS c0, 'a' || toString(number) as payload FROM numbers(10) ) AS t1
 JOIN ( SELECT 1 AS c0, 'b' || toString(number) as payload FROM numbers(100) ) t2
 ON t1.c0 = t2.c0
-SETTINGS max_joined_block_size_rows = 9;
+SETTINGS joined_block_split_single_row = 1, max_joined_block_size_rows = 9, min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0, enable_lazy_columns_replication = 0;
 
 SELECT
     if(max(blockSize()) > 9, 'Error: ' || toString(max(blockSize())), 'Ok'), count() as total_rows, sum(ignore(*)) as dummy
 FROM ( SELECT intDiv(number, 3) AS c0, 'a' || toString(number) as payload FROM numbers(10) ) AS t1
 JOIN ( SELECT if(number == 0, 1000, 2) AS c0, 'b' || toString(number) as payload FROM numbers(10_000) ) t2
 ON t1.c0 = t2.c0
-SETTINGS max_joined_block_size_rows = 9;
+SETTINGS joined_block_split_single_row = 1, max_joined_block_size_rows = 9, min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0, enable_lazy_columns_replication = 0;
 
 SELECT
     if(max(blockSize()) > 1, 'Error: ' || toString(max(blockSize())), 'Ok'), count(), sum(sipHash64(t1.*))
 FROM ( SELECT 1 AS c0, 'a' || toString(number) as payload FROM numbers(10) ) AS t1
 JOIN ( SELECT 1 AS c0, 'b' || toString(number) as payload FROM numbers(10) ) t2
 ON t1.c0 = t2.c0
-SETTINGS max_joined_block_size_rows = 1;
+SETTINGS joined_block_split_single_row = 1, max_joined_block_size_rows = 1, min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0, enable_lazy_columns_replication = 0;
 
 SELECT
     if(max(blockSize()) > 1, 'Error: ' || toString(max(blockSize())), 'Ok'), count(), sum(sipHash64(t2.*))
 FROM ( SELECT 1 AS c0, 'a' || toString(number) as payload FROM numbers(10) ) AS t1
 JOIN ( SELECT 1 AS c0, 'b' || toString(number) as payload FROM numbers(10) ) t2
 ON t1.c0 = t2.c0
-SETTINGS max_joined_block_size_rows = 1;
+SETTINGS joined_block_split_single_row = 1, max_joined_block_size_rows = 1, min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0, enable_lazy_columns_replication = 0;
 
 {% for join_kind in ['INNER', 'LEFT', 'RIGHT', 'FULL'] -%}
 
@@ -57,6 +58,6 @@ SELECT
 FROM ( SELECT intDiv(number, 3) AS c0, 'a' || toString(number) as payload FROM numbers(10) ) AS t1
 {{ join_kind }} JOIN ( SELECT if(number == 0, 1000, 2) AS c0, 'b' || toString(number) as payload FROM numbers(10) ) t2
 ON t1.c0 = t2.c0
-SETTINGS max_joined_block_size_rows = 1;
+SETTINGS joined_block_split_single_row = 1, max_joined_block_size_rows = 1, min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0, enable_lazy_columns_replication = 0;
 
 {% endfor -%}

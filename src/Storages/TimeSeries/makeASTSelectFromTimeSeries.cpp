@@ -778,9 +778,8 @@ SettingsChanges getSettingsForSelectFromTimeSeries(bool final)
 
     /// If `join_algorithm` is `full_sorting_merge` or `partial_merge` then the generated query would throw
     /// NOT_IMPLEMENTED (because the merge-join algorithms do not implement the SEMI and FULL joins it uses).
-    /// `hash` is the final fallback supporting every join kind, while `parallel_hash` keeps the faster
-    /// parallel build of the join's right side where applicable.
-    changes.emplace_back("join_algorithm", Field{"parallel_hash,hash"});
+    /// `hash` supports every join kind. Parallelism follows `parallel_hash_join_threshold`.
+    changes.emplace_back("join_algorithm", Field{"hash"});
 
     /// If `optimize_aggregation_in_order` is 0 then the GROUP BY id over the "samples" table would build a hash
     /// table of all the series in memory (because only this setting lets the aggregation stream in sorting-key

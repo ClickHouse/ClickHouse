@@ -28,7 +28,7 @@ class HashJoin;
  * Each input block is split into multiple buckets based on the hash of the row join keys.
  * The first bucket is added to the in-memory HashJoin, and the remaining buckets are written to disk for further processing.
  * When the size of HashJoin exceeds the limits, we double the number of buckets.
- * There can be multiple threads calling addBlockToJoin, just like @ConcurrentHashJoin.
+ * There can be multiple threads calling addBlockToJoin, just like HashJoin.
  *
  * 2) At the second stage we process left table blocks via @joinBlock.
  * Again, each input block is split into multiple buckets by hash.
@@ -40,7 +40,7 @@ class HashJoin;
  * And then join them with left table blocks.
  *
  * After joining the left table blocks, we can load non-joined rows from the right table for RIGHT/FULL JOINs.
- * Note that non-joined rows are processed in multiple threads, unlike HashJoin/ConcurrentHashJoin/MergeJoin.
+ * Note that non-joined rows are processed in multiple threads, unlike MergeJoin.
  */
 class GraceHashJoin final : public IJoin
 {
@@ -84,7 +84,8 @@ public:
         SharedHeader left_sample_block_, SharedHeader right_sample_block_,
         TemporaryDataOnDiskScopePtr tmp_data_,
         bool any_take_last_row_ = false,
-        size_t external_join_threshold_ = 0);
+        size_t external_join_threshold_ = 0,
+        size_t max_threads_ = 1);
 
     ~GraceHashJoin() override;
 
@@ -94,7 +95,7 @@ public:
 
     void initialize(const Block & sample_block) override;
 
-    bool addBlockToJoin(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     JoinResultPtr joinBlock(Block block) override;
 
@@ -107,6 +108,7 @@ public:
     bool alwaysReturnsEmptySet() const override;
 
     bool supportParallelJoin() const override { return true; }
+    size_t getMaxBuildThreads() const override { return max_threads; }
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size) const override;
@@ -128,7 +130,7 @@ private:
     InMemoryJoinPtr makeInMemoryJoin(const String & bucket_id, size_t reserve_num = 0);
 
     /// Add right table block to the @join. Calls @rehash on overflow.
-    void addBlockToJoinImpl(Block block);
+    void addBlockToJoinImpl(Block block, size_t worker_id);
 
     /// Check that join satisfies limits on rows/bytes in table_join.
     bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;
@@ -166,6 +168,7 @@ private:
     const size_t initial_num_buckets;
     const size_t max_num_buckets;
     const size_t external_join_threshold;
+    const size_t max_threads;
 
     Names left_key_names;
     Names right_key_names;
@@ -183,6 +186,9 @@ private:
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
     std::atomic<bool> force_spill = false;
+
+    /// Or every probe thread contends on `hash_join_mutex` once per block to learn it already ran.
+    std::atomic<bool> post_build_phase_ran = false;
 
     GraceHashJoinStats stats;
 

@@ -1,0 +1,143 @@
+-- key8 uint8 inner serial
+0	l0	r0
+2	l2	r2
+2	l2	r2b
+200	l200	r200
+255	l255	r255
+-- key8 uint8 inner parallel
+0	l0	r0
+2	l2	r2
+2	l2	r2b
+200	l200	r200
+255	l255	r255
+-- key8 uint8 right serial
+0	l0	r0
+2	l2	r2
+2	l2	r2b
+3	\N	r3
+200	l200	r200
+255	l255	r255
+-- key8 uint8 right parallel
+0	l0	r0
+2	l2	r2
+2	l2	r2b
+3	\N	r3
+200	l200	r200
+255	l255	r255
+-- key8 uint8 full serial
+0	0	l0	r0
+1	\N	l1	\N
+2	2	l2	r2
+2	2	l2	r2b
+200	200	l200	r200
+255	255	l255	r255
+\N	3	\N	r3
+-- key8 uint8 full parallel
+0	0	l0	r0
+1	\N	l1	\N
+2	2	l2	r2
+2	2	l2	r2b
+200	200	l200	r200
+255	255	l255	r255
+\N	3	\N	r3
+-- key8 int8 inner serial
+-128	ln	rn
+0	l0	r0
+127	lp	rp
+-- key8 int8 inner parallel
+-128	ln	rn
+0	l0	r0
+127	lp	rp
+-- key8 int8 right serial
+-128	ln	rn
+0	l0	r0
+1	\N	r1
+127	lp	rp
+-- key8 int8 right parallel
+-128	ln	rn
+0	l0	r0
+1	\N	r1
+127	lp	rp
+-- key8 int8 full serial
+-128	-128	ln	rn
+-1	\N	lm	\N
+0	0	l0	r0
+127	127	lp	rp
+\N	1	\N	r1
+-- key8 int8 full parallel
+-128	-128	ln	rn
+-1	\N	lm	\N
+0	0	l0	r0
+127	127	lp	rp
+\N	1	\N	r1
+-- key16 uint16 inner serial
+0	l0	r0
+30	l30	r30
+60	l60	r60
+90	l90	r90
+120	l120	r120
+150	l150	r150
+180	l180	r180
+-- key16 uint16 inner parallel
+0	l0	r0
+30	l30	r30
+60	l60	r60
+90	l90	r90
+120	l120	r120
+150	l150	r150
+180	l180	r180
+-- key16 int16 inner serial
+-30000	ln	rn
+0	l0	r0
+30000	lp	rp
+-- key16 int16 inner parallel
+-30000	ln	rn
+0	l0	r0
+30000	lp	rp
+-- sparse key16 right serial
+0	l0	r0
+1	l1	r1
+50000	\N	r50000
+65535	\N	r65535
+-- sparse key16 right parallel
+0	l0	r0
+1	l1	r1
+50000	\N	r50000
+65535	\N	r65535
+-- sparse key16 full serial
+0	0	l0	r0
+1	1	l1	r1
+2	\N	l2	\N
+\N	50000	\N	r50000
+\N	65535	\N	r65535
+-- sparse key16 full parallel
+0	0	l0	r0
+1	1	l1	r1
+2	\N	l2	\N
+\N	50000	\N	r50000
+\N	65535	\N	r65535
+-- range conversion after parallel key32
+1
+-- range uint32 inner conversion on vs off
+1
+-- range uint32 right conversion on vs off
+1
+1
+-- range int32 inner conversion on vs off
+1
+-- shared rf key8 serial
+rf0	2500
+rf1	2500
+-- shared rf key8 parallel
+rf0	2500
+rf1	2500
+-- hash table layouts
+key8_serial	1
+key8_parallel	1
+key16_serial	1
+key16_parallel	1
+-- shared rf published
+serial_on	1
+parallel_on	1
+serial_off	1
+parallel_off	1

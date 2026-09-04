@@ -64,7 +64,7 @@ namespace DB
     DECLARE(TotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE, "How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = 'any' are present.", IMPORTANT) \
     DECLARE(Float, totals_auto_threshold, 0.5, "The threshold for totals_mode = 'auto'.", 0) \
     \
-    DECLARE(JoinAlgorithm, join_algorithm, "direct,parallel_hash,hash", "Specifies which JOIN algorithm is used.", 0) \
+    DECLARE(JoinAlgorithm, join_algorithm, "direct,hash", "Specifies which JOIN algorithm is used.", 0) \
     \
     DECLARE(UInt64, max_rows_in_join, 0, "Maximum size of the hash table for JOIN (in number of rows).", 0) \
     DECLARE(UInt64, max_bytes_in_join, 0, "Maximum size of the hash table for JOIN (in number of bytes in memory).", 0) \
@@ -74,7 +74,7 @@ namespace DB
     DECLARE(UInt64, min_joined_block_size_rows, DEFAULT_BLOCK_SIZE, "Minimum block size in rows for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.", 0) \
     DECLARE(UInt64, min_joined_block_size_bytes, 524288, "Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.)", 0) \
     DECLARE(Bool, joined_block_split_single_row, false, "Allow to chunk hash join result by rows corresponding to single row from left table.", 0) \
-    DECLARE(Bool, parallel_non_joined_rows_processing, true, "Allow parallel processing of non-joined rows in RIGHT/FULL parallel_hash joins.", 0) \
+    DECLARE(Bool, parallel_non_joined_rows_processing, true, "Allow parallel processing of non-joined rows from the right table in RIGHT and FULL JOINs.", 0) \
     \
     DECLARE(Bool, use_join_disjunctions_push_down, false, "Enable JOIN disjunction pushdown: allows pushing safe OR-branch predicates from JOIN conditions down to the respective left/right inputs so storages can pre-filter. Applied only when each top-level OR branch contributes a deterministic predicate for the target side.", 0) \
     \
@@ -91,7 +91,7 @@ namespace DB
     DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, "Initial number of grace hash join buckets", 0) \
     DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, "Limit on the number of grace hash join buckets", 0) \
     \
-    DECLARE(UInt64, max_bytes_before_external_join, 0, "If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), automatic spilling is disabled.", 0) \
+    DECLARE(UInt64, max_bytes_before_external_join, 0, "If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, a hash join spills through `GraceHashJoin` when the right-side data exceeds this many bytes, but only when `GraceHashJoin` can run the join (one equality disjunct, supported kind and strictness). When set to 0 (default), this absolute byte threshold is disabled.", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_join, 0., "Spill threshold for hash joins expressed as a fraction of available memory. Combined with the absolute `max_bytes_before_external_join`, the smaller resulting threshold applies. The ratio is recomputed on each executor against its local memory limits.", 0) \
     \
     DECLARE(UInt64, max_rows_in_set_to_optimize_join, 0, "Maximal size of the set to filter joined tables by each other's row sets before joining.", 0) \
@@ -100,7 +100,7 @@ namespace DB
     \
     DECLARE(Bool, collect_hash_table_stats_during_joins, true, "Enable collecting hash table statistics to optimize memory allocation", 0) \
     DECLARE(UInt64, max_size_to_preallocate_for_joins, 1'000'000'000'000, "For how many elements it is allowed to preallocate space in all hash tables in total before join", 0) \
-    DECLARE(UInt64, parallel_hash_join_threshold, 100'000, "When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available). The former is used when we know that the right table size is below the threshold.", 0) \
+    DECLARE(UInt64, parallel_hash_join_threshold, 100'000, "When a hash join is used, this threshold decides whether the join may run in parallel. Below the threshold with a right-table estimate, single-threaded execution; at or above it, and also when there is no estimate, multiple threads when `max_threads` > 1.", 0) \
     DECLARE(UInt64, join_output_by_rowlist_perkey_rows_threshold, 5, "The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join.", 0) \
     DECLARE(Bool, allow_experimental_join_right_table_sorting, false, "If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.", 0) \
     DECLARE(Bool, allow_dynamic_type_in_join_keys, false, "Allows using Dynamic type in JOIN keys", 0) \

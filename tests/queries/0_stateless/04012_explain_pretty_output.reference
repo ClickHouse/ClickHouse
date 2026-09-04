@@ -30,7 +30,7 @@ Output: a, b, y
 
 Join (JOIN FillRightFirst)
 │  t1[no_stats~100] ⋈ t2[no_stats~100]
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: HashJoin
 │  Result rows: 100
 │  Join conditions: a = x
 │  Output:
@@ -49,7 +49,7 @@ Output: a, b, c, x, y
 
 Join (JOIN FillRightFirst)
 │  t1[no_stats~100] ⋈ t2[no_stats~100]
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: HashJoin
 │  Result rows: 100
 │  Join conditions: a = x
 │  Output:
@@ -68,7 +68,7 @@ Output: a, b
 
 Join (JOIN FillRightFirst)
 │  t1[no_stats~100] ⋈ t2[no_stats~100]
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: HashJoin
 │  Result rows: 100
 │  Join conditions: a = x
 │  Output:
@@ -87,7 +87,7 @@ Output: x, y
 
 Join (JOIN FillRightFirst)
 │  t1[no_stats~100] ⋈ t2[no_stats~100]
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: HashJoin
 │  Result rows: 100
 │  Join conditions: a = x
 │  Output:

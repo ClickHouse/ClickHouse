@@ -226,7 +226,7 @@ struct QueryPlanOptimizationSettings
     ///
     /// We should not have the number of threads in query plan.
     /// The information about threads should be available only at the moment we build pipeline.
-    /// Currently, it is used by ConcurrentHashJoin: it requiers the number of threads in ctor.
+    /// Currently, it is used by HashJoin: it requires the number of threads in ctor.
     /// It should be relativaly simple to fix, but I will do it later.
     size_t max_threads;
 

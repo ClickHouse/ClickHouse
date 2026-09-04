@@ -1,8 +1,10 @@
 #pragma once
+#include <algorithm>
 #include <atomic>
 #include <utility>
 #include <vector>
 #include <Core/Joins.h>
+#include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/joinDispatch.h>
 #include <Common/Exception.h>
 
@@ -25,9 +27,19 @@ public:
     using PendingPerRowFlags = std::vector<std::pair<UInt32, UsedFlagsForColumns>>;
 
     /// Per-row flags filled during the build phase: (block_no, flags) for each stored block.
-    PendingPerRowFlags pending_per_row_flags;
+    /// One list per build worker, so that appending needs no synchronization.
+    std::vector<PendingPerRowFlags> pending_per_worker;
 
-    /// Dense flags indexed by block_no, that are built from `pending_per_row_flags` when the build phase finishes.
+    /// Call before the build starts: resizing later would race with the appends.
+    /// `need_flags` is the fallback `getUsedSafe` reads, so publish it here, not from each worker.
+    void setPendingFlagWorkers(size_t num_workers, bool need_flags_ = false)
+    {
+        pending_per_worker.resize(num_workers);
+        if (need_flags_)
+            need_flags = true;
+    }
+
+    /// Dense flags indexed by block_no, built from `pending_per_worker` when the build finishes.
     /// The probe and non-joined phases read and write only this.
     std::vector<UsedFlagsForColumns> per_row_flags;
 
@@ -40,7 +52,7 @@ public:
     /// Update size for vector with flags.
     /// Calling this method invalidates existing flags.
     /// It can be called several times, but all of them should happen before using this structure.
-    template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
+    template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all> // NOLINT(readability-identifier-naming)
     void reinit(size_t size)
     {
         if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
@@ -57,7 +69,7 @@ public:
 
     /// Update size for vector with flags same as `reinit` but allows the updated size to be smaller.
     /// Must be called only before using this structure.
-    template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
+    template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all> // NOLINT(readability-identifier-naming)
     void reinitAllowShrinking(size_t size)
     {
         if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
@@ -67,13 +79,13 @@ public:
         }
     }
 
-    template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
-    void reinit(UInt32 block_no, size_t rows, const ScatteredBlock::Selector & selector)
+    template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all> // NOLINT(readability-identifier-naming)
+    void reinit(size_t worker_id, UInt32 block_no, size_t rows, const ScatteredBlock::Selector & selector)
     {
         if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
         {
-            need_flags = true;
-            auto & flags = pending_per_row_flags.emplace_back(block_no, UsedFlagsForColumns(rows)).second;
+            chassert(worker_id < pending_per_worker.size());
+            auto & flags = pending_per_worker[worker_id].emplace_back(block_no, UsedFlagsForColumns(rows)).second;
 
             /// Mark all rows outside of selector as used.
             /// We should not emit them in RIGHT/FULL JOIN result,
@@ -85,24 +97,25 @@ public:
         }
     }
 
-    /// Move the source pending per-block flags into the dense `per_row_flags` vector, which is
-    /// sized to cover every block_no of the `StoredColumnsIndex`.
-    void finalizePerRowFlags(JoinUsedFlags & source, size_t num_blocks)
+    /// Call once no build worker can still be appending.
+    void finalizePerRowFlags(size_t num_blocks)
     {
-        if (source.pending_per_row_flags.empty())
+        if (std::ranges::all_of(pending_per_worker, [](const auto & pending) { return pending.empty(); }))
             return;
-
-        auto source_pending_flags = std::exchange(source.pending_per_row_flags, PendingPerRowFlags{});
 
         need_flags = true;
         if (per_row_flags.size() < num_blocks)
             per_row_flags.resize(num_blocks);
 
-        for (auto & [block_no, flags] : source_pending_flags)
+        for (auto & pending : pending_per_worker)
         {
-            if (block_no >= per_row_flags.size() || !per_row_flags[block_no].empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinUsedFlags: unexpected per-row flags for block {}", block_no);
-            per_row_flags[block_no] = std::move(flags);
+            for (auto & [block_no, flags] : pending)
+            {
+                if (block_no >= per_row_flags.size() || !per_row_flags[block_no].empty())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinUsedFlags: unexpected per-row flags for block {}", block_no);
+                per_row_flags[block_no] = std::move(flags);
+            }
+            pending.clear();
         }
     }
 
@@ -116,36 +129,34 @@ public:
     }
 
     template <bool use_flags, bool flag_per_row, typename FindResult>
-    void setUsed(const FindResult & f)
+    void setUsed(const FindResult & f [[maybe_unused]])
     {
-        if constexpr (!use_flags)
-            return;
-
-        /// Could be set simultaneously from different threads.
-        if constexpr (flag_per_row)
+        if constexpr (use_flags)
         {
-            auto & mapped = f.getMapped();
-            if constexpr (std::is_same_v<std::decay_t<decltype(mapped)>, RowRefList>)
+            /// Could be set simultaneously from different threads.
+            if constexpr (flag_per_row)
             {
-                for (const UInt64 ref_word : refsOf(mapped.word))
+                auto & mapped = f.getMapped();
+                if constexpr (std::is_same_v<std::decay_t<decltype(mapped)>, RowRefList>)
                 {
-                    auto & flag = per_row_flags[refWordBlockNo(ref_word)][refWordRowNo(ref_word)];
+                    for (const UInt64 ref_word : refsOf(mapped.word))
+                    {
+                        auto & flag = per_row_flags[refWordBlockNo(ref_word)][refWordRowNo(ref_word)];
+                        if (!flag.load(std::memory_order_relaxed))
+                            flag.store(true, std::memory_order_relaxed);
+                    }
+                }
+                else
+                {
+                    auto & flag = headRowFlag(mapped);
                     if (!flag.load(std::memory_order_relaxed))
                         flag.store(true, std::memory_order_relaxed);
                 }
             }
             else
             {
-                auto & flag = headRowFlag(mapped);
-                if (!flag.load(std::memory_order_relaxed))
-                    flag.store(true, std::memory_order_relaxed);
+                markPerOffsetUsed(f.getOffset());
             }
-        }
-        else
-        {
-            auto & flag = per_offset_flags[f.getOffset()];
-            if (!flag.load(std::memory_order_relaxed))
-                flag.store(true, std::memory_order_relaxed);
         }
     }
 
@@ -164,9 +175,7 @@ public:
         }
         else
         {
-            auto & flag = per_offset_flags[offset];
-            if (!flag.load(std::memory_order_relaxed))
-                flag.store(true, std::memory_order_relaxed);
+            markPerOffsetUsed(offset);
         }
     }
 
@@ -183,50 +192,48 @@ public:
     }
 
     template <bool use_flags, bool flag_per_row, typename FindResult>
-    bool getUsed(const FindResult & f)
+    bool getUsed(const FindResult & f [[maybe_unused]])
     {
-        if constexpr (!use_flags)
-            return true;
-
-        if constexpr (flag_per_row)
+        /// `if constexpr` rather than an early return, so the no-flags instantiation never
+        /// mentions `getOffset`, which its `FindResult` does not have.
+        if constexpr (use_flags)
         {
-            return headRowFlag(f.getMapped()).load();
+            if constexpr (flag_per_row)
+                return headRowFlag(f.getMapped()).load();
+            else
+                return per_offset_flags[f.getOffset()].load();
         }
         else
         {
-            return per_offset_flags[f.getOffset()].load();
+            return true;
         }
     }
 
     template <bool use_flags, bool flag_per_row, typename FindResult>
-    bool setUsedOnce(const FindResult & f)
+    bool setUsedOnce(const FindResult & f [[maybe_unused]])
     {
-        if constexpr (!use_flags)
-            return true;
-
-        if constexpr (flag_per_row)
+        if constexpr (use_flags)
         {
-            auto & flag = headRowFlag(f.getMapped());
+            if constexpr (flag_per_row)
+            {
+                auto & flag = headRowFlag(f.getMapped());
 
-            /// fast check to prevent heavy CAS with seq_cst order
-            if (flag.load(std::memory_order_relaxed))
-                return false;
+                /// fast check to prevent heavy CAS with seq_cst order
+                if (flag.load(std::memory_order_relaxed))
+                    return false;
 
-            bool expected = false;
-            return flag.compare_exchange_strong(expected, true);
+                bool expected = false;
+                return flag.compare_exchange_strong(expected, true);
+            }
+            else
+            {
+                return markPerOffsetUsedOnce(f.getOffset());
+            }
         }
         else
         {
-            auto off = f.getOffset();
-
-            /// fast check to prevent heavy CAS with seq_cst order
-            if (per_offset_flags[off].load(std::memory_order_relaxed))
-                return false;
-
-            bool expected = false;
-            return per_offset_flags[off].compare_exchange_strong(expected, true);
+            return true;
         }
-
     }
 
     template <bool use_flags, bool flag_per_row>
@@ -248,23 +255,46 @@ public:
         }
         else
         {
-            /// fast check to prevent heavy CAS with seq_cst order
-            if (per_offset_flags[offset].load(std::memory_order_relaxed))
-                return false;
-
-            bool expected = false;
-            return per_offset_flags[offset].compare_exchange_strong(expected, true);
+            return markPerOffsetUsedOnce(offset);
         }
     }
 
-    /// Are all offset flags set? (index 0 is skipped as it is a service index)
-    bool allOffsetFlagsSet() const noexcept
+    /// Occupied keys, not cells: an empty cell has no flag to set and would never be counted off.
+    void setUnsetOffsetCount(size_t count) { unset_offset_flags.store(count, std::memory_order_relaxed); }
+
+    /// A counter rather than a scan: RIGHT/FULL asks once per non-joined stream, and the vector is
+    /// as large as the hash table.
+    bool allOffsetFlagsSet() const noexcept { return unset_offset_flags.load(std::memory_order_relaxed) == 0; }
+
+private:
+    void markPerOffsetUsed(size_t offset)
     {
-        for (const auto & per_offset_flag : per_offset_flags)
-            if (!per_offset_flag.load(std::memory_order_relaxed))
-                return false;
+        auto & flag = per_offset_flags[offset];
+        /// fast check to avoid a dirtying RMW on every re-match of the same key
+        if (flag.load(std::memory_order_relaxed))
+            return;
+        /// the exchange (not a plain store) keeps `unset_offset_flags` decremented exactly once
+        if (!flag.exchange(true, std::memory_order_relaxed))
+            unset_offset_flags.fetch_sub(1, std::memory_order_relaxed);
+    }
+
+    bool markPerOffsetUsedOnce(size_t offset)
+    {
+        auto & flag = per_offset_flags[offset];
+
+        /// fast check to prevent heavy CAS with seq_cst order
+        if (flag.load(std::memory_order_relaxed))
+            return false;
+
+        bool expected = false;
+        if (!flag.compare_exchange_strong(expected, true))
+            return false;
+
+        unset_offset_flags.fetch_sub(1, std::memory_order_relaxed);
         return true;
     }
+
+    std::atomic<size_t> unset_offset_flags{0};
 };
 
 }

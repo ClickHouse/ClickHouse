@@ -28,17 +28,17 @@ SET join_algorithm = 'hash';
 
 SET join_use_nulls = 0;
 
-SELECT t.*, t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t);
-SELECT t.t.*, t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t);
-SELECT t.t.t.*, t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t);
-SELECT t.t.t.t.*, t.t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t);
+SELECT t.*, t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t) ORDER BY ALL;
+SELECT t.t.*, t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t) ORDER BY ALL;
+SELECT t.t.t.*, t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t) ORDER BY ALL;
+SELECT t.t.t.t.*, t.t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t) ORDER BY ALL;
 
 SET join_use_nulls = 1;
 
-SELECT t.*, t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t);
-SELECT t.t.*, t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t);
-SELECT t.t.t.*, t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t);
-SELECT t.t.t.t.*, t.t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t);
+SELECT t.*, t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t) ORDER BY ALL;
+SELECT t.t.*, t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t) ORDER BY ALL;
+SELECT t.t.t.*, t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t) ORDER BY ALL;
+SELECT t.t.t.t.*, t.t.t.t.* APPLY toTypeName FROM ttta FULL JOIN tttb USING (t) ORDER BY ALL;
 
 DROP TABLE IF EXISTS ttta;
 DROP TABLE IF EXISTS tttb;

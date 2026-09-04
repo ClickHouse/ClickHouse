@@ -35,7 +35,7 @@ public:
     std::string getName() const override { return "DirectKeyValueJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
-    bool addBlockToJoin(const Block &, bool) override;
+    bool addBlockToJoin(const Block &, size_t, size_t, bool) override;
     void checkTypesOfKeys(const Block &) const override;
 
     /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addBlockToJoin).

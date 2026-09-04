@@ -1498,7 +1498,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
             if (!ie_join_description)
             {
                 bool can_convert_to_cross = (isInner(join_operator.kind) || isCrossOrComma(join_operator.kind))
-                    && TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH)
+                    && TableJoin::isHashFamilyEnabled(join_settings.join_algorithms)
                     && join_operator.strictness == JoinStrictness::All;
 
                 is_disjunctive_condition = tryAddDisjunctiveConditions(

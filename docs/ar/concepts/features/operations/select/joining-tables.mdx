@@ -174,7 +174,7 @@ Peak memory usage: 250.66 MiB.
 
 * **(2)** إذا كان [الترتيب المادي للصفوف](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) في جدولك يطابق ترتيب فرز مفتاح الـ JOIN، فالأمر يعتمد على الحالة. في هذه الحالة، تتخطى **full sorting merge JOIN** [مرحلة](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3#utilizing-physical-row-order) الفرز، مما يؤدي إلى خفض كبير في استخدام الذاكرة، وقد يوفّر أيضًا، بحسب حجم البيانات وتوزيع قيم أعمدة مفتاح الـ JOIN، زمن تنفيذ أسرع من بعض خوارزميات hash JOIN.
 
-* **(3)** إذا كان الجدول الأيمن يتّسع في الذاكرة، حتى مع [العبء الإضافي على استخدام الذاكرة](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2#summary) في **parallel hash JOIN**، فقد تكون هذه الخوارزمية أو hash JOIN أسرع. ويعتمد ذلك على حجم البيانات وأنواع البيانات وتوزيع قيم أعمدة مفتاح الـ JOIN.
+* **(3)** إذا كان الجدول الأيمن يتّسع في الذاكرة، فاستخدم hash JOIN (`hash` و`parallel_hash` اسمان بديلان؛ واختيار أحدهما لا يتحكّم في التوازي). وعادةً ما يكون هذا الخيار الأسرع داخل الذاكرة، بحسب حجم البيانات وأنواع البيانات وتوزيع قيم أعمدة مفتاح الـ JOIN.
 
 * **(4)** إذا كان الجدول الأيمن لا يتّسع في الذاكرة، فالأمر يعتمد مرة أخرى. يوفّر ClickHouse ثلاث خوارزميات JOIN غير مقيّدة بالذاكرة. وجميعها تقوم مؤقتًا بترحيل البيانات إلى القرص. تتطلّب **full sorting merge JOIN** و**partial merge JOIN** فرز البيانات مسبقًا. أما **Grace hash JOIN** فتبني جداول hash من البيانات بدلًا من ذلك. وبحسب حجم البيانات وأنواع البيانات وتوزيع قيم أعمدة مفتاح الـ JOIN، قد توجد حالات يكون فيها بناء جداول hash من البيانات أسرع من فرز البيانات، والعكس صحيح.
 

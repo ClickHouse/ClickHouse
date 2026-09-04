@@ -2047,9 +2047,37 @@ Number of reused server HTTP connections
 
 The number of hard page faults in query execution threads. High values indicate either that you forgot to turn off swap on your server, or eviction of memory pages of the ClickHouse binary during very high memory pressure, or successful usage of the 'mmap' read method for the tables data.
 
+### HashJoinBuildInsertMicroseconds {#hashjoinbuildinsertmicroseconds}
+
+HashJoin build-side sub-phase: time spent inserting scattered rows into the shared hash map, including slot-lock waits. A subset of `HashJoinBuildMicroseconds`.
+
+### HashJoinBuildLockWaitMicroseconds {#hashjoinbuildlockwaitmicroseconds}
+
+HashJoin build-side: time spent yielding in `insertIntoSlots` while waiting for a slot mutex. A subset of `HashJoinBuildInsertMicroseconds`.
+
+### HashJoinBuildMicroseconds {#hashjoinbuildmicroseconds}
+
+Time spent in the `HashJoin` build phase (adding right-side blocks plus `onBuildPhaseFinish`), summed over all build threads.
+
+### HashJoinBuildScatterMicroseconds {#hashjoinbuildscattermicroseconds}
+
+HashJoin build-side sub-phase: time spent in `scatterBlockBySlot` routing right-side rows into per-slot selectors. A subset of `HashJoinBuildMicroseconds`. Zero when the join uses a single slot.
+
 ### HashJoinPreallocatedElementsInHashTables {#hashjoinpreallocatedelementsinhashtables}
 
 How many elements were preallocated in hash tables for hash join.
+
+### HashJoinProbeGatherMicroseconds {#hashjoinprobegathermicroseconds}
+
+HashJoin probe-side sub-phase: gathering right-side column values in `lazy_output.buildOutput`. Does not include left-column replication. A subset of `HashJoinProbeMicroseconds`.
+
+### HashJoinProbeLookupMicroseconds {#hashjoinprobelookupmicroseconds}
+
+HashJoin probe-side sub-phase: hash-map lookup and per-row match emission (`findKey` plus recording match row-refs; includes residual `ON` filter). Does not include gathering column values. A subset of `HashJoinProbeMicroseconds`.
+
+### HashJoinProbeMicroseconds {#hashjoinprobemicroseconds}
+
+Time spent joining probe-side blocks in `HashJoin` (lookup plus draining `HashJoinResult`), summed over all probe threads.
 
 ### HedgedRequestsChangeReplica {#hedgedrequestschangereplica}
 
@@ -2289,7 +2317,7 @@ Total number of rows in the result of a JOIN operation.
 
 ### JoinSpillingHashJoinSwitchedToGraceJoin {#joinspillinghashjoinswitchedtogracejoin}
 
-Number of times a (Concurrent)HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.
+Number of times a HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.
 
 ### KafkaBackgroundReads {#kafkabackgroundreads}
 

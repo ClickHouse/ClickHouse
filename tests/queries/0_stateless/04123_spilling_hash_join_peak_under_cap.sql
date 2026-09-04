@@ -1,6 +1,6 @@
 -- Regression test: with `max_bytes_before_external_join` set, the in-memory peak of
 -- a spilling hash join must stay below `max_memory_usage`. Previously several issues
--- in `ConcurrentHashJoin`, `SpillingHashJoin` and `GraceHashJoin` could conspire to
+-- in `HashJoin`, `SpillingHashJoin` and `GraceHashJoin` could conspire to
 -- make the in-memory hash table grow well past the configured external-join
 -- threshold, causing a `MEMORY_LIMIT_EXCEEDED` exception during the build phase.
 

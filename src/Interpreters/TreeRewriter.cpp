@@ -659,7 +659,7 @@ std::optional<bool> tryEvaluateConstCondition(ASTPtr expr, ContextPtr context)
 
 bool tryJoinOnConst(TableJoin & analyzed_join, const ASTPtr & on_expression, ContextPtr context)
 {
-    if (!analyzed_join.isEnabledAlgorithm(JoinAlgorithm::HASH))
+    if (!analyzed_join.isHashFamilyEnabled())
         return false;
 
     if (analyzed_join.strictness() == JoinStrictness::Asof)
@@ -783,8 +783,9 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
             data.asofToJoinKeys();
         }
 
-        if (!analyzed_join.oneDisjunct() && !analyzed_join.isEnabledAlgorithm(JoinAlgorithm::HASH))
-            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
+        if (!analyzed_join.oneDisjunct() && !analyzed_join.isHashFamilyEnabled() && !analyzed_join.isEnabledAlgorithm(JoinAlgorithm::AUTO))
+            throw DB::Exception(
+                ErrorCodes::NOT_IMPLEMENTED, "Only `hash` and `parallel_hash` joins support multiple ORs for keys in JOIN ON section");
     }
 }
 

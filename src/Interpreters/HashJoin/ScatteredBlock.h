@@ -27,7 +27,7 @@ extern const int LOGICAL_ERROR;
 namespace detail
 {
 
-/// Previously ConcurrentHashJoin used IColumn::scatter method to split input blocks to sub-blocks by hash.
+/// The parallel hash join used to split input blocks into sub-blocks by hash with IColumn::scatter.
 /// To avoid copying of columns, we introduce a new class ScatteredBlock that holds a block and a selector.
 /// So now each threads get a copy of the source input block and a selector that tells which rows are meant for the given thread.
 /// Selector can be seen as just a list of indexes or rows that belong to the given thread.

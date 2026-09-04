@@ -339,7 +339,11 @@ public:
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
     /// Analyze ranges only for an intermediate cardinality estimate, without enforcing row limits
     /// or memoizing the result. The executed read analyzes again after its final mode is known.
-    AnalysisResultPtr selectRangesToReadForEstimation() const;
+    /// A fresh index analysis is normally left on the step for the read that executes to reuse.
+    /// Pass `keep_index_analysis = false` when estimating before filters have been pushed down
+    /// here, or that read inherits a `KeyCondition` built from a filter that was not there yet
+    /// and stops pruning.
+    AnalysisResultPtr selectRangesToReadForEstimation(bool keep_index_analysis) const;
 
     /// Analyze the ranges to read for a throwaway pre-plan estimate, without consulting or populating
     /// the query condition cache and without caching the analysis on the step. Used for the automatic

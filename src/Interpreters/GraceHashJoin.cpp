@@ -1,4 +1,5 @@
 #include <Compression/CompressedWriteBuffer.h>
+#include <deque>
 #include <Formats/NativeWriter.h>
 #include <Formats/formatBlock.h>
 #include <Interpreters/Context.h>
@@ -295,7 +296,8 @@ GraceHashJoin::GraceHashJoin(
     SharedHeader right_sample_block_,
     TemporaryDataOnDiskScopePtr tmp_data_,
     bool any_take_last_row_,
-    size_t external_join_threshold_)
+    size_t external_join_threshold_,
+    size_t max_threads_)
     : log{getLogger("GraceHashJoin")}
     , table_join{std::move(table_join_)}
     , left_sample_block{left_sample_block_}
@@ -304,6 +306,7 @@ GraceHashJoin::GraceHashJoin(
     , initial_num_buckets(initial_num_buckets_)
     , max_num_buckets(max_num_buckets_)
     , external_join_threshold(external_join_threshold_)
+    , max_threads(std::max<size_t>(1, max_threads_))
     , left_key_names(table_join->getOnlyClause().key_names_left)
     , right_key_names(table_join->getOnlyClause().key_names_right)
     , tmp_data(tmp_data_->childScope({
@@ -347,13 +350,13 @@ bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 
 GraceHashJoin::~GraceHashJoin() = default;
 
-bool GraceHashJoin::addBlockToJoin(const Block & block, bool /*check_limits*/)
+bool GraceHashJoin::addBlockToJoin(const Block & block, size_t /* num_rows */, size_t worker_id, bool /*check_limits*/)
 {
     if (current_bucket == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "GraceHashJoin is not initialized");
 
     Block materialized = materializeBlock(block);
-    addBlockToJoinImpl(std::move(materialized));
+    addBlockToJoinImpl(std::move(materialized), worker_id);
     return true;
 }
 
@@ -489,11 +492,14 @@ void GraceHashJoin::initialize(const Block & sample_block)
 
 JoinResultPtr GraceHashJoin::joinBlock(Block block)
 {
-    /// Check if hash join post build optimizations could be performed.
-    if (hash_join && getNumBuckets() <= 1)
+    if (!post_build_phase_ran.load(std::memory_order_acquire) && getNumBuckets() <= 1)
     {
         std::lock_guard lock(hash_join_mutex);
-        hash_join->runPostBuildPhase();
+        if (hash_join)
+        {
+            hash_join->runPostBuildPhase();
+            post_build_phase_ran.store(true, std::memory_order_release);
+        }
     }
 
     if (block.rows() == 0)
@@ -818,7 +824,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
         for (Block block = right_reader.read(); !block.empty(); block = right_reader.read())
         {
             num_rows += block.rows();
-            addBlockToJoinImpl(std::move(block));
+            addBlockToJoinImpl(std::move(block), /* worker_id = */ 0);
         }
         hash_join->onBuildPhaseFinish();
 
@@ -836,15 +842,31 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
 GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bucket_id, size_t reserve_num)
 {
-    return std::make_unique<HashJoin>(table_join, right_sample_block, any_take_last_row, reserve_num, bucket_id, /*is_concurrent_hash_join*/ false);
+    /// `max_threads` still matters even though inserts here are serialized: the fill streams
+    /// address worker slots by their own id.
+    ///
+    /// The parallel layout does not. 256 buckets of empty buffers count against
+    /// `max_bytes_before_external_join` and do not shrink as Grace adds file buckets, so a small
+    /// remainder could rehash past `grace_hash_join_max_buckets`.
+    return std::make_shared<HashJoin>(
+        table_join,
+        right_sample_block,
+        any_take_last_row,
+        reserve_num,
+        bucket_id,
+        HashJoinStatsCollectingParams{},
+        max_threads,
+        /*use_parallel_layout=*/false);
 }
 
 Block GraceHashJoin::prepareRightBlock(const Block & block)
 {
+    /// The cached sample block, not `hash_join`: this runs without the mutex, and a rehash
+    /// replaces `hash_join`.
     return HashJoin::prepareRightBlock(block, hash_join_sample_block);
 }
 
-void GraceHashJoin::addBlockToJoinImpl(Block block)
+void GraceHashJoin::addBlockToJoinImpl(Block block, size_t worker_id)
 {
     block = prepareRightBlock(block);
     Buckets buckets_snapshot = getCurrentBuckets();
@@ -899,9 +921,9 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
         bool block_added = false;
         if (!pre_threshold_overflow)
         {
-            hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
+            hash_join->addBlockToJoin(current_block, current_block.rows(), worker_id, /* check_limits = */ false);
             block_added = true;
-            size_t hash_join_total_keys = hash_join->getAndSetRightTableKeys();
+            size_t hash_join_total_keys = hash_join->getRightTableKeys();
             size_t hash_join_total_bytes = hash_join->getTotalByteCount();
             if (!hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes))
                 return;
@@ -951,7 +973,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
         hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index), prev_keys_num / 2);
 
         if (current_block.rows() > 0)
-            hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
+            hash_join->addBlockToJoin(current_block, current_block.rows(), worker_id, /* check_limits = */ false);
     }
 }
 

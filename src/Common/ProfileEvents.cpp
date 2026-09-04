@@ -453,7 +453,14 @@
     M(JoinNonJoinedTransformRowCount, "Number of non-joined rows emitted by NonJoinedBlocksTransform.", ValueType::Number) \
     M(JoinDelayedJoinedTransformBlockCount, "Number of blocks emitted by DelayedJoinedBlocksWorkerTransform.", ValueType::Number) \
     M(JoinDelayedJoinedTransformRowCount, "Number of rows emitted by DelayedJoinedBlocksWorkerTransform.", ValueType::Number) \
-    M(JoinSpillingHashJoinSwitchedToGraceJoin, "Number of times a (Concurrent)HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.", ValueType::Number) \
+    M(JoinSpillingHashJoinSwitchedToGraceJoin, "Number of times a HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.", ValueType::Number) \
+    M(HashJoinBuildMicroseconds, "Time spent in the HashJoin build phase (adding right-side blocks plus onBuildPhaseFinish), summed over all build threads.", ValueType::Microseconds) \
+    M(HashJoinBuildScatterMicroseconds, "HashJoin build-side sub-phase: time spent in scatterBlockBySlot routing right-side rows into per-slot selectors. A subset of HashJoinBuildMicroseconds. Zero when the join uses a single slot.", ValueType::Microseconds) \
+    M(HashJoinBuildInsertMicroseconds, "HashJoin build-side sub-phase: time spent inserting scattered rows into the shared hash map, including slot-lock waits. A subset of HashJoinBuildMicroseconds.", ValueType::Microseconds) \
+    M(HashJoinBuildLockWaitMicroseconds, "HashJoin build-side: time insertIntoSlots waits for a slot mutex. Counts the sweeps that acquired nothing, the yields between them, and the blocking acquisition a fully filtered block takes. A subset of HashJoinBuildInsertMicroseconds.", ValueType::Microseconds) \
+    M(HashJoinProbeMicroseconds, "Time spent joining probe-side blocks in HashJoin (lookup plus draining HashJoinResult), summed over all probe threads.", ValueType::Microseconds) \
+    M(HashJoinProbeLookupMicroseconds, "HashJoin probe-side sub-phase: hash-map lookup and per-row match emission (findKey plus recording match row-refs; includes residual ON filter). Does not include gathering column values. A subset of HashJoinProbeMicroseconds.", ValueType::Microseconds) \
+    M(HashJoinProbeGatherMicroseconds, "HashJoin probe-side sub-phase: gathering right-side column values in lazy_output.buildOutput. Does not include left-column replication. A subset of HashJoinProbeMicroseconds.", ValueType::Microseconds) \
     M(JoinReorderMicroseconds, "Total time spent executing JOIN reordering algorithm.", ValueType::Microseconds) \
     M(JoinOptimizeMicroseconds, "Total time spent executing JOIN plan optimizations.", ValueType::Microseconds) \
     M(QueryPlanOptimizeMicroseconds, "Total time spent executing query plan optimizations.", ValueType::Microseconds) \

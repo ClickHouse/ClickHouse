@@ -4,6 +4,7 @@
 #include <Storages/TableLockHolder.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
+#include <Common/HashTable/HashTable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -61,6 +62,25 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_JOIN_KEYS;
 }
 
+namespace
+{
+
+/// Filled from one thread, then shared unchanged, so always the serial map layout.
+HashJoinPtr makeStorageJoinHashJoin(std::shared_ptr<TableJoin> table_join, Block right_sample_block, bool overwrite)
+{
+    return std::make_shared<HashJoin>(
+        std::move(table_join),
+        std::make_shared<const Block>(std::move(right_sample_block)),
+        overwrite,
+        /*reserve_num_=*/0,
+        /*instance_id_=*/"",
+        HashJoinStatsCollectingParams{},
+        /*max_threads_=*/1,
+        /*use_parallel_layout_=*/false);
+}
+
+}
+
 StorageJoin::StorageJoin(
     DiskPtr disk_,
     const String & relative_path_,
@@ -89,7 +109,7 @@ StorageJoin::StorageJoin(
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Key column ({}) does not exist in table declaration.", key);
 
     table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, key_names);
-    join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    join = makeStorageJoinHashJoin(table_join, getRightSampleBlock(), overwrite);
     restore();
     optimizeUnlocked();
 }
@@ -150,7 +170,7 @@ void StorageJoin::optimizeUnlocked()
 {
     size_t current_bytes = join->getTotalByteCount();
     size_t dummy = current_bytes;
-    join->shrinkStoredBlocksToFit(dummy, true);
+    join->shrinkStoredBlocksToFit(dummy, /* worker_id = */ 0, true);
 
     size_t optimized_bytes = join->getTotalByteCount();
     if (current_bytes > optimized_bytes)
@@ -171,7 +191,7 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     disk->createDirectories(fs::path(path) / "tmp/");
 
     increment = 0;
-    join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    join = makeStorageJoinHashJoin(table_join, getRightSampleBlock(), overwrite);
 }
 
 void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -195,7 +215,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     auto compressed_backup_buf = CompressedWriteBuffer(*backup_buf);
     auto backup_stream = NativeWriter(compressed_backup_buf, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()));
 
-    auto new_data = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    auto new_data = makeStorageJoinHashJoin(table_join, getRightSampleBlock(), overwrite);
 
     // New scope controls lifetime of pipeline.
     {
@@ -208,7 +228,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         Block block;
         while (executor.pull(block))
         {
-            new_data->addBlockToJoin(block, true);
+            new_data->addBlockToJoin(block, block.rows(), /* worker_id = */ 0, true);
             if (persistent)
                 backup_stream.write(block);
         }
@@ -313,7 +333,8 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     Block right_sample_block;
     for (const auto & name : required_columns_names)
         right_sample_block.insert(getRightSampleBlock().getByName(name));
-    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, std::make_shared<const Block>(std::move(right_sample_block)));
+    HashJoinPtr join_clone
+        = makeStorageJoinHashJoin(analyzed_join, std::move(right_sample_block), /*overwrite=*/false);
 
     RWLockImpl::LockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, query_id, Poco::Timespan(acquire_timeout.count() * 1000));
     join_clone->setLock(holder);
@@ -341,7 +362,7 @@ void StorageJoin::insertBlock(const Block & block, ContextPtr context)
     if (!holder)
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
 
-    join->addBlockToJoin(block_to_insert, true);
+    join->addBlockToJoin(block_to_insert, block_to_insert.rows(), /* worker_id = */ 0, true);
 }
 
 size_t StorageJoin::getSize(ContextPtr context) const
@@ -869,7 +890,7 @@ public:
 protected:
     Chunk generate() override
     {
-        if (join->data->columns.empty())
+        if (!join->data->hasStoredColumns())
             return {};
 
         Chunk chunk;
@@ -1023,7 +1044,7 @@ private:
 
         /// Note key32 and keys32 (likewise key64/keys64) share one map type, so the variant has to come
         /// from the enum: only the keysN ones pack several key columns into the map key.
-        using KeyGetter = typename KeyGetterForType<TYPE, std::remove_cvref_t<Map>>::Type;
+        using KeyGetter = typename KeyGetterForType<TYPE, std::remove_cvref_t<Map>, /*use_offset=*/false>::Type;
         if constexpr (PacksKeysIntoBlob<KeyGetter>)
         {
             Sizes clause_sizes;
@@ -1067,11 +1088,21 @@ private:
     template <typename Map>
     static void insertKey(MutableColumns & columns, const KeyLayout & layout, typename Map::const_iterator & it)
     {
+        /// A `FixedHashMapCell` has no key of its own: the key is the cell index, exposed as hash.
+        const auto key = [&]
+        {
+            using CellKey = std::remove_cvref_t<decltype(it->getKey())>;
+            if constexpr (std::is_same_v<CellKey, VoidKey>)
+                return static_cast<typename Map::key_type>(it.getHash());
+            else
+                return it->getKey();
+        }();
+
         if (layout.whole_key_pos)
-            columns[*layout.whole_key_pos]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
+            columns[*layout.whole_key_pos]->insertData(rawData(key), rawSize(key));
         else
             for (const auto & slot : layout.packed)
-                columns[slot.output_pos]->insertData(rawData(it->getKey()) + slot.offset, slot.width);
+                columns[slot.output_pos]->insertData(rawData(key) + slot.offset, slot.width);
     }
 
     template <typename Map>

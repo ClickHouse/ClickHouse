@@ -2671,8 +2671,12 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWith
         /*check_row_limits=*/true);
 }
 
-ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEstimation() const
+ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEstimation(bool keep_index_analysis) const
 {
+    /// Already-built indexes are reused either way; only a fresh build is kept out of the step.
+    std::optional<Indexes> discarded_indexes;
+    std::optional<Indexes> & indexes_to_use = (keep_index_analysis || indexes) ? indexes : discarded_indexes;
+
     return selectRangesToRead(
         getParts(),
         mutations_snapshot,
@@ -2687,7 +2691,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEst
         data_settings,
         all_column_names,
         log,
-        indexes,
+        indexes_to_use,
         /*find_exact_ranges=*/false,
         is_parallel_reading_from_replicas,
         allow_query_condition_cache,

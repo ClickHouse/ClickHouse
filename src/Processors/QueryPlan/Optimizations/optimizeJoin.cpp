@@ -287,8 +287,7 @@ static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggreg
     return aggregation_stats;
 }
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter, bool keep_index_analysis)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
@@ -308,11 +307,10 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
             /// Range analysis normally enforces throwing read limits and memoizes its result.
             /// At this stage, however, later planning may make the executed read exempt from those
-            /// limits. In that case use an estimation-only analysis; execution will analyze again
-            /// after its final read mode is known.
-            analyzed_result = has_throwing_row_limit
-                ? reading->selectRangesToReadForEstimation()
-                : reading->selectRangesToRead();
+            /// limits. Either that or an unoptimized plan calls for an estimation-only analysis;
+            /// execution will analyze again once its final read mode is known.
+            const bool estimate_only = has_throwing_row_limit || !keep_index_analysis;
+            analyzed_result = estimate_only ? reading->selectRangesToReadForEstimation(keep_index_analysis) : reading->selectRangesToRead();
         }
 
         /// An exact empty range selection proves that the relation is empty. Other empty
@@ -409,7 +407,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
     {
-        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
+        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter, keep_index_analysis);
     }
 
     if (node.children.size() != 1)
@@ -417,7 +415,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * limit_step = typeid_cast<const LimitStep *>(step))
     {
-        auto estimated = estimateReadRowsCount(*node.children.front(), filter);
+        auto estimated = estimateReadRowsCount(*node.children.front(), filter, keep_index_analysis);
         auto limit = limit_step->getLimit();
         if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
@@ -426,7 +424,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step); expression_step && !expression_step->getExpression().hasArrayJoin())
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, keep_index_analysis);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
         return stats;
     }
@@ -435,14 +433,14 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         const auto & dag = filter_step->getExpression();
         const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
-        auto stats = estimateReadRowsCount(*node.children.front(), predicate);
+        auto stats = estimateReadRowsCount(*node.children.front(), predicate, keep_index_analysis);
         remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;
     }
 
     if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, keep_index_analysis);
         auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
         return aggregation_stats;
     }
@@ -460,7 +458,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, keep_index_analysis);
         if (sorting_step->getLimit())
         {
             if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
@@ -473,11 +471,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     /// already-distributed subtree would otherwise report unknown cardinality, degrading
     /// broadcast-vs-shuffle and join order decisions.
     if (dynamic_cast<LogicalExchangeStep *>(step))
-        return estimateReadRowsCount(*node.children.front(), filter);
+        return estimateReadRowsCount(*node.children.front(), filter, keep_index_analysis);
 
     if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
         transform && transform->getTransformTraits().preserves_number_of_rows)
-        return estimateReadRowsCount(*node.children.front(), filter);
+        return estimateReadRowsCount(*node.children.front(), filter, keep_index_analysis);
 
     return {};
 }
@@ -498,8 +496,8 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
     const auto & table_join = join->getTableJoin();
 
     /// Algorithms other than HashJoin may not support all JOIN kinds, so changing from LEFT to RIGHT is not always possible
-    bool allow_outer_join = typeid_cast<const HashJoin *>(join.get());
-    if (table_join.kind() != JoinKind::Inner && !allow_outer_join)
+    const auto * hash_join = typeid_cast<const HashJoin *>(join.get());
+    if (table_join.kind() != JoinKind::Inner && !hash_join)
         return true;
 
     /// fixme: USING clause handled specially in join algorithm, so swap breaks it
@@ -508,20 +506,22 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
         return true;
 
     bool need_swap = false;
+    std::optional<UInt64> lhs_estimation;
     if (!join_step->swap_join_tables.has_value())
     {
-        auto lhs_extimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
-        auto rhs_extimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
+        lhs_estimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
+        auto rhs_estimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
         LOG_TRACE(getLogger("optimizeJoinLegacy"), "Left table estimation: {}, right table estimation: {}",
-            lhs_extimation ? toString(lhs_extimation.value()) : "unknown",
-            rhs_extimation ? toString(rhs_extimation.value()) : "unknown");
+            lhs_estimation ? toString(lhs_estimation.value()) : "unknown",
+            rhs_estimation ? toString(rhs_estimation.value()) : "unknown");
 
-        if (lhs_extimation && rhs_extimation && lhs_extimation < rhs_extimation)
+        if (lhs_estimation && rhs_estimation && lhs_estimation < rhs_estimation)
             need_swap = true;
     }
     else if (join_step->swap_join_tables.value())
     {
         need_swap = true;
+        lhs_estimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
     }
 
     if (!need_swap)
@@ -536,7 +536,16 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
 
     auto updated_table_join = std::make_shared<TableJoin>(table_join);
     updated_table_join->swapSides();
-    auto updated_join = join->clone(updated_table_join, right_stream_input_header, left_stream_input_header);
+    /// After the swap the old left stream is the build side. Recompute the layout from that
+    /// estimate; `HashJoin::clone` would keep the pre-swap `use_parallel_layout`.
+    const bool use_parallel_layout
+        = preferParallelHashLayout(updated_table_join->kind(), lhs_estimation, updated_table_join->parallelHashJoinThreshold());
+    JoinPtr updated_join;
+    if (hash_join)
+        updated_join = hash_join->cloneWithParallelLayout(
+            updated_table_join, right_stream_input_header, left_stream_input_header, use_parallel_layout);
+    else
+        updated_join = join->clone(updated_table_join, right_stream_input_header, left_stream_input_header);
 
     /// After swapping, the join output may lose columns because TableJoin::swapSides
     /// swaps result_columns_from_left_table with columns_added_by_join, and the join

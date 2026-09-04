@@ -4,11 +4,11 @@
 --
 -- Strategy: per-row mutual EXCEPT in both directions. This is strictly stronger
 -- than comparing aggregate count/sum and avoids float-summation-order
--- non-determinism (ConcurrentHashJoin materializes rows in a different order
+-- non-determinism (HashJoin materializes rows in a different order
 -- than HashJoin, which changes the bit-level result of sum() over floats —
 -- semantically identical, but EXCEPT would treat the rows as different).
 
--- Force more than one ConcurrentHashJoin shard. With max_threads = 1 the number
+-- Force more than one HashJoin shard. With max_threads = 1 the number
 -- of shards is 1, dispatchBlock returns the whole block without ever calling
 -- selectDispatchBlock, and the ASOF prefix-slicing fix would not be exercised.
 SET max_threads = 4;
@@ -99,7 +99,7 @@ DROP TABLE asof_left;
 DROP TABLE asof_right;
 
 -- Multi-equality-key ASOF JOIN. Exercises the HashMethodKeysFixed /
--- HashMethodHashed code paths in ConcurrentHashJoin::selectDispatchBlock,
+-- HashMethodHashed code paths in HashJoin::selectDispatchBlock,
 -- which hash N columns based on `key_sizes.size()`. Without the trailing-
 -- asof-key slicing in selectDispatchBlock, same-(a,b) rows with different
 -- t values would be scattered to different partitions and probe rows would

@@ -136,8 +136,13 @@ struct AggregationDataWithNullKeyTwoLevel : public Base
 
     AggregationDataWithNullKeyTwoLevel() = default;
 
+    /// Same constraint as `TwoLevelHashTable(const Source &)` so this ctor hides the inherited converting
+    /// ctor (`using Base::Base`). Without it, C++20 prefers the more-constrained base template and
+    /// `convertToTwoLevel` copies cells only, dropping the NULL group on `impls[0]`.
     template <typename Other>
-    explicit AggregationDataWithNullKeyTwoLevel(const Other & other) : Base(other)
+    requires(!std::is_arithmetic_v<Other>)
+    explicit AggregationDataWithNullKeyTwoLevel(const Other & other)
+        : Base(other)
     {
         impls[0].hasNullKeyData() = other.hasNullKeyData();
         impls[0].getNullKeyData() = other.getNullKeyData();

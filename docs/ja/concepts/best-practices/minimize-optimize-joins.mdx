@@ -3,7 +3,7 @@ slug: /best-practices/minimize-optimize-joins
 sidebarTitle: 'JOINを最小限に抑えて最適化する'
 title: 'JOINを最小限に抑えて最適化する'
 description: 'ClickHouse で JOIN を使用する際のベストプラクティスを説明するドキュメント'
-keywords: ['JOIN', 'Parallel Hash JOIN']
+keywords: ['JOIN', 'Hash JOIN']
 show_related_blogs: true
 doc_type: 'guide'
 ---
@@ -50,7 +50,7 @@ JOIN のパフォーマンスを向上させるには、次のベストプラク
 
 ClickHouse は、速度とメモリ使用量のトレードオフが異なる複数の JOIN アルゴリズムをサポートしています。
 
-* **Parallel Hash JOIN (デフォルト) :** メモリに収まる小規模〜中規模の右側テーブルに対して高速です。
+* **Hash JOIN (デフォルト) :** メモリに収まる小規模〜中規模の右側テーブルに対して高速です。
 * **Direct JOIN:** `INNER` または `LEFT ANY JOIN` でDictionary (またはキー・バリュー特性を持つ他のテーブルエンジン) を使用する場合に最適です。ハッシュテーブルを構築する必要がないため、ポイントルックアップでは最速の方法です。
 * **Full Sorting Merge JOIN:** 両方のテーブルが結合キーでソートされている場合に効率的です。
 * **Partial Merge JOIN:** メモリ使用量を最小限に抑えられますが、速度は遅くなります。メモリが限られた環境で大規模なテーブルを結合するのに最適です。
@@ -62,7 +62,7 @@ ClickHouse は、速度とメモリ使用量のトレードオフが異なる複
   各アルゴリズムでサポートされる JOIN の種類は異なります。各アルゴリズムでサポートされる JOIN タイプの完全な一覧は、[こちら](/ja/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)を参照してください。
 </Note>
 
-`join_algorithm = 'auto'` を設定して最適なアルゴリズムを ClickHouse に選択させることも、ワークロードに応じて明示的に制御することもできます。デフォルト値は `direct,parallel_hash,hash` であるため、右側が Dictionary またはキー・バリュー特性を持つエンジンである場合、ClickHouse は direct join を使用し、それ以外の場合は parallel hash、次に hash にフォールバックします。パフォーマンスやメモリオーバーヘッドを最適化するために JOIN アルゴリズムを選択する必要がある場合は、[このガイド](/ja/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)をおすすめします。
+`join_algorithm = 'auto'` を設定して最適なアルゴリズムを ClickHouse に選択させることも、ワークロードに応じて明示的に制御することもできます。デフォルト値は `direct,parallel_hash,hash` であるため、右側が Dictionary またはキー・バリュー特性を持つエンジンである場合、ClickHouse は direct join を使用し、それ以外の場合は hash join を使用します（`hash` と `parallel_hash` は同じクラスであり、並列度は選択しません）。パフォーマンスやメモリオーバーヘッドを最適化するために JOIN アルゴリズムを選択する必要がある場合は、[このガイド](/ja/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)をおすすめします。
 
 最適なパフォーマンスを得るには:
 
