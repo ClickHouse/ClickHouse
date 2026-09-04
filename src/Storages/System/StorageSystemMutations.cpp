@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -34,16 +35,32 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
             "For replicated tables the value is per-replica; after a restart, the completion time of the most recently completed mutation "
             "is restored from Keeper, while older completed mutations report zero."
         },
-        { "block_numbers.partition_id",    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "For mutations of replicated tables, the array contains the partitions' IDs (one record for each partition). For mutations of non-replicated tables the array is empty."},
+        { "block_numbers.partition_id",    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "For mutations of replicated tables, the array contains the partitions' IDs (one record for each partition). "
+            "For mutations of non-replicated tables it holds a single empty string, whatever the number of partitions, because their block numbers form one sequence "
+            "for the whole table rather than one per partition."
+        },
         { "block_numbers.number",          std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>()),
             "For mutations of replicated tables, the array contains one record for each partition, with the block number that was acquired by the mutation. "
-            "Only parts that contain blocks with numbers less than this number will be mutated in the partition."
-            "In non-replicated tables, block numbers in all partitions form a single sequence. "
-            "This means that for mutations of non-replicated tables, the column will contain one record with a single block number acquired by the mutation."
+            "Only parts that contain blocks with numbers less than this number will be mutated in the partition. "
+            "In non-replicated tables, block numbers in all partitions form a single sequence, so the array holds exactly one number, paired with the empty partition id above, "
+            "and that number applies to every partition of the table."
         },
         { "parts_in_progress_names",        std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of data parts that are currently being mutated."},
         { "parts_to_do_names",             std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of data parts that need to be mutated for the mutation to complete."},
-        { "parts_to_do",                   std::make_shared<DataTypeInt64>(), "The number of data parts that need to be mutated for the mutation to complete. Note: even if `parts_to_do` = 0, a mutation of a replicated table may not be completed yet due to a long-running INSERT that is creating a new data part that will need to be mutated."},
+        { "parts_to_do",                   std::make_shared<DataTypeInt64>(), "The number of data parts that need to be mutated for the mutation to complete. Note: even if `parts_to_do` = 0, a mutation may not be completed yet, because a lower-numbered block that is still uncommitted can add a part to its scope: a long-running INSERT on any table kind, or `ATTACH`/`REPLACE`/`MOVE PARTITION` on a non-replicated one."},
+        { "bytes_to_do",                   std::make_shared<DataTypeUInt64>(), "The total size on disk of the data parts that need to be mutated for the mutation to complete. Byte-weighted counterpart of `parts_to_do`. "
+            "On a replicated table only the parts already on this replica have a size, so this is a lower bound while the replica still has parts to fetch or merge."},
+        { "progress",                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
+            "The estimated fraction of the mutation's work that is finished, from 0 to 1: the on-disk size of the remaining parts, including the live fraction of the parts currently "
+            "being rewritten (rows of `system.merges` with `is_mutation` = 1), relative to the byte weight the remaining work had when the mutation was submitted. Finished parts keep "
+            "that pre-mutation weight whatever size the rewrite left behind, so a `DELETE WHERE 1` over two equal parts reads about 0.5 once the first part is done. "
+            "The weight is kept in memory only: after a server restart, or on a replica that first sizes the mutation later, it is re-measured from what remains and `progress` "
+            "restarts as a lower bound for the leftover portion. A regular merge can fold a part inserted after the mutation into its scope; the denominator grows along with such "
+            "discovered work, and a merge can also retire pending parts at any moment, which makes `progress` jump forward. "
+            "`NULL` when the remaining work is not known yet. On either table kind that happens while a mutation that is not done waits for an uncommitted lower-numbered block whose "
+            "part still lands in its scope - a long-running INSERT, or `ATTACH`/`REPLACE`/`MOVE PARTITION` on a non-replicated table - and `parts_to_do` can read 0 meanwhile. "
+            "On a replicated table it also happens while any part the mutation still has to rewrite has not been fetched or merged here: neither has a size on disk to weigh."},
         { "parts_postpone_reasons",        std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "A map of part names to reasons why they are postponed."},
         { "is_done",                       std::make_shared<DataTypeUInt8>(),
             "The flag whether the mutation is done or not. Possible values: "
@@ -190,6 +207,8 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[col_num++]->insert(parts_in_progress_names);
             res_columns[col_num++]->insert(parts_to_do_names);
             res_columns[col_num++]->insert(parts_to_do_names.size());
+            res_columns[col_num++]->insert(status.bytes_to_do);
+            res_columns[col_num++]->insert(status.progress ? Field(*status.progress) : Field());
             res_columns[col_num++]->insert(parts_postpone_reasons_map);
             res_columns[col_num++]->insert(status.is_done);
             res_columns[col_num++]->insert(status.is_killed);

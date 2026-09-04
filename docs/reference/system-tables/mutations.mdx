@@ -81,6 +81,18 @@ Note: this requires read permissions on the `system.*` tables.
 In ClickHouse Cloud the `system.mutations` table on each node has all the mutations in the cluster, and there is no need for `clusterAllReplicas`.
 </Tip>
 
+### Estimating mutation progress {#estimating-mutation-progress}
+
+`parts_to_do` counts data parts, and parts can be wildly unequal in size; a regular merge can also retire many pending parts in one step without doing any mutation work. A percentage computed from part counts (for example `1 - parts_to_do / <part count at submission>`) is therefore not a reliable progress number: it can sit almost frozen while most of the bytes are still unprocessed, and jump forward when parts are merged. An honest estimate weights the remaining parts by their size on disk and adds the live fraction of the part that is being rewritten right now, which [`system.merges`](/reference/system-tables/merges) exposes for rows with `is_mutation = 1`. It also measures that remainder against the mutation's own scope — the parts it currently still has to rewrite, plus the ones it has already rewritten — rather than against every active part, so that a part inserted afterwards does not on its own make a mutation that has done nothing look nearly finished.
+
+For the built-in `progress` column the denominator is a snapshot: the server remembers the byte weight the mutation's remaining parts had when it was submitted, so a finished part keeps its pre-mutation weight whatever size the rewrite left behind — a `DELETE WHERE 1` that has rewritten one of two equal parts reads about `0.5`. The weight is kept in memory only: after a server restart, or on a replica that first sizes the mutation after some parts were already rewritten, it is re-measured from what remains and `progress` restarts as a lower bound for the leftover portion.
+
+Scope follows block numbers: a part is in scope when its `min_block_number` precedes the mutation's block number. If a regular merge combines a part that predates the mutation with one inserted after it was submitted, the merged part keeps the earlier `min_block_number` and the mutation then has to rewrite that whole part. The remembered denominator grows along with such discovered work, so bytes written after the mutation was submitted can reach `progress`.
+
+On a non-replicated `MergeTree` the built-in column stays `NULL` while an operation that took a lower block number has not published its parts yet — an `ATTACH`, `REPLACE` or `MOVE PARTITION` in flight, which holds its block number for the whole operation. Those parts fall inside the scope of every mutation submitted after them, so until they appear the remaining byte weight is a lower bound, and a mutation whose visible parts are all rewritten would otherwise report `1` and then go unfinished again.
+
+Rows of [`system.merges`](/reference/system-tables/merges) with `is_mutation = 1` also carry a genuine live `progress` for the single part currently being mutated; they are joinable to `parts_in_progress_names` / `parts_to_do_names` via `source_part_names`.
+
 ## See Also {#see-also}
 
 - [Mutations](/reference/statements/alter/index#mutations)

@@ -173,6 +173,10 @@ private:
     std::unique_ptr<PlainCommittingBlockHolder> allocateBlockNumber(CommittingBlock::Op op);
     void waitForCommittingInsertsAndMutations(Int64 max_block_number, size_t timeout_ms) const;
     CommittingBlocksSet getCommittingBlocks() const;
+    /// The lowest block number an in-flight INSERT / ATTACH / MOVE PARTITION can still commit a
+    /// part under, or Int64 max when there is none. A mutation with a higher version is not done
+    /// yet: that part is in its scope and appears only when the block commits.
+    Int64 getLowestUncommittedNewPartBlockNum() const;
 
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> flush_called {false};
