@@ -441,7 +441,7 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name_) con
         return true;
 
     String name_lowercase = Poco::toLower(name_);
-    if (case_insensitive_aggregate_functions.contains(name_lowercase) || isAlias(name_lowercase))
+    if (case_insensitive_aggregate_functions.contains(name_lowercase))
         return true;
 
     String name = name_;
@@ -450,8 +450,7 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name_) con
         name = name.substr(0, name.size() - combinator->getName().size());
         name_lowercase = name_lowercase.substr(0, name_lowercase.size() - combinator->getName().size());
 
-        if (aggregate_functions.contains(name) || isAlias(name) || case_insensitive_aggregate_functions.contains(name_lowercase)
-            || isAlias(name_lowercase))
+        if (aggregate_functions.contains(name) || isAlias(name) || case_insensitive_aggregate_functions.contains(name_lowercase))
             return true;
     }
     return false;
