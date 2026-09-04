@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: use-xray, no-parallel, no-fasttest, no-llvm-coverage, long
-# Tag no-parallel: mutates instrumentation or asserts server-global thread/log state
-# no-parallel: avoid other tests interfering with the global system.instrumentation table
+# Tags: use-xray, no-parallel:xray, no-fasttest, no-llvm-coverage, long
+# Tag no-parallel: all `use-xray` tests share process-global XRay instrumentation state.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

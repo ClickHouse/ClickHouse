@@ -227,7 +227,7 @@ done
 # Keep in sync with NO_PARALLEL_GROUPS in tests/clickhouse-test: a group this check
 # accepts but the runner does not know makes `clickhouse-test` raise while it builds
 # the suite, which is a much worse way to find out about a typo.
-allowed_no_parallel_groups='mark-cache|primary-index-cache|filesystem-cache|query-condition-cache|metadata-caches|misc-caches|xml-entities|stateful'
+allowed_no_parallel_groups='mark-cache|primary-index-cache|filesystem-cache|query-condition-cache|metadata-caches|misc-caches|xml-entities|stateful|xray'
 tests_with_no_parallel_group=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
         xargs grep -lP '(--|#)\s*[Tt]ags:.*no-parallel:' |

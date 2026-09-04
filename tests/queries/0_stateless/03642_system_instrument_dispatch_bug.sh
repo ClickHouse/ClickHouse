@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: use-xray, no-parallel
-# Tag no-parallel: mutates instrumentation or asserts server-global thread/log state
-# no-parallel: avoid other tests trying to add the same instrumentation to the same symbol
+# Tags: use-xray, no-parallel:xray
+# Tag no-parallel: all `use-xray` tests share process-global XRay instrumentation state.
 #
 # How the bug manifests:
 # - The ordered_non_unique index sorts elements by (function_id, id)

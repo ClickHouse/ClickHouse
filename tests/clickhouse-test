@@ -233,6 +233,7 @@ NO_PARALLEL_GROUPS = {
     "query-condition-cache",
     "stateful",
     "xml-entities",
+    "xray",
 }
 # Maximum number of test names put into one global-entity leak query. A unique
 # name is `<test>_test_<8 chars>`, so 500 of them stay well below the default
