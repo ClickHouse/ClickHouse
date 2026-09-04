@@ -268,6 +268,44 @@ WITH
      SETTINGS query_plan_propagate_predicate_across_join = 0) AS without_pass
 SELECT 'any left unmatched keys', with_pass, with_pass = without_pass;
 
+-- `SEMI` only asks whether a match exists, and a key predicate keeps whole key groups
+SELECT 'semi left',
+       countIf(explain LIKE '%ilter column:%orderkey = 4242%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM prop_orders WHERE orderkey = 4242) AS o
+    SEMI LEFT JOIN prop_lineitem AS l ON o.orderkey = l.orderkey
+);
+
+SELECT 'semi left correctness',
+       (SELECT count() FROM (SELECT * FROM prop_orders WHERE orderkey = 4242) AS o
+        SEMI LEFT JOIN prop_lineitem AS l ON o.orderkey = l.orderkey)
+     - (SELECT count() FROM (SELECT * FROM prop_orders WHERE orderkey = 4242) AS o
+        SEMI LEFT JOIN prop_lineitem AS l ON o.orderkey = l.orderkey
+        SETTINGS query_plan_propagate_predicate_across_join = 0);
+
+-- `any_join_distinct_right_table_keys` turns these into `SEMI LEFT` and `RightAny`
+SELECT 'legacy any inner',
+       countIf(explain LIKE '%ilter column:%orderkey = 4242%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM prop_orders WHERE orderkey = 4242) AS o
+    ANY INNER JOIN prop_lineitem AS l ON o.orderkey = l.orderkey
+    SETTINGS any_join_distinct_right_table_keys = 1
+);
+
+SELECT 'legacy any left',
+       countIf(explain LIKE '%ilter column:%orderkey = 4242%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM prop_orders WHERE orderkey = 4242) AS o
+    ANY LEFT JOIN prop_lineitem AS l ON o.orderkey = l.orderkey
+    SETTINGS any_join_distinct_right_table_keys = 1
+);
+
 -- Index analysis cannot reach past `DISTINCT`, so the predicate stays on the source side
 SELECT 'distinct target',
        countIf(explain LIKE '%ilter column:%orderkey = 4242%')

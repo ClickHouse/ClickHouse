@@ -22,6 +22,10 @@ any inner	2
 any inner correctness	0
 any left	2
 any left unmatched keys	(15,10,4999985)	1
+semi left	2
+semi left correctness	0
+legacy any inner	2
+legacy any left	2
 distinct target	1
 sorted target	2
 key vs key	1

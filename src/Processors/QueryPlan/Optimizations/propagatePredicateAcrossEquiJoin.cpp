@@ -288,9 +288,11 @@ size_t tryPropagatePredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryP
         return 0;
 
     const auto & op = join->getJoinOperator();
-    /// `Any` is safe too: the copied atom is a function of the key alone, so it removes a whole key
-    /// group or none of it, and cannot change which row `Any` picks
-    if (op.strictness != JoinStrictness::All && op.strictness != JoinStrictness::Any)
+    /// The copied atom is a function of the key alone, so it takes whole key groups: it cannot
+    /// change which row `Any` picks, nor whether `Semi` finds a match. `any_join_distinct_right_table_keys`
+    /// rewrites `ANY` into `Semi` / `RightAny`, so those shapes arrive here as well
+    if (op.strictness != JoinStrictness::All && op.strictness != JoinStrictness::Any
+        && op.strictness != JoinStrictness::Semi && op.strictness != JoinStrictness::RightAny)
         return 0;
     if (op.kind == JoinKind::Full || op.kind == JoinKind::Paste)
         return 0;
