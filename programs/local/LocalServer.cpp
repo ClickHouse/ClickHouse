@@ -1,5 +1,6 @@
 #include <LocalServer.h>
 
+#include <Server/StartupWarnings.h>
 #include <sys/resource.h>
 #include <exception>
 #include <Common/Config/getLocalConfigPath.h>
@@ -41,6 +42,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ThreadStackSize.h>
 #include <Common/ThreadStatus.h>
+#include <Common/ThreadFuzzer.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
@@ -242,6 +244,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_keep_alive_requests;
     extern const ServerSettingsBool asynchronous_metrics_enable_heavy_metrics;
     extern const ServerSettingsUInt32 asynchronous_heavy_metrics_update_period_s;
+    extern const ServerSettingsString logger_log;
 }
 
 namespace ErrorCodes
@@ -1408,6 +1411,10 @@ void LocalServer::processConfig()
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::LOCAL);
 
+    ThreadFuzzer::instance().setup();
+    addBuildWarnings(global_context);
+    addMergeTreeArenaPoolWarnings(global_context);
+
     tryInitPath();
 
     LoggerRawPtr log = &logger();
@@ -1734,6 +1741,11 @@ void LocalServer::processConfig()
     /// applied only to `client_context` would never reach `executeQuery`. The format options are
     /// taken back out below, once `client_context` exists.
     applyCmdSettings(global_context);
+
+    /// After the default profile and command-line settings: the first access to `MergeTreeSettings`
+    /// caches them, and it must see the final `compatibility` value.
+    std::string server_log_path = !server_logs_file.empty() ? server_logs_file : server_settings[ServerSetting::logger_log];
+    addEnvironmentWarnings(global_context, logger(), global_context->getPath(), server_log_path);
 
     /// We load temporary database first, because projections need it.
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
