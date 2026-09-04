@@ -1,0 +1,4 @@
+sum by() aggregates all series into one group
+1	3
+sum by() uses the constant empty group
+1
