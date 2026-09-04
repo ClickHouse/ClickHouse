@@ -15,19 +15,19 @@
         CREATE TABLE ts_deserialization
         (
             id UInt16,
-            state AggregateFunction(timeSeriesRateToGrid(0, 100000, 10, 300), DateTime, Float64)
+            state AggregateFunction(timeSeriesRateToGrid(0, 100000, 100, 300), DateTime, Float64)
         )
         ENGINE = MergeTree
         ORDER BY id
     </create_query>
 
-    <!-- 1000 series, 10000 sorted samples per state, 10M samples total. -->
+    <!-- 1000 series, 10000 sorted samples per state, 10M samples total. The 100-second step puts about 100 samples in each bucket. -->
     <fill_query>
         INSERT INTO ts_deserialization
         SELECT
             (number % 1000)::UInt16 AS id,
-            timeSeriesRateToGridState(0, 100000, 10, 300)(
-                toDateTime(intDiv(number, 1000) * 10),
+            timeSeriesRateToGridState(0, 100000, 100, 300)(
+                toDateTime(intDiv(number, 1000)),
                 (number % 1000)::Float64) AS state
         FROM numbers(1000 * 10000)
         GROUP BY id
