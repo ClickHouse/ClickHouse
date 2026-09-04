@@ -14,6 +14,8 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <utility>
+#include <vector>
 
 namespace DB
 {
@@ -26,6 +28,7 @@ extern const int LOGICAL_ERROR;
 }
 
 class IRuntimeFilter;
+struct KeyRangeHistogram;
 using UniqueRuntimeFilterPtr = std::unique_ptr<IRuntimeFilter>;
 using SharedRuntimeFilterPtr = std::shared_ptr<IRuntimeFilter>;
 using RuntimeFilterConstPtr = std::shared_ptr<const IRuntimeFilter>;
@@ -42,7 +45,7 @@ struct RuntimeFilterStats
 class IRuntimeFilter
 {
 public:
-    virtual ~IRuntimeFilter() = default;
+    virtual ~IRuntimeFilter();
 
     virtual void insert(ColumnPtr values) = 0;
 
@@ -58,10 +61,11 @@ public:
     /// The exact distinct key values collected from the build side, as a single column.
     virtual ColumnPtr getRecordedKeyValues() const { return nullptr; }
 
-    /// A closed [min, max] envelope of the values inserted into the filter, if one can be computed
-    virtual std::optional<Range> getRecordedKeyRanges() const;
+    /// A bounded set of disjoint closed intervals covering the values inserted into the filter,
+    /// ordered by left bound. Empty when no cover could be computed.
+    virtual std::vector<Range> getRecordedKeyRanges() const;
 
-    /// Opt in to tracking the [min, max] key-range envelope during build.
+    /// Opt in to tracking the key-range cover during build.
     void enableIndexAnalysis() { index_analysis_enabled = true; }
 
     /// Usage statistics
@@ -89,8 +93,21 @@ protected:
     virtual ColumnPtr findImpl(const ColumnWithTypeAndName & values) const = 0;
 
     void updateRange(const IColumn & column);
-    /// Merges another filter's envelope in, for parallel build streams.
+    /// Hands over the keys the exact set accumulated, at the moment it overflows. This is the last
+    /// point at which the set still holds every key inserted so far, and the first at which range
+    /// tracking has to do any work of its own.
+    void recordOverflowedKeys(const IColumn & column);
+    /// Merges another filter's cover in, for parallel build streams.
     void mergeRange(const IRuntimeFilter & source);
+    /// The recorded cover including whatever the histogram holds.
+    std::vector<std::pair<Field, Field>> effectiveRangeCover() const;
+
+    /// How many disjoint intervals the cover may keep. Every extra interval is another OR branch for
+    /// `KeyCondition` and another mark-range trim per part. Eight leaves headroom under
+    /// `MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT` (32), which bounds the RPN on the reader path that
+    /// does track disjunctions, and is already more than the number of clusters real build sides
+    /// tend to have: `dropUselessSplits` usually gives back 2 or 3.
+    static constexpr size_t max_key_range_intervals = 8;
 
     size_t filters_to_merge;
     const DataTypePtr filter_column_target_type;
@@ -107,13 +124,18 @@ protected:
     mutable std::atomic<Int64> rows_to_skip = 0;
     std::atomic<bool> is_fully_disabled = false;
 
-    /// Key-range envelope tracking (see updateRange/getRecordedKeyRanges).
+    /// Key-range cover tracking (see updateRange/getRecordedKeyRanges).
     bool index_analysis_enabled = false;
     bool range_supported = false;
     bool range_positive = true;
-    bool has_range = false;
-    Field range_min;
-    Field range_max;
+    /// Disjoint closed intervals, sorted by left bound, at most `max_key_range_intervals` of them.
+    /// Holds the keys seen before the exact set overflowed, plus any block whose type the histogram
+    /// cannot bucket.
+    std::vector<std::pair<Field, Field>> range_cover;
+    /// The keys seen after the overflow. Recording a key only sets a bit, so unlike the per-block
+    /// extremes that feed `range_cover` the clusters it finds do not depend on how the build side
+    /// happens to be split into blocks or on the order the blocks arrive in.
+    std::unique_ptr<KeyRangeHistogram> range_histogram;
 };
 
 template <bool negate>
@@ -153,6 +175,11 @@ public:
 
         exact_values->insertFromColumns({values});
         is_full = exact_values->getTotalRowCount() > exact_values_limit || exact_values->getTotalByteCount() > bytes_limit;
+
+        /// Last chance to look at the individual keys: the set is complete right now, and from here on
+        /// it either stops accepting keys or is dropped for a bloom filter.
+        if (is_full)
+            recordOverflowedKeys(*getValuesColumn());
     }
 
     void finishInsertImpl() override
@@ -330,7 +357,7 @@ public:
         Float64 pass_ratio_threshold_for_disabling_,
         UInt64 blocks_to_skip_before_reenabling_,
         ProbeFn probe_fn_,
-        std::optional<Range> key_range_ = {},
+        std::vector<Range> key_ranges_ = {},
         ColumnPtr recorded_key_values_ = {});
 
     /// All "build" entry points are no-ops: the data was built inside HashJoin already.
