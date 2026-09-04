@@ -1437,12 +1437,17 @@ def test_reload_users_xml_by_timer():
                 "[]",
             ]
         ],
+        user="user_with_no_quota",
     )
     assert_eq_with_retry(
         instance,
         "SELECT quota_name, duration, is_randomized_interval, max_queries, max_query_selects, max_query_inserts, max_errors, max_result_rows, max_result_bytes, max_read_rows, max_read_bytes, max_execution_time, max_written_bytes, max_failed_sequential_authentications FROM system.quota_limits",
         [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N", "\\N", "1"]],
+        user="user_with_no_quota",
     )
+
+    # Restore a clean config so later periodic reloads do not fail.
+    copy_quota_xml("no_quotas.xml")
 
 
 def test_dcl_introspection():
