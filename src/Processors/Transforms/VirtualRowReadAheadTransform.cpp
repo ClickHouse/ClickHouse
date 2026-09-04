@@ -136,8 +136,8 @@ Columns VirtualRowReadAheadTransform::lastRowKey(const Chunk & chunk) const
 /// must not be stopped by its own bound: it takes the next one in order.
 ssize_t VirtualRowReadAheadTransform::frontierFor(size_t lane_num) const
 {
-    if (decision.frontier_lane != static_cast<ssize_t>(lane_num))
-        return decision.frontier_lane;
+    if (frontier_lane != static_cast<ssize_t>(lane_num))
+        return frontier_lane;
 
     auto it = ranked_lanes.find(lane_num);
     for (++it; it != ranked_lanes.end(); ++it)
@@ -165,52 +165,45 @@ bool VirtualRowReadAheadTransform::mayRead(size_t lane_num) const
     return active && !budgetSpent() && lane.underCaps(max_rows_to_buffer, max_bytes_to_buffer) && !passedFrontier(lane_num);
 }
 
-bool VirtualRowReadAheadTransform::sameDecision(const Decision & lhs, const Decision & rhs) const
-{
-    return lhs.set_lanes == rhs.set_lanes && lhs.frontier_lane == rhs.frontier_lane
-        && lhs.demanded_lane == rhs.demanded_lane
-        && lhs.window_open == rhs.window_open && lhs.budget_spent == rhs.budget_spent
-        && (lhs.frontier_lane < 0 || compareKeys(lhs.frontier_bound, rhs.frontier_bound) == 0);
-}
-
-/// Walks the lanes in bound order: the first K that can read now, i.e. under their caps, form the
-/// set, and the first one passed over, or the (K + 1)-th, is the frontier. A lane whose input is
-/// finished is neither: the merge drains its buffer without any further read, so data beyond its
-/// bound is premature for no one. Returns whether the decision differs from the one in force.
+/// Walks the lanes in bound order: the first K that can read now, i.e. under their caps, are
+/// the set, and the first one passed over, or the (K + 1)-th, is the frontier. A lane whose
+/// input is exhausted is neither: the merge drains its buffer without any further read, so data
+/// beyond its bound is premature for no one. Returns whether the readers, or the window, changed.
 bool VirtualRowReadAheadTransform::chooseReaders()
 {
-    Decision next;
-    next.demanded_lane = demanded_lane;
-    next.window_open = window_open;
-    next.budget_spent = budgetSpent();
+    std::vector<size_t> next;
+    ssize_t frontier = -1;
     for (size_t lane_num : ranked_lanes)
     {
         const Lane & lane = lanes[lane_num];
         if (lane.exhausted)
             continue;
 
-        if (next.set_lanes.size() < read_ahead_window && lane.underCaps(max_rows_to_buffer, max_bytes_to_buffer))
-            next.set_lanes.push_back(lane_num);
-        else if (next.frontier_lane < 0)
-            next.frontier_lane = lane_num;
+        if (next.size() < read_ahead_window && lane.underCaps(max_rows_to_buffer, max_bytes_to_buffer))
+            next.push_back(lane_num);
+        else if (frontier < 0)
+            frontier = lane_num;
 
-        if (next.frontier_lane >= 0 && next.set_lanes.size() == read_ahead_window)
+        if (frontier >= 0 && next.size() == read_ahead_window)
             break;
     }
-    std::sort(next.set_lanes.begin(), next.set_lanes.end());
-    if (next.frontier_lane >= 0)
-        next.frontier_bound = lanes[next.frontier_lane].bound;
 
-    if (sameDecision(next, decision))
-        return false;
-
-    for (size_t lane_num : decision.set_lanes)
+    for (size_t lane_num : readers)
         lanes[lane_num].in_set = false;
-    for (size_t lane_num : next.set_lanes)
+    for (size_t lane_num : next)
         lanes[lane_num].in_set = true;
-    previous_decision = std::move(decision);
-    decision = std::move(next);
-    return true;
+
+    if (demanded_lane >= 0)
+        next.push_back(demanded_lane);
+    std::sort(next.begin(), next.end());
+    next.erase(std::unique(next.begin(), next.end()), next.end());
+
+    bool changed = next != readers || window_open != window_open_when_chosen;
+    previous_readers = std::move(readers);
+    readers = std::move(next);
+    frontier_lane = frontier;
+    window_open_when_chosen = window_open;
+    return changed;
 }
 
 /// ── Mechanics: moving chunks ─────────────────────────────────────────────────────────────────
@@ -327,7 +320,7 @@ void VirtualRowReadAheadTransform::setBound(size_t lane_num, Columns key, bool i
 /// With a limit the set may read only once the merge has moved on to a second lane parked
 /// behind a virtual row; until then everything it does not ask for stays unread. The lane asked
 /// for last keeps reading ahead on its own; the one before it loses that right and is served
-/// again by `prepare` once the decision records the change.
+/// again by `prepare`, which sees it leave the readers.
 void VirtualRowReadAheadTransform::noteDemand(size_t lane_num)
 {
     const Lane & lane = lanes[lane_num];
@@ -426,18 +419,15 @@ IProcessor::Status VirtualRowReadAheadTransform::prepareImpl(const UpdatedInputP
     for (const auto * input : updated_inputs)
         serve(lane_by_port.at(input));
 
-    /// Serving a lane can change who may read: a bound moved, a lane finished or filled its
-    /// buffer, the window opened, the budget ran out. The executor does not call back for that,
-    /// so the lanes concerned are served again here until the decision stands still.
+    /// Serving a lane can change who reads ahead: a bound moved, a lane finished or filled its
+    /// buffer, the window opened. The executor does not call back for that, so the readers are
+    /// served again here until they stand still.
     while (chooseReaders())
     {
-        for (const Decision * d : {&previous_decision, &decision})
-        {
-            for (size_t lane_num : d->set_lanes)
-                serve(lane_num);
-            if (d->demanded_lane >= 0)
-                serve(d->demanded_lane);
-        }
+        for (size_t lane_num : previous_readers)
+            serve(lane_num);
+        for (size_t lane_num : readers)
+            serve(lane_num);
     }
 
     if (finished_lanes == lanes.size())

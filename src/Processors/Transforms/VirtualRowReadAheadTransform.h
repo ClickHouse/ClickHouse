@@ -96,19 +96,6 @@ private:
         bool operator()(size_t lhs, size_t rhs) const;
     };
 
-    /// Who may read ahead, as decided from the ranking: the set, the frontier with the bound it
-    /// had, and the two switches that gate the set. Two decisions compare equal when nothing that
-    /// gates reading has changed between them.
-    struct Decision
-    {
-        std::vector<size_t> set_lanes; /// sorted by lane index, so that members leapfrogging is no change
-        ssize_t frontier_lane = -1;
-        Columns frontier_bound;
-        ssize_t demanded_lane = -1;
-        bool window_open = false;
-        bool budget_spent = false;
-    };
-
     Status prepareImpl(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs);
 
     int compareKeys(const Columns & lhs, const Columns & rhs) const;
@@ -119,7 +106,6 @@ private:
     ssize_t frontierFor(size_t lane_num) const;
     bool passedFrontier(size_t lane_num) const;
     bool mayRead(size_t lane_num) const;
-    bool sameDecision(const Decision & lhs, const Decision & rhs) const;
     bool chooseReaders();
 
     void serve(size_t lane_num);
@@ -147,9 +133,15 @@ private:
     /// so lanes are re-keyed all the time, and because the set and the frontier are the first
     /// K + 1 lanes of this order, which a heap cannot walk.
     std::set<size_t, BoundLess> ranked_lanes;
-    /// The decision in force and the one before it; lanes in either are served after a change.
-    Decision decision;
-    Decision previous_decision;
+
+    /// The read-ahead rule: of the lanes that can still read, the K with the smallest bounds read
+    /// ahead of the merge, up to the frontier, which is the (K + 1)-th bound; so does the lane the
+    /// merge is draining. `readers` holds them in lane order. When they change, or the window
+    /// opens, the old and the new readers are served: newcomers start, leavers release their input.
+    std::vector<size_t> readers;
+    std::vector<size_t> previous_readers;
+    ssize_t frontier_lane = -1;
+    bool window_open_when_chosen = false;
 
     bool window_open;
     /// Rows pulled over lanes whose output is not finished.
