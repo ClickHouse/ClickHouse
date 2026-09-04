@@ -55,7 +55,7 @@ Tailscale creates an encrypted, private network tunnel between the ClickHouse co
 - **Metrics access**: ClickHouse’s centralized monitoring dashboards access metrics from the Prometheus stack deployed within your BYOC VPC, providing ClickHouse engineers observability into the environment.
 
 <Warning>
-Tailscale is used **only for management and troubleshooting operations**. It is **never used for query traffic** or customer data access. All customer data remains within your VPC and is never transmitted through Tailscale connections.
+Tailscale is used **only for management and troubleshooting operations**. It is **never used for query traffic** or customer data access. All customer data remains in your own cloud account and is never transmitted through Tailscale connections.
 </Warning>
 
 ### How Tailscale Works in BYOC {#how-tailscale-works}
@@ -133,7 +133,7 @@ By default, ClickHouse management services reach your BYOC Kubernetes cluster ov
 
 - Tailscale connections are used only for management and troubleshooting
 - Query traffic and customer data never flow through Tailscale
-- All customer data remains within your VPC
+- All customer data remains in your own cloud account
 
 For more technical details about how Tailscale is implemented in BYOC, see the [Building ClickHouse BYOC on AWS blog post](https://clickhouse.com/blog/building-clickhouse-byoc-on-aws#tailscale-connection). For what ClickHouse engineers can read once connected and how ClickHouse audits that access, see [ClickHouse data access](/products/bring-your-own-cloud/reference/clickhouse-data-access).
 
