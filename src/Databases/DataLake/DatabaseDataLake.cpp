@@ -316,7 +316,13 @@ void DatabaseDataLake::initialize() const
             /// supported, so configure static storage credentials.
             DataLake::IcebergJdbcCatalog::ConnectionParams jdbc_params;
             jdbc_params.host = settings[DatabaseDataLakeSetting::jdbc_host].value;
-            jdbc_params.port = static_cast<UInt16>(settings[DatabaseDataLakeSetting::jdbc_port].value);
+            const UInt64 jdbc_port = settings[DatabaseDataLakeSetting::jdbc_port].value;
+            if (jdbc_port == 0 || jdbc_port > 65535)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Setting 'jdbc_port' must be a valid TCP port (1-65535), got {}", jdbc_port);
+            }
+            jdbc_params.port = static_cast<UInt16>(jdbc_port);
             jdbc_params.database = settings[DatabaseDataLakeSetting::jdbc_database].value;
             jdbc_params.schema = settings[DatabaseDataLakeSetting::jdbc_schema].value;
             jdbc_params.user = settings[DatabaseDataLakeSetting::jdbc_user].value;
