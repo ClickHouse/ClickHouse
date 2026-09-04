@@ -36,6 +36,7 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ArchivePathSyntax.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageNull.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
@@ -62,6 +63,7 @@ namespace DB
 {
 namespace DatabaseDataLakeSetting
 {
+    extern const DatabaseDataLakeSettingsBool allow_archive_path_syntax;
     extern const DatabaseDataLakeSettingsDatabaseDataLakeCatalogType catalog_type;
     extern const DatabaseDataLakeSettingsString warehouse;
     extern const DatabaseDataLakeSettingsString catalog_credential;
@@ -99,6 +101,7 @@ namespace DatabaseDataLakeSetting
 
 namespace Setting
 {
+    extern const SettingsBool allow_archive_path_syntax;
     extern const SettingsBool allow_experimental_database_iceberg;
     extern const SettingsBool allow_experimental_database_unity_catalog;
     extern const SettingsBool allow_experimental_database_glue_catalog;
@@ -242,6 +245,7 @@ void DatabaseDataLake::initialize() const
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unspecified catalog type");
 
     auto catalog_parameters = DataLake::CatalogSettings{
+        .allow_archive_path_syntax = settings[DatabaseDataLakeSetting::allow_archive_path_syntax].value,
         .storage_endpoint = settings[DatabaseDataLakeSetting::storage_endpoint].value,
         .aws_access_key_id = settings[DatabaseDataLakeSetting::aws_access_key_id].value,
         .aws_secret_access_key = settings[DatabaseDataLakeSetting::aws_secret_access_key].value,
@@ -853,6 +857,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     ContextMutablePtr context_copy = Context::createCopy(context_);
     Settings settings_copy = context_copy->getSettingsCopy();
     settings_copy[Setting::use_hive_partitioning] = false;
+    settings_copy[Setting::allow_archive_path_syntax]
+        = settings[DatabaseDataLakeSetting::allow_archive_path_syntax].value;
     context_copy->setSettings(settings_copy);
 
     if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
@@ -1273,6 +1279,14 @@ void DatabaseDataLake::checkDatabase() const
 
 void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr /*query_context*/)
 {
+    for (const auto & change : settings_changes)
+    {
+        if (change.name == "allow_archive_path_syntax")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `allow_archive_path_syntax` is immutable because it determines how persistent catalog paths are interpreted");
+    }
+
     const auto current_settings = database_settings.get();
 
     /// This check in some sense duplicate check in ICatalog, because it's a valid case when
@@ -1428,8 +1442,16 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
     {
-        const auto * database_engine_define = args.create_query.storage;
+        auto * database_engine_define = args.storage;
         const auto & database_engine_name = args.engine_name;
+
+        resolveAndPersistArchivePathSyntax(
+            *database_engine_define,
+            args.context,
+            args.mode == LoadingStrictnessLevel::CREATE
+                || (args.mode == LoadingStrictnessLevel::ATTACH
+                    && !args.internal
+                    && !args.create_query.attach_short_syntax));
 
         DatabaseDataLakeSettings database_settings;
         if (database_engine_define->settings)

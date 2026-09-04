@@ -1,0 +1,14 @@
+--- File literal :: path keeps creation-time disabled interpretation ---
+1
+11
+11
+--- File archive path keeps creation-time enabled interpretation ---
+1
+22
+22
+--- URL file dispatch keeps literal :: interpretation ---
+1
+11
+--- URL file dispatch keeps archive interpretation ---
+1
+22

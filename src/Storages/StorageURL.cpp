@@ -1,4 +1,5 @@
 #include <Storages/StorageURL.h>
+#include <Storages/ArchivePathSyntax.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageFile.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -2442,7 +2443,9 @@ private:
 /// re-dispatch on reload. The wrapper's `addInferredEngineArgsToCreateQuery` materializes the
 /// `url_base`-resolved URL back into those args so re-dispatch reproduces the original backend even
 /// if `url_base` later changes.
-static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments & args)
+static StoragePtr tryDispatchURLEngineByScheme(
+    const StorageFactory::Arguments & args,
+    const ContextPtr & archive_path_context)
 {
     if (args.engine_args.empty())
         return nullptr;
@@ -2459,7 +2462,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
     StorageURL::Configuration configuration;
     try
     {
-        configuration = StorageURL::getConfiguration(probe_args, context, &args.table_id);
+        configuration = StorageURL::getConfiguration(probe_args, archive_path_context, &args.table_id);
     }
     catch (...) // NOLINT(bugprone-empty-catch) // Ok: not a URL-engine argument shape we can classify; the plain URL path below reports any errors.
     {
@@ -2595,19 +2598,24 @@ void registerStorageURL(StorageFactory & factory)
         "URL",
         [](const StorageFactory::Arguments & args) -> StoragePtr
         {
+            auto context = args.getLocalContext();
+            const auto archive_path_syntax = resolveAndPersistArchivePathSyntax(
+                *args.storage_def,
+                context,
+                isFreshTableDefinition(args.mode, args.query.attach_short_syntax, args.is_restore_from_backup));
+
             /// The `URL` engine is a unified wrapper: dispatch by scheme to File/S3/Azure/HDFS.
-            if (auto dispatched = tryDispatchURLEngineByScheme(args))
+            if (auto dispatched = tryDispatchURLEngineByScheme(args, archive_path_syntax.context))
                 return dispatched;
 
             ASTs & engine_args = args.engine_args;
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
-            auto context = args.getLocalContext();
 
             ASTPtr partition_by;
             if (args.storage_def->partition_by)
                 partition_by = args.storage_def->partition_by->clone();
 
-            auto config = StorageURL::getConfiguration(engine_args, context, &args.table_id);
+            auto config = StorageURL::getConfiguration(engine_args, archive_path_syntax.context, &args.table_id);
             const bool use_object_storage
                 = config.http_method.empty()
                 && urlPathHasListableGlobs(config.url);
@@ -2654,7 +2662,8 @@ void registerStorageURL(StorageFactory & factory)
             StorageURL::overrideURLInEngineArgs(object_storage_args, config.url, context, /*skip_userinfo=*/ false);
 
             auto configuration = std::make_shared<StorageWebConfiguration>();
-            StorageObjectStorageConfiguration::initialize(*configuration, object_storage_args, context, /* with_table_structure */ false);
+            StorageObjectStorageConfiguration::initialize(
+                *configuration, object_storage_args, archive_path_syntax.context, /* with_table_structure */ false);
 
             /// Same contract as `createStorageObjectStorage`: only a user-issued `CREATE` applies the
             /// `file_like_engine_default_partition_strategy` default; ATTACH / startup / RESTORE must
@@ -2662,12 +2671,13 @@ void registerStorageURL(StorageFactory & factory)
             configuration->is_create_query = args.mode == LoadingStrictnessLevel::CREATE;
 
             ContextMutablePtr context_copy = Context::createCopy(args.getContext());
-            Settings settings_copy = args.getLocalContext()->getSettingsCopy();
+            Settings settings_copy = archive_path_syntax.context->getSettingsCopy();
             context_copy->setSettings(settings_copy);
 
             return std::make_shared<StorageObjectStorage>(
                 configuration,
-                configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
+                configuration->createObjectStorage(
+                    archive_path_syntax.context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
                 context_copy,
                 args.table_id,
                 args.columns,
@@ -2675,7 +2685,7 @@ void registerStorageURL(StorageFactory & factory)
                 args.comment,
                 format_settings,
                 args.mode,
-                configuration->getCatalog(context, args.table_id),
+                configuration->getCatalog(archive_path_syntax.context, args.table_id),
                 args.query.if_not_exists,
                 /* is_datalake_query */ false,
                 /* distributed_processing */ false,

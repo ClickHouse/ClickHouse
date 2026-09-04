@@ -159,6 +159,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     Arguments arguments{
         .engine_name = engine_name,
         .engine_args = has_engine_args ? storage->engine->arguments->children : empty_engine_args,
+        .storage = storage,
         .create_query = create,
         .database_name = database_name,
         .metadata_path = metadata_path,

@@ -21,6 +21,8 @@ namespace ErrorCodes
 }
 
 #define OBJECT_STORAGE_QUEUE_RELATED_SETTINGS(DECLARE, ALIAS) \
+    DECLARE(Bool, allow_archive_path_syntax, true, \
+      "Creation-time choice for interpreting `::` in the persistent queue path as archive syntax. The setting is immutable after creation.", 0) \
     DECLARE(ObjectStorageQueueMode, mode, ObjectStorageQueueMode::ORDERED, \
       "With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKeepeer." \
       "With ordered mode, only the max name of the successfully consumed file stored.", \

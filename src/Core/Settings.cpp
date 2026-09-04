@@ -8540,7 +8540,7 @@ Normally this setting should be set in user profile (users.xml or queries like `
 Note that initially (24.12) there was a server setting (`send_settings_to_client`), but latter it got replaced with this client setting, for better usability.
 )", 0) \
     DECLARE(Bool, allow_archive_path_syntax, true, R"(
-File/S3 engines/table function will parse paths with '::' as `<archive> :: <file>` if the archive has correct extension.
+`File`, `URL`, and object-storage engines and table functions parse paths with `::` as `<archive> :: <file>` if the archive has a supported extension. Persistent tables and data-lake databases retain the value used when their metadata was created.
 )", 0) \
     DECLARE(S3UriStyle, s3_uri_style, S3UriStyle::AUTO, R"(
 Force the s3 endpoint style. Possible values: auto, virtual_hosted, path.

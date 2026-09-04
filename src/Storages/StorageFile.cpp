@@ -1,4 +1,5 @@
 #include <Storages/StorageFile.h>
+#include <Storages/ArchivePathSyntax.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -3148,6 +3149,11 @@ void registerStorageFile(StorageFactory & factory)
         [](const StorageFactory::Arguments & factory_args)
         {
             auto context = factory_args.getLocalContext();
+            const auto archive_path_syntax = resolveAndPersistArchivePathSyntax(
+                *factory_args.storage_def,
+                context,
+                isFreshTableDefinition(
+                    factory_args.mode, factory_args.query.attach_short_syntax, factory_args.is_restore_from_backup));
             StorageFile::CommonArguments storage_args
             {
                 WithContext(context),
@@ -3215,7 +3221,10 @@ void registerStorageFile(StorageFactory & factory)
                 else if (type == Field::Types::UInt64)
                     source_fd = static_cast<int>(literal->value.safeGet<UInt64>());
                 else if (type == Field::Types::String)
-                    file_source = StorageFile::FileSource::parse(literal->value.safeGet<String>(), factory_args.getLocalContext());
+                    file_source = StorageFile::FileSource::parse(
+                        literal->value.safeGet<String>(),
+                        factory_args.getLocalContext(),
+                        archive_path_syntax.enabled);
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be path or file descriptor");
             }

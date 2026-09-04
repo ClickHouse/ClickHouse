@@ -335,6 +335,7 @@ std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metad
 DB::SettingsChanges CatalogSettings::allChanged() const
 {
     DB::SettingsChanges changes;
+    changes.emplace_back("allow_archive_path_syntax", allow_archive_path_syntax);
     changes.emplace_back("storage_endpoint", storage_endpoint);
     changes.emplace_back("aws_access_key_id", aws_access_key_id);
     changes.emplace_back("aws_secret_access_key", aws_secret_access_key);
