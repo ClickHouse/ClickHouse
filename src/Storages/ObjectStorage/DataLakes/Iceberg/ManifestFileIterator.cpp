@@ -48,11 +48,6 @@ namespace DB::Iceberg
 
 using namespace DB;
 
-/// How often the row loops consult `stop_condition`. The callback may take a lock, so it is
-/// amortized over rows; 256 rows decode within a few milliseconds, which bounds how late a
-/// stop is noticed.
-static constexpr size_t stop_check_period = 256;
-
 namespace
 {
     /// Iceberg store decimal values as unscaled value with two's-complement big-endian binary
@@ -338,7 +333,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     DB::ContextPtr context_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
     Int32 table_snapshot_schema_id_,
-    std::function<bool()> stop_condition_)
+    const std::atomic<bool> * stop_flag_)
 {
     insertRowToLogTable(
         context_,
@@ -448,7 +443,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         total_rows,
         std::move(filter_dag_),
         table_snapshot_schema_id_,
-        std::move(stop_condition_)));
+        stop_flag_));
 }
 
 ManifestFileIterator::ManifestFileIterator(
@@ -468,7 +463,7 @@ ManifestFileIterator::ManifestFileIterator(
     size_t total_rows_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
     Int32 table_snapshot_schema_id_,
-    std::function<bool()> stop_condition_)
+    const std::atomic<bool> * stop_flag_)
     : manifest_file_deserializer(std::move(manifest_file_deserializer_))
     , path_to_manifest_file(path_to_manifest_file_)
     , format_version(format_version_)
@@ -482,7 +477,7 @@ ManifestFileIterator::ManifestFileIterator(
     , partition_spec_fields_count(partition_spec_fields_count_)
     , table_snapshot_schema_id(table_snapshot_schema_id_)
     , total_rows(total_rows_)
-    , stop_condition(std::move(stop_condition_))
+    , stop_flag(stop_flag_)
     , data_files_without_deleted(std::make_shared<std::vector<ProcessedManifestFileEntryPtr>>())
     , position_deletes_files_without_deleted(std::make_shared<std::vector<ProcessedManifestFileEntryPtr>>())
     , equality_deletes_files_without_deleted(std::make_shared<std::vector<ProcessedManifestFileEntryPtr>>())
@@ -496,9 +491,9 @@ ManifestFileIterator::ManifestFileIterator(
     UInt64 next_row_id = *inherited_first_row_id_;
     for (size_t row_index = 0; row_index < total_rows; ++row_index)
     {
-        /// This walk runs before `next` is ever entered, so it must honor the stop condition
+        /// This walk runs before `next` is ever entered, so it must honor the stop flag
         /// itself; `next` then stops on its first row and the incomplete ids are never read.
-        if (stop_condition && row_index % stop_check_period == 0 && stop_condition())
+        if (stop_flag && stop_flag->load(std::memory_order_relaxed))
             return;
 
         const auto parsed_entry = manifest_file_deserializer->getParsedManifestFileEntry(row_index);
@@ -730,10 +725,10 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::next()
             fully_initialized.store(true);
             return nullptr;
         }
-        /// The data manifest decode tasks pass the queue's finished state here, so a cancelled
+        /// The data manifest decode tasks pass the stream's stopped flag here, so a cancelled
         /// query stops decoding mid-manifest. Checked between rows rather than by the caller,
         /// because a long stretch of pruned rows yields nothing the caller could check on.
-        if (stop_condition && row_index % stop_check_period == 0 && stop_condition())
+        if (stop_flag && stop_flag->load(std::memory_order_relaxed))
             return nullptr;
         auto entry = processRow(row_index);
         if (entry)

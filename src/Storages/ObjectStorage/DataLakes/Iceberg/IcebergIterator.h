@@ -18,6 +18,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ThreadPool_fwd.h>
 
+#include <atomic>
 #include <mutex>
 #include <base/defines.h>
 
@@ -33,14 +34,10 @@ namespace DB
 namespace Iceberg
 {
 
-/// Streams the entries of a snapshot's DATA manifests into a bounded queue. A producer thread
-/// keeps up to `decode_concurrency` decode tasks in flight; each task decodes one manifest and
-/// pushes its entries as they are produced, so the queue's backpressure applies within a
-/// manifest and at most the in-flight manifests' decoded contents are held in memory.
 class DataFileEntriesStream
 {
 public:
-    using CreateManifestIterator = std::function<ManifestIteratorPtr(const ManifestFileCacheKey &, std::function<bool()>)>;
+    using CreateManifestIterator = std::function<ManifestIteratorPtr(const ManifestFileCacheKey &, const std::atomic<bool> *)>;
 
     DataFileEntriesStream(
         size_t queue_size_,
@@ -51,23 +48,22 @@ public:
 
     ~DataFileEntriesStream();
 
-    /// Blocks until an entry is available; false once the stream is finished and drained.
     bool pop(ProcessedManifestFileEntryPtr & entry);
-    /// Drops the buffered entries and stops the producer once they can no longer be consumed.
     void clearAndFinish();
-    /// The first error the producer hit; set before the queue is finished.
     std::exception_ptr getException() const;
 
 private:
     void run();
     void streamManifest(const ManifestFileCacheKey & manifest_list_entry);
+    void stop();
 
     const size_t decode_concurrency;
     const IcebergDataSnapshotPtr data_snapshot;
-    /// Runs on the producer thread before any decode task is scheduled.
+
     const std::function<void()> prepare;
     const CreateManifestIterator create_manifest_iterator;
     ConcurrentBoundedQueue<ProcessedManifestFileEntryPtr> queue;
+    std::atomic<bool> stopped{false};
     mutable std::mutex exception_mutex;
     std::exception_ptr exception TSA_GUARDED_BY(exception_mutex);
     std::unique_ptr<ThreadFromGlobalPool> producer;
@@ -95,8 +91,8 @@ public:
 private:
     void ensureDeletesReady();
     void decodeDeleteManifests();
-    Iceberg::ManifestIteratorPtr createManifestIterator(const ManifestFileCacheKey & manifest_list_entry, std::function<bool()> stop_condition) const;
-    std::vector<Iceberg::ProcessedManifestFileEntryPtr> decodeManifest(const ManifestFileCacheKey & manifest_list_entry, std::function<bool()> stop_condition) const;
+    Iceberg::ManifestIteratorPtr createManifestIterator(const ManifestFileCacheKey & manifest_list_entry, const std::atomic<bool> * stop_flag) const;
+    std::vector<Iceberg::ProcessedManifestFileEntryPtr> decodeManifest(const ManifestFileCacheKey & manifest_list_entry, const std::atomic<bool> * stop_flag) const;
 
     LoggerPtr logger;
     ObjectStoragePtr object_storage;
