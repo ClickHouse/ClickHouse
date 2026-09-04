@@ -297,13 +297,20 @@ namespace
 class StorageURLSource::DisclosedGlobIterator::Impl
 {
 public:
-    Impl(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
+    Impl(const String & uri_, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns_, const NamesAndTypesList & hive_columns_, const ContextPtr & context_)
     {
-        uris = parseRemoteDescription(uri_, 0, uri_.size(), ',', max_addresses);
+        if (split_uris)
+        {
+            uris = parseRemoteDescription(uri_, 0, uri_.size(), ',', max_addresses);
+        }
+        else
+        {
+            uris.emplace_back(uri_);
+        }
 
         std::optional<ActionsDAG> filter_dag;
         if (!uris.empty())
-            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context, hive_columns);
+            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns_, context_, hive_columns_);
 
         if (filter_dag)
         {
@@ -312,19 +319,42 @@ public:
             for (const auto & uri : uris)
                 paths.push_back(Poco::URI(uri).getPath());
 
-            VirtualColumnUtils::buildSetsForDAG(*filter_dag, context);
-            auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-            VirtualColumnUtils::filterByPathOrFile(uris, paths, actions, virtual_columns, hive_columns, context);
+            if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_))
+            {
+                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                VirtualColumnUtils::filterByPathOrFile(uris, paths, actions, virtual_columns_, hive_columns_, context_);
+            }
+            else
+            {
+                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                this->virtual_columns = virtual_columns_;
+                this->hive_columns = hive_columns_;
+                this->context = context_;
+            }
         }
     }
 
     String next()
     {
-        size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
-        if (current_index >= uris.size())
-            return {};
+        while (true)
+        {
+            size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
+            if (current_index >= uris.size())
+                return {};
 
-        return uris[current_index];
+            auto uri = uris[current_index];
+            if (deferred_filter_actions)
+            {
+                std::vector<String> filtered_uris({uri});
+                const std::vector<String> paths({Poco::URI(uri).getPath()});
+                VirtualColumnUtils::filterByPathOrFile(
+                    filtered_uris, paths, deferred_filter_actions, virtual_columns, hive_columns, context);
+                if (filtered_uris.empty())
+                    continue;
+            }
+
+            return uri;
+        }
     }
 
     size_t size()
@@ -335,10 +365,14 @@ public:
 private:
     Strings uris;
     std::atomic_size_t index = 0;
+    ExpressionActionsPtr deferred_filter_actions;
+    NamesAndTypesList virtual_columns;
+    NamesAndTypesList hive_columns;
+    ContextPtr context;
 };
 
-StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
-    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, max_addresses, predicate, virtual_columns, hive_columns, context)) {}
+StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
+    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, split_uris, max_addresses, predicate, virtual_columns, hive_columns, context)) {}
 
 String StorageURLSource::DisclosedGlobIterator::next()
 {
@@ -1348,10 +1382,12 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
                 return getFailoverOptions(task->path, max_addresses);
             });
     }
-    else if (is_url_with_globs)
+    else
     {
-        /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, max_addresses, predicate, storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context);
+        /// Iterate through disclosed URLs and make a source for each file. Even a URL
+        /// without globs must go through this iterator: it applies a deferred `_path`
+        /// / `_file` filter before the source opens the URL.
+        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, is_url_with_globs, max_addresses, predicate, storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context);
 
         /// check if we filtered out all the paths
         if (glob_iterator->size() == 0)
@@ -1370,20 +1406,9 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
 
         num_streams = std::min(num_streams, glob_iterator->size());
     }
-    else
-    {
-        iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>([max_addresses, done = false, &uri = storage->uri]() mutable
-        {
-            if (done)
-                return StorageURLSource::FailoverOptions{};
-            done = true;
-            return getFailoverOptions(uri, max_addresses);
-        });
-        num_streams = 1;
-    }
 }
 
-void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
     createIterator(nullptr);
     const auto & settings = context->getSettingsRef();
@@ -1431,8 +1456,10 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     auto pipe = Pipe::unitePipes(std::move(pipes));
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = settings[Setting::parallelize_output_from_storages];
-    if (parallelize_output && storage->parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < max_num_streams)
-        pipe.resize(max_num_streams);
+    /// `max_num_streams` is a read-parallelism request, not a thread budget.
+    const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
+    if (parallelize_output && storage->parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < resize_to)
+        pipe.resize(resize_to);
 
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
