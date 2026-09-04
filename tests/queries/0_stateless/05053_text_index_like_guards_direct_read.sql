@@ -30,6 +30,8 @@ ORDER BY id;
 INSERT INTO t_text_index_like_direct
     SELECT number, concat('p', char(97 + (number % 26)), char(97 + intDiv(number, 26) % 26), ' common')
     FROM numbers(100000);
+-- The guard events below are counted per part, so the insert must end up as one part.
+OPTIMIZE TABLE t_text_index_like_direct FINAL;
 
 -- Rows budget 0: the analysis-phase scan discards once; the adopted granule must not be
 -- re-guarded on the read side, and no posting list may be read.
