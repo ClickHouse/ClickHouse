@@ -1,0 +1,7 @@
+---
+/** Mintlify `<Tooltip tip>`: native title tooltip for now. */
+interface Props { tip?: string }
+const { tip } = Astro.props;
+---
+
+<span class="ch-tooltip" title={tip}><slot /></span>

@@ -1,0 +1,36 @@
+---
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+import type { PrevNext } from "@cloudflare/nimbus-docs/types";
+
+interface Props extends HTMLAttributes<"nav"> {
+  prevNext: PrevNext;
+}
+
+const { prevNext, class: className, ...attrs } = Astro.props;
+const { prev, next } = prevNext;
+---
+
+{(prev || next) && (
+  <nav aria-label="Pagination" class={cn("flex items-center justify-between mt-12 pt-6 border-t border-border", className)} {...attrs}>
+    {prev ? (
+      <a href={prev.href} class="group flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+        <Icon name="ph:caret-left" class="w-4 h-4 transition-transform group-hover:-translate-x-0.5" />
+        <span>
+          <span class="block text-xs text-muted-foreground">Previous</span>
+          <span class="font-medium text-foreground">{prev.label}</span>
+        </span>
+      </a>
+    ) : <span />}
+    {next ? (
+      <a href={next.href} class="group flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors text-right">
+        <span>
+          <span class="block text-xs text-muted-foreground">Next</span>
+          <span class="font-medium text-foreground">{next.label}</span>
+        </span>
+        <Icon name="ph:caret-right" class="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+      </a>
+    ) : <span />}
+  </nav>
+)}

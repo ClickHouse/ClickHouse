@@ -1,0 +1,46 @@
+---
+/**
+ * Locale homepages render the authored JSX through generated React islands,
+ * preserving the full translated homepage while its source remains in the
+ * existing Mintlify tree until cutover.
+ */
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import Header from "../../components/Header.astro";
+import HomepageAr from "../../generated/homepage/ar.jsx";
+import HomepageEs from "../../generated/homepage/es.jsx";
+import HomepageFr from "../../generated/homepage/fr.jsx";
+import HomepageJa from "../../generated/homepage/ja.jsx";
+import HomepageKo from "../../generated/homepage/ko.jsx";
+import HomepagePtBr from "../../generated/homepage/pt-br.jsx";
+import HomepageRu from "../../generated/homepage/ru.jsx";
+import HomepageZh from "../../generated/homepage/zh.jsx";
+import { config } from "virtual:nimbus/config";
+import { ACTIVE_LOCALES, localeCollectionName } from "../../content.config";
+import { localeInfo } from "../../util/locales";
+
+export const prerender = true;
+
+export function getStaticPaths() {
+  return ACTIVE_LOCALES.map((locale) => ({ params: { locale: localeCollectionName(locale) } }));
+}
+
+const locale = Astro.params.locale as string;
+const info = localeInfo(locale);
+if (!["ar", "es", "fr", "ja", "ko", "pt-br", "ru", "zh"].includes(locale)) {
+  throw new Error(`Missing homepage React island for locale ${locale}.`);
+}
+---
+
+<BaseLayout title={config.title} description={config.description} lang={info.hreflang} dir={info.dir === "rtl" ? "rtl" : undefined}>
+  <Header showSidebar={false} currentLocale={locale} activeLocales={ACTIVE_LOCALES} homepage />
+  <div class="ch-homepage">
+    {locale === "ar" && <HomepageAr client:load />}
+    {locale === "es" && <HomepageEs client:load />}
+    {locale === "fr" && <HomepageFr client:load />}
+    {locale === "ja" && <HomepageJa client:load />}
+    {locale === "ko" && <HomepageKo client:load />}
+    {locale === "pt-br" && <HomepagePtBr client:load />}
+    {locale === "ru" && <HomepageRu client:load />}
+    {locale === "zh" && <HomepageZh client:load />}
+  </div>
+</BaseLayout>

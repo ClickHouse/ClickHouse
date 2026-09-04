@@ -1,0 +1,133 @@
+---
+import DocsLayout from "@/layouts/DocsLayout.astro";
+import ApiOperation from "./ApiOperation.astro";
+import { Badge } from "@/components/ui/badge";
+import { Breadcrumbs } from "@/components/ui/breadcrumbs";
+import { getPrevNext } from "@cloudflare/nimbus-docs";
+import { withBase } from "@/lib/base";
+import { buildRailFromConfig, type ConfigItem } from "@/lib/sidebar-lazy";
+import { getApiOperations, type RoutedApiOperationPage } from "@/lib/openapi";
+import navigation from "@/generated/sidebar.items.json";
+
+interface Props {
+  page: RoutedApiOperationPage;
+}
+
+const { page } = Astro.props;
+const { source, view } = page;
+const browserPath = withBase(`/${source.route}`);
+const sidebar = buildRailFromConfig(navigation as ConfigItem[], browserPath);
+const prevNext = await getPrevNext(browserPath, { sidebarTree: sidebar });
+const isCloud = source.collection === "cloud";
+const overview = isCloud
+  ? withBase("/products/cloud/features/admin-features/api/api-overview")
+  : withBase("/clickstack/api-reference");
+const firstInTag = getApiOperations(source.collection)
+  .find((candidate) => candidate.tagSlug === source.tagSlug) ?? source;
+const tagRoute = withBase(`/${firstInTag.route}`);
+const breadcrumbs = [
+  { label: isCloud ? "Cloud API" : "ClickStack", href: overview },
+  { label: "API reference", href: overview },
+  { label: source.tag, href: tagRoute },
+  { label: source.tag, href: browserPath },
+];
+const headings = [
+  ...(view.auth.length ? [{ depth: 2, text: "Authorizations", slug: "authorizations" }] : []),
+  ...view.parameters.map((group) => ({ depth: 2, text: group.label, slug: group.anchor })),
+  ...(view.body.length || view.bodyUnion ? [{ depth: 2, text: "Request body", slug: "request-body" }] : []),
+  ...(view.responses.length ? [{ depth: 2, text: "Response", slug: "response" }] : []),
+];
+const markdownPath = withBase(`/${source.route}/index.md`);
+const markdownUrl = Astro.site ? new URL(markdownPath, Astro.site).href : markdownPath;
+---
+
+<DocsLayout
+  title={view.title}
+  description={view.description}
+  sidebar={sidebar}
+  headings={headings}
+  breadcrumbs={breadcrumbs}
+  prevNext={prevNext}
+  mode="wide"
+  markdownUrl={markdownUrl}
+  editUrl={source.editUrl}
+  lang="en"
+  currentLocale="en"
+  activeLocales={[]}
+>
+  <div slot="page-title" class="ch-api-heading">
+    <Breadcrumbs items={breadcrumbs} class="ch-api-breadcrumbs" />
+    <div class="ch-api-title">
+      <h1>{view.title}</h1>
+      {source.badge && <Badge text={source.badge} variant="info" size="medium" />}
+      {view.deprecated && <Badge text="Deprecated" variant="warning" size="medium" />}
+    </div>
+  </div>
+  <ApiOperation
+    page={view}
+    authSchemes={source.document.components?.securitySchemes}
+  />
+</DocsLayout>
+
+<style>
+  .ch-api-breadcrumbs { margin-bottom: 1.25rem; }
+  .ch-api-title {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    flex-wrap: wrap;
+  }
+
+  .ch-api-title h1 {
+    margin: 0;
+    color: var(--foreground);
+    font-size: var(--nb-h1-size);
+    font-weight: var(--nb-h1-weight);
+    letter-spacing: var(--nb-h1-tracking);
+    line-height: 1.15;
+  }
+
+  @media (min-width: 1280px) {
+    .ch-api-heading {
+      max-width: calc(52% - 2.5rem);
+    }
+
+    :global(.ch-document-grid-wide:has(.ch-api-operation) .ch-title-page-actions) {
+      max-width: calc(52% - 2.5rem);
+      margin-top: 6px;
+      flex-wrap: nowrap;
+      gap: 0;
+      font-size: 0.72rem;
+    }
+
+    :global(.ch-document-grid-wide:has(.ch-api-operation) .ch-title-page-actions > :is(a, button)) {
+      padding-inline: 4px;
+    }
+
+    :global(.ch-document-grid-wide:has(.ch-api-operation) .docs-content) {
+      margin-top: 16px;
+    }
+  }
+
+  :global(.ch-document-grid-wide:has(.ch-api-operation) .ch-document) {
+    max-width: none;
+    justify-self: stretch;
+  }
+
+  :global(.ch-document-grid-wide:has(.ch-api-operation)) {
+    justify-content: stretch;
+    margin-left: 304px;
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+
+  @media (max-width: 1023px) {
+    :global(.ch-document-grid-wide:has(.ch-api-operation)) {
+      margin-left: 0;
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+
+    .ch-api-title h1 { font-size: 30px; }
+  }
+</style>

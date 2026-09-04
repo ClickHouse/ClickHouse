@@ -1,0 +1,54 @@
+---
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import { Dialog, DialogClose, DialogContent } from "@/components/ui/dialog";
+---
+
+<Dialog aria-label="Search documentation" data-search-dialog>
+  <DialogContent class="max-w-xl bg-muted shadow-xl ring-border">
+    <div class="flex flex-col overflow-hidden rounded-t-lg bg-card border-b border-border">
+      <div class="flex items-center gap-3 border-b border-border px-4 py-3">
+        <Icon name="ph:magnifying-glass" class="h-4 w-4 shrink-0 text-muted-foreground" />
+        <input
+          data-search-input
+          role="combobox"
+          aria-expanded="false"
+          aria-haspopup="listbox"
+          aria-autocomplete="list"
+          aria-controls="search-listbox"
+          type="text"
+          placeholder="Search documentation…"
+          class="min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+          autocomplete="off"
+          spellcheck="false"
+          autocorrect="off"
+          autocapitalize="none"
+        />
+        <DialogClose class="rounded border border-border bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+          Esc
+        </DialogClose>
+      </div>
+
+      <div
+        data-search-results
+        role="listbox"
+        id="search-listbox"
+        aria-orientation="vertical"
+        class="min-h-40 overflow-y-auto p-2"
+      >
+        <p data-search-empty class="py-8 text-center text-sm text-muted-foreground">
+          Type to search…
+        </p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-4 px-4 py-2.5 text-xs text-muted-foreground/80">
+      <span>↑↓ navigate</span>
+      <span>↵ select</span>
+      <span>Esc close</span>
+    </div>
+  </DialogContent>
+</Dialog>
+
+<script>
+  import "./search.client";
+</script>

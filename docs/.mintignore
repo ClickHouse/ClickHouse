@@ -25,3 +25,26 @@ _site/styles/
 /_includes/
 /changelogs/
 /get-started/quickstarts/_TEMPLATE.mdx
+
+# Nimbus (Astro) site tooling and build output (Project Nimbus POC). Anchored
+# to the top level. Mintlify must never parse or inject any of this; keep all
+# tooling in .ts/.mjs under these directories.
+/tmp/
+/src/
+/bin/
+/worker/
+/public/
+/dist/
+/patches/
+/.astro/
+/.remote/
+/.temp/
+/astro.config.ts
+/tsconfig.json
+/pnpm-lock.yaml
+/pnpm-workspace.yaml
+/wrangler.jsonc
+/wrangler.preview.jsonc
+/remotes.json
+/.preview-scope.json
+/reports/

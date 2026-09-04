@@ -1,0 +1,19 @@
+{
+  "$comment": "Snippet React components that use hooks or browser APIs and must hydrate as islands. Everything else under snippets/components renders server-side only.",
+  "components": [
+    "SessionSettingsExplorer",
+    "ServerSettingsExplorer",
+    "MergeTreeSettingsExplorer",
+    "FormatSettingsExplorer",
+    "KBExplorer",
+    "SampleDatasetExplorer",
+    "IntegrationGrid",
+    "QuickStartsGrid",
+    "Install",
+    "SectionSearch",
+    "GlobalSearch",
+    "Glossary",
+    "AgentPrompt",
+    "RunnableCode"
+  ]
+}

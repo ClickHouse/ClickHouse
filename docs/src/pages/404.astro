@@ -1,0 +1,30 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Header from "../components/Header.astro";
+import { config } from "virtual:nimbus/config";
+import { withBase } from "../lib/base";
+---
+
+<BaseLayout title={`Page not found · ${config.title}`} description="The page you're looking for doesn't exist.">
+  <div class="flex flex-col min-h-screen">
+    <Header />
+    <main id="main-content" tabindex="-1" class="flex-1 mx-auto max-w-2xl w-full px-6 py-24 text-center">
+      <p class="text-sm font-medium text-muted-foreground">404</p>
+      <h1
+        class="mt-2 text-foreground leading-tight"
+        style="font-size: var(--nb-h1-size); font-weight: var(--nb-h1-weight); letter-spacing: var(--nb-h1-tracking);"
+      >
+        Page not found
+      </h1>
+      <p class="mt-2 text-[1.0625rem] text-muted-foreground leading-relaxed">
+        The page you're looking for doesn't exist or has moved.
+      </p>
+      <a
+        href={withBase("/")}
+        class="mt-8 inline-block rounded-lg border border-border px-4 py-2 font-medium text-foreground no-underline transition-colors hover:border-border-strong"
+      >
+        Back home
+      </a>
+    </main>
+  </div>
+</BaseLayout>

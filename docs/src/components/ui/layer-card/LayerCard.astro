@@ -1,0 +1,23 @@
+---
+/**
+ * LayerCard — two-layer card (recessed header + raised content).
+ *
+ *   <LayerCard>
+ *     <LayerCardHeader>Title or tabs</LayerCardHeader>
+ *     <LayerCardContent>Main content</LayerCardContent>
+ *   </LayerCard>
+ */
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+
+interface Props extends HTMLAttributes<"div"> {}
+
+const { class: className, ...attrs } = Astro.props;
+---
+
+<div
+  class={cn("flex w-full flex-col overflow-hidden rounded-lg bg-muted text-sm ring ring-border", className)}
+  {...attrs}
+>
+  <slot />
+</div>

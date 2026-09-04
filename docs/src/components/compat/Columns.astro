@@ -1,0 +1,7 @@
+---
+/** Mintlify `<Columns cols>`. */
+interface Props { cols?: number | string }
+const { cols = 2 } = Astro.props;
+---
+
+<div class="ch-columns" style={`display:grid;grid-template-columns:repeat(${cols},minmax(0,1fr));gap:1rem`}><slot /></div>

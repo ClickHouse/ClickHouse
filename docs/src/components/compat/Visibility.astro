@@ -1,0 +1,7 @@
+---
+/** Mintlify `<Visibility for="humans|agents">` for the rendered HTML page. */
+interface Props { for?: "humans" | "agents" }
+const { for: audience = "humans" } = Astro.props;
+---
+
+{audience === "humans" && <div class="ch-visibility" data-for="humans"><slot /></div>}

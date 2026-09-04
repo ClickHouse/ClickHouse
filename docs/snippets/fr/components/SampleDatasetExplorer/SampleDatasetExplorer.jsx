@@ -1,7 +1,7 @@
 export const SampleDatasetExplorer = ({ categories }) => {
   const ACCENT = "#FAFF69"
   const assetBase = typeof window === "undefined" || window.location.pathname.startsWith("/docs") ? "/docs" : ""
-  const withBase = (p) => (p && p.startsWith("/") ? assetBase + p : p)
+  const withBase = (p) => (p && p.startsWith("/") && !p.startsWith("/docs/") ? assetBase + p : p)
 
   // Chaque catégorie : id, title (affiché sous l'image de bannière), une icône utilisée pour
   // ses cartes enfants, les deux images de bannière et les pages de jeux de données enfants.

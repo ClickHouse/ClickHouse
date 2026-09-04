@@ -1,0 +1,34 @@
+---
+/**
+ * TabsList — container for tab triggers with animated indicator bar.
+ * Renders `role="tablist"` with a sliding underline indicator.
+ */
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+
+interface Props extends HTMLAttributes<"div"> {}
+
+const { class: className, ...attrs } = Astro.props;
+---
+
+<div
+  class={cn(
+    // Scroll horizontally when the triggers exceed the column instead of
+    // leaking past the page. Scrollbar hidden so it doesn't collide with the
+    // underline/indicator on classic-scrollbar platforms; the strip stays
+    // scrollable via wheel/touch and the tabs remain keyboard-navigable.
+    "relative flex overflow-x-auto overscroll-x-contain border-b border-border",
+    "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+    className,
+  )}
+  role="tablist"
+  data-nb-tabs-list
+  {...attrs}
+>
+  <span
+    class="pointer-events-none absolute bottom-0 h-0.5 rounded-t-sm bg-primary transition-[left,width] duration-200 ease-out"
+    data-nb-tabs-indicator
+    aria-hidden="true"
+  ></span>
+  <slot />
+</div>

@@ -1,0 +1,56 @@
+{
+  "name": "clickhouse-docs",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "packageManager": "pnpm@10.20.0",
+  "scripts": {
+    "prebuild": "node bin/fetch-openapi.ts && node bin/gen-compat-wrappers.ts && node bin/gen-import-index.ts && node bin/gen-sidebar.ts && node bin/gen-galaxy-script.ts && node bin/gen-clickhouse-sql-keywords.ts && node bin/gen-homepage-locales.ts && node bin/gen-homepage-react.ts && node bin/gen-changelog-entries.ts",
+    "predev": "node bin/fetch-openapi.ts && node bin/gen-compat-wrappers.ts && node bin/gen-import-index.ts && node bin/gen-sidebar.ts && node bin/gen-galaxy-script.ts && node bin/gen-clickhouse-sql-keywords.ts && node bin/gen-homepage-react.ts && node bin/gen-changelog-entries.ts",
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "typecheck": "astro check",
+    "preview:cf": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "postbuild": "node bin/postbuild.ts",
+    "check:mdx": "node bin/measure/mdx-compile-check.ts --refs get-started concepts guides reference products clickstack integrations resources chdb snippets",
+    "measure": "node bin/measure/page-weight.ts ${DOCS_OUT_DIR:-dist}/docs && node bin/measure/anchor-parity.ts ${DOCS_OUT_DIR:-dist}/docs && node bin/measure/base-check.ts ${DOCS_OUT_DIR:-dist}/docs && node bin/measure/url-parity.ts ${DOCS_OUT_DIR:-dist}/docs"
+  },
+  "dependencies": {
+    "@astrojs/markdown-satteri": "^0.3.8",
+    "@astrojs/react": "^5.0.0",
+    "@cloudflare/nimbus-docs": "0.12.0",
+    "@fontsource-variable/inter": "^5.2.8",
+    "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "@iconify-json/fa6-solid": "^1.2.4",
+    "@iconify-json/ph": "^1.2.0",
+    "@readme/httpsnippet": "11.4.0",
+    "@scalar/openapi-parser": "0.28.12",
+    "astro": "~7.0.9",
+    "clsx": "^2.1.1",
+    "mermaid": "^11.17.2",
+    "openapi-sampler": "1.7.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "redirects-in-workers": "^0.0.7",
+    "satteri": "^0.10.5",
+    "tailwind-merge": "^3.5.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.8",
+    "@clickhouse/lexer": "github:ClickHouse/clickhouse-lexer#d5ba7f654c70c0bdb56d8de381e42f26dae6d36c",
+    "@cloudflare/workers-types": "^5.20260903.1",
+    "@tailwindcss/vite": "^4.1.4",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "tailwindcss": "^4.1.4",
+    "typescript": "^5.8.3",
+    "wrangler": "^4.95.0",
+    "yaml": "^2.9.0"
+  }
+}

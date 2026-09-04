@@ -1,0 +1,15 @@
+---
+/** Mintlify `<Update label description tags>` changelog entry. */
+interface Props { label: string; description?: string; tags?: string[] }
+const { label, description, tags = [] } = Astro.props;
+const id = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+---
+
+<section class="ch-update" id={id}>
+  <aside class="ch-update-meta">
+    <a href={`#${id}`} class="ch-update-label">{label}</a>
+    {description && <div class="ch-update-description">{description}</div>}
+    {tags.length > 0 && <div class="ch-update-tags">{tags.map((t) => <span class="ch-update-tag">{t}</span>)}</div>}
+  </aside>
+  <div class="ch-update-body"><slot /></div>
+</section>

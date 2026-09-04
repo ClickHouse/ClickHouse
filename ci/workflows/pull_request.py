@@ -76,6 +76,7 @@ workflow = Workflow.Config(
         JobConfigs.style_check,
         JobConfigs.code_review.set_run_after(CODE_REVIEW_BLOCKING_JOBS),
         JobConfigs.docs_job_mintlify,
+        JobConfigs.docs_job_nimbus,
         JobConfigs.fast_test,
         *JobConfigs.darwin_fast_test_jobs,
         *JobConfigs.tidy_build_arm_jobs,

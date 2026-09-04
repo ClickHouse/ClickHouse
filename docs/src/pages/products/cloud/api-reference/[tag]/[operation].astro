@@ -1,0 +1,16 @@
+---
+import ApiPage from "@/components/api/ApiPage.astro";
+import { getApiOperations, getRoutedApiOperation } from "@/lib/openapi";
+
+export const prerender = true;
+
+export function getStaticPaths() {
+  return getApiOperations("cloud").map((page) => ({
+    params: { tag: page.tagSlug, operation: page.slug },
+  }));
+}
+
+const page = await getRoutedApiOperation("cloud", Astro.params.tag!, Astro.params.operation!);
+---
+
+<ApiPage page={page} />

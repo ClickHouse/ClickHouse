@@ -1,0 +1,110 @@
+---
+import DocsLayout from "../layouts/DocsLayout.astro";
+import {
+  getDocsStaticPaths,
+  getDocsPageProps,
+  getRouteFlags,
+  getPrevNext,
+  getBreadcrumbs,
+  getEditUrl,
+  getLastUpdated,
+  getTOC,
+} from "@cloudflare/nimbus-docs";
+import { components } from "../components";
+import { withBase, stripBase } from "../lib/base";
+import { buildRailFromConfig, type ConfigItem } from "../lib/sidebar-lazy";
+import { ACTIVE_LOCALES, localeCollectionName } from "../content.config";
+import navigation from "../generated/sidebar.items.json";
+
+export const prerender = true;
+export async function getStaticPaths() {
+  const paths = await getDocsStaticPaths();
+  return paths.filter(({ params }) => {
+    const slug = params.slug;
+    return typeof slug !== "string" || !slug.startsWith("products/cloud/api-reference/");
+  });
+}
+
+const { entry, Content, headings } = await getDocsPageProps(Astro);
+
+// Nimbus route paths carry no base; the browser pathname does.
+const browserPath = Astro.url.pathname.replace(/\/$/, "") || "/";
+const currentSlug = stripBase(browserPath);
+
+const { sidebar: sidebarOn, tableOfContents: tocOn } = await getRouteFlags(entry);
+
+// Nimbus treats `custom` as a full-canvas route and disables its sidebar.
+// Mintlify customizes only the center content for pages such as the
+// quickstarts explorer, so keep the normal documentation rail there.
+const sidebar = sidebarOn || entry.data.mode === "custom"
+  ? buildRailFromConfig(navigation as ConfigItem[], browserPath)
+  : false;
+// The tree now carries base-prefixed hrefs, so match against the browser path.
+const prevNext = await getPrevNext(browserPath, {
+  sidebarTree: sidebar === false ? [] : sidebar,
+  overrides: { prev: entry.data.prev, next: entry.data.next },
+});
+// Pass `collection` so versioned pages (docs-<v>) get version-prefixed
+// breadcrumb hrefs — parity with the getSidebar call above.
+const breadcrumbs = (await getBreadcrumbs(currentSlug, { collection: entry.collection })).map((c) =>
+  c.href ? { ...c, href: withBase(c.href) } : c,
+);
+const editUrl = await getEditUrl(entry);
+// Frontmatter wins; git is the fallback.
+const lastUpdated = entry.data.lastUpdated ?? await getLastUpdated(entry);
+// `tocOn` already implies `tableOfContents !== false`, but TS can't carry
+// that boolean narrowing to the value here — re-check it so `getTOC` only
+// ever sees its options object (or undefined), never `false`.
+const tocConfig = entry.data.tableOfContents;
+// Mintlify's `toc_max_heading_level` maps onto Nimbus's TOC depth options.
+const tocMax = (entry.data as { toc_max_heading_level?: number }).toc_max_heading_level;
+const effectiveTocConfig =
+  tocConfig === false ? false : tocMax ? { minHeadingLevel: 2, maxHeadingLevel: Math.max(2, Math.min(6, tocMax)) } : tocConfig;
+const toc = tocOn && effectiveTocConfig !== false ? getTOC(headings, effectiveTocConfig) : false;
+// Preserve Mintlify's `wide` layout hint for landing pages. Nimbus handles the
+// regular `doc` and `custom` modes; DocsLayout applies the wider content rail.
+const layoutMode = entry.data.mode === "custom" || entry.data.mode === "wide" ? entry.data.mode : "doc";
+const data = entry.data as { title?: string; sidebarTitle?: string };
+const pageTitle = data.title ?? data.sidebarTitle ?? entry.id.split("/").pop() ?? entry.id;
+const markdownPath = withBase(`/${entry.id}/index.md`);
+const markdownUrl = Astro.site ? new URL(markdownPath, Astro.site).href : markdownPath;
+// No per-page OG cards yet (canvaskit); fall back to the site image.
+const socialImage = entry.data.socialImage;
+// hreflang alternates for the translated (or English-fallback) copies of this page.
+const HREFLANG: Record<string, string> = { "pt-br": "pt-BR" };
+const alternates = Astro.site && ACTIVE_LOCALES.length && entry.id !== "index"
+  ? [
+      { hreflang: "en", href: new URL(withBase(`/${entry.id}/`), Astro.site).href },
+      { hreflang: "x-default", href: new URL(withBase(`/${entry.id}/`), Astro.site).href },
+      ...ACTIVE_LOCALES.map(localeCollectionName).map((l) => ({ hreflang: HREFLANG[l] ?? l, href: new URL(withBase(`/${l}/${entry.id}/`), Astro.site!).href })),
+    ]
+  : [];
+---
+
+<DocsLayout
+  title={pageTitle}
+  description={entry.data.description}
+  sidebar={sidebar}
+  headings={toc}
+  breadcrumbs={breadcrumbs}
+  prevNext={prevNext}
+  mode={layoutMode}
+  banner={entry.data.banner}
+  head={entry.data.head}
+  searchable={entry.data.searchable}
+  noindex={entry.data.noindex}
+  markdownUrl={markdownUrl}
+  socialImage={socialImage}
+  lastUpdated={lastUpdated}
+  editUrl={editUrl}
+  draft={entry.data.draft}
+  audience={entry.data.audience}
+  collection={entry.collection}
+  entryId={entry.id}
+  lang="en"
+  alternates={alternates}
+  currentLocale="en"
+  activeLocales={ACTIVE_LOCALES}
+>
+  <Content components={components} />
+</DocsLayout>

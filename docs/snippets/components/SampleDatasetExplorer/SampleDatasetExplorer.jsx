@@ -10,7 +10,7 @@
 export const SampleDatasetExplorer = ({ categories }) => {
   const ACCENT = '#FAFF69';
   const assetBase = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
-  const withBase = (p) => p && p.startsWith('/') ? assetBase + p : p;
+  const withBase = (p) => p && p.startsWith('/') && !p.startsWith('/docs/') ? assetBase + p : p;
 
   // Each category: id, title (shown beneath the banner image), an icon used for
   // its child cards, the two banner images, and the child dataset pages.

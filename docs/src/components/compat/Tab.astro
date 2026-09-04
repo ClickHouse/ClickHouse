@@ -1,0 +1,8 @@
+---
+/** Mintlify `<Tab title>` -> Nimbus `<TabItem label>`. */
+import { TabItem } from "@/components/ui/tabs";
+interface Props { title: string; icon?: string }
+const { title, icon, ...rest } = Astro.props;
+---
+
+<TabItem label={title} icon={icon} {...rest}><slot /></TabItem>

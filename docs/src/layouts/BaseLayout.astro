@@ -1,0 +1,192 @@
+---
+import "@fontsource-variable/inter";
+import "@fontsource-variable/jetbrains-mono";
+import "../styles/globals.css";
+import "../styles/prose.css";
+import { ClientRouter } from "astro:transitions";
+import { config } from "virtual:nimbus/config";
+import { getCollectionLlmsUrl, getVersionStatus } from "@cloudflare/nimbus-docs";
+import AgentDirective from "@/components/AgentDirective.astro";
+import NimbusHead from "@/components/NimbusHead.astro";
+import type { BasePageProps } from "@cloudflare/nimbus-docs/types";
+
+export interface Alternate { hreflang: string; href: string }
+type Props = BasePageProps & {
+  /** Document language (default: config.locale). */
+  lang?: string;
+  /** Text direction, e.g. "rtl" for Arabic. */
+  dir?: "ltr" | "rtl";
+  /** hreflang alternates for the same page in other locales (+ x-default). */
+  alternates?: Alternate[];
+  /** Canonical URL override (untranslated locale pages point at English). */
+  canonicalUrl?: string;
+};
+
+const {
+  title,
+  description,
+  noindex,
+  markdownUrl,
+  socialImage,
+  lastUpdated,
+  head: pageHead = [],
+  collection,
+  entryId,
+  lang: pageLang,
+  dir,
+  alternates = [],
+  canonicalUrl,
+} = Astro.props;
+
+const lang = pageLang ?? config.locale ?? "en";
+// Per-page agent-index pointer. For pages in non-primary or version
+// collections, this resolves to `/<prefix>/llms.txt` (e.g. `/v0/llms.txt`
+// for a v0 docs page, `/blog/llms.txt` for a blog post). Falls back to
+// the root `/llms.txt` when no collection is provided.
+// Hidden-version pages don't advertise an agent index (the per-version
+// llms.txt isn't emitted for them); suppress the AgentDirective entirely.
+const versionStatus = collection ? await getVersionStatus(collection) : null;
+const isHiddenVersion = versionStatus?.isHidden === true;
+const llmsIndexPath = collection
+  ? await getCollectionLlmsUrl(collection)
+  : "/llms.txt";
+const llmsUrl = Astro.site
+  ? new URL(llmsIndexPath, Astro.site).href
+  : llmsIndexPath;
+---
+
+<!doctype html>
+<html lang={lang} dir={dir}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <script is:inline>
+      (() => {
+        const KEY = "ui-mode";
+        const media = window.matchMedia("(prefers-color-scheme: dark)");
+
+        const readPref = () => {
+          try {
+            const v = localStorage.getItem(KEY);
+            return v === "dark" || v === "light" || v === "system" ? v : "system";
+          } catch {
+            return "system";
+          }
+        };
+
+        const resolveMode = (preference) => preference === "system"
+          ? (media.matches ? "dark" : "light")
+          : preference;
+
+        const applyTheme = (targetDocument = document) => {
+          const root = targetDocument.documentElement;
+          const preference = readPref();
+          const mode = resolveMode(preference);
+          root.setAttribute("data-theme-preference", preference);
+          if (mode === "dark") root.setAttribute("data-mode", "dark");
+          else root.removeAttribute("data-mode");
+          // Legacy Mintlify CSS and the snippet JSX components key off `html.dark`.
+          root.classList.toggle("dark", mode === "dark");
+          root.style.colorScheme = mode;
+          targetDocument.querySelectorAll("[data-nb-theme-toggle]").forEach((b) => {
+            b.setAttribute("data-nb-state", mode);
+          });
+          targetDocument.querySelectorAll("[data-theme-choice]").forEach((button) => {
+            button.setAttribute("aria-pressed", String(button.dataset.themeChoice === preference));
+          });
+        };
+
+        const carrySidebarScroll = (targetDocument) => {
+          const current = document.querySelector("#desktop-sidebar .ch-sidebar-scroll");
+          const incoming = targetDocument.querySelector("#desktop-sidebar .ch-sidebar-scroll");
+          if (current && incoming) {
+            incoming.setAttribute("data-nb-restore-scroll-top", String(current.scrollTop));
+          }
+        };
+
+        const restoreSidebarScroll = () => {
+          const sidebar = document.querySelector("#desktop-sidebar .ch-sidebar-scroll");
+          const raw = sidebar?.getAttribute("data-nb-restore-scroll-top");
+          if (!sidebar || raw === null) return;
+          const top = Number(raw);
+          if (!Number.isFinite(top)) return;
+          const restore = () => {
+            sidebar.scrollTop = top;
+          };
+          restore();
+          requestAnimationFrame(restore);
+        };
+
+        applyTheme();
+        // ClientRouter replaces every <html> attribute with the attributes from
+        // the incoming server document. Stamp the saved theme onto that
+        // detached document before the swap so no frame renders with the light
+        // color tokens while navigating in dark mode.
+        document.addEventListener("astro:before-swap", (event) => {
+          applyTheme(event.newDocument);
+          carrySidebarScroll(event.newDocument);
+        });
+        document.addEventListener("astro:after-swap", () => {
+          applyTheme();
+          restoreSidebarScroll();
+        });
+        media.addEventListener("change", () => {
+          if (readPref() === "system") applyTheme();
+        });
+        window.addEventListener("storage", (e) => {
+          if (e.key === KEY) applyTheme();
+        });
+
+        window.__nbApplyTheme = applyTheme;
+      })();
+    </script>
+
+    <NimbusHead
+      title={title}
+      description={description}
+      noindex={noindex}
+      markdownUrl={markdownUrl}
+      socialImage={socialImage}
+      lastUpdated={lastUpdated}
+      head={pageHead}
+      collection={collection}
+      entryId={entryId}
+      canonicalUrl={canonicalUrl}
+    />
+    {alternates.map((a) => <link rel="alternate" hreflang={a.hreflang} href={a.href} />)}
+    <ClientRouter />
+  </head>
+  <body class="min-h-screen bg-background text-foreground antialiased">
+    <a
+      href="#main-content"
+      class="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-100 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground focus:no-underline focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
+    >
+      Skip to content
+    </a>
+    {markdownUrl && !isHiddenVersion && <AgentDirective markdownUrl={markdownUrl} llmsUrl={llmsUrl} />}
+    <div id="content-container">
+      <slot />
+    </div>
+    <script>
+      // Reuse the same footer source that is deployed on the Mintlify site.
+      import "../../_site/customizations/custom-footer.js";
+    </script>
+    <script>
+      // Reuse the localized, dismissible Get Started advert from Mintlify.
+      import "../../_site/customizations/cloud-sidebar-ad.js";
+    </script>
+    {config.search !== false && <script src="../scripts/inkeep.ts"></script>}
+    <script src="../scripts/kapa.ts"></script>
+    <script src="../scripts/anchor-redirects.ts"></script>
+    <script src="../scripts/settings-anchor-redirects.ts"></script>
+    <script src="../scripts/webterminal.ts"></script>
+    <script src="../scripts/galaxy.ts"></script>
+
+    <script>
+      import { codeCopy, headingAnchors } from "@cloudflare/nimbus-docs/client";
+      codeCopy();
+      headingAnchors();
+    </script>
+  </body>
+</html>

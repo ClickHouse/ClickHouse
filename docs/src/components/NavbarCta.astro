@@ -1,0 +1,18 @@
+---
+import { LinkButton } from "./ui/link-button";
+
+const signUpUrl = "https://clickhouse.cloud/signUp?loc=docs-nav-signUp-cta";
+---
+
+<LinkButton
+  href={signUpUrl}
+  variant="secondary"
+  size="sm"
+  target="_blank"
+  rel="noopener"
+  data-galaxy-event="docs.navbar.get-started"
+  data-galaxy-prop-href={signUpUrl}
+  class="hidden xl:inline-flex"
+>
+  Get started
+</LinkButton>

@@ -1,0 +1,91 @@
+---
+import { Button } from "./ui/button";
+import { ThemeToggle } from "./ui/theme-toggle";
+import { SearchTrigger } from "./ui/search";
+import { config } from "virtual:nimbus/config";
+import { withBase } from "@/lib/base";
+import LocaleSwitcher from "./LocaleSwitcher.astro";
+import AskAiButton from "./AskAiButton.astro";
+import HomepageNavigation from "./HomepageNavigation.astro";
+import HomepageNavbarCta from "./HomepageNavbarCta.astro";
+import HomepageLogoLight from "../../_site/logo/light.svg";
+import HomepageLogoDark from "../../_site/logo/dark.svg";
+
+interface Props {
+  /** Astro collection id for the current page, forwarded from DocsLayout. */
+  collection?: string;
+  /** Astro entry id for the current page, forwarded from DocsLayout. */
+  entryId?: string;
+  /**
+   * Whether the page has a sidebar to open. When `false`, the mobile
+   * menu button is hidden — pages that opted out via `sidebar: false`
+   * shouldn't show a button that opens an empty dialog. Default `true`.
+   */
+  showSidebar?: boolean;
+  /** Retained for layouts which provide section data; global navigation replaces these tabs. */
+  sections?: Array<{ label: string; href: string; isActive: boolean }>;
+  /** Current locale and the locale trees included in this build scope. */
+  currentLocale?: string;
+  activeLocales?: string[];
+  /** Use the authored homepage's full-width logo and product navigation. */
+  homepage?: boolean;
+}
+
+// `entryId` is part of Props as a forward-compat hook (the version-switcher
+// recipe reads it) but the base Header doesn't use it — leave it off the
+// destructure to avoid an unused-var warning.
+const { showSidebar = true, currentLocale, activeLocales, homepage = false } = Astro.props;
+const homepagePrefix = currentLocale && currentLocale.toLowerCase() !== "en"
+  ? `/${currentLocale.toLowerCase()}`
+  : "";
+const homepageHref = (href: string) => withBase(`${homepagePrefix}${href === "/" ? "" : href}` || "/");
+---
+
+<header class:list={["ch-site-header", homepage ? "ch-site-header-home" : "ch-site-header-docs", !showSidebar && "ch-site-header-full"]}>
+  <div class="ch-site-header-inner">
+    <div class="ch-site-header-primary ch-site-header-primary-home">
+      {!homepage && (
+        <a href={import.meta.env.BASE_URL} class="group lg:hidden">
+          <span class="font-semibold text-sm text-foreground group-hover:text-primary transition-colors">
+            {config.title}
+          </span>
+        </a>
+      )}
+      <div class="ch-brand-controls" transition:persist="brand-controls">
+        <a href={homepageHref("/")} class="ch-header-brand" aria-label="ClickHouse Documentation home page">
+          <img src={HomepageLogoLight.src} alt="ClickHouse Docs" class="logo-light" />
+          <img src={HomepageLogoDark.src} alt="ClickHouse Docs" class="logo-dark" />
+        </a>
+        <ThemeToggle />
+      </div>
+      <HomepageNavigation currentLocale={currentLocale} homeActive={homepage} />
+    </div>
+
+    <div class="ch-site-header-actions">
+      {homepage ? (
+        <HomepageNavbarCta />
+      ) : (
+        <>
+          <div class="flex items-center gap-2 lg:hidden">
+            {activeLocales && activeLocales.length > 0 && <LocaleSwitcher currentLocale={currentLocale} activeLocales={activeLocales} />}
+            {!showSidebar && config.search !== false && <SearchTrigger />}
+            {!showSidebar && <AskAiButton />}
+            <ThemeToggle />
+          </div>
+          <HomepageNavbarCta />
+        </>
+      )}
+      {showSidebar && (
+        <Button
+          variant="ghost"
+          shape="square"
+          size="sm"
+          icon="ph:list"
+          aria-label="Open navigation"
+          data-menu-btn
+          class="lg:hidden text-muted-foreground"
+        />
+      )}
+    </div>
+  </div>
+</header>

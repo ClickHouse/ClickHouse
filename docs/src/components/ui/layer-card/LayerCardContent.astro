@@ -1,0 +1,16 @@
+---
+/** LayerCardContent — raised content layer of a LayerCard. */
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+
+interface Props extends HTMLAttributes<"div"> {}
+
+const { class: className, ...attrs } = Astro.props;
+---
+
+<div
+  class={cn("relative flex flex-col gap-2 overflow-hidden rounded-lg bg-card p-4 pr-3 text-sm leading-6 text-foreground ring ring-border", className)}
+  {...attrs}
+>
+  <slot />
+</div>

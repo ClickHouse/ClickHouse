@@ -1,0 +1,19 @@
+# Nimbus (Astro) site: dependencies, build output, fetched inputs, scratch.
+node_modules/
+dist/
+.astro/
+.remote/
+.temp/
+tmp/
+src/generated/
+public/_astro/
+.preview-scope.json
+# Local-only Mintlify leftovers
+package-lock.json
+.nimbus/
+# Fetched from remote repositories at build time (see remotes.json); only images/ is committed.
+products/clickhouse-private/*
+!products/clickhouse-private/images/
+# wrangler dev state and the dist symlink used for local Worker tests
+.wrangler/
+dist

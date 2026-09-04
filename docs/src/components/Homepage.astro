@@ -1,0 +1,46 @@
+---
+import Header from "./Header.astro";
+import { withBase } from "@/lib/base";
+
+type Card = { title: string; description: string; href: string };
+type Homepage = { title: string; headline: string; subtitle: string; cards: Card[] };
+interface Props {
+  content: Homepage;
+  locale?: string;
+  activeLocales?: string[];
+}
+
+const { content, locale, activeLocales } = Astro.props;
+const localized = (href: string) => withBase(locale ? `/${locale}${href}` : href);
+---
+
+<div class="flex min-h-screen flex-col">
+  <Header currentLocale={locale} activeLocales={activeLocales} />
+  <main id="main-content" tabindex="-1" class="flex-1 px-6 py-20 lg:py-28">
+    <div class="mx-auto max-w-5xl text-center">
+      <h1 class="text-balance text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
+        {content.headline}
+      </h1>
+      {content.subtitle && <p class="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-muted-foreground">{content.subtitle}</p>}
+      <button
+        data-search-trigger
+        type="button"
+        class="mx-auto mt-8 flex w-full max-w-xl items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left text-sm text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
+        aria-label="Search documentation"
+      >
+        <span aria-hidden="true">⌕</span>
+        <span class="flex-1">Search ClickHouse docs…</span>
+        <kbd class="rounded border border-border bg-muted px-1.5 py-0.5 text-xs">Ctrl K</kbd>
+      </button>
+    </div>
+
+    <div class="mx-auto mt-16 grid max-w-6xl gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {content.cards.map((card) => (
+        <a href={localized(card.href)} class="rounded-xl border border-border bg-card p-5 text-left no-underline transition-colors hover:border-border-strong hover:bg-accent/40">
+          <h2 class="text-lg font-semibold text-foreground">{card.title}</h2>
+          <p class="mt-2 text-sm leading-relaxed text-muted-foreground">{card.description}</p>
+        </a>
+      ))}
+    </div>
+  </main>
+</div>

@@ -1,0 +1,328 @@
+/*
+ * field-list — flat-list geometry for the API field component (v2).
+ * Replaces the filetree spine/elbow system with hairline dividers, left-side
+ * anchor links, and indent-based nesting. Global (not Astro-scoped) because
+ * ApiFieldList, ApiFieldRow, and ApiUnionExplorer share one class namespace.
+ * `fl` = field list.
+ */
+
+.fl-root {
+  --fl-anchor: 20px;
+  --fl-gap: 6px;
+  --fl-indent: 16px;
+  --fl-icon: 12px;
+  --fl-guide: calc(var(--fl-icon) / 2);
+}
+
+/* ---- Section header ---- */
+.fl-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.fl-title {
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--color-muted-foreground);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.fl-badge {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-muted-foreground);
+}
+
+.fl-root.nb-api-major-section > .fl-head {
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+.fl-root.nb-api-major-section > .fl-head .fl-title {
+  color: var(--color-foreground);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+.fl-root.nb-api-auth-section .fl-anchor {
+  display: none;
+}
+
+/* ---- List container ---- */
+.fl-list {
+  margin: 0;
+  padding: 0 0 0 4px;
+  list-style: none;
+}
+
+/* ---- Field item ---- */
+.fl-item {
+  padding: 8px 0;
+  border-top: 1px solid color-mix(in oklab, var(--color-border) 40%, transparent);
+  scroll-margin-top: 6rem;
+}
+.fl-item:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+.fl-item:last-child {
+  padding-bottom: 0;
+}
+
+/* ---- Row layout: anchor + body ---- */
+.fl-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fl-gap);
+}
+
+/* ---- Anchor link ---- */
+.fl-anchor {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--fl-anchor);
+  height: var(--fl-anchor);
+  margin-top: 1px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  color: var(--color-muted-foreground);
+  opacity: 0;
+  transition: opacity 0.1s ease, color 0.1s ease;
+}
+.fl-anchor svg {
+  width: 12px;
+  height: 12px;
+}
+.fl-item:hover > .fl-row > .fl-anchor {
+  opacity: 1;
+}
+.fl-anchor:hover {
+  color: var(--color-foreground);
+}
+.fl-anchor:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--color-info);
+  outline-offset: 1px;
+}
+@media (hover: none) {
+  .fl-anchor {
+    opacity: 1;
+  }
+}
+
+/* ---- Body (flex: 1) ---- */
+.fl-body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---- Signature line ---- */
+.fl-sig {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  line-height: 1.5rem;
+}
+.fl-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-foreground);
+}
+.fl-name--deprecated {
+  color: var(--color-muted-foreground);
+  text-decoration: line-through;
+}
+.fl-optional {
+  font-size: 0.875rem;
+  color: var(--color-muted-foreground);
+}
+.fl-deprecated-badge {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-muted-foreground);
+}
+.fl-type-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+}
+.fl-type {
+  font-size: 0.8125rem;
+  color: var(--color-muted-foreground);
+}
+.fl-type,
+.fl-location {
+  border-radius: 5px;
+  background: color-mix(in oklab, var(--color-muted) 72%, transparent);
+  padding: 0 0.35rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+  line-height: 1.35rem;
+}
+.fl-location {
+  color: var(--color-muted-foreground);
+}
+.fl-type-link {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-info);
+  text-decoration: none;
+}
+.fl-type-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.fl-variant-link {
+  font-weight: 600;
+}
+.fl-nullable {
+  font-size: 0.8125rem;
+  color: var(--color-muted-foreground);
+}
+.fl-required {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: oklch(0.58 0.22 22);
+}
+[data-mode="dark"] .fl-required {
+  color: oklch(0.7 0.2 22);
+}
+.fl-preview {
+  font-size: 0.8125rem;
+  color: var(--color-muted-foreground);
+}
+
+/* ---- Description ---- */
+.fl-desc {
+  margin-top: 2px;
+  font-size: 0.875rem;
+  color: color-mix(in oklab, var(--color-foreground) 45%, var(--color-muted-foreground));
+  line-height: 1.5rem;
+}
+.fl-desc > :first-child { margin-top: 0; }
+.fl-desc > :last-child { margin-bottom: 0; }
+.fl-desc p { margin: 0.5rem 0 0; }
+.fl-desc a {
+  color: var(--color-info);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.fl-desc a:hover { color: var(--color-foreground); }
+.fl-desc code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.9em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--color-muted);
+}
+
+/* ---- Constraints / defaults ---- */
+.fl-constraints {
+  margin-top: 2px;
+  font-size: 0.75rem;
+  color: var(--color-muted-foreground);
+}
+.fl-constraint-value {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--color-foreground);
+}
+
+/* ---- Nesting ---- */
+.fl-expandable {
+  margin-top: 6px;
+}
+.fl-expand-trigger {
+  cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-muted-foreground);
+  padding: 2px 0;
+  transition: color 0.1s ease;
+}
+.fl-expand-trigger::-webkit-details-marker { display: none; }
+.fl-expand-trigger:hover { color: var(--color-foreground); }
+.fl-expand-icon {
+  width: var(--fl-icon);
+  height: var(--fl-icon);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .fl-expand-icon {
+    transition: transform 0.15s ease;
+  }
+}
+details[open] > .fl-expand-trigger .fl-expand-icon {
+  transform: rotate(90deg);
+}
+
+.fl-children {
+  margin-top: 4px;
+  margin-left: var(--fl-guide);
+  padding-left: calc(var(--fl-indent) - var(--fl-guide));
+  border-left: 1px solid var(--color-border);
+}
+.fl-children--union {
+  border-style: dashed;
+}
+
+/* ---- Child items (reduced sizing) ---- */
+.fl-item--child {
+  padding: 6px 0;
+}
+.fl-item--child .fl-name { font-size: 0.8125rem; }
+.fl-item--child .fl-type,
+.fl-item--child .fl-type-link { font-size: 0.75rem; }
+.fl-item--child .fl-desc {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+/* ---- Expand/collapse all toggle ---- */
+.fl-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: none;
+  background: none;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  transition: color 0.1s ease, background-color 0.1s ease;
+}
+.fl-toggle:hover {
+  color: var(--color-foreground);
+  background: var(--color-muted);
+}
+.fl-toggle svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ---- Union section heading ---- */
+.fl-union-label {
+  font-size: 0.875rem;
+  color: var(--color-muted-foreground);
+  margin-bottom: 4px;
+}
+
+/* ---- Truncation note ---- */
+.fl-truncated {
+  padding: 4px 0;
+  font-size: 0.75rem;
+  color: var(--color-muted-foreground);
+}

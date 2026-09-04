@@ -1,0 +1,32 @@
+# Proposal for ClickHouse/airgapped-docs/.github/workflows/docs-preview.yml
+#
+# On every push to a pull request, ask the ClickHouse/ClickHouse Praktika
+# dispatch workflow `DocsRemotePreview` to build a Nimbus preview with this
+# repository pinned to the pushed commit (mounted at products/clickhouse-private,
+# English only, reference pages omitted). Praktika pushes the mirror branch
+# `preview/private-<pr>` and posts the preview link back on this PR.
+#
+# Requires a fine-grained token (secret DOCS_DISPATCH_TOKEN) with
+# `actions: write` on ClickHouse/ClickHouse.
+name: Docs preview
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger the docs preview build
+        env:
+          GH_TOKEN: ${{ secrets.DOCS_DISPATCH_TOKEN }}
+          REF: ${{ github.event.pull_request.head.sha || github.sha }}
+          PR: ${{ github.event.pull_request.number || '' }}
+        run: |
+          gh workflow run docs_remote_preview.yml \
+            --repo ClickHouse/ClickHouse \
+            -f remote=clickhouse-private \
+            -f ref="$REF" \
+            -f pr="$PR" \
+            -f repo="${{ github.repository }}"

@@ -10,7 +10,7 @@ Le nouveau paramètre allow&#95;asynchronous&#95;read&#95;from&#95;io&#95;pool&#
 
 Normalement, le paramètre [max&#95;threads](/fr/reference/settings/session-settings/max-threads#max_threads) [contrôle](https://clickhouse.com/company/events/query-performance-introspection) le nombre de threads de lecture parallèles et de threads de traitement des requêtes parallèles :
 
-<Image img={sync_read} size="md" alt="Schéma de lecture synchrone des données" />
+<Image img="/images/knowledgebase/sync_read.webp" size="md" alt="Schéma de lecture synchrone des données" />
 
 Les données sont lues « dans l’ordre », colonne après colonne, à partir du disque.
 
@@ -21,7 +21,7 @@ Les données sont lues « dans l’ordre », colonne après colonne, à partir
 Le nouveau paramètre [allow&#95;asynchronous&#95;read&#95;from&#95;io&#95;pool&#95;for&#95;merge&#95;tree](https://github.com/ClickHouse/ClickHouse/pull/43260) permet d’avoir plus de threads de lecture (flux) que de threads dans le reste du pipeline d’exécution des requêtes afin d’**accélérer les requêtes à froid sur des services ClickHouse Cloud à faible capacité CPU** et d’**améliorer les performances des requêtes limitées par les E/S**.
 Lorsque ce paramètre est activé, le nombre de threads de lecture est contrôlé par le paramètre [max&#95;streams&#95;for&#95;merge&#95;tree&#95;reading](https://github.com/ClickHouse/ClickHouse/pull/43260) :
 
-<Image img={async_read} size="md" alt="Schéma de lecture asynchrone des données" />
+<Image img="/images/knowledgebase/async_read.webp" size="md" alt="Schéma de lecture asynchrone des données" />
 
 Les données sont lues de manière asynchrone, en parallèle, à partir de différentes colonnes.
 

@@ -1,0 +1,101 @@
+---
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import { cn } from "@/lib/cn";
+import { withBase } from "@/lib/base";
+import type { HTMLAttributes } from "astro/types";
+
+interface Props extends HTMLAttributes<"div"> {
+  markdownUrl?: string;
+  lastUpdated?: Date;
+  editUrl?: string;
+}
+
+const { markdownUrl, lastUpdated, editUrl, class: className, ...attrs } = Astro.props;
+
+const baseBtn =
+  "inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1 py-1 text-muted-foreground no-underline transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2";
+
+const formattedDate = lastUpdated
+  ? new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" }).format(lastUpdated)
+  : null;
+const issueUrl = new URL("https://github.com/ClickHouse/ClickHouse/issues/new");
+issueUrl.searchParams.set("template", "60_documentation-issue.yaml");
+issueUrl.searchParams.set("page", Astro.url.pathname);
+const documentationMcpHref = withBase("/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server");
+---
+
+<div
+  data-nb-page-actions
+  data-md-url={markdownUrl}
+  class={cn("not-prose -ml-1 flex flex-wrap items-center gap-y-1 text-[0.72rem]", className)}
+  {...attrs}
+>
+    {lastUpdated && (
+      <span class="inline-flex items-center gap-1.5 px-2 py-1 text-muted-foreground">
+        <Icon name="ph:clock" class="w-3.5 h-3.5" />
+        Updated <time datetime={lastUpdated.toISOString()}>{formattedDate}</time>
+      </span>
+    )}
+
+    {markdownUrl && lastUpdated && (
+      <span aria-hidden="true" class="select-none text-muted-foreground/40">|</span>
+    )}
+
+    {markdownUrl && (
+      <>
+        <button type="button" data-nb-page-actions-copy class={baseBtn}>
+          <Icon name="ph:copy" class="w-3.5 h-3.5" data-nb-page-actions-copy-icon />
+          <Icon name="ph:check" class="hidden w-3.5 h-3.5 text-success" data-nb-page-actions-check-icon />
+          <span data-nb-page-actions-label aria-live="polite">Copy page</span>
+        </button>
+
+        <span aria-hidden="true" class="select-none text-muted-foreground/40">|</span>
+
+        <a
+          href={markdownUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          class={baseBtn}
+        >
+          <Icon name="ph:markdown-logo" class="w-3.5 h-3.5" />
+          View as Markdown
+        </a>
+      </>
+    )}
+
+    {(markdownUrl || lastUpdated) && (
+      <span aria-hidden="true" class="select-none text-muted-foreground/40">|</span>
+    )}
+
+    {editUrl && (
+      <>
+        <a href={editUrl} class={baseBtn} target="_blank" rel="noopener">
+          <Icon name="ph:pencil-simple" class="w-3.5 h-3.5" />
+          Edit this page
+        </a>
+
+        <span aria-hidden="true" class="select-none text-muted-foreground/40">|</span>
+      </>
+    )}
+
+    <a href={issueUrl.href} class={baseBtn} target="_blank" rel="noopener">
+      <Icon name="ph:flag" class="w-3.5 h-3.5" />
+      Report an issue
+    </a>
+
+    <span aria-hidden="true" class="select-none text-muted-foreground/40">|</span>
+
+    <a href={documentationMcpHref} class={baseBtn}>
+      <img
+        src={withBase("/images/icons/icon-mcp.svg")}
+        alt=""
+        aria-hidden="true"
+        class="h-3.5 w-3.5 bg-transparent"
+      />
+      Set up docs MCP
+    </a>
+  </div>
+
+<script>
+  import "./page-actions.client";
+</script>

@@ -1,0 +1,9 @@
+---
+/** Mintlify `<Badge color>` with slotted text -> Nimbus Badge variant. */
+import { Badge as NimbusBadge } from "@/components/ui/badge";
+interface Props { color?: string; text?: string }
+const { color, text, ...rest } = Astro.props;
+const variant = ({ blue: "info", green: "success", red: "danger", yellow: "warning", amber: "warning", orange: "warning", gray: "default", grey: "default" } as Record<string, "info" | "success" | "danger" | "warning" | "default">)[color ?? ""] ?? "default";
+---
+
+<NimbusBadge variant={variant} text={text} {...rest}><slot /></NimbusBadge>

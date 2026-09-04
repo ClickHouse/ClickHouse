@@ -1,0 +1,81 @@
+---
+import ApiFieldRow from "./ApiFieldRow.astro";
+import { isExpandable } from "./type-display";
+import type { ApiFieldView } from "@cloudflare/nimbus-docs/api";
+import "./field-list.css";
+
+interface Props {
+  title?: string;
+  fields?: ApiFieldView[];
+  anchor?: string;
+  as?: "h2" | "h3" | "h4";
+  badge?: string;
+  collapsible?: boolean;
+  truncated?: { total: number };
+  class?: string;
+}
+
+const {
+  title,
+  fields,
+  anchor,
+  as: HeadTag = "h3",
+  badge,
+  collapsible,
+  class: className,
+  truncated,
+} = Astro.props;
+
+const hasFields = fields !== undefined;
+if (hasFields && fields.length === 0) return;
+
+const showControls = collapsible ?? (hasFields && fields.some(isExpandable));
+const omitted = truncated ? truncated.total - (fields?.length ?? 0) : 0;
+const TitleTag = title ? HeadTag : "span";
+---
+
+<section
+  id={anchor}
+  class:list={["fl-root scroll-mt-24", className]}
+  data-api-section
+>
+  {(title || badge || showControls) && (
+    <div class="fl-head">
+      <TitleTag class="fl-title">
+        {title}
+        {badge && <span class="fl-badge">{badge}</span>}
+      </TitleTag>
+      {showControls && (
+        <button
+          type="button"
+          class="fl-toggle group/toggle"
+          data-api-toggle-all
+          data-nb-expanded="true"
+          aria-label="Toggle all fields"
+        >
+          <span class="group-data-[nb-expanded=true]/toggle:hidden">Expand all</span>
+          <span class="hidden group-data-[nb-expanded=true]/toggle:inline">Collapse all</span>
+          <svg class="hidden group-data-[nb-expanded=true]/toggle:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/></svg>
+          <svg class="group-data-[nb-expanded=true]/toggle:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg>
+        </button>
+      )}
+    </div>
+  )}
+
+  {hasFields ? (
+    <ul class="fl-list">
+      {fields.map((field: ApiFieldView) => (
+        <ApiFieldRow field={field} depth={0} />
+      ))}
+      {omitted > 0 && (
+        <li class="fl-truncated">… {omitted} more field(s) omitted</li>
+      )}
+    </ul>
+  ) : (
+    <slot />
+  )}
+</section>
+
+<script>
+  import "./api-field-row.client";
+</script>

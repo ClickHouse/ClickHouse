@@ -1,0 +1,55 @@
+---
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import { withBase, stripBase } from "@/lib/base";
+import { localeInfo, localePath } from "@/util/locales";
+
+interface Props {
+  /** The locale of the current route; English has no path prefix. */
+  currentLocale?: string;
+  /** Locale trees present in this build scope, excluding English. */
+  activeLocales?: string[];
+  /** Render as the fixed bottom row in the desktop sidebar. */
+  sidebar?: boolean;
+}
+
+const { currentLocale = "en", activeLocales = [], sidebar = false } = Astro.props;
+const currentCode = currentLocale.toLowerCase();
+const locales = ["en", ...activeLocales.map((locale) => locale.toLowerCase()).filter((locale) => locale !== "en")];
+const currentPath = stripBase(Astro.url.pathname.replace(/\/$/, "") || "/");
+const localePrefix = currentCode === "en" ? "" : `/${currentCode}`;
+const documentPath = localePrefix && (currentPath === localePrefix || currentPath.startsWith(`${localePrefix}/`))
+  ? currentPath.slice(localePrefix.length) || "/"
+  : currentPath;
+const selected = localeInfo(currentCode);
+---
+
+<details class:list={[sidebar ? "ch-language-selector" : "relative hidden sm:block"]}>
+  <summary
+    class:list={[sidebar ? "ch-language-selector-trigger" : "flex h-8 cursor-pointer list-none items-center gap-1 rounded-md px-2 text-[0.8125rem] font-medium text-muted-foreground hover:bg-accent hover:text-foreground [&::-webkit-details-marker]:hidden"]}
+    aria-label="Choose documentation language"
+  >
+    <Icon name="ph:translate" class="h-4 w-4" />
+    <span>{selected.label}</span>
+    <Icon name={sidebar ? "ph:caret-right" : "ph:caret-down"} class={sidebar ? "ch-language-selector-chevron" : "h-3.5 w-3.5"} />
+  </summary>
+  <div class:list={[sidebar ? "ch-language-selector-menu" : "absolute right-0 top-10 z-40 min-w-48 rounded-md border border-border bg-popover p-1 shadow-lg"]}>
+    {locales.map((locale) => {
+      const info = localeInfo(locale);
+      const active = locale === currentCode;
+      return (
+        <a
+          href={withBase(localePath(documentPath, locale))}
+          hreflang={info.hreflang}
+          lang={info.hreflang}
+          aria-current={active ? "page" : undefined}
+          class:list={[
+            sidebar ? "ch-language-selector-item" : "flex rounded-sm px-2 py-1.5 text-sm no-underline transition-colors",
+            active ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+          ]}
+        >
+          {info.label}
+        </a>
+      );
+    })}
+  </div>
+</details>

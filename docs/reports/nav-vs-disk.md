@@ -1,0 +1,245 @@
+# Navigation vs disk (en, generated 2026-09-04)
+
+- Tabs: 5; pages referenced by navigation: 2732; pages on disk in content sections: 2679.
+- Navigation entries without a file: 0.
+- Files not referenced by navigation (orphans, still built and reachable by URL): 13.
+- Groups whose authored order differs from alphabetical disk order: 217.
+- Navigation constructs skipped by the generator: 0.
+
+## Navigation entries without a file
+
+## Orphans (on disk, not in navigation)
+- clickstack/api-reference
+- clickstack/managed-onboarding/instrument-application
+- clickstack/managed-onboarding/managed-getting-started
+- clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs
+- clickstack/managed-onboarding/monitoring-kubernetes
+- clickstack/managed-onboarding/setting-up-your-opentelemetry-collector
+- clickstack/managed-onboarding/tuning-clickstack-schema
+- integrations/language-clients/rust/index
+- reference/AGENTS
+- reference/settings/formats
+- reference/settings/merge-tree-settings
+- reference/settings/session-settings
+- resources/develop-contribute/index
+
+## Groups with authored order != alphabetical
+- Database > Get started > Get started > Quickstarts > All use cases: 6 pages, authored order differs from alphabetical
+- Database > Get started > Get started > Introduction: 3 pages, authored order differs from alphabetical
+- Database > Get started > Get started > Use cases: 5 pages, authored order differs from alphabetical
+- Database > Get started > Get started: 2 pages, authored order differs from alphabetical
+- Database > Get started > Setup > Self-managed > Local development: 4 pages, authored order differs from alphabetical
+- Database > Get started > Setup > Self-managed > Production server: 4 pages, authored order differs from alphabetical
+- Database > Get started > Setup: 2 pages, authored order differs from alphabetical
+- Database > Get started > Migrate > PostgreSQL: 2 pages, authored order differs from alphabetical
+- Database > Get started > Migrate > BigQuery: 3 pages, authored order differs from alphabetical
+- Database > Get started > Migrate > Snowflake: 3 pages, authored order differs from alphabetical
+- Database > Get started > Migrate > Redshift: 3 pages, authored order differs from alphabetical
+- Database > Concepts > Fundamentals: 8 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Materialized views: 4 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Dictionaries: 2 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Projections: 2 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Performance: 5 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Operations > Insert: 6 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Operations > Delete: 6 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Configuration > Settings: 11 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Configuration > Server config: 8 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Security and auth > TLS: 3 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Security and auth > External authenticators > LDAP: 2 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Security and auth > External authenticators: 4 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Security and auth: 3 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Backup and restore: 7 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Interfaces > Drivers and interfaces: 12 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Interfaces: 13 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Tools and utilities: 12 pages, authored order differs from alphabetical
+- Database > Concepts > Best practices: 12 pages, authored order differs from alphabetical
+- Database > Guides > ClickHouse guides > Data formats > JSON: 7 pages, authored order differs from alphabetical
+- Database > Guides > ClickHouse guides > Data formats: 7 pages, authored order differs from alphabetical
+- Database > Guides > ClickHouse guides > Data modelling: 10 pages, authored order differs from alphabetical
+- Database > Guides > ClickHouse guides > Performance & monitoring > Query optimization: 5 pages, authored order differs from alphabetical
+- Database > Guides > ClickHouse guides > Performance & monitoring: 3 pages, authored order differs from alphabetical
+- Database > Guides > ClickHouse guides > Deployment and scaling: 5 pages, authored order differs from alphabetical
+- Database > Guides > Use case guides > Real-time analytics > Time series: 8 pages, authored order differs from alphabetical
+- Database > Guides > Use case guides > Observability > Build your own: 7 pages, authored order differs from alphabetical
+- Database > Guides > Use case guides > Observability: 3 pages, authored order differs from alphabetical
+- Database > Guides > Use case guides > Data warehousing > Getting started: 6 pages, authored order differs from alphabetical
+- Database > Guides > Use case guides > Data warehousing > Catalogs: 11 pages, authored order differs from alphabetical
+- Database > Guides > Use case guides > AI/ML > MCP > AI agent libraries: 16 pages, authored order differs from alphabetical
+- Database > Guides > Use case guides > AI/ML > MCP: 7 pages, authored order differs from alphabetical
+- Database > Guides > Use case guides > AI/ML: 3 pages, authored order differs from alphabetical
+- Database > Reference > SQL Reference > Statements > ALTER: 25 pages, authored order differs from alphabetical
+- Database > Reference > SQL Reference > Statements > CREATE > DICTIONARY > Layouts: 13 pages, authored order differs from alphabetical
+- Database > Reference > SQL Reference > Statements > CREATE > DICTIONARY > Sources: 15 pages, authored order differs from alphabetical
+- Database > Reference > SQL Reference > Statements > CREATE > TABLE: 4 pages, authored order differs from alphabetical
+- Database > Reference > SQL Reference > Statements > CREATE: 12 pages, authored order differs from alphabetical
+- Database > Reference > SQL Reference > Statements > SELECT: 26 pages, authored order differs from alphabetical
+- Database > Reference > SQL Reference > Statements: 32 pages, authored order differs from alphabetical
+- Database > Reference > SQL Reference > Operators: 3 pages, authored order differs from alphabetical
+- Database > Reference > Data Types > Numeric types: 4 pages, authored order differs from alphabetical
+- Database > Reference > Data Types > String types: 2 pages, authored order differs from alphabetical
+- Database > Reference > Data Types > Composite types: 4 pages, authored order differs from alphabetical
+- Database > Reference > Data Types > Semi-structured types: 3 pages, authored order differs from alphabetical
+- Database > Reference > Data Types > Nullable and optional types: 2 pages, authored order differs from alphabetical
+- Database > Reference > Data Types > Specialized types: 5 pages, authored order differs from alphabetical
+- Database > Reference > Data Types > Special Data Types: 5 pages, authored order differs from alphabetical
+- Database > Reference > Engines > Table Engines > Integrations: 28 pages, authored order differs from alphabetical
+- Database > Reference > Engines > Table Engines > MergeTree Family: 13 pages, authored order differs from alphabetical
+- Database > Reference > Engines > Table Engines > Special: 19 pages, authored order differs from alphabetical
+- Database > Reference > Engines > Database Engines: 11 pages, authored order differs from alphabetical
+- Database > Reference > Functions > Regular functions > Geo: 10 pages, authored order differs from alphabetical
+- Database > Reference > Functions > Regular functions: 44 pages, authored order differs from alphabetical
+- Database > Reference > Functions > Aggregate Functions > Reference: 160 pages, authored order differs from alphabetical
+- Database > Reference > Functions > Aggregate Functions: 4 pages, authored order differs from alphabetical
+- Database > Reference > Functions > Table functions: 61 pages, authored order differs from alphabetical
+- Database > Reference > Functions > Window functions: 15 pages, authored order differs from alphabetical
+- Database > Reference > Formats > JSON: 25 pages, authored order differs from alphabetical
+- Database > Reference > Formats > TabSeparated: 7 pages, authored order differs from alphabetical
+- Database > Reference > Formats: 28 pages, authored order differs from alphabetical
+- Database > Reference > Interfaces: 2 pages, authored order differs from alphabetical
+- Database > Reference > Settings > Server Settings: 131 pages, authored order differs from alphabetical
+- Database > Reference > Settings > Session Settings: 257 pages, authored order differs from alphabetical
+- Database > Reference > Settings > MergeTree tables settings: 82 pages, authored order differs from alphabetical
+- Database > Reference > Settings > Format Settings: 17 pages, authored order differs from alphabetical
+- Database > Reference > Settings: 2 pages, authored order differs from alphabetical
+- Database > Reference > System Tables: 174 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Services and infrastructure > Plan and deploy: 6 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Services and infrastructure > Configure and scale: 9 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Services and infrastructure > Compute and storage: 6 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Services and infrastructure > Reliability and maintenance: 3 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Services and infrastructure > Production planning: 4 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Services and infrastructure: 2 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Bring Your Own Cloud > Overview: 2 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Bring Your Own Cloud > Onboarding > Network: 4 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Bring Your Own Cloud > Onboarding: 2 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Bring Your Own Cloud > Connector: 6 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Bring Your Own Cloud > Reference: 9 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Data and integrations > Data sources: 6 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Data and integrations: 3 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Connect and query: 6 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Access management > Cloud accounts and roles: 5 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Access management > Database users and permissions: 3 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Access management > Identity providers: 5 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Security and compliance > Network access > Private networking: 4 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Security and compliance > Audit logging: 5 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Security and compliance > Data security: 2 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Security and compliance > Compliance and privacy: 5 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Monitoring and backups > Monitoring: 7 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Monitoring and backups > Backups > Manage backups > Bring Your Own Backup: 3 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Monitoring and backups > Backups > Manage backups: 3 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > AI tools and agents > Remote MCP: 2 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > AI tools and agents > ClickHouse Agents > Agent Builder: 9 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > AI tools and agents > ClickHouse Agents: 7 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > AI tools and agents: 5 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Organization: 11 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > User management: 8 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Role Management: 5 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > UDF: 12 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: 26 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Backup: 8 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > API keys: 5 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Prometheus: 5 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickPipes: 17 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: 30 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Postgres: 17 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Billing > Marketplace: 8 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Billing > ClickPipes: 3 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Billing: 6 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > undefined > ClickHouse Private > Tutorials: 6 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > undefined > ClickHouse Private > How-To Guides: 17 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > undefined > ClickHouse Private > Reference: 8 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > undefined > ClickHouse Private > Explanation: 6 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > undefined > ClickHouse Private: 3 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Managed Postgres > Features: 14 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Managed Postgres > Migrations: 8 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Managed Postgres > Monitoring: 6 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Get started > Sample datasets: 10 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Get started: 3 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Features > Deployment > Open Source > Helm > v2.x: 6 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Features > Deployment > Open Source > Helm > v1.x (deprecated): 4 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Features > Deployment > Open Source: 6 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Features > Deployment: 2 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Features > Dashboards: 5 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Features > Demo days > 2026 > August: 3 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Features > Demo days > 2026 > July: 5 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Features > Demo days > 2026 > June: 4 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Features > Demo days > 2026 > May: 4 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Features > Demo days > 2026 > April: 3 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Features: 10 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Managing ClickStack: 9 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Guides > Ingesting data > Integrations: 19 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Guides > Ingesting data > Language SDKs: 13 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Guides > Ingesting data: 7 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Guides > Migration guides > Migrating from Elastic: 8 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Guides > Migration guides: 2 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Integration partners: 4 pages, authored order differs from alphabetical
+- Solutions > Agentic Data Stack > Get started: 2 pages, authored order differs from alphabetical
+- Solutions > Agentic Data Stack > Components: 3 pages, authored order differs from alphabetical
+- Solutions > chDB > Get started: 2 pages, authored order differs from alphabetical
+- Solutions > chDB > Language integrations: 8 pages, authored order differs from alphabetical
+- Solutions > chDB > DataStore: 10 pages, authored order differs from alphabetical
+- Solutions > chDB > Configuration: 4 pages, authored order differs from alphabetical
+- Solutions > chDB > Debugging: 4 pages, authored order differs from alphabetical
+- Solutions > chDB > Developer guides: 14 pages, authored order differs from alphabetical
+- Solutions > chDB > Technical reference: 4 pages, authored order differs from alphabetical
+- Solutions > Kubernetes Operator > Install: 3 pages, authored order differs from alphabetical
+- Solutions > Kubernetes Operator > Guides: 8 pages, authored order differs from alphabetical
+- Integrations > Ecosystem: 2 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for Streaming > Kafka: 6 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for Streaming > Amazon Kinesis: 2 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for Streaming > GCP Pub/Sub: 2 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for Object Storage > Amazon S3: 3 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for Object Storage > Google Cloud Storage: 3 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for Object Storage > Azure Blob Storage: 2 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for CDC > Postgres > Operations: 7 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for CDC > Postgres > Source: 11 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for CDC > Postgres: 12 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for CDC > MySQL > Operations: 7 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for CDC > MySQL > Source: 7 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for CDC > MySQL: 6 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for CDC > MongoDB > Operations: 7 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for CDC > MongoDB > Source: 3 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for CDC > MongoDB: 5 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for CDC > BigQuery: 2 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > Networking: 5 pages, authored order differs from alphabetical
+- Integrations > ClickPipes: 3 pages, authored order differs from alphabetical
+- Integrations > Language clients > Python: 8 pages, authored order differs from alphabetical
+- Integrations > Language clients > Go: 6 pages, authored order differs from alphabetical
+- Integrations > Language clients > Java: 5 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data sources > AWS S3: 3 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data sources > Kafka: 11 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data sources: 11 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data visualization > Grafana: 3 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data visualization > Tableau: 4 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data visualization > Community integrations: 15 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data visualization: 10 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data ingestion > Apache Spark: 4 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data ingestion > dbt: 5 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data ingestion > Streamkap: 2 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data ingestion > Community integrations > Estuary: 3 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data ingestion: 11 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data integrations: 7 pages, authored order differs from alphabetical
+- Integrations > Connectors > SQL-clients: 10 pages, authored order differs from alphabetical
+- Integrations > Connectors > Tools: 5 pages, authored order differs from alphabetical
+- Resources > Support center > Knowledgebase > Performance & optimization: 11 pages, authored order differs from alphabetical
+- Resources > Support center > Knowledgebase > Data import & export: 15 pages, authored order differs from alphabetical
+- Resources > Support center > Knowledgebase > Integrations & client libraries: 7 pages, authored order differs from alphabetical
+- Resources > Support center > Knowledgebase > Troubleshooting & errors: 11 pages, authored order differs from alphabetical
+- Resources > Support center > Knowledgebase > Monitoring & debugging: 10 pages, authored order differs from alphabetical
+- Resources > Support center > Knowledgebase > General & FAQs > General: 17 pages, authored order differs from alphabetical
+- Resources > Support center > Knowledgebase > General & FAQs > Use cases: 5 pages, authored order differs from alphabetical
+- Resources > Support center > Knowledgebase > General & FAQs > Integration: 3 pages, authored order differs from alphabetical
+- Resources > Support center > Knowledgebase > General & FAQs > Operations: 5 pages, authored order differs from alphabetical
+- Resources > Development & contributing > Introduction: 2 pages, authored order differs from alphabetical
+- Resources > Development & contributing > Building: 8 pages, authored order differs from alphabetical
+- Resources > Development & contributing > Native protocol: 5 pages, authored order differs from alphabetical
+- Resources > Development & contributing > Contributing: 8 pages, authored order differs from alphabetical
+- Resources > Development & contributing > Integration development: 4 pages, authored order differs from alphabetical
+- Resources > Changelogs > Cloud > Archive: 4 pages, authored order differs from alphabetical
+- Resources > Changelogs > Cloud > Cloud database release changelog > 2026: 3 pages, authored order differs from alphabetical
+- Resources > Changelogs > Cloud > Cloud database release changelog > 2025: 5 pages, authored order differs from alphabetical
+- Resources > Changelogs > Cloud > Cloud database release changelog > 2024: 6 pages, authored order differs from alphabetical
+- Resources > Changelogs > Cloud: 3 pages, authored order differs from alphabetical
+- Resources > Changelogs > Open source > Archive: 9 pages, authored order differs from alphabetical
+- Resources > About > About ClickHouse: 3 pages, authored order differs from alphabetical
+
+## Skipped constructs

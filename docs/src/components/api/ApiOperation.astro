@@ -1,0 +1,324 @@
+---
+import ApiBody from "@/components/ui/api-layout/ApiBody.astro";
+import type { ApiSecurityScheme } from "@/components/ui/api-layout/auth";
+import { ApiCodeRail } from "@/components/ui/api-code-rail";
+import type { ApiOperationPage } from "@cloudflare/nimbus-docs/api";
+
+interface Props {
+  page: ApiOperationPage;
+  authSchemes?: Record<string, ApiSecurityScheme>;
+}
+
+const { page, authSchemes = {} } = Astro.props;
+const editableParameters = page.parameters
+  .filter((group) => group.location === "path" || group.location === "query")
+  .flatMap((group) => group.fields.map((field) => ({ field, location: group.location })));
+const curlSample = page.samples.find((sample) => sample.lang === "curl")?.source ?? "";
+---
+
+<div
+  class="ch-api-operation"
+  data-api-operation
+  data-method={page.method}
+  data-base-url={page.server ?? ""}
+  data-path={page.path}
+  data-curl-sample={curlSample}
+>
+  <div class="ch-api-reference">
+    <div class="ch-api-endpoint">
+      <div class="ch-api-request-line">
+        <span class:list={["ch-api-method", `is-${page.method.toLowerCase()}`]}>{page.method}</span>
+        <code class="ch-api-path">{page.path}</code>
+        <button
+          type="button"
+          class="ch-api-copy"
+          data-api-copy={`${page.server ?? ""}${page.path}`}
+          aria-label="Copy request URL"
+        >Copy</button>
+      </div>
+      <button type="button" class="ch-api-try" data-api-try aria-expanded="false">
+        <span data-api-try-label>Try it</span>
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 2.25 9 6l-6 3.75z" fill="currentColor" /></svg>
+      </button>
+    </div>
+
+    <div class="ch-api-try-fields" hidden data-api-try-fields>
+      <label>
+        <span>Base URL</span>
+        <input value={page.server ?? ""} data-api-base />
+      </label>
+      {editableParameters.map(({ field, location }) => (
+        <label>
+          <span>
+            <code>{field.name}</code>
+            <small>{location}</small>
+            <small class:list={{ "is-required": field.required }}>{field.required ? "required" : "optional"}</small>
+          </span>
+          <input
+            placeholder={field.required ? "Required" : "Optional"}
+            data-api-parameter={field.name}
+            data-api-parameter-in={location}
+          />
+        </label>
+      ))}
+    </div>
+
+    {page.descriptionHtml && <div class="ch-api-description nb-md" set:html={page.descriptionHtml} />}
+    <ApiBody page={page} authSchemes={authSchemes} embedded />
+  </div>
+
+  {(page.samples.length > 0 || page.responses.some((response) => response.example !== undefined)) && (
+    <div class="ch-api-console">
+      <ApiCodeRail
+        responses={page.responses}
+        samples={page.samples}
+        title={page.title}
+        method={page.method}
+        coordinate={page.coordinate}
+      />
+    </div>
+  )}
+</div>
+
+<script>
+  import { mount } from "@cloudflare/nimbus-docs/client";
+
+  mount("[data-api-operation]", (element) => {
+    if (!(element instanceof HTMLElement)) return () => {};
+    const controller = new AbortController();
+    let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const copyText = async (value: string, button: HTMLButtonElement) => {
+      try {
+        await navigator.clipboard.writeText(value);
+      } catch {
+        return;
+      }
+      const label = button.textContent;
+      button.textContent = "Copied";
+      clearTimeout(copiedTimer);
+      copiedTimer = setTimeout(() => { button.textContent = label; }, 1200);
+    };
+
+    for (const button of element.querySelectorAll<HTMLButtonElement>("[data-api-copy]")) {
+      button.addEventListener(
+        "click",
+        () => void copyText(button.dataset.apiCopy ?? "", button),
+        { signal: controller.signal },
+      );
+    }
+
+    const fields = element.querySelector<HTMLElement>("[data-api-try-fields]");
+    const tryButton = element.querySelector<HTMLButtonElement>("[data-api-try]");
+    tryButton?.addEventListener(
+      "click",
+      () => {
+        if (!fields) return;
+        fields.hidden = !fields.hidden;
+        tryButton.setAttribute("aria-expanded", String(!fields.hidden));
+        const label = tryButton.querySelector<HTMLElement>("[data-api-try-label]");
+        if (label) label.textContent = fields.hidden ? "Try it" : "Close";
+      },
+      { signal: controller.signal },
+    );
+
+    const rebuild = () => {
+      let apiPath = element.dataset.path ?? "";
+      const query = new URLSearchParams();
+      for (const input of element.querySelectorAll<HTMLInputElement>("[data-api-parameter]")) {
+        if (!input.value) continue;
+        const name = input.dataset.apiParameter ?? "";
+        if (input.dataset.apiParameterIn === "path") {
+          apiPath = apiPath.replace(`{${name}}`, encodeURIComponent(input.value));
+        } else {
+          query.set(name, input.value);
+        }
+      }
+
+      const base = element.querySelector<HTMLInputElement>("[data-api-base]")?.value.replace(/\/$/, "")
+        ?? element.dataset.baseUrl
+        ?? "";
+      const queryString = query.size ? `?${query.toString()}` : "";
+      const url = `${base}${apiPath}${queryString}`;
+      const template = element.dataset.curlSample ?? "";
+      const updated = template.split("\n").map((line) => {
+        if (!line.includes("--url")) return line;
+        const indent = line.match(/^\s*/)?.[0] ?? "";
+        return `${indent}--url ${url}${line.trimEnd().endsWith("\\") ? " \\" : ""}`;
+      }).join("\n");
+      const code = element.querySelector<HTMLElement>('[data-nb-lang-panel][data-nb-lang-value="curl"] code');
+      if (code) code.textContent = updated;
+    };
+
+    for (const input of element.querySelectorAll<HTMLInputElement>("[data-api-try-fields] input")) {
+      input.addEventListener("input", rebuild, { signal: controller.signal });
+    }
+
+    return () => {
+      controller.abort();
+      clearTimeout(copiedTimer);
+    };
+  });
+</script>
+
+<style>
+  .ch-api-operation {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(400px, 48%);
+    gap: 2.5rem;
+    align-items: start;
+    margin-top: 1.25rem;
+  }
+
+  .ch-api-reference,
+  .ch-api-console {
+    min-width: 0;
+  }
+
+  .ch-api-endpoint {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem;
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    background: color-mix(in srgb, var(--muted) 58%, transparent);
+  }
+
+  .ch-api-request-line {
+    display: flex;
+    min-width: 0;
+    min-height: 2.75rem;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.45rem 0.65rem;
+    border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+    border-radius: 0.55rem;
+    background: var(--background);
+  }
+
+  .ch-api-method {
+    padding: 0.35rem 0.5rem;
+    border-radius: 0.28rem;
+    font: 700 0.68rem/1 var(--font-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .ch-api-method.is-get { color: #16803c; background: #dcfce7; }
+  .ch-api-method.is-post { color: #1769aa; background: #dbeafe; }
+  .ch-api-method.is-patch,
+  .ch-api-method.is-put { color: #9a5800; background: #fef3c7; }
+  .ch-api-method.is-delete { color: #b42318; background: #fee4e2; }
+
+  .ch-api-path {
+    min-width: 0;
+    overflow: auto;
+    white-space: nowrap;
+    font-size: 0.82rem;
+  }
+
+  .ch-api-copy,
+  .ch-api-try {
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .ch-api-copy {
+    margin-left: auto;
+    border: 0;
+    background: transparent;
+    color: var(--muted-foreground);
+  }
+  .ch-api-try {
+    display: inline-flex;
+    min-height: 2.75rem;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    padding: 0.45rem 0.9rem;
+    border: 1px solid color-mix(in srgb, #45c486 78%, white);
+    border-radius: 0.5rem;
+    color: #fff;
+    background: #39b979;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 18%);
+  }
+
+  .ch-api-try:hover { background: #31aa6d; }
+  .ch-api-try svg { width: 0.7rem; height: 0.7rem; }
+
+  .ch-api-description {
+    margin: 1.15rem 0 1.8rem;
+    color: var(--foreground);
+    line-height: 1.75;
+  }
+
+  .ch-api-try-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.7rem;
+    margin-top: 0.75rem;
+    padding: 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: 0.65rem;
+    background: var(--card);
+  }
+
+  .ch-api-try-fields label,
+  .ch-api-try-fields label > span {
+    display: flex;
+  }
+
+  .ch-api-try-fields label {
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.35rem;
+    color: var(--muted-foreground);
+    font-size: 0.7rem;
+  }
+
+  .ch-api-try-fields label > span {
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .ch-api-try-fields small {
+    font-size: 0.62rem;
+    color: var(--muted-foreground);
+  }
+
+  .ch-api-try-fields small.is-required { color: var(--danger); }
+  .ch-api-try-fields input {
+    min-width: 0;
+    padding: 0.5rem 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+    background: var(--background);
+    color: var(--foreground);
+    font: inherit;
+  }
+
+  .ch-api-try-fields[hidden] { display: none; }
+  .ch-api-console {
+    position: sticky;
+    top: 5rem;
+    margin-top: -12.35rem;
+  }
+  .ch-api-console :global(.nb-cr-layer) { margin: 0; }
+
+  @media (max-width: 79.99rem) {
+    .ch-api-operation { grid-template-columns: minmax(0, 1fr); }
+    .ch-api-console { position: relative; top: auto; margin-top: 0; }
+  }
+
+  @media (max-width: 40rem) {
+    .ch-api-endpoint { align-items: stretch; }
+    .ch-api-request-line { flex-wrap: wrap; }
+    .ch-api-path { order: 2; width: 100%; }
+    .ch-api-copy { margin-left: auto; }
+    .ch-api-try-fields { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>

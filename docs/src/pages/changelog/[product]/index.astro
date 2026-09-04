@@ -1,0 +1,33 @@
+---
+import { getCollection } from "astro:content";
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import Header from "../../../components/Header.astro";
+import { changelogPath, entriesForProduct, productTitle, type ChangelogEntry } from "../../../lib/changelog";
+
+export async function getStaticPaths() {
+  const entries = await getCollection("changelog");
+  return ["cloud", "oss"].map((product) => ({ params: { product }, props: { entries: entriesForProduct(entries, product) } }));
+}
+
+const product = Astro.params.product as string;
+const entries = Astro.props.entries as ChangelogEntry[];
+const title = `${productTitle(product)} changelog`;
+---
+
+<BaseLayout title={title} description={`Release notes for ${productTitle(product)}.`}>
+  <Header showSidebar={false} />
+  <main id="main-content" tabindex="-1" class="mx-auto w-full max-w-5xl px-4 py-10 lg:px-6">
+    <a href="../" class="text-sm text-muted-foreground hover:text-foreground">← All products</a>
+    <h1 class="mt-8 text-4xl font-semibold tracking-tight text-foreground">{title}</h1>
+    <a href="./rss.xml" class="mt-4 inline-block text-sm font-medium text-primary">RSS feed</a>
+    <ol class="mt-10 space-y-4 list-none p-0">
+      {entries.map((entry) => (
+        <li class="rounded-xl border border-border bg-card p-5 transition-colors hover:bg-accent/40">
+          <time datetime={entry.data.date} class="text-sm text-muted-foreground">{entry.data.date}</time>
+          <h2 class="mt-2 text-xl font-semibold"><a href={changelogPath(entry)} class="text-foreground no-underline hover:text-primary">{entry.data.title}</a></h2>
+          <p class="mt-2 mb-0 text-muted-foreground">{entry.data.description}</p>
+        </li>
+      ))}
+    </ol>
+  </main>
+</BaseLayout>

@@ -1,0 +1,470 @@
+/* Docs markdown styling scoped to docs content containers only. */
+
+.docs-content {
+  font-size: 1rem;
+  line-height: 1.75;
+	color: var(--nb-text);
+  /* Break a long unbroken token (URL, hash, no-space string) so it wraps within
+     the content column instead of leaking past the page width. Inherited, so it
+     covers headings, paragraphs, list items, and inline code; `pre` code blocks
+     are unaffected (their `white-space: pre` doesn't wrap — they scroll instead,
+     via `pre.astro-code { overflow-x: auto }`), and wide tables keep their own
+     `.nb-table-scroll` handling. */
+  overflow-wrap: break-word;
+}
+
+.ch-document-grid-wide .docs-content {
+  font-size: 1rem;
+}
+
+/* Vertical rhythm — every direct child gets spacing by default.
+   Components can override with their own margin utilities (my-4, mt-6, etc.)
+   because :where() keeps specificity at (0,1,0) and utilities come later. */
+.docs-content > :where(:not(:first-child)),
+.docs-content :where(.ch-view > :not(:first-child)) {
+  margin-top: 1.25rem;
+}
+
+.docs-content :where(ul:not([class])) {
+  padding-left: 1.25rem;
+  list-style-type: disc;
+}
+
+.docs-content :where(ol:not([class])) {
+  padding-left: 1.25rem;
+  list-style-type: decimal;
+}
+
+.docs-content :where(ul:not([class]) ul:not([class])) {
+  list-style-type: circle;
+}
+
+.docs-content :where(ul:not([class]) ul:not([class]) ul:not([class])) {
+  list-style-type: square;
+}
+
+.docs-content :where(li:not([class])) {
+  margin: 0.25rem 0;
+}
+
+.docs-content :where(blockquote:not([class])) {
+  margin: 1.25rem 0;
+  padding-left: 1rem;
+  border-left: 2px solid var(--nb-border);
+  color: var(--nb-muted-foreground);
+}
+
+.docs-content :where(hr:not([class])) {
+  border: 0;
+  border-top: 1px solid var(--nb-border);
+  margin: 1.5rem 0;
+}
+
+/* Component boundary — elements with a class attribute are component-owned.
+   Markdown never adds classes to h1–h6 or p; components always do. */
+.docs-content :where(h1, h2, h3, h4, h5, h6, p):where([class]) {
+  margin: 0;
+  font-size: inherit;
+}
+
+/* Markdown heading typography is token-driven from globals.css. */
+.docs-content :where(h1:not([class])) {
+  font-size: var(--nb-h1-size);
+  font-weight: var(--nb-h1-weight);
+  letter-spacing: var(--nb-h1-tracking);
+  margin-top: 0;
+}
+
+.docs-content :where(h2:not([class])) {
+  font-size: var(--nb-h2-size);
+  font-weight: var(--nb-h2-weight);
+  letter-spacing: var(--nb-h2-tracking);
+  margin-top: 2.5rem;
+}
+
+.docs-content :where(h3:not([class])) {
+  font-size: var(--nb-h3-size);
+  font-weight: var(--nb-h3-weight);
+  letter-spacing: var(--nb-h3-tracking);
+  margin-top: 2rem;
+}
+
+.docs-content :where(h4:not([class]), h5:not([class]), h6:not([class])) {
+  font-weight: var(--nb-h4-weight);
+}
+
+.docs-content :where(h1:not([class]), h2:not([class]), h3:not([class]), h4:not([class])) {
+	color: var(--nb-heading);
+	scroll-margin-top: 5rem;
+}
+
+/* Typographic wrapping — balance multi-line headings (no orphan words),
+   pretty-wrap body copy (no single-word last lines). Progressive
+   enhancement; unsupported browsers ignore both. */
+.docs-content :where(h1:not([class]), h2:not([class]), h3:not([class]), h4:not([class])) {
+  text-wrap: balance;
+}
+
+.docs-content :where(p:not([class]), li:not([class]), blockquote:not([class])) {
+  text-wrap: pretty;
+}
+
+.docs-content :where(h2[id], h3[id], h4[id]) {
+  position: relative;
+}
+
+.docs-content .heading-anchor {
+  margin-left: 0.5rem;
+  color: var(--nb-muted-foreground);
+  text-decoration: none;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.docs-content :where(h2[id], h3[id], h4[id]):hover .heading-anchor,
+.docs-content .heading-anchor:focus-visible {
+  opacity: 1;
+}
+
+.docs-content .heading-anchor:hover {
+  color: var(--nb-foreground);
+}
+
+/* Mintlify gives standalone media 20px of breathing room from surrounding
+   prose. Root article children already receive that rhythm above, but media
+   nested inside compatibility components such as `Step` does not. Keep this
+   targeted so card icons and decorative homepage artwork are unaffected. */
+.docs-content [data-step] > div > :where(img, picture),
+.docs-content .ch-frame {
+  margin-block: 1.25rem;
+}
+
+/* Mintlify's Frame is an 8px padded surface around a rounded media viewport.
+   Iframes opt into its full width and a 16:9 aspect ratio; images retain their
+   intrinsic ratio while remaining constrained to the available content width. */
+.docs-content .ch-frame-shell {
+  position: relative;
+  overflow: hidden;
+  padding: 0.5rem;
+  border-radius: 1rem;
+  background: rgb(249 250 251 / 50%);
+}
+
+[data-mode="dark"] .docs-content .ch-frame-shell {
+  background: rgb(31 41 55 / 25%);
+}
+
+.docs-content .ch-frame-content {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 0.75rem;
+}
+
+.docs-content .ch-frame-content > iframe {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border: 0;
+}
+
+.docs-content .ch-frame-content > :where(img, picture, video) {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.docs-content .ch-frame > figcaption {
+  margin-top: 0.75rem;
+  color: var(--nb-muted-foreground);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  text-align: center;
+}
+
+/* `View` is page-level conditional content. The first option is visible
+   before the client switcher mounts, preventing both alternatives from
+   flashing during navigation. */
+.docs-content .ch-view {
+  display: none;
+}
+
+.docs-content .ch-view:first-of-type,
+.docs-content .ch-view[data-ch-view-active="true"] {
+  display: block;
+}
+
+.docs-content .ch-view[data-ch-view-active="false"],
+.docs-content [hidden] {
+  display: none !important;
+}
+
+/* Mintlify renders a complete prose context inside every component-authored
+   step. Keep that context here as well: it restores the normal 16px/28px body
+   rhythm instead of compressing long-form content to small helper text. */
+.docs-content .ch-step-title {
+  margin: 0.5rem 0 1.25rem;
+  color: #171717;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.75rem;
+}
+
+.docs-content .ch-step-content {
+  color: #171717;
+  font-size: 1rem;
+  line-height: 1.75rem;
+}
+
+[data-mode="dark"] .docs-content .ch-step-title,
+[data-mode="dark"] .docs-content .ch-step-content {
+  color: #fff;
+}
+
+.docs-content .ch-step-content > :where(p:not([class])) {
+  margin-block: 1.25rem;
+}
+
+.docs-content .ch-step-content > :where(p:not([class]):first-child) {
+  margin-top: 0;
+}
+
+.docs-content .ch-step-content > :where(h3:not([class])) {
+  margin: 2rem 0 0.875rem;
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+}
+
+.docs-content .ch-step-content > :where(h4:not([class])) {
+  margin: 1.8rem 0 0.675rem;
+  font-size: 1.125rem;
+  line-height: 1.5;
+}
+
+.docs-content .ch-step-content > :where(h3:not([class]), h4:not([class])) + :where(p:not([class])) {
+  margin-top: 0;
+}
+
+.docs-content .ch-step-content > :where(ul:not([class]), ol:not([class])) {
+  margin-block: 1.25rem;
+  padding-left: 1.625rem;
+}
+
+.docs-content .ch-step-content > :where(ul:not([class]), ol:not([class])) > :where(li:not([class])) {
+  margin-block: 0.5rem;
+  padding-left: 0.375rem;
+}
+
+.docs-content .ch-step-content > .nb-code-figure {
+  margin: 1.25rem 0 2rem;
+}
+
+.docs-content :where(code:not([class])):not(:where(pre *)) {
+  font-family: var(--nb-font-mono);
+  direction: ltr;
+  unicode-bidi: isolate;
+	background: var(--nb-code-background);
+  border: 1px solid var(--nb-border);
+  border-radius: 0.375rem;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.8125em;
+  font-weight: 450;
+}
+
+.docs-content :where(code:not([class])):not(:where(pre *))::before,
+.docs-content :where(code:not([class])):not(:where(pre *))::after {
+  content: none;
+}
+
+.docs-content :where(pre:not([class])) {
+  font-family: var(--nb-font-mono);
+}
+
+/* Shiki-rendered code blocks — wider vertical margin than base rhythm
+   (1.25rem) because code blocks are visually dense. Inline code-token
+   styling (background, border, padding) is reset because Shiki spans
+   already carry their own colors via inline styles. */
+.docs-content .nb-code-figure {
+  margin: 1.5rem 0;
+}
+
+.docs-content pre.astro-code code {
+  direction: ltr;
+  unicode-bidi: isolate;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  border-radius: 0;
+}
+
+/* Fills its column; scroll is owned by the `.nb-table-scroll` wrapper (injected
+   by the tableScroll() hast plugin), since `overflow` is ignored on a table. */
+.docs-content :where(table:not([class])) {
+  display: table;
+  width: 100%;
+  max-width: 100%;
+  text-align: left;
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 0.75rem;
+  border: 1px solid var(--nb-border);
+  table-layout: auto;
+}
+
+/* Wide tables scroll within this box at all widths instead of overflowing the
+   page; short tables still fill it via the inner `width: 100%`. */
+.docs-content :where(.nb-table-scroll) {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.docs-content :where(th:not([class])),
+.docs-content :where(td:not([class])) {
+  padding: 0.625rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--nb-border);
+}
+
+.docs-content :where(th:not([class])) {
+  background: var(--nb-muted);
+  font-weight: 600;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+.docs-content :where(tbody:not([class]) tr:not([class]):last-child td:not([class])) {
+  border-bottom: none;
+}
+
+/* Round the outer corner cells to match the table's border-radius —
+   `border-collapse: separate` leaves square cell backgrounds (the muted
+   thead fill in particular) that would otherwise poke past the rounded
+   table border. */
+.docs-content :where(thead:not([class]) tr:not([class]):first-child th:not([class]):first-child) {
+  border-top-left-radius: 0.75rem;
+}
+.docs-content :where(thead:not([class]) tr:not([class]):first-child th:not([class]):last-child) {
+  border-top-right-radius: 0.75rem;
+}
+.docs-content :where(tbody:not([class]) tr:not([class]):last-child td:not([class]):first-child) {
+  border-bottom-left-radius: 0.75rem;
+}
+.docs-content :where(tbody:not([class]) tr:not([class]):last-child td:not([class]):last-child) {
+  border-bottom-right-radius: 0.75rem;
+}
+
+.docs-content :where(a:not([class])) {
+	color: var(--nb-link);
+  text-decoration-line: underline;
+  text-decoration-color: var(--nb-border-strong);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  font-weight: 500;
+  transition: text-decoration-color 0.15s;
+}
+
+.docs-content :where(a:not([class]):hover) {
+	color: var(--nb-link-hover);
+	text-decoration-color: currentColor;
+}
+
+/* ---- Long-tail prose vocabulary ----
+   Elements markdown/MDX authors can reach for that would otherwise
+   render with raw browser defaults. Same component boundary as the rest
+   of the file: `:not([class])` leaves component-owned markup alone. */
+
+/* Keycaps. The thicker bottom border stands in for a pressed edge —
+   border darkening, not a drop shadow. */
+.docs-content :where(kbd:not([class])) {
+  display: inline-block;
+  font-family: var(--nb-font-mono);
+  font-size: 0.75em;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--nb-foreground);
+  background: var(--nb-muted);
+  border: 1px solid var(--nb-border);
+  border-bottom-width: 2px;
+  border-radius: 0.375rem;
+  padding: 0.1875rem 0.375rem;
+  vertical-align: 0.0625rem;
+}
+
+/* Inline highlight — harmonized with ::selection instead of the
+   browser's fluorescent yellow. `box-decoration-break` keeps the tint
+   coherent when the highlight wraps across lines. */
+.docs-content :where(mark:not([class])) {
+  background: color-mix(in oklch, var(--nb-primary) 12%, transparent);
+  color: var(--nb-foreground);
+  border-radius: 0.25rem;
+  padding: 0.0625rem 0.25rem;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* Native disclosure. Scope guard: FileTree builds classless <details>
+   internally (`.file-tree :global(details)`), so exclude its subtree —
+   without this the rows below would grow double carets and borders. */
+.docs-content :where(details:not([class]):not(.file-tree *)) {
+  border: 1px solid var(--nb-border);
+  border-radius: 0.5rem;
+  padding: 0.625rem 0.875rem;
+}
+
+.docs-content :where(details:not([class]):not(.file-tree *) > summary) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.625rem;
+  cursor: pointer;
+  font-weight: 500;
+  list-style: none;
+  user-select: none;
+}
+
+.docs-content :where(details:not([class]):not(.file-tree *) > summary)::-webkit-details-marker {
+  display: none;
+}
+
+/* Trailing chevron — label left, indicator right, matching Collapsible. */
+.docs-content :where(details:not([class]):not(.file-tree *) > summary)::after {
+  content: "";
+  flex-shrink: 0;
+  width: 0.4375em;
+  height: 0.4375em;
+  border-right: 1.5px solid var(--nb-muted-foreground);
+  border-bottom: 1.5px solid var(--nb-muted-foreground);
+  transform: rotate(-45deg);
+  transition: transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.docs-content :where(details[open]:not([class]):not(.file-tree *) > summary)::after {
+  transform: rotate(45deg) translateY(-0.125em);
+}
+
+.docs-content :where(details[open]:not([class]):not(.file-tree *) > summary) {
+  margin-bottom: 0.5rem;
+}
+
+/* Definition lists — term/description pairs. */
+.docs-content :where(dt:not([class])) {
+  font-weight: 600;
+}
+
+.docs-content :where(dt:not([class]):not(:first-child)) {
+  margin-top: 0.75rem;
+}
+
+.docs-content :where(dd:not([class])) {
+  margin-left: 1rem;
+  color: var(--nb-muted-foreground);
+}

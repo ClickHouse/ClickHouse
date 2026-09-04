@@ -1,0 +1,8 @@
+---
+/** Mintlify `<Note>` callout rendered with Nimbus's Aside. */
+import { Aside } from "@/components/ui/aside";
+interface Props { title?: string }
+const title = Astro.props.title;
+---
+
+<Aside type="note" title={title}><slot /></Aside>

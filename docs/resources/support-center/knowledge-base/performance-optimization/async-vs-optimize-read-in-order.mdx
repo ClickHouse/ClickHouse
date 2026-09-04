@@ -10,7 +10,7 @@ The new setting allow_asynchronous_read_from_io_pool_for_merge_tree allows the n
 
 Normally the [max_threads](/reference/settings/session-settings/max-threads#max_threads) setting [controls](https://clickhouse.com/company/events/query-performance-introspection) the number of parallel reading threads and parallel query processing threads:
 
-<Image img={sync_read} size="md" alt="Synchronous data reading diagram" />
+<Image img="/images/knowledgebase/sync_read.webp" size="md" alt="Synchronous data reading diagram" />
 
 The data is read 'in order', column after column, from disk.
 
@@ -18,7 +18,7 @@ The data is read 'in order', column after column, from disk.
 The new setting [allow_asynchronous_read_from_io_pool_for_merge_tree](https://github.com/ClickHouse/ClickHouse/pull/43260) allows the number of reading threads (streams) to be higher than the number of threads in the rest of the query execution pipeline to **speed up cold queries on low-CPU ClickHouse Cloud services**, and to **increase performance for I/O bound queries**.
 When the setting is enabled, then the amount of reading threads is controlled by the [max_streams_for_merge_tree_reading](https://github.com/ClickHouse/ClickHouse/pull/43260) setting:
 
-<Image img={async_read} size="md" alt="Asynchronous data reading diagram" />
+<Image img="/images/knowledgebase/async_read.webp" size="md" alt="Asynchronous data reading diagram" />
 
 The data is read asynchronously, in parallel from different columns.
 

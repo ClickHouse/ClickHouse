@@ -1,0 +1,46 @@
+---
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+
+interface Props {
+  mobile?: boolean;
+  compact?: boolean;
+  showPathCue?: boolean;
+}
+
+const { mobile = false, compact = false, showPathCue = false } = Astro.props;
+---
+
+<div
+  class:list={[
+    "ch-view-switcher",
+    mobile && "ch-view-switcher-mobile",
+    compact && "ch-view-switcher-compact",
+  ]}
+  data-ch-view-switcher
+  hidden
+>
+  {showPathCue && (
+    <span class="ch-view-path-cue">
+      <Icon name="fa6-solid:signs-post" class="ch-view-path-cue-icon" aria-hidden="true" />
+      <span class="ch-view-path-cue-label">Choose your path</span>
+    </span>
+  )}
+  <div class="ch-view-switcher-select">
+    <button
+      type="button"
+      class="ch-view-switcher-trigger"
+      aria-haspopup="menu"
+      aria-expanded="false"
+    >
+      <span data-ch-view-switcher-label>View</span>
+      <svg aria-hidden="true" viewBox="0 0 16 16" fill="none">
+        <path d="m5 6 3 3 3-3" />
+      </svg>
+    </button>
+    <div class="ch-view-switcher-menu" data-ch-view-switcher-menu role="menu" hidden></div>
+  </div>
+</div>
+
+<script>
+  import "./view-switcher.client";
+</script>

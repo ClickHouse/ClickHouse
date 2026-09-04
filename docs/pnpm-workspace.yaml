@@ -1,0 +1,11 @@
+# Declines install scripts for esbuild and sharp (they ship prebuilds),
+# clearing pnpm's build-scripts gate. Adding a package here lets it run scripts.
+packages: []
+allowBuilds: # pnpm 11
+  esbuild: false
+  sharp: false
+  workerd: false
+ignoredBuiltDependencies: # pnpm 10
+  - esbuild
+  - sharp
+  - workerd

@@ -1,0 +1,16 @@
+---
+/** LayerCardHeader — recessed header layer of a LayerCard. */
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+
+interface Props extends HTMLAttributes<"div"> {}
+
+const { class: className, ...attrs } = Astro.props;
+---
+
+<div
+  class={cn("flex items-center gap-2 bg-muted px-3 py-2 text-[0.8125rem] font-medium leading-5 text-muted-foreground", className)}
+  {...attrs}
+>
+  <slot />
+</div>

@@ -1,0 +1,405 @@
+# Navigation vs disk (ar, generated 2026-09-03)
+
+- Tabs: 5; pages referenced by navigation: 2675; pages on disk in content sections: 2560.
+- Navigation entries without a file: 147.
+- Files not referenced by navigation (orphans, still built and reachable by URL): 33.
+- Groups whose authored order differs from alphabetical disk order: 207.
+- Navigation constructs skipped by the generator: 3.
+
+## Navigation entries without a file
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Organization: GET /v1/organizations
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Organization: GET /v1/organizations/{organizationId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Organization: PATCH /v1/organizations/{organizationId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Organization: products/cloud/api-reference/organization/organization-quotas-get-list
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Organization: products/cloud/api-reference/organization/organization-quota-get
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Organization: GET /v1/organizations/{organizationId}/activities
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Organization: GET /v1/organizations/{organizationId}/activities/{activityId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Organization: products/cloud/api-reference/organization/organization-private-endpoint-config-get-list
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Organization: POST /v1/organizations/{organizationId}/byocInfrastructure
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Organization: DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Organization: PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Billing: GET /v1/organizations/{organizationId}/usageCost
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Billing: products/cloud/api-reference/billing/active-balances-get
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Billing: products/cloud/api-reference/billing/credit-balances-get
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > User management: GET /v1/organizations/{organizationId}/members
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > User management: GET /v1/organizations/{organizationId}/members/{userId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > User management: PATCH /v1/organizations/{organizationId}/members/{userId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > User management: DELETE /v1/organizations/{organizationId}/members/{userId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > User management: GET /v1/organizations/{organizationId}/invitations
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > User management: POST /v1/organizations/{organizationId}/invitations
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > User management: GET /v1/organizations/{organizationId}/invitations/{invitationId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > User management: DELETE /v1/organizations/{organizationId}/invitations/{invitationId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Role Management: GET /v1/organizations/{organizationId}/roles
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Role Management: POST /v1/organizations/{organizationId}/roles
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Role Management: GET /v1/organizations/{organizationId}/roles/{roleId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Role Management: PATCH /v1/organizations/{organizationId}/roles/{roleId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Role Management: DELETE /v1/organizations/{organizationId}/roles/{roleId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > UDF: products/cloud/api-reference/udf/udf-attach
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > UDF: products/cloud/api-reference/udf/udf-attachment-get
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > UDF: products/cloud/api-reference/udf/udf-detach
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > UDF: products/cloud/api-reference/udf/udf-attachment-list
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > UDF: products/cloud/api-reference/udf/udf-create
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > UDF: products/cloud/api-reference/udf/udf-list
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > UDF: products/cloud/api-reference/udf/udf-delete
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > UDF: products/cloud/api-reference/udf/udf-get
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > UDF: products/cloud/api-reference/udf/udf-upload-session-create
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > UDF: products/cloud/api-reference/udf/udf-version-create
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > UDF: products/cloud/api-reference/udf/udf-version-list
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > UDF: products/cloud/api-reference/udf/udf-version-delete
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: GET /v1/organizations/{organizationId}/serviceProfiles
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: GET /v1/organizations/{organizationId}/services
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: POST /v1/organizations/{organizationId}/services
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: GET /v1/organizations/{organizationId}/services/{serviceId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: PATCH /v1/organizations/{organizationId}/services/{serviceId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: DELETE /v1/organizations/{organizationId}/services/{serviceId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: GET /v1/organizations/{organizationId}/services/{serviceId}/privateEndpointConfig
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: GET /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: DELETE /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: POST /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: PATCH /v1/organizations/{organizationId}/services/{serviceId}/state
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: products/cloud/api-reference/service/instance-scaling-update
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: PATCH /v1/organizations/{organizationId}/services/{serviceId}/replicaScaling
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: PATCH /v1/organizations/{organizationId}/services/{serviceId}/password
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: POST /v1/organizations/{organizationId}/services/{serviceId}/privateEndpoint
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: products/cloud/api-reference/service/scaling-schedule-get
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: products/cloud/api-reference/service/scaling-schedule-upsert
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: products/cloud/api-reference/service/scaling-schedule-delete
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: GET /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: PUT /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: DELETE /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: products/cloud/api-reference/service/service-clickhouse-settings-list-get
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: products/cloud/api-reference/service/service-clickhouse-settings-update
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: products/cloud/api-reference/service/service-clickhouse-settings-schema-get
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: products/cloud/api-reference/service/service-clickhouse-setting-get
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: products/cloud/api-reference/service/service-clickhouse-setting-delete
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Backup: GET /v1/organizations/{organizationId}/services/{serviceId}/backups
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Backup: GET /v1/organizations/{organizationId}/services/{serviceId}/backups/{backupId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Backup: GET /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Backup: PATCH /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Backup: products/cloud/api-reference/backup/backup-bucket-get
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Backup: products/cloud/api-reference/backup/backup-bucket-create
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Backup: products/cloud/api-reference/backup/backup-bucket-update
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Backup: products/cloud/api-reference/backup/backup-bucket-delete
+- Solutions > ClickHouse Cloud > Cloud API > API reference > API keys: GET /v1/organizations/{organizationId}/keys
+- Solutions > ClickHouse Cloud > Cloud API > API reference > API keys: POST /v1/organizations/{organizationId}/keys
+- Solutions > ClickHouse Cloud > Cloud API > API reference > API keys: GET /v1/organizations/{organizationId}/keys/{keyId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > API keys: PATCH /v1/organizations/{organizationId}/keys/{keyId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > API keys: DELETE /v1/organizations/{organizationId}/keys/{keyId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Prometheus: products/cloud/api-reference/prometheus/organization-prometheus-get
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Prometheus: products/cloud/api-reference/prometheus/organization-prometheus-discovery-get
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Prometheus: GET /v1/organizations/{organizationId}/services/{serviceId}/prometheus
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Prometheus: products/cloud/api-reference/prometheus/postgres-org-prometheus-get
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Prometheus: products/cloud/api-reference/prometheus/postgres-instance-prometheus-get
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickPipes: GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickPipes: POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipes
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickPipes: GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickPipes: PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickPipes: DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickPipes: GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickPipes: PUT /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickPipes: products/cloud/api-reference/clickpipes/click-pipe-schema-discovery
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickPipes: PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickPipes: PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickPipes: GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickPipes: PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickPipes: GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickPipes: POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickPipes: GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickPipes: DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickPipes: PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-list-dashboards
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-create-dashboard
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-get-dashboard
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-update-dashboard
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-delete-dashboard
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-validate-dashboard
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-list-alerts
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-create-alert
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-list-sources
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-create-source
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-get-source
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-update-source
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-delete-source
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-get-alert
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-update-alert
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-delete-alert
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-list-webhooks
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-create-webhook
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-update-webhook
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-delete-webhook
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-list-roles
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-create-role
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-get-role
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-update-role
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-delete-role
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-list-saved-searches
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-create-saved-search
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-get-saved-search
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-update-saved-search
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: products/cloud/api-reference/clickstack/click-stack-delete-saved-search
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Postgres: products/cloud/api-reference/postgres/postgres-service-create
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Postgres: products/cloud/api-reference/postgres/postgres-service-get-list
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Postgres: products/cloud/api-reference/postgres/postgres-service-get
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Postgres: products/cloud/api-reference/postgres/postgres-service-delete
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Postgres: products/cloud/api-reference/postgres/postgres-service-patch
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Postgres: products/cloud/api-reference/postgres/postgres-service-certs-get
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Postgres: products/cloud/api-reference/postgres/postgres-instance-restore
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Postgres: products/cloud/api-reference/postgres/postgres-service-set-password
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Postgres: products/cloud/api-reference/postgres/postgres-service-patch-state
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Postgres: products/cloud/api-reference/postgres/postgres-instance-create-read-replica
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Postgres: products/cloud/api-reference/postgres/postgres-instance-config-get
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Postgres: products/cloud/api-reference/postgres/postgres-instance-config-post
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Postgres: products/cloud/api-reference/postgres/postgres-instance-config-patch
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Postgres: products/cloud/api-reference/postgres/postgres-instance-metrics-get
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Postgres: products/cloud/api-reference/postgres/slow-query-patterns-get-list
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Postgres: products/cloud/api-reference/postgres/slow-query-pattern-get
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Postgres: products/cloud/api-reference/postgres/postgres-logs-get-list
+
+## Orphans (on disk, not in navigation)
+- clickstack/api-reference
+- clickstack/ingesting-data/index
+- clickstack/managed-onboarding/instrument-application
+- clickstack/managed-onboarding/managed-getting-started
+- clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs
+- clickstack/managed-onboarding/monitoring-kubernetes
+- clickstack/managed-onboarding/setting-up-your-opentelemetry-collector
+- clickstack/managed-onboarding/tuning-clickstack-schema
+- concepts/features/interfaces/odbc
+- get-started/quickstarts/connect-your-iceberg-catalog
+- get-started/quickstarts/create-your-first-materialized-view
+- get-started/quickstarts/create-your-first-mergetree-table
+- get-started/quickstarts/create-your-first-projection
+- get-started/quickstarts/create-your-first-service-on-cloud
+- get-started/quickstarts/creating-tables
+- get-started/quickstarts/insert-data-using-clickhouse-client
+- get-started/quickstarts/mutations
+- get-started/quickstarts/obtain-your-cloud-connection-details
+- get-started/quickstarts/tutorial
+- get-started/quickstarts/working-with-the-map-type
+- get-started/quickstarts/writing-queries
+- integrations/connectors/data-ingestion/index
+- integrations/connectors/data-ingestion/odbc-with-clickhouse
+- integrations/language-clients/rust/index
+- products/cloud/features/ai-ml/ask-ai
+- products/cloud/features/backups/faq
+- products/cloud/guides/index
+- products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles
+- products/cloud/reference/index
+- reference/settings/formats
+- reference/settings/merge-tree-settings
+- reference/settings/session-settings
+- resources/develop-contribute/index
+
+## Groups with authored order != alphabetical
+- Database > Get started > Get started > Introduction: 3 pages, authored order differs from alphabetical
+- Database > Get started > Get started > Use cases: 5 pages, authored order differs from alphabetical
+- Database > Get started > Get started: 3 pages, authored order differs from alphabetical
+- Database > Get started > Setup > Self-managed > Local development: 4 pages, authored order differs from alphabetical
+- Database > Get started > Setup > Self-managed > Production server: 4 pages, authored order differs from alphabetical
+- Database > Get started > Setup: 2 pages, authored order differs from alphabetical
+- Database > Get started > Migrate > PostgreSQL: 2 pages, authored order differs from alphabetical
+- Database > Get started > Migrate > BigQuery: 3 pages, authored order differs from alphabetical
+- Database > Get started > Migrate > Snowflake: 3 pages, authored order differs from alphabetical
+- Database > Get started > Migrate > Redshift: 3 pages, authored order differs from alphabetical
+- Database > Concepts > Fundamentals: 8 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Materialized views: 4 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Dictionaries: 2 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Projections: 2 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Performance: 5 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Operations > Insert: 6 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Operations > Delete: 6 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Configuration > Settings: 11 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Configuration > Server config: 8 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Security and auth > TLS: 3 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Security and auth > External authenticators > LDAP: 2 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Security and auth > External authenticators: 4 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Security and auth: 3 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Backup and restore: 7 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Interfaces > Drivers and interfaces: 12 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Interfaces: 12 pages, authored order differs from alphabetical
+- Database > Concepts > ClickHouse concepts > Tools and utilities: 12 pages, authored order differs from alphabetical
+- Database > Concepts > Best practices: 12 pages, authored order differs from alphabetical
+- Database > Guides > ClickHouse guides > Data formats > JSON: 7 pages, authored order differs from alphabetical
+- Database > Guides > ClickHouse guides > Data formats: 7 pages, authored order differs from alphabetical
+- Database > Guides > ClickHouse guides > Data modelling: 10 pages, authored order differs from alphabetical
+- Database > Guides > ClickHouse guides > Performance & monitoring > Query optimization: 5 pages, authored order differs from alphabetical
+- Database > Guides > ClickHouse guides > Performance & monitoring: 3 pages, authored order differs from alphabetical
+- Database > Guides > ClickHouse guides > Deployment and scaling: 5 pages, authored order differs from alphabetical
+- Database > Guides > Use case guides > Real-time analytics > Time series: 8 pages, authored order differs from alphabetical
+- Database > Guides > Use case guides > Observability > Build your own: 7 pages, authored order differs from alphabetical
+- Database > Guides > Use case guides > Observability: 3 pages, authored order differs from alphabetical
+- Database > Guides > Use case guides > Data warehousing > Getting started: 6 pages, authored order differs from alphabetical
+- Database > Guides > Use case guides > Data warehousing > Catalogs: 11 pages, authored order differs from alphabetical
+- Database > Guides > Use case guides > AI/ML > MCP > AI agent libraries: 16 pages, authored order differs from alphabetical
+- Database > Guides > Use case guides > AI/ML > MCP: 7 pages, authored order differs from alphabetical
+- Database > Guides > Use case guides > AI/ML: 3 pages, authored order differs from alphabetical
+- Database > Reference > SQL Reference > Statements > ALTER: 25 pages, authored order differs from alphabetical
+- Database > Reference > SQL Reference > Statements > CREATE > DICTIONARY > Layouts: 13 pages, authored order differs from alphabetical
+- Database > Reference > SQL Reference > Statements > CREATE > DICTIONARY > Sources: 15 pages, authored order differs from alphabetical
+- Database > Reference > SQL Reference > Statements > CREATE > TABLE: 4 pages, authored order differs from alphabetical
+- Database > Reference > SQL Reference > Statements > CREATE: 12 pages, authored order differs from alphabetical
+- Database > Reference > SQL Reference > Statements > SELECT: 26 pages, authored order differs from alphabetical
+- Database > Reference > SQL Reference > Statements: 32 pages, authored order differs from alphabetical
+- Database > Reference > SQL Reference > Operators: 3 pages, authored order differs from alphabetical
+- Database > Reference > Data Types > Numeric types: 4 pages, authored order differs from alphabetical
+- Database > Reference > Data Types > String types: 2 pages, authored order differs from alphabetical
+- Database > Reference > Data Types > Composite types: 4 pages, authored order differs from alphabetical
+- Database > Reference > Data Types > Semi-structured types: 3 pages, authored order differs from alphabetical
+- Database > Reference > Data Types > Nullable and optional types: 2 pages, authored order differs from alphabetical
+- Database > Reference > Data Types > Specialized types: 5 pages, authored order differs from alphabetical
+- Database > Reference > Data Types > Special Data Types: 5 pages, authored order differs from alphabetical
+- Database > Reference > Engines > Table Engines > Integrations: 28 pages, authored order differs from alphabetical
+- Database > Reference > Engines > Table Engines > MergeTree Family: 13 pages, authored order differs from alphabetical
+- Database > Reference > Engines > Table Engines > Special: 19 pages, authored order differs from alphabetical
+- Database > Reference > Engines > Database Engines: 11 pages, authored order differs from alphabetical
+- Database > Reference > Functions > Regular functions > Geo: 10 pages, authored order differs from alphabetical
+- Database > Reference > Functions > Regular functions: 44 pages, authored order differs from alphabetical
+- Database > Reference > Functions > Aggregate Functions > Reference: 160 pages, authored order differs from alphabetical
+- Database > Reference > Functions > Aggregate Functions: 4 pages, authored order differs from alphabetical
+- Database > Reference > Functions > Table functions: 61 pages, authored order differs from alphabetical
+- Database > Reference > Functions > Window functions: 15 pages, authored order differs from alphabetical
+- Database > Reference > Formats > JSON: 25 pages, authored order differs from alphabetical
+- Database > Reference > Formats > TabSeparated: 7 pages, authored order differs from alphabetical
+- Database > Reference > Formats: 28 pages, authored order differs from alphabetical
+- Database > Reference > Interfaces: 2 pages, authored order differs from alphabetical
+- Database > Reference > Settings > Server Settings: 131 pages, authored order differs from alphabetical
+- Database > Reference > Settings > Session Settings: 257 pages, authored order differs from alphabetical
+- Database > Reference > Settings > MergeTree tables settings: 82 pages, authored order differs from alphabetical
+- Database > Reference > Settings > Format Settings: 17 pages, authored order differs from alphabetical
+- Database > Reference > Settings: 2 pages, authored order differs from alphabetical
+- Database > Reference > System Tables: 174 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Services and infrastructure > Plan and deploy: 6 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Services and infrastructure > Configure and scale: 9 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Services and infrastructure > Compute and storage: 6 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Services and infrastructure > Reliability and maintenance: 3 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Services and infrastructure > Production planning: 4 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Services and infrastructure: 2 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Bring Your Own Cloud > Overview: 2 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Bring Your Own Cloud > Onboarding > Network: 4 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Bring Your Own Cloud > Onboarding: 2 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Bring Your Own Cloud > Connector: 6 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Bring Your Own Cloud > Reference: 9 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Data and integrations > Data sources: 6 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Data and integrations: 3 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Connect and query: 6 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Access management > Cloud accounts and roles: 5 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Access management > Database users and permissions: 3 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Access management > Identity providers: 5 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Security and compliance > Network access > Private networking: 4 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Security and compliance > Audit logging: 5 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Security and compliance > Data security: 2 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Security and compliance > Compliance and privacy: 5 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Monitoring and backups > Monitoring: 7 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Monitoring and backups > Backups > Manage backups > Bring Your Own Backup: 3 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Monitoring and backups > Backups > Manage backups: 3 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > AI tools and agents > Remote MCP: 2 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > AI tools and agents > ClickHouse Agents > Agent Builder: 9 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > AI tools and agents > ClickHouse Agents: 7 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > AI tools and agents: 5 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Organization: 11 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > User management: 8 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > Role Management: 5 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Organization > UDF: 12 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Service: 26 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Service > Backup: 8 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > API keys: 5 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Prometheus: 5 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickPipes: 17 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > ClickStack: 30 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Cloud API > API reference > Postgres: 17 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Billing > Marketplace: 8 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Billing > ClickPipes: 3 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Cloud > Billing: 6 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Managed Postgres > Features: 14 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Managed Postgres > Migrations: 7 pages, authored order differs from alphabetical
+- Solutions > ClickHouse Managed Postgres > Monitoring: 6 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Get started > Sample datasets: 10 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Get started: 3 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Features > Deployment > Open Source > Helm > v2.x: 6 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Features > Deployment > Open Source > Helm > v1.x (deprecated): 4 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Features > Deployment > Open Source: 6 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Features > Deployment: 2 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Features > Dashboards: 5 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Features > Demo days > 2026: 18 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Features: 10 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Managing ClickStack: 9 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Guides > Ingesting data > Integrations: 19 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Guides > Ingesting data > Language SDKs: 13 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Guides > Ingesting data: 7 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Guides > Migration guides > Migrating from Elastic: 8 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Guides > Migration guides: 2 pages, authored order differs from alphabetical
+- Solutions > ClickStack > Integration partners: 4 pages, authored order differs from alphabetical
+- Solutions > Agentic Data Stack > Get started: 2 pages, authored order differs from alphabetical
+- Solutions > Agentic Data Stack > Components: 3 pages, authored order differs from alphabetical
+- Solutions > chDB > Get started: 2 pages, authored order differs from alphabetical
+- Solutions > chDB > Language integrations: 8 pages, authored order differs from alphabetical
+- Solutions > chDB > DataStore: 10 pages, authored order differs from alphabetical
+- Solutions > chDB > Configuration: 4 pages, authored order differs from alphabetical
+- Solutions > chDB > Debugging: 4 pages, authored order differs from alphabetical
+- Solutions > chDB > Developer guides: 14 pages, authored order differs from alphabetical
+- Solutions > chDB > Technical reference: 4 pages, authored order differs from alphabetical
+- Solutions > Kubernetes Operator > Install: 3 pages, authored order differs from alphabetical
+- Solutions > Kubernetes Operator > Guides: 8 pages, authored order differs from alphabetical
+- Integrations > Ecosystem: 2 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for Streaming > Kafka: 6 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for Streaming > Amazon Kinesis: 2 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for Streaming > GCP Pub/Sub: 2 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for Object Storage > Amazon S3: 3 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for Object Storage > Google Cloud Storage: 3 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for Object Storage > Azure Blob Storage: 2 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for CDC > Postgres > Operations: 7 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for CDC > Postgres > Source: 11 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for CDC > Postgres: 12 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for CDC > MySQL > Operations: 7 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for CDC > MySQL > Source: 7 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for CDC > MySQL: 6 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for CDC > MongoDB > Operations: 7 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for CDC > MongoDB > Source: 3 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for CDC > MongoDB: 5 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > ClickPipes for CDC > BigQuery: 2 pages, authored order differs from alphabetical
+- Integrations > ClickPipes > Networking: 5 pages, authored order differs from alphabetical
+- Integrations > ClickPipes: 3 pages, authored order differs from alphabetical
+- Integrations > Language clients > Python: 7 pages, authored order differs from alphabetical
+- Integrations > Language clients > Go: 6 pages, authored order differs from alphabetical
+- Integrations > Language clients > Java: 5 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data sources > AWS S3: 3 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data sources > Kafka: 11 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data sources: 11 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data visualization > Grafana: 3 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data visualization > Tableau: 4 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data visualization > Community integrations: 15 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data visualization: 10 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data ingestion > Apache Spark: 4 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data ingestion > dbt: 5 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data ingestion > Streamkap: 2 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data ingestion > Community integrations > Estuary: 3 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data ingestion: 11 pages, authored order differs from alphabetical
+- Integrations > Connectors > Data integrations: 7 pages, authored order differs from alphabetical
+- Integrations > Connectors > SQL-clients: 10 pages, authored order differs from alphabetical
+- Integrations > Connectors > Tools: 5 pages, authored order differs from alphabetical
+- Resources > Support center > Knowledgebase > Performance & optimization: 11 pages, authored order differs from alphabetical
+- Resources > Support center > Knowledgebase > Data import & export: 15 pages, authored order differs from alphabetical
+- Resources > Support center > Knowledgebase > Integrations & client libraries: 7 pages, authored order differs from alphabetical
+- Resources > Support center > Knowledgebase > Troubleshooting & errors: 11 pages, authored order differs from alphabetical
+- Resources > Support center > Knowledgebase > Monitoring & debugging: 10 pages, authored order differs from alphabetical
+- Resources > Support center > Knowledgebase > General & FAQs > General: 17 pages, authored order differs from alphabetical
+- Resources > Support center > Knowledgebase > General & FAQs > Use cases: 5 pages, authored order differs from alphabetical
+- Resources > Support center > Knowledgebase > General & FAQs > Integration: 3 pages, authored order differs from alphabetical
+- Resources > Support center > Knowledgebase > General & FAQs > Operations: 5 pages, authored order differs from alphabetical
+- Resources > Development & contributing > Introduction: 2 pages, authored order differs from alphabetical
+- Resources > Development & contributing > Building: 8 pages, authored order differs from alphabetical
+- Resources > Development & contributing > Native protocol: 5 pages, authored order differs from alphabetical
+- Resources > Development & contributing > Contributing: 8 pages, authored order differs from alphabetical
+- Resources > Development & contributing > Integration development: 4 pages, authored order differs from alphabetical
+- Resources > Changelogs > Cloud > Archive: 4 pages, authored order differs from alphabetical
+- Resources > Changelogs > Cloud > Cloud database release changelog > 2026: 2 pages, authored order differs from alphabetical
+- Resources > Changelogs > Cloud > Cloud database release changelog > 2025: 5 pages, authored order differs from alphabetical
+- Resources > Changelogs > Cloud > Cloud database release changelog > 2024: 6 pages, authored order differs from alphabetical
+- Resources > Changelogs > Cloud: 3 pages, authored order differs from alphabetical
+- Resources > Changelogs > Open source > Archive: 9 pages, authored order differs from alphabetical
+- Resources > About > About ClickHouse: 3 pages, authored order differs from alphabetical
+
+## Skipped constructs
+- Solutions > ClickHouse Cloud > Cloud API > API reference: openapi group (P5: Nimbus api collection)
+- Solutions > ClickHouse Cloud > undefined: sourceRef ClickHouse/airgap-docs not fetched (run bin/fetch-remotes.ts)
+- Solutions > ClickStack > API reference: openapi group (P5: Nimbus api collection)

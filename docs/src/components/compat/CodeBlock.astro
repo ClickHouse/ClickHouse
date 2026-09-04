@@ -1,0 +1,11 @@
+---
+/** Mintlify `<CodeBlock language title>` with a string child. */
+interface Props { language?: string; title?: string; filename?: string }
+const { language, title, filename } = Astro.props;
+const label = title ?? filename;
+---
+
+<figure class="ch-codeblock">
+  {label && <figcaption>{label}</figcaption>}
+  <pre data-language={language}><code class={language ? `language-${language}` : undefined}><slot /></code></pre>
+</figure>

@@ -248,7 +248,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                       </span>
                       <div className="absolute inset-x-0 bottom-0 h-12 bg-[#E7EA5B] flex items-center justify-between px-5">
                         <img
-                          src={withBase('/images/clickhouse.svg')}
+                          src="/images/clickhouse.svg"
                           alt=""
                           aria-hidden="true"
                           className="h-[18px] w-auto"

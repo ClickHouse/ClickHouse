@@ -1,0 +1,32 @@
+---
+import { getCollection } from "astro:content";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import Header from "../../components/Header.astro";
+import { changelogPath, entriesForProduct, productSlug } from "../../lib/changelog";
+
+const entries = entriesForProduct(await getCollection("changelog"));
+const products = [...new Set(entries.flatMap((entry) => entry.data.products))].sort();
+---
+
+<BaseLayout title="Changelog" description="Release notes and product updates for ClickHouse.">
+  <Header showSidebar={false} />
+  <main id="main-content" tabindex="-1" class="mx-auto w-full max-w-5xl px-4 py-10 lg:px-6">
+    <p class="text-sm font-medium text-primary">What’s new</p>
+    <h1 class="mt-2 text-4xl font-semibold tracking-tight text-foreground">Changelog</h1>
+    <p class="mt-4 max-w-2xl text-lg text-muted-foreground">Release notes and product updates for ClickHouse.</p>
+    <nav class="mt-8 flex flex-wrap gap-3" aria-label="Changelog products">
+      {products.map((product) => <a href={`./${productSlug(product)}/`} class="rounded-full border border-border px-4 py-2 text-sm font-medium no-underline hover:bg-accent">{product}</a>)}
+      <a href="./rss.xml" class="rounded-full border border-border px-4 py-2 text-sm font-medium no-underline hover:bg-accent">RSS</a>
+    </nav>
+    <ol class="mt-12 space-y-4 list-none p-0">
+      {entries.map((entry) => (
+        <li class="rounded-xl border border-border bg-card p-5 transition-colors hover:bg-accent/40">
+          <time datetime={entry.data.date} class="text-sm text-muted-foreground">{entry.data.date}</time>
+          <h2 class="mt-2 text-xl font-semibold"><a href={changelogPath(entry)} class="text-foreground no-underline hover:text-primary">{entry.data.title}</a></h2>
+          <p class="mt-2 mb-0 text-muted-foreground">{entry.data.description}</p>
+          <p class="mt-3 mb-0 text-sm text-primary">{entry.data.products.join(" · ")}</p>
+        </li>
+      ))}
+    </ol>
+  </main>
+</BaseLayout>

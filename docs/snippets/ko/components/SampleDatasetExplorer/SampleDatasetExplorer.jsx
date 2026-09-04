@@ -1,7 +1,7 @@
 export const SampleDatasetExplorer = ({ categories }) => {
   const ACCENT = "#FAFF69"
   const assetBase = typeof window === "undefined" || window.location.pathname.startsWith("/docs") ? "/docs" : ""
-  const withBase = (p) => (p && p.startsWith("/") ? assetBase + p : p)
+  const withBase = (p) => (p && p.startsWith("/") && !p.startsWith("/docs/") ? assetBase + p : p)
 
   // 각 카테고리: id, title(배너 이미지 아래에 표시), 하위 카드에 사용되는 아이콘, 두 개의 배너 이미지, 하위 데이터셋 페이지.
   const CATEGORIES = [

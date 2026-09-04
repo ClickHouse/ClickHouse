@@ -1,0 +1,264 @@
+/*
+ * Request/response sample rail. The request card is a LayerCard: a recessed
+ * (muted) header carrying the method chip, title, and language <select>, over
+ * a raised (bg-card) content layer holding the code body. The code body reuses
+ * the shared `<Code>` figure; we reset its chrome to sit flush, add gutter line
+ * numbers, and lift the injected copy button up into the recessed header (it
+ * escapes to the LayerCard root — see the copy rule).
+ *
+ * Loaded as a plain global stylesheet (imported by ApiCodeRail.astro), so the
+ * `[data-nb-api-coderail]` scope and the `.nb-code-*` overrides apply exactly as
+ * an `is:global` block would.
+ */
+[data-nb-api-coderail] {
+  --nb-cr-border: color-mix(in oklab, var(--nb-foreground) 14%, transparent);
+  /* Focus-ring fallback accent — the house info token (blue); used only where
+     `--color-ring` isn't set. Sourced from the token so it follows the theme. */
+  --nb-cr-accent: var(--color-info);
+  font-size: 0.8125rem;
+}
+/* LayerCard sets text-sm; keep the rail's tighter size on its subtree. */
+[data-nb-api-coderail] .nb-cr-layer {
+  font-size: 0.8125rem;
+  border-radius: 0.875rem;
+}
+
+/* Recessed header row (LayerCardHeader). Right pad reserves the always-visible
+   copy button's column + gap; the title reads at full foreground weight. */
+[data-nb-api-coderail] .nb-cr-head {
+  gap: 0.5rem;
+  padding-right: 2.75rem;
+  min-height: 2.5rem;
+  color: var(--color-foreground);
+}
+[data-nb-api-coderail] .nb-cr-titlewrap {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+[data-nb-api-coderail] .nb-cr-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--color-foreground);
+}
+/* Language selector — a native <select> sitting where the static "HTTP" label
+   used to. Native so it's keyboard/AT/mobile-correct for free; appearance is
+   reset and a chevron painted on the right. The header's right-padding still
+   reserves the copy-button column, so the select sits left of it. */
+[data-nb-api-coderail] .nb-cr-langselect {
+  flex: none;
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  /* Match the copy button's box so the two sit as an aligned pair. */
+  height: 1.75rem;
+  max-width: 9rem;
+  border: 1px solid var(--nb-cr-border);
+  border-radius: 6px;
+  padding: 0 1.5rem 0 0.5rem;
+  background-color: var(--nb-background);
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23888'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='m6%209%206%206%206-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.375rem center;
+  background-size: 12px;
+  font: inherit;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--color-foreground);
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+[data-nb-api-coderail] .nb-cr-langselect:hover {
+  border-color: color-mix(in oklab, var(--nb-foreground) 28%, transparent);
+}
+[data-nb-api-coderail] .nb-cr-langselect:focus-visible {
+  outline: 2px solid var(--color-ring, var(--nb-cr-accent));
+  outline-offset: -1px;
+}
+/* A native <select> can't paint its chevron from `currentColor`, so the arrow
+   is a data-URI stroke; a dark-mode override keeps it legible on dark chrome. */
+[data-mode="dark"] [data-nb-api-coderail] .nb-cr-langselect {
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23a1a1aa'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='m6%209%206%206%206-6'/%3E%3C/svg%3E");
+}
+/* A hidden sample panel drops out entirely — no stray copy button, no gap. */
+[data-nb-api-coderail] [data-nb-lang-panel][hidden] {
+  display: none;
+}
+
+/* Raised content layer of the request card — the LayerCard's raised body
+   (`overflow-hidden rounded-lg bg-card ring ring-border`, set in the markup so
+   it matches the canonical LayerCardContent radius/ring exactly). Its rounded
+   top corners tuck under the recessed header for the nested-radius look. Left
+   un-positioned (no `relative`) so the copy button escapes past it to the
+   LayerCard root and lands in the header; its overflow:hidden doesn't clip
+   that button, whose containing block (the LayerCard) is an ancestor. */
+
+/* The response example lives INSIDE the request LayerCard as a recessed bottom.
+   Unlike the request (recessed head over a RAISED bg-card body), the whole
+   response block stays on the card's muted layer: the label row ("Response
+   example" + status toggle) AND the code body share one recessed surface, so
+   the informational response reads as sunken beside the raised, interactive
+   request card. The status toggle swaps the visible response panel (see
+   code-rail.client). Responses carry no copy button. */
+[data-nb-api-coderail] .nb-cr-respsection {
+  margin-top: 0;
+}
+/* Recessed code body — flush on the LayerCard's muted layer (no bg-card / ring),
+   so it's continuous with the label row above. The <Code> figure's background
+   is already reset to transparent below, so the muted layer shows through. No
+   radius of its own: it runs edge-to-edge and the LayerCard's overflow-hidden
+   clips it to the card's rounded bottom corners. */
+[data-nb-api-coderail] .nb-cr-respcontent {
+  overflow: hidden;
+  border-radius: 0 0 0.75rem 0.75rem;
+  background: var(--color-card);
+}
+[data-nb-api-coderail] .nb-cr-resphead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.75rem;
+}
+[data-nb-api-coderail] .nb-cr-resptext {
+  color: var(--color-foreground);
+  font-weight: 600;
+}
+/* Status toggle — a segmented control; the selected status shows its class
+   tint (2xx success, 3xx info, 4xx/5xx danger) on a faint fill. */
+[data-nb-api-coderail] .nb-cr-respswitch {
+  display: inline-flex;
+  gap: 0.125rem;
+}
+[data-nb-api-coderail] .nb-cr-respbtn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0.125rem 0.4375rem;
+  border-radius: 6px;
+  font-family: var(--nb-font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+}
+[data-nb-api-coderail] .nb-cr-respbtn:hover {
+  color: var(--color-foreground);
+}
+[data-nb-api-coderail] .nb-cr-respbtn[aria-selected="true"] {
+  background: color-mix(in oklab, var(--nb-foreground) 8%, transparent);
+  color: var(--color-foreground);
+}
+[data-nb-api-coderail] .nb-cr-respbtn.nb-cr-2xx[aria-selected="true"] {
+  color: var(--color-success);
+}
+[data-nb-api-coderail] .nb-cr-respbtn.nb-cr-3xx[aria-selected="true"] {
+  color: var(--color-info);
+}
+[data-nb-api-coderail] .nb-cr-respbtn.nb-cr-err[aria-selected="true"] {
+  color: var(--color-danger);
+}
+[data-nb-api-coderail] .nb-cr-respbtn:focus-visible {
+  outline: 2px solid var(--color-ring, var(--nb-cr-accent));
+  outline-offset: -2px;
+}
+/* Hidden response panel drops out entirely. */
+[data-nb-api-coderail] [data-nb-resp-panel][hidden] {
+  display: none;
+}
+/* Responses show no copy button — suppress the one the <Code> primitive injects. */
+[data-nb-api-coderail] .nb-cr-respsection .nb-code-copy {
+  display: none;
+}
+/* Slim, unobtrusive scrollbars on every scroller in the rail — the code <pre>
+   scrolls long lines horizontally (request AND response; `pre.astro-code` is
+   overflow-x:auto from globals, and the rail sets its figure overflow:visible
+   so the pre is the scroller), and the response body scrolls tall JSON
+   vertically. Thumb only, transparent track, matching the sidebar column. The
+   bar only paints when there's actual overflow, so short samples stay clean. */
+[data-nb-api-coderail] .nb-cr-body pre.astro-code,
+[data-nb-api-coderail] .nb-cr-respbody {
+  scrollbar-width: thin;
+  scrollbar-color: gray transparent;
+}
+[data-nb-api-coderail] .nb-cr-respbody {
+  max-height: 20rem;
+  overflow-y: auto;
+}
+
+/* Reset the shared <Code> figure so it sits flush inside the surface. The
+   figure goes position:static so its injected copy button escapes to the
+   nearest positioned ancestor — the LayerCard root (the only `.relative` here)
+   — landing top-right in the request header rather than over the first code
+   line. Only the request card renders a copy button; the response suppresses
+   it (see the .nb-cr-respsection .nb-code-copy rule). `codeCopy` sets
+   `figure.style.position = "relative"` inline at runtime; the non-important
+   inline write loses to this important stylesheet declaration, so the escape
+   holds. Neither the raised content nor the surface (overflow:hidden) clips
+   the escaped button — its containing block (the LayerCard) is an ancestor. */
+[data-nb-api-coderail] .nb-cr-body .nb-code-figure {
+  position: static !important;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+/* Suppress the figure's data-nb-lang badge — the header already labels it.
+   Outweighs the global badge selector on specificity, so order doesn't matter. */
+[data-nb-api-coderail] .nb-cr-body .nb-code-figure[data-nb-lang]::before {
+  content: none;
+}
+[data-nb-api-coderail] .nb-cr-body pre.astro-code {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+
+/* Gutter line numbers, counted off Shiki's per-line spans. Shiki separates
+   lines with literal "\n" text nodes, which a <pre> already renders as breaks;
+   leaving `.line` inline avoids a second break (block box + newline = the
+   double-spacing bug). The counter still increments once per `.line`. */
+[data-nb-api-coderail] pre.astro-code code {
+  counter-reset: nb-cr-line;
+  display: block;
+}
+[data-nb-api-coderail] pre.astro-code .line::before {
+  counter-increment: nb-cr-line;
+  content: counter(nb-cr-line);
+  display: inline-block;
+  width: 1.25rem;
+  margin-right: 1rem;
+  text-align: right;
+  color: var(--color-muted-foreground);
+  user-select: none;
+}
+/* Shiki emits a trailing empty line; don't number a blank last row. */
+[data-nb-api-coderail] pre.astro-code .line:last-child:empty {
+  display: none;
+}
+
+/* The copy button (injected by codeCopy) is pinned into the header row as the
+   right-most control: same 1.75rem box and same top as the language <select>,
+   so the two align as a pair. Always visible here (the rail's chrome reads as
+   a single toolbar) — overriding the shared block's hover-reveal default. */
+[data-nb-api-coderail] .nb-code-copy {
+  /* Anchored to the LayerCard root: top = header padding-top (py-2, 0.5rem) so
+     the button top lines up with the select; both are 1.75rem tall → bottoms
+     match. right leaves an ~8px gap to the select (reserved by .nb-cr-head). */
+  top: 0.5rem;
+  right: 0.5rem;
+  opacity: 1;
+}
