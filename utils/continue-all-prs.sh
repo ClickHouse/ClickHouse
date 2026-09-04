@@ -13,6 +13,16 @@ set -euo pipefail
 # worker becomes free first, so the work is distributed evenly regardless of how
 # long each PR takes.
 #
+# PRs are processed in priority order within each round. First every PR carrying
+# the `blocker` label is processed; only once a full pass over them makes no
+# progress does the round move on to the PRs labeled `pr-critical-bugfix`, and
+# only once those likewise make no progress does it process the rest. As soon as
+# a priority makes progress the round stops there, and the next round starts over
+# from the `blocker` PRs, so the highest-priority work is always revisited first.
+# "Progress" means a PR was pushed, merged or closed; a PR that only needs a
+# human decision (NEEDS-ATTENTION) or that failed / timed out does not count as
+# progress, so a stuck PR never starves the lower priorities.
+#
 # Output is intentionally terse: one line when a PR is assigned to a worker, and
 # when it finishes a status line plus a one-to-two sentence summary of what was
 # done. The finish status is one of:
@@ -104,8 +114,10 @@ set -euo pipefail
 #   If colors look wrong, run with --color never.
 #
 # Advanced/testing:
-#   Set CONTINUE_ALL_PRS_PRS_FILE=<file> to read the PR list (lines of
-#   "<number>\t<title>") from a file instead of querying GitHub.
+#   Set CONTINUE_ALL_PRS_PRS_FILE=<file> to read the PR list from a file instead
+#   of querying GitHub. Each line is "<number>\t<title>", optionally followed by
+#   a third tab-separated column of comma-separated labels
+#   ("<number>\t<title>\t<label>,<label>,...") used to assign the priority tier.
 #   Set CONTINUE_ALL_PRS_MIN_FREE_GB=<integer> to override the minimum free
 #   disk space maintained by worktree cleanup (default: 100).
 
@@ -418,6 +430,10 @@ na_add()
       grep -qxF "$1" "$NAFILE" 2>/dev/null || echo "$1" >> "$NAFILE"
     } 7>>"$STATSLOCK"
 }
+
+# Record a PR that made real progress this priority pass. Reset by run_workers_on
+# before each pass; read afterwards to decide whether to advance priorities.
+action_add() { { flock 7; printf '%s\n' "$1" >> "$ACTION_FILE"; } 7>>"$STATSLOCK"; }
 
 # Pipe this script's stdout (banners + all worker lines) through the renderer,
 # which owns the real terminal. No-op if disabled or the renderer is missing.
@@ -878,6 +894,10 @@ STATSFILE="$LOGDIR/stats"
 STATSLOCK="$LOGDIR/stats.lock"
 NAFILE="$LOGDIR/needs-attention"
 CLEANUP_FAILURE_FILE="$LOGDIR/cleanup-failure"
+# PRs that made real progress (pushed / merged / closed) during the current
+# priority pass. A non-empty file after a pass means the round should stay on
+# this priority and not advance to a lower one.
+ACTION_FILE="$LOGDIR/action-taken"
 declare -a WORKER_PIDS=()
 
 stop_workers()
@@ -1205,6 +1225,10 @@ process_pr()
         *)               stats_add 0 1 0 0 0 0 0 0 ;;
     esac
     [[ "$outcome" == NEEDS-ATTENTION ]] && na_add "$number"
+    # Real progress (pushed / merged / closed) keeps the current priority tier
+    # active, so the round does not advance to a lower priority yet. NO-CHANGE,
+    # NEEDS-ATTENTION, FAILED and TIMEOUT are not progress and let it advance.
+    [[ "$mark" == "OK " ]] && action_add "$number"
 
     ts=$(date +%H:%M:%S)
     emit "$color" "$ts  $mark  worker $i  FINISHED  PR #$number  $title  --  $status"
@@ -1248,6 +1272,31 @@ worker()
     exec 9>&-
 }
 
+# Run the worker pool over the given newline-separated "<number>\t<title>" list,
+# blocking until every worker drains the queue. Resets the progress marker first;
+# a worker records a PR in $ACTION_FILE whenever it makes real progress (pushed /
+# merged / closed), so afterwards a non-empty $ACTION_FILE means the pass
+# advanced at least one PR.
+run_workers_on()
+{
+    local prs="$1" i
+    : > "$ACTION_FILE"
+    printf '%s\n' "$prs" > "$QUEUEFILE"
+
+    # Job control gives every asynchronous worker its own process group. This
+    # lets the interrupt trap terminate the worker and all of its descendants
+    # immediately instead of waiting for a running agent command to return.
+    set -m
+    WORKER_PIDS=()
+    for (( i = 0; i < WORKERS; i++ )); do
+        worker "$i" "${WT[i]}" &
+        WORKER_PIDS+=($!)
+    done
+    set +m
+    wait "${WORKER_PIDS[@]}" || true
+    WORKER_PIDS=()
+}
+
 # Return 0 (true) if a "related" PR looks abandoned: nobody other than me has
 # acted on it (pushed a commit, commented, or reviewed) since `cutoff`. If the
 # activity data can't be fetched, treat it as active (skip) - fail closed rather
@@ -1279,10 +1328,29 @@ load_excluded_authors()
     done < "$EXCLUDE_AUTHORS_FILE"
 }
 
+# Map a PR's comma-separated label list to its priority tier: 0 for `blocker`,
+# 1 for `pr-critical-bugfix`, 2 for everything else (blocker wins if both apply).
+pr_priority()
+{
+    case ",$1," in
+        *,blocker,*)            printf '0' ;;
+        *,pr-critical-bugfix,*) printf '1' ;;
+        *)                      printf '2' ;;
+    esac
+}
+
+# Emit the PR list as "<number>\t<priority>\t<title>" lines, oldest first. The
+# caller buckets them into priority tiers.
 fetch_prs()
 {
     if [[ -n "${CONTINUE_ALL_PRS_PRS_FILE:-}" ]]; then
-        cat "$CONTINUE_ALL_PRS_PRS_FILE"
+        # File lines are "<number>\t<title>" with an optional third
+        # "<label>,<label>,..." column used only to assign the priority tier.
+        local n t labels
+        while IFS=$'\t' read -r n t labels || [[ -n "$n" ]]; do
+            [[ -n "$n" ]] || continue
+            printf '%s\t%s\t%s\n' "$n" "$(pr_priority "$labels")" "$t"
+        done < "$CONTINUE_ALL_PRS_PRS_FILE"
         return 0
     fi
 
@@ -1318,29 +1386,33 @@ fetch_prs()
         add
         | map(select((.labels // []) | map(.name) | index("hold") | not))
         | group_by(.number)
-        | map({ number:    .[0].number,
-                title:     .[0].title,
-                author:    (.[0].author.login // ""),
-                updatedAt: (map(.updatedAt) | max),
-                always:    (any(.[]; .always)) })
+        | map(([.[].labels[]?.name] | unique) as $names
+              | { number:    .[0].number,
+                  title:     .[0].title,
+                  author:    (.[0].author.login // ""),
+                  updatedAt: (map(.updatedAt) | max),
+                  always:    (any(.[]; .always)),
+                  priority:  (if   ($names | index("blocker"))            then 0
+                              elif ($names | index("pr-critical-bugfix")) then 1
+                              else 2 end) })
         | sort_by(.updatedAt)
-        | .[] | [ .number, (.always | tostring), .author, .updatedAt, .title ] | @tsv' )
+        | .[] | [ .number, (.always | tostring), .author, .updatedAt, (.priority | tostring), .title ] | @tsv' )
 
-    local number always author updatedAt title
-    while IFS=$'\t' read -r number always author updatedAt title; do
+    local number always author updatedAt priority title
+    while IFS=$'\t' read -r number always author updatedAt priority title; do
         [[ -n "$number" ]] || continue
         if [[ "$always" == "true" ]]; then
             # mine / assigned to me -> always processed, regardless of author.
-            printf '%s\t%s\n' "$number" "$title"
+            printf '%s\t%s\t%s\n' "$number" "$priority" "$title"
             continue
         fi
         # related-only: skip if the author is excluded from --related updates.
         [[ -n "${EXCLUDED_AUTHOR[${author,,}]:-}" ]] && continue
         if [[ "$updatedAt" < "$cutoff" ]]; then
             # No activity by anyone (including me) in the window -> abandoned.
-            printf '%s\t%s\n' "$number" "$title"
+            printf '%s\t%s\t%s\n' "$number" "$priority" "$title"
         elif related_is_abandoned "$number" "$cutoff"; then
-            printf '%s\t%s\n' "$number" "$title"
+            printf '%s\t%s\t%s\n' "$number" "$priority" "$title"
         fi
     done <<< "$candidates"
 }
@@ -1357,6 +1429,10 @@ fi
 maybe_color_hint
 load_excluded_authors
 
+# Priority tiers processed highest-first each round (see the header comment).
+# Index i names priority i, as assigned by pr_priority / fetch_prs.
+PRIORITY_NAMES=("blocker" "pr-critical-bugfix" "other")
+
 modes=()
 (( MODE_MINE ))     && modes+=("mine")
 (( MODE_ASSIGNED )) && modes+=("assigned")
@@ -1369,6 +1445,7 @@ banner "Workers:         $WORKERS"
 banner "Worktree base:   ${WORKTREE_BASE}-{0..$((WORKERS - 1))}"
 [[ -n "$GH_USER" ]] && banner "GitHub user:     $GH_USER"
 banner "Selecting:       $MODES_DESC"
+banner "Priority order:  ${PRIORITY_NAMES[0]} > ${PRIORITY_NAMES[1]} > ${PRIORITY_NAMES[2]}"
 (( MODE_RELATED )) && (( ${#EXCLUDED_AUTHOR[@]} )) && banner "Excluded (related): ${!EXCLUDED_AUTHOR[*]}"
 banner "Per-PR timeout:  ${TIMEOUT}s (shared across up to ${MAX_CONTINUE} turns)"
 banner "ccache:          ${CCACHE_DIR} (max ${CCACHE_MAXSIZE})"
@@ -1428,38 +1505,43 @@ while true; do
     na_reset
     banner "===== Round ${ROUND}: fetching open PRs ====="
 
-    PRS="$(fetch_prs || true)"
+    PRS_RAW="$(fetch_prs || true)"
 
-    if [[ -z "$PRS" ]]; then
+    if [[ -z "$PRS_RAW" ]]; then
         banner "No open PRs found. Sleeping 60s before retrying..."
         (( ONCE )) && break
         sleep 60
         continue
     fi
 
-    COUNT=$(printf '%s\n' "$PRS" | grep -c . || true)
-    banner "Round ${ROUND}: ${COUNT} PR(s) to process across ${WORKERS} worker(s)"
+    TOTAL=$(printf '%s\n' "$PRS_RAW" | grep -c . || true)
+    banner "Round ${ROUND}: ${TOTAL} PR(s) across ${WORKERS} worker(s), by priority: ${PRIORITY_NAMES[0]} > ${PRIORITY_NAMES[1]} > ${PRIORITY_NAMES[2]}"
     echo ""
 
-    printf '%s\n' "$PRS" > "$QUEUEFILE"
+    # Process the PRs in priority tiers. Only advance to a lower priority once a
+    # full pass over the current one makes no progress; the moment a pass does
+    # make progress, stop the round so the next one revisits the top priority.
+    for prio in 0 1 2; do
+        tier_prs=$(printf '%s\n' "$PRS_RAW" \
+            | awk -F'\t' -v p="$prio" '$2 == p { t = $3; for (i = 4; i <= NF; ++i) t = t "\t" $i; print $1 "\t" t }')
+        tier_count=$(printf '%s\n' "$tier_prs" | grep -c . || true)
+        (( tier_count == 0 )) && continue
 
-    # Job control gives every asynchronous worker its own process group. This
-    # lets the interrupt trap terminate the worker and all of its descendants
-    # immediately instead of waiting for a running agent command to return.
-    set -m
-    WORKER_PIDS=()
-    for (( i = 0; i < WORKERS; i++ )); do
-        worker "$i" "${WT[i]}" &
-        WORKER_PIDS+=($!)
+        banner "Priority ${prio} (${PRIORITY_NAMES[prio]}): ${tier_count} PR(s)"
+        echo ""
+        run_workers_on "$tier_prs"
+
+        if [[ -s "$CLEANUP_FAILURE_FILE" ]]; then
+            banner "Worktree cleanup failed; stopping instead of retrying in another round"
+            exit 1
+        fi
+
+        if [[ -s "$ACTION_FILE" ]]; then
+            banner "Priority ${prio} (${PRIORITY_NAMES[prio]}) made progress; skipping lower priorities this round"
+            break
+        fi
+        banner "Priority ${prio} (${PRIORITY_NAMES[prio]}) needs no action; advancing to the next priority"
     done
-    set +m
-    wait "${WORKER_PIDS[@]}" || true
-    WORKER_PIDS=()
-
-    if [[ -s "$CLEANUP_FAILURE_FILE" ]]; then
-        banner "Worktree cleanup failed; stopping instead of retrying in another round"
-        exit 1
-    fi
 
     echo ""
     banner "===== Round ${ROUND} complete ====="

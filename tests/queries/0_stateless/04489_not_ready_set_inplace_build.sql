@@ -37,6 +37,10 @@ SYSTEM DISABLE FAILPOINT prepared_sets_build_ordered_set_inplace_fail;
 -- subquery shape takes the destructive fallback (as it always did before this change). The whole
 -- query must still produce the correct result when the in-place build fails silently once: the
 -- `ONCE` failpoint fires on the first (innermost, clonable) set, whose deferred build recovers it.
+-- The refusal to clone such a plan is what keeps the two copies from sharing one single-use set
+-- source, so it is asserted directly below: the speculative clone must be rejected for this shape
+-- (a caught `NOT_IMPLEMENTED`, invisible to the client but counted in `system.errors`), and must not
+-- be rejected for a subquery whose source holds no set.
 SELECT count() FROM t_not_ready_set
 WHERE k IN (SELECT k FROM t_not_ready_set WHERE k IN (SELECT k FROM t_not_ready_set WHERE k < 250));
 
@@ -45,4 +49,21 @@ SELECT count() FROM t_not_ready_set
 WHERE k IN (SELECT k FROM t_not_ready_set WHERE k IN (SELECT k FROM t_not_ready_set WHERE k < 250));
 SYSTEM DISABLE FAILPOINT prepared_sets_build_ordered_set_inplace_fail;
 
+-- The counter is server-global, so compare a delta taken around one query, never an absolute value.
+CREATE TABLE t_not_ready_set_errors (value UInt64) ENGINE = MergeTree ORDER BY value;
+
+INSERT INTO t_not_ready_set_errors SELECT sum(value) FROM system.errors WHERE name = 'NOT_IMPLEMENTED';
+SELECT count() FROM t_not_ready_set
+WHERE k IN (SELECT k FROM t_not_ready_set WHERE k IN (SELECT k FROM t_not_ready_set WHERE k < 250));
+INSERT INTO t_not_ready_set_errors SELECT sum(value) FROM system.errors WHERE name = 'NOT_IMPLEMENTED';
+SELECT max(value) > min(value) FROM t_not_ready_set_errors;
+
+TRUNCATE TABLE t_not_ready_set_errors;
+
+INSERT INTO t_not_ready_set_errors SELECT sum(value) FROM system.errors WHERE name = 'NOT_IMPLEMENTED';
+SELECT count() FROM t_not_ready_set WHERE k IN (SELECT k FROM t_not_ready_set WHERE k < 250);
+INSERT INTO t_not_ready_set_errors SELECT sum(value) FROM system.errors WHERE name = 'NOT_IMPLEMENTED';
+SELECT max(value) = min(value) FROM t_not_ready_set_errors;
+
+DROP TABLE t_not_ready_set_errors;
 DROP TABLE t_not_ready_set;

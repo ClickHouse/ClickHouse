@@ -17,6 +17,8 @@ Fonction d’agrégation qui prend des données de séries temporelles sous form
 
 Alias : `timeSeriesLastToGrid`.
 
+Si plusieurs échantillons ont le même horodatage, un seul est utilisé : celui dont la valeur est la plus élevée. Une valeur NaN est inférieure à toute autre valeur, elle n’est donc utilisée que si tous les échantillons associés à cet horodatage sont NaN.
+
 <Warning>
   Cette fonction est expérimentale, activez-la en définissant `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>

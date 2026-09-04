@@ -9,9 +9,13 @@ doc_type: 'reference'
 دوال الذكاء الاصطناعي هي دوال مضمّنة في ClickHouse يمكنك استخدامها لاستدعاء الذكاء الاصطناعي أو إنشاء تضمين للعمل مع بياناتك، واستخراج المعلومات، وتصنيف البيانات، وغير ذلك...
 
 <Note>
-  دوال الذكاء الاصطناعي تجريبية. اضبط [`allow_experimental_ai_functions`](/ar/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions) لتمكينها.
+  دوال الذكاء الاصطناعي في مرحلة Beta.
 
   قد تُرجع دوال الذكاء الاصطناعي مخرجات غير متوقعة. وتعتمد النتيجة بدرجة كبيرة على جودة الموجّه والنموذج المستخدم.
+</Note>
+
+<Note>
+  لا تتوفر دوال الذكاء الاصطناعي في خدمات ClickHouse Cloud في الوقت الحالي. ترقّب التحديثات.
 </Note>
 
 <Warning>
@@ -228,6 +232,7 @@ aiClassify(text, categories[, params])
 **تصنيف المشاعر**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
 ```
 
@@ -238,6 +243,9 @@ positive
 **تصنيف عمود باستخدام بيانات اعتماد صريحة**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE issues (body String) ENGINE = Memory;
+INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
 ```
 
@@ -290,18 +298,23 @@ aiEmbed(text, model[, params])
 **تضمين سلسلة نصية واحدة (يمكن حذف `credentials` إذا كان الإعداد `ai_function_embedding_default_credentials` مضبوطًا)**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **مع تحديد الأبعاد صراحةً**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))
 ```
 
 **إنشاء تضمينات لعمود من النصوص**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (title String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');
 SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
 ```
 
@@ -346,6 +359,7 @@ aiExtract(text, instruction_or_schema[, params])
 **تعليمة بصياغة حرة**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint')
 ```
 
@@ -356,6 +370,9 @@ late and damaged package
 **استخراج المخطط**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE reviews (review String) ENGINE = Memory;
+INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only two hours.');
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
@@ -367,8 +384,11 @@ SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic"
 
 يقيّم شرطًا مكتوبًا بلغة طبيعية على النص المحدد باستخدام موفّر LLM، ويُرجع قيمة منطقية (`UInt8`) مناسبة للاستخدام في `WHERE` و`PREWHERE` و`JOIN ... ON`.
 
-تطلب الدالة من النموذج أن يردّ بـ `true` أو `false` فقط وبأحرف صغيرة. تُحوَّل الطلبات الفاشلة (عندما يكون
-`ai_function_throw_on_error` معطّلًا) والاستجابات غير المعروفة إلى `0`، وبالتالي يُستبعد الصف.
+تطلب الدالة من النموذج أن يردّ بـ `true` أو `false` فقط وبأحرف صغيرة. تُحوَّل أي استجابة مكتملة بخلاف
+`true` (بما في ذلك `false` والنص غير المعروف) إلى `0`، وبالتالي يُستبعد الصف. أما
+الرد غير المكتمل الذي يشير إليه الموفّر — سواء كان مقتطعًا أو مُرشَّحًا للمحتوى أو يتطلب إجراءً إضافيًا — فيُعامل بدلًا من ذلك
+كخطأ: عند تفعيل `ai_function_throw_on_error` (وهو الإعداد الافتراضي) يُجهض الاستعلام؛ وعند تعطيله
+تُحوَّل قيمة الصف إلى `0` ويُستبعد.
 
 **تحذير:** لا تعتمد على نتائج `aiFilter` دون تدقيق. قد تكون المسندات المستندة إلى LLM غير صحيحة
 أو غير متسقة؛ لذا لا تستخدمها إلا عندما تكون الإيجابيات الكاذبة والسلبيات الكاذبة مقبولة.
@@ -385,7 +405,7 @@ SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic"
 aiFilter(text, condition[, params])
 ```
 
-**الأسماء المستعارة**: `AIFilter`
+**اسم بديل**: `AIFilter`
 
 **الوسيطات**
 
@@ -402,12 +422,18 @@ aiFilter(text, condition[, params])
 **تصفية المراجعات الغاضبة**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE reviews (body String) ENGINE = Memory;
+INSERT INTO reviews VALUES ('The package arrived three days late.');
 SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
 ```
 
-**تصفية عمود باستخدام بيانات اعتماد مُحدَّدة صراحةً**
+**تصفية عمود باستخدام بيانات اعتماد صريحة**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE issues (body String) ENGINE = Memory;
+INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
 ```
 
@@ -440,7 +466,7 @@ aiGenerate(prompt[, params])
 **الوسيطات**
 
 * `prompt` — الموجّه أو السؤال الذي يُرسله المستخدم إلى النموذج. [`String`](/ar/reference/data-types/string)
-* `params` — قيمة ثابتة اختيارية من النوع `Map(String, String)` للمعلمات. المفاتيح الخاصة بالدالة هي: `temperature` (درجة حرارة التوليد التي تتحكم في العشوائية؛ والقيمة الافتراضية `0.7`)، و`max_tokens` (الحد الأقصى لعدد الرموز المميّزة في المخرجات لكل استدعاء؛ والقيمة الافتراضية `1024`)، و`system_prompt` (تعليمة ثابتة على مستوى النظام لتوجيه سلوك النموذج؛ والقيمة الافتراضية موجّه عام للمساعد). كما تنطبق أيضًا المعلمتان الشائعتان `credentials` و`model` (راجع [دوال الذكاء الاصطناعي](/ar/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ar/reference/data-types/map)
+* `params` — قيمة ثابتة اختيارية من النوع `Map(String, String)` للمعلمات. المفاتيح الخاصة بالدالة هي: `temperature` (درجة حرارة أخذ العينات التي تتحكم في العشوائية؛ والقيمة الافتراضية `0.7`)، و`max_tokens` (الحد الأقصى لعدد رموز الإخراج لكل استدعاء؛ والقيمة الافتراضية `1024`)، و`system_prompt` (تعليمة ثابتة على مستوى النظام لتوجيه سلوك النموذج؛ والقيمة الافتراضية موجّه عام للمساعد). كما تنطبق أيضًا المعلمتان العامتان `credentials` و`model` (راجع [دوال الذكاء الاصطناعي](/ar/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ar/reference/data-types/map)
 
 **القيمة المُعادة**
 
@@ -451,6 +477,7 @@ aiGenerate(prompt[, params])
 **سؤال بسيط**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 ```
 
@@ -461,12 +488,16 @@ SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 **مع بيانات اعتماد صريحة وموجّه النظام**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials', 'system_prompt', 'You are a database expert. Be concise.'))
 ```
 
 **لخّص قيم العمود**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (article_title String, article_body String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-oriented database for online analytical processing.');
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
@@ -498,8 +529,9 @@ SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_b
 مطابقًا على مستوى البايت للمدخلات التي تحتوي عليها.
 
 لأن `aiRedact` يعيد النص الكامل للإدخال بعد استبدال معلومات تحديد الهوية الشخصية، فإن طول الناتج يقارب طول الإدخال.
-اضبط `max_tokens` (القيمة الافتراضية `1024`) على قيمة أعلى من طول الإدخال بالرموز المميزة؛ إذ ستكون الاستجابة المقتطعة بسبب حد منخفض جدًا
-غير مكتملة.
+اضبط `max_tokens` (القيمة الافتراضية `1024`) على قيمة أعلى من طول الإدخال برموز الإدخال؛ إذ تُرفض الاستجابة المقتطعة بسبب حد منخفض جدًا
+مع `AI_PROVIDER_RESPONSE_TRUNCATED` (أو تُنتج القيمة الافتراضية للعمود عندما يكون `ai_function_throw_on_error`
+معطلاً) بدلًا من إرجاع نص محجوب جزئيًا.
 
 **البنية**
 
@@ -507,23 +539,24 @@ SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_b
 aiRedact(text, categories[, params])
 ```
 
-**الأسماء المستعارة**: `AIRedact`
+**اسم بديل**: `AIRedact`
 
 **الوسيطات**
 
 * `text` — النص المراد حجبه. [`String`](/ar/reference/data-types/string)
-* `categories` — قائمة ثابتة بفئات معلومات التعريف الشخصية المراد حجبها (مثل `['name', 'ssn', 'credit_card']`). تستخدم المصفوفة الفارغة مجموعة افتراضية من الفئات الشائعة (الاسم، والبريد الإلكتروني، ورقم الهاتف، والعنوان، وبطاقة الائتمان، وعنوان IP). [`Array(String)`](/ar/reference/data-types/array)
-* `params` — `Map(String, String)` اختيارية وثابتة للمعلمات. المفاتيح الخاصة بالدالة هي: `temperature` (درجة حرارة أخذ العينات التي تتحكم في العشوائية؛ القيمة الافتراضية `0.0`)، و`max_tokens` (الحد الأقصى لرموز الإخراج لكل استدعاء؛ القيمة الافتراضية `1024` — بما أن `aiRedact` يعيد النص كاملاً، فاضبطها على قيمة أكبر من طول الإدخال بالرموز، وإلا فقد تكون الاستجابة مقتطعة وغير مكتملة)، و`replacement` (الرمز الذي يحل محل كل نطاق مكتشف من معلومات التعريف الشخصية؛ القيمة الافتراضية `[REDACTED]`). تنطبق أيضًا المعلمتان العامتان `credentials` و`model` (راجع [دوال الذكاء الاصطناعي](/ar/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ar/reference/data-types/map)
+* `categories` — قائمة ثابتة بفئات معلومات تحديد الهوية الشخصية المراد حجبها (مثل `['name', 'ssn', 'credit_card']`). تستخدم المصفوفة الفارغة مجموعة افتراضية من الفئات الشائعة (الاسم، والبريد الإلكتروني، ورقم الهاتف، والعنوان، وبطاقة الائتمان، وعنوان IP). [`Array(String)`](/ar/reference/data-types/array)
+* `params` — `Map(String, String)` اختيارية وثابتة للمعلمات. المفاتيح الخاصة بالدالة هي: `temperature` (درجة حرارة أخذ العينات التي تتحكم في العشوائية؛ القيمة الافتراضية `0.0`)، و`max_tokens` (الحد الأقصى لرموز الإخراج لكل استدعاء؛ القيمة الافتراضية `1024` — بما أن `aiRedact` يعيد النص كاملاً، فاضبطها على قيمة أكبر من طول الإدخال برموز الإدخال؛ إذ تُرفض الاستجابة المقتطعة بسبب حد منخفض جدًا بدلًا من إرجاع نص محجوب جزئيًا)، و`replacement` (الرمز الذي يحل محل كل نطاق مكتشف من معلومات تحديد الهوية الشخصية؛ القيمة الافتراضية `[REDACTED]`). تنطبق أيضًا المعلمتان العامتان `credentials` و`model` (راجع [دوال الذكاء الاصطناعي](/ar/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ar/reference/data-types/map)
 
 **القيمة المعادة**
 
-النص بعد استبدال معلومات التعريف الشخصية المكتشفة برمز الحجب، أو القيمة الافتراضية لنوع العمود (سلسلة فارغة) إذا فشل الطلب وكان `ai_function_throw_on_error` معطلاً. [`String`](/ar/reference/data-types/string)
+النص بعد استبدال معلومات تحديد الهوية الشخصية المكتشفة برمز الحجب، أو القيمة الافتراضية لنوع العمود (سلسلة فارغة) إذا فشل الطلب وكان `ai_function_throw_on_error` معطلاً. [`String`](/ar/reference/data-types/string)
 
 **أمثلة**
 
 **حجب فئات محددة**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])
 ```
 
@@ -534,6 +567,9 @@ Purchase was done by customer [REDACTED] with email [REDACTED]
 **احجب فئات معلومات تحديد الهوية الشخصية الافتراضية باستخدام رمز مميز مخصص**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE tickets (body String) ENGINE = Memory;
+INSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');
 SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
 ```
 
@@ -583,18 +619,25 @@ aiSimilarity(text1, text2, model[, params])
 **قارن بين سلسلتين (`credentials` يمكن حذفها إذا كان الإعداد `ai_function_embedding_default_credentials` مضبوطًا)**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **رتّب المراجعات حسب مدى تشابهها مع استعلام**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE product_reviews (review String) ENGINE = Memory;
+INSERT INTO product_reviews VALUES ('It works well under rain.');
 SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
 ```
 
 **إزالة التكرار الدلالي باستخدام ربط ذاتي**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE docs (id UInt64, title String) ENGINE = Memory;
+INSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse database guide');
 SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
@@ -602,7 +645,7 @@ SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title
   ## aiTranslate
 </div>
 
-قُدِّم في: v26.4.0
+أُضيف في: v26.4.0
 
 يترجم النص المُعطى إلى اللغة الهدف المحددة باستخدام موفّر LLM.
 
@@ -624,7 +667,7 @@ aiTranslate(text, target_language[, params])
 
 * `text` — النص المراد ترجمته. [`String`](/ar/reference/data-types/string)
 * `target_language` — اسم اللغة الهدف أو رمز BCP-47 لها (مثل `'French'` و`'es-MX'`). [`String`](/ar/reference/data-types/string)
-* `params` — `Map(String, String)` ثابت اختياري للمعلمات. المفاتيح الخاصة بهذه الدالة هي: `temperature` (درجة حرارة أخذ العينات التي تتحكم في العشوائية؛ والقيمة الافتراضية `0.3`)، و`max_tokens` (الحد الأقصى لعدد التوكنات الناتجة في كل استدعاء؛ والقيمة الافتراضية `1024`)، و`instructions` (تعليمات إضافية للمترجم تتعلق بالأسلوب أو اللهجة). كما تنطبق أيضًا المعلمتان الشائعتان `credentials` و`model` (راجع [دوال الذكاء الاصطناعي](/ar/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ar/reference/data-types/map)
+* `params` — `Map(String, String)` ثابت اختياري للمعلمات. المفاتيح الخاصة بهذه الدالة هي: `temperature` (درجة حرارة أخذ العينات التي تتحكم في العشوائية؛ والقيمة الافتراضية `0.3`)، و`max_tokens` (الحد الأقصى لعدد رموز الإخراج في كل استدعاء؛ والقيمة الافتراضية `1024`)، و`instructions` (تعليمات إضافية للمترجم تتعلق بالأسلوب أو اللهجة). كما تنطبق أيضًا المعلمتان العامتان `credentials` و`model` (راجع [دوال الذكاء الاصطناعي](/ar/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ar/reference/data-types/map)
 
 **القيمة المُعادة**
 
@@ -635,6 +678,7 @@ aiTranslate(text, target_language[, params])
 **الترجمة إلى الفرنسية**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiTranslate('Hello, world!', 'French')
 ```
 
@@ -645,6 +689,9 @@ Bonjour le monde!
 **ترجم إلى اليابانية مع تعليمات الأسلوب**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (body String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse processes analytical queries quickly.');
 SELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5
 ```
 
