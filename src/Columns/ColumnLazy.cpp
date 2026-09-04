@@ -156,11 +156,6 @@ void ColumnLazy::deserializeAndInsertFromArena(ReadBuffer &, const IColumn::Seri
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method deserializeAndInsertFromArena is not supported for {}", getName());
 }
 
-void ColumnLazy::skipSerializedInArena(ReadBuffer &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipSerializedInArena is not supported for {}", getName());
-}
-
 void ColumnLazy::updateHashWithValue(size_t, SipHash &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateHashWithValue is not supported for {}", getName());

@@ -41,7 +41,6 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 extern const SettingsBool allow_suspicious_codecs;
-extern const SettingsBool allow_experimental_codecs;
 }
 
 
@@ -223,34 +222,25 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                 if (settings)
                 {
                     const String gate_setting_name = getGateSettingName(codec_family_name);
-                    if (const std::optional<SettingsTierType> tier = getGateTier(gate_setting_name))
+                    const std::optional<SettingsTierType> tier = getGateTier(gate_setting_name);
+                    if (tier && !settings->get(gate_setting_name).safeGet<bool>())
                     {
-                        const bool umbrella_bypass
-                            = *tier == SettingsTierType::EXPERIMENTAL && (*settings)[Setting::allow_experimental_codecs];
-                        if (!settings->get(gate_setting_name).safeGet<bool>() && !umbrella_bypass)
+                        std::string_view reason;
+                        /// `getGateTier` maps OBSOLETE to nullopt (the codec is GA). Included for switch exhaustiveness.
+                        switch (*tier)
                         {
-                            std::string_view reason;
-                            switch (*tier)
-                            {
-                                case SettingsTierType::EXPERIMENTAL:
-                                    reason = "is experimental and not meant to be used in production";
-                                    break;
-                                case SettingsTierType::BETA:
-                                    reason = "is in beta and not yet recommended for production use";
-                                    break;
-                                case SettingsTierType::PRODUCTION:
-                                case SettingsTierType::PRIVATE_PREVIEW:
-                                case SettingsTierType::OBSOLETE:
-                                    reason = "is disabled";
-                                    break;
-                            }
-                            throw Exception(
-                                ErrorCodes::BAD_ARGUMENTS,
-                                "Codec {} {}. You can enable it with the '{}' setting",
-                                codec_family_name,
-                                reason,
-                                gate_setting_name);
+                            case SettingsTierType::EXPERIMENTAL: reason = "is experimental and not meant to be used in production"; break;
+                            case SettingsTierType::BETA: reason = "is in beta and not yet recommended for production use"; break;
+                            case SettingsTierType::PRODUCTION:
+                            case SettingsTierType::PRIVATE_PREVIEW:
+                            case SettingsTierType::OBSOLETE: reason = "is disabled"; break;
                         }
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Codec {} {}. You can enable it with the '{}' setting",
+                            codec_family_name,
+                            reason,
+                            gate_setting_name);
                     }
                 }
 
