@@ -1082,3 +1082,16 @@ spec:
         key: password
         name: default-password
 ```
+
+## 定期的な再同期 {#periodic-resync}
+
+オペレーターは、Kubernetesのイベントに反応するだけでなく、一定間隔ですべてのクラスターを再度リコンサイルします。これにより、watchでは検知できない状態 (ClickHouseのレプリカのヘルス、Keeperのクォーラムなど) についてもステータス条件を最新に保ち、スタックしたポッドのクリーンアップといった修復処理を再試行します。
+
+この間隔は、オペレーターの環境変数 `RESYNC_PERIOD` (デフォルトは `30s`) で制御します。これは `KeeperCluster` リソースに適用され、`0` を指定すると定期的な再同期が無効になります。`ClickHouseCluster` リソースは30秒ごとにClickHouseの `system.warnings` をポーリングしており、その時点でリコンサイルが再度トリガーされるため、現時点では `RESYNC_PERIOD` は影響しません。
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: RESYNC_PERIOD
+  value: "1m"
+```

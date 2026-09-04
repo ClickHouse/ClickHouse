@@ -1082,3 +1082,16 @@ spec:
         key: password
         name: default-password
 ```
+
+## 주기적 resync {#periodic-resync}
+
+연산자는 Kubernetes 이벤트에 반응하는 것 외에도, 일정한 인터벌마다 모든 클러스터를 다시 리컨실합니다. 이를 통해 어떤 watch로도 관찰할 수 없는 상태(ClickHouse 레플리카 health, Keeper quorum)의 상태 조건을 최신으로 유지하고, 멈춘 파드 정리와 같은 조치를 재시도합니다.
+
+이 인터벌은 연산자의 `RESYNC_PERIOD` environment variable(기본값 `30s`)로 제어됩니다. 이 설정은 `KeeperCluster` 리소스에 적용되며, `0`으로 지정하면 주기적 resync가 비활성화됩니다. `ClickHouseCluster` 리소스는 30초마다 ClickHouse `system.warnings`를 폴링하면서 이미 리컨실리에이션을 다시 트리거하므로, 현재 `RESYNC_PERIOD`는 이러한 리소스에 아무런 영향을 주지 않습니다.
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: RESYNC_PERIOD
+  value: "1m"
+```

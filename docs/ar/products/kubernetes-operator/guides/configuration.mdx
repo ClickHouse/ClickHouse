@@ -1085,3 +1085,16 @@ spec:
         key: password
         name: default-password
 ```
+
+## المزامنة الدورية {#periodic-resync}
+
+إلى جانب الاستجابة لأحداث Kubernetes، يعيد الـ مشغّل مطابقة (reconcile) كل عنقود على فترات زمنية ثابتة. ويبقي ذلك شروط الحالة محدَّثة بالنسبة للحالات التي لا يمكن لأي watch رصدها — مثل صحة الـ نسخة متماثلة في ClickHouse، و quorum الخاص بـ Keeper — كما يعيد محاولة إجراءات المعالجة مثل تنظيف الـ pod العالق.
+
+ويُتحكَّم في هذه الفترة عبر متغير البيئة `RESYNC_PERIOD` الخاص بالـ مشغّل (القيمة الافتراضية `30s`). وهو ينطبق على موارد `KeeperCluster`، حيث تُعطِّل القيمة `0` المزامنة الدورية. أما موارد `ClickHouseCluster` فتستطلع `system.warnings` في ClickHouse كل 30 ثانية، وهو ما يعيد تشغيل عملية التسوية أصلاً، لذا لا تأثير لـ `RESYNC_PERIOD` عليها حالياً.
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: RESYNC_PERIOD
+  value: "1m"
+```

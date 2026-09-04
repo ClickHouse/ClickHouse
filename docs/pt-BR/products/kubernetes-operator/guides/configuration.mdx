@@ -1083,3 +1083,16 @@ spec:
         key: password
         name: default-password
 ```
+
+## Resync periódico {#periodic-resync}
+
+Além de reagir a eventos do Kubernetes, o operador refaz o reconcile de cada cluster em um intervalo fixo. Isso mantém as condições de status atualizadas para o state que nenhum watch consegue observar — saúde das réplicas do ClickHouse, quorum do Keeper — e refaz retries de remediação, como a limpeza de pods do Kubernetes travados.
+
+O intervalo é controlado pela environment variable `RESYNC_PERIOD` do operador (padrão `30s`). Ela se aplica a recursos `KeeperCluster`, nos quais `0` desativa o resync periódico. Recursos `ClickHouseCluster` fazem poll de `system.warnings` do ClickHouse a cada 30 segundos, o que já dispara novamente a reconciliação, de modo que `RESYNC_PERIOD` atualmente não tem efeito sobre eles.
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: RESYNC_PERIOD
+  value: "1m"
+```

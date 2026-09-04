@@ -1079,3 +1079,16 @@ spec:
         key: password
         name: default-password
 ```
+
+## 定期重新同步 {#periodic-resync}
+
+除了响应 Kubernetes 事件之外，operator 还会按固定时间间隔对每个 cluster 重新执行协调。这样可以让 watch 无法观察到的状态 (如 ClickHouse 副本健康状况、Keeper quorum) 对应的 状态条件 保持最新，并重试诸如清理卡住的 pod (容器组) 等修复操作。
+
+该时间间隔由 operator 的 `RESYNC_PERIOD` environment variable 控制 (默认为 `30s`) 。它适用于 `KeeperCluster` 资源，设为 `0` 即可禁用定期重新同步。`ClickHouseCluster` 资源每 30 秒轮询一次 ClickHouse 的 `system.warnings`，这本身就会重新触发协调，因此 `RESYNC_PERIOD` 目前对其不起作用。
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: RESYNC_PERIOD
+  value: "1m"
+```

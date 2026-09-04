@@ -1084,3 +1084,16 @@ spec:
         key: password
         name: default-password
 ```
+
+## Resynchronisation périodique {#periodic-resync}
+
+En plus de réagir aux événements Kubernetes, l&#39;opérateur réconcilie à nouveau chaque cluster à intervalle fixe. Cela permet de garder à jour les conditions d&#39;état relatives à un state qu&#39;aucun watch ne peut observer — santé des replicas ClickHouse, quorum Keeper — et de réessayer les actions correctives telles que le nettoyage des pods bloqués.
+
+L&#39;intervalle est contrôlé par la variable d&#39;environnement `RESYNC_PERIOD` de l&#39;opérateur (valeur par défaut : `30s`). Elle s&#39;applique aux ressources `KeeperCluster`, où `0` désactive la resynchronisation périodique. Les ressources `ClickHouseCluster` interrogent la table ClickHouse `system.warnings` toutes les 30 secondes, ce qui relance déjà la réconciliation ; `RESYNC_PERIOD` n&#39;a donc actuellement aucun effet sur elles.
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: RESYNC_PERIOD
+  value: "1m"
+```

@@ -7,36 +7,36 @@
       "versionId": "5e8eb2f148cc34089a58ef566bc0123f2ef0726c9083366bf4815bd39bf74645",
       "translations": {
         "ko": {
-          "updatedAt": "2026-09-04T11:22:23.549Z",
+          "updatedAt": "2026-09-04T18:14:41.119Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-04T11:22:23.665Z",
+          "updatedAt": "2026-09-04T18:14:41.259Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-04T11:22:23.929Z",
+          "updatedAt": "2026-09-04T18:14:41.505Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-04T11:22:24.172Z",
+          "updatedAt": "2026-09-04T18:14:41.730Z",
           "fileName": "docs.json",
           "postProcessHash": "894d205f2980fce08b20153bdb5da6b5dfc63baa61711efdbf8f5de3c897f84d"
         },
         "es": {
-          "updatedAt": "2026-09-04T11:22:23.283Z",
+          "updatedAt": "2026-09-04T18:14:40.816Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-04T11:22:24.059Z",
+          "updatedAt": "2026-09-04T18:14:41.617Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-04T11:22:23.787Z",
+          "updatedAt": "2026-09-04T18:14:41.388Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-09-04T11:22:23.429Z",
+          "updatedAt": "2026-09-04T18:14:40.992Z",
           "fileName": "docs.json"
         }
       },
@@ -48174,47 +48174,47 @@
     },
     {
       "fileId": "9878343168a47755a7d7cef28bdbf866edbc8d42d6ec57de823658772eaf307c",
-      "versionId": "70ad05b6cdaf1550cf133e5afac434f47415f1e407c4296943ac9906a27eddd9",
+      "versionId": "d0e18d8096075ab533aacef3adbb5786ee7e81ca52e28c59ea0c27e523eae169",
       "translations": {
-        "ko": {
-          "updatedAt": "2026-09-02T22:31:18.755Z",
-          "fileName": "ko/products/kubernetes-operator/guides/configuration.mdx",
-          "postProcessHash": "4e6b5af71e877b235cd3cdbc036c969aede7a52d212231ae103ecf6ecd0f8862"
-        },
         "zh": {
-          "updatedAt": "2026-09-02T22:31:18.763Z",
+          "updatedAt": "2026-09-04T18:14:44.215Z",
           "fileName": "zh/products/kubernetes-operator/guides/configuration.mdx",
-          "postProcessHash": "5d3a4acb74bca6b19ce77c16e3306b301fe66ba682706bef15bfb4cfb4b02dc8"
+          "postProcessHash": "8f03d661873ca7b6d2cd3ace90ba38daa5e84faba2b68ea367c50cbd9e29dcf0"
         },
         "fr": {
-          "updatedAt": "2026-09-02T22:31:18.764Z",
+          "updatedAt": "2026-09-04T18:14:44.216Z",
           "fileName": "fr/products/kubernetes-operator/guides/configuration.mdx",
-          "postProcessHash": "9e83a438e97705cb39b7b10805e5f1dbcd356602a6d347c34894e466513c9646"
-        },
-        "es": {
-          "updatedAt": "2026-09-02T22:31:18.770Z",
-          "fileName": "es/products/kubernetes-operator/guides/configuration.mdx",
-          "postProcessHash": "737252235d8e086aba1c0178be9465138795b4f7b3fabce5da428f2dd9d22fde"
-        },
-        "ru": {
-          "updatedAt": "2026-09-02T22:31:18.962Z",
-          "fileName": "ru/products/kubernetes-operator/guides/configuration.mdx",
-          "postProcessHash": "86e464040bcdfe8f34aec519a6be1edabd0073a011dfbca3a9b9e89951bf0e56"
-        },
-        "ar": {
-          "updatedAt": "2026-09-02T22:31:18.964Z",
-          "fileName": "ar/products/kubernetes-operator/guides/configuration.mdx",
-          "postProcessHash": "0575d1cda1d35edaa03ffe7f35ab02cfab152feb5358b55d13a51a338fd5a3a3"
+          "postProcessHash": "926568f84fdb628a48ce28083a2ea45d7235b54eb553eda1bb0132ea36d0c6db"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-02T22:31:19.498Z",
+          "updatedAt": "2026-09-04T18:14:44.217Z",
           "fileName": "pt-BR/products/kubernetes-operator/guides/configuration.mdx",
-          "postProcessHash": "7303841719e059c152403af8f1fc45ab4ecb2bd074dd1a4c20119c925dcd59ba"
+          "postProcessHash": "5749e689e48d609f436ad60286cdad3b7dbf54897e4f71bc936e965c75dc89b0"
+        },
+        "es": {
+          "updatedAt": "2026-09-04T18:14:44.217Z",
+          "fileName": "es/products/kubernetes-operator/guides/configuration.mdx",
+          "postProcessHash": "928d545dec858fe4e6ea52d8473d2ff2ac9bf2d5e1737f7e5422a8861cc3a50c"
+        },
+        "ko": {
+          "updatedAt": "2026-09-04T18:14:44.218Z",
+          "fileName": "ko/products/kubernetes-operator/guides/configuration.mdx",
+          "postProcessHash": "a78f34562a5271a5076c3b056a5c29ffabc0f9c2ebd613e509eeb73214925a9a"
+        },
+        "ru": {
+          "updatedAt": "2026-09-04T18:14:44.218Z",
+          "fileName": "ru/products/kubernetes-operator/guides/configuration.mdx",
+          "postProcessHash": "dc5209c61c2a5ddd6a6c964e06543a73889d95eb8d88ccfc33e067b19082e3d9"
         },
         "ja": {
-          "updatedAt": "2026-09-02T22:31:19.500Z",
+          "updatedAt": "2026-09-04T18:14:44.219Z",
           "fileName": "ja/products/kubernetes-operator/guides/configuration.mdx",
-          "postProcessHash": "a86d617031e6339f327315200fe2b7e976d954630f53665e0ed224c1c2d44d9b"
+          "postProcessHash": "0b369f3de4a58ed42178f77e082e3594699340fc7cb27f444db975434a38b722"
+        },
+        "ar": {
+          "updatedAt": "2026-09-04T18:14:44.220Z",
+          "fileName": "ar/products/kubernetes-operator/guides/configuration.mdx",
+          "postProcessHash": "2083e27e562b7a35744978f46bce838643dbe4aa4dfdb8f4e1b31d0bac147447"
         }
       },
       "fileName": "products/kubernetes-operator/guides/configuration.mdx"
