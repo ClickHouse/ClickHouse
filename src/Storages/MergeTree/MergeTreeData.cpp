@@ -1203,7 +1203,27 @@ void MergeTreeData::checkProperties(
                 /// index files are written and merged all the same, so the cost is paid and nothing
                 /// reads them. Existing tables are left alone: `attach` must keep loading whatever
                 /// is already on disk.
-                if (!attach && !index.data_types.empty())
+                /// Only a newly added or redefined index is checked. `checkProperties` also runs for
+                /// every `ALTER` (`checkAlterIsPossible`) and on the replica side of a committed
+                /// `ALTER_METADATA` (`setTableStructure` -> `setProperties`), both with `attach = false`,
+                /// so validating indexes that the operation does not touch would leave a table that
+                /// already carries such an index loadable but un-alterable - and would wedge the
+                /// replication queue of an upgraded replica behind an entry it can never apply.
+                /// On the create path `setProperties` is called with the same metadata as both
+                /// arguments, so "already present in `old_metadata`" only means "pre-existing" when
+                /// the two are actually different objects.
+                const bool is_alter = &old_metadata != &new_metadata;
+                const bool index_is_unchanged = is_alter
+                    && std::ranges::any_of(
+                        old_metadata.secondary_indices,
+                        [&](const auto & old_index)
+                        {
+                            return old_index.name == index.name && old_index.definition_ast && index.definition_ast
+                                && old_index.definition_ast->getTreeHash(/*ignore_aliases=*/true)
+                                == index.definition_ast->getTreeHash(/*ignore_aliases=*/true);
+                        });
+
+                if (!attach && !index_is_unchanged && !index.data_types.empty())
                 {
                     const auto * index_ast = typeid_cast<const ASTIndexDeclaration *>(index.definition_ast.get());
                     ASTPtr index_expression = index_ast ? index_ast->getExpression() : nullptr;

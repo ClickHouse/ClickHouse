@@ -1,3 +1,7 @@
+-- Tags: no-parallel, no-ordinary-database
+-- Tag no-parallel, no-ordinary-database: the grandfathering case below needs an Ordinary database,
+-- because only there can a table be ATTACHed from an explicit definition.
+
 -- A text index over an ALIAS column whose declared type differs from the type its expression
 -- produces can never be used: reading the column applies an implicit CAST to the declared type,
 -- while the index is built over the expression as written, and the two no longer match by name.
@@ -42,3 +46,23 @@ SELECT paths FROM t_alias_no_index;
 
 DROP TABLE t_matching_alias;
 DROP TABLE t_alias_no_index;
+
+-- A table that already carries such an index keeps loading, and unrelated ALTERs on it still work.
+-- `checkProperties` also runs for every ALTER and on the replica side of a committed ALTER_METADATA,
+-- both with attach = false, so re-validating an index the operation does not touch would leave such
+-- a table loadable but un-alterable - and would wedge the replication queue of an upgraded replica.
+SET allow_deprecated_database_ordinary = 1;
+DROP DATABASE IF EXISTS db_05076_ord;
+CREATE DATABASE db_05076_ord ENGINE = Ordinary;
+
+ATTACH TABLE db_05076_ord.t_grandfathered
+(
+    event String,
+    paths String ALIAS JSONExtractKeys(event),
+    INDEX fts_paths paths TYPE text(tokenizer = array)
+) ENGINE = MergeTree ORDER BY tuple();
+
+ALTER TABLE db_05076_ord.t_grandfathered ADD COLUMN x UInt8;
+SELECT count() FROM system.columns WHERE database = 'db_05076_ord' AND table = 't_grandfathered' AND name = 'x';
+
+DROP DATABASE db_05076_ord;
