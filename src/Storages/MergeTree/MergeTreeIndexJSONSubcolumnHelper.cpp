@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/JSONPathValues.h>
 #include <Interpreters/convertFieldToType.h>
@@ -14,6 +15,13 @@
 
 namespace DB
 {
+
+/// Prefixed subcolumns look like "<prefix>`first_path_element`.rest": the back-quote distinguishes
+/// them from an ordinary path starting with the prefix character, e.g. "@`a`" versus "@a".
+static bool isPrefixedSubcolumn(std::string_view subcolumn_name, char prefix)
+{
+    return subcolumn_name.size() >= 2 && subcolumn_name[0] == prefix && subcolumn_name[1] == '`';
+}
 
 /// Extract the JSON path from a subcolumn name, stripping any `.:\`Type\`` suffix.
 /// For example:
@@ -26,8 +34,8 @@ static std::optional<String> extractPathFromSubcolumn(
     size_t & array_json_levels)
 {
     if (subcolumn_name.empty()
-        || subcolumn_name.starts_with("^")
-        || subcolumn_name.starts_with("@`")
+        || isPrefixedSubcolumn(subcolumn_name, DataTypeObject::SUB_OBJECT_SUBCOLUMN_PREFIX)
+        || isPrefixedSubcolumn(subcolumn_name, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX)
         || subcolumn_name.contains(".^`")
         || subcolumn_name.contains(".@`"))
         return std::nullopt;

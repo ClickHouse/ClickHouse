@@ -2058,7 +2058,8 @@ def test_timeseries(started_cluster):
         """
         CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');
         CREATE TABLE ts_db.table ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = false
-        DATA ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
+        SAMPLES ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
+        RECENT SAMPLES ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
         TAGS ENGINE = ReplicatedAggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
         METRICS ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family_name;
         """,
@@ -2069,7 +2070,7 @@ def test_timeseries(started_cluster):
         "CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');"
     )
 
-    # The outer table + 4 inner tables (samples, tags, metrics and the on-by-default recent samples).
+    # The outer table + 4 inner tables (samples, recent samples, tags and metrics).
     for node in [competing_node, main_node, dummy_node]:
         assert node.query(
             """

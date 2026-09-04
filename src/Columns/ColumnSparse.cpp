@@ -187,11 +187,6 @@ void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
     insertSingleValue([&](IColumn & column) { column.deserializeAndInsertFromArena(in, settings); });
 }
 
-void ColumnSparse::skipSerializedInArena(ReadBuffer & in) const
-{
-    values->skipSerializedInArena(in);
-}
-
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 #else

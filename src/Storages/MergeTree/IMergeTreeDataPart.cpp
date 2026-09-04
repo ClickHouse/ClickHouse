@@ -213,6 +213,9 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
         Field max_val;
         serialization->deserializeBinary(max_val, *file, format_settings);
 
+        normalizeBoolFields(min_val);
+        normalizeBoolFields(max_val);
+
         // NULL_LAST
         if (min_val.isNull())
             min_val = POSITIVE_INFINITY;

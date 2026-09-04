@@ -7,7 +7,50 @@
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
         "get-started/index",
-        "get-started/quickstarts/home",
+        {
+          "expandable": true,
+          "expanded": false,
+          "group": "Quickstarts",
+          "pages": [
+            "get-started/quickstarts/home",
+            {
+              "expanded": false,
+              "group": "All use cases",
+              "pages": [
+                "get-started/setup/cloud",
+                "get-started/quickstarts/obtain-your-cloud-connection-details",
+                "get-started/quickstarts/insert-data-using-clickhouse-client",
+                "get-started/quickstarts/creating-tables",
+                "get-started/quickstarts/writing-queries",
+                "get-started/quickstarts/create-your-first-mergetree-table"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Real-time analytics",
+              "pages": [
+                "get-started/quickstarts/create-your-first-materialized-view",
+                "get-started/quickstarts/create-your-first-projection",
+                "get-started/quickstarts/tutorial"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Data warehousing",
+              "pages": [
+                "get-started/quickstarts/connect-your-iceberg-catalog",
+                "get-started/quickstarts/mutations"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Observability",
+              "pages": [
+                "get-started/quickstarts/working-with-the-map-type"
+              ]
+            }
+          ]
+        },
         {
           "expandable": true,
           "expanded": true,

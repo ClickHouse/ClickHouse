@@ -3,6 +3,8 @@
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 
+#include <utility>
+
 
 namespace DB
 {
@@ -54,7 +56,11 @@ RowPolicyFilterPtr EnabledRowPolicies::getFilter(const String & database, const 
 
 RowPolicyFilterPtr EnabledRowPolicies::getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, RowPolicyFilterPtr combine_with_filter) const
 {
-    RowPolicyFilterPtr filter = getFilter(database, table_name, filter_type);
+    return combineRowPolicyFilters(getFilter(database, table_name, filter_type), std::move(combine_with_filter));
+}
+
+RowPolicyFilterPtr combineRowPolicyFilters(RowPolicyFilterPtr filter, RowPolicyFilterPtr combine_with_filter)
+{
     if (filter && combine_with_filter)
     {
         auto new_filter = std::make_shared<RowPolicyFilter>(*filter);

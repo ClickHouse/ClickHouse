@@ -7,6 +7,7 @@
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 
@@ -15,6 +16,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int UNKNOWN_TABLE;
 }
@@ -108,6 +110,13 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     const StoragePtr & table = DatabaseCatalog::instance().getTable(
         {database_name, table_name},
         const_pointer_cast<Context>(getContext()));
+
+    /// An `Alias` reports the columns of its target, so seeing them takes the privilege on the target.
+    if (const auto * alias = table->as<StorageAlias>();
+        alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
+        throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to check metadata exposed by {}",
+                        StorageID{database_name, table_name}.getNameForLogs());
+
     auto table_metadata = table->getInMemoryMetadataPtr(getContext(), false);
     bool has_column = table_metadata->getColumns().hasPhysical(column_name);
     bool has_alias_column = table_metadata->getColumns().hasAlias(column_name);

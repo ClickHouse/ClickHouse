@@ -46,6 +46,7 @@
 
 namespace DB::CoordinationSetting
 {
+    extern const CoordinationSettingsInt64 snapshot_zstd_compression_level;
     extern const CoordinationSettingsUInt64 write_snapshot_version;
 }
 
@@ -138,6 +139,28 @@ TEST(CoordinationSettingsParse, NuraftSnapshotSyncCtxTimeout)
                    "<nuraft_snapshot_sync_ctx_timeout_ms>3000000000</nuraft_snapshot_sync_ctx_timeout_ms>"
                    "</coordination_settings></keeper_server></clickhouse>"),
               std::numeric_limits<int32_t>::max());
+}
+
+TEST(CoordinationSettingsParse, SnapshotZstdCompressionLevel)
+{
+    auto load = [](const std::string & xml)
+    {
+        std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
+        DB::CoordinationSettings settings;
+        settings.loadFromConfig("keeper_server.coordination_settings", *config);
+        return static_cast<Int64>(settings[DB::CoordinationSetting::snapshot_zstd_compression_level]);
+    };
+
+    EXPECT_EQ(
+        load("<clickhouse><keeper_server><coordination_settings>"
+             "</coordination_settings></keeper_server></clickhouse>"),
+        DB::DEFAULT_KEEPER_SNAPSHOT_ZSTD_COMPRESSION_LEVEL);
+    EXPECT_EQ(
+        load("<clickhouse><keeper_server><coordination_settings>"
+             "<snapshot_zstd_compression_level>-5</snapshot_zstd_compression_level>"
+             "</coordination_settings></keeper_server></clickhouse>"),
+        -5);
 }
 
 /// The composition that actually reaches NuRaft: config text -> setting -> `raft_params` field.

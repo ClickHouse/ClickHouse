@@ -1303,6 +1303,8 @@ def test_required_privileges():
     create_and_fill_table(n=5)
 
     instance.query("CREATE USER u1")
+    # new_backup_name() returns a Disk(...) locator, so the DISK source grant is required.
+    instance.query("GRANT READ ON DISK, WRITE ON DISK TO u1")
 
     backup_name = new_backup_name()
     expected_error = "necessary to have the grant BACKUP ON test.`table`"
@@ -1435,6 +1437,8 @@ def test_system_users_required_privileges():
 
     # SETTINGS allow_backup=false means the following user won't be included in backups.
     instance.query("CREATE USER u2 SETTINGS allow_backup=false")
+    # new_backup_name() returns a Disk(...) locator, so the DISK source grant is required.
+    instance.query("GRANT READ ON DISK, WRITE ON DISK TO u2")
 
     backup_name = new_backup_name()
 
@@ -2166,6 +2170,8 @@ def test_required_privileges_with_partial_revokes():
     instance.query("CREATE USER u2")
     instance.query("GRANT SELECT ON *.* TO u2 WITH GRANT OPTION")
     instance.query("GRANT CREATE USER ON *.* TO u2")
+    # backup_name is a Disk(...) locator, so restoring from it needs the DISK source grant.
+    instance.query("GRANT READ ON DISK TO u2")
     instance.query("REVOKE SELECT ON system.zookeeper* FROM u2")
     instance.query("REVOKE SELECT ON foo.* FROM u2")
 

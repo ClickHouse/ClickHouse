@@ -7,6 +7,7 @@ FAIL="\tFAIL\t\\N\t"
 
 FAILURE_CONTEXT_LINES=100
 FAILURE_CONTEXT_MAX_LINE_WIDTH=3000
+START_SERVER_READY_TIMEOUT=120
 
 function escaped()
 {
@@ -357,6 +358,16 @@ function wait_server_ports_free()
     done
 }
 
+function report_start_failure()
+{
+    echo "Cannot start clickhouse-server"
+    rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt ||:
+    echo -e "Cannot start clickhouse-server$FAIL$1$(trim_server_logs application_errors.txt)" >> /test_output/test_results.tsv
+    cat /var/log/clickhouse-server/stdout.log
+    tail -n100 /var/log/clickhouse-server/stderr.log
+    tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | rg -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n100
+}
+
 function start_server()
 {
     # After safeExit (forceful shutdown), the kernel may still be cleaning up sockets,
@@ -365,27 +376,33 @@ function start_server()
 
     counter=0
     max_attempt=${1:-6}
-    until clickhouse-client --receive_timeout 30 --query "SELECT 1"
+    local ready_timeout=${2:-$START_SERVER_READY_TIMEOUT}
+    # The client port opens only after the databases are loaded, so a running server is bounded
+    # by time and only a server that exited is bounded by the number of starts.
+    local wait_start=$SECONDS
+    until clickhouse-client --handshake_timeout_ms=30000 --receive_timeout 30 --query "SELECT 1"
     do
-        if [ "$counter" -gt "$max_attempt" ]
-        then
-            echo "Cannot start clickhouse-server"
-            rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt ||:
-            echo -e "Cannot start clickhouse-server$FAIL$(trim_server_logs application_errors.txt)" >> /test_output/test_results.tsv
-            cat /var/log/clickhouse-server/stdout.log
-            tail -n100 /var/log/clickhouse-server/stderr.log
-            tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | rg -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n100
-            return 1
-        fi
         # Only wait for ports and restart if the previous daemon actually exited.
         # If the process is still alive, the ports are bound by a healthy but
         # slow-starting server — just retry the readiness check.
-        if [ "$counter" -eq 0 ] || ! pgrep -x clickhouse-serv > /dev/null 2>&1; then
+        if [ "$counter" -eq 0 ] || ! pgrep -x clickhouse-serv > /dev/null 2>&1
+        then
+            if [ "$counter" -gt "$max_attempt" ]
+            then
+                report_start_failure "server process is not running after $counter start attempts"
+                return 1
+            fi
             [ "$counter" -gt 0 ] && wait_server_ports_free
             clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>>/var/log/clickhouse-server/stderr.log
+            counter=$((counter + 1))
+            # The deadline covers one daemon instance, so each start re-anchors it.
+            wait_start=$SECONDS
+        elif [ "$SECONDS" -ge "$((wait_start + ready_timeout))" ]
+        then
+            report_start_failure "a clickhouse-server process is running but did not become ready in $((SECONDS - wait_start))s after start attempt $counter completed"
+            return 1
         fi
         sleep 10
-        counter=$((counter + 1))
     done
 }
 

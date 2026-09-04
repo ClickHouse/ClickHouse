@@ -175,6 +175,21 @@ Avoid repeated inverse dictionary lookup by doing faster lookups into a precompu
 
 Replace 'multiIf' with only one condition to 'if'.
 
+## optimize_mutations_with_partition_pruning {#optimize_mutations_with_partition_pruning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "New setting to automatically prune partitions for mutations based on WHERE clause"}]}]}/>
+
+When enabled, ClickHouse automatically detects partition key conditions in the WHERE clause of `ALTER TABLE UPDATE`/`DELETE` mutations and lightweight `UPDATE`/`DELETE` statements on tables of the `ReplicatedMergeTree` family and only processes the affected partitions instead of all partitions.
+
+This automatic pruning currently applies only to replicated tables. On non-replicated `MergeTree` tables, use an explicit `IN PARTITION` clause to limit a mutation to specific partitions.
+
+Possible values:
+
+- 0 — Disabled. Mutations and lightweight updates will process all partitions.
+- 1 — Enabled. Mutations and lightweight updates will only process partitions that match the WHERE condition.
+
 ## optimize_normalize_count_variants {#optimize_normalize_count_variants}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

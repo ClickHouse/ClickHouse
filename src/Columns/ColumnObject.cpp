@@ -1256,28 +1256,6 @@ void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in
     }
 }
 
-void ColumnObject::skipSerializedInArena(ReadBuffer & in) const
-{
-    /// First, skip all values of typed paths;
-    for (auto path : sorted_typed_paths)
-        typed_paths.find(path)->second->skipSerializedInArena(in);
-
-    /// Second, skip all other paths and values.
-    size_t num_paths = 0;
-    readBinaryLittleEndian<size_t>(num_paths, in);
-
-    for (size_t i = 0; i != num_paths; ++i)
-    {
-        size_t path_size = 0;
-        readBinaryLittleEndian<size_t>(path_size, in);
-        in.ignore(path_size);
-
-        size_t value_size = 0;
-        readBinaryLittleEndian<size_t>(value_size, in);
-        in.ignore(value_size);
-    }
-}
-
 void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
 {
     for (auto path : sorted_typed_paths)

@@ -1,4 +1,5 @@
 import glob
+import io
 import os
 import platform
 import shlex
@@ -32,6 +33,7 @@ class ClickHouseProc:
     KAFKA_LOG = f"{temp_dir}/kafka.log"
     LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_rows_to_read=0 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
     DMESG_LOG = f"{temp_dir}/dmesg.log"
+    DMESG_AT_COLLECT_LOG = f"{temp_dir}/dmesg.at-collect.log"
     # TODO: run servers in  dedicated wds to keep trash localised
     WD0 = f"{temp_dir}/ft_wd0"
     WD1 = f"{temp_dir}/ft_wd1"
@@ -544,6 +546,30 @@ class ClickHouseProc:
     # Grace period between the TERM the bound sends and the KILL that follows,
     # so a client that ignores TERM is still bounded.
     PREP_STEP_KILL_AFTER_S = 60
+    # TERM deadline for one all-thread backtrace capture (seconds).
+    STACK_CAPTURE_TIMEOUT_S = 300
+
+    def _capture_server_stacks(self, tag):
+        """Write an all-thread backtrace of each running server into `log_dir`.
+
+        A wedged server cannot report its own threads: `system.stack_trace`
+        needs a responsive server and the fault handler needs the machinery the
+        wedge has already stopped. An external debugger needs neither.
+        """
+        for pid in (self.pid_0, self.pid_1, self.pid_2):
+            if not pid:
+                continue
+            # gdb exits 0 even when the attach is refused, so its stderr goes
+            # into the same file: the artifact explains its own emptiness.
+            out = f"{self.log_dir}/{tag}-stacks-{pid}.log"
+            Shell.check(
+                f"timeout --verbose --signal=TERM"
+                f" --kill-after={self.PREP_STEP_KILL_AFTER_S}"
+                f" {self.STACK_CAPTURE_TIMEOUT_S}"
+                f" gdb -batch -ex 'thread apply all backtrace' -p {pid}"
+                f" > {out} 2>&1",
+                verbose=True,
+            )
 
     @classmethod
     def prep_timeout_prefix(cls, step_timeout):
@@ -578,6 +604,10 @@ class ClickHouseProc:
         is_sanitizer = any(
             san in sanitizer_source for san in ("asan", "tsan", "msan", "ubsan")
         )
+        # Attaching a debugger to an ASan build disables LeakSanitizer, so the
+        # capture below is skipped there. Both in-tree ubsan build names contain
+        # "asan"; the alternative only covers names outside this repository's defs.
+        is_asan = any(san in sanitizer_source for san in ("asan", "ubsan"))
         max_insert_threads = 4 if is_sanitizer else 16
         command = """
 set -e
@@ -643,17 +673,25 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
         log_file = f"{temp_dir}/prepare_stateful_data.log"
         rc = Shell.run(command, log_file=log_file, verbose=True)
         if rc != 0:
-            tail = ""
+            log_text = ""
             try:
                 with open(log_file, errors="ignore") as f:
-                    tail = "".join(f.readlines()[-15:]).strip()
+                    log_text = f.read()
             except OSError:
                 pass
+            tail = "".join(io.StringIO(log_text).readlines()[-15:]).strip()
             self.stateful_setup_error = (
                 f"stateful data prep failed (exit {rc})"
                 + (f": {tail}" if tail else "")
             )
             print(f"ERROR: {self.stateful_setup_error}")
+            if self._timeout_wrapper_expired(rc, log_text):
+                if is_asan:
+                    print(
+                        "Cannot collect C stacktraces under ASan: debugger attach is disabled."
+                    )
+                else:
+                    self._capture_server_stacks("stateful-prep")
         return rc == 0
 
     def insert_system_zookeeper_config(self):
@@ -813,8 +851,20 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
                     res.append(self.AZURITE_LOG)
                 if Path(self.KAFKA_LOG).exists():
                     res.append(self.KAFKA_LOG)
-                if Path(self.DMESG_LOG).exists():
-                    res.append(self.DMESG_LOG)
+                # `start` clears the ring buffer, so a dump after it holds only
+                # this server generation; before `start` it can hold earlier
+                # host lines. The OOM check grades the file it writes.
+                dmesg_target = (
+                    self.DMESG_AT_COLLECT_LOG
+                    if Path(self.DMESG_LOG).exists()
+                    else self.DMESG_LOG
+                )
+                if not Shell.check(f"dmesg > {dmesg_target}", verbose=True):
+                    print("WARNING: dmesg not enabled")
+                    Path(dmesg_target).unlink(missing_ok=True)
+                for dmesg_log in (self.DMESG_LOG, self.DMESG_AT_COLLECT_LOG):
+                    if Path(dmesg_log).exists():
+                        res.append(dmesg_log)
                 if Path(self.CH_LOCAL_ERR_LOG).exists():
                     res.append(self.CH_LOCAL_ERR_LOG)
                 if Path(self.CH_LOCAL_LOG).exists():
@@ -1153,12 +1203,17 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
     # after --kill-after; it proves a 137 came from the wrapper itself rather
     # than from an external/OOM SIGKILL of `clickhouse local`.
     _TIMEOUT_KILL_DIAG = "sending signal KILL to command"
+    # The same, for the initial SIGTERM. 124 is also the ClickHouse error code
+    # `INCORRECT_ELEMENT_OF_SET`, so the code alone proves nothing. Quote-free
+    # on purpose: `timeout` quotes the command name locale-dependently.
+    _TIMEOUT_TERM_DIAG = "sending signal TERM to command"
 
     def _timeout_wrapper_expired(self, res, stderr):
-        # 124: the child died on timeout's initial SIGTERM - always an expiry.
-        # 137 (128+9): any SIGKILL death; trust it as an expiry only when
-        # timeout's own KILL diagnostic is present in stderr.
-        return res == 124 or (res == 137 and self._TIMEOUT_KILL_DIAG in stderr)
+        # Both codes are ambiguous on their own (137 is any SIGKILL death), so
+        # each is trusted only alongside timeout's own diagnostic.
+        return (res == 124 and self._TIMEOUT_TERM_DIAG in stderr) or (
+            res == 137 and self._TIMEOUT_KILL_DIAG in stderr
+        )
 
     def _annotate_timeout(self, res, stderr):
         # Prepend the "timed out" annotation only to proven wrapper expiries,
