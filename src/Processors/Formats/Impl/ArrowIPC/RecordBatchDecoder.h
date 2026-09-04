@@ -52,7 +52,9 @@ public:
     /// natural type: the values are decoded as the field encoding them would decode them inline (a `date32`
     /// under a numeric target holds raw day numbers, binary under an IPv6 / big-integer target is already
     /// reinterpreted), so the decoder builds `LowCardinality` columns from this pair instead of re-deriving
-    /// the type from the field. Fields sharing a dictionary id may request different types, so a dictionary
+    /// the type from the field. The values are decoded as a nullable array whatever the fields encoding them
+    /// declare (see `ArrowIPCBlockInputFormat::collectDictionaryFields`); a field applies its own nullability
+    /// when it materializes them. Fields sharing a dictionary id may request different types, so a dictionary
     /// is decoded once per position of a field encoding it and stored per position (see
     /// `RecordBatchDecoder::collectDictionaryUses`).
     struct Values

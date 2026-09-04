@@ -340,6 +340,30 @@ const InvisibleRowsMask * maskPtr(const std::optional<InvisibleRowsMask> & mask)
     return mask ? &*mask : nullptr;
 }
 
+/// The dictionary values a field materializes. Dictionary values are decoded as a nullable array whatever the
+/// fields encoding them declare (see `ArrowIPCBlockInputFormat::collectDictionaryFields`): a null entry is a
+/// legal dictionary value, and `Field.nullable` describes the encoded array — the index validity — instead.
+/// A nullable field keeps the values as decoded, so its row is null either through the index validity or
+/// through the entry it points at. A non-nullable field takes the values without their null map and may not
+/// point at a null entry, which `decodeDictionary` checks against `null_entries`.
+struct FieldDictionaryValues
+{
+    ColumnPtr column;
+    DataTypePtr type;
+    /// The null map a non-nullable field left out of `column`; null when there is none to leave out.
+    const NullMap * null_entries = nullptr;
+};
+
+FieldDictionaryValues dictionaryValuesFor(const ArrowField & field, const DictionaryRegistry::Values & registered)
+{
+    const auto * nullable_values
+        = field.nullable ? nullptr : typeid_cast<const ColumnNullable *>(registered.column.get());
+    if (!nullable_values)
+        return {registered.column, registered.type, nullptr};
+    return {
+        nullable_values->getNestedColumnPtr(), removeNullable(registered.type), &nullable_values->getNullMapData()};
+}
+
 /// The requested type hint of a field at dotted name `path`, `list_depth` lists below the top level. A
 /// hint derived from the parent (Array element, Tuple element, Map key/value) wins: it already reflects
 /// this exact node. Otherwise the dotted name is looked up in `types` (null: nothing to look up), which
@@ -1293,7 +1317,8 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
     const String & path, size_t list_depth)
 {
     const Slice indices_slice = nextBuffer();
-    const DictionaryRegistry::Values & dictionary = registry.get(field.dictionary->id, FieldPosition{path, list_depth});
+    const FieldDictionaryValues dictionary
+        = dictionaryValuesFor(field, registry.get(field.dictionary->id, FieldPosition{path, list_depth}));
     const ColumnPtr & values = dictionary.column;
     const size_t dict_size = values->size();
 
@@ -1309,12 +1334,13 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
     const size_t index_size = static_cast<size_t>(bits) / 8;
     checkBufferSize(indices_slice, requiredBytes(rows, index_size), "dictionary indices");
 
-    /// Keys for the LowCardinality dictionary: the decoded Arrow dictionary values plus, for nullable
-    /// fields, a trailing NULL. A row can be null either via the index validity or by pointing at a null entry
-    /// inside the dictionary values. Invisible rows' index bytes are undefined per the Arrow spec, so they must not be
-    /// bounds-checked; for a non-nullable field the trailing key holds the value type's default instead of NULL.
-    /// The registered type describes these values (they may have been decoded under a requested type hint,
-    /// see `DictionaryRegistry::Values`), so it — not the referencing field's natural type — declares them.
+    /// Keys for the LowCardinality dictionary: the dictionary values the field materializes (see
+    /// `dictionaryValuesFor`) plus, for nullable fields, a trailing NULL. A nullable field's row can be null
+    /// either via the index validity or by pointing at a null entry inside the dictionary values. Invisible
+    /// rows' index bytes are undefined per the Arrow spec, so they must not be bounds-checked; for a
+    /// non-nullable field the trailing key holds the value type's default instead of NULL. The registered
+    /// type describes these values (they may have been decoded under a requested type hint, see
+    /// `DictionaryRegistry::Values`), so it — not the referencing field's natural type — declares them.
     const DataTypePtr & value_type = dictionary.type;
     MutableColumnPtr keys = IColumn::mutate(values->cloneResized(dict_size));
     UInt64 fallback_key_index = dict_size;
@@ -1347,6 +1373,12 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
         }
         if (v < 0 || static_cast<UInt64>(v) >= dict_size)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary index {} out of range (size {})", v, dict_size);
+        /// A row of a non-nullable field may not point at a null entry: it would be a null row.
+        if (dictionary.null_entries && (*dictionary.null_entries)[v])
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow IPC field '{}' is declared non-nullable but its row {} references null dictionary entry {}",
+                field.name, i, v);
         idx[i] = static_cast<UInt64>(v);
     }
 
@@ -1895,12 +1927,13 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
     DecodedColumn decoded;
     decoded.name = field.name;
     /// A dictionary-encoded field is declared by its registered value type — the type its dictionary batch
-    /// was decoded to for this field's position (see `DictionaryRegistry::Values`), which is what
-    /// `decodeDictionary` builds the column from — rather than by its natural type; a top-level field
-    /// decodes into a LowCardinality column of that value type.
+    /// was decoded to for this field's position (see `DictionaryRegistry::Values`), under the field's own
+    /// nullability (see `dictionaryValuesFor`), which is what `decodeDictionary` builds the column from —
+    /// rather than by its natural type; a top-level field decodes into a LowCardinality column of that type.
     if (field.dictionary)
     {
-        decoded.type = registry.get(field.dictionary->id, FieldPosition{path, list_depth}).type;
+        decoded.type
+            = dictionaryValuesFor(field, registry.get(field.dictionary->id, FieldPosition{path, list_depth})).type;
         if (decoded.type->canBeInsideLowCardinality())
             decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
     }

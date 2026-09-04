@@ -112,9 +112,14 @@ void ArrowIPCBlockInputFormat::collectDictionaryFields(const ArrowIPC::ArrowFiel
     {
         if (field.dictionary)
         {
-            /// The dictionary batch carries the plain value column: same type, but not dictionary-encoded.
+            /// The dictionary batch carries the plain value column: same type, but not dictionary-encoded,
+            /// and nullable whatever the field declares. `Field.nullable` describes the encoded array — the
+            /// index validity — while the dictionary values are an array of their own that may hold null
+            /// entries; a field applies its own nullability when it materializes them (see
+            /// `RecordBatchDecoder::decodeDictionary`). Fields sharing a dictionary id may thus differ in it.
             ArrowIPC::ArrowField value_field = field;
             value_field.dictionary.reset();
+            value_field.nullable = true;
             const Int64 id = field.dictionary->id;
             auto it = dictionary_value_fields.find(id);
             if (it == dictionary_value_fields.end())
