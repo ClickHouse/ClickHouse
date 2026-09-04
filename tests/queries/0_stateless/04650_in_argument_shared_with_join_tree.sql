@@ -4,10 +4,10 @@
 
 -- A table expression that is also a join-tree table expression of the enclosing query must not be
 -- shared with the right argument of an IN-family function: later stages rewrite each argument
--- instance in place (createUniqueAliasesIfNecessary, GLOBAL IN external tables, rewrite_in_to_join),
--- and with a shared node those edits land in the join tree.
+-- instance in place (`createUniqueAliasesIfNecessary`, `GLOBAL IN` external tables,
+-- `rewrite_in_to_join`), and with a shared node those edits land in the join tree.
 -- The measured pre-fix failures for the shapes below are noted per group.
--- (The exists consumer of the same resolution site cannot carry this: its argument is always a
+-- (The `exists` consumer of the same resolution site cannot carry this: its argument is always a
 -- parsed subquery, never an identifier.)
 
 DROP TABLE IF EXISTS t_04650_l;
