@@ -6,6 +6,8 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Port.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -139,7 +141,7 @@ ssize_t VirtualRowReadAheadTransform::frontierFor(size_t lane_num) const
 
     auto it = ranked_lanes.find(lane_num);
     for (++it; it != ranked_lanes.end(); ++it)
-        if (!lanes[*it].in_set && !lanes[*it].input->isFinished())
+        if (!lanes[*it].in_set && !lanes[*it].exhausted)
             return *it;
     return -1;
 }
@@ -184,7 +186,7 @@ bool VirtualRowReadAheadTransform::chooseReaders()
     for (size_t lane_num : ranked_lanes)
     {
         const Lane & lane = lanes[lane_num];
-        if (lane.input->isFinished())
+        if (lane.exhausted)
             continue;
 
         if (next.set_lanes.size() < read_ahead_window && lane.underCaps(max_rows_to_buffer, max_bytes_to_buffer))
@@ -195,6 +197,7 @@ bool VirtualRowReadAheadTransform::chooseReaders()
         if (next.frontier_lane >= 0 && next.set_lanes.size() == read_ahead_window)
             break;
     }
+    std::sort(next.set_lanes.begin(), next.set_lanes.end());
     if (next.frontier_lane >= 0)
         next.frontier_bound = lanes[next.frontier_lane].bound;
 
@@ -241,7 +244,8 @@ void VirtualRowReadAheadTransform::serve(size_t lane_num)
         pushReady(lane);
     }
 
-    if (!lane.input->isFinished())
+    lane.exhausted = lane.input->isFinished();
+    if (!lane.exhausted)
         lane.input->setNotNeeded();
     else if (lane.buffer.empty())
         finishLane(lane_num);
@@ -356,7 +360,7 @@ void VirtualRowReadAheadTransform::grantWarmup(size_t lane_num)
         if (granted.size() + 1 >= read_ahead_window)
             break;
         const Lane & other = lanes[other_num];
-        if (other_num == lane_num || other.input->isFinished())
+        if (other_num == lane_num || other.exhausted)
             continue;
         /// A lane that already holds a block keeps its place in the count but pulls no more.
         if (other.buffered_rows == 0 && !other.warmup)

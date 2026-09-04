@@ -76,6 +76,9 @@ private:
         /// May pull one block of data regardless of the window: granted to the lanes next in
         /// line when the demanded lane passes a fully filtered stretch.
         bool warmup = false;
+        /// The input has nothing more to give (noted when served, so the ranking walk needs no
+        /// port access); the output is finished once the buffer is drained.
+        bool exhausted = false;
         bool finished = false;
 
         bool ranked() const { return !bound.empty() && !finished; }
@@ -98,7 +101,7 @@ private:
     /// gates reading has changed between them.
     struct Decision
     {
-        std::vector<size_t> set_lanes;
+        std::vector<size_t> set_lanes; /// sorted by lane index, so that members leapfrogging is no change
         ssize_t frontier_lane = -1;
         Columns frontier_bound;
         ssize_t demanded_lane = -1;
