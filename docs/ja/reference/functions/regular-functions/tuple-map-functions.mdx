@@ -293,14 +293,14 @@ SELECT mapAdd(map(1, 1), map(1, 1))
 {1:2}
 ```
 
-**tuple を使う場合**
+**タプル を使う場合**
 
 ```sql title=Query
 SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1]))
 ```
 
 ```response title=Response
-([1, 2], [2, 2])
+([1,2],[2,2])
 ```
 
 <div id="mapAll">
@@ -564,10 +564,10 @@ SELECT mapContainsValueLike(a, 'a%') FROM tab;
 ```
 
 ```response title=Response
-┌─mapContainsV⋯ke(a, 'a%')─┐
-│                        1 │
-│                        0 │
-└──────────────────────────┘
+┌─mapContainsValueLike(a, 'a%')─┐
+│                             1 │
+│                             0 │
+└───────────────────────────────┘
 ```
 
 <div id="mapExists">
@@ -775,7 +775,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 ```
 
 ```response title=Response
-{1:('a', 1), 2:('b', 2), 3:('c', 3)}
+{1:('a',1),2:('b',2),3:('c',3)}
 ```
 
 <div id="mapKeys">
@@ -927,7 +927,7 @@ SELECT mapPopulateSeries(map(1, 10, 5, 20), 6)
 ```
 
 ```response title=Response
-{1:10, 2:0, 3:0, 4:0, 5:20, 6:0}
+{1:10,2:0,3:0,4:0,5:20,6:0}
 ```
 
 **マッピングされた配列の場合**
@@ -937,7 +937,7 @@ SELECT mapPopulateSeries([1, 2, 4], [11, 22, 44], 5)
 ```
 
 ```response title=Response
-([1, 2, 3, 4, 5], [11, 22, 0, 44, 0])
+([1,2,3,4,5],[11,22,0,44,0])
 ```
 
 <div id="mapReverseSort">
@@ -1032,7 +1032,7 @@ mapSubtract(arg1[, arg2, ...])
 
 **戻り値**
 
-1 つの Map または Tuple を返します。最初の配列にはソート済みのキーが、2 番目の配列には値が含まれます。[`Map(K, V)`](/ja/reference/data-types/map) または [`Tuple(Array(T), Array(T))`](/ja/reference/data-types/tuple)
+1 つの Map または Tuple を返します。最初の配列にはソートされたキーが、2 番目の配列には値が含まれます。[`Map(K, V)`](/ja/reference/data-types/map) または [`Tuple(Array(T), Array(T))`](/ja/reference/data-types/tuple)
 
 **例**
 
@@ -1053,7 +1053,7 @@ SELECT mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt3
 ```
 
 ```response title=Response
-([1, 2], [-1, 0])
+([1,2],[-1,0])
 ```
 
 <div id="mapUpdate">

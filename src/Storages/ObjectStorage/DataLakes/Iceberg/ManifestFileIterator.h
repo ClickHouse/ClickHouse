@@ -131,6 +131,7 @@ private:
         Int32 manifest_schema_id,
         std::shared_ptr<const PartitionSpecification> common_partition_specification,
         std::optional<DB::KeyDescription> partition_key_description,
+        size_t partition_spec_fields_count,
         size_t total_rows,
         std::shared_ptr<const ActionsDAG> filter_dag,
         Int32 table_snapshot_schema_id);
@@ -150,6 +151,7 @@ private:
     const Int32 manifest_schema_id;
     const std::shared_ptr<const PartitionSpecification> common_partition_specification;
     const std::optional<DB::KeyDescription> partition_key_description;
+    const size_t partition_spec_fields_count;
     const Int32 table_snapshot_schema_id;
 
     /// Iteration state

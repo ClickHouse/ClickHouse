@@ -262,6 +262,9 @@ static struct InitFiu
     PAUSEABLE(backup_from_snapshot_pause_before_mount_parent_removal) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_on_start) \
+    PAUSEABLE_ONCE(restore_pause_before_data_restore_tasks) \
+    PAUSEABLE_ONCE(backups_pause_before_publishing_progress) \
+    PAUSEABLE_ONCE(restore_pause_before_publishing_final_progress) \
     PAUSEABLE(sc_state_application_pause) \
     PAUSEABLE(sc_state_application_pause_after_fetch) \
     PAUSEABLE(sc_state_fetch_pause_before_version_check) \
@@ -271,6 +274,7 @@ static struct InitFiu
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
+    PAUSEABLE_ONCE(merge_task_pause_after_reserving_tmp_dir) \
     REGULAR(mutate_task_random_sleep_in_prepare) \
     PAUSEABLE(merge_task_projection_stage_pause) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
@@ -363,6 +367,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(aggregating_in_order_transform_mid_loop_pause) \
+    PAUSEABLE_ONCE(mysql_output_format_mid_loop_pause) \
+    PAUSEABLE_ONCE(postgresql_output_format_mid_loop_pause) \
     ONCE(hash_join_throw_after_data_release) \
     REGULAR(smt_force_takeover_predicate_true) \
     REGULAR(smt_takeover_fake_hardware_error_after_set) \
