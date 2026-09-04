@@ -56,8 +56,10 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     /// With a version or an is_deleted column every row of a run must be examined, and row
     /// sources for a vertical merge must be recorded per row. Without them the only effect of
     /// processing a row is replacing `selected_row` with it, so runs can be fast-forwarded.
+    /// In the reverse reading order the first row of a run within a source wins instead of the
+    /// last one, so the fast-forward to the last row of the run does not apply either.
     can_skip_to_run_end = version_column_number == -1 && is_deleted_column_number == -1
-        && out_row_sources_buf == nullptr && !enable_vertical_final;
+        && out_row_sources_buf == nullptr && !enable_vertical_final && !read_in_reverse;
 }
 
 void ReplacingSortedAlgorithm::insertRow()

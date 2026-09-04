@@ -382,9 +382,10 @@ enum class SortingQueueContainer : uint8_t
     /// case for clustered data).
     Heap,
 
-    /// Sorted array of cursors. Reinsertion of the advanced front cursor costs exactly
-    /// ceil(log2(K)) comparisons (a binary search) plus a shift of on average half of the
-    /// array. The shifted elements are plain pointers, so the shift is cheap and this container
+    /// Sorted array of cursors. Reinsertion of the advanced front cursor costs one comparison
+    /// when it is still the minimum and otherwise ceil(log2(K - 1)) further comparisons (a binary
+    /// search among the other cursors) plus a shift of on average half of the array. The shifted
+    /// elements are plain pointers, so the shift is cheap and this container
     /// wins when comparisons are expensive relative to the data structure maintenance: generic
     /// cursors compare through a virtual call per column (possibly over several columns),
     /// strings, or a collation. With too many cursors the shifts start to dominate, so above
@@ -651,10 +652,14 @@ private:
                 return;
             }
 
-            /// Reinsert the advanced front cursor at its sorted position: exactly
-            /// ceil(log2(size)) comparisons, then a shift of plain pointers.
+            /// The front cursor is known to be not less than the second one: either the check
+            /// above has just failed, or the caller has established it (the batch strategy ends
+            /// a batch exactly when the next row of the front cursor is not less than the second
+            /// cursor's row). Reinsert the advanced front cursor at its sorted position among the
+            /// remaining ones: ceil(log2(size - 1)) comparisons, then a shift of plain pointers.
+            /// With two cursors this costs no comparisons at all.
             Cursor top = queue[0];
-            size_t upper = arrayUpperBound(top, 1);
+            size_t upper = arrayUpperBound(top, 2);
             std::move(queue.begin() + 1, queue.begin() + upper, queue.begin());
             queue[upper - 1] = top;
 
