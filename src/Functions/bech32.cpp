@@ -96,10 +96,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -128,41 +125,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() < 2)
-            throw Exception(
-                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                "At least two string arguments (human_readable_part, data) are required for function {}",
-                getName());
-
-        if (arguments.size() > 3)
-            throw Exception(
-                ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                "A maximum of 3 arguments (human_readable_part, data, witness_version | 'bech32' | 'bech32m') are allowed for function {}",
-                getName());
-
-        /// check first two args, human_readable_part and input string
-        for (size_t i = 0; i < 2; ++i)
-            if (!WhichDataType(arguments[i]).isStringOrFixedString())
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument {} of function {}, expected String or FixedString",
-                    arguments[i]->getName(),
-                    i + 1,
-                    getName());
-
-        /// check 3rd (optional) arg: either a witness version (UInt*) or encoding variant ('bech32'/'bech32m')
-        size_t arg_idx = 2;
-        if (arguments.size() == 3 && !WhichDataType(arguments[arg_idx]).isNativeUInt() && !WhichDataType(arguments[arg_idx]).isString())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}, expected unsigned integer (witness version) or String ('bech32'/'bech32m')",
-                arguments[arg_idx]->getName(),
-                arg_idx + 1,
-                getName());
-
-        return std::make_shared<DataTypeString>();
+        return "(StringOrFixedString, StringOrFixedString, [NativeUInt | String]) -> String";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -442,37 +407,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.empty())
-            throw Exception(
-                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                "At least 1 argument (address) is required for function {}",
-                getName());
-
-        if (arguments.size() > 2)
-            throw Exception(
-                ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                "A maximum of 2 arguments (address[, 'raw']) are allowed for function {}",
-                getName());
-
-        WhichDataType dtype(arguments[0]);
-        if (!dtype.isStringOrFixedString())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-
-        if (arguments.size() == 2 && !WhichDataType(arguments[1]).isString())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument 2 of function {}, expected String ('raw')",
-                arguments[1]->getName(),
-                getName());
-
-        DataTypes types(tuple_size);
-        for (size_t i = 0; i < tuple_size; ++i)
-            types[i] = std::make_shared<DataTypeString>();
-
-        return std::make_shared<DataTypeTuple>(types);
+        return "(StringOrFixedString, [String]) -> Tuple(String, String)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

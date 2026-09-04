@@ -41,6 +41,17 @@ public:
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// The result `FixedString(N)` takes its size from the const-`UInt` second argument. Capture
+    /// it as `N` and spell the parameterised result type, so this is computable on the types-only
+    /// `getReturnTypeImpl(DataTypes)` fallback too: when the value is unavailable there (no column),
+    /// the DSL reports a clean `ILLEGAL_COLUMN` ("argument must be a constant expression") instead
+    /// of the internal exception a bare `FixedString` return raised by resolving to the zero-argument
+    /// `FixedString` type function.
+    String getSignatureString() const override
+    {
+        return "(StringOrFixedString, const N UInt) -> FixedString(N)";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!isUInt(arguments[1].type))

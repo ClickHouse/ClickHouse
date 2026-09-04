@@ -116,6 +116,15 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override;
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return {}; } // Not used
 
+    /// Documentation-only — `joinGet[OrNull](join_table, attribute_name, key, ...)`
+    /// returns the value of the named attribute from the JOIN table for the
+    /// given key. The result type is read from the JOIN table's column type
+    /// (wrapped in `Nullable` for the OrNull variant).
+    String getSignatureString() const override
+    {
+        return "(const String, const String, Any, ...) -> Any";
+    }
+
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 

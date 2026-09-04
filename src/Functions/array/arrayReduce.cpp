@@ -59,6 +59,13 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
+    /// Documentation-only — the result type is the named aggregate function's
+    /// result type, resolved at query time from the const-string first argument.
+    String getSignatureString() const override
+    {
+        return "(const String, Array, ...) -> Any";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
         return aggregate_function->getResultType();
@@ -185,6 +192,16 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+
+    /// Declarative signature — the result is the named aggregator's
+    /// finalised return type computed over the array element types:
+    /// `AggregateFunction(name, T1, T2, ...)` builds the aggregator state,
+    /// `aggregateFunctionReturnType` extracts what `finalizeAggregation`
+    /// of that state would produce.
+    String getSignatureString() const override
+    {
+        return "(const a String, Array(T1 : Any), ...) -> aggregateFunctionReturnType(AggregateFunction(a, T1, ...))";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

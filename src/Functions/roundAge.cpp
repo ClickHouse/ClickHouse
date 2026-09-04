@@ -11,6 +11,7 @@ struct RoundAgeImpl
 {
     using ResultType = UInt8;
     static constexpr const bool allow_string_or_fixed_string = false;
+    static constexpr auto signature = "(NativeNumber) -> UInt8";
 
     static ResultType apply(A x)
     {

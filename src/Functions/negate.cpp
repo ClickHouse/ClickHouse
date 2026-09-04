@@ -14,6 +14,12 @@ struct NegateImpl
     using ResultType = std::conditional_t<is_decimal<A>, A, typename NumberTraits::ResultOfNegate<A>::Type>;
     static constexpr const bool allow_string_or_fixed_string = false;
 
+    /// Documentation-only — for numbers, the result widens to a signed type
+    /// large enough to fit `-value`; for `Decimal`, the input scale is
+    /// preserved; for `Tuple`, the call is rewritten as `tupleNegate`. None
+    /// of these dispatches is expressible in the DSL.
+    static constexpr auto signature_documentation = "(Any) -> Any";
+
     static NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
         if constexpr (is_decimal<A>)

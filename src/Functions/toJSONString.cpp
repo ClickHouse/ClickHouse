@@ -22,7 +22,10 @@ namespace
 
         size_t getNumberOfArguments() const override { return 1; }
 
-        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return std::make_shared<DataTypeString>(); }
+        String getSignatureString() const override
+        {
+            return "(Any) -> String";
+        }
 
         DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {

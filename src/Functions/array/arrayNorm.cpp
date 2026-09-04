@@ -193,38 +193,28 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    String getSignatureString() const override
+    {
+        /// 1-arg norms (`array<L1|L2|L2Squared|Linf>Norm`) and the 2-arg `arrayLpNorm` share
+        /// the same nested-element → return-type table: arrays of BFloat16 or Float32
+        /// produce a Float32 result, everything else falls back to Float64. The trailing
+        /// `[Integer | Float]` covers LpNorm's `p` argument (a numeric constant; constness is
+        /// enforced separately in `initConstParams`).
+        return
+            "(Array(Float32 | BFloat16), [Integer | Float]) -> Float32"
+            " OR (Array(NativeNumber), [Integer | Float]) -> Float64";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
-        if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must be array.", getName());
-
+        /// The declarative signature above only constrains the *type* of `p`. Its value range
+        /// `[1, inf)` is still validated here, so that analysis-only paths (e.g. `toTypeName`)
+        /// reject an out-of-range `p` such as `0.5`, `nan` or `inf` instead of advertising a
+        /// return type for a call that execution rejects with `ARGUMENT_OUT_OF_BOUND`.
+        DataTypePtr result_type = IFunction::getReturnTypeImpl(arguments);
         if constexpr (std::is_same_v<Kernel, LpNorm>)
             checkLpNormPArgumentForAnalysis(arguments[1], getName());
-
-        switch (array_type->getNestedType()->getTypeId())
-        {
-            case TypeIndex::BFloat16:
-            case TypeIndex::Float32:
-                return std::make_shared<DataTypeFloat32>();
-            case TypeIndex::UInt8:
-            case TypeIndex::UInt16:
-            case TypeIndex::UInt32:
-            case TypeIndex::UInt64:
-            case TypeIndex::Int8:
-            case TypeIndex::Int16:
-            case TypeIndex::Int32:
-            case TypeIndex::Int64:
-            case TypeIndex::Float64:
-                return std::make_shared<DataTypeFloat64>();
-            default:
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Arguments of function {} has nested type {}. "
-                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
-                    getName(),
-                    array_type->getNestedType()->getName());
-        }
+        return result_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

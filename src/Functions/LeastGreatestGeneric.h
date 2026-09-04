@@ -127,6 +127,13 @@ public:
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return legacy_null_behavior; }
 
+    /// Declarative signature — the result is the least common supertype of
+    /// the inputs (or a specialized numeric result for two numeric args).
+    String getSignatureString() const override
+    {
+        return "(A1 : Any, ...) -> leastSupertype(A1, ...)";
+    }
+
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         DataTypes argument_types;
@@ -160,6 +167,19 @@ public:
         }
 
         return getLeastSupertype(types);
+    }
+
+    /// Bypass the DSL — the `(A1 : Any, ...) -> leastSupertype(A1, ...)` signature
+    /// is documentation-only and does not capture the cross-type numeric widening
+    /// performed by the two-argument specialization (e.g. signed + unsigned mixes
+    /// that `getLeastSupertype` rejects but `FunctionBinaryArithmetic` resolves).
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & arg : arguments)
+            types.push_back(arg.type);
+        return getReturnTypeImpl(types);
     }
 
 private:

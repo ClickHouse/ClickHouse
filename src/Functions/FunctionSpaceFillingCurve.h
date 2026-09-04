@@ -5,6 +5,8 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Functions/FunctionHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -14,8 +16,9 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_COLUMN;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 class FunctionSpaceFillingCurveEncode: public IFunction
@@ -70,44 +73,74 @@ public:
         return {};
     }
 
-    DataTypePtr getReturnTypeImpl(const DB::DataTypes & arguments) const override
+    /// The largest number of encoded dimensions the implementation supports.
+    virtual size_t getMaxDimensions() const { return 8; }
+
+    /// `mortonEncode`/`hilbertEncode` accept either (a) one to `getMaxDimensions()`
+    /// `NativeUInt`s (encoded as a single space-filling-curve key), or (b) a leading
+    /// `Tuple` of size N whose elements are all `NativeUInt`, followed by exactly N
+    /// `NativeUInt` "mask" arguments. The mask alternatives are spelled out per
+    /// arity because the `Tuple(NativeUInt, …)` matcher enforces both the arity
+    /// equality and the per-element type at type-check time, and the DSL cannot
+    /// yet correlate the `Tuple` size with the number of mask arguments (that
+    /// would need a shared count variable, e.g.
+    /// `(Tuple(NativeUInt...{N}), NativeUInt...{N})`).
+    String getSignatureString() const override
     {
-        size_t vector_start_index = 0;
+        const size_t max_dimensions = getMaxDimensions();
+
+        WriteBufferFromOwnString out;
+        out << "(NativeUInt...{1.." << max_dimensions << "}) -> UInt64";
+        for (size_t dimensions = 1; dimensions <= max_dimensions; ++dimensions)
+        {
+            out << " OR (Tuple(";
+            for (size_t i = 0; i < dimensions; ++i)
+                out << (i ? ", " : "") << "NativeUInt";
+            out << ")";
+            for (size_t i = 0; i < dimensions; ++i)
+                out << ", NativeUInt";
+            out << ") -> UInt64";
+        }
+        return out.str();
+    }
+
+    /// The number of dimensions a call encodes: the size of the leading range-mask `Tuple` in the
+    /// expanded mode, the number of arguments otherwise. The declarative signature already rejects
+    /// a call that encodes more dimensions than the implementation supports, but it reports a
+    /// signature mismatch; check the dimension count separately so that the two codes the legacy
+    /// resolver and `executeImpl` used - `TOO_FEW_ARGUMENTS_FOR_FUNCTION` and
+    /// `TOO_MANY_ARGUMENTS_FOR_FUNCTION` - stay the user-visible contract.
+    void checkNumberOfDimensions(const DataTypes & arguments) const
+    {
         if (arguments.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
                             "At least one UInt argument is required for function {}",
                             getName());
-        if (WhichDataType(arguments[0]).isTuple())
-        {
-            vector_start_index = 1;
-            const auto * type_tuple = typeid_cast<const DataTypeTuple *>(arguments[0].get());
-            auto tuple_size = type_tuple->getElements().size();
-            if (tuple_size == 0)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Empty tuple is not allowed for function {}",
-                                getName());
-            if (tuple_size != (arguments.size() - 1))
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                                "Illegal argument {} for function {}, tuple size should be equal to number of UInt arguments",
-                                arguments[0]->getName(), getName());
-            for (size_t i = 0; i < tuple_size; i++)
-            {
-                if (!WhichDataType(type_tuple->getElement(i)).isNativeUInt())
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                    "Illegal type {} of argument in tuple for function {}, should be a native UInt",
-                                    type_tuple->getElement(i)->getName(), getName());
-            }
-        }
 
-        for (size_t i = vector_start_index; i < arguments.size(); i++)
-        {
-            const auto & arg = arguments[i];
-            if (!WhichDataType(arg).isNativeUInt())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Illegal type {} of argument for function {}, should be a native UInt",
-                                arg->getName(), getName());
-        }
-        return std::make_shared<DataTypeUInt64>();
+        size_t num_dimensions = arguments.size();
+        if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(arguments[0].get()))
+            num_dimensions = type_tuple->getElements().size();
+
+        if (num_dimensions > getMaxDimensions())
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
+                            "Illegal number of UInt arguments of function {}: should be not more than {} dimensions",
+                            getName(), getMaxDimensions());
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        checkNumberOfDimensions(arguments);
+        return IFunction::getReturnTypeImpl(arguments);
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & argument : arguments)
+            types.push_back(argument.type);
+        checkNumberOfDimensions(types);
+        return IFunction::getReturnTypeImpl(arguments);
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -128,6 +161,31 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+
+    /// Documentation-only — first arg is a constant `UInt` (the number of
+    /// dimensions to decode into) or a constant `Tuple` of bit-shift masks;
+    /// the result is a tuple of decoded coordinates (`UInt64` by default,
+    /// shrunk per the mask when one is provided).
+    String getSignatureString() const override
+    {
+        /// The `const` modifier applies to the whole first argument; it cannot be repeated
+        /// inside the `|` alternation (the parser only accepts one `const` per argument).
+        return "(const UInt | Tuple, UInt) -> Tuple";
+    }
+
+    /// The declarative signature above is documentation-only — the exact result type isn't
+    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
+    /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
+    /// fallback never evaluates the bare container return type (which would yield a wrong type or
+    /// an internal error).
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

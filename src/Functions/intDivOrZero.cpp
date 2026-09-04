@@ -14,6 +14,9 @@ struct DivideIntegralOrZeroImpl
     /// See the comment in DivideIntegralImpl.
     static constexpr bool no_vectorize = true;
 
+    /// Documentation-only — see `PlusImpl::signature_documentation`.
+    static constexpr auto signature_documentation = "(Any, Any) -> Any";
+
     template <typename Result = ResultType>
     static Result apply(A a, B b)
     {

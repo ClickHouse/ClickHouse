@@ -18,6 +18,14 @@ struct BitAndImpl
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
     static constexpr bool allow_fixed_string = true;
     static constexpr bool allow_string_integer = false;
+    /// Documentation-only: the legacy `BinaryArithmeticOverloadResolver`
+    /// validator stays authoritative. It additionally casts `IPv4`/`IPv6`
+    /// arguments to `UInt32`/`UInt128` (e.g. `bitAnd(ipv6, mask)`), which the
+    /// DSL can't express yet — an authoritative signature here would reject
+    /// those types at analysis time.
+    static constexpr auto signature_documentation =
+        "(A : Integer, B : Integer) -> nativeNumber(maxBits(A, B), anySigned(A, B), 0)"
+        " OR (F : FixedString, FixedString) -> F";
 
     template <typename Result = ResultType>
     static Result apply(A a, B b)

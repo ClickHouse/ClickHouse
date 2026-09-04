@@ -433,6 +433,23 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
 
+    /// Documentation-only — the result type depends on the input time's width and the interval kind:
+    /// nano/micro/milli/second/minute/hour produce DateTime/DateTime64 results,
+    /// day/week/month/quarter/year produce Date/Date32 results. The exact
+    /// scale and Date/DateTime variant comes from the interval kind and the
+    /// `enable_extended_results_for_datetime_functions` setting.
+    /// The optional third and fourth positions are two independent optional groups: the
+    /// third argument is either a constant `origin` value or a constant timezone `String`,
+    /// and the four-argument form takes both an `origin` and a timezone. The matcher
+    /// tries to skip an optional group first, so a `(value, interval, timezone)` call
+    /// binds the `String` to the timezone position without requiring an `origin`.
+    /// The interval, origin and timezone positions are all constant
+    /// (see `getArgumentsThatAreAlwaysConstant`).
+    String getSignatureString() const override
+    {
+        return "(DateOrDateTime, const Interval, [const DateOrDateTime], [const String]) -> DateOrDateTime";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         bool value_is_date = false;

@@ -57,6 +57,35 @@ public:
     bool useDefaultImplementationForDynamic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// Documentation-only. The result type is the requested element, looked up from the const
+    /// second argument (an integer index — negative indices count from the end — or a string
+    /// element/sub-column name) against the first argument's type structure. This is a value- and
+    /// structure-dependent lookup rather than a settings-dependent one (so, unlike CAST or
+    /// `dateTrunc`, it could in principle be expressed with a bespoke type function), but the logic
+    /// is substantial and specialised — Array nesting is peeled and re-applied, `Nullable(Tuple)`
+    /// wraps the element when it can hold NULL, `QBit` resolves a bit-plane element, `JSON` resolves
+    /// a combined `@` sub-column, and the optional third argument is the type used when the element
+    /// is missing — so it stays in the dedicated `getReturnTypeImpl` below. The signature string is
+    /// purely descriptive; it is only rendered, never applied.
+    String getSignatureString() const override
+    {
+        return "(Tuple | Nullable(Tuple) | Array | QBit | JSON, const index_or_name, [Any default]) -> Any";
+    }
+
+    /// The declarative signature above is documentation-only: the exact result type is not
+    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
+    /// Route the types-only path to it as well, so the base
+    /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
+    /// would reject valid calls or evaluate an uncaptured return-type name).
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const size_t number_of_arguments = arguments.size();

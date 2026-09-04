@@ -731,51 +731,28 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    String getSignatureString() const override
+    {
+        /// Result is `Float32` when the common type of the two array element
+        /// types is `BFloat16` or `Float32`, otherwise `Float64`. (We do not
+        /// return `BFloat16` even for `Array(BFloat16)` pairs because SIMD
+        /// support for BFloat16 is too limited to compute the distance.)
+        /// `LpDistance` carries an extra `p` argument — covered by the
+        /// trailing `[Integer | Float]`.
+        return "(Array(A : NativeNumber | BFloat16), Array(B : NativeNumber | BFloat16), [Integer | Float])"
+               " -> selectIf(isFloat32OrSmaller(leastSupertype(A, B)), Float32, Float64)";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        DataTypes types;
-        for (size_t i = 0; i < 2; ++i)
-        {
-            const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].type.get());
-            if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {} of function {} must be array.", i, getName());
-
-            types.push_back(array_type->getNestedType());
-        }
-
+        /// The declarative signature above only constrains the *type* of `p`. Its value range
+        /// `[1, inf)` is still validated here, so that analysis-only paths (e.g. `toTypeName`)
+        /// reject an out-of-range `p` such as `0.5`, `nan` or `inf` instead of advertising a
+        /// return type for a call that execution rejects with `ARGUMENT_OUT_OF_BOUND`.
+        DataTypePtr result_type = IFunction::getReturnTypeImpl(arguments);
         if constexpr (std::is_same_v<Kernel, LpDistance>)
             checkLpNormPArgumentForAnalysis(arguments[2], getName());
-
-        const DataTypePtr & common_type = getLeastSupertype(types);
-        switch (common_type->getTypeId())
-        {
-            case TypeIndex::BFloat16: /// (*)
-            case TypeIndex::Float32:
-                return std::make_shared<DataTypeFloat32>();
-            case TypeIndex::UInt8:
-            case TypeIndex::UInt16:
-            case TypeIndex::UInt32:
-            case TypeIndex::UInt64:
-            case TypeIndex::Int8:
-            case TypeIndex::Int16:
-            case TypeIndex::Int32:
-            case TypeIndex::Int64:
-            case TypeIndex::Float64:
-                return std::make_shared<DataTypeFloat64>();
-            default:
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Arguments of function {} has nested type {}. "
-                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
-                    getName(),
-                    common_type->getName());
-
-            /// (*) You may ask why we return Float32 instead of BFloat16 for Array(BFloat16) arguments.
-            ///     The reason is that Intels' SIMD support for BFloat16 that is extremely limited at the moment, see
-            ///     https://en.wikichip.org/wiki/x86/avx512_bf16 for AVX-512 BF16. To calculate the common L2 and cosine distances with
-            ///     SIMD, we need to cast up or relinquish SIMD support. (Interestingly, FP16 (IEEE 754 binary16) is well supported by
-            ///     AVX-512 but nobody seems to likes FP16 these days ...)
-        }
+        return result_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
