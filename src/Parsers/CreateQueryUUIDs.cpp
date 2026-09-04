@@ -124,10 +124,11 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
                 if (recent_samples_enabled)
                     generate_target_uuid(ViewTarget::RecentSamples);
 
-                /// The "histograms" target is optional: its inner table exists only when the CREATE query
-                /// declares it (an explicit HISTOGRAMS clause, or the `store_native_histograms` setting, which
-                /// normalizeTimeSeriesDefinition() has already materialized into the target by this point).
-                if (query.targets && query.targets->tryGetTarget(ViewTarget::Histograms))
+                /// The "histograms" target is optional: an explicit HISTOGRAMS clause or the `store_native_histograms`
+                /// setting enables it. The setting is checked here too because an ON CLUSTER initiator generates
+                /// the UUIDs before normalizeTimeSeriesDefinition() materializes the setting into the target.
+                if ((query.targets && query.targets->tryGetTarget(ViewTarget::Histograms))
+                    || getTimeSeriesSettingStoreNativeHistograms(query))
                     generate_target_uuid(ViewTarget::Histograms);
             }
         }

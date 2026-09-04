@@ -65,4 +65,9 @@ bool hasExplicitTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query);
 /// A non-zero result means the query enables the optional "recent samples" target table.
 UInt64 getTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query);
 
+/// Returns the value of `store_native_histograms` from the SETTINGS clause of a
+/// CREATE TABLE ... ENGINE=TimeSeries query, or false if the query doesn't specify it.
+/// A true result means the query enables the optional "histograms" target table.
+bool getTimeSeriesSettingStoreNativeHistograms(const ASTCreateQuery & query);
+
 }
