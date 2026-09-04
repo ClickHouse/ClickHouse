@@ -17,3 +17,6 @@
 -- Case 23: an unblocked patched merge leaves the GROUP BY entry schedulable
 28
 rolled up after the unblocked patched merge: 1
+-- Case 24: a patch zeroing every row's TTL clears the GROUP BY bound
+100
+1

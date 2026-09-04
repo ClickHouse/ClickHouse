@@ -396,3 +396,57 @@ for _ in $(seq 1 120); do
 done
 echo "rolled up after the unblocked patched merge: $([[ "$live_rows" -lt 28 ]] && echo 1 || echo 0)"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_group_by_live;"
+
+# -------------------------------------------------------------------
+# Case 24: a patch zeroing every row's TTL clears the GROUP BY bound
+#
+# `MergeTreeDataPartTTLInfo::update(time_t)` ignores 0, so when every surviving row's TTL
+# evaluates to 1970-01-01 the recomputed entry stays {0, 0}. finalize must still prefer it to
+# the pre-patch one: that one's expired bound would keep the part in the TTL selectors, and
+# each merge they schedule would write it back unchanged.
+# -------------------------------------------------------------------
+echo "-- Case 24: a patch zeroing every row's TTL clears the GROUP BY bound"
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_patch_group_by_zero
+    (
+        id UInt64,
+        event_time DateTime,
+        value UInt64
+    )
+    ENGINE = MergeTree()
+    ORDER BY id
+    TTL event_time GROUP BY id SET value = max(value)
+    SETTINGS
+        -- As in Case 22, 0 keeps the OPTIMIZE the only merge.
+        max_number_of_merges_with_ttl_in_pool = 0,
+        merge_with_ttl_timeout = 0,
+        apply_patches_on_merge = 1,
+        enable_block_number_column = 1,
+        enable_block_offset_column = 1,
+        min_bytes_for_wide_part = 1;
+
+    SYSTEM STOP MERGES t_ttl_patch_group_by_zero;
+
+    -- Every row is expired, so the part is written with a bound in the past.
+    INSERT INTO t_ttl_patch_group_by_zero SELECT number, now() - INTERVAL 2 DAY, number FROM numbers(100);
+
+    -- A TTL of 0 means no TTL: the rows are not expired any more and contribute no bound.
+    UPDATE t_ttl_patch_group_by_zero SET event_time = toDateTime(0) WHERE TRUE
+    SETTINGS enable_lightweight_update = 1, mutations_sync = 2;
+
+    SYSTEM START MERGES t_ttl_patch_group_by_zero;
+    OPTIMIZE TABLE t_ttl_patch_group_by_zero FINAL;
+"
+
+# Nothing is due any more, so nothing rolls up.
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_group_by_zero;"
+
+# The stale pre-patch bound would show here as a value two days in the past.
+${CLICKHOUSE_CLIENT} -q "
+    SELECT max(group_by_ttl_info.max[1]) = toDateTime(0)
+    FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_ttl_patch_group_by_zero' AND active
+      AND partition_id NOT LIKE 'patch-%';
+"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_group_by_zero;"

@@ -38,6 +38,9 @@ private:
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns columns_for_aggregator;
     bool no_more_keys = false;
+    /// Whether any row reached the rule. `new_ttl_info` stays uninitialized when every such row's
+    /// TTL evaluates to 0, and it must still override the pre-merge info then.
+    bool saw_rows = false;
 };
 
 }
