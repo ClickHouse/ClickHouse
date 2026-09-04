@@ -12,6 +12,9 @@ DOCKER_COMPOSE_PATH = get_docker_compose_path()
 BEARER_PORT = 8001
 DLF_PORT = 8002
 
+# A listing walk that does not terminate never answers, so the paginated query is bounded.
+PAGED_QUERY_TIMEOUT = 60
+
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True, main_configs=[])
 
@@ -154,3 +157,37 @@ def test_paimon_rest_catalog(started_cluster):
     message = str(exc_info.value)
     assert "Code: 86" in message, message
     assert "401" in message, message
+
+
+def test_paginated_listing_terminates(started_cluster):
+    bearer_ip = cluster.get_instance_ip("paimon-rest-bearer")
+
+    node.query("DROP DATABASE IF EXISTS paimon_rest_db_paged SYNC;")
+    node.query(
+        f"CREATE DATABASE paimon_rest_db_paged ENGINE = DataLakeCatalog('http://{bearer_ip}:{BEARER_PORT}')"
+        f" SETTINGS catalog_type='paimon_rest', warehouse='restWarehouse',"
+        f" catalog_credential='bearer-token-xxx-xxx-xxx';",
+        settings={"allow_experimental_database_paimon_rest_catalog": 1},
+    )
+
+    # A page size of one makes every listing paginate: a Paimon REST catalog hands back the name of
+    # the last item of a page as `nextPageToken`, and a page that exactly fills `maxResults` still
+    # carries one. So the single database and the single table of this catalog each take two
+    # requests, and the second page comes back empty with no token at all. Walking them must
+    # terminate and yield every item exactly once - a cursor that is not cleared on the last page
+    # re-requests that page forever, hanging the query and duplicating its items.
+    node.query("SYSTEM ENABLE FAILPOINT datalake_paimon_list_page_size_one")
+    try:
+        # Covers both paginated walks: the database listing and the table listing of `test`.
+        assert (
+            node.query(
+                "SHOW TABLES;",
+                database="paimon_rest_db_paged",
+                timeout=PAGED_QUERY_TIMEOUT,
+            )
+            == "test.test_table\n"
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_paimon_list_page_size_one")
+
+    node.query("DROP DATABASE paimon_rest_db_paged SYNC;")
