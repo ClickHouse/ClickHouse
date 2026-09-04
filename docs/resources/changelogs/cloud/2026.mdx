@@ -13,6 +13,25 @@ import { Image } from "/snippets/components/Image.jsx";
 In addition to this ClickHouse Cloud changelog, please see the [Cloud Compatibility](/products/cloud/guides/cloud-compatibility) page.
 
 
+<Update label="2026-08-31">
+
+This week expands ClickHouse Cloud's global reach with new AWS regions in Taipei and Malaysia, adds Global Access support for Private Service Connect, and makes it easier for SAML users to move between organizations.
+
+### New AWS regions: Taipei and Malaysia {#new-aws-regions-taipei-and-malaysia}
+
+ClickHouse Cloud is now available in AWS Taipei (`ap-east-2`) and AWS Malaysia (`ap-southeast-5`). Both are set up as Private Regions with ClickPipes support. See the [supported regions documentation](/cloud/reference/supported-regions) and [Private Region considerations](/cloud/reference/supported-regions#private-regions) for details.
+
+### ClickPipes: Private Service Connect supports Global Access {#private-service-connect-supports-global-access}
+
+ClickPipes now supports Global Access for **cross-region** private connections using Private Service Connect (PSC). When enabled, ClickPipes can connect to a PSC endpoint in a different region than the GCP region where the service is running, including regions not natively supported in ClickHouse Cloud (_e.g._ `asia-northeast3` (Seoul)).
+
+### Switch between SAML organizations {#switch-between-saml-organizations}
+
+SAML users who belong to multiple SAML organizations can now switch between them directly from the org switcher, which re-authenticates them behind the scenes. There's no longer any need to bookmark each organization's URL or manually log out and back in — just bookmark your main organization and switch from there. This covers SAML-to-SAML switching; existing non-SAML org switching is unchanged.
+
+</Update>
+
+
 <Update label="August 17, 2026">
 
 This week's updates bring broader platform reach and better operational visibility. Managed Postgres is now available on GCP for selected design partners, ClickStack resources can be managed through the official Terraform provider, and new billing notifications give customers early warning before credits expire or service is interrupted. We also shipped improved tracing for ClickHouse Agents and a smoother SAML sign-in experience.

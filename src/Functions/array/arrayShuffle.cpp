@@ -219,22 +219,22 @@ The value of `limit` should be in the range `[1..N]`. Values outside of that ran
     returned_value = {"Array with elements partially shuffled.", {"Array(T)"}};
     examples = {
         {"no_limit1", "SELECT arrayPartialShuffle([1, 2, 3, 4], 0)", "[2, 4, 3, 1]"},
-        {"no_limit2", "SELECT arrayPartialShuffle([1, 2, 3, 4])", "[4, 1, 3, 2]"},
+        {"no_limit2", "SELECT arrayPartialShuffle([1, 2, 3, 4])", "[2,3,4,1]"},
         {"random_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2)", "[3, 4, 1, 2]"},
-        {"explicit_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2, 41)", "[3, 2, 1, 4]"},
+        {"explicit_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2, 41)", "[3,2,1,4]"},
         {"materialize", "SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffle([1, 2, 3], 2, 42) FROM numbers(10)", R"(
-┌─arrayPartial⋯4]), 2, 42)─┬─arrayPartial⋯ 3], 2, 42)─┐
-│ [3,2,1,4]                │ [3,2,1]                  │
-│ [3,2,1,4]                │ [3,2,1]                  │
-│ [4,3,2,1]                │ [3,2,1]                  │
-│ [1,4,3,2]                │ [3,2,1]                  │
-│ [3,4,1,2]                │ [3,2,1]                  │
-│ [1,2,3,4]                │ [3,2,1]                  │
-│ [1,4,3,2]                │ [3,2,1]                  │
-│ [1,4,3,2]                │ [3,2,1]                  │
-│ [3,1,2,4]                │ [3,2,1]                  │
-│ [1,3,2,4]                │ [3,2,1]                  │
-└──────────────────────────┴──────────────────────────┘
+┌─arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42)─┬─arrayPartialShuffle([1, 2, 3], 2, 42)─┐
+│ [3,2,1,4]                                             │ [3,2,1]                               │
+│ [3,2,1,4]                                             │ [3,1,2]                               │
+│ [4,3,2,1]                                             │ [1,3,2]                               │
+│ [1,4,3,2]                                             │ [2,1,3]                               │
+│ [3,4,1,2]                                             │ [3,2,1]                               │
+│ [1,2,3,4]                                             │ [3,2,1]                               │
+│ [1,4,3,2]                                             │ [1,2,3]                               │
+│ [1,4,3,2]                                             │ [3,2,1]                               │
+│ [3,1,2,4]                                             │ [3,2,1]                               │
+│ [1,3,2,4]                                             │ [2,1,3]                               │
+└───────────────────────────────────────────────────────┴───────────────────────────────────────┘
     )"}
     };
     documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

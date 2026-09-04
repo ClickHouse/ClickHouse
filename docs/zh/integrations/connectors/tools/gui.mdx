@@ -269,14 +269,14 @@ doc_type: 'reference'
 
   功能：
 
-  * 支持查询历史 (分页、全部清除等) 
+  * 支持查询历史 (分页、全部清除等)
   * 支持对选定 SQL 子句进行查询
   * 支持终止查询
-  * 支持表管理 (元数据、删除、预览) 
-  * 支持数据库管理 (删除、创建) 
+  * 支持表管理 (元数据、删除、预览)
+  * 支持数据库管理 (删除、创建)
   * 支持自定义查询
-  * 支持多数据源管理 (连接测试、监控) 
-  * 支持监控 (处理器、连接、查询) 
+  * 支持多数据源管理 (连接测试、监控)
+  * 支持监控 (处理器、连接、查询)
   * 支持迁移数据
 </Accordion>
 
@@ -432,6 +432,23 @@ doc_type: 'reference'
   ## 商业
 </div>
 
+<Accordion title="ProbeDeck">
+  [ProbeDeck](https://probedeck.app) 是一款用于监控和查询 ClickHouse 的 iOS 和 iPadOS 客户端。
+
+  功能：
+
+  * ProbeDeck 可显示正在运行的查询、副本、parts、合并、变更、磁盘和服务器指标。
+  * 您可以使用 `KILL QUERY` 终止查询，并使用 `KILL MUTATION` 终止变更。
+  * 您可以浏览模式和数据，或在编辑器中运行 SQL。
+  * ProbeDeck 可通过设备网络或 SSH 隧道使用 HTTP(S) 连接。
+  * ProbeDeck 将凭据存储在 iOS Keychain 中，并支持为每个连接设置只读模式。
+  * 该应用包含附带数据的离线演示。
+
+  免费用户可监控一台服务器并运行只读 SQL。他们可以保存一个连接。ProbeDeck Pro 增加了终止控件、写入、DDL 和不限数量的已保存连接。
+
+  请参阅[将 ProbeDeck 连接到 ClickHouse](/zh/integrations/connectors/sql-clients/probedeck)了解连接指令。
+</Accordion>
+
 <Accordion title="DataGrip">
   [DataGrip](https://www.jetbrains.com/datagrip/) 是 JetBrains 推出的数据库 IDE，为 ClickHouse 提供专门支持。它还嵌入在其他基于 IntelliJ 的工具中：PyCharm、IntelliJ IDEA、GoLand、PhpStorm 等。
 
@@ -453,7 +470,7 @@ doc_type: 'reference'
   * 提供从简单柱状图到复杂仪表盘的丰富可视化类型。
   * 仪表盘可公开访问。
   * 支持包括 ClickHouse 在内的多种数据源。
-  * 基于 ClickHouse 的物化数据存储。
+  * 基于 ClickHouse 的materialized数据存储。
 
   DataLens 可供低负载项目[免费使用](https://yandex.cloud/en/docs/datalens/pricing)，包括商业用途。
 
@@ -487,24 +504,24 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="SeekTable">
-  [SeekTable](https://www.seektable.com) 是一款用于数据探索和运营报表的自助式 BI 工具，既提供云服务，也提供自托管版本。SeekTable 的报表可嵌入到任何 Web 应用中。
+  [SeekTable](https://www.seektable.com) 是一款用于数据探索和运营报告的自助式 BI 工具。它既提供云服务，也提供自托管版本。SeekTable 的报告可嵌入任何 Web 应用。
 
   功能：
 
-  * 面向业务用户的易用报表构建器。
-  * 强大的报表参数，支持 SQL 过滤以及报表级查询自定义。
-  * 可通过原生 TCP/IP 端点和 HTTP(S) 接口连接到 ClickHouse (两种不同的驱动) 。
-  * 可在维度/度量定义中充分利用 ClickHouse SQL 方言的全部能力。
-  * 用于自动生成报表的 [Web API](https://www.seektable.com/help/web-api-integration)。
-  * 支持报表开发流程中的账户数据[备份/恢复](https://www.seektable.com/help/self-hosted-backup-restore)；数据模型 (cubes) /报表配置采用易于阅读的 XML，可存储在版本控制系统中。
+  * 面向业务用户的易用型报告构建器。
+  * 强大的报告参数，支持 SQL 过滤和针对特定报告的查询自定义。
+  * 可通过原生 TCP/IP 端点和 HTTP(S) 接口连接 ClickHouse (两种不同的驱动程序) 。
+  * 可在维度/度量定义中使用 ClickHouse SQL 方言的全部功能。
+  * 用于自动生成报告的 [Web API](https://www.seektable.com/help/web-api-integration)。
+  * 支持通过账户数据[备份/恢复](https://www.seektable.com/help/self-hosted-backup-restore)的报告开发流程；数据模型 (立方体) /报告配置采用易于阅读的 XML 格式，并可存储在版本控制系统中。
 
-  SeekTable 对个人使用 [免费](https://www.seektable.com/help/cloud-pricing)。
+  SeekTable 对个人使用[免费](https://www.seektable.com/help/cloud-pricing)。
 
   [如何在 SeekTable 中配置 ClickHouse 连接。](https://www.seektable.com/help/clickhouse-pivot-table)
 </Accordion>
 
 <Accordion title="Chadmin">
-  [Chadmin](https://github.com/bun4uk/chadmin) 是一个简单的 UI，可用于查看当前在 ClickHouse 集群上运行的查询及其相关信息，并可在需要时终止这些查询。
+  [Chadmin](https://github.com/bun4uk/chadmin) 是一个简单的 UI，可用于查看 ClickHouse 集群中当前正在运行的查询及其相关信息，并可按需终止这些查询。
 </Accordion>
 
 <Accordion title="TABLUM.IO">
@@ -546,8 +563,8 @@ doc_type: 'reference'
 
   功能：
 
-  * 连接后即可查看服务器概览——版本、运行时间、正在运行的查询、活跃 merges、parts 和存储大小、副本状态，以及 clusters 和 nodes，全部一目了然。
-  * 提供可视化查询构建器 (列选择器、过滤器、排序、限制) ，以及带语法高亮的 Monaco SQL 编辑器，并为每个连接保留查询历史。
+  * 连接后即可查看服务器概览——版本、运行时间、正在运行的查询、活跃合并、parts 和存储大小、副本状态，以及 clusters 和 nodes，全部一目了然。
+  * 提供可视化查询构建器 (列选择器、过滤器、排序、限制) ，以及带语法高亮的 Monaco SQL 编辑器，并为每个连接保留查询历史记录。
   * 提供可视化 `CREATE TABLE` 向导，支持 `MergeTree` 变体、`ORDER BY`、`PARTITION BY`、`SETTINGS` 以及 `Nullable()` 自动封装。
   * 原生支持 ClickHouse 类型处理——`Nullable`、`Array`、`LowCardinality` 和嵌套对象。
   * 支持向量搜索——将 `Array(Float32)` embedding 列渲染为紧凑的向量单元，提供 2D embedding 可视化，并可通过 `cosineDistance` 查找相似项。
