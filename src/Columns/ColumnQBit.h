@@ -96,6 +96,7 @@ public:
     void insert(const Field & x) override { tuple->insert(x); }
     bool tryInsert(const Field & x) override { return tuple->tryInsert(x); }
     bool isDefaultAt(size_t n) const override { return tuple->isDefaultAt(n); }
+    bool hasOnlyTypeDefaults() const override { return tuple->hasOnlyTypeDefaults(); }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src_, size_t n) override;
@@ -131,7 +132,6 @@ public:
     {
         tuple->deserializeAndInsertFromArena(in, settings);
     }
-    void skipSerializedInArena(ReadBuffer & in) const override { tuple->skipSerializedInArena(in); }
     void updateHashWithValue(size_t n, SipHash & hash) const override { tuple->updateHashWithValue(n, hash); }
     void updateHashFast(SipHash & hash) const override { tuple->updateHashFast(hash); }
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override
