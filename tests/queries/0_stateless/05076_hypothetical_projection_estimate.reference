@@ -1,0 +1,78 @@
+--- point query on the projection key, three parts ---
+hypothetical:
+marks: 100
+status: applicable
+marks: 4
+skip_ratio: 96.0%
+verdict: would be chosen, it reads fewer marks than the base table
+source: empirical
+real:
+ReadFromMergeTree (p_b)
+Granules: 4/100
+--- range on the projection key ---
+hypothetical:
+marks: 100
+status: applicable
+marks: 13
+skip_ratio: 87.0%
+verdict: would be chosen, it reads fewer marks than the base table
+source: empirical
+real:
+ReadFromMergeTree (p_b)
+Granules: 13/100
+--- composite key, leading column ---
+hypothetical:
+marks: 100
+status: applicable
+marks: 4
+skip_ratio: 96.0%
+verdict: would be chosen, it reads fewer marks than the base table
+source: empirical
+real:
+ReadFromMergeTree (p_ba)
+Granules: 4/100
+--- base PK already prunes to one granule, the projection cannot beat it ---
+hypothetical:
+marks: 1
+status: applicable
+marks: 1
+skip_ratio: 0.0%
+verdict: would not be chosen, it does not read fewer marks than the base table
+source: empirical
+real:
+ReadFromMergeTree (default.t_real)
+Granules: 1/100
+--- key over a computed expression ---
+hypothetical:
+marks: 100
+status: applicable
+marks: 4
+skip_ratio: 96.0%
+verdict: would be chosen, it reads fewer marks than the base table
+source: empirical
+real:
+ReadFromMergeTree (p_c)
+Granules: 4/100
+--- not applicable cases ---
+With p_key (projection (normal), hypothetical):
+reason: Projection sort key cannot filter this predicate (always unknown or true)
+With p_agg (projection (aggregate), hypothetical):
+reason: EXPLAIN WHATIF estimates normal (sorted) hypothetical projections only, aggregate projections are not estimated yet
+With p_where (projection (normal), hypothetical):
+reason: EXPLAIN WHATIF does not estimate projections with a WHERE clause yet
+With p_nocol (projection (normal), hypothetical):
+reason: Projection does not contain column v required by the query
+--- projections disabled by the query ---
+reason: Projections are disabled by `optimize_use_projections = 0`
+--- empirical = 0 scans nothing ---
+status: applicable
+source: applicability_only
+empirical_status: disabled
+--- the scan honours max_rows_to_read ---
+status: applicable
+source: applicability_only
+empirical_status: unsupported
+empirical_reason: The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)
+--- estimating needs SELECT on the projection columns ---
+ACCESS_DENIED
+status: applicable

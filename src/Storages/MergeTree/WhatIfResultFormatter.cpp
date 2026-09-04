@@ -35,8 +35,13 @@ void WhatIfResult::format(WriteBuffer & out) const
 
         writeCString("  status:       applicable\n", out);
         writeString(fmt::format("  marks:        {}\n", idx.estimated_marks), out);
+        if (idx.estimated_rows)
+            writeString(fmt::format("  rows:         {}\n", *idx.estimated_rows), out);
 
-        if (baseline_marks > 0 && baseline_est_bytes > 0)
+        /// a projection granule holds different rows than a base granule, so its bytes are measured, not scaled
+        if (idx.estimated_bytes)
+            writeString(fmt::format("  est_bytes:    {}\n", ReadableSize(*idx.estimated_bytes)), out);
+        else if (baseline_marks > 0 && baseline_est_bytes > 0)
         {
             UInt64 hypo_bytes = static_cast<UInt64>(
                 static_cast<double>(baseline_est_bytes) * static_cast<double>(idx.estimated_marks) / static_cast<double>(baseline_marks));
@@ -44,6 +49,11 @@ void WhatIfResult::format(WriteBuffer & out) const
         }
 
         writeString(fmt::format("  skip_ratio:   {:.1f}%\n", idx.skip_ratio * 100.0), out);
+        if (idx.would_be_chosen)
+            writeString(
+                *idx.would_be_chosen ? "  verdict:      would be chosen, it reads fewer marks than the base table\n"
+                                     : "  verdict:      would not be chosen, it does not read fewer marks than the base table\n",
+                out);
         writeCString("\n", out);
 
         writeCString("Estimation:\n", out);

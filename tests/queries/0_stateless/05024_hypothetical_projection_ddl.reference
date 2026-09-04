@@ -25,17 +25,17 @@ accepted with gates on:	1
 reason: Hypothetical projection can no longer be added to this table
 --- a runtime ALTER guard does not reject a valid definition ---
 created: 1
-reason: EXPLAIN WHATIF does not estimate hypothetical projections yet
+reason: Projections are disabled by `optimize_use_projections = 0`
 --- a name taken by a real projection is rejected ---
 ILLEGAL_PROJECTION
 --- duplicate without IF NOT EXISTS is rejected ---
 BAD_ARGUMENTS
 --- non-MergeTree is rejected ---
 NOT_IMPLEMENTED
---- EXPLAIN WHATIF lists the projection as not estimated yet ---
+--- EXPLAIN WHATIF lists the projection when projections are disabled ---
 With p_norm (projection (normal), hypothetical):
 status: not_applicable
-reason: EXPLAIN WHATIF does not estimate hypothetical projections yet
+reason: Projections are disabled by `optimize_use_projections = 0`
 --- with nothing defined the report says so ---
 No hypothetical indexes or projections defined for this table. Use CREATE HYPOTHETICAL INDEX or CREATE HYPOTHETICAL PROJECTION to define one.
 --- creating needs the same privilege as a real ADD PROJECTION ---
