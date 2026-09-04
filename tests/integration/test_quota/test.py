@@ -454,85 +454,87 @@ def test_tracking_quota():
 def test_exceed_quota():
     # Change quota, now the limits are tiny so we will exceed the quota.
     copy_quota_xml("tiny_limits.xml")
-    check_system_quotas(
-        [
+    try:
+        check_system_quotas(
             [
-                "myQuota",
-                "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users_xml",
-                "['user_name']",
-                "[31556952]",
-                0,
-                "['default']",
-                "[]",
+                [
+                    "myQuota",
+                    "e651da9c-a748-8703-061a-7e5e5096dae7",
+                    "users_xml",
+                    "['user_name']",
+                    "[31556952]",
+                    0,
+                    "['default']",
+                    "[]",
+                ]
             ]
-        ]
-    )
-    system_quota_limits(
-        [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N", "\\N", "1"]]
-    )
-    system_quota_usage(
-        [
+        )
+        system_quota_limits(
+            [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N", "\\N", "1"]]
+        )
+        system_quota_usage(
             [
-                "myQuota",
-                "default",
-                31556952,
-                0,
-                1,
-                0,
-                1,
-                0,
-                1,
-                0,
-                1,
-                0,
-                1,
-                0,
-                "\\N",
-                0,
-                1,
-                0,
-                "\\N",
-                "\\N",
-                "1",
+                [
+                    "myQuota",
+                    "default",
+                    31556952,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    "\\N",
+                    0,
+                    1,
+                    0,
+                    "\\N",
+                    "\\N",
+                    "1",
+                ]
             ]
-        ]
-    )
+        )
 
-    assert re.search(
-        "Quota.*has been exceeded",
-        instance.query_and_get_error("SELECT * from test_table"),
-    )
-    system_quota_usage(
-        [
+        assert re.search(
+            "Quota.*has been exceeded",
+            instance.query_and_get_error("SELECT * from test_table"),
+        )
+        system_quota_usage(
             [
-                "myQuota",
-                "default",
-                31556952,
-                1,
-                1,
-                1,
-                1,
-                0,
-                1,
-                1,
-                1,
-                0,
-                1,
-                0,
-                "\\N",
-                50,
-                1,
-                0,
-                "\\N",
-                "\\N",
-                "1",
+                [
+                    "myQuota",
+                    "default",
+                    31556952,
+                    1,
+                    1,
+                    1,
+                    1,
+                    0,
+                    1,
+                    1,
+                    1,
+                    0,
+                    1,
+                    0,
+                    "\\N",
+                    50,
+                    1,
+                    0,
+                    "\\N",
+                    "\\N",
+                    "1",
+                ]
             ]
-        ]
-    )
+        )
+    finally:
+        # Change quota, now the limits are enough to execute queries.
+        copy_quota_xml("normal_limits.xml")
 
-    # Change quota, now the limits are enough to execute queries.
-    copy_quota_xml("normal_limits.xml")
     check_system_quotas(
         [
             [
