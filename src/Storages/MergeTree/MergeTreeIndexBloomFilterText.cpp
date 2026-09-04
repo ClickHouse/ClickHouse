@@ -378,6 +378,42 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
             }
         }
 
+        /// `LIKE pattern ESCAPE 'c'` and `NOT LIKE pattern ESCAPE 'c'` arrive here as a 3-argument
+        /// call `like(col, pattern, escape_char)` / `notLike(...)`. Fold the escape character into the
+        /// pattern and dispatch through the existing 2-argument handler. `ilike` is intentionally not
+        /// handled here because this index does not support case-insensitive LIKE.
+        if (arguments_size == 3 && (function_name == "like" || function_name == "notLike"))
+        {
+            auto lhs_argument = function_node.getArgumentAt(0);
+            auto pattern_argument = function_node.getArgumentAt(1);
+            auto escape_argument = function_node.getArgumentAt(2);
+
+            Field pattern_field;
+            DataTypePtr pattern_type;
+            Field escape_field;
+            DataTypePtr escape_type;
+            if (pattern_argument.tryGetConstant(pattern_field, pattern_type)
+                && escape_argument.tryGetConstant(escape_field, escape_type)
+                && pattern_field.getType() == Field::Types::String
+                && escape_field.getType() == Field::Types::String)
+            {
+                const String & escape_str = escape_field.safeGet<String>();
+                /// Mirror the execution-layer validation in `FunctionsStringSearch::executeImpl`, otherwise
+                /// skipping the granule would drop a `like` call that should have raised `BAD_ARGUMENTS`.
+                if (escape_str.size() != 1 || static_cast<unsigned char>(escape_str[0]) > 0x7F)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The ESCAPE argument of function {} must be a single ASCII character, got '{}'",
+                        function_name, escape_str);
+
+                Field rewritten_field(likePatternWithCustomEscapeToLikePattern(
+                    pattern_field.safeGet<String>(), escape_str[0]));
+                if (traverseTreeEquals(function_name, lhs_argument, pattern_type, rewritten_field, out))
+                    return true;
+            }
+            return false;
+        }
+
         if (arguments_size != 2)
             return false;
 

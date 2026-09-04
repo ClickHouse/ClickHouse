@@ -29,6 +29,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageMerge.h>
 #include <Common/logger_useful.h>
 
 #include <unordered_set>
@@ -37,6 +38,7 @@ namespace DB
 {
 namespace Setting
 {
+extern const SettingsBool parallel_replicas_allow_merge_tables;
 extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
 }
 
@@ -46,7 +48,16 @@ namespace QueryPlanOptimizations
 constexpr bool debug_logging_enabled = false;
 
 /// Plan-wide collector of the MergeTree reads to distribute (defined below; used by buildPlanFragment).
-static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node * node);
+/// A `MergeTree` read the pass would distribute, and the table it reads. A `Merge` read contributes one
+/// entry per underlying table while `consider_merges` is set - all sharing that one node - which is what the
+/// duplicate check of a union needs in order to judge a plan before any `Merge` is expanded.
+struct ReadToDistribute
+{
+    QueryPlan::Node * node;
+    StorageID storage_id;
+};
+
+static std::vector<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * node, bool consider_merges = false);
 
 /// Side of a JOIN; `Left`/`Right` double as the join node's child indices.
 enum class JoinSide : size_t
@@ -442,9 +453,9 @@ private:
         ContextPtr context;
         /// Mark only the coordinated reads (collectReadsToDistribute follows a join's coordinated side) so they
         /// are deserialized in parallel-reading mode; the other side stays unmarked and is broadcast.
-        for (auto * read_node : collectReadsToDistribute(plan_fragment->getRootNode()))
+        for (const auto & read : collectReadsToDistribute(plan_fragment->getRootNode()))
         {
-            auto * read_step = typeid_cast<ReadFromMergeTree *>(read_node->step.get());
+            auto * read_step = typeid_cast<ReadFromMergeTree *>(read.node->step.get());
             read_step->enableParallelReadingFromReplicasForSerialization();
             context = read_step->getContext();
         }
@@ -461,7 +472,7 @@ private:
 /// reads are left local): the parallel-replicas coordinator drives every read of a shipped fragment and
 /// cannot distinguish duplicate announcements for one table, so such a union must not become a single
 /// distributed fragment (mirrors StorageView::getUnderlyingMergeTreeStorageForParallelReplicas).
-static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node * node)
+static std::vector<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * node, bool consider_merges)
 {
     if (!node)
         return {};
@@ -470,25 +481,44 @@ static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node *
     {
         if (!mergeTreeReadCanBeShipped(*read))
             return {};
-        return {node};
+        return {{node, read->getMergeTreeData().getStorageID()}};
+    }
+
+    /// A `Merge` read is still opaque at this point, so answer for the union it would be expanded into: the
+    /// reads of its underlying tables, all attributed to this node. That makes the verdict below - including
+    /// the duplicate check of an enclosing union - the same one the expanded plan would get, so the plan is
+    /// rewritten only when the rewrite is of use.
+    if (consider_merges)
+    {
+        if (auto * merge = typeid_cast<ReadFromMerge *>(node->step.get()))
+        {
+            if (!merge->getContext()->getSettingsRef()[Setting::parallel_replicas_allow_merge_tables])
+                return {};
+
+            const auto & storage_ids = merge->getExpandableReads(mergeTreeReadCanBeShipped);
+
+            std::vector<ReadToDistribute> reads;
+            reads.reserve(storage_ids.size());
+            for (const auto & storage_id : storage_ids)
+                reads.push_back({node, storage_id});
+            return reads;
+        }
     }
 
     if (typeid_cast<UnionStep *>(node->step.get()))
     {
-        std::vector<QueryPlan::Node *> reads;
+        std::vector<ReadToDistribute> reads;
         for (auto * child : node->children)
         {
-            auto child_reads = collectReadsToDistribute(child);
+            auto child_reads = collectReadsToDistribute(child, consider_merges);
             reads.insert(reads.end(), child_reads.begin(), child_reads.end());
         }
 
         std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> seen;
-        for (auto * read_node : reads)
-        {
-            const auto & storage_id = typeid_cast<ReadFromMergeTree &>(*read_node->step).getMergeTreeData().getStorageID();
-            if (!seen.insert(storage_id).second)
+        for (const auto & read : reads)
+            if (!seen.insert(read.storage_id).second)
                 return {};
-        }
+
         return reads;
     }
 
@@ -507,11 +537,11 @@ static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node *
         if (coordinated_side == JoinSide::None)
             return {};
 
-        return collectReadsToDistribute(node->children.at(static_cast<size_t>(coordinated_side)));
+        return collectReadsToDistribute(node->children.at(static_cast<size_t>(coordinated_side)), consider_merges);
     }
 
     /// Non-join single-input step (Expression/Filter/Sorting/...): follow the only input.
-    return collectReadsToDistribute(node->children.at(0));
+    return collectReadsToDistribute(node->children.at(0), consider_merges);
 }
 
 /// FINAL is incompatible with parallel-replica reading (the FINAL merge path requires the read not to be
@@ -546,6 +576,40 @@ static bool planHasSubquerySet(const QueryPlan::Node * node)
     return false;
 }
 
+/// A `Merge` table is opaque to the collectors above: `ReadFromMerge` unites the pipelines of its
+/// per-table subplans instead of their plans, so the underlying `MergeTree` reads do not exist yet while
+/// the plan is transformed. Expand every eligible `ReadFromMerge` into a plan-level union of those reads
+/// first, so that the rest of the pass treats a `Merge` exactly like a `UNION ALL` over its underlying
+/// tables. Ineligible ones (a child which is not a plain `MergeTree` read, a `FINAL` read, nothing to read)
+/// are left as they are and read by a single replica. Call it only once the plan is known to distribute
+/// something - see the caller.
+static void expandMergeReadsForParallelReplicas(QueryPlan & query_plan)
+{
+    auto * root = query_plan.getRootNode();
+    if (!root)
+        return;
+
+    /// Collect first: the expansion replaces the step of a visited node.
+    std::vector<QueryPlan::Node *> merge_nodes;
+    Stack stack;
+    traverseQueryPlan(
+        stack,
+        *root,
+        [&](QueryPlan::Node & node)
+        {
+            const auto * merge = typeid_cast<const ReadFromMerge *>(node.step.get());
+            if (merge && merge->getContext()->getSettingsRef()[Setting::parallel_replicas_allow_merge_tables])
+                merge_nodes.push_back(&node);
+        });
+
+    for (auto * node : merge_nodes)
+    {
+        auto & merge = typeid_cast<ReadFromMerge &>(*node->step);
+        if (!merge.getExpandableReads(mergeTreeReadCanBeShipped).empty())
+            query_plan.replaceNodeWithPlan(node, merge.expandForParallelReplicas());
+    }
+}
+
 /// Insertion phase: put a ParallelReplicasSplitStep directly above every eligible MergeTree read.
 /// Raising the markers up the plan (through expressions, aggregation and unions) and rewriting them
 /// into a distributed read is done by the phases below. The planner now builds only a plain local plan.
@@ -564,9 +628,23 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
     if (planHasSubquerySet(root))
         return;
 
+    /// Ask first whether anything would be distributed once the `Merge` reads are expanded into unions of
+    /// the reads of their underlying tables. The answer is not a property of one read: a `FULL`/`CROSS` join
+    /// yields nothing, and a union is rejected outright when two of its branches read the same table - which
+    /// the expansion itself can cause, by turning a `Merge` into a union of the very tables a sibling branch
+    /// reads. Deciding up front is what keeps a query which is not distributed on the plan it would have
+    /// without the feature, instead of on a union nothing distributes.
+    if (collectReadsToDistribute(root, /*consider_merges=*/ true).empty())
+        return;
+
+    /// Now the same union and aggregation splitting as for a plain `MergeTree` table applies to a `Merge`.
+    /// Every eligible one is expanded, including a `Merge` on the broadcast side of a join, which has no read
+    /// of its own to distribute but is shipped inside the fragment and read in full by every replica.
+    expandMergeReadsForParallelReplicas(query_plan);
+
     std::unordered_set<const QueryPlan::Node *> eligible;
-    for (auto * node : collectReadsToDistribute(root))
-        eligible.insert(node);
+    for (const auto & read : collectReadsToDistribute(root))
+        eligible.insert(read.node);
     if (eligible.empty())
         return;
 

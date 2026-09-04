@@ -8,8 +8,14 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/Arena.h>
+#include <Common/ArenaAllocator.h>
+#include <Common/PODArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+
+#include <base/sort.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -25,12 +31,14 @@ namespace ErrorCodes
 /// Aggregate function sorting pairs (timestamp, values) by timestamp.
 /// If there are pairs with the same timestamp then the function keeps only a pair with the biggest value,
 /// where a NaN value loses to any other value (see `timeseriesMaxValueForDuplicateTimestamp`).
-template <typename TimestampType, typename ValueType, bool array_arguments>
+/// Samples can be passed in three ways: as two scalar arguments (timestamp, value),
+/// as two arrays (Array(timestamp), Array(value)), or as a single array of pairs Array(Tuple(timestamp, value)).
+template <typename TimestampType, typename ValueType>
 class AggregateFunctionTimeSeriesGroupArray final :
-    public IAggregateFunctionHelper<AggregateFunctionTimeSeriesGroupArray<TimestampType, ValueType, array_arguments>>
+    public IAggregateFunctionHelper<AggregateFunctionTimeSeriesGroupArray<TimestampType, ValueType>>
 {
 public:
-    using Base = IAggregateFunctionHelper<AggregateFunctionTimeSeriesGroupArray<TimestampType, ValueType, array_arguments>>;
+    using Base = IAggregateFunctionHelper<AggregateFunctionTimeSeriesGroupArray<TimestampType, ValueType>>;
 
     using ColVecType = ColumnVectorOrDecimal<TimestampType>;
     using ColVecResultType = ColumnVectorOrDecimal<ValueType>;
@@ -46,84 +54,142 @@ public:
         ValueType value;
     };
 
+    /// Small states are kept in the aggregation arena; bigger ones move to the general allocator, which,
+    /// unlike the arena, reclaims the previous buffer while the array grows.
+    using ElementsAllocator = MixedAlignedArenaAllocator<alignof(Element), 4096>;
+    using Elements = PODArray<Element, 32, ElementsAllocator>;
+
     /// Stores all samples.
     struct Data
     {
-        Element * elements = nullptr;
-        size_t size = 0;
-        size_t allocated_size = 0;
-
-        void reserve(size_t new_size, Arena * arena)
-        {
-            if (new_size > allocated_size)
-            {
-                auto old_size = allocated_size;
-                allocated_size = std::max(2 * allocated_size, new_size);
-                elements = reinterpret_cast<Element *>(arena->alignedRealloc(
-                    reinterpret_cast<char *>(elements), old_size * sizeof(Element), allocated_size * sizeof(Element),
-                    alignof(Element)));
-            }
-        }
+        /// The samples, sorted by timestamp and deduplicated whenever `sorted` is true.
+        Elements elements;
+        /// Cleared by an out-of-order `add`; while set, timestamps in `elements` are strictly increasing.
+        bool sorted = true;
 
         void add(TimestampType timestamp, ValueType value, Arena * arena)
         {
-            reserve(size + 1, arena);
-            elements[size++] = Element{.timestamp = timestamp, .value = value};
+            /// Samples usually arrive in timestamp order, hence `[[unlikely]]`.
+            if (!elements.empty() && timestamp <= elements.back().timestamp) [[unlikely]]
+            {
+                Element & last = elements.back();
+                if (timestamp == last.timestamp)
+                {
+                    last.value = timeseriesMaxValueForDuplicateTimestamp(last.value, value);
+                    return;
+                }
+                sorted = false;
+            }
+            elements.push_back(Element{.timestamp = timestamp, .value = value}, arena);
         }
 
         void merge(const Data & rhs, Arena * arena)
         {
-            reserve(size + rhs.size, arena);
-            if (rhs.size)
-                memcpy(elements + size, rhs.elements, rhs.size * sizeof(Element));
-            size += rhs.size;
+            if (rhs.elements.empty())
+                return;
+
+            if (elements.empty())
+            {
+                elements.assign(rhs.elements.begin(), rhs.elements.end(), arena);
+                sorted = rhs.sorted;
+                sort(arena);
+                return;
+            }
+
+            sort(arena);
+
+            /// A rare unsorted argument is sorted into a copy: `rhs` belongs to another state and is kept intact.
+            const Elements * rhs_elements = &rhs.elements;
+            Elements sorted_rhs_elements;
+            if (!rhs.sorted) [[unlikely]]
+            {
+                sorted_rhs_elements.assign(rhs.elements.begin(), rhs.elements.end(), arena);
+                sorted_rhs_elements.resize_exact(
+                    sortElements(sorted_rhs_elements.data(), sorted_rhs_elements.size()), arena);
+                rhs_elements = &sorted_rhs_elements;
+            }
+
+            /// Partial states often cover disjoint time ranges - then the merge is a plain append or prepend.
+            if (elements.back().timestamp < rhs_elements->front().timestamp)
+            {
+                elements.insert(rhs_elements->begin(), rhs_elements->end(), arena);
+                return;
+            }
+
+            if (rhs_elements->back().timestamp < elements.front().timestamp)
+            {
+                Elements prepended;
+                prepended.reserve_exact(rhs_elements->size() + elements.size(), arena);
+                prepended.insert_assume_reserved(rhs_elements->begin(), rhs_elements->end());
+                prepended.insert_assume_reserved(elements.begin(), elements.end());
+                elements.swap(prepended, arena);
+                return;
+            }
+
+            Elements merged;
+            merged.resize_exact(elements.size() + rhs_elements->size(), arena);
+            std::merge(
+                elements.begin(), elements.end(), rhs_elements->begin(), rhs_elements->end(), merged.begin(), lessByTimestamp);
+            merged.resize_exact(deduplicateSorted(merged.data(), merged.size()), arena);
+            elements.swap(merged, arena);
         }
 
-        void sortAndRemoveDuplicates()
+        /// Restores the invariant in place after out-of-order `add`s; no-op in the common (already sorted) case.
+        void sort(Arena * arena)
         {
-            auto less_by_timestamp = [](const Element & left, const Element & right) { return left.timestamp < right.timestamp; };
+            if (sorted)
+                return;
+            elements.resize_exact(sortElements(elements.data(), elements.size()), arena);
+            sorted = true;
+        }
 
-            if (!std::is_sorted(elements, elements + size, less_by_timestamp))
+        static bool lessByTimestamp(const Element & lhs, const Element & rhs)
+        {
+            return lhs.timestamp < rhs.timestamp;
+        }
+
+        /// Collapses each equal-timestamp run of a sorted range into one element and returns how many elements
+        /// are left at the beginning of the range.
+        static size_t deduplicateSorted(Element * elements, size_t size)
+        {
+            if (size == 0)
+                return 0;
+
+            size_t last_unique = 0;
+            for (size_t i = 1; i < size; ++i)
             {
-                std::sort(elements, elements + size, less_by_timestamp);
+                if (elements[i].timestamp == elements[last_unique].timestamp)
+                    elements[last_unique].value
+                        = timeseriesMaxValueForDuplicateTimestamp(elements[last_unique].value, elements[i].value);
+                else
+                    elements[++last_unique] = elements[i];
             }
+            return last_unique + 1;
+        }
 
-            bool need_deduplication = false;
-
-            if (size > 0)
-            {
-                for (size_t i = size - 1; i > 0; --i)
-                {
-                    if (elements[i].timestamp == elements[i - 1].timestamp)
-                    {
-                        /// If there are multiple values with the same timestamp, then we move the kept value
-                        /// to the first position in each group of values with the same timestamp.
-                        /// We do that because std::unique() which is called below will remove all except the first element
-                        /// in each group of values with the same timestamp.
-                        elements[i - 1].value = timeseriesMaxValueForDuplicateTimestamp(elements[i - 1].value, elements[i].value);
-                        need_deduplication = true;
-                    }
-                }
-            }
-
-            if (need_deduplication)
-            {
-                auto equal_by_timestamp = [](const Element & left, const Element & right) { return left.timestamp == right.timestamp; };
-                const Element * new_end = std::unique(elements, elements + size, equal_by_timestamp);
-                size = new_end - elements;
-            }
+        static size_t sortElements(Element * elements, size_t size)
+        {
+            ::sort(elements, elements + size, lessByTimestamp);
+            return deduplicateSorted(elements, size);
         }
     };
 
     explicit AggregateFunctionTimeSeriesGroupArray(const DataTypes & argument_types_)
         : Base(argument_types_, {}, createResultType(argument_types_))
+        , array_of_pairs_argument(argument_types_.size() == 1)
+        , array_arguments(!array_of_pairs_argument && (argument_types_[1]->getTypeId() == TypeIndex::Array))
     {
     }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_)
     {
-        const auto & timestamp_type = array_arguments ? typeid_cast<const DataTypeArray *>(argument_types_[0].get())->getNestedType() : argument_types_[0];
-        const auto & value_type = array_arguments ? typeid_cast<const DataTypeArray *>(argument_types_[1].get())->getNestedType() : argument_types_[1];
+        /// With the single argument form the result type is the same as the type of that argument.
+        if (argument_types_.size() == 1)
+            return argument_types_[0];
+
+        const bool arrays_passed = (argument_types_[1]->getTypeId() == TypeIndex::Array);
+        const auto & timestamp_type = arrays_passed ? typeid_cast<const DataTypeArray *>(argument_types_[0].get())->getNestedType() : argument_types_[0];
+        const auto & value_type = arrays_passed ? typeid_cast<const DataTypeArray *>(argument_types_[1].get())->getNestedType() : argument_types_[1];
         return std::make_shared<DataTypeArray>(make_shared<DataTypeTuple>(DataTypes{timestamp_type, value_type}));
     }
 
@@ -173,12 +239,12 @@ public:
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE reserveAdd(AggregateDataPtr __restrict place, size_t num_elements_to_add, Arena * arena) const
     {
         Data & data = this->data(place);
-        data.reserve(data.size + num_elements_to_add, arena);
+        data.elements.reserve(data.elements.size() + num_elements_to_add, arena);
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        if (array_arguments)
+        if (array_of_pairs_argument || array_arguments)
         {
             addBatchSinglePlace(row_num, row_num + 1, place, columns, arena, -1);
         }
@@ -246,81 +312,75 @@ public:
         Arena * arena,
         const UInt8 * flags_data) const
     {
-        if (array_arguments)
+        if (!array_of_pairs_argument && !array_arguments)
         {
-            const auto & timestamp_column = typeid_cast<const ColumnArray &>(*columns[0]);
-            const auto & value_column = typeid_cast<const ColumnArray &>(*columns[1]);
-            const auto & timestamp_offsets = timestamp_column.getOffsets();
-            const auto & value_offsets = value_column.getOffsets();
-            const TimestampType * timestamp_data = typeid_cast<const ColVecType *>(timestamp_column.getDataPtr().get())->getData().data();
-            const ValueType * value_data = typeid_cast<const ColVecResultType *>(value_column.getDataPtr().get())->getData().data();
+            /// Each row holds a single sample.
+            const TimestampType * timestamp_data = typeid_cast<const ColVecType &>(*columns[0]).getData().data();
+            const ValueType * value_data = typeid_cast<const ColVecResultType &>(*columns[1]).getData().data();
 
-            if (flags_data)
-            {
-                size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
-                size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[row_begin - 1]);
-                for (size_t i = row_begin; i < row_end; ++i)
-                {
-                    const auto timestamp_array_size = timestamp_offsets[i] - previous_timestamp_offset;
-                    const auto value_array_size = value_offsets[i] - previous_value_offset;
-
-                    if (flags_data[i] == flag_value_to_include)
-                    {
-                        /// Check that timestamp and value arrays have the same size for the selected rows
-                        if (timestamp_array_size != value_array_size)
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp and value arrays have different sizes at row {} : {} and {}",
-                                i, timestamp_array_size, value_array_size);
-
-                        /// A flag is per row, and each row is a pair of arrays
-                        addMany(place, timestamp_data + previous_timestamp_offset, value_data + previous_value_offset, 0, timestamp_array_size, arena);
-                    }
-
-                    previous_timestamp_offset = timestamp_offsets[i];
-                    previous_value_offset = value_offsets[i];
-                }
-            }
+            if (!flags_data)
+                addMany(place, timestamp_data, value_data, row_begin, row_end, arena);
+            else if constexpr (flag_value_to_include)
+                addManyConditional(place, timestamp_data, value_data, flags_data, row_begin, row_end, arena);
             else
-            {
-                {
-                    /// Check that timestamp and value arrays have the same size for each row
-                    size_t previous_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
-                    for (size_t i = row_begin; i < row_end; ++i)
-                    {
-                        const auto timestamp_array_size = timestamp_offsets[i] - previous_offset;
-                        const auto value_array_size = value_offsets[i] - previous_offset;
+                addManyNotNull(place, timestamp_data, value_data, flags_data, row_begin, row_end, arena);
 
-                        if (timestamp_array_size != value_array_size)
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp and value arrays have different sizes at row {} : {} and {}",
-                                i, timestamp_array_size, value_array_size);
+            return;
+        }
 
-                        previous_offset = timestamp_offsets[i];
-                    }
-                }
+        /// Each row holds a whole series.
+        const ColumnArray::Offset * timestamp_offsets = nullptr;
+        const ColumnArray::Offset * value_offsets = nullptr;
+        const TimestampType * timestamp_data = nullptr;
+        const ValueType * value_data = nullptr;
 
-                const size_t data_row_begin = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
-                const size_t data_row_end = (row_end == 0 ? 0 : timestamp_offsets[row_end - 1]);
+        if (array_of_pairs_argument)
+        {
+            const auto & array_column = typeid_cast<const ColumnArray &>(*columns[0]);
+            const auto & tuple_column = typeid_cast<const ColumnTuple &>(array_column.getData());
 
-                addMany(place, timestamp_data, value_data, data_row_begin, data_row_end, arena);
-            }
+            /// The timestamps and the values are stored in the same array, so they share the offsets.
+            timestamp_offsets = array_column.getOffsets().data();
+            value_offsets = timestamp_offsets;
+            timestamp_data = typeid_cast<const ColVecType &>(tuple_column.getColumn(0)).getData().data();
+            value_data = typeid_cast<const ColVecResultType &>(tuple_column.getColumn(1)).getData().data();
         }
         else
         {
-            const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
-            const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
-            const TimestampType * timestamp_data = timestamp_column.getData().data();
-            const ValueType * value_data = value_column.getData().data();
+            const auto & timestamp_array_column = typeid_cast<const ColumnArray &>(*columns[0]);
+            const auto & value_array_column = typeid_cast<const ColumnArray &>(*columns[1]);
 
-            if (flags_data)
+            timestamp_offsets = timestamp_array_column.getOffsets().data();
+            value_offsets = value_array_column.getOffsets().data();
+            timestamp_data = typeid_cast<const ColVecType &>(timestamp_array_column.getData()).getData().data();
+            value_data = typeid_cast<const ColVecResultType &>(value_array_column.getData()).getData().data();
+        }
+
+        size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
+        size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[row_begin - 1]);
+
+        /// Reserve memory for all the samples at once if no rows are skipped.
+        if (!flags_data && row_end > row_begin)
+            reserveAdd(place, timestamp_offsets[row_end - 1] - previous_timestamp_offset, arena);
+
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            /// A flag is per row, and each row holds a whole series
+            if (!flags_data || flags_data[i] == flag_value_to_include)
             {
-                if constexpr (flag_value_to_include)
-                    addManyConditional(place, timestamp_data, value_data, flags_data, row_begin, row_end, arena);
-                else
-                    addManyNotNull(place, timestamp_data, value_data, flags_data, row_begin, row_end, arena);
+                const size_t timestamp_array_size = timestamp_offsets[i] - previous_timestamp_offset;
+                const size_t value_array_size = value_offsets[i] - previous_value_offset;
+
+                /// Check that timestamp and value arrays have the same size for the selected rows
+                if (timestamp_array_size != value_array_size)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp and value arrays have different sizes at row {} : {} and {}",
+                        i, timestamp_array_size, value_array_size);
+
+                addMany(place, timestamp_data + previous_timestamp_offset, value_data + previous_value_offset, 0, timestamp_array_size, arena);
             }
-            else
-            {
-                addMany(place, timestamp_data, value_data, row_begin, row_end, arena);
-            }
+
+            previous_timestamp_offset = timestamp_offsets[i];
+            previous_value_offset = value_offsets[i];
         }
     }
 
@@ -367,14 +427,31 @@ public:
     {
         const Data & data = this->data(place);
 
+        /// A rare unsorted state is serialized from a sorted copy, so the state is not mutated behind `const`.
+        /// The copy cannot live in the arena because `serialize` gets no arena.
+        if (!data.sorted) [[unlikely]]
+        {
+            PODArray<Element> sorted_elements;
+            sorted_elements.assign(data.elements.begin(), data.elements.end());
+            sorted_elements.resize_exact(Data::sortElements(sorted_elements.data(), sorted_elements.size()));
+            writeElements(sorted_elements, buf);
+            return;
+        }
+
+        writeElements(data.elements, buf);
+    }
+
+    template <typename Container>
+    static void writeElements(const Container & elements, WriteBuffer & buf)
+    {
         writeBinaryLittleEndian(FORMAT_VERSION, buf);
-        writeBinaryLittleEndian(data.size, buf);
+        writeBinaryLittleEndian(elements.size(), buf);
 
-        for (size_t i = 0; i < data.size; ++i)
-            writeBinaryLittleEndian(data.elements[i].timestamp, buf);
+        for (const Element & element : elements)
+            writeBinaryLittleEndian(element.timestamp, buf);
 
-        for (size_t i = 0; i < data.size; ++i)
-            writeBinaryLittleEndian(data.elements[i].value, buf);
+        for (const Element & element : elements)
+            writeBinaryLittleEndian(element.value, buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
@@ -389,21 +466,39 @@ public:
                 FORMAT_VERSION, format_version);
 
         Data & data = this->data(place);
+
+        /// Deserialize replaces any previous contents.
+        data.elements.clear();
+        data.sorted = true;
+
         size_t size = 0;
         readBinaryLittleEndian(size, buf);
 
-        data.reserve(size, arena);
+        /// The number of elements is read from the state and cannot be trusted, so only a bounded amount is
+        /// reserved upfront and the array grows while the timestamps are read. That way a corrupted size fails
+        /// with an end-of-buffer error instead of allocating memory for the claimed number of elements.
+        data.elements.reserve(std::min(size, MAX_ELEMENTS_TO_RESERVE), arena);
 
         for (size_t i = 0; i < size; ++i)
-            readBinaryLittleEndian(data.elements[i].timestamp, buf);
+        {
+            TimestampType timestamp{};
+            readBinaryLittleEndian(timestamp, buf);
+
+            /// Peers running older versions write the samples in the order they were added, so the order is
+            /// checked here instead of assumed.
+            if (i > 0 && !(data.elements.back().timestamp < timestamp))
+                data.sorted = false;
+
+            data.elements.push_back(Element{.timestamp = timestamp, .value = ValueType{}}, arena);
+        }
 
         for (size_t i = 0; i < size; ++i)
             readBinaryLittleEndian(data.elements[i].value, buf);
 
-        data.size = size;
+        data.sort(arena);
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         ColumnArray & array_to = typeid_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = array_to.getOffsets();
@@ -421,20 +516,28 @@ public:
 
         Data & data = this->data(place);
 
-        data.sortAndRemoveDuplicates();
+        data.sort(arena);
 
-        for (size_t i = 0; i != data.size; ++i)
+        for (const Element & element : data.elements)
         {
-            const auto & element = data.elements[i];
             timestamps_to.insert(element.timestamp);
             values_to.insert(element.value);
         }
 
-        offsets_to.push_back(offsets_to.back() + data.size);
+        offsets_to.push_back(offsets_to.back() + data.elements.size());
     }
 
 private:
+    /// Whether samples are passed as a single argument of type Array(Tuple(timestamp, value)).
+    const bool array_of_pairs_argument;
+
+    /// Whether timestamp/value arguments are arrays (one row holds a whole series) or scalars.
+    const bool array_arguments;
+
     static constexpr UInt16 FORMAT_VERSION = 1;
+
+    /// How many elements `deserialize` reserves before reading the data. Bigger states grow while they are read.
+    static constexpr size_t MAX_ELEMENTS_TO_RESERVE = 4096;
 };
 
 }
