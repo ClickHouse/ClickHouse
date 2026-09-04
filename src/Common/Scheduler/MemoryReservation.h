@@ -59,7 +59,7 @@ public:
     void setReclaimable(ResourceCost reclaimable_total);
     void finishSpill(ResourceCost reclaimable_total);
 
-    ResourceCost spillRequested();
+    ResourceCost spillDemand();
 
 private:
     void throwIfNeeded();

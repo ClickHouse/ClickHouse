@@ -197,7 +197,7 @@ void MemoryReservation::finishSpill(ResourceCost reclaimable_total)
     queue.finishSpill(*this, reclaimable_total);
 }
 
-ResourceCost MemoryReservation::spillRequested()
+ResourceCost MemoryReservation::spillDemand()
 {
     std::lock_guard lock(mutex);
     return spill_at_least_bytes;

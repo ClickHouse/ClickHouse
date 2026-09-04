@@ -67,6 +67,7 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
         const auto & processor = node->processor();
 
         processor->work();
+
         if (auto * spillable = processor->getSpillable())
         {
             auto memory = spillable->getMemoryStats();
@@ -74,13 +75,13 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
             {
                 if (auto * reservation = read_progress_callback->getProcessListElement()->getMemoryReservation())
                 {
-                    auto spill_requested = reservation->spillRequested();
-                    if (spill_requested > 0)
+                    auto spill_demand = reservation->spillDemand();
+                    if (spill_demand > 0)
                     {
                         size_t spilled = spillable->spill(memory.spillable_memory_bytes);
-                        LOG_TEST(getLogger("Scheduler"), "memory.spillable_memory_bytes={}, memory.need_reserved_memory_bytes={}, spill_requested={}, spilled={}", memory.spillable_memory_bytes, memory.need_reserved_memory_bytes, spill_requested, spilled);
+                        LOG_TEST(getLogger("Scheduler"), "memory.spillable_memory_bytes={}, memory.need_reserved_memory_bytes={}, spill_requested={}, spilled={}", memory.spillable_memory_bytes, memory.need_reserved_memory_bytes, spill_demand, spilled);
                         ProfileEvents::increment(ProfileEvents::MemoryReservationSpilledBytes, spilled);
-                        reservation->finishSpill(saturating_sub<size_t>(spill_requested, spilled));
+                        reservation->finishSpill(saturating_sub<size_t>(spill_demand, spilled));
                     }
                     else
                         reservation->setReclaimable(memory.spillable_memory_bytes);
