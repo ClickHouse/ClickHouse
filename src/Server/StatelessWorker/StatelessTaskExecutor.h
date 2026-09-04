@@ -2,6 +2,7 @@
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <IO/Progress.h>
 #include <Common/ThreadPool.h>
+#include <Interpreters/InternalTextLogsQueue.h>
 #include <base/types.h>
 #include <base/defines.h>
 
@@ -39,6 +40,9 @@ public:
         Progress progress;
         /// Error code of a failed task, 0 otherwise.
         int error_code = 0;
+        /// Log lines collected on the worker since the previous status poll
+        /// (InternalTextLogsQueue block format); empty when logs are not requested.
+        Block logs;
     };
 
     /// The error a task ended with.
@@ -66,6 +70,10 @@ private:
         std::shared_future<std::optional<TaskFailure>> completion_future;
         std::shared_ptr<std::atomic<bool>> cancelled = std::make_shared<std::atomic<bool>>(false);
         std::shared_ptr<Progress> progress = std::make_shared<Progress>();
+        /// Created only when the task's forwarded `send_logs_level` is above `none`;
+        /// filled by the task's threads via the thread-group attachment, drained by
+        /// status polls in `getStatus`.
+        InternalTextLogsQueuePtr logs_queue;
     };
 
     using TaskStatePtr = std::shared_ptr<TaskState>;
