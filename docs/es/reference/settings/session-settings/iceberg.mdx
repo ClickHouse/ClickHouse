@@ -24,6 +24,22 @@ Estas configuraciones están disponibles en [system.settings](/es/reference/syst
 
 Indica si se deben eliminar todos los archivos de Iceberg al hacer drop.
 
+<div id="iceberg_delete_manifest_decode_concurrency">
+  ## iceberg_delete_manifest_decode_concurrency
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "4"},{"label": "Nueva configuración que limita cuántos archivos de manifiesto de eliminación de Iceberg se decodifican simultáneamente antes de leer la primera fila. Antes de la versión 26.8, se decodificaba un manifiesto a la vez mientras la obtención del siguiente ya estaba en curso, por lo que `2` es lo más equivalente al comportamiento anterior, que situaba la suma de los viajes de ida y vuelta al almacenamiento de objetos en la ruta crítica antes de la primera fila."}]}]} />
+
+Número máximo de archivos de manifiesto de eliminación de Iceberg que se decodifican simultáneamente durante la ejecución de una consulta antes de leer cualquier archivo de datos.
+
+Todos los manifiestos de eliminación deben decodificarse antes de leer cualquier archivo de datos, por lo que esta tarea se encuentra en la ruta crítica antes de devolver la primera fila. Decodificar varios a la vez solapa tanto los viajes de ida y vuelta al almacenamiento de objetos como el trabajo de poda por fila.
+
+Los valores más altos aumentan el uso máximo de memoria durante la inicialización de la consulta cuando la caché de archivos de metadatos de Iceberg está deshabilitada o llena, ya que cada manifiesto en curso conserva su propio contenido decodificado.
+
+Debe ser mayor que cero; `1` decodifica los manifiestos de uno en uno.
+
 <div id="iceberg_manifest_min_count_to_compact">
   ## iceberg_manifest_min_count_to_compact
 </div>
