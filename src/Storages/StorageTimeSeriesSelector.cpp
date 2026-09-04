@@ -593,7 +593,7 @@ namespace
     /// costs at most a missed optimization.
     ///
     /// An entry is retired after a fixed number of uses, so a selector that becomes whole-metric
-    /// again is re-probed within that many queries of its shape.
+    /// again is re-probed on the next query of its shape once the entry is exhausted.
     class WholeMetricProbeNegativeMemo
     {
     public:
@@ -630,9 +630,13 @@ namespace
         void rememberCounterexampleFound(const UInt128 & key)
         {
             std::lock_guard lock{mutex};
+            /// Never raises an existing count: a probe that completes late must not extend a reuse
+            /// window another query is already consuming.
+            if (remaining_uses.contains(key))
+                return;
             if (remaining_uses.size() >= MAX_ENTRIES)
                 remaining_uses.clear();
-            remaining_uses[key] = MAX_VERDICT_REUSES;
+            remaining_uses.emplace(key, MAX_VERDICT_REUSES);
         }
 
     private:

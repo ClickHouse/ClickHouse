@@ -8,6 +8,7 @@ both series are returned:
 -- B. a reused verdict is retired after a bounded number of uses
 narrow window is whole-metric on its own probe: 1
 wide window falls back: 0
+a different shape on the same table still emits the range: 1
 narrow window reuses that verdict: 1
 reuse returns the same rows: 1
 probed again within 40 queries: 1
@@ -19,3 +20,4 @@ rows in the narrow window:
 -- C. reuse skips the probe's work, not just its emitted range
 reuse reads fewer marks than the probe: 1
 the reusing query still reads marks of its own: 1
+the same shape on a different table still emits the range: 1

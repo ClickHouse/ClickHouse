@@ -99,6 +99,10 @@ ROWS_FRESH=$(selector_rows ts_b "$NARROW_SELECTOR" 0 200)
 # The wide window makes the failing series time-eligible, so the probe finds a counterexample.
 echo "wide window falls back: $(has_id_range ts_b "$NARROW_SELECTOR" 0 1000)"
 
+# A different shape on the same table: the entry stored above is for the regex shape, so this
+# bare-metric selector must still probe and still emit the range.
+echo "a different shape on the same table still emits the range: $(has_id_range ts_b foo 0 200)"
+
 echo "narrow window reuses that verdict: $([ "$(has_id_range ts_b "$NARROW_SELECTOR" 0 200)" = 0 ] && echo 1 || echo 0)"
 echo "reuse returns the same rows: $([ "$(selector_rows ts_b "$NARROW_SELECTOR" 0 200)" = "$ROWS_FRESH" ] && echo 1 || echo 0)"
 
@@ -147,5 +151,10 @@ MARKS_REUSED=$(marks_of 05076_probe_2)
 echo "reuse reads fewer marks than the probe: $([ "$MARKS_PROBED" -gt "$MARKS_REUSED" ] && echo 1 || echo 0)"
 # Positive control: without it two zeros - a query that read nothing at all - would also pass above.
 echo "the reusing query still reads marks of its own: $([ "$MARKS_REUSED" -gt 0 ] && echo 1 || echo 0)"
+
+# The same shape on a different table: scenario C's entry is for ts_c, so the identical selector
+# on ts_b must still probe. In this window only the matching series is time-eligible, so its own
+# probe finds no counterexample and the range is emitted.
+echo "the same shape on a different table still emits the range: $(has_id_range ts_b 'foo{env="prod"}' 0 120)"
 
 $CH -q "DROP TABLE ts_c SYNC; DROP TABLE ts_b SYNC; DROP TABLE ts_a SYNC;"
