@@ -13,6 +13,8 @@
 #include <IO/ReadSettings.h>
 #include <Common/Exception.h>
 
+#include <algorithm>
+
 #include <base/unaligned.h>
 
 #include <rocksdb/env.h>
@@ -90,8 +92,7 @@ namespace
                     *result = rocksdb::Slice(scratch, 0);
                     return rocksdb::IOStatus::OK();
                 }
-                if (n > file_size - offset)
-                    n = file_size - offset;
+                n = std::min(n, file_size - offset);
 
                 size_t bytes_read = buffer->readBigAt(scratch, n, offset, {});
                 *result = rocksdb::Slice(scratch, bytes_read);
