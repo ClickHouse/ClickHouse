@@ -16,7 +16,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # pinned because the codebook must span more than one compressed block, and the granularity settings because the
 # read must stop before the part's final mark.
 
-$CLICKHOUSE_CLIENT --allow_experimental_codecs 1 -m -q "
+$CLICKHOUSE_CLIENT --enable_quantized_codec 1 -m -q "
 DROP TABLE IF EXISTS quantize_pq_codebook_mark_range;
 
 CREATE TABLE quantize_pq_codebook_mark_range

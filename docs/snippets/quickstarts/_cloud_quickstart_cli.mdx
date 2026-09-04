@@ -88,7 +88,7 @@ done
 `clickhousectl cloud service query` runs SQL over HTTP — no local `clickhouse` binary or service password required. The first call provisions a Query API endpoint and a service-scoped API key automatically:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --query "SHOW databases"
+clickhousectl cloud service query --id "$CH_ID" --json --query "SHOW databases"
 ```
 
 ```text
@@ -99,7 +99,7 @@ Provisioning Query API endpoint + key for service 'quickstart-ch'...
 {"name":"system"}
 ```
 
-Piped output defaults to `JSONEachRow`; pass `--format PrettyCompact` for table-formatted output instead.
+Output defaults to `PrettyCompact` on a terminal and `TabSeparated` when piped. `--json`, used above, selects `JSONEachRow`; for any other format, pass `--format` instead (`--json` and `--format` cannot be combined).
 
 ## Create a database and table {#create-database-and-table}
 
@@ -131,7 +131,7 @@ clickhousectl cloud service query --id "$CH_ID" \
 Verify it worked:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query --id "$CH_ID" --json \
   --query "SELECT * FROM helloworld.my_first_table ORDER BY timestamp"
 ```
 
@@ -164,7 +164,7 @@ printf 'INSERT INTO helloworld.my_first_table FORMAT CSV\n' | cat - data.csv \
 Verify the new rows landed:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query --id "$CH_ID" --json \
   --query "SELECT count() FROM helloworld.my_first_table"
 ```
 

@@ -24,6 +24,7 @@ workflow = Workflow.Config(
         JobConfigs.docker_server,
         JobConfigs.docker_keeper,
         *JobConfigs.install_check_jobs,
+        *JobConfigs.compatibility_test_jobs,
         *[job for job in JobConfigs.functional_tests_jobs if "amd_asan_ubsan" in job.name],
         *[
             job

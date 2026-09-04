@@ -26,11 +26,7 @@ UInt32 getNumCPUs() noexcept;
 ALWAYS_INLINE inline Int32 getCurrentCPU()
 {
 #if defined(OS_LINUX)
-    /// An rseq TLS read on modern kernels, so cheap enough to call on every `ProfileEvents`
-    /// increment. Our musl registers the rseq area eagerly during thread setup
-    /// (see `contrib/musl/src/sched/rseq.c`), following the glibc 2.35+ ABI.
-    /// Without a registered area this falls back to the `getcpu` vDSO entry, or to a real syscall
-    /// on AArch64, which has no such entry - see `haveRSeq` and the startup warning it drives.
+    /// TLS read via glibc rseq on modern kernels (see glibc-compatibility/musl/sched_getcpu.c).
     return sched_getcpu();
 #elif defined(OS_DARWIN) && defined(__aarch64__)
     /// macOS has no `sched_getcpu`. XNU exposes the current CPU number to userspace in the low 12
@@ -53,10 +49,5 @@ ALWAYS_INLINE inline Int32 getCurrentCPU()
     return -1;
 #endif
 }
-
-/// Whether libc registered rseq for the process. Without it `sched_getcpu` takes a slower
-/// fallback — on AArch64 a real syscall, since there is no `getcpu` vDSO entry — making
-/// per-CPU routing costly.
-bool haveRSeq() noexcept;
 
 }
