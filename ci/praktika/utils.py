@@ -11,6 +11,7 @@ import subprocess
 import sys
 import shutil
 import tempfile
+import textwrap
 import time
 from abc import ABC, abstractmethod
 from collections import deque
@@ -23,7 +24,7 @@ from threading import Event, Thread
 from types import SimpleNamespace
 from typing import Any, Dict, Iterator, List, Optional, Type, TypeVar, Union
 
-T = TypeVar("T", bound="Serializable")  # noqa: F821  # forward ref to MetaClasses.Serializable below
+T = TypeVar("T", bound="MetaClasses.Serializable")
 
 
 class MetaClasses:
@@ -340,7 +341,8 @@ class Shell:
             return 0  # Return success for dry-run
 
         if verbose:
-            print(f"Run command: [{command}]")
+            wrapped = textwrap.fill(f"Run command: [{command}]", width=80)
+            print(wrapped)
 
         log_file = log_file or "/dev/null"
         proc = None
@@ -410,6 +412,12 @@ class Shell:
                         stderr_thread.join()
 
                         proc.wait()  # Wait for the process to finish
+                        # Close the pipe FDs Popen opened so the GC doesn't
+                        # log ResourceWarning for "unclosed file" later.
+                        proc.stdout.close()
+                        proc.stderr.close()
+                        if proc.stdin is not None:
+                            proc.stdin.close()
                     finally:
                         # Only here: the readers return when the last writer closes the pipe, so
                         # setting this at the leader's exit would retire the watchdog while a
@@ -656,9 +664,7 @@ class Utils:
     @staticmethod
     def from_base64(value):
         assert isinstance(value, str), f"TODO: not supported for {type(value)}"
-        base64_bytes = value.encode("utf-8")
-        string_bytes = base64.b64decode(base64_bytes)
-        return string_bytes.decode("utf-8")
+        return base64.b64decode(value.encode("utf-8")).decode("utf-8")
 
     @staticmethod
     def is_hex(s):
@@ -831,7 +837,8 @@ class Utils:
 
     @classmethod
     def encrypt(cls, path: str, key_path: str, aes_key_path: str) -> str:
-        # -base64: raw bytes can contain \0 which breaks openssl enc -pass file:
+        # -base64: raw bytes can contain \0 or a leading newline, which breaks
+        # openssl enc -pass file: (it reads only the first line as the password).
         if not Path(f"{aes_key_path}.rsa").exists():
             Shell.run(f"""
 openssl rand -base64 32 >{aes_key_path}
@@ -970,9 +977,9 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
                 print("ERROR: zstd is not installed. Cannot decompress artifact.")
                 return False
 
-            # Perform decompression (--no-progress suppresses per-MB stderr noise)
+            # Perform decompression
             res = Shell.check(
-                f"zstd --decompress --force --no-progress -o {quote(path_to)} {quote(path)}",
+                f"zstd --decompress --force -o {quote(path_to)} {quote(path)}",
                 verbose=True,
                 strict=not no_strict,
             )
@@ -1075,31 +1082,18 @@ class TeePopen:
         self.terminated_by_sigkill = False
         self.log_rolling_buffer = deque(maxlen=100)
         self.preserve_stdio = preserve_stdio
-        # Set as soon as the child is reaped, so the watchdog wakes immediately
-        # and skips signalling when the process finished before the timeout.
         self.finished = Event()
 
     def _check_timeout(self) -> None:
         if self.timeout is None:
             return
-        # Wait for the timeout, but wake as soon as the child finishes. A blind
-        # sleep would fire the watchdog even for a job that already succeeded --
-        # flipping timeout_exceeded, running cleanup, and, in a long-lived
-        # process, issuing a late killpg against an already-reaped (possibly
-        # PID-recycled) process group that may now belong to an unrelated job.
         if self.finished.wait(self.timeout):
             return
-        # Backstop for the race between the wait timing out and the child
-        # exiting: if the process is already gone, enforce nothing.
         if self.process.poll() is not None:
             return
         print(f"WARNING: Timeout exceeded [{self.timeout}] for [{self.process.pid}]")
         self.timeout_exceeded = True
 
-        # Terminate the launched process group first: timeout enforcement must
-        # never depend on the external cleanup returning. Best-effort teardown
-        # (e.g. `docker rm -f <container>`) then runs in a bounded daemon thread,
-        # so a cleanup that wedges on a hung daemon cannot re-introduce the hang.
         self.send_signal(signal.SIGTERM)
         print(f"Send SIGTERM to [{self.process.pid}]")
 
@@ -1110,7 +1104,6 @@ class TeePopen:
                 kwargs={"verbose": True, "timeout": 120},
                 daemon=True,
             ).start()
-
         time_wait = 0
 
         while self.process.poll() is None and time_wait < 100:
@@ -1183,8 +1176,6 @@ class TeePopen:
                     self.log_rolling_buffer.append(line)
             return self.process.wait()
         finally:
-            # The child is reaped: wake the watchdog so it does not mark a
-            # timeout or signal a process group that no longer exists.
             self.finished.set()
 
     def poll(self):

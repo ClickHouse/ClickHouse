@@ -33,7 +33,7 @@ Esta opción incluye autenticación, lo que permite conservar dashboards, alerta
 
 <Steps>
   <Step title="Desplegar con Docker" id="deploy-with-docker">
-    Esto iniciará un colector de OpenTelemetry (en los puertos 4317 y 4318) y la UI de HyperDX (en el puerto 8080).
+    Esto iniciará un OpenTelemetry collector (en los puertos 4317 y 4318) y la UI de HyperDX (en el puerto 8080).
 
     ```shell
     docker run -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
@@ -59,7 +59,7 @@ Esta opción incluye autenticación, lo que permite conservar dashboards, alerta
   </Step>
 
   <Step title="Ingestar datos" id="ingest-data">
-    Para ingestar datos, consulte [&quot;Ingestar datos&quot;](/es/clickstack/ingesting-data/index).
+    Para ingestar datos, consulte [&quot;Ingestar datos&quot;](/es/clickstack/ingesting-data/overview).
   </Step>
 </Steps>
 

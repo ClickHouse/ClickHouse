@@ -47,7 +47,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int READONLY;
 }
 
 // clang-format off
@@ -211,6 +210,23 @@ additionally need `nullable_serialization_version = 'allow_sparse'`).
 Leaving it disabled keeps inserts/merges as fast as before; enabling it
 adds an O(rows) pass per sparse-eligible column.
 )", BETA) \
+    DECLARE(Bool, skip_empty_columns_on_insert, false, R"(
+If enabled, columns whose values are entirely type-defaults in a given INSERT
+block are not written to the data part on disk. When the part is later read,
+missing columns are filled with the default of their recorded type. This saves
+disk space for sparse-update workloads
+where most columns in each INSERT are left at their type's default value.
+Columns with `DEFAULT`, `MATERIALIZED`, or `ALIAS` expressions are never
+skipped, because the read path would evaluate the expression instead of
+returning the type-default that was explicitly inserted. Patch parts
+(used by lightweight UPDATE) are also excluded.
+This optimization records the missing columns in the part's
+`serialization.json` using the `with_missing_columns` format version, so it
+only takes effect when `serialization_info_version` is set to
+`with_missing_columns`. With a lower version (for example pinned to a lower
+value for a rolling upgrade so older servers can read freshly written parts)
+no columns are skipped.
+)", 0) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, R"(
 If the file name for column is too long (more than 'max_file_name_length'
 bytes) replace it to SipHash128
@@ -293,15 +309,18 @@ Possible values:
 - `basic` - Basic format.
 - `with_types` - Format with additional `types_serialization_versions` field, allowing per-type serialization versions.
 This makes settings like `string_serialization_version` effective.
+- `with_missing_columns` - Everything `with_types` records, plus a `missing_columns` field
+listing omitted columns and the type whose default represents their values.
+Required to enable `skip_empty_columns_on_insert`.
 
 During rolling upgrades, set this to `basic` so that new servers produce
 data parts compatible with old servers. After the upgrade completes,
-switch to `WITH_TYPES` to enable per-type serialization versions.
+switch to `with_types` (or `with_missing_columns`) to enable the corresponding features.
 )", 0) \
     DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "with_size_stream", R"(
 Controls the serialization format for top-level `String` columns.
 
-This setting is only effective when `serialization_info_version` is set to "with_types".
+This setting is only effective when `serialization_info_version` is set to "with_types" or newer.
 When set to `with_size_stream`, top-level `String` columns are serialized with a separate
 `.size` subcolumn storing string lengths, rather than inline. This allows real `.size`
 subcolumns and can improve compression efficiency.
@@ -786,9 +805,8 @@ Possible values:
 - Positive integer.
 
 The value of the `number_of_free_entries_in_pool_to_execute_optimize_entire_partition`
-setting should be less than the value of the
-[background_pool_size](/reference/settings/server-settings/settings/background#background_pool_size)
-* [background_merges_mutations_concurrency_ratio](/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
+setting must not exceed the product of [`background_pool_size`](/reference/settings/server-settings/settings/background#background_pool_size)
+and [`background_merges_mutations_concurrency_ratio`](/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
 Otherwise, ClickHouse throws an exception.
 )", 0) \
     DECLARE(Bool, remove_rolled_back_parts_immediately, 1, R"(
@@ -1323,7 +1341,7 @@ Deprecated alias of `deduplication_hashes_cache_update_wait_ms`, kept for one re
 compatibility. It is honored only when `deduplication_hashes_cache_update_wait_ms` is left at its
 default; this setting will be removed in a future release.
 )", 0) \
-    DECLARE(UInt64, max_replicated_logs_to_keep, 1000, R"(
+    DECLARE(NonZeroUInt64, max_replicated_logs_to_keep, 1000, R"(
 How many records may be in the ClickHouse Keeper log if there is inactive
 replica. An inactive replica becomes lost when when this number exceed.
 
@@ -2514,12 +2532,7 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database);
 
     /// Check that the values are sane taking also query-level settings into account.
-    void sanityCheck(
-        size_t background_pool_tasks,
-        bool allow_experimental,
-        bool allow_private_preview,
-        bool allow_beta,
-        bool background_pool_auto_lowered) const;
+    void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
 
     /// Subscript operators so that MergeTreeSetting::NAME can be used inside Impl methods.
     /// Delegate to `BaseSettings::operator[]` so the Impl->Data subobject offset is handled
@@ -2624,48 +2637,8 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 #undef ADD_IF_ABSENT
 }
 
-void MergeTreeSettingsImpl::sanityCheck(
-    size_t background_pool_tasks,
-    bool allow_experimental,
-    bool allow_private_preview,
-    bool allow_beta,
-    bool background_pool_auto_lowered) const
+void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const
 {
-    if (!allow_experimental || !allow_private_preview || !allow_beta)
-    {
-        for (const auto & setting : all())
-        {
-            if (!setting.isValueChanged())
-                continue;
-
-            auto tier = setting.getTier();
-            if (!allow_experimental && tier == EXPERIMENTAL)
-            {
-                throw Exception(
-                    ErrorCodes::READONLY,
-                    "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config "
-                    "('allow_feature_tier')",
-                    setting.getName());
-            }
-            if (!allow_private_preview && tier == PRIVATE_PREVIEW)
-            {
-                throw Exception(
-                    ErrorCodes::READONLY,
-                    "Cannot modify setting '{}'. Changes to PRIVATE PREVIEW settings are disabled in the server config "
-                    "('allow_feature_tier')",
-                    setting.getName());
-            }
-            if (!allow_beta && tier == BETA)
-            {
-                throw Exception(
-                    ErrorCodes::READONLY,
-                    "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allow_feature_tier')",
-                    setting.getName());
-            }
-        }
-    }
-
-
     /// Skip these checks when the background pool was auto-lowered by the low-memory heuristic
     /// AND the corresponding table-level threshold is at its default. On small systems the pool
     /// may be tuned below the default thresholds, and we do not want to fail table creation in
@@ -2912,6 +2885,18 @@ SettingsChanges MergeTreeSettings::changes() const
     return impl->changes();
 }
 
+SettingsChanges MergeTreeSettings::changesFrom(const MergeTreeSettings & base) const
+{
+    SettingsChanges res;
+    for (const auto & setting : impl->all())
+    {
+        auto value = setting.getValue();
+        if (value != base.impl->get(setting.getName()))
+            res.emplace_back(String{setting.getName()}, value);
+    }
+    return res;
+}
+
 void MergeTreeSettings::applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     auto resolved_changes = changes;
@@ -3008,7 +2993,7 @@ VectorWithMemoryTracking<std::string_view> MergeTreeSettings::getAllRegisteredNa
     return setting_names;
 }
 
-std::vector<std::string_view> MergeTreeSettings::getAllAliasNames() const
+std::vector<std::string_view> MergeTreeSettings::getAllAliasNames()
 {
     std::vector<std::string_view> alias_names;
     const auto & settings_to_aliases = MergeTreeSettingsImpl::Traits::settingsToAliases();
@@ -3070,14 +3055,9 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
         || ((*this)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_merge] && input_bytes >= (*this)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_merge]));
 }
 
-void MergeTreeSettings::sanityCheck(
-    size_t background_pool_tasks,
-    bool allow_experimental,
-    bool allow_private_preview,
-    bool allow_beta,
-    bool background_pool_auto_lowered) const
+void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const
 {
-    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_private_preview, allow_beta, background_pool_auto_lowered);
+    impl->sanityCheck(background_pool_tasks, background_pool_auto_lowered);
 }
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const
@@ -3203,6 +3183,11 @@ Field MergeTreeSettings::stringToValueUtil(std::string_view name, const String &
 bool MergeTreeSettings::hasBuiltin(std::string_view name)
 {
     return MergeTreeSettingsImpl::hasBuiltin(name);
+}
+
+std::optional<SettingsTierType> MergeTreeSettings::tryGetTierOfBuiltin(std::string_view name)
+{
+    return MergeTreeSettingsImpl::tryGetTierOfBuiltin(name);
 }
 
 std::string_view MergeTreeSettings::resolveName(std::string_view name)

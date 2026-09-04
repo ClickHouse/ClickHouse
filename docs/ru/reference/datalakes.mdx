@@ -47,6 +47,13 @@ ClickHouse поддерживает многие популярные табли
 
 Iceberg REST Catalog можно использовать с таблицами Iceberg. Он поддерживается как в движке таблиц `iceberg`, так и в движке базы данных [DataLakeCatalog](/ru/reference/engines/database-engines/datalake).
 
+<div id="snowflake-horizon-catalog">
+  ## Каталог Snowflake Horizon
+</div>
+
+Snowflake Horizon Catalog предоставляет Iceberg REST API для таблиц Iceberg, управляемых Snowflake.
+Используйте `DataLakeCatalog` с `catalog_type = 'horizon'`. См. [руководство по каталогу Horizon](/ru/guides/use-cases/data-warehousing/horizon-catalog).
+
 <div id="unity-catalog">
   ## Unity Catalog
 </div>

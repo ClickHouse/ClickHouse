@@ -5,13 +5,13 @@ user_name="user_04510_a_${CLICKHOUSE_DATABASE}"
 query_as_user()
 {
     local query="$1"
-    $CLICKHOUSE_CLIENT_BINARY --database="${CLICKHOUSE_DATABASE}" --user="${user_name}" --query="$query"
+    $CLICKHOUSE_CLIENT_BINARY --database="${CLICKHOUSE_DATABASE}" --user="${user_name}" --enable_analyzer=1 --query="$query"
 }
 
 error_as_user()
 {
     local query="$1"
-    $CLICKHOUSE_CLIENT_BINARY --database="${CLICKHOUSE_DATABASE}" --user="${user_name}" --query="$query" 2>&1 || true
+    $CLICKHOUSE_CLIENT_BINARY --database="${CLICKHOUSE_DATABASE}" --user="${user_name}" --enable_analyzer=1 --query="$query" 2>&1 || true
 }
 
 cleanup_objects()
@@ -218,15 +218,15 @@ test_select_count()
     cleanup_objects
     echo "select_count"
     $CLICKHOUSE_CLIENT --query "CREATE TABLE table1_04510(x String, y UInt8) ENGINE = MergeTree ORDER BY tuple()"
-    assert_has "$(error_as_user "SELECT count() FROM table1_04510")" "it's necessary to have the grant SELECT for at least one column on ${CLICKHOUSE_DATABASE}.table1_04510"
+    assert_has "$(error_as_user "SELECT count() FROM table1_04510")" "it's necessary to have the grant SELECT ON ${CLICKHOUSE_DATABASE}.table1_04510"
     $CLICKHOUSE_CLIENT --query "GRANT SELECT(x) ON ${CLICKHOUSE_DATABASE}.table1_04510 TO ${user_name}"
     [ "$(query_as_user "SELECT count() FROM table1_04510")" = "0" ]
     $CLICKHOUSE_CLIENT --query "REVOKE SELECT(x) ON ${CLICKHOUSE_DATABASE}.table1_04510 FROM ${user_name}"
-    assert_has "$(error_as_user "SELECT count() FROM table1_04510")" "it's necessary to have the grant SELECT for at least one column on ${CLICKHOUSE_DATABASE}.table1_04510"
+    assert_has "$(error_as_user "SELECT count() FROM table1_04510")" "it's necessary to have the grant SELECT ON ${CLICKHOUSE_DATABASE}.table1_04510"
     $CLICKHOUSE_CLIENT --query "GRANT SELECT(y) ON ${CLICKHOUSE_DATABASE}.table1_04510 TO ${user_name}"
     [ "$(query_as_user "SELECT count() FROM table1_04510")" = "0" ]
     $CLICKHOUSE_CLIENT --query "REVOKE SELECT(y) ON ${CLICKHOUSE_DATABASE}.table1_04510 FROM ${user_name}"
-    assert_has "$(error_as_user "SELECT count() FROM table1_04510")" "it's necessary to have the grant SELECT for at least one column on ${CLICKHOUSE_DATABASE}.table1_04510"
+    assert_has "$(error_as_user "SELECT count() FROM table1_04510")" "it's necessary to have the grant SELECT ON ${CLICKHOUSE_DATABASE}.table1_04510"
     $CLICKHOUSE_CLIENT --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.table1_04510 TO ${user_name}"
     [ "$(query_as_user "SELECT count() FROM table1_04510")" = "0" ]
     echo "OK"
@@ -291,7 +291,7 @@ test_row_policy()
         CREATE ROW POLICY pol1_04510 ON table1_04510 USING b = 0 TO ${user_name};
     "
     assert_has "$(error_as_user "$select_a_query")" "it's necessary to have the grant SELECT ON ${CLICKHOUSE_DATABASE}.table1_04510"
-    assert_has "$(error_as_user "$select_count_query")" "it's necessary to have the grant SELECT for at least one column on ${CLICKHOUSE_DATABASE}.table1_04510"
+    assert_has "$(error_as_user "$select_count_query")" "it's necessary to have the grant SELECT ON ${CLICKHOUSE_DATABASE}.table1_04510"
     $CLICKHOUSE_CLIENT --query "GRANT SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.table1_04510 TO ${user_name}"
     assert_has "$(error_as_user "$select_a_query")" "it's necessary to have the grant SELECT(a) ON ${CLICKHOUSE_DATABASE}.table1_04510"
     assert_has "$(error_as_user "$select_count_query")" "it's necessary to have the grant SELECT for at least one column on ${CLICKHOUSE_DATABASE}.table1_04510"
