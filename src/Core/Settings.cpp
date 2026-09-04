@@ -6738,6 +6738,19 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_propagate_predicate_across_join, true, R"(
+Toggles a query-plan-level optimization which copies filter conjuncts from one side of an
+equi-join onto the other side via equi-key substitution, so that primary-key/index pruning
+on the other side can use them.
+
+Applies when the filter and the `MergeTree` read are separated from the join only by expression
+and filter steps, and when the copied conjunct compares a primary key column with a constant
+(including `IN` with a constant set). A predicate below a nested join or below `DISTINCT`, or a
+comparison between two key columns, is left alone: it could not drive primary key pruning on the
+other side, so copying it would only add work.
+
+Only takes effect if `query_plan_enable_optimizations` is 1.
+)", 0) \
     DECLARE(Bool, query_plan_push_down_volume_reducing_functions, true, R"(
 Toggles a query-plan-level optimization which moves volume-reducing functions (`length`, `lengthUTF8`, `empty`, `notEmpty`)
 down in the execution plan, below `Sorting` and `Filter` steps. The fixed-size result replaces the
