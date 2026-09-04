@@ -106,6 +106,12 @@ struct PayloadSplit
     std::vector<size_t> format_column_indices;
 };
 PayloadSplit splitPayloadColumns(const Block & header, bool map_virtual_columns_on_write);
+
+/// Deadline for every offset commit, passed to `cppkafka::Consumer::commit`. Far above
+/// `offsets.commit.timeout.ms` (5000ms default), which bounds a broker's response to an OffsetCommit
+/// rather than the case where no broker is reachable to send one to, so only an undeliverable commit
+/// reaches this one.
+inline constexpr auto COMMIT_TIMEOUT_MS = std::chrono::milliseconds{30000};
 }
 }
 

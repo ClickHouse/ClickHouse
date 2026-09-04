@@ -238,7 +238,7 @@ void KafkaConsumer::commit()
                 // broker may reject commit if during offsets.commit.timeout.ms (5000 by default),
                 // there were not enough replicas available for the __consumer_offsets topic.
                 // also some other temporary issues like client-server connectivity problems are possible
-                consumer->commit();
+                consumer->commit(StorageKafkaUtils::COMMIT_TIMEOUT_MS);
                 committed = true;
                 print_offsets("Committed offset", consumer->get_offsets_committed(consumer->get_assignment()));
                 last_commit_timestamp = timeInSeconds(std::chrono::system_clock::now());
@@ -422,7 +422,7 @@ void KafkaConsumer::rewindToLastCommitted()
                         tp.set_offset(start.get_offset());
 
             consumer->assign(positions);
-            consumer->commit(block_start_offsets);
+            consumer->commit(block_start_offsets, StorageKafkaUtils::COMMIT_TIMEOUT_MS);
             LOG_TRACE(log, "Aborted in-flight block, rewound to block start: {}", block_start_offsets);
             cleanBlockStartOffsets();
             return;
