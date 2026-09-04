@@ -76,7 +76,7 @@ Name of the data part. The part naming structure can be used to determine many a
         {"bytes_on_disk",                               std::make_shared<DataTypeUInt64>(),    "Total size of all the data part files in bytes."},
         {"data_compressed_bytes",                       std::make_shared<DataTypeUInt64>(),    "Total size of compressed data in the data part. All the auxiliary files (for example, files with marks) are not included."},
         {"data_uncompressed_bytes",                     std::make_shared<DataTypeUInt64>(),    "Total size of uncompressed data in the data part. All the auxiliary files (for example, files with marks) are not included."},
-        {"primary_key_size",                            std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) used by primary key values in the primary.idx/cidx file on disk."},
+        {"primary_key_size",                            std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) used by primary key values in the primary.idx/cidx file on disk, including primary keys of projections stored in this part."},
         {"marks_bytes",                                 std::make_shared<DataTypeUInt64>(),    "The size of the file with marks."},
         {"secondary_indices_compressed_bytes",          std::make_shared<DataTypeUInt64>(),    "Total size of compressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included."},
         {"secondary_indices_uncompressed_bytes",        std::make_shared<DataTypeUInt64>(),    "Total size of uncompressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included."},
@@ -93,8 +93,8 @@ Name of the data part. The part naming structure can be used to determine many a
         {"max_block_number",                            std::make_shared<DataTypeInt64>(),     "The maximum number of data parts that make up the current part after merging."},
         {"level",                                       std::make_shared<DataTypeUInt32>(),    "Depth of the merge tree. Zero means that the current part was created by insert rather than by merging other parts."},
         {"data_version",                                std::make_shared<DataTypeUInt64>(),    "Number that is used to determine which mutations should be applied to the data part (mutations with a version higher than data_version)."},
-        {"primary_key_bytes_in_memory",                 std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) used by primary key values. Will be 0 when `primary_key_lazy_load` is enabled and the key is not loaded. When non-zero the bytes live in the part itself and are accounted within `jemalloc.mergetree_arena.active_bytes`. They are NEVER counted in `PrimaryIndexCacheBytes` — those are mutually exclusive per part: an index lives either in the part (this metric) or in the shared `PrimaryIndexCache` (the other), depending on `primary_key_lazy_load` and `use_primary_key_cache`."},
-        {"primary_key_bytes_in_memory_allocated",       std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) reserved for primary key values. Will be 0 when `primary_key_lazy_load` is enabled and the key is not loaded. When non-zero, included in `jemalloc.mergetree_arena.active_bytes`. See the note on `primary_key_bytes_in_memory` for the relationship with `PrimaryIndexCacheBytes`."},
+        {"primary_key_bytes_in_memory",                 std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) used by primary key values, including primary keys of projections stored in this part. Will be 0 when `primary_key_lazy_load` is enabled and the key is not loaded. When non-zero the bytes live in the part itself and are accounted within `jemalloc.mergetree_arena.active_bytes`. They are NEVER counted in `PrimaryIndexCacheBytes` — those are mutually exclusive per part: an index lives either in the part (this metric) or in the shared `PrimaryIndexCache` (the other), depending on `primary_key_lazy_load` and `use_primary_key_cache`."},
+        {"primary_key_bytes_in_memory_allocated",       std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) reserved for primary key values, including primary keys of projections stored in this part. Will be 0 when `primary_key_lazy_load` is enabled and the key is not loaded. When non-zero, included in `jemalloc.mergetree_arena.active_bytes`. See the note on `primary_key_bytes_in_memory` for the relationship with `PrimaryIndexCacheBytes`."},
         {"index_granularity_bytes_in_memory",           std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) used by index granularity values (will be 0 in case of primary_key_lazy_load=1 and use_primary_key_cache=1). When non-zero the bytes are part-owned and accounted within `jemalloc.mergetree_arena.active_bytes`."},
         {"index_granularity_bytes_in_memory_allocated", std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) reserved for index granularity values (will be 0 in case of primary_key_lazy_load=1 and use_primary_key_cache=1). When non-zero, included in `jemalloc.mergetree_arena.active_bytes`."},
         {"is_frozen",                                   std::make_shared<DataTypeUInt8>(),     "Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup does not exist. For more details, see FREEZE PARTITION."},
@@ -162,6 +162,20 @@ void StorageSystemParts::processNextStorage(
         const auto & part = all_parts[part_number];
         auto part_state = all_parts_state[part_number];
 
+        UInt64 primary_key_bytes_in_memory = part->getIndexSizeInBytes();
+        UInt64 primary_key_bytes_in_memory_allocated = part->getIndexSizeInAllocatedBytes();
+        auto primary_key_size = part->getIndexSizeFromFile();
+        UInt64 primary_key_size_on_disk = primary_key_size.data_compressed > 0 ? primary_key_size.data_compressed : primary_key_size.data_uncompressed;
+        for (const auto & [_, projection_part] : part->getProjectionParts())
+        {
+            primary_key_bytes_in_memory += projection_part->getIndexSizeInBytes();
+            primary_key_bytes_in_memory_allocated += projection_part->getIndexSizeInAllocatedBytes();
+            auto projection_primary_key_size = projection_part->getIndexSizeFromFile();
+            primary_key_size_on_disk += projection_primary_key_size.data_compressed > 0
+                ? projection_primary_key_size.data_compressed
+                : projection_primary_key_size.data_uncompressed;
+        }
+
         std::unique_ptr<ColumnSize> columns_size;
         auto get_columns_size = [&]()
         {
@@ -205,8 +219,7 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(get_columns_size().data_uncompressed);
         if (columns_mask[src_index++])
         {
-            auto index_size = part->getIndexSizeFromFile();
-            columns[res_index++]->insert(index_size.data_compressed > 0 ? index_size.data_compressed : index_size.data_uncompressed);
+            columns[res_index++]->insert(primary_key_size_on_disk);
         }
         if (columns_mask[src_index++])
             columns[res_index++]->insert(get_columns_size().marks);
@@ -251,9 +264,9 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(static_cast<UInt64>(part->info.getDataVersion()));
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->getIndexSizeInBytes());
+            columns[res_index++]->insert(primary_key_bytes_in_memory);
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->getIndexSizeInAllocatedBytes());
+            columns[res_index++]->insert(primary_key_bytes_in_memory_allocated);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getIndexGranularityBytes());
         if (columns_mask[src_index++])

@@ -533,6 +533,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
                         for (const auto & [_, proj_part] : part->getProjectionParts())
                         {
+                            total_primary_key_bytes_memory += proj_part->getIndexSizeInBytes();
+                            total_primary_key_bytes_memory_allocated += proj_part->getIndexSizeInAllocatedBytes();
                             total_projection_primary_key_bytes_memory += proj_part->getIndexSizeInBytes();
                             total_projection_primary_key_bytes_memory_allocated += proj_part->getIndexSizeInAllocatedBytes();
                             total_projection_index_granularity_bytes_in_memory += proj_part->getIndexGranularityBytes();
@@ -610,8 +612,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["TotalRowsOfMergeTreeTablesSystem"] = { total_number_of_rows_system, "Total amount of rows (records) stored in tables of MergeTree family in the system database." };
         new_values["TotalPartsOfMergeTreeTablesSystem"] = { total_number_of_parts_system, "Total amount of data parts in tables of MergeTree family in the system database." };
 
-        new_values["TotalPrimaryKeyBytesInMemory"] = { total_primary_key_bytes_memory, "The total amount of memory (in bytes) used by primary key values (only takes active parts into account)." };
-        new_values["TotalPrimaryKeyBytesInMemoryAllocated"] = { total_primary_key_bytes_memory_allocated, "The total amount of memory (in bytes) reserved for primary key values (only takes active parts into account)." };
+        new_values["TotalPrimaryKeyBytesInMemory"] = { total_primary_key_bytes_memory, "The total amount of memory (in bytes) used by primary key values, including projection primary keys (only takes active parts into account)." };
+        new_values["TotalPrimaryKeyBytesInMemoryAllocated"] = { total_primary_key_bytes_memory_allocated, "The total amount of memory (in bytes) reserved for primary key values, including projection primary keys (only takes active parts into account)." };
         new_values["TotalIndexGranularityBytesInMemory"] = { total_index_granularity_bytes_in_memory, "The total amount of memory (in bytes) used by index granules (only takes active parts into account)." };
         new_values["TotalIndexGranularityBytesInMemoryAllocated"] = { total_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for index granules (only takes active parts into account)." };
 
