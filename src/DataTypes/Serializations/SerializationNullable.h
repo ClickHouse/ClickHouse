@@ -105,7 +105,10 @@ public:
     static bool deserializeNullAsDefaultOrNestedTextEscaped(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization);
     static bool deserializeNullAsDefaultOrNestedTextQuoted(IColumn & nested_column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested_serialization);
     static bool deserializeNullAsDefaultOrNestedTextCSV(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization);
-    static bool deserializeNullAsDefaultOrNestedTextJSON(IColumn & nested_column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested_serialization);
+    /// Set `is_composite_element` when the value is an element of a tuple, array or map. Such an element
+    /// has no DEFAULT expression of its own, so for a Float element `null` is decoded as NaN instead of a
+    /// default -- JSON writes NaN as `null`, and this keeps the round trip intact. See issue #111917.
+    static bool deserializeNullAsDefaultOrNestedTextJSON(IColumn & nested_column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested_serialization, bool is_composite_element = false);
     static bool deserializeNullAsDefaultOrNestedTextRaw(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization);
 
     /// If Check for NULL and deserialize value into non-nullable column or insert default value of nested type.
@@ -114,7 +117,7 @@ public:
     static bool tryDeserializeNullAsDefaultOrNestedTextEscaped(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization);
     static bool tryDeserializeNullAsDefaultOrNestedTextQuoted(IColumn & nested_column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested_serialization);
     static bool tryDeserializeNullAsDefaultOrNestedTextCSV(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization);
-    static bool tryDeserializeNullAsDefaultOrNestedTextJSON(IColumn & nested_column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested_serialization);
+    static bool tryDeserializeNullAsDefaultOrNestedTextJSON(IColumn & nested_column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested_serialization, bool is_composite_element = false);
     static bool tryDeserializeNullAsDefaultOrNestedTextRaw(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization);
 
     static void serializeNullEscaped(WriteBuffer & ostr, const FormatSettings & settings);

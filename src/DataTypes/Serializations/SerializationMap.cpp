@@ -443,14 +443,14 @@ ReturnType SerializationMap::deserializeTextJSONImpl(IColumn & column, ReadBuffe
         if constexpr (std::is_same_v<ReturnType, void>)
         {
             if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
-                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization);
+                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization, /*is_composite_element=*/true);
             else
                 subcolumn_serialization->deserializeTextJSON(subcolumn, buf, settings);
         }
         else
         {
             if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
-                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization);
+                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization, /*is_composite_element=*/true);
             return subcolumn_serialization->tryDeserializeTextJSON(subcolumn, buf, settings);
         }
     };

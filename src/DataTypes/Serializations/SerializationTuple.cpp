@@ -591,14 +591,14 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
         if constexpr (std::is_same_v<ReturnType, void>)
         {
             if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
-                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(nested_column, buf, settings, nested_column_serialization);
+                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(nested_column, buf, settings, nested_column_serialization, /*is_composite_element=*/true);
             else
                 nested_column_serialization->deserializeTextJSON(nested_column, buf, settings);
         }
         else
         {
             if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
-                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(nested_column, buf, settings, nested_column_serialization);
+                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(nested_column, buf, settings, nested_column_serialization, /*is_composite_element=*/true);
             return nested_column_serialization->tryDeserializeTextJSON(nested_column, buf, settings);
         }
     };
