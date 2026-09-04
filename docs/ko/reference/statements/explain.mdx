@@ -60,9 +60,7 @@ Union
             Output: number
 ```
 
-<div id="explain-types">
-  ## EXPLAIN 타입
-</div>
+## EXPLAIN 타입 {#explain-types}
 
 * `AST` — 추상 구문 트리입니다.
 * `SYNTAX` — AST 수준 최적화가 적용된 후의 쿼리 텍스트입니다.
@@ -73,9 +71,7 @@ Union
 * `ESTIMATE` — 쿼리 처리 중 테이블에서 읽을 것으로 예상되는 행 수, 마크 수 및 파트 수입니다.
 * `TABLE OVERRIDE` — 테이블 함수 스키마에 적용된 테이블 재정의의 유효성이 검증된 결과입니다.
 
-<div id="explain-ast">
-  ### EXPLAIN AST
-</div>
+### EXPLAIN AST {#explain-ast}
 
 쿼리 AST를 출력합니다. `SELECT`뿐 아니라 모든 쿼리를 지원합니다.
 
@@ -113,9 +109,7 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
         ExpressionList
 ```
 
-<div id="explain-syntax">
-  ### EXPLAIN 구문
-</div>
+### EXPLAIN 구문 {#explain-syntax}
 
 구문 분석이 끝난 후 쿼리의 추상 구문 트리(AST)를 표시합니다.
 
@@ -156,9 +150,7 @@ ALL INNER JOIN system.numbers AS __table2 ON __table1.number = __table2.number
 ALL INNER JOIN system.numbers AS __table3 ON __table2.number = __table3.number
 ```
 
-<div id="explain-query-tree">
-  ### EXPLAIN QUERY TREE
-</div>
+### EXPLAIN QUERY TREE {#explain-query-tree}
 
 설정:
 
@@ -187,9 +179,7 @@ QUERY id: 0
     TABLE id: 3, table_name: default.test_table
 ```
 
-<div id="explain-plan">
-  ### EXPLAIN PLAN
-</div>
+### EXPLAIN PLAN {#explain-plan}
 
 쿼리 계획 단계를 덤프합니다.
 
@@ -630,9 +620,7 @@ Join (JOIN FillRightFirst)
          Output: id, value
 ```
 
-<div id="explain-pipeline">
-  ### EXPLAIN PIPELINE
-</div>
+### EXPLAIN PIPELINE {#explain-pipeline}
 
 설정:
 
@@ -672,9 +660,7 @@ ExpressionTransform
             NumbersRange × 2 0 → 1
 ```
 
-<div id="explain-analyze">
-  ### EXPLAIN ANALYZE
-</div>
+### EXPLAIN ANALYZE {#explain-analyze}
 
 `EXPLAIN ANALYZE`는 실제로 쿼리를 실행하고 결과 행은 버린 다음, 각 단계에 실행 시 실제로 발생한 내용을 표시하여 `EXPLAIN PLAN`과 동일한 계획 트리를 출력합니다.
 
@@ -784,9 +770,7 @@ I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
   2. `max_threads`에 설정된 최대 쿼리 처리 스레드 수
 </Note>
 
-<div id="explain-analyze-join-steps">
-  #### 조인 단계
-</div>
+#### 조인 단계 {#explain-analyze-join-steps}
 
 조인 단계에서 `EXPLAIN ANALYZE`는 각 측의 *참여* 행인 `Left`와 `Right`를 출력한 후, 조인 구현에 특화된 행을 출력합니다. `Left`와 `Right`는 논리적인 SQL 측면에 해당합니다. 대부분 `Left`는 조인의 프로브 측이고 `Right`는 빌드 측이지만, 조인 실행 중 스왑이 발생할 수 있으므로 항상 그렇지는 않습니다. [`join_algorithm`](/ko/reference/settings/session-settings/join#join_algorithm)의 모든 값(`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`)이 지원됩니다. 또한 이 설정으로 선택할 수 없는 두 구현, 즉 `CROSS` 또는 `COMMA` 조인, 키 동등 조건이 없는 모든 `ON` 절 및 [`Join`](/ko/reference/engines/table-engines/special/join) 테이블 엔진도 지원됩니다. 대부분은 양쪽 모두에 대한 정보를 보고하지만, 일부는 구체화하는 측에 대해서만 보고합니다(예: `direct`는 `Left:`만 출력합니다).
 
@@ -806,9 +790,7 @@ Right: rows <right_rows> · matched <matched_right_rows> · match rate <match_ra
 
 정확히 산출할 수 없는 수치는 `0`이 아니라 `not collected`로 보고됩니다. `match rate`와 `fanout`은 `matched`에서 산출되므로, `matched`가 없는 측면에서는 세 항목 모두 `not collected`로 보고됩니다.
 
-<div id="explain-analyze-fanout">
-  #### 팬아웃
-</div>
+#### 팬아웃 {#explain-analyze-fanout}
 
 `fanout`은 행이 얼마나 늘어나는지를 측정합니다:
 
@@ -823,9 +805,7 @@ fanout              = <matched output rows> / <matched_rows of that side>
 * `fanout = 1` — 깔끔한 1:1 조인으로, 일치한 각 행이 정확히 하나의 출력 행을 생성했습니다.
 * `fanout > 1` — 1:N 조인으로, 반대쪽의 중복 key로 인해 행 수가 늘어났습니다. 양쪽에서 동시에 큰 값이 나타나면 의도하지 않은 데카르트 곱 폭증의 징후입니다.
 
-<div id="explain-analyze-matches">
-  #### 수치에 `matches = 1`이 필요한 경우
-</div>
+#### 수치에 `matches = 1`이 필요한 경우 {#explain-analyze-matches}
 
 이러한 수치 대부분은 조인이 어차피 생성하는 데이터로부터 산출되며, 일반 `EXPLAIN ANALYZE`로 보고됩니다. 나머지는 조인이 그렇지 않으면 수행하지 않을 추가 기록 작업이 필요하므로 `EXPLAIN ANALYZE matches = 1`에서만 보고됩니다. 어떤 수치가 이에 해당하는지는 알고리즘에 따라 달라지며, 해시 계열에서는 다음 두 가지입니다.
 
@@ -871,9 +851,7 @@ fanout              = <matched output rows> / <matched_rows of that side>
 
 두 알고리즘이 모두 수치를 보고하는 경우 그 수치는 일치합니다. 머지 알고리즘은 더 많은 정보를 제공할 뿐, 무엇을 일치로 간주하는지에 대해서는 서로 다르지 않습니다.
 
-<div id="explain-analyze-join-algorithm-lines">
-  #### 알고리즘별 행
-</div>
+#### 알고리즘별 행 {#explain-analyze-join-algorithm-lines}
 
 각 조인 구현에서 앞서 설명한 내용에 추가되는 행을 살펴보겠습니다.
 
@@ -930,9 +908,7 @@ Spill: yes · right spilled <right_spilled_bytes>
 
 [`Join`](/ko/reference/engines/table-engines/special/join) 테이블 엔진을 대상으로 조인을 수행하면 사전 구축된 테이블을 설명하는 `Hash table:` 줄과 함께 양쪽 정보가 모두 표시됩니다. 오른쪽은 쿼리별 빌드의 행 수가 아니라 엔진에 저장된 행 수를 나타냅니다.
 
-<div id="explain-analyze-processors">
-  #### 프로세서별 시간
-</div>
+#### 프로세서별 시간 {#explain-analyze-processors}
 
 `processors = 1`인 경우 각 스테이지 아래에 추가 줄이 출력되며, 해당 스테이지의 프로세서 전반에 걸친 경과 시간 분포를 보여줍니다.
 
@@ -942,9 +918,7 @@ Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
 
 `<n>`은 해당 단계에 있는 프로세서의 수입니다. `median`과 `max` 사이의 큰 차이는 병렬 프로세서 간의 부하 편차를 나타냅니다.
 
-<div id="explain-estimate">
-  ### EXPLAIN ESTIMATE
-</div>
+### EXPLAIN ESTIMATE {#explain-estimate}
 
 쿼리를 처리하는 동안 테이블에서 읽게 될 것으로 예상되는 행 수, 마크 수, 파트 수를 표시합니다. [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 계열 테이블에서 동작합니다.
 
@@ -968,11 +942,11 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 └──────────┴───────┴───────┴──────┴───────┘
 ```
 
-<div id="explain-whatif">
-  ### EXPLAIN WHATIF
-</div>
+### EXPLAIN WHATIF {#explain-whatif}
 
 가상의 스킵 인덱스를 디스크에 구체화하지 *않고도* `SELECT` 쿼리에서 얼마나 효과가 있을지 추정합니다. [`CREATE HYPOTHETICAL INDEX`](/ko/reference/statements/hypothetical-index#create-hypothetical-index)로 하나 이상의 후보를 정의한 다음 `EXPLAIN WHATIF SELECT ...`를 실행하면 각 후보별로 적용 가능 여부, 예상 읽기 마크 수, 예상 바이트 수, 스킵 비율을 확인할 수 있습니다.
+
+[`CREATE HYPOTHETICAL PROJECTION`](/ko/reference/statements/hypothetical-projection#create-hypothetical-projection)으로 정의한 가상 프로젝션도 후보로 함께 나열되지만, 아직 그 효과는 추정되지 않으며 각각 `status: not_applicable`로 보고됩니다. 정의가 더 이상 테이블에 적용되지 않는 프로젝션(삭제된 컬럼이 있거나, 필요한 기능을 비활성화하는 설정 변경이 있는 경우)은 해당 사유와 함께 보고됩니다.
 
 **구문**
 
@@ -1018,11 +992,11 @@ Estimation:
 
 이 설정은 `WHATIF`와 `SELECT` 사이에 인라인으로 작성하며, `SETTINGS` keyword는 없습니다(다른 `EXPLAIN` 변형이 옵션을 받는 방식과 동일합니다).
 
-테이블에 hypothetical index가 정의되어 있지 않으면 `EXPLAIN WHATIF`는 `status: not_applicable`와 함께 생성하라는 힌트를 보고합니다.
+테이블에 hypothetical index와 가상 프로젝션이 모두 정의되어 있지 않으면 `EXPLAIN WHATIF`는 `status: not_applicable`와 함께 생성하라는 힌트를 보고합니다.
 
 **결합 행(여러 후보)**
 
-두 개 이상의 후보를 empirical 방식으로 평가하면 `EXPLAIN WHATIF`는 후보별 행 뒤에 `(combined: idx_a, idx_b, ...)`라는 이름의 추가 블록 1개를 덧붙입니다. 이 블록은 해당 인덱스들을 *모두* 동시에 적용했을 때의 전체 효과를 보고합니다. 실제 읽기에서는 그래뉼이 *모든* 스킵 인덱스를 통과한 경우에만 유지되므로, 결합 추정치는 후보별 생존 그래뉼의 교집합이 됩니다. 따라서 `skip_ratio`는 가장 성능이 좋은 단일 후보보다 최소한 같거나 더 높습니다. 상호 보완적인 인덱스는 함께 더 많이 프루닝하고, 중복되는 인덱스는 결과를 바꾸지 않습니다.
+두 개 이상의 후보가 경험적으로 평가되면, `EXPLAIN WHATIF`는 후보별 행 뒤에 `(combined: idx_a, idx_b, ...)`라는 이름의 추가 블록을 하나 덧붙입니다. 이 블록은 해당 인덱스를 *모두* 동시에 보유했을 때의 결합 이점을 보고합니다. 실제 읽기에서는 그래뉼이 *모든* 스킵 인덱스를 통과한 경우에만 유지되므로, 결합된 추정치는 후보들의 생존 그래뉼의 교집합입니다. 따라서 `skip_ratio`는 최소한 가장 우수한 단일 후보만큼 높습니다 — 상호 보완적인 인덱스는 함께 사용할 때 더 많이 프루닝하고, 중복된 인덱스는 값을 변화시키지 않습니다.
 
 `source: empirical`인 후보만 반영됩니다. 결합된 행은 각 후보의 그래뉼별 생존 Set의 교집합으로 만들어지기 때문입니다. `statistical` 또는 `applicability_only`로 추정된 후보에는 그래뉼별 데이터가 없으므로 제외됩니다. 따라서 결합된 블록은 최소 2개의 후보가 경험적 추정치를 생성한 경우에만 나타나며, 그렇지 않으면(예: `empirical = 0`인 경우) 생략됩니다. 추정 필드는 후보별 경험적 블록과 동일하지만, `elapsed_us`는 `0`입니다 — 결합된 추정치는 새로운 스캔이 아니라 후보별 스캔에서 파생되기 때문입니다. 합성된 `(combined: ...)` 이름은 보고서 레이블일 뿐이며 `force_data_skipping_indices`와 함께 사용할 수 없습니다.
 
@@ -1092,9 +1066,7 @@ Estimation:
 
 두 경로 모두 사용할 수 없으면(예: `empirical = 0`이고 컬럼 통계가 정의되지 않은 경우), 추정기는 `source: applicability_only`와 보수적인 `skip_ratio: 0.0%`를 보고합니다.
 
-<div id="explain-table-override">
-  ### EXPLAIN TABLE OVERRIDE
-</div>
+### EXPLAIN TABLE OVERRIDE {#explain-table-override}
 
 테이블 함수를 통해 접근한 테이블 스키마(schema)에 테이블 재정의를 적용한 결과를 보여줍니다.
 또한 일부 유효성 검사도 수행하며, 이 재정의로 인해 어떤 형태로든 실패가 발생할 경우 예외를 발생시킵니다.

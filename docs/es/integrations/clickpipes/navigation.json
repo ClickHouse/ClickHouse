@@ -4,7 +4,7 @@
   "pages": [
     "es/integrations/clickpipes/home",
     {
-      "group": "ClickPipes for Streaming",
+      "group": "ClickPipes para streaming",
       "pages": [
         {
           "group": "Kafka",
@@ -37,7 +37,7 @@
       ]
     },
     {
-      "group": "ClickPipes for Object Storage",
+      "group": "ClickPipes para almacenamiento de objetos",
       "pages": [
         {
           "group": "Amazon S3",
@@ -68,7 +68,7 @@
       ]
     },
     {
-      "group": "ClickPipes for CDC",
+      "group": "ClickPipes para CDC",
       "pages": [
         {
           "group": "Postgres",
@@ -87,7 +87,7 @@
             "es/integrations/clickpipes/postgres/lifecycle",
             "es/integrations/clickpipes/postgres/auth",
             {
-              "group": "Operations",
+              "group": "Operaciones",
               "pages": [
                 "es/integrations/clickpipes/postgres/add-table",
                 "es/integrations/clickpipes/postgres/pause-and-resume",
@@ -99,7 +99,7 @@
               ]
             },
             {
-              "group": "Source",
+              "group": "Fuente",
               "pages": [
                 "es/integrations/clickpipes/postgres/source/alloydb",
                 "es/integrations/clickpipes/postgres/source/rds",
@@ -127,7 +127,7 @@
             "es/integrations/clickpipes/mysql/schema-changes",
             "es/integrations/clickpipes/mysql/lifecycle",
             {
-              "group": "Operations",
+              "group": "Operaciones",
               "pages": [
                 "es/integrations/clickpipes/mysql/add-table",
                 "es/integrations/clickpipes/mysql/pause-and-resume",
@@ -139,7 +139,7 @@
               ]
             },
             {
-              "group": "Source",
+              "group": "Fuente",
               "pages": [
                 "es/integrations/clickpipes/mysql/source/rds",
                 "es/integrations/clickpipes/mysql/source/aurora",
@@ -162,7 +162,7 @@
             "es/integrations/clickpipes/mongodb/lifecycle",
             "es/integrations/clickpipes/mongodb/faq",
             {
-              "group": "Operations",
+              "group": "Operaciones",
               "pages": [
                 "es/integrations/clickpipes/mongodb/add-table",
                 "es/integrations/clickpipes/mongodb/remove-table",
@@ -174,7 +174,7 @@
               ]
             },
             {
-              "group": "Source",
+              "group": "Fuente",
               "pages": [
                 "es/integrations/clickpipes/mongodb/source/atlas",
                 "es/integrations/clickpipes/mongodb/source/generic",
@@ -194,7 +194,7 @@
       ]
     },
     {
-      "group": "Programmatic access",
+      "group": "Acceso programático",
       "icon": "code",
       "pages": [
         "es/integrations/clickpipes/programmatic-access/openapi",
@@ -202,7 +202,7 @@
       ]
     },
     {
-      "group": "Networking",
+      "group": "Redes",
       "icon": "network-wired",
       "pages": [
         "es/integrations/clickpipes/networking/index",
