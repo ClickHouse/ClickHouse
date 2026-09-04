@@ -411,12 +411,12 @@ void ArrowIPCBlockInputFormat::prepareReader()
     collectDictionaryFields(arrow_schema->fields);
     decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
 
-    /// Collect the dictionaries the requested columns reference and the requested type hints each one's
-    /// values are decoded under; the stream reader skips the DictionaryBatch bodies of dictionaries used
-    /// only by unrequested columns. (The file reader has already computed and used this above, before
+    /// Collect the dictionaries the requested columns reference and the field positions each one's values
+    /// are decoded for; the stream reader skips the DictionaryBatch bodies of dictionaries used only by
+    /// unrequested columns. (The file reader has already computed and used this above, before
     /// decoding its dictionaries up front; recomputing it here is cheap and keeps the stream path — whose
     /// dictionaries are decoded lazily while reading — correct.)
-    dictionary_value_hints = decoder->collectDictionaryValueHints(&requested_top_level_fields, &requested_field_target_types);
+    dictionary_uses = decoder->collectDictionaryUses(&requested_top_level_fields, &requested_field_target_types);
 
     prepared = true;
 }
@@ -497,7 +497,7 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
         /// Subset reads: only the dictionaries the requested columns reference are decoded; the bodies of
         /// dictionaries used solely by unrequested top-level fields are skipped (see the loop below).
         auto temp_decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
-        dictionary_value_hints = temp_decoder->collectDictionaryValueHints(&requested_top_level_fields, &requested_field_target_types);
+        dictionary_uses = temp_decoder->collectDictionaryUses(&requested_top_level_fields, &requested_field_target_types);
         for (const auto & block : footer.dictionary_blocks)
         {
             seekable->seek(block.offset, SEEK_SET);
@@ -516,7 +516,7 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
             /// iteration seeks to the following block, so the unread body is harmless. Check this before any
             /// body-length/data validation so a missing/corrupt unrequested dictionary cannot fail a
             /// projected read.
-            if (!dictionary_value_hints.contains(id))
+            if (!dictionary_uses.contains(id))
                 continue;
             /// The footer block fixes this message's body size; a message claiming a different (e.g. huge)
             /// body length is corrupt and would otherwise force reading past the footer-declared boundary.
@@ -549,27 +549,28 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
     batch_decoder.validateBatchLayout(*dict_batch.data(), value_fields);
     message_reader->readBody(*dict_batch.data(), body_length, body_buffer);
 
-    /// Decode the values once under each requested type hint of the fields encoding this dictionary, so
-    /// every field gets the same hint-driven decoding as inline values in a record batch. The registered
-    /// type must describe the registered column: the raw-byte rewrite the record-batch columns go through
-    /// reinterprets fixed_size_binary values under an IPv6 / big-integer hint and re-declares values the
-    /// decoder already converted or read raw, so `decodeDictionary` later builds its `LowCardinality` from
-    /// a consistent (values, type) pair.
-    for (const DataTypePtr & hint : dictionary_value_hints.at(id))
+    /// Decode the values once for each position of a field encoding this dictionary, so every field gets
+    /// the decoding it would get for inline values in a record batch. The registered type must describe the
+    /// registered column: the raw-byte rewrite the record-batch columns go through reinterprets
+    /// fixed_size_binary values under an IPv6 / big-integer hint and re-declares values the decoder already
+    /// converted or read raw, so `decodeDictionary` later builds its `LowCardinality` from a consistent
+    /// (values, type) pair.
+    for (const ArrowIPC::DictionaryUse & use : dictionary_uses.at(id))
     {
-        auto decoded = batch_decoder.decodeDictionaryValues(*dict_batch.data(), body_buffer, value_field, hint);
+        auto decoded = batch_decoder.decodeDictionaryValues(
+            *dict_batch.data(), body_buffer, value_field, use, &requested_field_target_types);
         ColumnWithTypeAndName values(decoded.column, decoded.type, value_field.name);
-        if (hint)
-            reinterpretRawByteColumns(values, hint);
+        if (use.hint)
+            reinterpretRawByteColumns(values, use.hint);
 
         checkDictionaryUnique(values.column);
-        dictionaries.set(id, hint, values.column, values.type, dict_batch.isDelta());
+        dictionaries.set(id, use.position, values.column, values.type, dict_batch.isDelta());
         /// A delta batch merges into the existing dictionary; re-validate the merged values. The per-batch
         /// check above only proves the delta is internally unique, but a unique delta can still repeat a
         /// value already present in the base dictionary, which would violate the LowCardinality dictionary
         /// uniqueness invariant the non-delta path enforces.
         if (dict_batch.isDelta())
-            checkDictionaryUnique(dictionaries.get(id, hint).column);
+            checkDictionaryUnique(dictionaries.get(id, use.position).column);
     }
 }
 
@@ -1087,7 +1088,7 @@ Chunk ArrowIPCBlockInputFormat::readStream()
                 /// never used, so skip its body instead of decoding (and possibly failing/allocating on) it.
                 /// Check this before validating `data` so a missing/corrupt unrequested dictionary cannot fail
                 /// a projected read.
-                if (!dictionary_value_hints.contains(id))
+                if (!dictionary_uses.contains(id))
                 {
                     message_reader->skipBody(msg.body_length);
                     continue;
@@ -1169,7 +1170,7 @@ void ArrowIPCBlockInputFormat::resetParser()
     geo_columns.clear();
     message_reader.reset();
     dictionary_value_fields.clear();
-    dictionary_value_hints.clear();
+    dictionary_uses.clear();
     dictionaries.clear();
     record_batch_blocks.clear();
     record_batch_current = 0;

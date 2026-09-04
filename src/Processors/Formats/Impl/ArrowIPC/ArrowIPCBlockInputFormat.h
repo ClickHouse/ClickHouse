@@ -59,9 +59,8 @@ private:
     void prepareFileReader();
     void collectDictionaryFields(const ArrowIPC::ArrowFields & fields);
     /// Decodes the values of one `DictionaryBatch` with `batch_decoder` and registers them in `dictionaries`
-    /// under the batch's id, once under each requested type hint of the fields encoding that dictionary
-    /// (`dictionary_value_hints`). `body_length` is the message's declared body length, already validated
-    /// by the caller.
+    /// under the batch's id, once for each position of a field encoding that dictionary (`dictionary_uses`).
+    /// `body_length` is the message's declared body length, already validated by the caller.
     void decodeDictionaryBatch(
         ArrowIPC::RecordBatchDecoder & batch_decoder, const ArrowIPC::flatbuf::DictionaryBatch & dict_batch, Int64 body_length);
     Chunk buildChunk(ArrowIPC::RecordBatchDecoder::DecodedColumns & decoded, size_t num_rows);
@@ -95,12 +94,12 @@ private:
     /// `date32` mapped (at any nesting) to a numeric target is read as the raw `Int32` day number without
     /// the `Date32` range check, matching the Apache Arrow library reader's numeric type-hint behavior.
     UnorderedMapWithMemoryTracking<String, DataTypePtr> requested_field_target_types;
-    /// For each Arrow dictionary id the requested columns reference, the distinct requested type hints its
-    /// values are decoded under (see `RecordBatchDecoder::collectDictionaryValueHints`), computed from the
-    /// requested header before any dictionary batch is decoded. A DictionaryBatch whose id is not here
-    /// belongs only to unrequested columns and its body is skipped rather than decoded, so a subset read
-    /// does not pay for — or fail on — an unrequested column's dictionary.
-    UnorderedMapWithMemoryTracking<Int64, DataTypes> dictionary_value_hints;
+    /// For each Arrow dictionary id the requested columns reference, the positions of the fields encoding it
+    /// with the requested type hint each resolves there (see `RecordBatchDecoder::collectDictionaryUses`),
+    /// computed from the requested header before any dictionary batch is decoded. A DictionaryBatch whose id
+    /// is not here belongs only to unrequested columns and its body is skipped rather than decoded, so a
+    /// subset read does not pay for — or fail on — an unrequested column's dictionary.
+    UnorderedMapWithMemoryTracking<Int64, ArrowIPC::DictionaryUses> dictionary_uses;
     bool prepared = false;
     PODArray<char> body_buffer;
 
