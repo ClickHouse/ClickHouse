@@ -89,6 +89,9 @@ as_user "SELECT count() FROM mergeTreeAnalyzeIndexesUUID('$MT_UUID')"
 
 echo "=== viewIfPermitted delegation is a no-op for a function with no source ==="
 $CLICKHOUSE_CLIENT --user "$user_name" -q "SELECT * FROM viewIfPermitted(SELECT 1 AS x ELSE null('x UInt8'))"
+# `executable` is the only ELSE engine that requires a `TABLE ENGINE` grant, which resolving its
+# structure owes as well. Printing the type instead means the grant was not required.
+$CLICKHOUSE_CLIENT --user "$user_name" -q "DESCRIBE viewIfPermitted(SELECT 1 AS x ELSE executable('x.sh', 'TSV', 'x UInt8'))" 2>&1 | grep -o "ACCESS_DENIED\|UInt8" | head -1
 # The primary query must be one this user cannot run, or viewIfPermitted answers with it instead
 # of the ELSE function, so it reads a table this user can see but not read.
 $CLICKHOUSE_CLIENT --user "$user_name" -q "SELECT count() FROM viewIfPermitted(SELECT * FROM t_alias_src ELSE mergeTreeTextIndex(currentDatabase(), t_source_access, 'idx_none'))" 2>&1 | grep -o "ACCESS_DENIED\|There is no index with name 'idx_none'" | uniq
