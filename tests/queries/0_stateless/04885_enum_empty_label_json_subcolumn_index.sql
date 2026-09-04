@@ -50,6 +50,10 @@ INSERT INTO t_json_tuple VALUES (1, '{"alpha":"(''x'')"}'), (2, '{"beta":"y"}'),
 -- Ids 2 and 4 carry no `alpha` path, so the non-nullable `Tuple(String)` reads as `('')` and they match.
 SELECT arraySort(groupArray(id)) FROM t_json_tuple WHERE data.alpha::Tuple(String) = tuple(CAST('', 'Enum8('''' = 3)'));
 
+-- A nested `Dynamic` names no alternative in its type, so it is the one carrier whose `Enum` stays
+-- invisible even where the element types are walked.
+SELECT arraySort(groupArray(id)) FROM t_json_tuple WHERE data.alpha::Tuple(String) = tuple(CAST(CAST('', 'Enum8('''' = 3)'), 'Dynamic'));
+
 -- A tuple constant holding no `Enum` loses nothing in that conversion, so the index stays usable.
 SELECT arraySort(groupArray(id)) FROM t_json_tuple WHERE data.alpha::Tuple(String) = tuple('x') SETTINGS force_data_skipping_indices = 'idx';
 
