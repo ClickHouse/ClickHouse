@@ -7,6 +7,7 @@ add_headers_and_sources(clickhouse_parsers ./MySQL)
 add_headers_and_sources(clickhouse_parsers ./PRQL)
 add_headers_and_sources(clickhouse_parsers ./Polyglot)
 add_headers_and_sources(clickhouse_parsers ./Prometheus)
+add_headers_and_sources(clickhouse_parsers ./SPARQL)
 
 add_library(clickhouse_parsers ${clickhouse_parsers_headers} ${clickhouse_parsers_sources})
 target_link_libraries(clickhouse_parsers PUBLIC clickhouse_common_io clickhouse_common_access Poco::JSON)
@@ -25,6 +26,10 @@ endif ()
 
 if(ENABLE_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+if (ENABLE_BENCHMARKS)
+    add_subdirectory(SPARQL/benchmarks)
 endif()
 
 if (ENABLE_FUZZING)
