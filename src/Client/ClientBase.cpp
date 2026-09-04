@@ -3910,9 +3910,11 @@ bool ClientBase::processQueryText(const String & text)
     /// A mistake in the name of a `/`-command would otherwise be parsed as SQL and reported as a
     /// syntax error at the `/`, which tells the user nothing about the command they meant. Gated
     /// like the commands themselves, so batch `clickhouse-client` still treats the input as SQL.
+    /// In a noninteractive `clickhouse-local` script the interactive-only commands (`/dialect`, ...)
+    /// are rejected with an explicit message and are not suggested for a misspelled name.
     if (is_interactive || supportsLocalMetaCommands())
     {
-        if (auto slash_command_error = diagnoseClientSlashCommand(trimmed_input))
+        if (auto slash_command_error = diagnoseClientSlashCommand(trimmed_input, is_interactive))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", *slash_command_error);
     }
 
