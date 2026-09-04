@@ -87,27 +87,34 @@ TEST(DiskAccessStorageRecovery, RebuildRemovesOlderDuplicates)
 
 TEST(DiskAccessStorageShutdown, DoesNotWaitOutTheListsWritingTimeout)
 {
-    Poco::TemporaryFile temp_dir;
-    temp_dir.createDirectories();
-    String dir = temp_dir.path() + "/";
-
     AccessChangesNotifier notifier;
-    DiskAccessStorage storage("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false);
 
-    auto user = std::make_shared<User>();
-    user->setName("alice");
-    storage.insert(user);
+    /// Shutting down right after the insert races the request to stop the background lists-writing
+    /// thread against that thread starting to wait for the request, and which one wins varies per
+    /// pass, hence the repetition. Writing the lists takes milliseconds, while the thread's batching
+    /// timeout is a minute.
+    for (size_t iteration = 0; iteration != 20; ++iteration)
+    {
+        Poco::TemporaryFile temp_dir;
+        temp_dir.createDirectories();
+        String dir = temp_dir.path() + "/";
 
-    /// Shutting down right after the insert is the interleaving in which the request to stop the
-    /// background lists-writing thread is made before that thread starts waiting for it. Writing
-    /// the lists takes milliseconds, while the thread's batching timeout is a minute.
-    auto started = std::chrono::steady_clock::now();
-    storage.shutdown();
-    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
+        DiskAccessStorage storage("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false);
 
-    EXPECT_LT(elapsed_ms, 20000) << "shutdown() took " << elapsed_ms << " ms";
+        auto user = std::make_shared<User>();
+        user->setName("alice");
+        storage.insert(user);
 
-    /// The lists are on disk once `shutdown` returns, whichever thread wrote them.
-    EXPECT_FALSE(std::filesystem::exists(std::filesystem::path(dir) / "need_rebuild_lists.mark"));
-    EXPECT_TRUE(std::filesystem::exists(std::filesystem::path(dir) / "users.list"));
+        auto started = std::chrono::steady_clock::now();
+        storage.shutdown();
+        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
+
+        ASSERT_LT(elapsed_ms, 20000) << "shutdown() took " << elapsed_ms << " ms on iteration " << iteration;
+
+        /// With the marker absent the reopened storage reads the `.list` files instead of rebuilding
+        /// from the `<id>.sql` files, so it resolves `alice` only if `users.list` really names her.
+        EXPECT_FALSE(std::filesystem::exists(std::filesystem::path(dir) / "need_rebuild_lists.mark"));
+        DiskAccessStorage reopened("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false);
+        ASSERT_TRUE(reopened.find<User>("alice").has_value()) << "iteration " << iteration;
+    }
 }
