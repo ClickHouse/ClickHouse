@@ -257,14 +257,100 @@ def test_prepared_statement_parameter_types(test_case):
 
 
 def test_prepared_statement_schema_returned_on_prepare():
-    """When NULL substitution succeeds, prepare should return dataset_schema."""
+    """`GetSchema` infers the current dataset schema before and after binding."""
     client = get_client()
 
     stmt = client.prepare("SELECT ? AS result")
-    assert stmt.dataset_schema is not None
-    assert len(stmt.dataset_schema) == 1
-    assert stmt.dataset_schema.field(0).name == "result"
-    stmt.close()
+    try:
+        assert stmt.dataset_schema is not None
+        assert len(stmt.dataset_schema) == 1
+        assert stmt.dataset_schema.field(0).name == "result"
+
+        schema_before_binding = client.get_prepared_statement_schema(stmt.handle).schema
+        assert schema_before_binding.equals(stmt.dataset_schema, check_metadata=True)
+
+        params = pa.record_batch([pa.array([42], type=pa.int64())], names=["parameter_1"])
+        stmt.bind_parameters(params)
+
+        schema_after_binding = client.get_prepared_statement_schema(stmt.handle).schema
+        flight_info = client.get_prepared_statement_flight_info(stmt.handle)
+        result = client.do_get(flight_info.endpoints[0].ticket).read_all()
+
+        assert not schema_after_binding.equals(schema_before_binding, check_metadata=True)
+        assert schema_after_binding.equals(flight_info.schema, check_metadata=True)
+        assert schema_after_binding.equals(result.schema, check_metadata=True)
+        assert result.column("result").to_pylist() == [42]
+    finally:
+        stmt.close()
+
+
+def test_prepared_statement_schema_reflects_table_changes():
+    """Unbound `GetSchema` reflects table changes and bound execution stays consistent."""
+    client = get_client()
+    table_name = "prepared_schema_refresh"
+    stmt = None
+
+    client.execute_update(f"DROP TABLE IF EXISTS {table_name}")
+    client.execute_update(f"CREATE TABLE {table_name} (id UInt32) ENGINE = Memory")
+    client.execute_update(f"INSERT INTO {table_name} VALUES (1)")
+
+    try:
+        stmt = client.prepare(f"SELECT * FROM {table_name} WHERE id = ?")
+        assert stmt.dataset_schema.names == ["id"]
+
+        client.execute_update(f"ALTER TABLE {table_name} ADD COLUMN value String")
+
+        schema_before_binding = client.get_prepared_statement_schema(stmt.handle).schema
+        assert schema_before_binding.names == ["id", "value"]
+
+        with pytest.raises(pa.lib.ArrowInvalid, match="Parameters were not bound"):
+            client.get_prepared_statement_flight_info(stmt.handle)
+
+        params = pa.record_batch([pa.array([1], type=pa.uint32())], names=["id"])
+        stmt.bind_parameters(params)
+
+        schema_after_binding = client.get_prepared_statement_schema(stmt.handle).schema
+        flight_info = client.get_prepared_statement_flight_info(stmt.handle)
+        result = client.do_get(flight_info.endpoints[0].ticket).read_all()
+
+        assert schema_after_binding.equals(flight_info.schema, check_metadata=True)
+        assert schema_after_binding.equals(result.schema, check_metadata=True)
+        assert result.column("id").to_pylist() == [1]
+    finally:
+        if stmt is not None:
+            stmt.close()
+        client.execute_update(f"DROP TABLE IF EXISTS {table_name}")
+
+
+def test_prepared_statement_schema_uses_current_session_settings():
+    """`GetSchema` uses the caller's current Arrow unsupported-type setting."""
+    creator_client = get_client()
+    schema_client = get_client()
+    setting = "output_format_arrow_unsupported_types_as_binary"
+
+    set_result = creator_client.set_session_options({setting: "1"})
+    assert len(set_result.errors) == 0
+    stmt = creator_client.prepare(
+        "SELECT initializeAggregation('sumState', toUInt64(1)) AS state"
+    )
+
+    try:
+        assert pa.types.is_binary(stmt.dataset_schema.field("state").type)
+
+        set_result = schema_client.set_session_options({setting: "0"})
+        assert len(set_result.errors) == 0
+        with pytest.raises(pa.lib.ArrowException, match="not supported for conversion"):
+            schema_client.get_prepared_statement_schema(stmt.handle)
+
+        set_result = schema_client.set_session_options({setting: "1"})
+        assert len(set_result.errors) == 0
+        current_schema = schema_client.get_prepared_statement_schema(stmt.handle).schema
+        assert current_schema.equals(stmt.dataset_schema, check_metadata=True)
+    finally:
+        stmt.close()
+        for client in (creator_client, schema_client):
+            reset_result = client.set_session_options({setting: None})
+            assert len(reset_result.errors) == 0
 
 
 def test_prepared_statement_no_schema_when_null_invalid():
@@ -277,10 +363,17 @@ def test_prepared_statement_no_schema_when_null_invalid():
     assert stmt.parameter_schema is not None
     assert len(stmt.parameter_schema) == 1
 
+    with pytest.raises(pa.lib.ArrowException, match="must be numeric"):
+        client.get_prepared_statement_schema(stmt.handle)
+
     # Executing with a real value should work.
     params = pa.record_batch([pa.array([5], type=pa.int64())], names=["0"])
     stmt.bind_parameters(params)
-    result = stmt.execute()
+    schema = client.get_prepared_statement_schema(stmt.handle).schema
+    flight_info = client.get_prepared_statement_flight_info(stmt.handle)
+    result = client.do_get(flight_info.endpoints[0].ticket).read_all()
+    assert schema.equals(flight_info.schema, check_metadata=True)
+    assert schema.equals(result.schema, check_metadata=True)
     assert result.column("number").to_pylist() == [0, 1, 2, 3, 4]
     stmt.close()
 

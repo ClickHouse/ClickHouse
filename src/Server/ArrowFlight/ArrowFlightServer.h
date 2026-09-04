@@ -65,9 +65,16 @@ public:
 private:
     using DecodeResult = std::tuple<std::string, ArrowFlight::SchemaModifier, ArrowFlight::BlockModifier, std::shared_ptr<arrow::Table>>;
 
+    enum class PreparedStatementParameterMode
+    {
+        RequireBoundParameters,
+        SubstituteNullsIfUnbound,
+    };
+
     [[nodiscard]] arrow::Result<DecodeResult> decodeDescriptor(
         const arrow::flight::FlightDescriptor & descriptor,
         bool for_put_operation,
+        PreparedStatementParameterMode prepared_statement_parameter_mode,
         const std::string & username) const;
 
     arrow::Status tryRunAndLogIfError(std::string_view method_name, std::function<arrow::Status()> && func) const;
