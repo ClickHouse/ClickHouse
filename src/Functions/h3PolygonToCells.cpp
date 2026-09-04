@@ -44,7 +44,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        checkGeometryArgumentType<SphericalPoint, GeoKindNonAreal>(arguments[0], getName(), "The first argument of function {} must not be {}", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        checkGeometryArgumentType(arguments[0], getName(), GeoKindNonAreal, "The first argument of function {} must not be {}", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 

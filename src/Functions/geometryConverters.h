@@ -595,25 +595,30 @@ enum GeoKindBits : UInt32
     GeoKindNonAreal = GeoKindPoint | GeoKindMultiPoint | GeoKindLineString | GeoKindMultiLineString,
 };
 
-template <typename Point, typename Converter>
-constexpr UInt32 geoKindBitOf()
+/// The geometry kind of a type, or 0 for a type the dispatch cannot read at all. Mirrors
+/// `callOnGeometryDataType`'s chain, but answers with a bit instead of calling a templated
+/// continuation, so the checks below cost no template instantiations: they are asking about the
+/// TYPE, and the converters only matter once there is a column to read.
+inline UInt32 geoKindOf(const DataTypePtr & type)
 {
-    if constexpr (std::is_same_v<ColumnToPointsConverter<Point>, Converter>)
+    const auto & factory = DataTypeFactory::instance();
+    const auto * custom_name = type->getCustomName();
+
+    if (factory.get("Point")->equals(*type))
         return GeoKindPoint;
-    else if constexpr (std::is_same_v<ColumnToMultiPointsConverter<Point>, Converter>)
+    if (factory.get("MultiPoint")->equals(*type) && custom_name && custom_name->getName() == "MultiPoint")
         return GeoKindMultiPoint;
-    else if constexpr (std::is_same_v<ColumnToLineStringsConverter<Point>, Converter>)
+    if (factory.get("LineString")->equals(*type) && custom_name && custom_name->getName() == "LineString")
         return GeoKindLineString;
-    else if constexpr (std::is_same_v<ColumnToMultiLineStringsConverter<Point>, Converter>)
+    if (factory.get("MultiLineString")->equals(*type) && custom_name && custom_name->getName() == "MultiLineString")
         return GeoKindMultiLineString;
-    else if constexpr (std::is_same_v<ColumnToRingsConverter<Point>, Converter>)
+    if (factory.get("Ring")->equals(*type))
         return GeoKindRing;
-    else if constexpr (std::is_same_v<ColumnToPolygonsConverter<Point>, Converter>)
+    if (factory.get("Polygon")->equals(*type))
         return GeoKindPolygon;
-    else if constexpr (std::is_same_v<ColumnToMultiPolygonsConverter<Point>, Converter>)
+    if (factory.get("MultiPolygon")->equals(*type))
         return GeoKindMultiPolygon;
-    else
-        return 0;
+    return 0;
 }
 
 constexpr const char * geoKindBitName(UInt32 bit)
@@ -642,51 +647,30 @@ constexpr const char * geoKindBitName(UInt32 bit)
 /// suppresses it and the function answers as if the argument had been valid.
 ///
 /// `message` is a runtime format string taking the function name and the offending kind name, in that order.
-template <typename Point, UInt32 rejected_kinds>
-void checkGeometryArgumentType(
+inline void checkGeometryArgumentType(
     const DataTypePtr & type,
     const String & function_name,
+    UInt32 rejected_kinds,
     const char * message = "",
     int error_code = ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
 {
-    callOnGeometryDataType<Point>(
-        type,
-        [&](const auto & arg)
-        {
-            using Converter = typename std::decay_t<decltype(arg)>::Type;
-            constexpr UInt32 bit = geoKindBitOf<Point, Converter>();
-            if constexpr ((bit & rejected_kinds) != 0)
-                throw Exception(error_code, "{}", fmt::format(fmt::runtime(message), function_name, geoKindBitName(bit)));
-        },
-        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    const UInt32 kind = geoKindOf(type);
+    if (kind == 0)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unknown geometry type {}", type->getName());
+    if ((kind & rejected_kinds) != 0)
+        throw Exception(error_code, "{}", fmt::format(fmt::runtime(message), function_name, geoKindBitName(kind)));
 }
 
-template <typename Point, UInt32 rejected_kinds>
-void checkGeometryArgumentTypes(
+inline void checkGeometryArgumentTypes(
     const DataTypePtr & left_type,
     const DataTypePtr & right_type,
     const String & function_name,
+    UInt32 rejected_kinds,
     const char * message = "",
     int error_code = ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
 {
-    callOnTwoGeometryDataTypes<Point>(
-        left_type,
-        right_type,
-        [&](const auto & left, const auto & right)
-        {
-            using LeftConverter = typename std::decay_t<decltype(left)>::Type;
-            using RightConverter = typename std::decay_t<decltype(right)>::Type;
-
-            constexpr UInt32 left_bit = geoKindBitOf<Point, LeftConverter>();
-            constexpr UInt32 right_bit = geoKindBitOf<Point, RightConverter>();
-
-            if constexpr ((left_bit & rejected_kinds) != 0)
-                throw Exception(error_code, "{}", fmt::format(fmt::runtime(message), function_name, geoKindBitName(left_bit)));
-            else if constexpr ((right_bit & rejected_kinds) != 0)
-                throw Exception(error_code, "{}", fmt::format(fmt::runtime(message), function_name, geoKindBitName(right_bit)));
-        },
-        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    checkGeometryArgumentType(left_type, function_name, rejected_kinds, message, error_code);
+    checkGeometryArgumentType(right_type, function_name, rejected_kinds, message, error_code);
 }
-
 
 }
