@@ -6,7 +6,7 @@ title: 'ユーザーとロールの設定'
 doc_type: 'reference'
 ---
 
-`users.xml` 構成ファイルの `users` セクションには、ユーザー設定が含まれています。
+`users.xml` 設定ファイルの `users` セクションには、ユーザー設定が含まれています。
 
 <Note>
   ClickHouse は、ユーザー管理のための [SQL ベースのワークフロー](/ja/concepts/features/security/access-rights#access-control-usage) もサポートしています。こちらの使用を推奨します。
@@ -16,14 +16,14 @@ doc_type: 'reference'
 
 ```xml
 <users>
-    <!-- ユーザー名が指定されていない場合、'default' ユーザーが使用されます。 -->
+    <!-- If user name was not specified, the user from the 'default_session_user' server setting is used ('default' unless configured otherwise). -->
     <user_name>
-        <!-- users.user_name レベルでは、認証方式を1つだけ指定できます。例: -->
+        <!-- Exactly one authentication method may be specified at the users.user_name level. For example: -->
         <password></password>
-        <!-- または（排他） -->
+        <!-- Or (exclusive) -->
         <password_sha256_hex></password_sha256_hex>
  
-        <!-- または（排他）（注意: 後方互換性のため、複数のSSHキーを指定可能） -->
+        <!-- Or (exclusive) (N.B. multiple SSH keys are allowed for backwards compatibility) -->
         <ssh_keys>
             <ssh_key>
                 <type>ssh-ed25519</type>
@@ -39,7 +39,7 @@ doc_type: 'reference'
             </ssh_key>
         </ssh_keys>
 
-        <!-- または（排他）複数の認証方式を使用する場合: -->
+        <!-- Or (exclusive) for multiple authentication methods: -->
         <auth_methods>
             <method1>
                 <password></password>
@@ -74,7 +74,7 @@ doc_type: 'reference'
             <query>GRANT SELECT ON system.*</query>
         </grants>
     </user_name>
-    <!-- その他のユーザー設定 -->
+    <!-- Other users settings -->
 </users>
 ```
 
