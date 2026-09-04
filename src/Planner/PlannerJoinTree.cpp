@@ -396,7 +396,7 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
 }
 
 /// Collect names of the columns of `table_expression` that a resolved filter expression reads
-class CollectFilterColumnNamesVisitor : public InDepthQueryTreeVisitor<CollectFilterColumnNamesVisitor, true /*const_visitor*/>
+class CollectFilterColumnNamesVisitor : public ConstInDepthQueryTreeVisitor<CollectFilterColumnNamesVisitor>
 {
 public:
     explicit CollectFilterColumnNamesVisitor(const IQueryTreeNode * table_expression_)
@@ -443,7 +443,9 @@ private:
 
 /// Check column-level SELECT for the columns a settings-provided filter reads.
 /// Such filters are user-supplied, so unlike row policies they must not grant access to columns the user cannot select.
-void checkAccessRightsForFilter(const QueryTreeNodePtr & filter_query_tree, const QueryTreeNodePtr & table_expression, const ContextPtr & query_context)
+void checkAccessRightsForFilter(const QueryTreeNodePtr & filter_query_tree,
+    const QueryTreeNodePtr & table_expression,
+    const ContextPtr & query_context)
 {
     StoragePtr storage;
     StorageID storage_id = StorageID::createEmpty();
@@ -1092,7 +1094,8 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
         metadata_snapshot->columns,
         query_context);
 
-    return buildFilterInfoWithAccessCheck(parallel_replicas_custom_filter_ast, table_expression_query_info.table_expression, planner_context);
+    return buildFilterInfoWithAccessCheck(
+        parallel_replicas_custom_filter_ast, table_expression_query_info.table_expression, planner_context);
 }
 
 /// Parse `additional_table_filters` for this table expression and assign the AST into

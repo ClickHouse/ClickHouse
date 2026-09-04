@@ -568,7 +568,9 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
     return select_query_info;
 }
 
-QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression, const TableExpressionNodePtr & table_expression, const ContextPtr & query_context)
+QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
+        const TableExpressionNodePtr & table_expression,
+        const ContextPtr & query_context)
 {
     /// If the filter expression is a standalone subquery (e.g. ROW POLICY
     /// USING (SELECT 1)), wrap it with notEquals(<subquery>, 0) so that

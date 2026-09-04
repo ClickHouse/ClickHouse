@@ -93,7 +93,9 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
 SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context);
 
 /// Build and resolve a filter expression against the table expression (used for row policies and settings-provided filters).
-QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression, const TableExpressionNodePtr & table_expression, const ContextPtr & query_context);
+QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
+        const TableExpressionNodePtr & table_expression,
+        const ContextPtr & query_context);
 
 /// Build filter for specific table_expression
 FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
