@@ -456,6 +456,19 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStric
     if (query.as_table_function)
         return false;
 
+    /// A push-source starts the background job that feeds its materialized views in its own `startup`,
+    /// which the lazy stand-in never calls: nothing reads such a table directly, so the consumer would
+    /// never start and the ingestion would stall silently until the table is read by hand. Load it
+    /// eagerly, as views are.
+    if (query.storage && query.storage->engine)
+    {
+        static const std::unordered_set<std::string_view> streaming_source_engines
+            = {"Kafka", "RabbitMQ", "NATS", "FileLog", "S3Queue", "AzureQueue"};
+
+        if (streaming_source_engines.contains(query.storage->engine->name))
+            return false;
+    }
+
     if (mode == LoadingStrictnessLevel::FORCE_RESTORE)
         return false;
 
