@@ -8,6 +8,8 @@
 #include <Storages/RabbitMQ/RabbitMQ_fwd.h>
 #include <Common/maskURIPassword.h>
 
+#include <functional>
+
 namespace DB
 {
 
@@ -16,6 +18,8 @@ namespace
 
 /// `format_avro_schema_registry_url` belongs to no engine's registry: it is a format setting, and
 /// any engine reading Avro may carry it.
+using MaskFunction = std::function<std::string(std::string_view)>;
+
 constexpr std::string_view FORMAT_AVRO_SCHEMA_REGISTRY_URL = "format_avro_schema_registry_url";
 
 std::optional<String> maskAvroSchemaRegistryUrl(std::string_view value)
@@ -26,32 +30,53 @@ std::optional<String> maskAvroSchemaRegistryUrl(std::string_view value)
     return masked;
 }
 
+/// The registry rule that masks this setting for this engine, or `nullptr` when no registry claims
+/// it. Both entry points below go through this, so "is it secret" and "what does it look like
+/// masked" cannot drift apart. `format_avro_schema_registry_url` stays outside it: it belongs to no
+/// engine, and it masks only when the value actually embeds a password, so it cannot be reduced to
+/// a rule that always produces a masked rendering.
+const MaskFunction * findMask(std::string_view engine_name, const String & setting_name)
+{
+    if (auto it = DataLake::SETTINGS_TO_HIDE.find(setting_name); it != DataLake::SETTINGS_TO_HIDE.end())
+        return &it->second;
+
+    const auto find_in = [&](std::string_view owner, const auto & registry) -> const MaskFunction *
+    {
+        if (owner != engine_name)
+            return nullptr;
+        if (auto it = registry.find(setting_name); it != registry.end())
+            return &it->second;
+        return nullptr;
+    };
+
+    if (const auto * mask = find_in(RabbitMQ::TABLE_ENGINE_NAME, RabbitMQ::SETTINGS_TO_HIDE))
+        return mask;
+    if (const auto * mask = find_in(NATS::TABLE_ENGINE_NAME, NATS::SETTINGS_TO_HIDE))
+        return mask;
+    if (const auto * mask = find_in(Kafka::TABLE_ENGINE_NAME, Kafka::SETTINGS_TO_HIDE))
+        return mask;
+    if (const auto * mask = find_in(AzureQueue::TABLE_ENGINE_NAME, AzureQueue::SETTINGS_TO_HIDE))
+        return mask;
+    if (const auto * mask = find_in(S3Queue::TABLE_ENGINE_NAME, S3Queue::SETTINGS_TO_HIDE))
+        return mask;
+
+    return nullptr;
+}
+
+}
+
+bool canMaskSettingValue(std::string_view engine_name, const String & setting_name)
+{
+    /// True for the Avro URL whether or not this particular value has a password in it: the caller
+    /// uses this to decide whether rendering the value is worth it, and only the rendered value can
+    /// answer that question.
+    return findMask(engine_name, setting_name) != nullptr || setting_name == FORMAT_AVRO_SCHEMA_REGISTRY_URL;
 }
 
 std::optional<String> maskSettingValue(std::string_view engine_name, const String & setting_name, std::string_view value)
 {
-    if (auto it = DataLake::SETTINGS_TO_HIDE.find(setting_name); it != DataLake::SETTINGS_TO_HIDE.end())
-        return it->second(value);
-
-    const auto mask_for = [&](std::string_view owner, const auto & registry) -> std::optional<String>
-    {
-        if (owner != engine_name)
-            return {};
-        if (auto it = registry.find(setting_name); it != registry.end())
-            return it->second(value);
-        return {};
-    };
-
-    if (auto masked = mask_for(RabbitMQ::TABLE_ENGINE_NAME, RabbitMQ::SETTINGS_TO_HIDE))
-        return masked;
-    if (auto masked = mask_for(NATS::TABLE_ENGINE_NAME, NATS::SETTINGS_TO_HIDE))
-        return masked;
-    if (auto masked = mask_for(Kafka::TABLE_ENGINE_NAME, Kafka::SETTINGS_TO_HIDE))
-        return masked;
-    if (auto masked = mask_for(AzureQueue::TABLE_ENGINE_NAME, AzureQueue::SETTINGS_TO_HIDE))
-        return masked;
-    if (auto masked = mask_for(S3Queue::TABLE_ENGINE_NAME, S3Queue::SETTINGS_TO_HIDE))
-        return masked;
+    if (const auto * mask = findMask(engine_name, setting_name))
+        return (*mask)(value);
 
     if (setting_name == FORMAT_AVRO_SCHEMA_REGISTRY_URL)
         return maskAvroSchemaRegistryUrl(value);

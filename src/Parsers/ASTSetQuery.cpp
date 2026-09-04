@@ -160,6 +160,9 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
             /// can carry any `Field` type here, and a setting that is secret stays secret however
             /// it was written. A rule that masks only part of its value - a URI password, say -
             /// simply finds nothing to mask in a value that cannot hold one.
+            if (!canMaskSettingValue(state.create_engine_name, change.name))
+                return false;
+
             if (auto masked = maskSettingValue(state.create_engine_name, change.name, convertFieldToString(change.value)))
             {
                 ostr << " = '" << *masked << "'";

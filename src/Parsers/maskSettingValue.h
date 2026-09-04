@@ -26,6 +26,10 @@ namespace DB
 /// grant - see `formatWithPossiblyHidingSecrets.cpp`.
 std::optional<String> maskSettingValue(std::string_view engine_name, const String & setting_name, std::string_view value);
 
+/// Whether `maskSettingValue` would mask this setting, without rendering the value. Lets a caller
+/// holding a `Field` skip converting it to a string for a setting that nothing can mask.
+bool canMaskSettingValue(std::string_view engine_name, const String & setting_name);
+
 /// Whether the name is a secret of *some* engine. Deliberately ignores the engine, unlike
 /// `maskSettingValue`: a caller uses this to decide whether a statement needs masking at all, where
 /// answering yes too often is safe and answering no wrongly is not.
