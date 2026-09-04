@@ -35,3 +35,23 @@ SELECT 'deterministic functions keep the fast path';
 SELECT uniqExact(s + 1), sum(s + 1) FROM t_sparse_nondeterministic;
 
 DROP TABLE t_sparse_nondeterministic;
+
+SELECT 'a generator that reads its argument';
+-- The generators above ignore their argument, so they would pass even if the materialization of the
+-- sparse column produced a malformed full column. `fuzzBits` reads its argument and preserves the
+-- length of each value, so lining the output lengths up against the input lengths checks that every
+-- output row was built from its own input row.
+DROP TABLE IF EXISTS t_sparse_string;
+
+CREATE TABLE t_sparse_string (id UInt64, s String)
+ENGINE = MergeTree ORDER BY id
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.1;
+
+INSERT INTO t_sparse_string SELECT number, if(number % 100 = 0, repeat('x', 8), '') FROM numbers(1000);
+
+SELECT serialization_kind FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_sparse_string' AND column = 's' AND active;
+
+SELECT countIf(length(fuzzBits(s, 0.5)) != length(s)) FROM t_sparse_string;
+
+DROP TABLE t_sparse_string;
