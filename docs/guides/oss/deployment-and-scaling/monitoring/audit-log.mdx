@@ -59,10 +59,16 @@ error.
 ### Composite statements {#composite-statements}
 
 `EXECUTE AS <user> <statement>` and `statement1 PARALLEL WITH statement2 ...` are wrappers: the
-statements they contain are what actually runs. The audit log looks through the wrapper and writes
-one record per executed statement, each classified and given `OBJECT_NAMES` of its own, so a node
-that audits only `DML` still sees the `SELECT` inside an `EXECUTE AS`, and a node that audits only
-`DDL` still sees every `DROP` of a `PARALLEL WITH`. Impersonation itself is recorded as `DCL`.
+statements they contain are what actually runs. Every contained statement is audited from its own
+execution, so it gets a record of its own, with its own text, classification, `OBJECT_NAMES` and
+`EXCEPTION_CODE`, and only if it actually ran. A node that audits only `DML` therefore still sees
+the `SELECT` inside an `EXECUTE AS`, and a node that audits only `DDL` still sees every `DROP` of a
+`PARALLEL WITH`. If a `PARALLEL WITH` query stops at a failing statement, the statements that were
+never reached leave no record.
+
+The wrapper itself produces one more record carrying the outcome of the query as a whole:
+`EXECUTE AS` is recorded as `DCL`, because impersonation is an access-control event, and
+`PARALLEL WITH` as `MISC`.
 
 ## Changing the configuration at runtime {#changing-the-configuration-at-runtime}
 
