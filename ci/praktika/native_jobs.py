@@ -31,6 +31,10 @@ if "." not in sys.path:
 
 assert Settings.CI_CONFIG_RUNS_ON
 
+# Every image is built inside this one budget, so `Docker.build` is given what is left
+# of it and sizes its own bounds from that.
+DOCKER_BUILD_JOB_TIMEOUT_S = int(5.5 * 3600)
+
 
 _workflow_config_job = Job.Config(
     name=Settings.CI_CONFIG_JOB_NAME,
@@ -46,21 +50,21 @@ _workflow_config_job = Job.Config(
 _docker_build_manifest_job = Job.Config(
     name=Settings.DOCKER_BUILD_MANIFEST_JOB_NAME,
     runs_on=Settings.DOCKER_MERGE_RUNS_ON,
-    timeout=int(5.5 * 3600),
+    timeout=DOCKER_BUILD_JOB_TIMEOUT_S,
     command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_MANIFEST_JOB_NAME}'",
 )
 
 _docker_build_amd_linux_job = Job.Config(
     name=Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME,
     runs_on=Settings.DOCKER_BUILD_AMD_RUNS_ON,
-    timeout=int(5.5 * 3600),
+    timeout=DOCKER_BUILD_JOB_TIMEOUT_S,
     command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME}'",
 )
 
 _docker_build_arm_linux_job = Job.Config(
     name=Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
     runs_on=Settings.DOCKER_BUILD_ARM_RUNS_ON,
-    timeout=int(5.5 * 3600),
+    timeout=DOCKER_BUILD_JOB_TIMEOUT_S,
     command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME}'",
 )
 
@@ -86,6 +90,7 @@ def _is_praktika_job(job_name):
 
 def _build_dockers(workflow, job_name):
     print(f"Start [{job_name}], workflow [{workflow.name}]")
+    sw = Utils.Stopwatch()
     dockers = workflow.dockers
     ready = []
     results = []
@@ -167,6 +172,10 @@ def _build_dockers(workflow, job_name):
                     amd_only=amd_only,
                     arm_only=arm_only,
                     disable_push=Info().is_local_run,
+                    job_timeout=DOCKER_BUILD_JOB_TIMEOUT_S,
+                    # Read per image, not once: what is left of the budget is what the
+                    # images already built have not used.
+                    elapsed=sw.duration,
                 )
             )
             if results[-1].is_ok():
