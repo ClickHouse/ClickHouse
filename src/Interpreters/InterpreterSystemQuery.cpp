@@ -374,11 +374,12 @@ BlockIO InterpreterSystemQuery::execute()
     bool check_constraints = false;
     system_context->setCurrentProfile(getContext()->getSystemProfileName(), check_constraints);
 
-    auto dictionary_context = getContext();
-    if ((query.type == Type::RELOAD_DICTIONARY || query.type == Type::UNLOAD_DICTIONARY) && query.database)
+    String dictionary_name;
+    if (query.type == Type::RELOAD_DICTIONARY || query.type == Type::UNLOAD_DICTIONARY)
     {
-        dictionary_context = Context::createCopy(getContext());
-        dictionary_context->setCurrentDatabase(query.getDatabase());
+        dictionary_name = query.getTable();
+        if (query.database)
+            dictionary_name = backQuoteIfNeed(query.getDatabase()) + "." + backQuoteIfNeed(dictionary_name);
     }
 
     /// Make canonical query for simpler processing
@@ -780,7 +781,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
 
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
-            external_dictionaries_loader.reloadDictionary(query.getTable(), dictionary_context);
+            external_dictionaries_loader.reloadDictionary(dictionary_name, getContext());
 
             ExternalDictionariesLoader::resetAll();
             break;
@@ -800,7 +801,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
 
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
-            external_dictionaries_loader.unloadDictionary(query.getTable(), dictionary_context);
+            external_dictionaries_loader.unloadDictionary(dictionary_name, getContext());
             ExternalDictionariesLoader::resetAll();
             break;
         }
