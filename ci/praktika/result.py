@@ -1072,8 +1072,8 @@ class Result(MetaClasses.Serializable):
             self._add_job_summary_to_info()
         if do_not_block_pipeline_on_failure and not self.is_ok():
             self.ext["do_not_block_pipeline_on_failure"] = True
-        # Set by a job whose verdict depends on run-time state no digest input captures,
-        # where a success record would be reused by a later commit that hashes the same.
+        # A job sets this flag when its verdict depends on run-time state no digest input
+        # captures, so a later commit with the same digest must not reuse its success record.
         if do_not_cache:
             self.ext["do_not_cache"] = True
         if not disable_attached_files_sorting:
