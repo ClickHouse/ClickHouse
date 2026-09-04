@@ -7,6 +7,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Compression/CompressionFactory.h>
 
+#include <functional>
 #include <map>
 #include <vector>
 
@@ -20,9 +21,19 @@ namespace DB
 {
 
 class ASTColumnDeclaration;
+class ASTDataType;
 
 /// A logical path of `Tuple` element names relative to the owning top-level column.
 using CodecPath = std::vector<String>;
+
+/// Visit Tuple elements through direct Tuple nesting, Array, and SimpleAggregateFunction.
+/// Transparent wrappers do not add a codec-path segment.
+using TupleCodecElementVisitor = std::function<void(ASTDataType &, const DataTypePtr &, const CodecPath &)>;
+void forEachTupleElementInCodecType(
+    const ASTPtr & type_ast,
+    const DataTypePtr & logical_type,
+    CodecPath & path,
+    const TupleCodecElementVisitor & visitor);
 
 /** All codec declarations for one column.
   *
@@ -101,6 +112,7 @@ ColumnCodecDescription codecDescriptionFromAST(
 
 void applyCodecDescriptionToAST(
     ASTColumnDeclaration & declaration,
+    const DataTypePtr & logical_type,
     const ColumnCodecDescription & codec);
 
 }

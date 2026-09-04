@@ -179,8 +179,7 @@ size_t countTupleCodecPatchOperations(const ASTPtr & type_ast)
     return count;
 }
 
-/// Read codec operations from direct Tuple nodes. Paths use names from the resulting Tuple type.
-/// This stops at other type wrappers. extractTupleCodecPatch rejects operations below them.
+/// Read codec operations from every supported Tuple element.
 void collectTupleCodecPatch(
     const ASTPtr & type_ast,
     const DataTypePtr & logical_type,
@@ -188,40 +187,29 @@ void collectTupleCodecPatch(
     std::map<CodecPath, ASTPtr> & codec_sets,
     std::vector<CodecPath> & codec_removals)
 {
-    const auto * tuple_ast = type_ast ? type_ast->as<ASTTupleDataType>() : nullptr;
-    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(logical_type.get());
-    if (!tuple_ast || !tuple_type)
-        return;
-
-    auto arguments = tuple_ast->getArguments();
-    if (!arguments)
-        return;
-
-    for (size_t i = 0; i < arguments->children.size(); ++i)
-    {
-        path.push_back(tuple_type->getNameByPosition(i + 1));
-        const auto & subtype = tuple_type->getElements()[i];
-        const auto * element_type = arguments->children[i]->as<ASTDataType>();
-        if (!element_type)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple element is not a data type AST");
-        const bool remove = element_type->hasCodecRemoval();
-        if (const auto element_codec = element_type->getCodec())
+    forEachTupleElementInCodecType(
+        type_ast,
+        logical_type,
+        path,
+        [&](ASTDataType & element_ast, const DataTypePtr &, const CodecPath & element_path)
         {
+            const bool remove = element_ast.hasCodecRemoval();
+            const auto element_codec = element_ast.getCodec();
+            if (!element_codec)
+            {
+                if (remove)
+                    codec_removals.push_back(element_path);
+                return;
+            }
             if (remove)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tuple element cannot set and remove CODEC");
             if (tryExtractQuantizedCodecParams(element_codec))
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Quantized codec on tuple elements is not supported yet because its custom serialization must be path-aware");
-            if (!codec_sets.emplace(path, element_codec).second)
+            if (!codec_sets.emplace(element_path, element_codec).second)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate CODEC operation for tuple element");
-        }
-        else if (remove)
-            codec_removals.push_back(path);
-
-        collectTupleCodecPatch(arguments->children[i], subtype, path, codec_sets, codec_removals);
-        path.pop_back();
-    }
+        });
 }
 
 /// Build the codec patch and reject operations outside supported Tuple nodes.
@@ -236,7 +224,7 @@ void extractTupleCodecPatch(
     if (countTupleCodecPatchOperations(declaration.getType()) != codec_sets.size() + codec_removals.size())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Tuple element codec operations through non-Tuple wrapper types are not supported");
+            "Tuple element codec operations through this wrapper type are not supported");
 }
 
 }

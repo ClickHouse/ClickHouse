@@ -96,7 +96,7 @@ TEST(ColumnCodecDescription, ExtractAndApply)
     ASTColumnDeclaration restored;
     restored.name = declaration.name;
     restored.setType(dataTypeToAST(logical_type));
-    applyCodecDescriptionToAST(restored, codec);
+    applyCodecDescriptionToAST(restored, logical_type, codec);
 
     EXPECT_EQ(
         codecDescriptionFromAST(restored, logical_type, CodecValidationSettings::trusted()),
@@ -125,6 +125,18 @@ TEST(ColumnCodecDescription, CodecOperationBelongsToElementDataType)
         DataTypeFactory::instance().get(declaration.getType())->getName(),
         "Tuple(items Array(Tuple(id UInt64, text String)), state Enum8('ok' = 1))");
     EXPECT_EQ(parsed->clone()->getTreeHash(false), parsed->getTreeHash(false));
+
+    const auto logical_type = DataTypeFactory::instance().get(declaration.getType());
+    const auto codec = codecDescriptionFromAST(declaration, logical_type, CodecValidationSettings::trusted());
+    ASSERT_EQ(codec.getCodecs().size(), 2);
+    EXPECT_EQ(codec.getCodecs().at(CodecPath{"items", "id"})->formatWithSecretsOneLine(), "CODEC(ZSTD(3))");
+    EXPECT_EQ(codec.getCodecs().at(CodecPath{"state"})->formatWithSecretsOneLine(), "CODEC(LZ4)");
+
+    ASTColumnDeclaration restored;
+    restored.name = declaration.name;
+    restored.setType(dataTypeToAST(logical_type));
+    applyCodecDescriptionToAST(restored, logical_type, codec);
+    EXPECT_EQ(restored.formatWithSecretsOneLine(), declaration_text);
 
     const auto removal = parseAlterColumnDeclaration("payload Tuple(id UInt64 REMOVE CODEC, text String)");
     const auto removal_arguments = removal->as<ASTColumnDeclaration &>().getType()->as<ASTTupleDataType &>().getArguments();

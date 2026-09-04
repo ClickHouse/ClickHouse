@@ -485,7 +485,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->setComment(make_intrusive<ASTLiteral>(Field(column.comment)));
         }
 
-        applyCodecDescriptionToAST(*column_declaration, column.codec);
+        applyCodecDescriptionToAST(*column_declaration, column.type, column.codec);
 
         if (column.statistics.hasExplicitStatistics())
         {

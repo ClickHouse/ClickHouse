@@ -276,7 +276,7 @@ protected:
                         auto declaration = make_intrusive<ASTColumnDeclaration>();
                         declaration->name = column.name;
                         declaration->setType(dataTypeToAST(column.type));
-                        applyCodecDescriptionToAST(*declaration, column.codec);
+                        applyCodecDescriptionToAST(*declaration, column.type, column.codec);
                         if (column.codec.hasSubcolumns())
                         {
                             String policy = declaration->getType()->formatWithSecretsOneLine();

@@ -1,5 +1,4 @@
 DROP TABLE IF EXISTS t_tuple_codec_as_select;
-DROP TABLE IF EXISTS t_tuple_codec_wrapped_array;
 DROP TABLE IF EXISTS t_tuple_codec_wrapped_map;
 DROP TABLE IF EXISTS t_tuple_codec_wrapper_controls;
 DROP TABLE IF EXISTS t_tuple_codec_remove_create;
@@ -28,14 +27,7 @@ FROM system.tables
 WHERE database = currentDatabase() AND name = 't_tuple_codec_as_select';
 DROP TABLE t_tuple_codec_as_select;
 
--- An annotation below a non-`Tuple` wrapper is rejected instead of being ignored.
-CREATE TABLE t_tuple_codec_wrapped_array
-(
-    value Array(Tuple(id UInt64 CODEC(Delta, ZSTD), text String))
-)
-ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
-
+-- Unsupported wrappers are rejected instead of being ignored.
 CREATE TABLE t_tuple_codec_wrapped_map
 (
     value Map(String, Tuple(id UInt64 CODEC(Delta, ZSTD), text String))
@@ -75,12 +67,6 @@ ORDER BY tuple();
 
 ALTER TABLE t_tuple_codec_no_declaration
     MODIFY COLUMN value Tuple(id UInt64 REMOVE CODEC, i Int32); -- { serverError BAD_ARGUMENTS }
-
-ALTER TABLE t_tuple_codec_no_declaration
-    MODIFY COLUMN value Tuple(
-        id UInt64,
-        wrapped Array(Tuple(number UInt64 CODEC(Delta, ZSTD), text String))
-    ); -- { serverError BAD_ARGUMENTS }
 
 ALTER TABLE t_tuple_codec_no_declaration
     MODIFY COLUMN value Tuple(

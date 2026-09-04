@@ -1,6 +1,9 @@
 #include <Storages/ColumnCodecDescription.h>
 
 #include <Compression/CompressionCodecQuantized.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
@@ -9,6 +12,7 @@
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
+#include <string_view>
 
 namespace DB
 {
@@ -95,6 +99,46 @@ bool ColumnCodecDescription::operator==(const ColumnCodecDescription & rhs) cons
 namespace
 {
 
+ASTDataType & getDataTypeAST(const ASTPtr & ast, std::string_view context)
+{
+    if (auto * data_type = ast ? ast->as<ASTDataType>() : nullptr)
+        return *data_type;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is not a data type AST", context);
+}
+
+const ASTPtr & getOnlyTypeArgument(const ASTDataType & ast, std::string_view wrapper)
+{
+    const auto arguments = ast.getArguments();
+    if (!arguments || arguments->children.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} AST does not have one type argument", wrapper);
+    getDataTypeAST(arguments->children[0], wrapper);
+    return arguments->children[0];
+}
+
+const ASTPtr & getSimpleAggregateFunctionStorageTypeAST(const ASTDataType & ast)
+{
+    const auto arguments = ast.getArguments();
+    if (!arguments || arguments->children.size() < 2)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "SimpleAggregateFunction AST has no storage type argument");
+    getDataTypeAST(arguments->children[1], "SimpleAggregateFunction storage type");
+    return arguments->children[1];
+}
+
+DataTypePtr getCodecTransparentNestedType(const DataTypePtr & type)
+{
+    /// Nested also uses DataTypeArray, but its named fields are separate columns and are not transparent here.
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()); array && !isNested(type))
+        return array->getNestedType();
+    return {};
+}
+
+DataTypePtr unwrapCodecTransparentTypes(DataTypePtr type)
+{
+    while (auto nested = getCodecTransparentNestedType(type))
+        type = std::move(nested);
+    return type;
+}
+
 /// Normalize each path segment using the element name from the logical Tuple type.
 CodecPath canonicalizeCodecPath(const DataTypePtr & root_type, const CodecPath & input)
 {
@@ -102,6 +146,7 @@ CodecPath canonicalizeCodecPath(const DataTypePtr & root_type, const CodecPath &
     CodecPath result;
     for (const auto & segment : input)
     {
+        current = unwrapCodecTransparentTypes(std::move(current));
         const auto * tuple = typeid_cast<const DataTypeTuple *>(current.get());
         if (!tuple)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec path reaches non-Tuple type {} before element '{}'", current->getName(), segment);
@@ -114,6 +159,65 @@ CodecPath canonicalizeCodecPath(const DataTypePtr & root_type, const CodecPath &
     return result;
 }
 
+}
+
+void forEachTupleElementInCodecType(
+    const ASTPtr & type_ast,
+    const DataTypePtr & logical_type,
+    CodecPath & path,
+    const TupleCodecElementVisitor & visitor)
+{
+    auto & data_type_ast = getDataTypeAST(type_ast, "Codec declaration type");
+
+    if (const auto * tuple_ast = type_ast->as<ASTTupleDataType>())
+    {
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(logical_type.get());
+        if (!tuple_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple AST corresponds to non-Tuple type {}", logical_type->getName());
+
+        const auto arguments = tuple_ast->getArguments();
+        const size_t argument_count = arguments ? arguments->children.size() : 0;
+        if (argument_count != tuple_type->getElements().size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Tuple AST has {} elements but logical type {} has {}",
+                argument_count,
+                logical_type->getName(),
+                tuple_type->getElements().size());
+
+        for (size_t i = 0; i < argument_count; ++i)
+        {
+            auto & element_ast = getDataTypeAST(arguments->children[i], "Tuple element");
+            const auto & element_type = tuple_type->getElements()[i];
+            path.push_back(tuple_type->getNameByPosition(i + 1));
+            visitor(element_ast, element_type, path);
+            forEachTupleElementInCodecType(arguments->children[i], element_type, path, visitor);
+            path.pop_back();
+        }
+        return;
+    }
+
+    if (data_type_ast.name == "Array")
+    {
+        const auto * array_type = typeid_cast<const DataTypeArray *>(logical_type.get());
+        if (!array_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Array AST corresponds to non-Array type {}", logical_type->getName());
+        forEachTupleElementInCodecType(
+            getOnlyTypeArgument(data_type_ast, "Array"), array_type->getNestedType(), path, visitor);
+        return;
+    }
+
+    if (data_type_ast.name == "SimpleAggregateFunction")
+    {
+        if (!typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(logical_type->getCustomName()))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "SimpleAggregateFunction AST corresponds to type without SimpleAggregateFunction custom name: {}",
+                logical_type->getName());
+        /// The first syntax argument is the function. The second is the type used for storage.
+        forEachTupleElementInCodecType(
+            getSimpleAggregateFunctionStorageTypeAST(data_type_ast), logical_type, path, visitor);
+    }
 }
 
 CodecPath getCodecPath(const ISerialization::SubstreamPath & path)
@@ -157,41 +261,30 @@ CodecPath getCodecPathForStream(
 
 namespace
 {
-/// Collect codec declarations from direct Tuple nodes. Paths use names from the logical type.
-/// Declarations below other wrappers are detected separately and rejected.
+/// Collect declarations from every supported Tuple element.
 void collectTupleCodecs(
     const ASTPtr & type_ast,
     const DataTypePtr & logical_type,
     CodecPath & path,
     ColumnCodecDescription & result)
 {
-    const auto * tuple_ast = type_ast ? type_ast->as<ASTTupleDataType>() : nullptr;
-    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(logical_type.get());
-    if (!tuple_ast || !tuple_type)
-        return;
-    auto arguments = tuple_ast->getArguments();
-    if (!arguments)
-        return;
-    for (size_t i = 0; i < arguments->children.size(); ++i)
-    {
-        path.push_back(tuple_type->getNameByPosition(i + 1));
-        const auto & subtype = tuple_type->getElements()[i];
-        auto * element_type = arguments->children[i]->as<ASTDataType>();
-        if (!element_type)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple element is not a data type AST");
-        if (const auto element_codec = element_type->getCodec())
+    forEachTupleElementInCodecType(
+        type_ast,
+        logical_type,
+        path,
+        [&](ASTDataType & element_ast, const DataTypePtr &, const CodecPath & element_path)
         {
+            const auto element_codec = element_ast.getCodec();
+            if (!element_codec)
+                return;
             if (tryExtractQuantizedCodecParams(element_codec))
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Quantized codec on tuple subcolumns is not supported yet because its custom serialization must be path-aware");
-            if (result.getCodecs().contains(path))
+            if (result.getCodecs().contains(element_path))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate codec declaration for tuple subcolumn");
-            result.set(path, element_codec);
-        }
-        collectTupleCodecs(arguments->children[i], subtype, path, result);
-        path.pop_back();
-    }
+            result.set(element_path, element_codec);
+        });
 }
 
 /// Count annotations through every AST child so unsupported wrappers cannot hide a declaration.
@@ -224,6 +317,19 @@ size_t countTupleCodecRemovals(const ASTPtr & type_ast)
 
 using DeclarationTypes = std::map<CodecPath, std::vector<DataTypePtr>>;
 
+bool hasCodecDeclarationBelow(const ColumnCodecDescription & policy, const CodecPath & path)
+{
+    /// Descend through an Array only when a more specific declaration must be validated below it.
+    for (const auto & entry : policy.getCodecs())
+    {
+        const auto & declaration_path = entry.first;
+        if (declaration_path.size() > path.size()
+            && std::equal(path.begin(), path.end(), declaration_path.begin()))
+            return true;
+    }
+    return false;
+}
+
 /// Record the leaf types that each declaration controls after child overrides are applied.
 /// A declaration is validated only against leaves where it is effective.
 void collectEffectiveDeclarationTypes(
@@ -241,6 +347,15 @@ void collectEffectiveDeclarationTypes(
             path.pop_back();
         }
         return;
+    }
+
+    if (auto nested = getCodecTransparentNestedType(type))
+    {
+        if (hasCodecDeclarationBelow(policy, path))
+        {
+            collectEffectiveDeclarationTypes(nested, path, policy, declaration_types);
+            return;
+        }
     }
 
     auto resolved = policy.resolve(path, nullptr);
@@ -306,27 +421,22 @@ ColumnCodecDescription validateEffectivePolicy(
 
 /// Put tuple-element declarations back into a type AST for metadata and query formatting.
 /// The column-level declaration is installed on ASTColumnDeclaration by the caller.
-void installTupleCodecs(ASTPtr & type_ast, CodecPath & path, const ColumnCodecDescription & codec)
+void installTupleCodecs(
+    ASTPtr & type_ast,
+    const DataTypePtr & logical_type,
+    CodecPath & path,
+    const ColumnCodecDescription & codec)
 {
-    auto * tuple = type_ast ? type_ast->as<ASTTupleDataType>() : nullptr;
-    if (!tuple)
-        return;
-    auto arguments = tuple->getArguments();
-    if (!arguments)
-        return;
-    for (size_t i = 0; i < arguments->children.size(); ++i)
-    {
-        auto * element_type = arguments->children[i]->as<ASTDataType>();
-        if (!element_type)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple element is not a data type AST");
-        element_type->resetCodecOperation();
-        const String segment = tuple->element_names.empty() ? std::to_string(i + 1) : tuple->element_names[i];
-        path.push_back(segment);
-        if (auto it = codec.getCodecs().find(path); it != codec.getCodecs().end())
-            element_type->setCodec(it->second->clone());
-        installTupleCodecs(arguments->children[i], path, codec);
-        path.pop_back();
-    }
+    forEachTupleElementInCodecType(
+        type_ast,
+        logical_type,
+        path,
+        [&](ASTDataType & element_ast, const DataTypePtr &, const CodecPath & element_path)
+        {
+            element_ast.resetCodecOperation();
+            if (auto it = codec.getCodecs().find(element_path); it != codec.getCodecs().end())
+                element_ast.setCodec(it->second->clone());
+        });
 }
 }
 
@@ -363,11 +473,14 @@ ColumnCodecDescription codecDescriptionFromAST(
         != result.getCodecs().size() - static_cast<size_t>(result.hasRoot()))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Tuple element codec declarations through non-Tuple wrapper types are not supported");
+            "Tuple element codec declarations through this wrapper type are not supported");
     return validateEffectivePolicy(result, logical_type, settings);
 }
 
-void applyCodecDescriptionToAST(ASTColumnDeclaration & declaration, const ColumnCodecDescription & codec)
+void applyCodecDescriptionToAST(
+    ASTColumnDeclaration & declaration,
+    const DataTypePtr & logical_type,
+    const ColumnCodecDescription & codec)
 {
     if (countTupleCodecRemovals(declaration.getType()))
         throw Exception(
@@ -377,7 +490,7 @@ void applyCodecDescriptionToAST(ASTColumnDeclaration & declaration, const Column
         declaration.setCodec(codec.getRoot()->clone());
     ASTPtr type_ast = declaration.getType();
     CodecPath path;
-    installTupleCodecs(type_ast, path, codec);
+    installTupleCodecs(type_ast, logical_type, path, codec);
 }
 
 }
