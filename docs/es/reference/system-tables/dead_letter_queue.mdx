@@ -15,7 +15,7 @@ Contiene información sobre los mensajes recibidos mediante un motor de streamin
 
 El logging se habilita especificando `dead_letter_queue` en la configuración `handle_error_mode` específica del motor.
 
-El intervalo de vaciado de los datos se establece en el parámetro `flush_interval_milliseconds` de la sección de configuraciones del servidor [dead&#95;letter&#95;queue](/es/reference/settings/server-settings/settings/other#dead_letter_queue). Para forzar el vaciado, use la consulta [SYSTEM FLUSH LOGS](/es/reference/statements/system#flush-logs).
+El intervalo de vaciado de los datos se establece en el parámetro `flush_interval_milliseconds` de la sección de configuraciones del servidor [dead&#95;letter&#95;queue](/es/reference/settings/server-settings/settings#dead_letter_queue). Para forzar el vaciado, use la consulta [SYSTEM FLUSH LOGS](/es/reference/statements/system#flush-logs).
 
 ClickHouse no elimina automáticamente los datos de la tabla. Consulte [Introducción](/es/reference/system-tables/overview#system-tables-introduction) para obtener más detalles.
 

@@ -12,7 +12,7 @@ Se essa configuração não estiver ativada por padrão no seu ambiente, depende
 
 **Ativando**
 
-Para ativar manualmente a coleta do histórico de métricas assíncronas para `system.asynchronous_metric_log`, consulte a [referência da tabela do sistema](/pt-BR/reference/system-tables/asynchronous_metric_log) e crie `/etc/clickhouse-server/config.d/asynchronous_metric_log.xml` com o seguinte conteúdo:
+Para ativar manualmente a coleta do histórico de métricas assíncronas em [`system.asynchronous_metric_log`](/pt-BR/reference/system-tables/asynchronous_metric_log), crie `/etc/clickhouse-server/config.d/asynchronous_metric_log.xml` com o seguinte conteúdo:
 
 ```xml
 <clickhouse>
@@ -44,8 +44,6 @@ Para desativar a configuração `asynchronous_metric_log`, crie o seguinte arqui
 </div>
 
 Use o endereço de origem na autenticação de clientes conectados por meio de um proxy.
-
-* **Padrão:** `false`
 
 <Note>
   Essa configuração deve ser usada com cuidado redobrado, pois endereços encaminhados podem ser facilmente falsificados — servidores que aceitam essa autenticação não devem ser acessados diretamente, mas exclusivamente por meio de um proxy confiável.
@@ -137,8 +135,6 @@ Contém informações sobre todas as tarefas em segundo plano executadas por mei
 Fator de trabalho para o tipo de autenticação `bcrypt_password`, que usa o [algoritmo Bcrypt](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
 O fator de trabalho define a quantidade de processamento e o tempo necessários para calcular o hash e verificar a senha.
 
-* **Padrão:** `12`
-
 ```xml
 <bcrypt_workfactor>12</bcrypt_workfactor>
 ```
@@ -153,11 +149,7 @@ O fator de trabalho define a quantidade de processamento e o tempo necessários 
   ## table_engines_require_grant
 </div>
 
-<CloudNotSupportedBadge />
-
 Se definido como true, os usuários precisam de um grant para criar uma tabela com um motor específico, por exemplo `GRANT TABLE ENGINE ON TinyLog to user`.
-
-* **Padrão:** `false`
 
 <Note>
   Por padrão, para manter a compatibilidade com versões anteriores, a criação de uma tabela com um motor de tabela específico ignora o grant; no entanto, você pode alterar esse comportamento definindo esta opção como true.
@@ -206,7 +198,7 @@ Configurações de compressão de dados para tabelas do motor [MergeTree](/pt-BR
 * `min_part_size` – O tamanho mínimo de uma parte de dados.
 * `min_part_size_ratio` – A proporção entre o tamanho da parte de dados e o tamanho da tabela.
 * `method` – Método de compressão. Valores aceitos: `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
-* `level` – Nível de compressão. Consulte [Codecs](/pt-BR/reference/statements/create/table/codec#general-purpose-codecs).
+* `level` – Nível de compressão. Consulte [Codecs](/pt-BR/reference/statements/create/table#general-purpose-codecs).
 
 <Note>
   Você pode configurar várias seções `<case>`.
@@ -238,7 +230,7 @@ Configurações de compressão de dados para tabelas do motor [MergeTree](/pt-BR
   ## criptografia
 </div>
 
-Configura um comando para obter uma chave a ser usada por [codecs de criptografia](/pt-BR/reference/statements/create/table/codec#encryption-codecs). A chave (ou as chaves) deve ser armazenada em variáveis de ambiente ou definida no arquivo de configuração.
+Configura um comando para obter uma chave a ser usada por [codecs de criptografia](/pt-BR/reference/statements/create/table#encryption-codecs). A chave (ou as chaves) deve ser armazenada em variáveis de ambiente ou definida no arquivo de configuração.
 
 As chaves podem ser hexadecimais ou strings com comprimento de 16 bytes.
 
@@ -395,8 +387,6 @@ Define o limite flexível para o tamanho do arquivo de core dump.
 </div>
 
 Perfil de configurações padrão. Os perfis de configurações ficam no arquivo especificado pela configuração `user_config`.
-
-* **Padrão:** `default`
 
 **Exemplo**
 
@@ -586,8 +576,6 @@ Exemplo:
 A página exibida por padrão ao acessar o servidor HTTP(s) do ClickHouse.
 O valor padrão é &quot;Ok.&quot; (com uma quebra de linha no final)
 
-* **Padrão:** `"Ok.\n"`
-
 **Exemplo**
 
 Abre `https://tabix.io/` ao acessar `http://localhost: http_port`.
@@ -652,8 +640,6 @@ Tempo de expiração do HSTS, em segundos.
 
 Restrição dos hosts que podem trocar dados entre os servidores do ClickHouse.
 Se o Keeper for usado, a mesma restrição será aplicada à comunicação entre diferentes instâncias do Keeper.
-
-* **Padrão:** `listen_host`
 
 <Note>
   Por padrão, o valor é igual à configuração [`listen_host`](#listen_host).
@@ -1165,7 +1151,7 @@ Nome do grupo de réplicas para o banco de dados Replicated.
 O cluster criado pelo banco de dados Replicated será composto por réplicas do mesmo grupo.
 As consultas DDL aguardarão apenas as réplicas do mesmo grupo.
 
-* **Padrão:** `""`
+Vazio por padrão.
 
 **Exemplo**
 
@@ -1406,11 +1392,10 @@ Configurações:
 * `events` – Expõe métricas da tabela [system.events](/pt-BR/reference/system-tables/events).
 * `asynchronous_metrics` – Expõe os valores atuais das métricas da tabela [system.asynchronous&#95;metrics](/pt-BR/reference/system-tables/asynchronous_metrics).
 * `errors` - Expõe o número de erros por código de erro ocorridos desde a última reinicialização do servidor. Essas informações também podem ser obtidas na [system.errors](/pt-BR/reference/system-tables/errors).
-* `labels` – Rótulos constantes adicionados a cada métrica exposta. Cada elemento filho define um rótulo: o nome do elemento é o nome do rótulo (deve corresponder a `[a-zA-Z_][a-zA-Z0-9_]*`) e o valor do elemento é o valor do rótulo. Os valores dos rótulos aceitam substituições de configuração padrão, como o atributo `from_env`. Um nome de rótulo é rejeitado quando começa com `__` (reservado pelo Prometheus) ou quando entraria em conflito com um rótulo que este endpoint já grava em uma de suas seções habilitadas — caso contrário, uma amostra teria o mesmo nome de rótulo duas vezes. Portanto, o conjunto reservado segue a superfície de exportação ativa do endpoint: `le` quando `histograms` está habilitado; os rótulos de `ClickHouse_Info` (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`) quando `info` está habilitado; e qualquer rótulo usado por uma família de métricas dimensionais ou de histogramas exposta (por exemplo, `group`, `direction` ou `operation_type`) quando `histograms`/`dimensional_metrics` está habilitado. Como isso depende do que o endpoint realmente expõe, um nome pode ser válido em um endpoint, mas rejeitado em outro — por exemplo, um endpoint `keeper_metrics_only` do Keeper expõe apenas as famílias `keeper_*`, portanto os rótulos usados somente por famílias do servidor são aceitos nele.
 
 **Exemplo**
 
-```xml highlight={5-16}
+```xml highlight={5-12}
 <clickhouse>
     <listen_host>0.0.0.0</listen_host>
     <http_port>8123</http_port>
@@ -1422,10 +1407,6 @@ Configurações:
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
         <errors>true</errors>
-        <labels>
-            <environment>production</environment>
-            <shard from_env="SHARD_NAME"></shard>
-        </labels>
     </prometheus>
 </clickhouse>
 ```
@@ -1440,13 +1421,11 @@ curl 127.0.0.1:9363/metrics
   ## query_log
 </div>
 
-Configuração para registrar as consultas recebidas com a configuração [log&#95;queries=1](/pt-BR/reference/settings/session-settings/log-queries#log_queries).
+Configuração para registrar as consultas recebidas com a configuração [log&#95;queries=1](/pt-BR/reference/settings/session-settings).
 
 As consultas são registradas na tabela [system.query&#95;log](/pt-BR/reference/system-tables/query_log), e não em um arquivo separado. Você pode alterar o nome da tabela no parâmetro `table` (veja abaixo).
 
 <SystemLogParameters />
-
-O parâmetro `enable_user_query_log` (ativado por padrão) cria [`system.user_query_log`](/pt-BR/reference/system-tables/user_query_log), que mostra a cada usuário seus próprios registros da tabela de log de consultas configurada, sem exigir acesso à própria tabela. Isso funciona apenas quando o log de consultas é armazenado localmente: se `engine` delegar a outro servidor (por exemplo, `Distributed`), desative `enable_user_query_log`, pois `system.user_query_log` não pode aplicar a verificação de acesso por usuário através de uma fronteira entre servidores do protocolo ClickHouse e se recusa a ler de tal backend.
 
 Se a tabela não existir, o ClickHouse a criará. Se a estrutura do log de consultas tiver mudado quando o servidor ClickHouse for atualizado, a tabela com a estrutura antiga será renomeada, e uma nova tabela será criada automaticamente.
 
@@ -1462,7 +1441,6 @@ Se a tabela não existir, o ClickHouse a criará. Se a estrutura do log de consu
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
-    <enable_user_query_log>true</enable_user_query_log>
 </query_log>
 ```
 
@@ -1538,7 +1516,7 @@ As seguintes configurações estão disponíveis:
   ## query_thread_log
 </div>
 
-Configuração para registrar as threads das consultas recebidas com a configuração [log&#95;query&#95;threads=1](/pt-BR/reference/settings/session-settings/log-query#log_query_threads).
+Configuração para registrar as threads das consultas recebidas com a configuração [log&#95;query&#95;threads=1](/pt-BR/reference/settings/session-settings#log_query_threads).
 
 As consultas são registradas na tabela [system.query&#95;thread&#95;log](/pt-BR/reference/system-tables/query_thread_log), não em um arquivo separado. Você pode alterar o nome da tabela no parâmetro `table` (veja abaixo).
 
@@ -1565,7 +1543,7 @@ Se a tabela não existir, o ClickHouse a criará. Se a estrutura do log de threa
   ## query_views_log
 </div>
 
-Configuração para registrar views (live, materializadas etc.) associadas às consultas recebidas com a configuração [log&#95;query&#95;views=1](/pt-BR/reference/settings/session-settings/log-query#log_query_views).
+Configuração para registrar views (live, materializadas etc.) associadas às consultas recebidas com a configuração [log&#95;query&#95;views=1](/pt-BR/reference/settings/session-settings#log_query_views).
 
 As consultas são registradas na tabela [system.query&#95;views&#95;log](/pt-BR/reference/system-tables/query_views_log), não em um arquivo separado. Você pode alterar o nome da tabela no parâmetro `table` (veja abaixo).
 
@@ -1641,7 +1619,7 @@ O arquivo de configuração padrão do servidor `config.xml` contém a seguinte 
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
-    <symbolize>true</symbolize>
+    <symbolize>false</symbolize>
 </trace_log>
 ```
 
@@ -1708,36 +1686,6 @@ O arquivo de configuração padrão do servidor, `config.xml`, contém a seguint
     <buffer_size_rows_flush_threshold>512</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
 </crash_log>
-```
-
-<div id="create_union_system_log_tables">
-  ## create_union_system_log_tables
-</div>
-
-Solicita a criação de tabelas `all_...` ao lado das tabelas de log do sistema (`system.all_query_log` para `system.query_log`, `system.all_text_log` para `system.text_log` e assim por diante). Essa tabela é uma união da tabela de log correspondente, de suas versões rotacionadas (`query_log_0`, `query_log_1`, ...) e/ou das mesmas tabelas em todas as réplicas de um cluster, permitindo consultá-las de uma só vez sem precisar se lembrar de construções como `clusterAllReplicas(default, merge(system, '^query_log'))`.
-
-A seção é opcional. Se estiver presente, pelo menos uma das seguintes configurações deve ser especificada:
-
-| Configuração           | Descrição                                                                                                                                                                                                                                  |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `merge_rotated_tables` | Se `true`, a tabela `all_...` consulta a tabela de log e suas versões rotacionadas usando a função de tabela `merge`.                                                                                                                      |
-| `cluster`              | Se especificado, a tabela `all_...` consulta todas as réplicas desse cluster usando a função de tabela `clusterAllReplicas` (com `SETTINGS skip_unavailable_shards = 1`, para que réplicas indisponíveis não causem falhas nas consultas). |
-
-Se ambas as configurações forem especificadas, a tabela será uma união das tabelas rotacionadas em todas as réplicas do cluster.
-
-A opção se aplica a todas as tabelas de log do sistema; não permite configurações diferentes para logs do sistema distintos. As tabelas são criadas no mesmo banco de dados das tabelas de log do sistema no primeiro flush de cada log e recriadas automaticamente quando a estrutura da tabela de log muda (durante a rotação). Elas não têm estado, portanto podem ser removidas com segurança a qualquer momento. A criação é compatível apenas com os motores de banco de dados `Atomic`, `Replicated` e `Shared`.
-
-<Note>
-  Quando a configuração `cluster` é usada, a definição da tabela faz referência ao cluster, que precisa existir para que a tabela seja carregada. Se você remover o cluster da configuração, remova também as tabelas `all_...` (elas serão recriadas de acordo com a nova configuração no próximo flush).
-</Note>
-
-**Exemplo**
-
-```xml
-<create_union_system_log_tables>
-    <merge_rotated_tables>true</merge_rotated_tables>
-    <cluster>default</cluster>
-</create_union_system_log_tables>
 ```
 
 <div id="custom_cached_disks_base_directory">
@@ -1858,7 +1806,7 @@ Para o valor do atributo `incl`, consulte a seção &quot;[arquivos de configura
 
 **Veja também**
 
-* [skip&#95;unavailable&#95;shards](/pt-BR/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
+* [skip&#95;unavailable&#95;shards](/pt-BR/reference/settings/session-settings#skip_unavailable_shards)
 * [Cluster Discovery](/pt-BR/guides/oss/deployment-and-scaling/cluster-discovery)
 * [motor de banco de dados Replicated](/pt-BR/reference/engines/database-engines/replicated)
 
@@ -1902,7 +1850,7 @@ O fuso horário é necessário para conversões entre os formatos String e DateT
 
 **Veja também**
 
-* [session&#95;timezone](/pt-BR/reference/settings/session-settings/other#session_timezone)
+* [session&#95;timezone](/pt-BR/reference/settings/session-settings#session_timezone)
 
 <div id="tcp_port">
   ## tcp_port
@@ -1920,9 +1868,9 @@ Porta para comunicação com clientes por meio do protocolo TCP.
   ## tcp_port_secure
 </div>
 
-Porta TCP para comunicação segura com clientes. Use-a com as configurações do [OpenSSL](#openSSL).
+Porta TCP para comunicação segura com clientes. Use-a com as configurações do [OpenSSL](#openssl).
 
-* **Padrão:** `9440`
+**Valor padrão**
 
 ```xml
 <tcp_port_secure>9440</tcp_port_secure>
@@ -2022,13 +1970,13 @@ Configurações para melhorias opcionais no sistema de controle de acesso.
 | Configuração                                    | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Padrão  |
 | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `on_cluster_queries_require_cluster_grant`      | Define se consultas `ON CLUSTER` exigem o privilégio `CLUSTER`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | `true`  |
-| `role_cache_expiration_time_seconds`            | Define o número de segundos desde o último acesso durante os quais um papel é armazenado no cache de papéis.                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `600`   |
+| `role_cache_expiration_time_seconds`            | Define o número de segundos desde o último acesso durante os quais um papel é armazenado no cache de papéis.                                                                                                                                                                                                                                                                                                                                                                                                                                                  | `600`   |
 | `select_from_information_schema_requires_grant` | Define se `SELECT * FROM information_schema.<table>` exige algum privilégio ou pode ser executado por qualquer usuário. Se definido como true, essa consulta exige `GRANT SELECT ON information_schema.<table>`, assim como em tabelas comuns.                                                                                                                                                                                                                                                                                                                 | `true`  |
 | `select_from_system_db_requires_grant`          | Define se `SELECT * FROM system.<table>` exige algum privilégio ou pode ser executado por qualquer usuário. Se definido como true, essa consulta exige `GRANT SELECT ON system.<table>`, assim como em tabelas que não pertencem ao sistema. Exceções: algumas system tables (`tables`, `columns`, `databases` e algumas tabelas constantes, como `one` e `contributors`) continuam acessíveis a todos; e, se um privilégio `SHOW` (por exemplo, `SHOW USERS`) tiver sido concedido, a system table correspondente (ou seja, `system.users`) ficará acessível. | `true`  |
 | `settings_constraints_replace_previous`         | Define se uma restrição em um perfil de configurações para determinada configuração cancelará as actions da restrição anterior (definida em outros perfis) para essa configuração, incluindo campos que não são definidos pela nova restrição. Também habilita o tipo de restrição `changeable_in_readonly`.                                                                                                                                                                                                                                                   | `true`  |
-| `table_engines_require_grant`                   | Define se criar uma tabela com um table engine específico exige um privilégio. Não é compatível com o ClickHouse Cloud.                                                                                                                                                                                                                                                                                                                                                                                                                                        | `false` |
-| `throw_on_unmatched_row_policies`               | Define se a leitura de uma tabela deve lançar uma exceção caso a tabela tenha políticas de linha, mas nenhuma delas se aplique ao usuário atual                                                                                                                                                                                                                                                                                                                                                                                                                | `false` |
-| `users_without_row_policies_can_read_rows`      | Define se usuários sem políticas de linha permissivas ainda podem ler linhas usando uma consulta `SELECT`. Por exemplo, se houver dois usuários, A e B, e uma política de linha estiver definida apenas para A, então, se esta configuração for true, o usuário B verá todas as linhas. Se esta configuração for false, o usuário B não verá nenhuma linha.                                                                                                                                                                                                    | `true`  |
+| `table_engines_require_grant`                   | Define se criar uma tabela com um table engine específico exige um privilégio.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `false` |
+| `throw_on_unmatched_row_policies`               | Define se a leitura de uma tabela deve lançar uma exceção caso a tabela tenha políticas de linha, mas nenhuma delas se aplique ao usuário atual                                                                                                                                                                                                                                                                                                                                                                                                               | `false` |
+| `users_without_row_policies_can_read_rows`      | Define se usuários sem políticas de linha permissivas ainda podem ler linhas usando uma consulta `SELECT`. Por exemplo, se houver dois usuários, A e B, e uma política de linha estiver definida apenas para A, então, se esta configuração for true, o usuário B verá todas as linhas. Se esta configuração for false, o usuário B não verá nenhuma linha.                                                                                                                                                                                                | `true`  |
 
 Exemplo:
 
@@ -2180,7 +2128,7 @@ Se [`use_minimalistic_part_header_in_zookeeper = 1`](#use_minimalistic_part_head
 </div>
 
 Gerencia a execução de [consultas de DDL distribuído](/pt-BR/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`) no cluster.
-Funciona apenas se o [ZooKeeper](/pt-BR/reference/settings/server-settings/settings/zookeeper#zookeeper) estiver habilitado.
+Funciona apenas se o [ZooKeeper](/pt-BR/reference/settings/server-settings/settings#zookeeper) estiver habilitado.
 
 As configurações de `<distributed_ddl>` incluem:
 
@@ -2197,26 +2145,26 @@ As configurações de `<distributed_ddl>` incluem:
 
 ```xml
 <distributed_ddl>
-    <!-- Path in ZooKeeper to queue with DDL queries -->
+    <!-- Caminho no ZooKeeper para a fila com consultas DDL -->
     <path>/clickhouse/task_queue/ddl</path>
 
-    <!-- Settings from this profile will be used to execute DDL queries -->
+    <!-- As configurações deste perfil serão usadas para executar consultas DDL -->
     <profile>default</profile>
 
-    <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
+    <!-- Controla quantas consultas ON CLUSTER podem ser executadas simultaneamente. -->
     <pool_size>1</pool_size>
 
     <!--
-         Cleanup settings (active tasks will not be removed)
+         Configurações de limpeza (tarefas ativas não serão removidas)
     -->
 
-    <!-- Controls task TTL (default 1 week) -->
+    <!-- Controla o TTL da tarefa (padrão: 1 semana) -->
     <task_max_lifetime>604800</task_max_lifetime>
 
-    <!-- Controls how often cleanup should be performed (in seconds) -->
+    <!-- Controla com que frequência a limpeza deve ser realizada (em segundos) -->
     <cleanup_delay_period>60</cleanup_delay_period>
 
-    <!-- Controls how many tasks could be in the queue -->
+    <!-- Controla quantas tarefas podem estar na fila -->
     <max_tasks_in_queue>1000</max_tasks_in_queue>
 </distributed_ddl>
 ```
@@ -2237,8 +2185,6 @@ Caminho para uma pasta em que um servidor ClickHouse armazena as configurações
 
 Define se tipos de senha em texto sem criptografia (inseguros) são permitidos ou não.
 
-* **Padrão:** `true`
-
 ```xml
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
@@ -2248,8 +2194,6 @@ Define se tipos de senha em texto sem criptografia (inseguros) são permitidos o
 </div>
 
 Define se o tipo de senha inseguro `no&#95;password` é permitido ou não.
-
-* **Padrão:** `true`
 
 ```xml
 <allow_no_password>1</allow_no_password>
@@ -2261,8 +2205,6 @@ Define se o tipo de senha inseguro `no&#95;password` é permitido ou não.
 
 Proíbe a criação de um usuário sem senha, a menos que &#39;IDENTIFIED WITH no&#95;password&#39; seja explicitamente especificado.
 
-* **Padrão:** `true`
-
 ```xml
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
@@ -2272,8 +2214,6 @@ Proíbe a criação de um usuário sem senha, a menos que &#39;IDENTIFIED WITH n
 </div>
 
 Tempo limite padrão da sessão, em segundos.
-
-* **Padrão:** `60`
 
 ```xml
 <default_session_timeout>60</default_session_timeout>
@@ -2288,14 +2228,9 @@ Define o tipo de senha que será configurado automaticamente em consultas como `
 Os valores aceitos são:
 
 * `plaintext_password`
-
 * `sha256_password`
-
 * `double_sha1_password`
-
 * `bcrypt_password`
-
-* **Padrão:** `sha256_password`
 
 ```xml
 <default_password_type>sha256_password</default_password_type>
@@ -2311,7 +2246,7 @@ Seção do arquivo de configuração que contém as seguintes configurações:
 * Caminho para a pasta onde são armazenados os usuários criados por comandos SQL.
 * Caminho do nó no ZooKeeper onde são armazenados e replicados os usuários criados por comandos SQL.
 
-Se esta seção for especificada, os caminhos de [users&#95;config](/pt-BR/reference/settings/server-settings/settings/users#users_config) e [access&#95;control&#95;path](/pt-BR/reference/settings/server-settings/settings/access-control#access_control_path) não serão usados.
+Se esta seção for especificada, os caminhos de [users&#95;config](/pt-BR/reference/settings/server-settings/settings#users_config) e [access&#95;control&#95;path](/pt-BR/reference/settings/server-settings/settings#access_control_path) não serão usados.
 
 A seção `user_directories` pode conter qualquer número de itens; a ordem deles define sua precedência (quanto mais acima o item, maior a precedência).
 
@@ -2345,10 +2280,10 @@ Você também pode definir as seções `memory` — que significa armazenar info
 
 Para adicionar um servidor LDAP como diretório remoto para usuários que não estão definidos localmente, defina uma única seção `ldap` com as seguintes configurações:
 
-| Configuração | Descrição                                                                                                                                                                                                                                                                                                                                                                               |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Configuração | Descrição                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `roles`      | seção com uma lista de papéis definidos localmente que serão atribuídos a cada usuário recuperado do servidor LDAP. Se nenhum papel for especificado, o usuário não poderá executar nenhuma ação após a autenticação. Se qualquer um dos papéis listados não estiver definido localmente no momento da autenticação, a tentativa falhará como se a senha fornecida estivesse incorreta. |
-| `server`     | um dos nomes de servidor LDAP definidos na seção de configuração `ldap_servers`. Este parâmetro é obrigatório e não pode ficar vazio.                                                                                                                                                                                                                                                   |
+| `server`     | um dos nomes de servidor LDAP definidos na seção de configuração `ldap_servers`. Este parâmetro é obrigatório e não pode ficar vazio.                                                                                                                                                                                                                                                  |
 
 **Exemplo**
 
@@ -2527,8 +2462,6 @@ Isso também permite usar uma combinação de tipos de resolver.
 
 Por padrão, o tunelamento (isto é, `HTTP CONNECT`) é usado para fazer solicitações `HTTPS` via proxy `HTTP`. Esta configuração pode ser usada para desativá-lo.
 
-* **Padrão:** `false`
-
 **no&#95;proxy**
 
 Por padrão, todas as solicitações passam pelo proxy. Para desativá-lo para hosts específicos, a variável `no_proxy` deve ser definida.
@@ -2558,8 +2491,6 @@ O mesmo se aplica ao GitLab, mesmo com um ponto à esquerda. Tanto `gitlab.com` 
 </div>
 
 O diretório usado para armazenar todas as consultas `CREATE WORKLOAD` e `CREATE RESOURCE`. Por padrão, é usada a pasta `/workload/` no diretório de trabalho do servidor.
-
-* **Padrão:** `<path>/workload/`
 
 **Exemplo**
 

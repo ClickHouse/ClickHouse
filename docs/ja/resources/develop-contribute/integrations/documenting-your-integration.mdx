@@ -2,7 +2,7 @@
 slug: /integrations/integration-development/documenting-your-integration
 sidebarTitle: 'インテグレーションのドキュメント作成'
 title: 'ClickHouse 連携のドキュメント作成'
-description: '必須セクションやコピーして使えるひな形を含め、このリポジトリにインテグレーションページを追加する方法。'
+description: '必須セクションやコピーして使えるひな形を含め、clickhouse-docs にインテグレーションページを追加する方法。'
 keywords: ['partner', 'integration', 'documentation', 'contributing', 'pull request', 'integration docs']
 doc_type: 'guide'
 ---
@@ -15,10 +15,10 @@ doc_type: 'guide'
   ## ドキュメントの配置場所
 </div>
 
-* **リポジトリ:** [`ClickHouse/ClickHouse`](https://github.com/ClickHouse/ClickHouse) (このツリーの `docs/`)
-* **フォーマット:** MDX ([Mintlify](https://www.mintlify.com/) でビルド)
-* **場所:** `docs/integrations/<category>/<your-integration>/`。`<category>` には、製品の種類を表すカテゴリ (`data-visualization`、`data-ingestion`、`language-clients` など) を指定します
-* **プロセス:** `master` 向けにプルリクエストを作成します。ClickHouse のインテグレーションチームがレビューします。初回コントリビューターは、PR でボットの案内に従って Contributor License Agreement に署名します。ローカルプレビューについては、[ドキュメント貢献ガイド](https://github.com/ClickHouse/ClickHouse/tree/master/docs#readme) を参照してください (`docs/` から `mint dev` を実行)
+* **リポジトリ:** [`ClickHouse/clickhouse-docs`](https://github.com/ClickHouse/clickhouse-docs)
+* **フォーマット:** Markdown (Docusaurus でビルド)
+* **場所:** `/docs/integrations/<category>/<your-integration>/`。`<category>` には、製品の種類を表すカテゴリ (`data-visualization`、`data-ingestion`、`language-clients` など) を指定します
+* **プロセス:** `main` 向けにプルリクエストを作成します。ClickHouse のインテグレーションチームがレビューします。初回コントリビューターは、PR でボットの案内に従って Contributor License Agreement に署名します
 
 このリポジトリ内のインテグレーションページは、エンドユーザー向けの主要な参照先です。製品固有の詳細については、インテグレーションページから自社サイト上の補足ドキュメントにリンクできます。
 
@@ -49,7 +49,7 @@ doc_type: 'guide'
 </div>
 
 * **Cloud とセルフホストの両方を記載してください。** Cloud では通常、ポート `8443` で HTTPS、`9440` でネイティブ TCP を使用します。セルフホストのデフォルトは `8123` と `9000` です
-* コールアウトには太字の段落ではなく、**Mintlify の callouts** (`<Note>`、`<Warning>`、`<Tip>`) を使用してください
+* コールアウトには太字の段落ではなく、**Docusaurus の admonitions** (`:::note`、`:::warning`、`:::tip`) を使用してください
 * **詳しい説明はリンク先に任せてください。** データ型、フォーマット、JDBC、ClickPipes などのトピックは、ここで再説明するのではなく、既存のドキュメントにリンクしてください
 * **マーケティング色は不要です。** ここでのインテグレーションページは技術リファレンスです。宣伝的な内容はあなたのサイトに掲載し、こちらからはパートナーディレクトリ経由でリンクできます
 
@@ -57,17 +57,10 @@ doc_type: 'guide'
   ## コピー＆ペースト用のひな形
 </div>
 
-角括弧で囲まれた部分を埋めて、`docs/integrations/<category>/<your-integration>/index.mdx` として保存し、PR を作成してください。
+角括弧で囲まれた部分を埋めて、`/docs/integrations/<category>/<your-integration>/index.md` として保存し、PR を作成してください。
 
-```mdx
----
-title: '[Your product] and ClickHouse'
-sidebarTitle: '[Your product]'
-slug: /integrations/[your-product]
-description: '[One sentence: what the integration does.]'
-doc_type: 'guide'
-keywords: ['[your product]', 'integration']
----
+```markdown
+# [Your product] and ClickHouse
 
 [One to three sentences: what the integration does and why a
 ClickHouse user would want it.]

@@ -853,7 +853,7 @@ Optional day count convention (default 'ACT_365F'). Supported values:
         }
     };
     FunctionDocumentation::ReturnedValue returned_value{
-        "Returns the XIRR value. If the calculation cannot be performed, it returns NaN. [`Float64`](/reference/data-types/float)"};
+        "Returns the XIRR value. If the calculation cannot be performed, it returns NaN. [`Float64`](/sql-reference/data-types/float)"};
     FunctionDocumentation::Examples examples = {
         {"simple_example",
          R"(

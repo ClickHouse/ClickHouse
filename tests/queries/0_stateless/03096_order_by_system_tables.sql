@@ -1,16 +1,13 @@
--- Tags: no-parallel, no-llvm-coverage
--- `SYSTEM FLUSH LOGS` flushes every system log table and must wait (up to the 180s
--- `waitFlush` timeout in `SystemLogBase.cpp`) for the shared backlog accumulated in the
--- server-wide log queues (`query_metric_log`, `trace_log`, ...). Under many concurrent
--- parallel tests that backlog can exceed 180s to drain, producing:
+-- Tags: no-llvm-coverage
+-- Tag no-llvm-coverage: `SYSTEM FLUSH LOGS` flushes every system log table (including
+-- `trace_log`) and must wait for the shared backlog accumulated by other parallel tests.
+-- Under LLVM source-based coverage instrumentation the accumulated `trace_log` queue can
+-- exceed the 180s server-side `waitFlush` timeout (`SystemLogBase.cpp`), producing:
 --   Code: 159. DB::Exception: Timeout exceeded (180 s) while flushing system log
---   'DB::SystemLogQueue<DB::QueryMetricLogElement>'. (TIMEOUT_EXCEEDED)
--- no-parallel: run in the sequential phase (after the parallel flood ends) so no other
--- test is feeding the shared queues while this test flushes.
--- no-llvm-coverage: coverage instrumentation slows the flush enough to time out even on
--- the residual backlog; skip entirely there.
+--   'DB::SystemLogQueue<DB::TraceLogElement>'. (TIMEOUT_EXCEEDED)
 -- Same pattern as `01473_event_time_microseconds` / `00974_query_profiler` /
--- `01569_query_profiler_big_query_id`.
+-- `01569_query_profiler_big_query_id` and the precedent of commit cec04c17241
+-- (Kafka tests under coverage).
 
 SYSTEM FLUSH LOGS /* all tables */;
 

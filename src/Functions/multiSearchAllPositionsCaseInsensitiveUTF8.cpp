@@ -34,9 +34,9 @@ REGISTER_FUNCTION(MultiSearchAllPositionsCaseInsensitiveUTF8)
         "Case-insensitive UTF-8 search",
         "SELECT multiSearchAllPositionsCaseInsensitiveUTF8('Здравствуй, мир!', ['здравствуй', 'МИР']);",
         R"(
-┌─multiSearchAllPositionsCaseInsensitiveUTF8('Здравствуй, мир!', ['здравствуй', 'МИР'])─┐
-│ [1,13]                                                                                │
-└───────────────────────────────────────────────────────────────────────────────────────┘
+┌─multiSearchA⋯й', 'МИР'])─┐
+│ [1, 13]                  │
+└──────────────────────────┘
         )"
     }
     };

@@ -17,7 +17,7 @@ If you prefer to use an existing VPC to deploy ClickHouse BYOC instead of having
 <Step title="Configure your existing VPC" id="configure-existing-vpc">
 
 1. Allocate at least 1 private subnet in a [region supported by ClickHouse BYOC](/products/cloud/reference/supported-regions) for the ClickHouse Kubernetes (GKE) cluster. Ensure the subnet has a minimum CIDR range of `/24` (e.g., 10.0.0.0/24) to provide sufficient IP addresses for GKE cluster nodes.
-2. Within the private subnet, allocate at least 1 secondary IPv4 range that will be used for GKE cluster pods. The secondary range must be at least `/21`. Smaller ranges do not provide enough pod IP addresses for the GKE cluster to finish provisioning, and infrastructure setup will fail.
+2. Within the private subnet, allocate at least 1 secondary IPv4 range that will be used for GKE cluster pods. The secondary range should be at least `/23` to provide sufficient IP addresses for GKE cluster pods.
 3. Enable **Private Google Access** on the subnet. This allows GKE nodes to reach Google APIs and services without requiring external IP addresses.
 
 <Image img="/images/cloud/reference/byoc-gcp-subnet.webp" size="lg" alt="BYOC GCP Subnet details showing primary and secondary IPv4 ranges with Private Google Access enabled" />
@@ -31,9 +31,6 @@ Ensure a [Cloud NAT gateway](https://cloud.google.com/nat/docs/overview) is depl
 Ensure your VPC has working DNS resolution and doesn't block, interfere with, or overwrite standard DNS names. ClickHouse BYOC relies on DNS to resolve Tailscale control servers and ClickHouse service endpoints. If DNS is unavailable or misconfigured, BYOC services may fail to connect or operate properly.
 </Step>
 <Step title="Set up BYOC infrastructure" id="set-up-byoc-infrastructure">
-<Note>
-When you click **Set up Infrastructure**, ClickHouse Cloud automatically runs [pre-flight validation](/products/bring-your-own-cloud/onboarding/standard#preflight-validation) before provisioning, checking that the management service account has the required permissions and the required Google Cloud APIs are enabled. Automatic validation of a bring-your-own VPC is not yet part of GCP pre-flight, so make sure your VPC meets the [network requirements](#configure-existing-vpc) above before you begin.
-</Note>
 
 In the ClickHouse Cloud console, configure the following when setting up new infrastructure:
 

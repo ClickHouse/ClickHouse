@@ -93,7 +93,7 @@ Query processing works similarly to setups without replicas, with only a single 
 
 The rest works the [same](#select-forwarding) as in setups without replicas and isn't shown in the diagram above. The ClickHouse server hosting the initially targeted distributed table collects all local results, merges them into the final global result, and returns it to the query sender.
 
-Note that ClickHouse allows configuring the query forwarding strategy for ②. By default—unlike in the diagram above—the distributed table [prefers](/reference/settings/session-settings/prefer#prefer_localhost_replica) a local replica if available, but other load balancing [strategies](/reference/settings/session-settings/load-balancing#load_balancing) can be used.
+Note that ClickHouse allows configuring the query forwarding strategy for ②. By default—unlike in the diagram above—the distributed table [prefers](/reference/settings/session-settings#prefer_localhost_replica) a local replica if available, but other load balancing [strategies](/reference/settings/session-settings#load_balancing) can be used.
 
 ## Where to find more information {#where-to-find-more-information}
 For more details beyond this high-level introduction to table shards and replicas, check out our [deployment and scaling guide](/guides/oss/deployment-and-scaling/examples/2-shards-1-replica).

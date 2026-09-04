@@ -103,7 +103,7 @@ ENGINE = MergeTree ORDER BY (radio, mcc, net, created);
 2. Import the dataset from a public S3 bucket (686 MB):
 
 ```sql
-INSERT INTO cell_towers SELECT * FROM s3('https://datasets-documentation.s3.amazonaws.com/cell_towers/cell_towers.csv.xz', NOSIGN, 'CSVWithNames')
+INSERT INTO cell_towers SELECT * FROM s3('https://datasets-documentation.s3.amazonaws.com/cell_towers/cell_towers.csv.xz', 'CSVWithNames')
 ```
 
 </Tab>

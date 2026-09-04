@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Access/Common/SQLSecurityDefs.h>
-#include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Core/Joins.h>
 #include <Core/LoadBalancing.h>
 #include <Core/LogsLevel.h>
@@ -247,14 +246,6 @@ enum class CleanDeletedRows : uint8_t
 
 DECLARE_SETTING_ENUM(CleanDeletedRows)
 
-enum class UniqueKeyProbeImplementation : uint8_t
-{
-    Auto = 0, /// Pick the default; currently the simple baseline.
-    Simple,   /// Single-threaded baseline probe.
-};
-
-DECLARE_SETTING_ENUM(UniqueKeyProbeImplementation)
-
 enum class MySQLDataTypesSupport : uint8_t
 {
     DECIMAL, // convert MySQL's decimal and number to ClickHouse Decimal when applicable
@@ -324,7 +315,6 @@ enum class Dialect : uint8_t
     prql,
     promql,
     polyglot,
-    clickhouse_json,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
@@ -453,8 +443,6 @@ enum class GroupArrayActionWhenLimitReached : uint8_t
 };
 DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
 
-DECLARE_SETTING_ENUM(AsynchronousMetricsKeyValuesMode)
-
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
 enum class DatabaseDataLakeCatalogType : uint8_t
@@ -467,9 +455,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     ICEBERG_ONELAKE,
     ICEBERG_BIGLAKE,
     PAIMON_REST,
-    S3_TABLES,
     ICEBERG_DELTA_SHARING,
-    ICEBERG_HORIZON,
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
@@ -523,7 +509,6 @@ DECLARE_SETTING_ENUM(MergeTreeNullableSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeObjectSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeObjectSharedDataSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeDynamicSerializationVersion)
-DECLARE_SETTING_ENUM(MergeTreePatchPartsVersion)
 DECLARE_SETTING_ENUM(MergeTreeMapSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeMapBucketsStrategy)
 
@@ -571,7 +556,6 @@ DECLARE_SETTING_ENUM(MergeTreePartMinMaxIndexColumns)
 enum class MergeCoordinatorDistributionAlgorithm : uint64_t
 {
     WATER_FILLING = 0,
-    SAINTE_LAGUE = 1,
 };
 
 DECLARE_SETTING_ENUM(MergeCoordinatorDistributionAlgorithm)

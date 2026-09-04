@@ -1,0 +1,84 @@
+---
+slug: /cloud/guides/sql-console/manage-sql-console-role-assignments
+sidebarTitle: 'Gestionar las asignaciones de roles de la consola SQL'
+title: 'Configuración de las asignaciones de roles de la consola SQL'
+description: 'Guía sobre cómo gestionar las asignaciones de roles de la consola SQL'
+doc_type: 'guide'
+keywords: ['consola SQL', 'asignaciones de roles', 'gestión de acceso', 'permisos', 'seguridad']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<Warning>
+  Esta configuración está obsoleta y ha sido sustituida por una nueva configuración en la pantalla de creación de roles de las organizaciones que han migrado a roles personalizados. Para obtener más información, consulte [Manage cloud users](/es/products/cloud/guides/security/cloud-access-management/manage-cloud-users).
+</Warning>
+
+> Esta guía muestra cómo configurar las asignaciones de roles de la consola SQL, que
+> determinan los permisos de acceso en toda la consola y las funcionalidades a las que puede
+> acceder un usuario dentro de Cloud Console.
+
+<Steps>
+  <Step>
+    ### Acceder a la configuración del servicio
+
+    En la página de servicios, haga clic en el menú de la esquina superior derecha del servicio cuya configuración de acceso de la consola SQL desea ajustar.
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/1_service_settings.webp" size="lg" />
+
+    Seleccione `settings` en el menú emergente.
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/2_service_settings.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Ajustar el acceso a la consola SQL
+
+    En la sección &quot;Security&quot;, busque el área &quot;SQL console access&quot;:
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/3_service_settings.webp" size="md" />
+  </Step>
+
+  <Step>
+    ### Actualizar la configuración de Service Admin
+
+    Seleccione el menú desplegable de Service Admin para cambiar la configuración de access control de los roles Service Admin:
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/4_service_settings.webp" size="md" />
+
+    Puede elegir entre los siguientes roles:
+
+    | Rol           |
+    | ------------- |
+    | `No access`   |
+    | `Read only`   |
+    | `Full access` |
+  </Step>
+
+  <Step>
+    ### Actualizar la configuración de Service Read Only
+
+    Seleccione el menú desplegable de Service Read Only para cambiar la configuración de access control de los roles Service Read Only:
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/5_service_settings.webp" size="md" />
+
+    Puede elegir entre los siguientes roles:
+
+    | Rol           |
+    | ------------- |
+    | `No access`   |
+    | `Read only`   |
+    | `Full access` |
+  </Step>
+
+  <Step>
+    ### Revisar los usuarios con acceso
+
+    Puede ver un resumen de los usuarios del servicio seleccionando el recuento de usuarios:
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/6_service_settings.webp" size="md" />
+
+    Se abrirá una pestaña a la derecha de la página que mostrará el número total de usuarios y sus roles:
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/7_service_settings.webp" size="md" />
+  </Step>
+</Steps>

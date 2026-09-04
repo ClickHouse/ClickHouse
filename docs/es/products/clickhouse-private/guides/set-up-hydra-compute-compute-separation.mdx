@@ -1,0 +1,124 @@
+---
+noindex: true
+title: "Configurar Hydra (separación de cómputo a cómputo)"
+sidebarTitle: "Configurar Hydra (separación de cómputo)"
+description: "Esta guía explica cómo aprovisionar instancias secundarias de Hydra para un clúster ClickHouse Private existente."
+---
+
+Esta guía explica cómo aprovisionar instancias secundarias de Hydra para un clúster ClickHouse Private existente. Hydra le permite ejecutar varios grupos de cómputo independientes sobre un conjunto de datos compartido, cada uno con su propio dimensionamiento y endpoint.
+
+Para obtener una explicación conceptual de cómo funciona Hydra, consulte [Hydra Compute Separation](/es/products/clickhouse-private/explanation/hydra-compute-separation).
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+* Un clúster de ClickHouse Private en ejecución que actúe como **principal** (esta guía usa `default-xx-01`)
+
+* ClickHouse Operator instalado con la feature flag de Hydra habilitada:
+
+  ```text
+  --set operator.featureFlags.privateHydraEnabled="true"
+  ```
+
+  Si ClickHouse Operator se instaló sin este indicador, actualícelo con el indicador establecido en `true` antes de continuar.
+
+* Acceso al registro de Helm y al gráfico de Helm `onprem-clickhouse-cluster`
+
+<Steps>
+  <Step>
+    ## 1. Identificar el clúster principal
+
+    Antes de crear una instancia secundaria, anote el **nombre** y el **espacio de nombres** del clúster principal. El principal debe estar en ejecución; no se pueden aprovisionar instancias secundarias si el principal está detenido, terminado o inactivo.
+
+    Para un clúster llamado `default-xx-01`, los valores predeterminados son:
+
+    | Propiedad          | Valor              |
+    | ------------------ | ------------------ |
+    | Nombre del clúster | `default-xx-01`    |
+    | Espacio de nombres | `ns-default-xx-01` |
+  </Step>
+
+  <Step>
+    ## 2. Crear una instancia secundaria
+
+    <Warning>
+      Cada instancia de ClickHouseCluster debe estar en su propio espacio de nombres. No despliegue una instancia secundaria en el mismo espacio de nombres que la principal. El Operator asume un ClickHouseCluster por espacio de nombres, y no cumplir esto provoca clústeres degradados.
+    </Warning>
+
+    Despliegue un nuevo `ClickHouseCluster` con el mismo gráfico de Helm que usó para el principal, agregando los valores de `parentCluster` para vincularlo:
+
+    ```bash
+    helm install default-xx-02 oci://$HELM_REGISTRY/helm/onprem-clickhouse-cluster \
+        --version=$CR_HELM_TAG \
+        --namespace ns-default-xx-02 \
+        --create-namespace \
+        --set-json='parentCluster.name="c-default-xx-01"' \
+        --set-json='parentCluster.namespace="ns-default-xx-01"' \
+        --set-json="server.replicas=$SERVER_REPLICAS" \
+        --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\""
+    ```
+
+    La instancia secundaria hará lo siguiente:
+
+    * Compartirá el conjunto de ClickHouse Keeper del principal (no se necesita una implementación de Keeper independiente)
+    * Compartirá el prefijo de datos de S3 del principal
+    * Ejecutará sus propios pods de ClickHouse Server con asignaciones de recursos independientes
+    * Expondrá su propio endpoint de Kubernetes Service
+  </Step>
+
+  <Step>
+    ## 3. Crear una instancia secundaria de solo lectura (opcional)
+
+    Para crear una instancia secundaria que pueda consultar datos pero no escribir en ellos, agregue el indicador `isReadonly`:
+
+    ```bash
+    helm install default-xx-03 oci://$HELM_REGISTRY/helm/onprem-clickhouse-cluster \
+        --version=$CR_HELM_TAG \
+        --namespace ns-default-xx-03 \
+        --create-namespace \
+        --set-json='parentCluster.name="c-default-xx-01"' \
+        --set-json='parentCluster.namespace="ns-default-xx-01"' \
+        --set-json='isReadonly=true' \
+        --set-json="server.replicas=$SERVER_REPLICAS" \
+        --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\""
+    ```
+
+    Las instancias secundarias de solo lectura son adecuadas para informes, dashboards o cargas de trabajo de analítica en las que no se necesita acceso de escritura.
+  </Step>
+
+  <Step>
+    ## 4. Verificar la instancia secundaria
+
+    Después de desplegar la instancia secundaria, verifique que esté en ejecución:
+
+    ```bash
+    kubectl get clickhousecluster -n ns-default-xx-02
+    ```
+
+    Conéctese mediante el endpoint de servicio de la propia instancia secundaria:
+
+    ```bash
+    kubectl port-forward svc/c-default-xx-02-server-any 9000:9000 -n ns-default-xx-02
+    clickhouse client --host localhost --port 9000 --password $PASSWORD
+    ```
+
+    Ejecute una consulta para confirmar el acceso a los datos:
+
+    ```sql
+    SELECT count() FROM system.tables;
+    ```
+  </Step>
+</Steps>
+
+<div id="limitations">
+  ## Limitaciones
+</div>
+
+1. **La instancia principal debe estar en ejecución.** No puede aprovisionar instancias secundarias si la instancia principal está detenida, terminada o inactiva. La instancia principal debe estar en ejecución porque las instancias secundarias dependen del conjunto de ClickHouse Keeper de la principal y de la configuración de datos compartidos.
+
+2. **Elimine las instancias secundarias antes que la principal.** Debe eliminar todas las instancias secundarias antes de eliminar el clúster principal. Si intenta eliminar una instancia principal con instancias secundarias activas, la operación fallará.
+
+3. **Los restablecimientos de contraseña se aplican a la instancia principal.** No se pueden restablecer contraseñas en las instancias secundarias de Hydra. Para restablecer la contraseña de una instancia secundaria, hágalo en la instancia principal. Consulte [how-to/reset-passwords.md](/es/products/clickhouse-private/guides/reset-user-passwords).

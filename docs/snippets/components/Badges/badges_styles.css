@@ -1,38 +1,39 @@
 /* Beta Badge */
 .betaBadge {
-    background-color: #DBEAFE;
+    background-color: #E5FFFB;
     border-radius: 16px;
     display: flex;
     align-items: center;
     padding: 5px 12px;
-    color: #1D4ED8;
+    color: #004237;
     display: inline-flex;
     margin-right: 5px;
     font-size: 0.875rem;
 }
 
-.betaBadge::before {
-    content: "β";
-    flex: 0 0 auto;
+.betaIcon {
     margin-right: 8px;
-    font-size: 1rem;
-    font-weight: 600;
-    line-height: 1;
 }
 
-a.betaBadge {
-    color: #1D4ED8 !important;
-    text-decoration: none !important;
+.betaIcon svg path {
+    fill: #004237;
+}
+
+.betaBadge a {
+    color: black;
 }
 
 .dark .betaBadge {
-    background-color: #1E3A6B;
-    color: #93C5FD;
+    background-color: #1A332D;
+    color: #66FFE5;
 }
 
-.dark a.betaBadge {
-    color: #93C5FD !important;
-    text-decoration: none !important;
+.dark .betaBadge a {
+    color: #66FFE5;
+}
+
+.dark .betaIcon svg path {
+    fill: #66FFE5;
 }
 
 /* ClickHouse Supported Badge */
@@ -90,11 +91,6 @@ a.betaBadge {
     margin-right: 8px;
 }
 
-a.cloudNotSupportedBadge {
-    color: #660099 !important;
-    text-decoration: none !important;
-}
-
 .cloudNotSupportedIcon svg path {
     stroke: #660099;
 }
@@ -102,11 +98,6 @@ a.cloudNotSupportedBadge {
 .dark .cloudNotSupportedBadge {
     background-color: #33004D;
     color: #EECCFF;
-}
-
-.dark a.cloudNotSupportedBadge {
-    color: #EECCFF !important;
-    text-decoration: none !important;
 }
 
 .dark .cloudNotSupportedIcon svg path {
@@ -190,7 +181,6 @@ a.cloudNotSupportedBadge {
 /* Deprecated Badge */
 .deprecatedBadge {
     background-color: #DFDFDF;
-    color: #53575F;
     border-radius: 16px;
     display: flex;
     align-items: center;
@@ -205,16 +195,16 @@ a.cloudNotSupportedBadge {
 }
 
 .deprecatedBadge a {
-    color: inherit;
+    color: black;
 }
 
 .dark .deprecatedBadge {
     background-color: #414141;
-    color: #E6E7E9;
+    color: #000000;
 }
 
 .dark .deprecatedBadge a {
-    color: inherit;
+    color: #000000;
 }
 
 .deprecatedIcon svg path {
@@ -256,7 +246,7 @@ a.cloudNotSupportedBadge {
 }
 
 .dark .enterprisePlanFeatureContainer {
-    background-color: #1F1F1C;
+    background-color: #F6F7FA;
     border: 1px solid #414141;
 }
 
@@ -267,9 +257,9 @@ a.cloudNotSupportedBadge {
 
 /* Experimental Badge */
 .experimentalBadge {
-    background-color: #F3E8FF;
+    background-color: #FFEDD8;
     border-radius: 16px;
-    color: #6D28D9;
+    color: black;
     display: flex;
     align-items: center;
     padding: 5px 12px;
@@ -282,27 +272,25 @@ a.cloudNotSupportedBadge {
     margin-right: 8px;
 }
 
-a.experimentalBadge {
-    color: #6D28D9 !important;
-    text-decoration: none !important;
+.experimentalBadge a {
+    color: black;
 }
 
 .dark .experimentalBadge {
-    background-color: #3B1D6B;
-    color: #D8B4FE;
+    background-color: #E9D5FF;
+    color: #000000;
 }
 
-.dark a.experimentalBadge {
-    color: #D8B4FE !important;
-    text-decoration: none !important;
+.dark .experimentalBadge a {
+    color: #000000;
 }
 
 .experimentalIcon svg path {
-    stroke: #6D28D9;
+    stroke: #4F2B00;
 }
 
 .dark .experimentalIcon svg path {
-    stroke: #D8B4FE;
+    stroke: #000000;
 }
 
 /* Partner Badge */
@@ -351,8 +339,8 @@ a.experimentalBadge {
 
 /* Private Preview Badge */
 .privatePreviewBadge {
-    background-color: #FEF3C7;
-    color: #B45309;
+    background-color: #F4FF66;
+    color: #4A4D00;
     border-radius: 16px;
     display: flex;
     align-items: center;
@@ -363,8 +351,8 @@ a.experimentalBadge {
 }
 
 .dark .privatePreviewBadge {
-    background-color: #4B3410;
-    color: #FCD34D;
+    background-color: #3C4601;
+    color: #FEFFC2;
 }
 
 .privatePreviewIcon {
@@ -372,11 +360,11 @@ a.experimentalBadge {
 }
 
 .privatePreviewIcon svg path {
-    stroke: #B45309;
+    stroke: #4A4D00;
 }
 
 .dark .privatePreviewIcon svg path {
-    stroke: #FCD34D;
+    stroke: #FEFFC2;
 }
 
 /* Scale Plan Feature Badge */

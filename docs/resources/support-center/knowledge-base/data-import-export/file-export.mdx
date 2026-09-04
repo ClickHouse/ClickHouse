@@ -6,6 +6,9 @@ tags: ['Data Export']
 keywords: ['Exporting Data', 'INTO OUTFILE', 'File Table Engine']
 ---
 
+{frontMatter.description}
+{/* truncate */}
+
 ## Using INTO OUTFILE Clause {#using-into-outfile-clause}
 Add an [INTO OUTFILE](/reference/statements/select/into-outfile) clause to your query.
 
@@ -76,4 +79,4 @@ Using the `File` table engine is incredibly handy for creating and querying file
 $ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt
 ```
 
-See [clickhouse-client](/concepts/features/interfaces/client).
+See [clickhouse-client](/concepts/features/interfaces/cli).

@@ -1,0 +1,124 @@
+---
+noindex: true
+title: "Configurer Hydra (Compute-Compute Separation)"
+sidebarTitle: "Configurer Hydra (séparation du compute)"
+description: "Ce guide vous explique comment provisionner des instances enfants Hydra pour un cluster ClickHouse Private existant."
+---
+
+Ce guide vous explique comment provisionner des instances enfants Hydra pour un cluster ClickHouse Private existant. Hydra vous permet d’exécuter plusieurs groupes de compute indépendants sur un jeu de données partagé, chacun avec son propre dimensionnement et son propre point de terminaison.
+
+Pour une vue d’ensemble conceptuelle du fonctionnement d’Hydra, consultez [Hydra Compute Separation](/fr/products/clickhouse-private/explanation/hydra-compute-separation).
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* Un cluster ClickHouse Private en cours d’exécution pour servir de **parent** (ce guide utilise `default-xx-01`)
+
+* Le ClickHouse Operator installé avec le flag de fonctionnalité Hydra activé :
+
+  ```text
+  --set operator.featureFlags.privateHydraEnabled="true"
+  ```
+
+  Si l’Operator a été installé sans ce flag, mettez-le à niveau avec ce flag défini sur `true` avant de continuer.
+
+* L’accès au registre Helm et au chart `onprem-clickhouse-cluster`
+
+<Steps>
+  <Step>
+    ## 1. Identifier le cluster parent
+
+    Avant de créer un enfant, notez le **nom** et l’**espace de noms** du cluster parent. Le parent doit être en cours d’exécution -- les enfants ne peuvent pas être provisionnés si le parent est arrêté, terminé ou mis en veille.
+
+    Pour un cluster nommé `default-xx-01`, les valeurs par défaut sont :
+
+    | Propriété      | Valeur             |
+    | -------------- | ------------------ |
+    | Nom du cluster | `default-xx-01`    |
+    | Espace de noms | `ns-default-xx-01` |
+  </Step>
+
+  <Step>
+    ## 2. Créer une instance enfant
+
+    <Warning>
+      Chaque instance ClickHouseCluster doit résider dans son propre espace de noms. Ne déployez pas d’instance enfant dans le même espace de noms que le parent. L’Operator suppose une seule instance ClickHouseCluster par espace de noms, et ne pas respecter cette règle entraîne une dégradation des clusters.
+    </Warning>
+
+    Déployez un nouveau `ClickHouseCluster` à l’aide du même chart Helm que celui du parent, en ajoutant les valeurs `parentCluster` pour les lier :
+
+    ```bash
+    helm install default-xx-02 oci://$HELM_REGISTRY/helm/onprem-clickhouse-cluster \
+        --version=$CR_HELM_TAG \
+        --namespace ns-default-xx-02 \
+        --create-namespace \
+        --set-json='parentCluster.name="c-default-xx-01"' \
+        --set-json='parentCluster.namespace="ns-default-xx-01"' \
+        --set-json="server.replicas=$SERVER_REPLICAS" \
+        --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\""
+    ```
+
+    L’instance enfant :
+
+    * Partagera le Keeper ensemble du parent (aucun déploiement Keeper distinct n’est nécessaire)
+    * Partagera le préfixe de données S3 du parent
+    * Exécutera ses propres pods du serveur ClickHouse avec des allocations de ressources indépendantes
+    * Exposera son propre point de terminaison de service Kubernetes
+  </Step>
+
+  <Step>
+    ## 3. Créer un enfant en lecture seule (facultatif)
+
+    Pour créer un enfant capable d’interroger les données sans pouvoir y écrire, ajoutez le flag `isReadonly` :
+
+    ```bash
+    helm install default-xx-03 oci://$HELM_REGISTRY/helm/onprem-clickhouse-cluster \
+        --version=$CR_HELM_TAG \
+        --namespace ns-default-xx-03 \
+        --create-namespace \
+        --set-json='parentCluster.name="c-default-xx-01"' \
+        --set-json='parentCluster.namespace="ns-default-xx-01"' \
+        --set-json='isReadonly=true' \
+        --set-json="server.replicas=$SERVER_REPLICAS" \
+        --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\""
+    ```
+
+    Les enfants en lecture seule conviennent aux charges de travail de reporting, de tableaux de bord ou d’analytics pour lesquelles l’accès en écriture n’est pas nécessaire.
+  </Step>
+
+  <Step>
+    ## 4. Vérifier l’instance enfant
+
+    Une fois l’enfant déployé, vérifiez qu’il est en cours d’exécution :
+
+    ```bash
+    kubectl get clickhousecluster -n ns-default-xx-02
+    ```
+
+    Connectez-vous via le point de terminaison de service de l’enfant :
+
+    ```bash
+    kubectl port-forward svc/c-default-xx-02-server-any 9000:9000 -n ns-default-xx-02
+    clickhouse client --host localhost --port 9000 --password $PASSWORD
+    ```
+
+    Exécutez une requête pour confirmer l’accès aux données :
+
+    ```sql
+    SELECT count() FROM system.tables;
+    ```
+  </Step>
+</Steps>
+
+<div id="limitations">
+  ## Limites
+</div>
+
+1. **Le parent doit être en cours d’exécution.** Vous ne pouvez pas provisionner d’instances enfants si l’instance parente est arrêtée, supprimée ou mise en veille. Le parent doit être en cours d’exécution, car les enfants dépendent du Keeper ensemble du parent et de sa configuration de données partagées.
+
+2. **Supprimez les enfants avant le parent.** Vous devez supprimer toutes les instances enfants avant de supprimer le cluster parent. La tentative de suppression d’un parent avec des enfants actifs échouera.
+
+3. **Les réinitialisations de mot de passe s’appliquent au parent.** Il n’est pas possible de réinitialiser les mots de passe sur les instances enfants Hydra. Pour réinitialiser le mot de passe d’une instance enfant, effectuez plutôt la réinitialisation sur l’instance parente. Voir [how-to/reset-passwords.md](/fr/products/clickhouse-private/guides/reset-user-passwords).

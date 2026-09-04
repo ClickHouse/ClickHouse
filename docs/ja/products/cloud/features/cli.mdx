@@ -79,30 +79,30 @@ clickhousectl cloud service delete <service-id>
 [ClickHouse Cloud Postgres](/ja/products/managed-postgres/overview) サービスの作成と管理を行います。
 
 ```bash
-# List Postgres services
+# Postgresサービスの一覧表示
 clickhousectl cloud postgres list
 
-# Create a Postgres service
+# Postgresサービスの作成
 clickhousectl cloud postgres create \
   --name my-pg \
   --region us-east-1 \
-  --size m6gd.xlarge \
+  --size c6gd.xlarge \
   --pg-version 18
 
-# Get service details
+# サービス詳細の取得
 clickhousectl cloud postgres get <pg-id>
 
-# Update a service
-clickhousectl cloud postgres update <pg-id> --size m6gd.2xlarge --add-tag env=prod
+# サービスの更新
+clickhousectl cloud postgres update <pg-id> --size c6gd.2xlarge --add-tag env=prod
 
-# Reset the password
+# パスワードのリセット
 clickhousectl cloud postgres reset-password <pg-id> --generate
 
-# Read replicas and point-in-time restore
+# 読み取りレプリカとポイントインタイムリストア
 clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
 clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
 
-# Delete a service
+# サービスの削除
 clickhousectl cloud postgres delete <pg-id>
 ```
 

@@ -1,0 +1,339 @@
+---
+sidebarTitle: 'ClickPipes용 AWS PrivateLink'
+description: 'AWS PrivateLink를 사용하여 데이터 소스와 ClickPipes 간에 보안 연결을 설정합니다.'
+slug: /integrations/clickpipes/aws-privatelink
+title: 'ClickPipes용 AWS PrivateLink'
+doc_type: 'guide'
+keywords: ['aws privatelink', 'ClickPipes 보안', 'vpc endpoint', '프라이빗 연결', 'vpc 리소스']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+[AWS PrivateLink](https://aws.amazon.com/privatelink/)를 사용하면 트래픽을 퍼블릭 인터넷에 노출하지 않고도 VPC,
+AWS 서비스, 온프레미스 시스템, ClickHouse Cloud 간에 안전하게 연결할 수 있습니다.
+
+이 문서에서는 AWS PrivateLink VPC 엔드포인트를 설정할 수 있게 해주는
+ClickPipes reverse private endpoint 기능을 설명합니다.
+
+<div id="supported-sources">
+  ## ClickPipes에서 지원되는 데이터 소스
+</div>
+
+ClickPipes reverse private endpoint 기능은 다음
+데이터 소스 유형에서만 지원됩니다:
+
+* Kafka
+* Postgres
+* MySQL
+* MongoDB
+
+<Note>
+  Kafka의 경우, [스키마 레지스트리](/ko/integrations/clickpipes/kafka/schema-registries)는 브로커와 동일한 reverse private endpoint를 통해 연결할 수 있으며, 해당 호스트명이 엔드포인트의 프라이빗 IP 주소로 확인되는 경우 공개적으로 접근 가능할 필요는 없습니다.
+</Note>
+
+<div id="aws-privatelink-endpoint-types">
+  ## 지원되는 AWS PrivateLink 엔드포인트 유형
+</div>
+
+ClickPipes Reverse Private Endpoint는 다음 AWS PrivateLink 방식 중 하나를 사용하도록 구성할 수 있습니다:
+
+* [VPC 리소스](#vpc-resource)
+* [MSK ClickPipe용 MSK multi-VPC 연결](#msk-multi-vpc)
+* [VPC 엔드포인트 서비스](#vpc-endpoint-service)
+
+<div id="vpc-resource">
+  ### VPC 리소스
+</div>
+
+<Info>
+  리전 간 연결은 지원되지 않습니다.
+</Info>
+
+VPC 리소스는 [PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-access-resources.html)를 통해 ClickPipes에서 액세스할 수 있습니다. 이 방식은 데이터 소스 앞에 로드 밸런서를 설정할 필요가 없습니다.
+
+리소스 구성은 특정 호스트 또는 RDS 클러스터 ARN을 대상으로 지정할 수 있습니다.
+
+이는 RDS 클러스터에서 데이터를 수집하는 Postgres CDC에 권장되는 옵션입니다.
+
+VPC 리소스에 PrivateLink를 설정하려면 다음을 수행하십시오.
+
+1. 리소스 게이트웨이 생성
+2. 리소스 구성 생성
+3. 리소스 공유 생성
+
+<Steps>
+  <Step>
+    #### 리소스 게이트웨이 생성
+
+    리소스 게이트웨이는 VPC에서 지정한 리소스로 향하는 트래픽을 수신하는 지점입니다.
+
+    <Note>
+      리소스 게이트웨이에 연결된 서브넷에는 사용 가능한 IP 주소를 충분히 확보해 두는 것이 좋습니다.
+      각 서브넷에는 최소 `/26` 서브넷 마스크를 사용하는 것이 좋습니다.
+
+      각 VPC endpoint(각 Reverse Private Endpoint)마다 AWS는 서브넷별로 연속된 16개의 IP 주소 블록을 요구합니다. (`/28` 서브넷 마스크)
+      이 요구 사항을 충족하지 않으면 Reverse Private Endpoint가 실패 상태로 전환됩니다.
+    </Note>
+
+    [AWS 콘솔](https://docs.aws.amazon.com/vpc/latest/privatelink/create-resource-gateway.html) 또는 다음 명령을 사용하여 리소스 게이트웨이를 생성할 수 있습니다.
+
+    ```bash
+    aws vpc-lattice create-resource-gateway \
+        --vpc-identifier <VPC_ID> \
+        --subnet-ids <SUBNET_IDS> \
+        --security-group-ids <SG_IDs> \
+        --name <RESOURCE_GATEWAY_NAME>
+    ```
+
+    출력에는 다음 단계에 필요한 resource gateway ID가 포함되어 있습니다.
+
+    진행하기 전에 resource gateway가 `Active` 상태가 될 때까지 기다려야 합니다. 다음 명령을 실행하면 상태를 확인할 수 있습니다:
+
+    ```bash
+    aws vpc-lattice get-resource-gateway \
+        --resource-gateway-identifier <RESOURCE_GATEWAY_ID>
+    ```
+  </Step>
+
+  <Step>
+    #### VPC 리소스 구성 만들기
+
+    리소스에 액세스할 수 있도록 리소스 구성은 리소스 gateway와 연결됩니다.
+
+    [AWS 콘솔](https://docs.aws.amazon.com/vpc/latest/privatelink/create-resource-configuration.html) 또는 다음 명령을 사용해 리소스 구성을 만들 수 있습니다:
+
+    ```bash
+    aws vpc-lattice create-resource-configuration \
+        --resource-gateway-identifier <RESOURCE_GATEWAY_ID> \
+        --type <RESOURCE_CONFIGURATION_TYPE> \
+        --resource-configuration-definition <RESOURCE_CONFIGURATION_DEFINITION> \
+        --name <RESOURCE_CONFIGURATION_NAME>
+    ```
+
+    가장 단순한 [리소스 구성 유형](https://docs.aws.amazon.com/vpc-lattice/latest/ug/resource-configuration.html#resource-configuration-types)은 단일 Resource-Configuration입니다. ARN을 직접 지정해 구성할 수도 있고, 공개적으로 조회 가능한 IP 주소나 도메인 이름을 공유할 수도 있습니다.
+
+    예를 들어, RDS Cluster의 ARN으로 구성하려면 다음과 같습니다.
+
+    ```bash
+    aws vpc-lattice create-resource-configuration \
+        --name my-rds-cluster-config \
+        --type ARN \
+        --resource-gateway-identifier rgw-0bba03f3d56060135 \
+        --resource-configuration-definition 'arnResource={arn=arn:aws:rds:us-east-1:123456789012:cluster:my-rds-cluster}'
+    ```
+
+    <Note>
+      공개적으로 액세스할 수 있는 클러스터에는 리소스 구성을 생성할 수 없습니다.
+      클러스터가 공개적으로 액세스 가능하면, 리소스 구성을 생성하기 전에
+      클러스터를 비공개로 변경해야 합니다.
+      또는 대신 [IP 허용 목록](/ko/integrations/clickpipes/home#list-of-static-ips)을 사용하십시오.
+      자세한 내용은 [AWS 문서](https://docs.aws.amazon.com/vpc/latest/privatelink/resource-configuration.html#resource-definition)를 참조하십시오.
+    </Note>
+
+    출력에는 다음 단계에 필요한 Resource-Configuration ARN이 포함됩니다. 또한 VPC 리소스로 ClickPipe connection을 설정하는 데 필요한 Resource-Configuration ID도 포함됩니다.
+  </Step>
+
+  <Step>
+    #### Resource-Share 생성
+
+    리소스를 공유하려면 Resource-Share가 필요합니다. 이는 Resource Access Manager(RAM)를 통해 설정합니다.
+
+    <Note>
+      Resource-Share는 단일 Reverse Private Endpoint에만 사용할 수 있으며 재사용할 수 없습니다.
+      동일한 Resource-Configuration을 여러 Reverse Private Endpoint에 사용해야 하는 경우,
+      각 endpoint마다 별도의 Resource-Share를 생성해야 합니다.
+      Reverse Private Endpoint가 삭제된 후에도 Resource-Share는 AWS account에 그대로 남아 있으므로,
+      더 이상 필요하지 않다면 수동으로 삭제해야 합니다.
+    </Note>
+
+    [AWS console](https://docs.aws.amazon.com/ram/latest/userguide/working-with-sharing-create.html)에서 Resource-Configuration을 Resource-Share에 추가하거나, ClickPipes account ID `072088201116`(arn:aws:iam::072088201116:root)를 사용해 다음 명령을 실행할 수 있습니다:
+
+    ```bash
+    aws ram create-resource-share \
+        --principals 072088201116 \
+        --resource-arns <RESOURCE_CONFIGURATION_ARN> \
+        --name <RESOURCE_SHARE_NAME>
+    ```
+
+    출력에는 Resource-Share ARN이 포함되며, 이는 VPC 리소스로 ClickPipe connection을 설정하는 데 필요합니다.
+
+    이제 VPC 리소스를 사용해 [Reverse private endpoint로 ClickPipe를 생성](#creating-clickpipe)할 수 있습니다. 다음과 같이 설정하십시오:
+
+    * `VPC endpoint type`을 `VPC Resource`로 설정합니다.
+    * `Resource configuration ID`를 2단계에서 생성한 Resource-Configuration의 ID로 설정합니다.
+    * `Resource share ARN`을 3단계에서 생성한 Resource-Share의 ARN으로 설정합니다.
+
+    VPC 리소스를 사용하는 PrivateLink에 대한 자세한 내용은 [AWS documentation](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-access-resources.html)을 참조하십시오.
+  </Step>
+</Steps>
+
+<div id="msk-multi-vpc">
+  ### MSK multi-VPC 연결
+</div>
+
+[Multi-VPC connectivity](https://docs.aws.amazon.com/msk/latest/developerguide/aws-access-mult-vpc.html)는 여러 VPC를 단일 MSK 클러스터에 연결할 수 있게 해주는 AWS MSK의 기본 제공 기능입니다.
+Private DNS 지원은 기본으로 제공되며 추가 구성이 필요하지 않습니다.
+리전 간 연결은 지원되지 않습니다.
+
+이는 MSK용 ClickPipes에 권장되는 옵션입니다.
+자세한 내용은 [시작하기](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-getting-started.html) 가이드를 참조하십시오.
+
+<Info>
+  MSK 클러스터 정책을 업데이트하고 MSK 클러스터의 허용된 주체에 `072088201116`을 추가하십시오.
+  자세한 내용은 [클러스터 정책 연결](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-cluster-owner-action-policy.html)에 대한 AWS 가이드를 참조하십시오.
+</Info>
+
+연결 설정 방법은 [ClickPipes용 MSK 설정 가이드](/ko/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-msk-clickpipes)를 참조하십시오.
+
+<div id="vpc-endpoint-service">
+  ### VPC 엔드포인트 서비스
+</div>
+
+[VPC 엔드포인트 서비스](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html)는 데이터 소스를 ClickPipes와 공유하는 또 다른 방법입니다.
+이 방식을 사용하려면 데이터 소스 앞에 NLB(Network Load Balancer)를 설정하고,
+해당 NLB를 사용하도록 VPC 엔드포인트 서비스를 구성해야 합니다.
+
+VPC 엔드포인트 서비스는 [Private DNS로 구성](https://docs.aws.amazon.com/vpc/latest/privatelink/manage-dns-names.html)할 수 있으며, 이렇게 구성한 DNS는 ClickPipes VPC 내에서 사용할 수 있습니다.
+
+다음과 같은 경우에 권장됩니다.
+
+* Private DNS 지원이 필요한 모든 온프레미스 Kafka 구성
+* [Postgres CDC용 교차 리전 연결](/ko/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)
+* MSK 클러스터용 교차 리전 연결. 도움이 필요하면 ClickHouse 지원팀에 문의하십시오.
+
+자세한 내용은 [시작하기](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html) 가이드를 참조하십시오.
+
+<Info>
+  VPC 엔드포인트 서비스의 허용된 주체에 ClickPipes 계정 ID `072088201116`을 추가하십시오.
+  자세한 내용은 AWS의 [권한 관리](https://docs.aws.amazon.com/vpc/latest/privatelink/configure-endpoint-service.html#add-remove-permissions) 가이드를 참조하십시오.
+</Info>
+
+<Info>
+  ClickPipes에 대해 [교차 리전 액세스](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html#endpoint-service-cross-region)를
+  구성할 수 있습니다. VPC 엔드포인트 서비스의 허용된 리전에 [ClickPipe 리전](#aws-privatelink-regions)을 추가하십시오.
+</Info>
+
+<div id="creating-clickpipe">
+  ## reverse private endpoint로 ClickPipe 생성하기
+</div>
+
+1. ClickHouse Cloud 서비스의 SQL 콘솔에 접속합니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes 서비스" size="md" border />
+
+2. 왼쪽 메뉴에서 `Data Sources` 버튼을 선택한 후 &quot;Set up a ClickPipe&quot;를 클릭합니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="가져오기 선택" size="lg" border />
+
+3. 데이터 소스로 Kafka 또는 Postgres를 선택합니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp" alt="데이터 소스 선택" size="lg" border />
+
+4. `Reverse private endpoint` 옵션을 선택합니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp" alt="Reverse private endpoint 선택" size="lg" border />
+
+5. 기존 reverse private endpoint 중 하나를 선택하거나 새로 생성합니다.
+
+<Info>
+  RDS에 대해 리전 간 액세스가 필요하면 VPC 엔드포인트 서비스를 생성해야 합니다.
+  설정을 시작할 때는 [이 가이드](/ko/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)가 좋은 출발점이 됩니다.
+
+  동일 리전 액세스에는 VPC 리소스를 생성하는 방식을 권장합니다.
+</Info>
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp" alt="Reverse private endpoint 선택" size="lg" border />
+
+6. 선택한 endpoint 유형에 필요한 매개변수를 입력합니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp" alt="Reverse private endpoint 선택" size="lg" border />
+
+* VPC 리소스의 경우 구성 공유 ARN과 구성 ID를 입력합니다.
+  * MSK multi-VPC의 경우 cluster ARN과 생성된 endpoint에 사용된 인증 방법을 입력합니다.
+  * VPC 엔드포인트 서비스의 경우 서비스 이름을 입력합니다.
+
+7. `Create`를 클릭하고 reverse private endpoint가 준비될 때까지 기다립니다.
+
+   새 endpoint를 생성하는 경우 설정이 완료되기까지 다소 시간이 걸립니다.
+   endpoint가 준비되면 페이지가 자동으로 갱신됩니다.
+   VPC 엔드포인트 서비스의 경우 AWS 콘솔에서 connection 요청을 수락해야 할 수 있습니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp" alt="Reverse private endpoint 선택" size="lg" border />
+
+8. endpoint가 준비되면 DNS 이름을 사용해 데이터 소스에 연결할 수 있습니다.
+
+   endpoint 목록에서 사용 가능한 endpoint의 DNS 이름을 확인할 수 있습니다.
+   이 이름은 ClickPipes가 내부적으로 프로비저닝한 DNS 이름이거나 PrivateLink 서비스에서 제공하는 private DNS 이름일 수 있습니다.
+   DNS 이름만으로는 완전한 네트워크 주소가 되지 않습니다.
+   데이터 소스에 맞는 포트를 추가하십시오.
+
+   MSK connection string은 AWS 콘솔에서 확인할 수 있습니다.
+
+   DNS 이름의 전체 목록을 보려면 Cloud 서비스 설정으로 이동하십시오.
+
+<div id="managing-existing-endpoints">
+  ## 기존 Reverse Private Endpoint 관리
+</div>
+
+기존 Reverse Private Endpoint는 ClickHouse Cloud 서비스 설정에서 관리할 수 있습니다.
+
+1. 사이드바에서 `Settings` 버튼을 찾아 클릭합니다.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp" alt="ClickHouse Cloud 설정" size="lg" border />
+
+2. `ClickPipe reverse private endpoints` 섹션에서 `Reverse private endpoints`를 클릭합니다.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp" alt="ClickHouse Cloud 설정" size="md" border />
+
+   Reverse Private Endpoint의 자세한 정보가 플라이아웃에 표시됩니다.
+
+   여기에서 엔드포인트를 제거할 수 있습니다. 이 엔드포인트를 사용하는 모든 ClickPipes에 영향을 줍니다.
+
+<div id="aws-privatelink-regions">
+  ## 지원되는 AWS 리전
+</div>
+
+ClickPipes의 AWS PrivateLink 지원은 일부 AWS 리전에서만 제공됩니다.
+사용 가능한 리전을 확인하려면 [ClickPipes 리전 목록](/ko/integrations/clickpipes/home#list-of-static-ips)을 참조하십시오.
+
+이 제한은 리전 간 연결이 enabled된 PrivateLink VPC 엔드포인트 서비스에는 적용되지 않습니다.
+
+<div id="limitations">
+  ## 제한 사항
+</div>
+
+ClickHouse Cloud에서 ClickPipes용으로 생성된 AWS PrivateLink 엔드포인트는
+ClickHouse Cloud 서비스와 동일한 AWS 리전에 생성된다고 보장되지 않습니다.
+
+현재는 VPC 엔드포인트 서비스만
+교차 리전 연결을 지원합니다.
+
+Private Endpoint는 특정 ClickHouse 서비스에 연결되며, 서비스 간에 이전할 수 없습니다.
+하나의 ClickHouse 서비스에 대해 여러 ClickPipes가 동일한 엔드포인트를 재사용할 수 있습니다.
+
+AWS MSK는 인증 유형(SASL&#95;IAM 또는 SASL&#95;SCRAM)별로 MSK 클러스터당 하나의 PrivateLink(VPC 엔드포인트)만 지원합니다. 따라서 여러 ClickHouse Cloud 서비스 또는 조직은 동일한 인증 유형을 사용해 동일한 MSK 클러스터에 대해 별도의 PrivateLink 연결을 생성할 수 없습니다.
+
+<div id="automatic-cleanup">
+  ### 비활성 endpoint의 자동 정리
+</div>
+
+최종 상태에 머무는 Reverse private endpoints는 정해진 유예 기간이 지나면 자동으로 제거됩니다.
+이를 통해 사용되지 않거나 잘못 구성된 endpoint가 무기한 남아 있지 않도록 합니다.
+
+다음 유예 기간은 endpoint 상태에 따라 적용됩니다:
+
+| 상태                     | 유예 기간 | 설명                                                |
+| ---------------------- | ----- | ------------------------------------------------- |
+| **Failed**             | 7일    | Provisioning 중 endpoint에 오류가 발생했습니다.              |
+| **Pending Acceptance** | 1일    | endpoint connection이 service 소유자에게 아직 수락되지 않았습니다. |
+| **Rejected**           | 1일    | endpoint connection이 service 소유자에게 거부되었습니다.       |
+| **Expired**            | 즉시    | endpoint는 이미 만료되었으며 즉시 제거됩니다.                     |
+
+유예 기간이 지나면 endpoint와 관련된 모든 resource가 자동으로 삭제됩니다.
+
+자동 제거를 방지하려면 유예 기간이 끝나기 전에 근본 원인을 해결하십시오.
+예를 들어 AWS console에서 대기 중인 connection 요청을 수락하거나,
+endpoint가 Failed 상태가 된 경우 다시 생성하십시오.

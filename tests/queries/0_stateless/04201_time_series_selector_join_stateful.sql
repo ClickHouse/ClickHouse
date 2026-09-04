@@ -1,5 +1,8 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-replicated-database
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
+-- Tag no-replicated-database: `DatabaseReplicated::dropTable` does not drop `TimeSeries` inner tables
+-- synchronously (unlike for `MaterializedView`), so the deferred inner DROPs are rejected with
+-- "It's not initial query. ON CLUSTER is not allowed for Replicated database.".
 
 -- Regression test for the PromQL binary-operator path where ClickHouse query optimization
 -- could push `timeSeriesIdToGroup(id)` ahead of the matching `timeSeriesStoreTags(...)` call,

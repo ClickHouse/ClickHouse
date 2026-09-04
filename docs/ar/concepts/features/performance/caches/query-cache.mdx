@@ -45,7 +45,7 @@ doc_type: 'guide'
   ذاكرة التخزين المؤقت لنتيجة الاستعلام تكون معطّلة في clickhouse-local.
 </Note>
 
-يمكن استخدام الإعداد [use&#95;query&#95;cache](/ar/reference/settings/session-settings/use-query#use_query_cache) للتحكم في ما إذا كان ينبغي لاستعلام معيّن أو لجميع استعلامات
+يمكن استخدام الإعداد [use&#95;query&#95;cache](/ar/reference/settings/session-settings#use_query_cache) للتحكم في ما إذا كان ينبغي لاستعلام معيّن أو لجميع استعلامات
 الجلسة الحالية استخدام ذاكرة التخزين المؤقت للاستعلامات. على سبيل المثال، أول تنفيذ للاستعلام
 
 ```sql
@@ -62,8 +62,8 @@ SETTINGS use_query_cache = true;
   مع `SETTINGS use_query_cache = true`.
 </Note>
 
-يمكن ضبط طريقة استخدام ذاكرة التخزين المؤقت بمزيد من التفصيل باستخدام الإعدادين [enable&#95;writes&#95;to&#95;query&#95;cache](/ar/reference/settings/session-settings/enable#enable_writes_to_query_cache)
-و[enable&#95;reads&#95;from&#95;query&#95;cache](/ar/reference/settings/session-settings/enable#enable_reads_from_query_cache) (وكلاهما `true` افتراضيًا). يتحكم الإعداد الأول
+يمكن ضبط طريقة استخدام ذاكرة التخزين المؤقت بمزيد من التفصيل باستخدام الإعدادين [enable&#95;writes&#95;to&#95;query&#95;cache](/ar/reference/settings/session-settings#enable_writes_to_query_cache)
+و[enable&#95;reads&#95;from&#95;query&#95;cache](/ar/reference/settings/session-settings#enable_reads_from_query_cache) (وكلاهما `true` افتراضيًا). يتحكم الإعداد الأول
 في ما إذا كانت نتائج الاستعلامات ستُخزَّن في ذاكرة التخزين المؤقت، بينما يحدد الإعداد الثاني ما إذا كان ينبغي على قاعدة البيانات محاولة استرجاع نتائج الاستعلامات
 من ذاكرة التخزين المؤقت. على سبيل المثال، سيستخدم الاستعلام التالي ذاكرة التخزين المؤقت بشكل سلبي فقط، أي سيحاول القراءة منها دون تخزين
 نتيجته فيها:
@@ -97,7 +97,7 @@ use_query_cache = true`)، لكن ينبغي الانتباه إلى أن جمي
 إذا أُجهض الاستعلام بسبب استثناء أو إلغاء من المستخدم، فلن يُكتَب أي إدخال في ذاكرة التخزين المؤقت للاستعلامات.
 
 يمكن تهيئة حجم ذاكرة التخزين المؤقت للاستعلامات بالبايتات، والحد الأقصى لعدد إدخالات التخزين المؤقت، والحد الأقصى لحجم كل إدخال من إدخالات التخزين المؤقت (بالبايتات وبالسجلات)
-باستخدام خيارات مختلفة من [خيارات تهيئة الخادم](/ar/reference/settings/server-settings/settings/query#query_cache).
+باستخدام خيارات مختلفة من [خيارات تهيئة الخادم](/ar/reference/settings/server-settings/settings#query_cache).
 
 ```xml
 <query_cache>
@@ -108,11 +108,11 @@ use_query_cache = true`)، لكن ينبغي الانتباه إلى أن جمي
 </query_cache>
 ```
 
-يمكن أيضًا تقييد استخدام ذاكرة التخزين المؤقت للمستخدمين الفرديين باستخدام [ملفات تعريف الإعدادات](/ar/concepts/features/configuration/settings/settings-profiles) و[قيود
+يمكن أيضًا تقييد استخدام cache للمستخدمين الفرديين باستخدام [ملفات تعريف الإعدادات](/ar/concepts/features/configuration/settings/settings-profiles) و[قيود
 الإعدادات](/ar/concepts/features/configuration/settings/constraints-on-settings). وبشكل أكثر تحديدًا، يمكنك تقييد الحد الأقصى لذاكرة (بالبايت) التي يمكن للمستخدم
-تخصيصها في ذاكرة التخزين المؤقت للاستعلام، والحد الأقصى لعدد نتائج الاستعلام المخزّنة. ولتنفيذ ذلك، حدِّد أولًا الإعدادين
-[query&#95;cache&#95;max&#95;size&#95;in&#95;bytes](/ar/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes) و
-[query&#95;cache&#95;max&#95;entries](/ar/reference/settings/session-settings/query-cache#query_cache_max_entries) في ملف تعريف مستخدم داخل `users.xml`، ثم اجعل كلا الإعدادين
+تخصيصها في query cache، والحد الأقصى لعدد نتائج الاستعلام المخزّنة. ولتنفيذ ذلك، حدِّد أولًا الإعدادين
+[query&#95;cache&#95;max&#95;size&#95;in&#95;bytes](/ar/reference/settings/session-settings#query_cache_max_size_in_bytes) و
+[query&#95;cache&#95;max&#95;entries](/ar/reference/settings/session-settings#query_cache_max_entries) في ملف تعريف مستخدم داخل `users.xml`، ثم اجعل كلا الإعدادين
 للقراءة فقط:
 
 ```xml
@@ -136,7 +136,7 @@ use_query_cache = true`)، لكن ينبغي الانتباه إلى أن جمي
 ```
 
 لتحديد الحد الأدنى لمدة تشغيل الاستعلام بحيث يمكن تخزين نتيجته مؤقتًا، يمكنك استخدام الإعداد
-[query&#95;cache&#95;min&#95;query&#95;duration](/ar/reference/settings/session-settings/query-cache#query_cache_min_query_duration). على سبيل المثال، نتيجة الاستعلام
+[query&#95;cache&#95;min&#95;query&#95;duration](/ar/reference/settings/session-settings#query_cache_min_query_duration). على سبيل المثال، نتيجة الاستعلام
 
 ```sql
 SELECT some_expensive_calculation(column_1, column_2)
@@ -145,10 +145,10 @@ SETTINGS use_query_cache = true, query_cache_min_query_duration = 5000;
 ```
 
 يُخزَّن مؤقتًا فقط إذا استغرق الاستعلام أكثر من 5 ثوانٍ. ويمكن أيضًا تحديد عدد المرات التي يجب أن يُنفَّذ فيها الاستعلام قبل أن تُخزَّن نتيجته
-مؤقتًا — ولهذا استخدم الإعداد [query&#95;cache&#95;min&#95;query&#95;runs](/ar/reference/settings/session-settings/query-cache#query_cache_min_query_runs).
+مؤقتًا — ولهذا استخدم الإعداد [query&#95;cache&#95;min&#95;query&#95;runs](/ar/reference/settings/session-settings#query_cache_min_query_runs).
 
 تصبح العناصر في ذاكرة التخزين المؤقت للاستعلام قديمة بعد فترة زمنية معينة (time-to-live). وتكون هذه الفترة افتراضيًا 60 ثانية، ولكن يمكن تحديد
-قيمة مختلفة على مستوى الجلسة أو ملف التعريف أو الاستعلام باستخدام الإعداد [query&#95;cache&#95;ttl](/ar/reference/settings/session-settings/query-cache#query_cache_ttl). وتُخرج
+قيمة مختلفة على مستوى الجلسة أو ملف التعريف أو الاستعلام باستخدام الإعداد [query&#95;cache&#95;ttl](/ar/reference/settings/session-settings#query_cache_ttl). وتُخرج
 ذاكرة التخزين المؤقت للاستعلام العناصر بشكل &quot;كسول&quot;، أي عندما يصبح أحد العناصر قديمًا، لا يُزال فورًا من ذاكرة التخزين المؤقت. وبدلًا من ذلك، عندما يُراد إدراج عنصر
 جديد في ذاكرة التخزين المؤقت للاستعلام، تتحقق قاعدة البيانات مما إذا كانت ذاكرة التخزين المؤقت تحتوي على مساحة خالية كافية للعنصر الجديد. وإذا لم تكن هذه هي
 الحالة، تحاول قاعدة البيانات إزالة جميع العناصر القديمة. وإذا ظلت ذاكرة التخزين المؤقت لا تحتوي على مساحة خالية كافية، فلن يُدرج العنصر الجديد.
@@ -156,10 +156,10 @@ SETTINGS use_query_cache = true, query_cache_min_query_duration = 5000;
 إذا جرى تنفيذ الاستعلام عبر HTTP، فإن ClickHouse يضبط ترويستَي `Age` و`Expires` مع عمر العنصر المخزَّن مؤقتًا (بالثواني) والطابع الزمني لانتهاء صلاحيته.
 
 تكون العناصر في ذاكرة التخزين المؤقت للاستعلام مضغوطة افتراضيًا. وهذا يقلل إجمالي استهلاك الذاكرة على حساب بطء عمليات الكتابة إلى / والقراءة
-من ذاكرة التخزين المؤقت للاستعلام. لتعطيل الضغط، استخدم الإعداد [query&#95;cache&#95;compress&#95;entries](/ar/reference/settings/session-settings/query-cache#query_cache_compress_entries).
+من ذاكرة التخزين المؤقت للاستعلام. لتعطيل الضغط، استخدم الإعداد [query&#95;cache&#95;compress&#95;entries](/ar/reference/settings/session-settings#query_cache_compress_entries).
 
 أحيانًا يكون من المفيد الاحتفاظ بعدة نتائج مخزَّنة مؤقتًا للاستعلام نفسه. ويمكن تحقيق ذلك باستخدام الإعداد
-[query&#95;cache&#95;tag](/ar/reference/settings/session-settings/query-cache#query_cache_tag) الذي يعمل كتسمية (أو مساحة اسم) لعناصر ذاكرة التخزين المؤقت للاستعلام. وتتعامل ذاكرة التخزين المؤقت للاستعلام
+[query&#95;cache&#95;tag](/ar/reference/settings/session-settings#query_cache_tag) الذي يعمل كتسمية (أو مساحة اسم) لعناصر ذاكرة التخزين المؤقت للاستعلام. وتتعامل ذاكرة التخزين المؤقت للاستعلام
 مع نتائج الاستعلام نفسه ذات الوسوم المختلفة على أنها مختلفة.
 
 مثال على إنشاء ثلاثة عناصر مختلفة في ذاكرة التخزين المؤقت للاستعلام للاستعلام نفسه:
@@ -206,17 +206,17 @@ SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
 
 تظهر إدخالات ذاكرة التخزين المؤقت للاستعلامات الفرعية في [system.query&#95;cache](/ar/reference/system-tables/query_cache) مع `is_subquery = 1`. وينطبق الإعداد `query_cache_ttl` أيضًا على إدخالات ذاكرة التخزين المؤقت الخاصة بالاستعلامات الفرعية، ويمكن ضبطه لكل استعلام فرعي على حدة.
 
-يقرأ ClickHouse بيانات الجدول في blocks من [max&#95;block&#95;size](/ar/reference/settings/session-settings/max#max_block_size) rows. وبسبب التصفية وaggregation،
+يقرأ ClickHouse بيانات الجدول في blocks من [max&#95;block&#95;size](/ar/reference/settings/session-settings#max_block_size) rows. وبسبب التصفية وaggregation
 وما إلى ذلك، تكون blocks النتائج عادةً أصغر بكثير من &#39;max&#95;block&#95;size&#39;، ولكن توجد أيضًا حالات تكون فيها أكبر بكثير. يتحكم الإعداد
-[query&#95;cache&#95;squash&#95;partial&#95;results](/ar/reference/settings/session-settings/query-cache#query_cache_squash_partial_results) (ممكّن افتراضيًا) في ما إذا كانت blocks النتائج
+[query&#95;cache&#95;squash&#95;partial&#95;results](/ar/reference/settings/session-settings#query_cache_squash_partial_results) (ممكّن افتراضيًا) في ما إذا كانت blocks النتائج
 تُدمج (إذا كانت صغيرة جدًا) أو تُقسَّم (إذا كانت كبيرة) إلى blocks بحجم &#39;max&#95;block&#95;size&#39; قبل إدراجها في ذاكرة التخزين المؤقت لنتيجة الاستعلام. ويؤدي ذلك إلى تقليل أداء عمليات الكتابة إلى ذاكرة التخزين المؤقت للاستعلامات، لكنه يحسّن معدل Compression لإدخالات ذاكرة التخزين المؤقت ويوفر
-granularity أكثر طبيعية للـ block عند تقديم نتائج الاستعلام لاحقًا من ذاكرة التخزين المؤقت للاستعلامات.
+granularity أكثر طبيعية للـ block عند تقديم query results لاحقًا من ذاكرة التخزين المؤقت للاستعلامات.
 
-ونتيجة لذلك، يخزّن ذاكرة التخزين المؤقت للاستعلامات لكل استعلام عدة blocks نتائج (جزئية).
+ونتيجة لذلك، يخزّن ذاكرة التخزين المؤقت للاستعلامات لكل query عدة blocks نتائج (جزئية).
 ورغم أن هذا السلوك يُعد خيارًا افتراضيًا جيدًا، يمكن تعطيله باستخدام الإعداد
-[query&#95;cache&#95;squash&#95;partial&#95;results](/ar/reference/settings/session-settings/query-cache#query_cache_squash_partial_results).
+[query&#95;cache&#95;squash&#95;partial&#95;results](/ar/reference/settings/session-settings#query_cache_squash_partial_results).
 
-كذلك، لا تُخزَّن نتائج الاستعلامات التي تحتوي على دوال non-deterministic مؤقتًا افتراضيًا. وتشمل هذه الدوال:
+كذلك، لا تُخزَّن نتائج queries التي تحتوي على دوال nondeterministic مؤقتًا افتراضيًا. وتشمل هذه الدوال:
 
 * الدوال الخاصة بالوصول إلى Dictionaries: [`dictGet()`](/ar/reference/functions/regular-functions/ext-dict-functions) وغيرها.
 * [الدوال المعرّفة من قبل المستخدم](/ar/reference/statements/create/function) من دون الوسم `<deterministic>true</deterministic>` في تعريف XML
@@ -226,7 +226,7 @@ granularity أكثر طبيعية للـ block عند تقديم نتائج ال
   [`yesterday()`](/ar/reference/functions/regular-functions/date-time-functions#yesterday) وغيرها،
 * الدوال التي تُرجع قيمًا عشوائية: [`randomString()`](/ar/reference/functions/regular-functions/random-functions#randomString),
   [`fuzzBits()`](/ar/reference/functions/regular-functions/random-functions#fuzzBits) وغيرها،
-* الدوال التي تعتمد نتيجتها على الحجم والترتيب أو على chunks الداخلية المستخدمة في معالجة الاستعلام:
+* الدوال التي تعتمد نتيجتها على الحجم والترتيب أو على chunks الداخلية المستخدمة في query processing:
   [`nowInBlock()`](/ar/reference/functions/regular-functions/date-time-functions#nowInBlock) وغيرها،
   [`rowNumberInBlock()`](/ar/reference/functions/regular-functions/other-functions#rowNumberInBlock),
   [`runningDifference()`](/ar/reference/functions/regular-functions/other-functions#runningDifference),
@@ -235,17 +235,17 @@ granularity أكثر طبيعية للـ block عند تقديم نتائج ال
   [`queryID()`](/ar/reference/functions/regular-functions/other-functions#queryID),
   [`getMacro()`](/ar/reference/functions/regular-functions/other-functions#getMacro) وغيرها.
 
-لفرض تخزين نتائج الاستعلامات التي تحتوي على دوال non-deterministic مؤقتًا رغم ذلك، استخدم الإعداد
-[query&#95;cache&#95;nondeterministic&#95;function&#95;handling](/ar/reference/settings/session-settings/query-cache#query_cache_nondeterministic_function_handling).
+لفرض تخزين نتائج queries التي تحتوي على دوال nondeterministic مؤقتًا رغم ذلك، استخدم الإعداد
+[query&#95;cache&#95;nondeterministic&#95;function&#95;handling](/ar/reference/settings/session-settings#query_cache_nondeterministic_function_handling).
 
-لا تُخزَّن نتائج الاستعلامات التي تتضمن system tables (مثل [system.processes](/ar/reference/system-tables/processes)&#96; أو
-[information&#95;schema.tables](/ar/reference/system-tables/information_schema)) مؤقتًا افتراضيًا. ولفرض تخزين نتائج الاستعلامات التي تتضمن
-system tables مؤقتًا رغم ذلك، استخدم الإعداد [query&#95;cache&#95;system&#95;table&#95;handling](/ar/reference/settings/session-settings/query-cache#query_cache_system_table_handling).
+لا تُخزَّن نتائج queries التي تتضمن system tables (مثل [system.processes](/ar/reference/system-tables/processes)&#96; أو
+[information&#95;schema.tables](/ar/reference/system-tables/information_schema)) مؤقتًا افتراضيًا. ولفرض تخزين نتائج queries التي تتضمن
+system tables مؤقتًا رغم ذلك، استخدم الإعداد [query&#95;cache&#95;system&#95;table&#95;handling](/ar/reference/settings/session-settings#query_cache_system_table_handling).
 
 أخيرًا، لا تتم مشاركة إدخالات ذاكرة التخزين المؤقت للاستعلامات بين المستخدمين لأسباب أمنية. على سبيل المثال، يجب ألا يتمكن المستخدم A من تجاوز
 سياسة الصفوف على جدول من خلال تشغيل الاستعلام نفسه الذي يشغّله المستخدم B، والذي لا تنطبق عليه مثل هذه السياسة. ومع ذلك، إذا لزم الأمر، يمكن تمييز إدخالات ذاكرة التخزين المؤقت
 بحيث تصبح متاحة لمستخدمين آخرين (أي مشتركة) عبر توفير الإعداد
-[query&#95;cache&#95;share&#95;between&#95;users](/ar/reference/settings/session-settings/query-cache#query_cache_share_between_users).
+[query&#95;cache&#95;share&#95;between&#95;users](/ar/reference/settings/session-settings#query_cache_share_between_users).
 
 <div id="related-content">
   ## محتوى مرتبط

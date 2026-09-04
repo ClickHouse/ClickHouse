@@ -36,12 +36,8 @@ StorageID ReplicatedMergeMutateTaskBase::getStorageID() const
 
 void ReplicatedMergeMutateTaskBase::onCompleted()
 {
-    /// `common_assignee_trigger` treats the argument as "delay the next attempt": a successfully
-    /// finished task does not have to be retried, and a failed one is paced by the queue's
-    /// exponential backoff. A task that intentionally did nothing because it waits for another
-    /// replica has no such pacing, so ask for a delay explicitly.
-    bool delay_next_attempt = state == State::SUCCESS || postpone_next_attempt;
-    task_result_callback(delay_next_attempt);
+    bool successfully_executed = state == State::SUCCESS;
+    task_result_callback(successfully_executed);
 }
 
 
@@ -201,7 +197,6 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
             auto prepare_result = prepare();
 
             part_log_writer = prepare_result.part_log_writer;
-            postpone_next_attempt = prepare_result.postpone_next_attempt;
 
             /// Avoid rescheduling, execute fetch here, in the same thread.
             if (!prepare_result.prepared_successfully)

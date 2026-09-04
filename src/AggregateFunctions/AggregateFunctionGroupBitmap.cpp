@@ -278,7 +278,7 @@ void registerAggregateFunctionsBitmap(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
 Creates a bitmap (bit array) from a column of unsigned integers, then returns the count of unique values (cardinality) in that bitmap.
-By appending the `-State` combinator suffix, instead of returning the count, it returns the actual [bitmap object](/reference/functions/regular-functions/bitmap-functions).
+By appending the `-State` combinator suffix, instead of returning the count, it returns the actual [bitmap object](/sql-reference/functions/bitmap-functions).
     )";
     FunctionDocumentation::Syntax syntax = R"(
 groupBitmap(expr)
@@ -313,7 +313,7 @@ SELECT groupBitmap(UserID) AS num FROM t;
 
     FunctionDocumentation::Description description_and = R"(
 Calculates the AND of a bitmap column and returns it's cardinality.
-If suffix combinator [`-State`](/reference/functions/aggregate-functions/combinators#-state) is added, then it returns a bitmap object.
+If suffix combinator [`-State`](/sql-reference/aggregate-functions/combinators#-state) is added, then it returns a bitmap object.
     )";
     FunctionDocumentation::Syntax syntax_and = R"(
 groupBitmapAnd(expr)
@@ -344,7 +344,7 @@ SELECT groupBitmapAnd(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%'
         )",
         R"(
 ┌─groupBitmapAnd(z)─┐
-│                 3 │
+│               3   │
 └───────────────────┘
         )"
     },
@@ -368,8 +368,8 @@ SELECT arraySort(bitmapToArray(groupBitmapAndState(z))) FROM bitmap_column_expr_
 
     FunctionDocumentation::Description description_or = R"(
 Calculates the OR of a bitmap column and returns it's cardinality.
-If suffix combinator [`-State`](/reference/functions/aggregate-functions/combinators#-state) is added, then it returns a bitmap object.
-This is equivalent to `groupBitmapMerge` ([`groupBitmap`](/reference/functions/aggregate-functions/groupBitmap) with the [`-Merge`](/reference/functions/aggregate-functions/combinators#-merge) combinator suffix).
+If suffix combinator [`-State`](/sql-reference/aggregate-functions/combinators#-state) is added, then it returns a bitmap object.
+This is equivalent to `groupBitmapMerge` ([`groupBitmap`](/sql-reference/aggregate-functions/reference/groupbitmap) with the [`-Merge`](/sql-reference/aggregate-functions/combinators#-merge) combinator suffix).
     )";
     FunctionDocumentation::Syntax syntax_or = R"(
 groupBitmapOr(expr)
@@ -400,7 +400,7 @@ SELECT groupBitmapOr(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%')
         )",
         R"(
 ┌─groupBitmapOr(z)─┐
-│               15 │
+│             15   │
 └──────────────────┘
         )"
     },
@@ -424,7 +424,7 @@ SELECT arraySort(bitmapToArray(groupBitmapOrState(z))) FROM bitmap_column_expr_t
 
     FunctionDocumentation::Description description_xor = R"(
 Calculates the XOR of a bitmap column and returns it's cardinality.
-If suffix combinator [`-State`](/reference/functions/aggregate-functions/combinators#-state) is added, then it returns a bitmap object.
+If suffix combinator [`-State`](/sql-reference/aggregate-functions/combinators#-state) is added, then it returns a bitmap object.
     )";
     FunctionDocumentation::Syntax syntax_xor = R"(
 groupBitmapXor(expr)
@@ -455,7 +455,7 @@ SELECT groupBitmapXor(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%'
         )",
         R"(
 ┌─groupBitmapXor(z)─┐
-│                10 │
+│              10   │
 └───────────────────┘
         )"
     },
@@ -466,7 +466,7 @@ SELECT arraySort(bitmapToArray(groupBitmapXorState(z))) FROM bitmap_column_expr_
         )",
         R"(
 ┌─arraySort(bitmapToArray(groupBitmapXorState(z)))─┐
-│ [1,3,5,6,8,10,11,13,14,15]                       │
+│ [1, 3, 5, 6, 8, 10, 11, 13, 14, 15]              │
 └──────────────────────────────────────────────────┘
         )"
     }
