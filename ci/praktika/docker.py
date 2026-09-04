@@ -166,11 +166,11 @@ _IMAGE_BUILD_REGISTRY_ERRORS = _BUILDX_REGISTRY_TRANSIENT_ERRORS + (
     # The one signature `Docker.build` retried before this ladder existed.
     "Error response from daemon: manifest unknown: manifest unknown",
 )
-# 8.6x the longest silence a healthy leg produced in 60 days (314s, generating the SBOM
-# attestation for `binary-builder`), and 7.3x below the 19722s of silence that consumed a
-# whole leg on 2026-09-04. Sizing a TOTAL bound to tell those apart is impossible: the
-# slowest healthy single image needs 6646s, so one retry of it would already overrun the
-# job. Silence does not scale with how long a healthy build takes.
+# 8.6x the worst silence in the four healthy leg logs still retrievable from S3 (314s,
+# generating the SBOM attestation for `binary-builder`), and 7.3x below the 19722s of
+# silence that consumed a whole leg on 2026-09-04. Silence does not scale with how long a
+# healthy build takes: the slowest healthy single image needs 6646s, so no total bound can
+# tell them apart.
 _IMAGE_BUILD_IDLE_CAP_S = 2700
 # From the FIRST transient failure, and it only gates STARTING another attempt. Spans the
 # outages measured on 2026-09-04: minutes for one archive, about half an hour for the
