@@ -1,0 +1,9 @@
+<clickhouse>
+    <openSSL>
+        <client>
+            <caConfig>/etc/clickhouse-server/config.d/server.crt</caConfig>
+            <verificationMode>relaxed</verificationMode>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+        </client>
+    </openSSL>
+</clickhouse>

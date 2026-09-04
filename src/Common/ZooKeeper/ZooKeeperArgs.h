@@ -45,6 +45,10 @@ struct ZooKeeperArgs
     String sessions_path = "/clickhouse/sessions";
     String client_availability_zone;
     int32_t connection_timeout_ms = Coordination::DEFAULT_CONNECTION_TIMEOUT_MS;
+    /// TLS connection timeout. When 0 (the default), falls back to connection_timeout_ms.
+    /// Mirrors clickhouse-client's separate secure_connection_timeout so that the TLS
+    /// handshake overhead does not cause spurious timeouts on plain-TCP limits.
+    int32_t secure_connection_timeout_ms = 0;
     UInt64 num_connection_retries = 2;
     int32_t session_timeout_ms = Coordination::DEFAULT_SESSION_TIMEOUT_MS;
     int32_t operation_timeout_ms = Coordination::DEFAULT_OPERATION_TIMEOUT_MS;

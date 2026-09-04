@@ -1,0 +1,9 @@
+<clickhouse>
+    <!-- openSSL section present but no invalidCertificateHandler.name — keeper-client
+         must seed RejectCertificateHandler so verification is not silently skipped. -->
+    <openSSL>
+        <client>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+        </client>
+    </openSSL>
+</clickhouse>

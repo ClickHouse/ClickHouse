@@ -1,0 +1,11 @@
+<clickhouse>
+    <openSSL>
+        <client>
+            <!-- certificateFile intentionally absent: tls_cert_file falls back to tls_key_file (combined-PEM path) -->
+            <privateKeyFile>/etc/clickhouse-server/config.d/client.combined.pem</privateKeyFile>
+            <caConfig>/etc/clickhouse-server/config.d/server.crt</caConfig>
+            <verificationMode>relaxed</verificationMode>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+        </client>
+    </openSSL>
+</clickhouse>
