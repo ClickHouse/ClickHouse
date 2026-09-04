@@ -10,6 +10,7 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Processors/QueryPlan/ReadFromTimeSeries.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -675,6 +676,13 @@ void StorageTimeSeries::readImpl(
     InterpreterSelectQueryAnalyzer interpreter(select_query, read_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
     query_plan = std::move(interpreter).extractQueryPlan();
+
+    if (!query_plan.isInitialized())
+        return;
+
+    auto generated_plan = std::make_unique<QueryPlan>(std::move(query_plan));
+    query_plan = QueryPlan();
+    query_plan.addStep(std::make_unique<ReadFromTimeSeriesStep>(std::move(generated_plan), read_context));
 }
 
 
