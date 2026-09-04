@@ -2,6 +2,7 @@ import csv
 import logging
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 from typing import List, Tuple
@@ -315,13 +316,15 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     docker_image = DockerImage.get_docker_image("clickhouse/stress-test").pull_image()
 
     server_log_path = temp_path / "server_log"
-    server_log_path.mkdir(parents=True, exist_ok=True)
-
     result_path = temp_path / "result_path"
-    result_path.mkdir(parents=True, exist_ok=True)
-
     cores_path = temp_path / "cores"
-    cores_path.mkdir(parents=True, exist_ok=True)
+
+    # Wiped, not just created: the scans below take whole log families, so a rotated log a
+    # previous local run left here would be read as this run's evidence. Not `temp_path`
+    # itself - the packages to install live directly in it.
+    for path in (server_log_path, result_path, cores_path):
+        shutil.rmtree(path, ignore_errors=True)
+        path.mkdir(parents=True, exist_ok=True)
 
     additional_envs = get_additional_envs(info, check_name)
 
