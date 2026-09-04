@@ -199,9 +199,16 @@ private:
         size_t limit,
         ReadBuffer * stream,
         bool continuous_reading,
-        DeserializeBinaryBulkStateVariantDiscriminators & state) const;
+        DeserializeBinaryBulkStateVariantDiscriminators & state,
+        const DeserializeBinaryBulkSettings & settings) const;
 
-    static void readDiscriminatorsGranuleStart(DeserializeBinaryBulkStateVariantDiscriminators & state, ReadBuffer * stream);
+    /// Reads the compact-discriminators granule header and validates the compact discriminator
+    /// against num_variants when num_variants > 0.
+    static void readDiscriminatorsGranuleStart(
+        DeserializeBinaryBulkStateVariantDiscriminators & state,
+        ReadBuffer * stream,
+        size_t num_variants,
+        const DeserializeBinaryBulkSettings & settings);
 
     bool tryDeserializeTextEscapedImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
     bool tryDeserializeTextQuotedImpl(IColumn & column, const String & field, const FormatSettings & settings) const;

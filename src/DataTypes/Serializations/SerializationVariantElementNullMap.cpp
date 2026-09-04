@@ -135,6 +135,8 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
                 discriminators_stream,
                 settings.continuous_reading,
                 variant_element_null_map_state->discriminators_state,
+                settings,
+                num_variants,
                 this);
 
             variant_limit = variant_pair.second;
@@ -184,11 +186,13 @@ SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::VariantNullM
     const ColumnPtr & local_discriminators_,
     const String & variant_element_name_,
     ColumnVariant::Discriminator global_variant_discriminator_,
-    ColumnVariant::Discriminator local_variant_discriminator_)
+    ColumnVariant::Discriminator local_variant_discriminator_,
+    size_t num_variants_)
     : local_discriminators(local_discriminators_)
     , variant_element_name(variant_element_name_)
     , global_variant_discriminator(global_variant_discriminator_)
     , local_variant_discriminator(local_variant_discriminator_)
+    , num_variants(num_variants_)
 {
 }
 
@@ -199,7 +203,7 @@ DataTypePtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::
 
 SerializationPtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::create(const DB::SerializationPtr &, const DataTypePtr &) const
 {
-    return std::make_shared<SerializationVariantElementNullMap>(variant_element_name, global_variant_discriminator);
+    return std::make_shared<SerializationVariantElementNullMap>(variant_element_name, global_variant_discriminator, num_variants);
 }
 
 ColumnPtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::create(const DB::ColumnPtr &) const
