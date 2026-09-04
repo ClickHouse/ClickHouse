@@ -1530,7 +1530,7 @@ bool isNamedTupleSubfieldAddition(
         }
         if (isJSONLazyMetadataConversion(old_elem, new_elem, context))
         {
-            nested_lazy_settings.emplace("allow_experimental_json_lazy_type_hints");
+            nested_lazy_settings.emplace("enable_json_lazy_type_hints");
             continue;
         }
         if (!isTrueMetadataOnlyConversion(old_elem, new_elem))
@@ -1557,7 +1557,7 @@ std::set<std::string_view> getLazyMetadataConversionSettings(
     }
 
     if (isJSONLazyMetadataConversion(from, to, context))
-        settings.emplace("allow_experimental_json_lazy_type_hints");
+        settings.emplace("enable_json_lazy_type_hints");
 
     return settings;
 }
