@@ -752,9 +752,10 @@ With `pretty` = 1, the plan tree is displayed using line-drawing characters inst
 - **Filter steps** display the filter condition in SQL notation. When runtime join filters are present, they are shown separately.
 - **Aggregation steps** display keys and aggregate functions with their arguments (e.g., `sum(c)`, `count()`).
 - **IN sets** from tuple literals show their values (truncated for large sets), subquery-based sets are labeled `subquery1`, `subquery2`, etc., and sets from `Set` engine tables show the table name.
-- **Join steps** display the join relation using mathematical notation, estimated result row count,
-  and which output columns come from the left vs. right side. The following symbols are used to
-  represent different join types:
+- **Join steps** display the join relation using mathematical notation, the estimates the
+  join-order optimizer produced for the step (cost, selectivity, output rows, and per-side rows),
+  and the input columns of each side. The following symbols are used to represent different join
+  types:
 
 | Symbol | Join Type |
 |--------|-----------|
@@ -772,11 +773,43 @@ For example, `t1 ⟕ t2` means a left join between tables `t1` and `t2`.
 The number in brackets after the table name (e.g., `t1[100]`) indicates the estimated row count
 when table statistics are available.
 
+Below the join relation, each join step prints the estimates the join-order optimizer produced for it:
+
+```txt
+Cost: estimated <cost>
+Selectivity: estimated (NDV) <selectivity>
+Output rows: estimated <rows>
+Left: rows estimated <left_rows>
+Right: rows estimated <right_rows>
+```
+
+- `Cost` — the cost of the whole join subtree under this step, which is the value the optimizer
+  minimizes when it compares candidate join orders. The cost of a join is its estimated number of
+  matched row pairs, `<selectivity> * <left_rows> * <right_rows>`, plus the cost of its inputs.
+- `Selectivity` — the estimated fraction of the Cartesian product of the two sides that survives
+  the join condition. It is derived from the number of distinct values (NDV) of the join keys:
+  a key equality keeps about `1 / max(NDV_left, NDV_right)` of the pairs, and the smallest
+  fraction over the join conditions is used.
+- `Output rows` — the estimated number of rows the join produces, computed as
+  `<selectivity> * <left_rows> * <right_rows>`.
+- `Left` / `Right` — the estimated number of rows entering the join from each side.
+
+A value the optimizer could not estimate is reported as `no stats`. This happens when the
+join-order optimization did not run — for example, when
+[`query_plan_optimize_join_order_limit`](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit)
+is `0` — or when there is no basis for the estimate.
+
+The `Input (left):` and `Input (right):` lines list the columns each side feeds into the join.
+
 The `pretty` option works well together with `compact = 1`, which hides `Expression` steps and detailed action info, making the plan easier to read.
 
-A detailed example with joins:
+A detailed example with joins. The
+[`join_runtime_filter_min_probe_rows`](/reference/settings/session-settings/join-runtime#join_runtime_filter_min_probe_rows)
+setting is lowered only so that a table this small still builds a runtime join filter:
 
 ```sql
+SET join_runtime_filter_min_probe_rows = 10;
+
 CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
@@ -792,11 +825,14 @@ Output: id, value, id, value
 Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
 │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
-│  Result rows: 100
+│  Cost: estimated 100.00
+│  Selectivity: estimated (NDV) 0.01
+│  Output rows: estimated 100.00
+│  Left: rows estimated 100.00
+│  Right: rows estimated 100.00
 │  Join conditions: id = id
-│  Output:
-│    Left:  id, value
-│    Right: id, value
+│  Input (left): id, value
+│  Input (right): id, value
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
@@ -961,23 +997,62 @@ The maximum number in `parallelism` is computed as a minimum between:
 
 #### Join steps {#explain-analyze-join-steps}
 
-For a join step `EXPLAIN ANALYZE` prints per-side *participation* lines — `Left` and `Right` — followed by any lines specific to the join implementation. `Left` and `Right` correspond to logical SQL sides. In most of the cases `Left` would also be the probe side of the join, and `Right` would be the build side of the join. However this is not always the case due to the swap that can happen during execution of the join. Every value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is covered (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), and so are the two implementations that setting cannot select: a `CROSS` or `COMMA` join and any `ON` section without a key equality, and the [`Join`](/reference/engines/table-engines/special/join) table engine. Most of them report both sides; some report only the side they materialize (for example `direct` prints only `Left:`).
+For a join step `EXPLAIN ANALYZE` prints lines comparing the join-order optimizer's estimates with what actually happened (see [Estimated vs. actual join metrics](#explain-analyze-join-estimation)) and per-side *participation* lines — `Left` and `Right` — followed by any lines specific to the join implementation. Every value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is covered (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), and so are the two implementations that setting cannot select: a `CROSS` or `COMMA` join and any `ON` section without a key equality, and the [`Join`](/reference/engines/table-engines/special/join) table engine. Most of them report both sides; some report only the side they materialize (for example `direct` prints only `Left:`).
 
 The per-side lines share the same shape:
 
 ```txt
-Left:  rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
-Right: rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
+Left:  rows estimated <estimated_left_rows>  · rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
 ```
 
 For each side `EXPLAIN ANALYZE` reports:
 
+- `rows estimated <estimated_rows>` — the join-order optimizer's estimate of that side's rows, printed for comparison with the actual `rows` next to it; `no stats` when the optimizer produced no estimate (see [Estimated vs. actual join metrics](#explain-analyze-join-estimation)).
 - `rows <rows>` — the total number of rows of that side that passed through the join.
 - `matched <matched_rows>` — the number of rows of that side that found at least one join partner on the other side. This counts *rows*, not keys: if a key occurs three times on the right and matches, all three right rows count as matched.
 - `match rate <match_rate>%` — the percentage of that side's rows that matched, computed as `100 * <matched_rows> / <rows>`.
 - `fanout <fanout>` — how many output rows an average matched row of that side produced.
 
 A number that cannot be derived exactly is reported as `not collected` rather than as `0`. `match rate` and `fanout` are derived from `matched`, so a side without it reports all three as `not collected`.
+
+#### Estimated vs. actual join metrics {#explain-analyze-join-estimation}
+
+A join step carries the join-order optimizer's estimates — the same ones `EXPLAIN PLAN` shows (see the [EXPLAIN PLAN](#explain-plan) section) — and `EXPLAIN ANALYZE` prints each of them next to the measured value:
+
+```txt
+Cost: estimated <cost> · actual <cost>
+Selectivity: estimated (NDV) <selectivity> · actual (cartesian) <selectivity>
+Output rows: estimated <rows> · actual <rows> · q-error <ratio>
+```
+
+- `Cost` — both values count matched output rows. The estimate is the optimizer's cost of the join subtree: `<selectivity> * <left_rows> * <right_rows>` plus the cost of its inputs. The actual value is measured the same way — the matched output rows of this join plus the actual cost of every join below it that belongs to the same reorder cluster.
+- `Selectivity` — the estimate is derived from the number of distinct values of the join keys; the actual value is the measured fraction of the Cartesian product that ended up in the output: `<matched output rows> / (<left rows> * <right rows>)`.
+- `Output rows` — the estimated and the actual number of rows the join produced. When both are non-zero, `q-error` reports `max(estimated / actual, actual / estimated)`, the standard measure of cardinality-estimation quality: `1.00` means a perfect estimate, and a large value means the optimizer picked the join order using a badly wrong cardinality.
+
+An estimate that was never made is reported as `no stats` — for example, when the join-order optimization did not run because [`query_plan_optimize_join_order_limit`](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) is `0`. This is distinct from `not collected`, which marks an actual value the execution could not measure. Joins with a pre-filled right side (the [`Join`](/reference/engines/table-engines/special/join) table engine, `direct` joins) do not go through the join-order optimizer and print only the participation lines.
+
+The join step also prints `Input (left):` and `Input (right):` lines with the columns each side feeds into the join.
+
+For the tables of the [EXPLAIN PLAN](#explain-plan) join example, the join step of `EXPLAIN ANALYZE SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id` looks like this:
+
+```text
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+│  Join conditions: id = id
+│  Cost: estimated 100.00 · actual 100.00
+│  Selectivity: estimated (NDV) 0.01 · actual (cartesian) 0.01
+│  Output rows: estimated 100.00 · actual 100.00 · q-error 1.00
+│  Left: rows estimated 100.00 · rows 100.00 · matched 100.00 · match rate 100.00% · fanout 1.00
+│  Right: rows estimated 100.00 · rows 100.00 · matched not collected · match rate not collected · fanout not collected
+│  Hash table: unique keys 100.00 · memory 6.27 KB
+│  Input (left): id, value
+│  Input (right): id, value
+│  I/O: rows 200 → 100 (50.00%) · 3.58 KB → 3.58 KB
+│    Stage (build): time 127.45 us (1.2%) · parallelism 0.99/1
+│    Stage (probe): time 124.99 us (1.2%) · parallelism 0.99/1
+```
 
 #### Fanout {#explain-analyze-fanout}
 
@@ -1070,7 +1145,7 @@ Spill: yes · left spilled <left_spilled_bytes> · right spilled <right_spilled_
 For `partial_merge` join the `Right:` line carries extra information about how the right table was buffered and sorted, and the sorting time is shown on the `Stage (build)` and `Stage (probe)` lines:
 
 ```txt
-Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
   Stage (build): time <t> (<share>%) · parallelism <avg>/<max> · sort time <build_sort_time> · sort share <build_sort_share>%
   Stage (probe): time <t> (<share>%) · parallelism <avg>/<max> · sort time <probe_sort_time> · sort share <probe_sort_share>%
 ```

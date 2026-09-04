@@ -1,11 +1,16 @@
 #include <Processors/QueryPlan/JoinStatsAnalyzer.h>
+#include <Processors/QueryPlan/JoinEstimation.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Processors/QueryPlan/StepStatsAnalyzer.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Core/Joins.h>
 #include <Common/typeid_cast.h>
 #include <algorithm>
+#include <array>
+#include <iterator>
 #include <optional>
 #include <type_traits>
 #include <variant>
@@ -94,33 +99,40 @@ void appendSideMetrics(MetricGroup & group, const JoinSideRows & side, std::opti
         group.metrics.emplace_back(MetricKey::Fanout, std::monostate{});
 }
 
-void enrichJoinSides(StepAnalysisReport & report, UInt64 output_rows, JoinKind kind, JoinStrictness strictness)
+std::optional<UInt64> matchedOutputRows(
+    const JoinSideRows & left_side, const JoinSideRows & right_side, UInt64 output_rows, JoinKind kind, JoinStrictness strictness)
 {
-    auto * left_group = findGroup(report, MetricGroupKey::Left);
-    auto * right_group = findGroup(report, MetricGroupKey::Right);
-    if (!left_group && !right_group)
-        return;
-
-    const JoinSideRows left_side = readSideRows(left_group);
-    const JoinSideRows right_side = readSideRows(right_group);
-
     const bool left_side_preserved_with_nulls = isLeftOrFull(kind) && strictness != JoinStrictness::Semi;
     const bool right_side_preserved_with_nulls = isRightOrFull(kind) && strictness != JoinStrictness::Semi;
 
     const auto left_unpaired_rows = unpairedOutputRows(left_side, left_side_preserved_with_nulls);
     const auto right_unpaired_rows = unpairedOutputRows(right_side, right_side_preserved_with_nulls);
 
-    std::optional<UInt64> matched_output_rows;
-    if (left_unpaired_rows.has_value() && right_unpaired_rows.has_value())
-    {
-        const UInt64 unpaired_rows = *left_unpaired_rows + *right_unpaired_rows;
-        matched_output_rows = output_rows > unpaired_rows ? output_rows - unpaired_rows : 0;
-    }
+    if (!left_unpaired_rows.has_value() || !right_unpaired_rows.has_value())
+        return std::nullopt;
+
+    const UInt64 unpaired_rows = *left_unpaired_rows + *right_unpaired_rows;
+    return output_rows > unpaired_rows ? output_rows - unpaired_rows : 0;
+}
+
+std::optional<UInt64> enrichJoinSides(StepAnalysisReport & report, UInt64 output_rows, JoinKind kind, JoinStrictness strictness)
+{
+    auto * left_group = findGroup(report, MetricGroupKey::Left);
+    auto * right_group = findGroup(report, MetricGroupKey::Right);
+    if (!left_group && !right_group)
+        return std::nullopt;
+
+    const JoinSideRows left_side = readSideRows(left_group);
+    const JoinSideRows right_side = readSideRows(right_group);
+
+    const auto matched_output_rows = matchedOutputRows(left_side, right_side, output_rows, kind, strictness);
 
     if (left_group)
         appendSideMetrics(*left_group, left_side, matched_output_rows);
     if (right_group)
         appendSideMetrics(*right_group, right_side, matched_output_rows);
+
+    return matched_output_rows;
 }
 
 /// sort time is the time a merge join spent sorting the blocks of one side. Relate it to the
@@ -171,6 +183,73 @@ void reshapeSpillGroup(MetricGroup & spill_group)
     spill_group.metrics = std::move(reshaped);
 }
 
+MetricValue optionalDouble(const std::optional<double> & value)
+{
+    if (value)
+        return *value;
+    return std::monostate{};
+}
+
+std::optional<double> cartesianSelectivity(
+    const JoinSideRows & left_side, const JoinSideRows & right_side, std::optional<UInt64> matched_output_rows)
+{
+    if (!left_side.input_rows || !right_side.input_rows || !*left_side.input_rows || !*right_side.input_rows || !matched_output_rows)
+        return std::nullopt;
+    return static_cast<double>(*matched_output_rows)
+        / (static_cast<double>(*left_side.input_rows) * static_cast<double>(*right_side.input_rows));
+}
+
+std::optional<double> resultRowsQError(const std::optional<UInt64> & estimated_rows, UInt64 actual_rows)
+{
+    if (!estimated_rows || !*estimated_rows || !actual_rows)
+        return std::nullopt;
+    return std::max(
+        static_cast<double>(*estimated_rows) / static_cast<double>(actual_rows),
+        static_cast<double>(actual_rows) / static_cast<double>(*estimated_rows));
+}
+
+void prependEstimationComparison(
+    StepAnalysisReport & report, const JoinStep & join_step, const StepStatsContext & context, std::optional<UInt64> matched_output_rows)
+{
+    const JoinEstimation & estimation = join_step.getEstimation();
+
+    std::optional<UInt64> actual_branch_cost;
+    if (const auto cost_it = std::ranges::find(report, MetricGroupKey::Cost, &MetricGroup::key); cost_it != report.end())
+    {
+        actual_branch_cost = findQuantity(*cost_it, MetricKey::Actual);
+        report.erase(cost_it);
+    }
+
+    auto * left_group = findGroup(report, MetricGroupKey::Left);
+    auto * right_group = findGroup(report, MetricGroupKey::Right);
+
+    const JoinSideRows left_side = readSideRows(left_group);
+    const JoinSideRows right_side = readSideRows(right_group);
+
+    if (left_group)
+        left_group->metrics.insert(left_group->metrics.begin(), {MetricKey::RowsEstimated, optionalQuantity(estimation.left_rows)});
+    if (right_group)
+        right_group->metrics.insert(right_group->metrics.begin(), {MetricKey::RowsEstimated, optionalQuantity(estimation.right_rows)});
+
+    MetricGroup cost{MetricGroupKey::Cost, {}};
+    cost.metrics.emplace_back(MetricKey::Estimated, optionalDouble(estimation.cost));
+    cost.metrics.emplace_back(MetricKey::Actual, optionalQuantity(actual_branch_cost));
+
+    MetricGroup selectivity{MetricGroupKey::Selectivity, {}};
+    selectivity.metrics.emplace_back(MetricKey::EstimatedNDV, optionalDouble(estimation.selectivity));
+    selectivity.metrics.emplace_back(
+        MetricKey::ActualCartesian, optionalDouble(cartesianSelectivity(left_side, right_side, matched_output_rows)));
+
+    MetricGroup output{MetricGroupKey::Output, {}};
+    output.metrics.emplace_back(MetricKey::Estimated, optionalQuantity(estimation.output_rows));
+    output.metrics.emplace_back(MetricKey::Actual, context.io.output_rows);
+    if (const auto q_error = resultRowsQError(estimation.output_rows, context.io.output_rows))
+        output.metrics.emplace_back(MetricKey::QError, *q_error);
+
+    std::array<MetricGroup, 3> comparison_groups{std::move(cost), std::move(selectivity), std::move(output)};
+    report.insert(report.begin(), std::make_move_iterator(comparison_groups.begin()), std::make_move_iterator(comparison_groups.end()));
+}
+
 void inlineGroupIntoStage(AnalyzedStepData & step_data, MetricGroupKey group_key, JoinStep::JoinStage stage)
 {
     auto group_it = std::ranges::find(step_data.step_metric_groups, group_key, &MetricGroup::key);
@@ -206,7 +285,7 @@ AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisR
     if (swapped)
         swapReportSides(report);
 
-    enrichJoinSides(report, context.io.output_rows, logical_kind, table_join.strictness());
+    const auto matched_output_rows = enrichJoinSides(report, context.io.output_rows, logical_kind, table_join.strictness());
 
     appendSortShare(report, context, MetricGroupKey::Build, JoinStep::JoinStage::Build);
     appendSortShare(report, context, MetricGroupKey::Probe, JoinStep::JoinStage::Probe);
@@ -214,12 +293,32 @@ AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisR
     if (auto * spill_group = findGroup(report, MetricGroupKey::Spill))
         reshapeSpillGroup(*spill_group);
 
+    /// Only a JoinStep passes through the optimizer that assigns the estimation; a filled join has none.
+    if (join_step)
+    {
+        prependEstimationComparison(report, *join_step, context, matched_output_rows);
+
+        /// Ad hoc solution since we don't have generic infrastructure for rendering EXPLAIN PLAN
+        /// and EXPLAIN ANALYZE at the moment. That is why we pull the part for the collecting the input columns
+        /// and instead put it in here
+        for (auto & group : QueryPlanFormat::collectJoinInputColumns(*join_step))
+            report.push_back(std::move(group));
+    }
+
     AnalyzedStepData result = buildAnalyzedStepData(context, std::move(report));
 
     inlineGroupIntoStage(result, MetricGroupKey::Build, JoinStep::JoinStage::Build);
     inlineGroupIntoStage(result, MetricGroupKey::Probe, JoinStep::JoinStage::Probe);
 
     return result;
+}
+
+std::optional<UInt64> joinMatchedOutputRows(
+    const StepAnalysisReport & report, UInt64 output_rows, JoinKind kind, JoinStrictness strictness)
+{
+    const JoinSideRows left_side = readSideRows(findGroup(report, MetricGroupKey::Left));
+    const JoinSideRows right_side = readSideRows(findGroup(report, MetricGroupKey::Right));
+    return matchedOutputRows(left_side, right_side, output_rows, kind, strictness);
 }
 
 }

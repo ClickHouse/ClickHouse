@@ -51,6 +51,7 @@ DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_m
 DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
         DPJoinEntryPtr rhs,
         double cost_,
+        double selectivity_,
         std::optional<UInt64> cardinality_,
         JoinOperator join_operator_,
         JoinMethod join_method_)
@@ -58,6 +59,7 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
     , left(std::move(lhs))
     , right(std::move(rhs))
     , cost(cost_)
+    , selectivity(selectivity_)
     , estimated_rows(cardinality_)
     , join_operator(std::move(join_operator_))
     , join_method(join_method_)

@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/JoinEstimation.h>
 #include <Core/Joins.h>
 
 namespace DB
@@ -13,8 +14,9 @@ using JoinPtr = std::shared_ptr<IJoin>;
 struct LogicalJoinInfo
 {
     String readable_relation_name;
-    std::optional<UInt64> result_rows_estimation;
+    JoinEstimation estimation;
     JoinLocality locality{};
+    UInt64 cluster_id = 0;
 };
 
 /// Join two data streams.
@@ -91,6 +93,9 @@ public:
 
     StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
 
+    const JoinEstimation & getEstimation() const { return estimation; }
+    UInt64 getClusterId() const { return cluster_id; }
+
 private:
     bool optimized = false;
     void updateOutputHeader() override;
@@ -102,7 +107,8 @@ private:
     String join_readable_relation_name;
 
     JoinPtr join;
-    std::optional<size_t> result_rows_estimation;
+    JoinEstimation estimation;
+    UInt64 cluster_id = 0;
     size_t max_block_size;
     size_t min_block_size_rows;
     size_t min_block_size_bytes;

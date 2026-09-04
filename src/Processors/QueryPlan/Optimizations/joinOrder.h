@@ -38,6 +38,7 @@ struct DPJoinEntry
     DPJoinEntryPtr right;
 
     double cost = 0.0;
+    double selectivity = 0.0;
     std::optional<UInt64> estimated_rows = {};
     std::unordered_map<String, ColumnStats> column_stats = {};
 
@@ -55,6 +56,7 @@ struct DPJoinEntry
     DPJoinEntry(DPJoinEntryPtr lhs,
                 DPJoinEntryPtr rhs,
                 double cost_,
+                double selectivity_,
                 std::optional<UInt64> cardinality_,
                 JoinOperator join_operator_,
                 JoinMethod join_method_ = JoinMethod::Hash);
