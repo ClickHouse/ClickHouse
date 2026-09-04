@@ -159,6 +159,9 @@ struct MergeTreeWriterSettings
     size_t adaptive_write_buffer_initial_size{};
     bool compress_per_column_in_compact_parts{};
     bool apply_adaptive_codec = false;
+    /// Set by mutation writers when allow_json_shared_data_paths_repromotion is enabled: re-decide
+    /// JSON shared-vs-dynamic path placement from the data instead of preserving the incoming one.
+    bool reconsider_json_shared_data_placement = false;
 };
 
 }

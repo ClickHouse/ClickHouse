@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/JSONPathRegexpMatcher.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 
@@ -34,7 +35,9 @@ public:
         std::unordered_set<String> paths_to_skip_ = {},
         std::vector<String> path_regexps_to_skip_ = {},
         size_t max_dynamic_paths_ = DEFAULT_MAX_DYNAMIC_PATHS,
-        size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES);
+        size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES,
+        std::vector<JSONPathRegexpRule> shared_data_path_rules_ = {},
+        String shared_data_path_prefix_ = {});
 
     DataTypeObject(const SchemaFormat & schema_format_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
 
@@ -77,11 +80,30 @@ public:
     UnorderedMapWithMemoryTracking<String, SerializationPtr> getTypedPathSerializations() const;
     const std::unordered_set<String> & getPathsToSkip() const { return paths_to_skip; }
     const std::vector<String> & getPathRegexpsToSkip() const { return path_regexps_to_skip; }
+    /// Paths matching one of these rules are always stored in shared data and are never promoted
+    /// to a dedicated dynamic-path subcolumn, regardless of the `max_dynamic_paths` budget.
+    const std::vector<JSONPathRegexpRule> & getSharedDataPathRules() const { return shared_data_path_rules; }
+    const JSONPathRegexpMatcherPtr & getSharedDataPathMatcher() const { return shared_data_path_matcher; }
+    const String & getSharedDataPathPrefix() const { return shared_data_path_prefix; }
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
 
     DataTypePtr getTypeOfNestedObjects() const;
+    /// Same, but propagates this object's own SHARED REGEXP rules and prefix, extended by
+    /// `path_prefix_from_root`, to the nested type -- so a value dynamically inferred as a nested
+    /// object at that path can still correctly evaluate the rules against its own root-relative
+    /// paths instead of losing the policy or evaluating it unprefixed. Also projects typed paths
+    /// and literal SKIP paths declared under that prefix, stripped to be relative to the nested
+    /// type's own root, so they keep taking precedence over SHARED REGEXP as documented. SKIP
+    /// REGEXP patterns propagate unchanged for the same root-relative evaluation, but only get a
+    /// non-empty prefix to evaluate against when this object also has at least one SHARED REGEXP
+    /// rule -- the constructor rejects a non-empty prefix otherwise. An object with SKIP REGEXP
+    /// and no SHARED REGEXP rules at all still propagates its regexps here, but the nested type's
+    /// prefix stays empty, so they fall back to matching the nested type's own bare local paths
+    /// instead of the intended root-relative ones. This mirrors a pre-existing, equally-scoped
+    /// limitation of buildSubObjectTypeAndSerialization for the explicit `^`-subcolumn accessor.
+    DataTypePtr getTypeOfNestedObjects(const String & path_prefix_from_root) const;
     DataTypePtr getDynamicType() const;
 
     /// Shared data has type Array(Tuple(String, String)).
@@ -99,10 +121,37 @@ private:
     std::unordered_set<String> paths_to_skip;
     /// List of regular expressions that should be used to skip paths during data parsing.
     std::vector<String> path_regexps_to_skip;
+    /// Canonical persisted rules and their immutable compiled matcher.
+    std::vector<JSONPathRegexpRule> shared_data_path_rules;
+    JSONPathRegexpMatcherPtr shared_data_path_matcher;
+    /// Root-relative prefix used by derived sub-object columns. It is empty for stored columns.
+    String shared_data_path_prefix;
     /// Limit on the number of paths that can be stored as subcolumn.
     size_t max_dynamic_paths;
     /// Limit of dynamic types that should be used for Dynamic columns.
     size_t max_dynamic_types;
 };
+
+/// Returns true when two types differ only in `SHARED REGEXP` policy. This difference never changes
+/// value representation and can therefore be handled without a value conversion.
+bool isJSONSharedDataPathPolicyOnlyChange(const IDataType * from, const IDataType * to);
+
+/// Returns a copy of `type` with `SHARED REGEXP` rules from corresponding `JSON` nodes in
+/// `source_type` added as placement provenance. `Array`, `Nullable`, `Tuple`, `Map`, and typed `JSON`
+/// paths are traversed recursively; non-JSON structure is taken from `type`. If an exact union cannot
+/// fit the matcher limits (or uses incompatible root prefixes), internal provenance conservatively
+/// saturates to "all untyped paths stay shared" instead of failing a merge.
+DataTypePtr mergeJSONSharedDataPathRules(const DataTypePtr & type, const DataTypePtr & source_type);
+
+/// Returns a copy of `type` whose corresponding `JSON` nodes use the `SHARED REGEXP` policy from
+/// `policy_source_type`. The same nested containers as mergeJSONSharedDataPathRules are traversed.
+DataTypePtr replaceJSONSharedDataPathPolicy(const DataTypePtr & type, const DataTypePtr & policy_source_type);
+
+/// Returns true if some `JSON` node nested in `type` carries the saturated match-everything policy
+/// that rule unions fall back to, forcing all untyped paths of that node into shared data.
+bool hasSaturatedJSONSharedDataPathPolicy(const IDataType & type);
+
+/// Returns true if `type` is, or wraps (via Array/Nullable/Tuple/Map), a `JSON` (DataTypeObject) node.
+bool containsJSONObjectType(const IDataType & type);
 
 }

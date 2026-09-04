@@ -1,8 +1,19 @@
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/DataTypesCache.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnVariant.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -12,6 +23,8 @@
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
+
+#include <limits>
 
 namespace DB
 {
@@ -27,31 +40,74 @@ namespace ErrorCodes
 namespace
 {
 
+/// Frequency counter over shared-data paths with a hard entry bound (weighted Misra-Gries).
+///
+/// Counting every distinct path exactly would make the counting structure itself grow with the
+/// number of distinct paths, so a wide JSON value could run out of memory here before the
+/// MAX_SHARED_DATA_STATISTICS_SIZE cap is ever applied. This keeps at most `capacity` entries: when
+/// a new path arrives and the table is full, the smallest counter's value is subtracted from every
+/// entry and the ones that reach zero are dropped.
+///
+/// The guarantee that matters for path selection is preserved: any path occurring in more than
+/// total/(capacity + 1) of the counted rows always survives, and its count is understated by at most
+/// that same amount. Rarer paths may be dropped or undercounted, which only affects which of the
+/// already-infrequent paths get statistics. Amortized O(1) per add: each eviction pass costs
+/// O(capacity) but removes at least `capacity` from the total counted mass.
+/// Entry bound for the counter below: a multiple of the statistics cap, so the frequent paths that
+/// actually get kept are ranked accurately while the working set stays bounded.
+const size_t SHARED_DATA_STATISTICS_COUNTER_CAPACITY = 4 * ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE;
+
+class BoundedPathFrequencyCounter
+{
+public:
+    explicit BoundedPathFrequencyCounter(size_t capacity_) : capacity(capacity_) { }
+
+    void add(const String & path, size_t count)
+    {
+        if (count == 0)
+            return;
+
+        if (auto it = counters.find(path); it != counters.end())
+        {
+            it->second += count;
+            return;
+        }
+
+        if (counters.size() < capacity)
+        {
+            counters.emplace(path, count);
+            return;
+        }
+
+        size_t min_count = std::numeric_limits<size_t>::max();
+        for (const auto & [_, counter] : counters)
+            min_count = std::min(min_count, counter);
+
+        const size_t decrement = std::min(count, min_count);
+        for (auto it = counters.begin(); it != counters.end();)
+        {
+            it->second -= decrement;
+            if (it->second == 0)
+                it = counters.erase(it);
+            else
+                ++it;
+        }
+
+        if (count > decrement)
+            counters.emplace(path, count - decrement);
+    }
+
+    const UnorderedMapWithMemoryTracking<String, size_t> & get() const { return counters; }
+
+private:
+    const size_t capacity;
+    UnorderedMapWithMemoryTracking<String, size_t> counters;
+};
+
 const FormatSettings & getFormatSettings()
 {
     static thread_local const FormatSettings settings;
     return settings;
-}
-
-template <typename Container, typename Compare>
-void sortAndKeepTop(Container & container, size_t limit, Compare compare)
-{
-    if (container.size() <= limit)
-    {
-        std::sort(container.begin(), container.end(), compare);
-        return;
-    }
-
-    if (limit == 0)
-    {
-        container.clear();
-        return;
-    }
-
-    auto nth = container.begin() + limit;
-    std::nth_element(container.begin(), nth, container.end(), compare);
-    container.resize(limit);
-    std::sort(container.begin(), container.end(), compare);
 }
 
 const SerializationPtr & getDynamicSerialization()
@@ -150,6 +206,8 @@ ColumnObject::ColumnObject(const ColumnObject & other)
     , global_max_dynamic_paths(other.global_max_dynamic_paths)
     , max_dynamic_types(other.max_dynamic_types)
     , statistics(other.statistics)
+    , shared_data_path_matcher(other.shared_data_path_matcher)
+    , shared_data_path_prefix(other.shared_data_path_prefix)
 {
     /// We should update string_view in sorted_typed_paths and sorted_dynamic_paths so they
     /// point to the new strings in typed_paths and dynamic_paths.
@@ -171,7 +229,9 @@ ColumnObject::Ptr ColumnObject::create(
     size_t max_dynamic_paths_upper_bound_,
     size_t global_max_dynamic_paths_,
     size_t max_dynamic_types_,
-    const ColumnObject::StatisticsPtr & statistics_)
+    const ColumnObject::StatisticsPtr & statistics_,
+    JSONPathRegexpMatcherPtr shared_data_path_matcher_,
+    String shared_data_path_prefix_)
 {
     UnorderedMapWithMemoryTracking<String, MutableColumnPtr> mutable_typed_paths;
     mutable_typed_paths.reserve(typed_paths_.size());
@@ -191,7 +251,9 @@ ColumnObject::Ptr ColumnObject::create(
         max_dynamic_paths_upper_bound_,
         global_max_dynamic_paths_,
         max_dynamic_types_,
-        statistics_);
+        statistics_,
+        std::move(shared_data_path_matcher_),
+        std::move(shared_data_path_prefix_));
 }
 
 ColumnObject::MutablePtr ColumnObject::create(
@@ -202,14 +264,25 @@ ColumnObject::MutablePtr ColumnObject::create(
     size_t max_dynamic_paths_upper_bound_,
     size_t global_max_dynamic_paths_,
     size_t max_dynamic_types_,
-    const ColumnObject::StatisticsPtr & statistics_)
+    const ColumnObject::StatisticsPtr & statistics_,
+    JSONPathRegexpMatcherPtr shared_data_path_matcher_,
+    String shared_data_path_prefix_)
 {
-    return Base::create(std::move(typed_paths_), std::move(dynamic_paths_), std::move(shared_data_), max_dynamic_paths_, max_dynamic_paths_upper_bound_, global_max_dynamic_paths_, max_dynamic_types_, statistics_);
+    auto result = Base::create(std::move(typed_paths_), std::move(dynamic_paths_), std::move(shared_data_), max_dynamic_paths_, max_dynamic_paths_upper_bound_, global_max_dynamic_paths_, max_dynamic_types_, statistics_);
+    result->setSharedDataPathMatcher(std::move(shared_data_path_matcher_), std::move(shared_data_path_prefix_));
+    return result;
 }
 
-ColumnObject::MutablePtr ColumnObject::create(UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_)
+ColumnObject::MutablePtr ColumnObject::create(
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
+    size_t max_dynamic_paths_,
+    size_t max_dynamic_types_,
+    JSONPathRegexpMatcherPtr shared_data_path_matcher_,
+    String shared_data_path_prefix_)
 {
-    return Base::create(std::move(typed_paths_), max_dynamic_paths_, max_dynamic_types_);
+    auto result = Base::create(std::move(typed_paths_), max_dynamic_paths_, max_dynamic_types_);
+    result->setSharedDataPathMatcher(std::move(shared_data_path_matcher_), std::move(shared_data_path_prefix_));
+    return result;
 }
 
 std::string ColumnObject::getName() const
@@ -244,7 +317,9 @@ MutableColumnPtr ColumnObject::cloneEmpty() const
         max_dynamic_paths_upper_bound,
         global_max_dynamic_paths,
         max_dynamic_types,
-        statistics);
+        statistics,
+        shared_data_path_matcher,
+        shared_data_path_prefix);
 }
 
 MutableColumnPtr ColumnObject::cloneResized(size_t size) const
@@ -267,7 +342,9 @@ MutableColumnPtr ColumnObject::cloneResized(size_t size) const
         max_dynamic_paths_upper_bound,
         global_max_dynamic_paths,
         max_dynamic_types,
-        statistics);
+        statistics,
+        shared_data_path_matcher,
+        shared_data_path_prefix);
 }
 
 Field ColumnObject::operator[](size_t n) const
@@ -492,6 +569,9 @@ ColumnDynamic * ColumnObject::tryToAddNewDynamicPath(std::string_view path)
     if (dynamic_paths.size() == max_dynamic_paths)
         return nullptr;
 
+    if (unlikely(shared_data_path_matcher && shouldForceSharedData(path)))
+        return nullptr;
+
     auto new_dynamic_column = ColumnDynamic::create(max_dynamic_types);
     new_dynamic_column->reserve(shared_data->capacity());
     new_dynamic_column->insertManyDefaults(size());
@@ -503,10 +583,39 @@ ColumnDynamic * ColumnObject::tryToAddNewDynamicPath(std::string_view path)
     return it_ptr->second;
 }
 
-void ColumnObject::addNewDynamicPath(std::string_view path, MutableColumnPtr column)
+bool ColumnObject::shouldForceSharedData(std::string_view path)
 {
-    if (dynamic_paths.size() == max_dynamic_paths)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add new dynamic path as the limit ({}) on dynamic paths is reached", max_dynamic_paths);
+    if (!shared_data_path_matcher)
+        return false;
+
+    if (force_shared_data_paths.contains(path))
+        return true;
+
+    bool force_shared = false;
+    if (shared_data_path_prefix.empty())
+    {
+        force_shared = shared_data_path_matcher->matches(path);
+    }
+    else
+    {
+        String root_relative_path;
+        root_relative_path.reserve(shared_data_path_prefix.size() + path.size());
+        root_relative_path.append(shared_data_path_prefix);
+        root_relative_path.append(path);
+        force_shared = shared_data_path_matcher->matches(root_relative_path);
+    }
+
+    /// Memoize only matches (non-matching paths become dynamic paths or overflow anyway) and only up
+    /// to a bounded size, since a broad rule can match most paths of a high-cardinality document once.
+    if (force_shared && force_shared_data_paths.size() < ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
+        force_shared_data_paths.emplace(path);
+    return force_shared;
+}
+
+bool ColumnObject::tryToAddNewDynamicPath(std::string_view path, MutableColumnPtr & column)
+{
+    if (dynamic_paths.size() == max_dynamic_paths || (shared_data_path_matcher && shouldForceSharedData(path)))
+        return false;
 
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting specific column for dynamic path is allowed only for empty object column");
@@ -514,6 +623,7 @@ void ColumnObject::addNewDynamicPath(std::string_view path, MutableColumnPtr col
     auto it = dynamic_paths.emplace(path, std::move(column)).first;
     dynamic_paths_ptrs.emplace(path, assert_cast<ColumnDynamic *>(it->second.get()));
     sorted_dynamic_paths.insert(it->first);
+    return true;
 }
 
 void ColumnObject::addNewDynamicPath(std::string_view path)
@@ -950,6 +1060,19 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
                 column->insertDefault();
         }
     }
+}
+
+ColumnPtr ColumnObject::updateFrom(const IColumn::Patch & patch) const
+{
+    auto result = IColumnHelper<ColumnObject>::updateFrom(patch);
+    if (result.get() == this)
+        return result;
+
+    /// Paths new to `this` can only land in shared data during the splice (no budget to admit them
+    /// as dynamic paths, see tryToAddNewDynamicPath), which leaves the cache below stale.
+    auto mutable_result = IColumn::mutate(std::move(result));
+    assert_cast<ColumnObject &>(*mutable_result).setStatistics(nullptr);
+    return mutable_result;
 }
 
 void ColumnObject::serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const ColumnDynamic & column, size_t n)
@@ -1429,7 +1552,20 @@ ColumnPtr ColumnObject::filter(const Filter & filt, ssize_t result_size_hint) co
         filtered_dynamic_paths[path] = column->filter(filt, result_size_hint);
 
     auto filtered_shared_data = shared_data->filter(filt, result_size_hint);
-    return ColumnObject::create(filtered_typed_paths, filtered_dynamic_paths, filtered_shared_data, max_dynamic_paths, max_dynamic_paths_upper_bound, global_max_dynamic_paths, max_dynamic_types, statistics);
+    /// The statistics count rows, so they do not carry over to a different set of them: keeping the
+    /// source pointer would let a part written from here be serialized against the parent's totals.
+    /// The in-place overload below drops them for the same reason, as do permute/index/replicate/scatter.
+    return ColumnObject::create(
+        filtered_typed_paths,
+        filtered_dynamic_paths,
+        filtered_shared_data,
+        max_dynamic_paths,
+        max_dynamic_paths_upper_bound,
+        global_max_dynamic_paths,
+        max_dynamic_types,
+        /* statistics= */ nullptr,
+        shared_data_path_matcher,
+        shared_data_path_prefix);
 }
 
 void ColumnObject::filter(const Filter & filt)
@@ -1467,7 +1603,17 @@ ColumnPtr ColumnObject::permute(const Permutation & perm, size_t limit) const
         permuted_dynamic_paths[path] = column->permute(perm, limit);
 
     auto permuted_shared_data = shared_data->permute(perm, limit);
-    return ColumnObject::create(permuted_typed_paths, permuted_dynamic_paths, permuted_shared_data, max_dynamic_paths, max_dynamic_paths_upper_bound, global_max_dynamic_paths, max_dynamic_types, statistics);
+    return ColumnObject::create(
+        permuted_typed_paths,
+        permuted_dynamic_paths,
+        permuted_shared_data,
+        max_dynamic_paths,
+        max_dynamic_paths_upper_bound,
+        global_max_dynamic_paths,
+        max_dynamic_types,
+        /* statistics= */ nullptr,
+        shared_data_path_matcher,
+        shared_data_path_prefix);
 }
 
 ColumnPtr ColumnObject::index(const IColumn & indexes, size_t limit) const
@@ -1483,7 +1629,17 @@ ColumnPtr ColumnObject::index(const IColumn & indexes, size_t limit) const
         indexed_dynamic_paths[path] = column->index(indexes, limit);
 
     auto indexed_shared_data = shared_data->index(indexes, limit);
-    return ColumnObject::create(indexed_typed_paths, indexed_dynamic_paths, indexed_shared_data, max_dynamic_paths, max_dynamic_paths_upper_bound, global_max_dynamic_paths, max_dynamic_types, statistics);
+    return ColumnObject::create(
+        indexed_typed_paths,
+        indexed_dynamic_paths,
+        indexed_shared_data,
+        max_dynamic_paths,
+        max_dynamic_paths_upper_bound,
+        global_max_dynamic_paths,
+        max_dynamic_types,
+        /* statistics= */ nullptr,
+        shared_data_path_matcher,
+        shared_data_path_prefix);
 }
 
 ColumnPtr ColumnObject::replicate(const Offsets & replicate_offsets) const
@@ -1499,7 +1655,17 @@ ColumnPtr ColumnObject::replicate(const Offsets & replicate_offsets) const
         replicated_dynamic_paths[path] = column->replicate(replicate_offsets);
 
     auto replicated_shared_data = shared_data->replicate(replicate_offsets);
-    return ColumnObject::create(replicated_typed_paths, replicated_dynamic_paths, replicated_shared_data, max_dynamic_paths, max_dynamic_paths_upper_bound, global_max_dynamic_paths, max_dynamic_types, statistics);
+    return ColumnObject::create(
+        replicated_typed_paths,
+        replicated_dynamic_paths,
+        replicated_shared_data,
+        max_dynamic_paths,
+        max_dynamic_paths_upper_bound,
+        global_max_dynamic_paths,
+        max_dynamic_types,
+        /* statistics= */ nullptr,
+        shared_data_path_matcher,
+        shared_data_path_prefix);
 }
 
 VectorWithMemoryTracking<MutableColumnPtr> ColumnObject::scatter(size_t num_columns, const Selector & selector) const
@@ -1530,7 +1696,20 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnObject::scatter(size_t num_colu
     VectorWithMemoryTracking<MutableColumnPtr> result_columns;
     result_columns.reserve(num_columns);
     for (size_t i = 0; i != num_columns; ++i)
-        result_columns.emplace_back(ColumnObject::create(std::move(scattered_typed_paths[i]), std::move(scattered_dynamic_paths[i]), std::move(scattered_shared_data_columns[i]), max_dynamic_paths, max_dynamic_paths_upper_bound, global_max_dynamic_paths, max_dynamic_types, statistics));
+    {
+        result_columns.emplace_back(
+            ColumnObject::create(
+                std::move(scattered_typed_paths[i]),
+                std::move(scattered_dynamic_paths[i]),
+                std::move(scattered_shared_data_columns[i]),
+                max_dynamic_paths,
+                max_dynamic_paths_upper_bound,
+                global_max_dynamic_paths,
+                max_dynamic_types,
+                /* statistics= */ nullptr,
+                shared_data_path_matcher,
+                shared_data_path_prefix));
+    }
     return result_columns;
 }
 
@@ -1763,7 +1942,9 @@ ColumnPtr ColumnObject::compress(bool force_compression) const
          my_max_dynamic_paths_upper_bound = max_dynamic_paths_upper_bound,
          my_global_max_dynamic_paths = global_max_dynamic_paths,
          my_max_dynamic_types = max_dynamic_types,
-         my_statistics = statistics]() mutable
+         my_statistics = statistics,
+         my_shared_data_path_matcher = shared_data_path_matcher,
+         my_shared_data_path_prefix = shared_data_path_prefix]() mutable
     {
         UnorderedMapWithMemoryTracking<String, ColumnPtr> decompressed_typed_paths;
         decompressed_typed_paths.reserve(my_compressed_typed_paths.size());
@@ -1776,7 +1957,17 @@ ColumnPtr ColumnObject::compress(bool force_compression) const
             decompressed_dynamic_paths[path] = column->decompress();
 
         auto decompressed_shared_data = my_compressed_shared_data->decompress();
-        return ColumnObject::create(decompressed_typed_paths, decompressed_dynamic_paths, decompressed_shared_data, my_max_dynamic_paths, my_max_dynamic_paths_upper_bound, my_global_max_dynamic_paths, my_max_dynamic_types, my_statistics);
+        return ColumnObject::create(
+            decompressed_typed_paths,
+            decompressed_dynamic_paths,
+            decompressed_shared_data,
+            my_max_dynamic_paths,
+            my_max_dynamic_paths_upper_bound,
+            my_global_max_dynamic_paths,
+            my_max_dynamic_types,
+            my_statistics,
+            my_shared_data_path_matcher,
+            my_shared_data_path_prefix);
     };
 
     return ColumnCompressed::create(size(), byte_size, decompress);
@@ -1852,6 +2043,14 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
 
     /// Add dynamic paths from this object column.
     add_dynamic_paths(*this);
+
+    if (shared_data_path_matcher)
+    {
+        std::erase_if(path_to_total_number_of_non_null_values, [this](const auto & entry)
+        {
+            return !dynamic_paths.contains(entry.first) && shouldForceSharedData(entry.first);
+        });
+    }
 
     /// It might happen that current max_dynamic_paths is less then its upper bound
     /// but the shared data is empty. For example if this block was deserialized from Native format.
@@ -1974,7 +2173,15 @@ bool ColumnObject::dynamicStructureEquals(const IColumn & rhs) const
     return true;
 }
 
-void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnObject::setSharedDataPathMatcher(JSONPathRegexpMatcherPtr matcher, String path_prefix)
+{
+    /// Memoized force-shared decisions are valid only for the previously bound matcher and prefix.
+    force_shared_data_paths.clear();
+    shared_data_path_matcher = std::move(matcher);
+    shared_data_path_prefix = std::move(path_prefix);
+}
+
+void ColumnObject::choosePathPlacementForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "chooseDynamicStructureForMerge should be called only on empty Object column");
@@ -2021,6 +2228,17 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
                 it = path_to_total_number_of_non_null_values.emplace(path, 0).first;
             it->second += size;
         }
+    }
+
+    /// Paths matching a `SHARED REGEXP` pattern from the column's type must always be stored in shared
+    /// data and must never be selected as dynamic paths, regardless of their statistics. Filter them
+    /// out of the candidate set before the top-K selection below.
+    if (shared_data_path_matcher)
+    {
+        std::erase_if(path_to_total_number_of_non_null_values, [this](const auto & entry)
+        {
+            return shouldForceSharedData(entry.first);
+        });
     }
 
     /// Reset current state.
@@ -2085,6 +2303,19 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
         }
         column->chooseDynamicStructureForMerge(dynamic_path_source_columns, max_dynamic_subcolumns);
     }
+}
+
+void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+{
+    /// This may be freshly created from a stale source type; inherit the policy from source_columns
+    /// (already correctly patched by the reader) so filtering below uses the current policy.
+    if (!source_columns.empty())
+    {
+        const auto & source_object = assert_cast<const ColumnObject &>(*source_columns.front());
+        setSharedDataPathMatcher(source_object.getSharedDataPathMatcher(), source_object.getSharedDataPathPrefix());
+    }
+
+    choosePathPlacementForMerge(source_columns, max_dynamic_subcolumns);
 
     /// Typed paths also can contain types with dynamic structure.
     for (auto & [path, column] : typed_paths)
@@ -2094,6 +2325,329 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
         for (const auto & source_column : source_columns)
             typed_path_source_columns.push_back(assert_cast<const ColumnObject &>(*source_column).typed_paths.at(path));
         column->chooseDynamicStructureForMerge(typed_path_source_columns, max_dynamic_subcolumns);
+    }
+}
+
+/// A dynamic path's own value can be object-shaped directly, or wrapped in Array/Tuple/Map/Nullable
+/// (e.g. `arr`'s inferred elements are `Array(JSON(...))`, not a bare JSON) -- mirrors
+/// containsJSONObjectType's traversal, but rebuilds the same wrapper shape around `replacement`
+/// instead of just testing for one.
+static DataTypePtr replaceNestedJSONObjectType(const DataTypePtr & shape, const DataTypePtr & replacement)
+{
+    if (typeid_cast<const DataTypeObject *>(shape.get()))
+        return replacement;
+
+    if (const auto * array = typeid_cast<const DataTypeArray *>(shape.get()))
+        return std::make_shared<DataTypeArray>(replaceNestedJSONObjectType(array->getNestedType(), replacement));
+
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(shape.get()))
+        return std::make_shared<DataTypeNullable>(replaceNestedJSONObjectType(nullable->getNestedType(), replacement));
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(shape.get()))
+    {
+        DataTypes elements;
+        elements.reserve(tuple->getElements().size());
+        for (const auto & element : tuple->getElements())
+            elements.push_back(replaceNestedJSONObjectType(element, replacement));
+        if (tuple->hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(std::move(elements), tuple->getElementNames());
+        return std::make_shared<DataTypeTuple>(std::move(elements));
+    }
+
+    if (const auto * map = typeid_cast<const DataTypeMap *>(shape.get()))
+        return std::make_shared<DataTypeMap>(
+            replaceNestedJSONObjectType(map->getKeyType(), replacement), replaceNestedJSONObjectType(map->getValueType(), replacement));
+
+    return shape;
+}
+
+void setSharedDataPathMatcherRecursively(IColumn & column, const DataTypePtr & type)
+{
+    IColumn * current = &column;
+    while (true)
+    {
+        if (auto * sparse = typeid_cast<ColumnSparse *>(current))
+        {
+            current = &sparse->getValuesColumn();
+        }
+        else if (auto * replicated = typeid_cast<ColumnReplicated *>(current))
+        {
+            current = &*replicated->getNestedColumn();
+        }
+        else
+            break;
+    }
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        if (auto * nullable_column = typeid_cast<ColumnNullable *>(current))
+            setSharedDataPathMatcherRecursively(nullable_column->getNestedColumn(), nullable_type->getNestedType());
+        return;
+    }
+
+    if (const auto * object_type = typeid_cast<const DataTypeObject *>(type.get()))
+    {
+        auto * object_column = typeid_cast<ColumnObject *>(current);
+        if (!object_column)
+            return;
+
+        object_column->setSharedDataPathMatcher(object_type->getSharedDataPathMatcher(), object_type->getSharedDataPathPrefix());
+        for (const auto & [path, nested_type] : object_type->getTypedPaths())
+        {
+            if (auto it = object_column->getTypedPaths().find(path); it != object_column->getTypedPaths().end())
+                setSharedDataPathMatcherRecursively(*it->second, nested_type);
+        }
+
+        /// A value dynamically inferred as its own nested JSON object (see
+        /// ObjectJSONNode::getDynamicNodeForPath in JSONExtractTree.cpp) lives under a dynamic path
+        /// as an Object-typed Dynamic variant, with its own derived matcher/prefix -- it has no
+        /// entry in typed_paths, so the loop above never reaches it. A policy-only rewrite would
+        /// otherwise leave it on the matcher/prefix it had when first materialized. Push the update
+        /// into any dynamic path currently holding one, deriving its type the same way it was
+        /// first derived.
+        for (const auto & [path, column_dynamic] : object_column->getDynamicPathsPtrs())
+        {
+            const auto & variant_info = column_dynamic->getVariantInfo();
+            const auto & variants = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
+            DataTypes retargeted_variants;
+            retargeted_variants.reserve(variants.size());
+            bool any_variant_retargeted = false;
+            /// Old name -> new name for every variant the loop renames, to keep the statistics keys
+            /// aligned: the serialization prefix asserts an entry per variant name.
+            UnorderedMapWithMemoryTracking<String, String> variant_rename;
+            for (const auto & variant_type : variants)
+            {
+                retargeted_variants.push_back(variant_type);
+                /// The object may be direct (a dynamic path whose value is itself always
+                /// object-shaped) or wrapped, e.g. `arr`'s inconsistent-shape elements infer as
+                /// Array(JSON(...)), not a bare JSON.
+                if (!containsJSONObjectType(*variant_type))
+                    continue;
+
+                auto discriminator_it = variant_info.variant_name_to_discriminator.find(variant_type->getName());
+                if (discriminator_it == variant_info.variant_name_to_discriminator.end())
+                    continue;
+
+                auto retargeted_variant = replaceNestedJSONObjectType(variant_type, object_type->getTypeOfNestedObjects(path + "."));
+                setSharedDataPathMatcherRecursively(
+                    column_dynamic->getVariantColumn().getVariantByGlobalDiscriminator(discriminator_it->second),
+                    retargeted_variant);
+                /// The column is retargeted above, but the cached variant name still spells the retired
+                /// policy, and that name is what a regular-variant read reports and what the merge seeds
+                /// the destination set from.
+                if (retargeted_variant->getName() != variant_type->getName())
+                {
+                    any_variant_retargeted = true;
+                    variant_rename[variant_type->getName()] = retargeted_variant->getName();
+                }
+                retargeted_variants.back() = retargeted_variant;
+            }
+
+            if (any_variant_retargeted)
+                column_dynamic->resetVariantInfoAfterRetarget(std::make_shared<DataTypeVariant>(retargeted_variants));
+
+            /// A nested object that currently lives only in the shared variant has no column for the
+            /// loop above to retarget: its retired type survives solely as a statistics key, and
+            /// `ColumnDynamic::chooseDynamicStructureForMerge` rebuilds a type from that key when it
+            /// promotes the variant back out. Rewriting the keys is what keeps that promotion from
+            /// resurrecting the old matcher and prefix.
+            if (const auto & statistics = column_dynamic->getStatistics())
+            {
+                auto rewritten = std::make_shared<ColumnDynamic::Statistics>(*statistics);
+                /// The loop above renamed regular variants; part-level statistics attached from the
+                /// source part still carry the old keys, and the write-side prefix asserts one entry
+                /// per (new) variant name. Rename the keys with them.
+                if (!variant_rename.empty())
+                {
+                    rewritten->variants_statistics.clear();
+                    for (const auto & [variant_name, size] : statistics->variants_statistics)
+                    {
+                        auto rename_it = variant_rename.find(variant_name);
+                        /// Accumulated rather than assigned, like the shared keys below.
+                        rewritten->variants_statistics[rename_it == variant_rename.end() ? variant_name : rename_it->second] += size;
+                    }
+                }
+                rewritten->shared_variants_statistics.clear();
+                for (const auto & [variant_name, size] : statistics->shared_variants_statistics)
+                {
+                    String rewritten_name = variant_name;
+                    /// `tryGet`, not `get`: these keys are arbitrary type names and a merge must not
+                    /// abort on one that no longer parses.
+                    auto variant_type = DataTypeFactory::instance().tryGet(variant_name);
+                    if (variant_type && containsJSONObjectType(*variant_type))
+                        rewritten_name
+                            = replaceNestedJSONObjectType(variant_type, object_type->getTypeOfNestedObjects(path + "."))
+                                  ->getName();
+                    /// Accumulated rather than assigned: two retired names can share one rewritten name.
+                    rewritten->shared_variants_statistics[rewritten_name] += size;
+                }
+                column_dynamic->setStatistics(rewritten);
+            }
+
+            /// The statistics rewrite above only governs what a later promotion rebuilds. A value
+            /// sitting in the shared variant still carries the type name it was written under, in
+            /// the header ahead of its bytes, and that name outlives the policy: it occupies a
+            /// `max_dynamic_types` slot, so the next widening promotes it back out and the retired
+            /// name absorbs values written after the retirement, leaving the current type unable to
+            /// read them. Rewrite the headers too. Only the matcher and prefix change, and neither
+            /// is encoded in the value, so the bytes after the header are copied through untouched.
+            auto & shared_variant = column_dynamic->getSharedVariant();
+            if (!shared_variant.empty())
+            {
+                ColumnString::Chars rewritten_chars;
+                IColumn::Offsets rewritten_offsets;
+                rewritten_offsets.reserve(shared_variant.size());
+                for (size_t i = 0; i != shared_variant.size(); ++i)
+                {
+                    auto row = shared_variant.getDataAt(i);
+                    const auto * row_begin = row.data();
+                    const size_t row_size = row.size();
+                    ReadBufferFromMemory buf(row);
+                    /// A header this column wrote itself is always decodable.
+                    auto value_type = decodeDataType(buf);
+                    size_t header_size = buf.count();
+                    if (containsJSONObjectType(*value_type))
+                    {
+                        WriteBufferFromVector<ColumnString::Chars> header_buf(rewritten_chars, AppendModeTag());
+                        encodeDataType(
+                            replaceNestedJSONObjectType(value_type, object_type->getTypeOfNestedObjects(path + ".")),
+                            header_buf);
+                    }
+                    else
+                    {
+                        rewritten_chars.insert(row_begin, row_begin + header_size);
+                    }
+
+                    rewritten_chars.insert(row_begin + header_size, row_begin + row_size);
+                    rewritten_offsets.push_back(rewritten_chars.size());
+                }
+                shared_variant.getChars().swap(rewritten_chars);
+                shared_variant.getOffsets().swap(rewritten_offsets);
+            }
+        }
+        return;
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        if (auto * array_column = typeid_cast<ColumnArray *>(current))
+            setSharedDataPathMatcherRecursively(array_column->getData(), array_type->getNestedType());
+        return;
+    }
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        if (auto * tuple_column = typeid_cast<ColumnTuple *>(current))
+        {
+            const auto & element_types = tuple_type->getElements();
+            for (size_t i = 0; i != element_types.size(); ++i)
+                setSharedDataPathMatcherRecursively(tuple_column->getColumn(i), element_types[i]);
+        }
+        return;
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        if (auto * map_column = typeid_cast<ColumnMap *>(current))
+        {
+            auto & tuple_column = map_column->getNestedData();
+            setSharedDataPathMatcherRecursively(tuple_column.getColumn(0), map_type->getKeyType());
+            setSharedDataPathMatcherRecursively(tuple_column.getColumn(1), map_type->getValueType());
+        }
+    }
+}
+
+void chooseJSONSharedDataStructureForMergeRecursively(IColumn & mutable_column, const IColumn & source_column, const DataTypePtr & type)
+{
+    IColumn * mutable_current = &mutable_column;
+    const IColumn * source_current = &source_column;
+    while (true)
+    {
+        if (auto * sparse = typeid_cast<ColumnSparse *>(mutable_current))
+        {
+            mutable_current = &sparse->getValuesColumn();
+            source_current = &assert_cast<const ColumnSparse &>(*source_current).getValuesColumn();
+        }
+        else if (auto * replicated = typeid_cast<ColumnReplicated *>(mutable_current))
+        {
+            mutable_current = &*replicated->getNestedColumn();
+            source_current = &*assert_cast<const ColumnReplicated &>(*source_current).getNestedColumn();
+        }
+        else
+            break;
+    }
+
+    /// A JSON node: re-decide its own dynamic-vs-shared path placement from the data (this also covers
+    /// each selected dynamic path's own Dynamic structure, which is part of that placement decision).
+    if (const auto * object_type = typeid_cast<const DataTypeObject *>(type.get()))
+    {
+        auto * mutable_object = typeid_cast<ColumnObject *>(mutable_current);
+        if (!mutable_object)
+            return;
+
+        mutable_object->choosePathPlacementForMerge({source_current->getPtr()}, /*max_dynamic_subcolumns=*/ std::nullopt);
+
+        /// Typed paths are fixed by the type and never participate in shared/dynamic placement (see the
+        /// constructor comment on shared_data_path_rules), so this JSON node's own re-decision above must
+        /// not reach them. Recurse into each independently instead of calling chooseDynamicStructureForMerge
+        /// on this node, which would also unconditionally reshape every typed path, JSON-related or not.
+        const auto & source_object = assert_cast<const ColumnObject &>(*source_current);
+        for (const auto & [path, nested_type] : object_type->getTypedPaths())
+        {
+            auto mutable_it = mutable_object->getTypedPaths().find(path);
+            auto source_it = source_object.getTypedPaths().find(path);
+            if (mutable_it != mutable_object->getTypedPaths().end() && source_it != source_object.getTypedPaths().end())
+                chooseJSONSharedDataStructureForMergeRecursively(*mutable_it->second, *source_it->second, nested_type);
+        }
+        return;
+    }
+
+    /// No JSON anywhere in this subtree: keep the source's exact structure, unaffected by repromotion.
+    if (!containsJSONObjectType(*type))
+    {
+        if (mutable_current->hasDynamicStructure())
+            mutable_current->takeExactDynamicStructureFrom(*source_current);
+        return;
+    }
+
+    /// JSON is reachable somewhere below; keep walking down to isolate it from non-JSON siblings.
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        if (auto * mutable_nullable = typeid_cast<ColumnNullable *>(mutable_current))
+            chooseJSONSharedDataStructureForMergeRecursively(
+                mutable_nullable->getNestedColumn(), assert_cast<const ColumnNullable &>(*source_current).getNestedColumn(), nullable_type->getNestedType());
+        return;
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        if (auto * mutable_array = typeid_cast<ColumnArray *>(mutable_current))
+            chooseJSONSharedDataStructureForMergeRecursively(
+                mutable_array->getData(), assert_cast<const ColumnArray &>(*source_current).getData(), array_type->getNestedType());
+        return;
+    }
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        if (auto * mutable_tuple = typeid_cast<ColumnTuple *>(mutable_current))
+        {
+            const auto & source_tuple = assert_cast<const ColumnTuple &>(*source_current);
+            const auto & element_types = tuple_type->getElements();
+            for (size_t i = 0; i != element_types.size(); ++i)
+                chooseJSONSharedDataStructureForMergeRecursively(mutable_tuple->getColumn(i), source_tuple.getColumn(i), element_types[i]);
+        }
+        return;
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        if (auto * mutable_map = typeid_cast<ColumnMap *>(mutable_current))
+        {
+            auto & mutable_tuple = mutable_map->getNestedData();
+            const auto & source_tuple = assert_cast<const ColumnMap &>(*source_current).getNestedData();
+            chooseJSONSharedDataStructureForMergeRecursively(mutable_tuple.getColumn(0), source_tuple.getColumn(0), map_type->getKeyType());
+            chooseJSONSharedDataStructureForMergeRecursively(mutable_tuple.getColumn(1), source_tuple.getColumn(1), map_type->getValueType());
+        }
     }
 }
 
@@ -2112,6 +2666,8 @@ void ColumnObject::takeExactDynamicStructureFrom(const IColumn & source)
     sorted_dynamic_paths.clear();
     for (const auto & [path, column] : source_object.getDynamicPaths())
     {
+        if (shared_data_path_matcher && shouldForceSharedData(path))
+            continue;
         auto it = dynamic_paths.emplace(path, ColumnDynamic::create(max_dynamic_types)).first;
         it->second->takeExactDynamicStructureFrom(*column);
         dynamic_paths_ptrs.emplace(path, assert_cast<ColumnDynamic *>(it->second.get()));
@@ -2141,14 +2697,31 @@ ColumnObject::StatisticsPtr ColumnObject::getOrCalculateStatistics() const
     for (const auto & [path, column] : dynamic_paths)
         calculated_statistics->dynamic_paths_statistics[path] = column->size() - column->getNumberOfDefaultRows();
 
+    /// Rank the shared-data paths by frequency before capping to MAX_SHARED_DATA_STATISTICS_SIZE
+    /// (below), so the ones kept are the frequent paths rather than whichever were seen first. The
+    /// counter is bounded, so a value with very many distinct paths cannot blow up here.
+    BoundedPathFrequencyCounter shared_data_counter(SHARED_DATA_STATISTICS_COUNTER_CAPACITY);
     const auto [shared_data_paths, _] = getSharedDataPathsAndValues();
     for (size_t i = 0; i != shared_data_paths->size(); ++i)
     {
-        auto path = shared_data_paths->getDataAt(i);
-        if (auto it = calculated_statistics->shared_data_paths_statistics.find(path); it != calculated_statistics->shared_data_paths_statistics.end())
-            ++it->second;
-        else if (calculated_statistics->shared_data_paths_statistics.size() < ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
-            calculated_statistics->shared_data_paths_statistics.emplace(path, 1);
+        shared_data_counter.add(String(shared_data_paths->getDataAt(i)), 1);
+    }
+    const auto & shared_data_candidates = shared_data_counter.get();
+
+    if (shared_data_candidates.size() <= ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
+    {
+        for (const auto & [path, size] : shared_data_candidates)
+            calculated_statistics->shared_data_paths_statistics.emplace(path, size);
+    }
+    else
+    {
+        VectorWithMemoryTracking<std::pair<size_t, std::string_view>> candidates_with_sizes;
+        candidates_with_sizes.reserve(shared_data_candidates.size());
+        for (const auto & [path, size] : shared_data_candidates)
+            candidates_with_sizes.emplace_back(size, path);
+        sortAndKeepTop(candidates_with_sizes, ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE, std::greater<>());
+        for (const auto & [size, path] : candidates_with_sizes)
+            calculated_statistics->shared_data_paths_statistics.emplace(path, size);
     }
 
     return calculated_statistics;
@@ -2158,8 +2731,10 @@ void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
 {
     /// Assumes dynamic structure has already been set by `takeExactDynamicStructureFrom` or `chooseDynamicStructureForMerge`.
     Statistics new_statistics;
-    /// Collect total sizes for paths that are not in our dynamic_paths (candidates for shared data statistics).
-    UnorderedMapWithMemoryTracking<String, size_t> shared_data_candidates;
+    /// Collect total sizes for paths that are not in our dynamic_paths (candidates for shared data
+    /// statistics). Bounded the same way as in getOrCalculateStatistics: merging many sources with
+    /// broad path sets must not make this map grow with the number of distinct paths.
+    BoundedPathFrequencyCounter shared_data_counter(SHARED_DATA_STATISTICS_COUNTER_CAPACITY);
     for (const auto & source_column : source_columns)
     {
         const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
@@ -2172,7 +2747,7 @@ void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
             if (dynamic_paths.contains(path))
                 new_statistics.dynamic_paths_statistics[path] += size;
             else
-                shared_data_candidates[path] += size;
+                shared_data_counter.add(path, size);
         }
 
         /// For shared data paths in source statistics: if the path got promoted to a dynamic path
@@ -2182,14 +2757,16 @@ void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
             if (dynamic_paths.contains(path))
                 new_statistics.dynamic_paths_statistics[path] += size;
             else
-                shared_data_candidates[path] += size;
+                shared_data_counter.add(path, size);
         }
     }
+
+    const auto & shared_data_candidates = shared_data_counter.get();
 
     /// Select top MAX_SHARED_DATA_STATISTICS_SIZE paths by total size for shared data statistics.
     if (shared_data_candidates.size() <= Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
     {
-        for (auto & [path, size] : shared_data_candidates)
+        for (const auto & [path, size] : shared_data_candidates)
             new_statistics.shared_data_paths_statistics.emplace(path, size);
     }
     else

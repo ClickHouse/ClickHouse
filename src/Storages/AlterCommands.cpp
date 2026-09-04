@@ -1318,9 +1318,8 @@ void AlterCommand::apply(
 namespace
 {
 
-/// Checks if the only difference between two JSON (DataTypeObject) types is their
-/// typed_paths. All other parameters must be identical, making this safe to treat
-/// as a metadata-only conversion without rewriting data.
+/// Checks if the only difference between two `JSON` types is their typed paths. `SHARED REGEXP`-only
+/// changes are handled separately by `isTrueMetadataOnlyConversion`, including nested wrappers.
 bool isJSONTypeHintOnlyChange(const IDataType * from_type, const IDataType * to_type)
 {
     const auto * from_json = typeid_cast<const DataTypeObject *>(from_type);
@@ -1385,6 +1384,11 @@ bool isTrueMetadataOnlyConversion(const IDataType * from, const IDataType * to)
     {
         /// types are equal, obviously pure metadata alter
         if (from->equals(*to))
+            return true;
+
+        /// `SHARED REGEXP` changes affect future path placement, not existing bytes. The per-part
+        /// policy is retained as placement provenance until re-promotion is explicitly enabled.
+        if (isJSONSharedDataPathPolicyOnlyChange(from, to))
             return true;
 
         /// We just adding something to enum, nothing changed on disk

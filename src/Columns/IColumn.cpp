@@ -36,6 +36,7 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
 
 using Hash = CityHash_v1_0_2::uint128;
 using HashState = SipHash;
@@ -1043,6 +1044,17 @@ static UInt64 getColumnIndex(const IColumn::Patch & patch, size_t i)
     }
 }
 
+/// A patch splice can introduce paths new to a nested JSON column that only fit in shared data
+/// (see ColumnObject::updateFrom), which leaves any pre-patch cached statistics on that nested
+/// column stale. Recurse through wrapper columns (Array/Nullable/Tuple/Map/...) so a JSON column
+/// nested at any depth gets the same invalidation the top-level ColumnObject case already gets.
+static void invalidateNestedJSONStatisticsAfterPatch(IColumn & column)
+{
+    if (auto * column_object = typeid_cast<ColumnObject *>(&column))
+        column_object->setStatistics(nullptr);
+    column.forEachMutableSubcolumnRecursively(invalidateNestedJSONStatisticsAfterPatch);
+}
+
 template <bool one_source, typename Derived>
 static ColumnPtr updateFrom(const Derived & dst, const IColumn::Patch & patch)
 {
@@ -1074,6 +1086,7 @@ static ColumnPtr updateFrom(const Derived & dst, const IColumn::Patch & patch)
     }
 
     res_typed.insertRangeFrom(dst, current_row, dst.size() - current_row);
+    invalidateNestedJSONStatisticsAfterPatch(res_typed);
     return res;
 }
 

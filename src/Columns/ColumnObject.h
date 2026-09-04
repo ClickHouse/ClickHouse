@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
@@ -7,13 +9,39 @@
 #include <Columns/ColumnString.h>
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/JSONPathRegexpMatcher.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <Common/SetWithMemoryTracking.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {
+
+/// Sorts container by compare and keeps only the top `limit` elements. Shared between ColumnObject
+/// and SerializationObject, both of which need to pick the top MAX_SHARED_DATA_STATISTICS_SIZE
+/// shared-data paths by frequency out of a larger candidate set.
+template <typename Container, typename Compare>
+void sortAndKeepTop(Container & container, size_t limit, Compare compare)
+{
+    if (container.size() <= limit)
+    {
+        std::sort(container.begin(), container.end(), compare);
+        return;
+    }
+
+    if (limit == 0)
+    {
+        container.clear();
+        return;
+    }
+
+    auto nth = container.begin() + limit;
+    std::nth_element(container.begin(), nth, container.end(), compare);
+    container.resize(limit);
+    std::sort(container.begin(), container.end(), compare);
+}
 
 class ColumnObject final : public COWHelper<IColumnHelper<ColumnObject>, ColumnObject>
 {
@@ -80,7 +108,9 @@ public:
         size_t max_dynamic_paths_upper_bound_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
-        const StatisticsPtr & statistics_ = {});
+        const StatisticsPtr & statistics_ = {},
+        JSONPathRegexpMatcherPtr shared_data_path_matcher_ = {},
+        String shared_data_path_prefix_ = {});
 
     static MutablePtr create(
         UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
@@ -90,9 +120,16 @@ public:
         size_t max_dynamic_paths_upper_bound_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
-        const StatisticsPtr & statistics_ = {});
+        const StatisticsPtr & statistics_ = {},
+        JSONPathRegexpMatcherPtr shared_data_path_matcher_ = {},
+        String shared_data_path_prefix_ = {});
 
-    static MutablePtr create(UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
+    static MutablePtr create(
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
+        size_t max_dynamic_paths_,
+        size_t max_dynamic_types_,
+        JSONPathRegexpMatcherPtr shared_data_path_matcher_ = {},
+        String shared_data_path_prefix_ = {});
 
     std::string getName() const override;
 
@@ -207,7 +244,19 @@ public:
     bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeExactDynamicStructureFrom(const IColumn & source) override;
     void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
+    /// The dynamic-vs-shared path placement part of chooseDynamicStructureForMerge, without its final
+    /// typed_paths loop. Typed paths are fixed by the type and never participate in shared/dynamic
+    /// placement, so callers that only need to reconsider placement (not a full dynamic-structure merge)
+    /// should call this instead of chooseDynamicStructureForMerge, which calls this and then also merges
+    /// each typed path's own dynamic structure.
+    void choosePathPlacementForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns);
     void fixDynamicStructure() override;
+
+    /// Sets the immutable `SHARED REGEXP` matcher from the type. `path_prefix` is non-empty only for
+    /// query-time sub-object views; stored `JSON` paths are always matched root-relative.
+    void setSharedDataPathMatcher(JSONPathRegexpMatcherPtr matcher, String path_prefix = {});
+    const JSONPathRegexpMatcherPtr & getSharedDataPathMatcher() const { return shared_data_path_matcher; }
+    const String & getSharedDataPathPrefix() const { return shared_data_path_prefix; }
 
     const PathToColumnMap & getTypedPaths() const { return typed_paths; }
     PathToColumnMap & getTypedPaths() { return typed_paths; }
@@ -222,6 +271,10 @@ public:
     StatisticsPtr getOrCalculateStatistics() const;
     bool hasStatistics() const override { return true; }
     void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
+
+    /// Drops the pre-patch `statistics` cache inherited via cloneEmpty() when applying an IColumn::Patch,
+    /// so placement repromotion sees paths the patch spliced directly into shared data (see .cpp).
+    ColumnPtr updateFrom(const IColumn::Patch & patch) const override;
 
     const ColumnPtr & getSharedDataPtr() const { return shared_data; }
     ColumnPtr & getSharedDataPtr() { return shared_data; }
@@ -270,9 +323,9 @@ public:
     /// Try to add new dynamic path. Returns pointer to the new dynamic
     /// path column or nullptr if limit on dynamic paths is reached.
     ColumnDynamic * tryToAddNewDynamicPath(std::string_view path);
+    bool tryToAddNewDynamicPath(std::string_view path, MutableColumnPtr & column);
     /// Throws an exception if cannot add.
     void addNewDynamicPath(std::string_view path);
-    void addNewDynamicPath(std::string_view path, MutableColumnPtr column);
     bool canAddNewDynamicPath() const { return dynamic_paths.size() < max_dynamic_paths; }
 
     void setDynamicPaths(const VectorWithMemoryTracking<String> & paths);
@@ -419,6 +472,27 @@ private:
     /// Statistics on the number of non-null values for each dynamic path and for some shared data paths in the MergeTree data part.
     /// Calculated during serializing of data part in MergeTree. Used to determine the set of dynamic paths for the merged part.
     StatisticsPtr statistics;
+    JSONPathRegexpMatcherPtr shared_data_path_matcher;
+    String shared_data_path_prefix;
+    /// Paths already decided as force-shared, to avoid re-running the matcher regexp on every occurrence.
+    /// Bounded by the number of distinct force-shared paths; cleared on matcher rebind; not copied to clones.
+    UnorderedSetWithMemoryTracking<String, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal> force_shared_data_paths;
+
+    bool shouldForceSharedData(std::string_view path);
 };
+
+/// Rebinds every nested `ColumnObject` policy from the corresponding `DataTypeObject`. Used when a
+/// column is cloned from a source part but the result header carries a different active/history set.
+void setSharedDataPathMatcherRecursively(IColumn & column, const DataTypePtr & type);
+
+/// Re-derives shared-vs-dynamic placement (like a real merge would) only at `JSON` nodes reachable
+/// through `Nullable`/`Array`/`Tuple`/`Map`, mirroring the recursion of setSharedDataPathMatcherRecursively
+/// above. At each `JSON` node, only its own dynamic-vs-shared path selection is re-derived (via
+/// ColumnObject::choosePathPlacementForMerge); its typed paths are recursed into independently, so a
+/// typed path's own dynamic structure (or further-nested JSON) is never swept into that re-decision.
+/// Every dynamic-structured node outside of a JSON subtree (for example a plain sibling `Dynamic`
+/// column) instead keeps its exact existing structure from `source_column`, unaffected by JSON
+/// re-promotion.
+void chooseJSONSharedDataStructureForMergeRecursively(IColumn & mutable_column, const IColumn & source_column, const DataTypePtr & type);
 
 }

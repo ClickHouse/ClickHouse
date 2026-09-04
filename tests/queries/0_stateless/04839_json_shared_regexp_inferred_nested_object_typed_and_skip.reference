@@ -1,0 +1,2 @@
+typed and skipped paths inside inferred nested elements	{'forced':'UInt64','keep':'Int64'}	{'forced':'UInt64','other':'Int64'}	1	4
+typed and skipped paths inside inferred nested elements after reload	{'forced':'UInt64','keep':'Int64'}	{'forced':'UInt64','other':'Int64'}	1	4

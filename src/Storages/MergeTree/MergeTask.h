@@ -29,6 +29,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/PartitionActionBlocker.h>
+#include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/TextIndexSegment.h>
 
 namespace ProfileEvents
@@ -219,6 +220,10 @@ private:
         StorageMetadataPtr metadata_snapshot{nullptr};
         FutureMergedMutatedPartPtr future_part{nullptr};
         std::vector<AlterConversionsPtr> alter_conversions;
+        /// Rename-aware view of future_part->patch_parts, built once in prepare() so rebuilt
+        /// projections can resolve JSON SHARED REGEXP provenance from patch parts the same way
+        /// the main part's columns already do (see applyJSONSharedDataPathPoliciesForProjection).
+        PatchPartsForReader projection_patch_parts;
         ProjectionDescriptionRawPtr projection{nullptr};
         /// This will be either nullptr or new_data_part, so raw pointer is ok.
         IMergeTreeDataPart * parent_part{nullptr};

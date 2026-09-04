@@ -1,7 +1,9 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
 #include <DataTypes/Serializations/SerializationObjectTypedPath.h>
@@ -14,6 +16,7 @@
 #include <Columns/ColumnDynamic.h>
 #include <Interpreters/castColumn.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/quoteString.h>
@@ -57,17 +60,26 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace FailPoints
+{
+    extern const char json_shared_regexp_force_combined_compile_failure[];
+}
+
 DataTypeObject::DataTypeObject(
     const SchemaFormat & schema_format_,
     std::unordered_map<String, DataTypePtr> typed_paths_,
     std::unordered_set<String> paths_to_skip_,
     std::vector<String> path_regexps_to_skip_,
     size_t max_dynamic_paths_,
-    size_t max_dynamic_types_)
+    size_t max_dynamic_types_,
+    std::vector<JSONPathRegexpRule> shared_data_path_rules_,
+    String shared_data_path_prefix_)
     : schema_format(schema_format_)
     , typed_paths(std::move(typed_paths_))
     , paths_to_skip(std::move(paths_to_skip_))
     , path_regexps_to_skip(std::move(path_regexps_to_skip_))
+    , shared_data_path_rules(std::move(shared_data_path_rules_))
+    , shared_data_path_prefix(std::move(shared_data_path_prefix_))
     , max_dynamic_paths(max_dynamic_paths_)
     , max_dynamic_types(max_dynamic_types_)
 {
@@ -82,6 +94,17 @@ DataTypeObject::DataTypeObject(
             throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Invalid regexp '{}': {}", regexp_str, regexp.error());
     }
 
+    if (!shared_data_path_rules.empty())
+    {
+        shared_data_path_matcher = JSONPathRegexpMatcher::create(std::move(shared_data_path_rules));
+        shared_data_path_rules = shared_data_path_matcher->getRules();
+    }
+    else if (!shared_data_path_prefix.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'shared_regexp_path_prefix' requires at least one SHARED REGEXP rule");
+
+    if (shared_data_path_prefix.size() > JSONPathRegexpMatcher::MAX_PATTERN_BYTES)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "JSON SHARED REGEXP path prefix is too long: {} bytes. Maximum: {} bytes", shared_data_path_prefix.size(), JSONPathRegexpMatcher::MAX_PATTERN_BYTES);
+
     for (const auto & [typed_path, type] : typed_paths)
     {
         for (const auto & path_to_skip : paths_to_skip)
@@ -95,6 +118,11 @@ DataTypeObject::DataTypeObject(
             if (re2::RE2::FullMatch(typed_path, re2::RE2(path_regex_to_skip)))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' is specified with the data type ('{}') and matches the SKIP REGEXP '{}'", typed_path, type->getName(), path_regex_to_skip);
         }
+
+        /// Note: an exact typed-path hint is intentionally NOT checked against shared_data_path_rules.
+        /// Typed paths are always forced dynamic subcolumns by a higher-precedence, entirely separate
+        /// mechanism, so a typed path matching a SHARED REGEXP pattern is not a real conflict: the typed
+        /// path simply always wins and the SHARED REGEXP rule has no effect on it.
     }
 }
 
@@ -132,6 +160,8 @@ bool DataTypeObject::equals(const IDataType & rhs) const
         }
 
         return schema_format == object->schema_format && paths_to_skip == object->paths_to_skip && path_regexps_to_skip == object->path_regexps_to_skip
+            && shared_data_path_rules == object->shared_data_path_rules
+            && shared_data_path_prefix == object->shared_data_path_prefix
             && max_dynamic_types == object->max_dynamic_types && max_dynamic_paths == object->max_dynamic_paths;
     }
 
@@ -224,6 +254,20 @@ String DataTypeObject::doGetName() const
         out << "max_dynamic_paths=" << max_dynamic_paths;
     }
 
+    const bool all_shared_regexps_use_full_match = !shared_data_path_rules.empty()
+        && std::all_of(shared_data_path_rules.begin(), shared_data_path_rules.end(), [](const auto & rule) { return rule.mode == JSONPathRegexpMatchMode::Full; });
+    if (all_shared_regexps_use_full_match)
+    {
+        write_separator();
+        out << "shared_regexp_use_partial_match=0";
+    }
+
+    if (!shared_data_path_prefix.empty())
+    {
+        write_separator();
+        out << "shared_regexp_path_prefix=" << quoteString(shared_data_path_prefix);
+    }
+
     std::vector<String> sorted_typed_paths;
     sorted_typed_paths.reserve(typed_paths.size());
     for (const auto & [path, _] : typed_paths)
@@ -232,8 +276,9 @@ String DataTypeObject::doGetName() const
     for (const auto & path : sorted_typed_paths)
     {
         write_separator();
-        /// We must quote path "SKIP" to avoid its confusion with SKIP keyword.
-        if (boost::to_upper_copy(path) == "SKIP")
+        /// We must quote paths "SKIP" and "SHARED" to avoid their confusion with the SKIP/SHARED keywords.
+        auto upper_path = boost::to_upper_copy(path);
+        if (upper_path == "SKIP" || upper_path == "SHARED")
             out << backQuote(path) << " " << typed_paths.at(path)->getName();
         else
             out << backQuoteIfNeed(path) << " " << typed_paths.at(path)->getName();
@@ -256,6 +301,17 @@ String DataTypeObject::doGetName() const
         out << "SKIP REGEXP " << quoteString(skip_regexp);
     }
 
+    for (const auto & rule : shared_data_path_rules)
+    {
+        write_separator();
+        out << "SHARED REGEXP ";
+        /// Mixed modes occur in part provenance after ALTER. FULL is accepted by the parser for
+        /// this canonical persisted representation; homogeneous user declarations use the setting.
+        if (!all_shared_regexps_use_full_match && rule.mode == JSONPathRegexpMatchMode::Full)
+            out << "FULL ";
+        out << quoteString(rule.pattern);
+    }
+
     if (!first)
         out << ")";
 
@@ -269,7 +325,7 @@ MutableColumnPtr DataTypeObject::createColumn() const
     for (const auto & [path, type] : typed_paths)
         typed_path_columns[path] = type->createColumn();
 
-    return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types);
+    return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types, shared_data_path_matcher, shared_data_path_prefix);
 }
 
 void DataTypeObject::forEachChild(const ChildCallback & callback) const
@@ -296,10 +352,17 @@ void replaceJSONTypeNameIfNeeded(String & type_name, const String & nested_json_
     auto pos = type_name.find("JSON");
     while (pos != String::npos)
     {
+        size_t continue_from = pos + 4;
         /// Replace only if we don't already have parameters in JSON type declaration.
         if (pos + 4 == type_name.size() || type_name[pos + 4] != '(')
+        {
             type_name.replace(pos, 4, nested_json_type_name);
-        pos = type_name.find("JSON", pos + 4);
+            /// Resume past the replacement rather than inside it: the nested type name can carry a
+            /// projected subpath typed as a bare `JSON`, and rescanning would substitute into the
+            /// text just inserted, then into that substitution, without bound.
+            continue_from = pos + nested_json_type_name.size();
+        }
+        pos = type_name.find("JSON", continue_from);
     }
 }
 
@@ -381,7 +444,9 @@ struct PathAndSubcolumn
     }
 };
 
-PathAndSubcolumn splitPathAndDynamicTypeSubcolumn(std::string_view subcolumn_name, const String & nested_json_type_name)
+/// The returned type hint is still the raw one the user wrote; expanding a bare `JSON` in it needs
+/// the path this split produces, so the caller does it (see replaceJSONTypeNameIfNeeded above).
+PathAndSubcolumn splitPathAndDynamicTypeSubcolumn(std::string_view subcolumn_name)
 {
     /// Try to find dynamic type subcolumn in a form .:`Type`.
     auto pos = subcolumn_name.find(".:`");
@@ -393,8 +458,6 @@ PathAndSubcolumn splitPathAndDynamicTypeSubcolumn(std::string_view subcolumn_nam
     /// Try to read back quoted type name.
     if (!tryReadBackQuotedString(type_hint, buf))
         return {String(subcolumn_name), {}, {}};
-
-    replaceJSONTypeNameIfNeeded(type_hint, nested_json_type_name);
 
     /// If there is more data in the buffer - it's the remaining subcolumn after the type hint.
     /// Strip the leading dot separator if present.
@@ -540,6 +603,8 @@ std::pair<DataTypePtr, SerializationPtr> buildSubObjectTypeAndSerialization(
     const DataTypeObject::SchemaFormat & schema_format,
     const std::unordered_set<String> & paths_to_skip,
     const std::vector<String> & path_regexps_to_skip,
+    const std::vector<JSONPathRegexpRule> & shared_data_path_rules,
+    const String & shared_data_path_prefix,
     size_t max_dynamic_paths,
     size_t max_dynamic_types,
     const DataTypePtr & dynamic_type,
@@ -556,7 +621,7 @@ std::pair<DataTypePtr, SerializationPtr> buildSubObjectTypeAndSerialization(
         }
     }
 
-    auto sub_object_type = std::make_shared<DataTypeObject>(schema_format, typed_sub_paths, paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types);
+    auto sub_object_type = std::make_shared<DataTypeObject>(schema_format, typed_sub_paths, paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, shared_data_path_rules, shared_data_path_rules.empty() ? String{} : shared_data_path_prefix + prefix);
     auto sub_object_serialization = SerializationSubObject::create(prefix, typed_sub_paths_serializations, dynamic_type, dynamic_serialization);
     return {std::move(sub_object_type), std::move(sub_object_serialization)};
 }
@@ -611,7 +676,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     {
         const String prefix = *sub_object_subcolumn + ".";
         auto [sub_object_type, sub_object_serialization] = buildSubObjectTypeAndSerialization(
-            prefix, typed_paths, typed_paths_serializations, schema_format, paths_to_skip, path_regexps_to_skip,
+            prefix, typed_paths, typed_paths_serializations, schema_format, paths_to_skip, path_regexps_to_skip, shared_data_path_rules, shared_data_path_prefix,
             max_dynamic_paths, max_dynamic_types, getDynamicType(), dynamic_path_serialization);
 
         std::unique_ptr<SubstreamData> res = std::make_unique<SubstreamData>(sub_object_serialization);
@@ -653,7 +718,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
         const String prefix = combined_path + ".";
         auto dynamic_result_type = getDynamicType();
         auto [sub_object_type, sub_object_serialization] = buildSubObjectTypeAndSerialization(
-            prefix, typed_paths, typed_paths_serializations, schema_format, paths_to_skip, path_regexps_to_skip,
+            prefix, typed_paths, typed_paths_serializations, schema_format, paths_to_skip, path_regexps_to_skip, shared_data_path_rules, shared_data_path_prefix,
             max_dynamic_paths, max_dynamic_types, dynamic_result_type, dynamic_path_serialization);
 
         auto literal_serialization = SerializationObjectDynamicPath::create(dynamic_path_serialization, combined_path, /*path_subcolumn=*/"", dynamic_result_type, dynamic_path_serialization, dynamic_result_type);
@@ -688,8 +753,12 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     }
 
     /// Split requested subcolumn to the JSON path, type hint, and remaining subcolumn.
-    auto split = splitPathAndDynamicTypeSubcolumn(subcolumn_name, getTypeOfNestedObjects()->getName());
+    auto split = splitPathAndDynamicTypeSubcolumn(subcolumn_name);
     const auto & path = split.path;
+    /// An inferred nested object is stored under the type derived for *its* path, so expand the
+    /// `JSON`/`Array(JSON)` shorthand to that one; the pathless type no longer names the variant.
+    if (!split.type_hint.empty())
+        replaceJSONTypeNameIfNeeded(split.type_hint, getTypeOfNestedObjects(path + ".")->getName());
     String path_subcolumn;
     std::unique_ptr<SubstreamData> res;
     if (auto it = typed_paths.find(path); it != typed_paths.end())
@@ -741,6 +810,9 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
     std::unordered_map<String, DataTypePtr> typed_paths;
     std::unordered_set<String> paths_to_skip;
     std::vector<String> path_regexps_to_skip;
+    std::vector<JSONPathRegexpRule> shared_data_path_rules;
+    bool shared_regexp_use_partial_match = true;
+    String shared_regexp_path_prefix;
 
     size_t max_dynamic_types = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES;
     size_t max_dynamic_paths = DataTypeObject::DEFAULT_MAX_DYNAMIC_PATHS;
@@ -762,17 +834,33 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
             /// The `equals` function expects exactly two children: an identifier and a literal.
             /// Validate the argument list shape before indexing.
             if (!function->arguments || function->arguments->children.size() != 2)
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected parameter in {} type arguments: {}. Expected expression 'max_dynamic_types=N' or 'max_dynamic_paths=N'", magic_enum::enum_name(schema_format), function->formatForErrorMessage());
+                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected parameter in {} type arguments: {}", magic_enum::enum_name(schema_format), function->formatForErrorMessage());
 
             const auto * identifier = function->arguments->children[0]->as<ASTIdentifier>();
             if (!identifier)
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected {} type argument: {}. Expected expression 'max_dynamic_types=N' or 'max_dynamic_paths=N'", magic_enum::enum_name(schema_format), function->formatForErrorMessage());
+                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected {} type argument: {}", magic_enum::enum_name(schema_format), function->formatForErrorMessage());
 
             auto identifier_name = identifier->name();
-            if (identifier_name != "max_dynamic_types" && identifier_name != "max_dynamic_paths")
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected parameter in {} type arguments: {}. Expected 'max_dynamic_types' or `max_dynamic_paths`", magic_enum::enum_name(schema_format), identifier_name);
+            if (identifier_name != "max_dynamic_types" && identifier_name != "max_dynamic_paths"
+                && identifier_name != "shared_regexp_use_partial_match" && identifier_name != "shared_regexp_path_prefix")
+                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected parameter in {} type arguments: {}. Expected 'max_dynamic_types', 'max_dynamic_paths', 'shared_regexp_use_partial_match', or 'shared_regexp_path_prefix'", magic_enum::enum_name(schema_format), identifier_name);
 
             auto * literal = function->arguments->children[1]->as<ASTLiteral>();
+            if (identifier_name == "shared_regexp_use_partial_match")
+            {
+                if (!literal || literal->value.getType() != Field::Types::UInt64 || literal->value.safeGet<UInt64>() > 1)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "'shared_regexp_use_partial_match' parameter for {} type should be 0 or 1. Got {}", magic_enum::enum_name(schema_format), function->arguments->children[1]->formatForErrorMessage());
+                shared_regexp_use_partial_match = literal->value.safeGet<UInt64>() != 0;
+                continue;
+            }
+            if (identifier_name == "shared_regexp_path_prefix")
+            {
+                if (!literal || literal->value.getType() != Field::Types::String)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "'shared_regexp_path_prefix' parameter for {} type should be a string. Got {}", magic_enum::enum_name(schema_format), function->arguments->children[1]->formatForErrorMessage());
+                shared_regexp_path_prefix = literal->value.safeGet<String>();
+                continue;
+            }
+
             size_t max_value = identifier_name == "max_dynamic_types" ? ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT : DataTypeObject::MAX_DYNAMIC_PATHS_LIMIT;
             if (!literal || literal->value.getType() != Field::Types::UInt64 || literal->value.safeGet<UInt64>() > max_value)
                 throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "'{}' parameter for {} type should be a positive integer between 0 and {}. Got {}", identifier_name, magic_enum::enum_name(schema_format), max_value, function->arguments->children[1]->formatForErrorMessage());
@@ -811,10 +899,33 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
 
             path_regexps_to_skip.push_back(literal->value.safeGet<String>());
         }
+        else if (object_type_argument->shared_path_regexp)
+        {
+            const auto * literal = object_type_argument->shared_path_regexp->as<ASTLiteral>();
+            if (!literal || literal->value.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST in SHARED REGEXP section of {} type arguments: {}. Expected string literal with path regexp", magic_enum::enum_name(schema_format), object_type_argument->shared_path_regexp->formatForErrorMessage());
+
+            shared_data_path_rules.push_back(
+                {literal->value.safeGet<String>(),
+                 object_type_argument->shared_path_regexp_full_match ? JSONPathRegexpMatchMode::Full : JSONPathRegexpMatchMode::Partial});
+        }
     }
 
     std::sort(path_regexps_to_skip.begin(), path_regexps_to_skip.end());
-    return std::make_shared<DataTypeObject>(schema_format, std::move(typed_paths), std::move(paths_to_skip), std::move(path_regexps_to_skip), max_dynamic_paths, max_dynamic_types);
+    if (!shared_regexp_use_partial_match)
+    {
+        for (auto & rule : shared_data_path_rules)
+            rule.mode = JSONPathRegexpMatchMode::Full;
+    }
+    return std::make_shared<DataTypeObject>(
+        schema_format,
+        std::move(typed_paths),
+        std::move(paths_to_skip),
+        std::move(path_regexps_to_skip),
+        max_dynamic_paths,
+        max_dynamic_types,
+        std::move(shared_data_path_rules),
+        std::move(shared_regexp_path_prefix));
 }
 
 const DataTypePtr & DataTypeObject::getTypeOfSharedData()
@@ -852,11 +963,56 @@ void DataTypeObject::updateHashImpl(SipHash & hash) const
     hash.update(path_regexps_to_skip.size());
     for (const auto & regexp : path_regexps_to_skip)
         hash.update(regexp);
+
+    hash.update(shared_data_path_rules.size());
+    for (const auto & rule : shared_data_path_rules)
+    {
+        hash.update(rule.pattern);
+        hash.update(static_cast<UInt8>(rule.mode));
+    }
+    hash.update(shared_data_path_prefix);
 }
 
 DataTypePtr DataTypeObject::getTypeOfNestedObjects() const
 {
     return std::make_shared<DataTypeObject>(schema_format, max_dynamic_paths / NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR, max_dynamic_types / NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR);
+}
+
+DataTypePtr DataTypeObject::getTypeOfNestedObjects(const String & path_prefix_from_root) const
+{
+    /// Typed paths and literal SKIP paths declared under this prefix (e.g. `arr.forced`, `SKIP
+    /// arr.skip`) still apply to the inferred element at `arr`, but relative to *its* own root, so
+    /// project them the same way buildSubObjectTypeAndSerialization does for the explicit `^`
+    /// subcolumn accessor: keep only entries under the prefix, with it stripped.
+    std::unordered_map<String, DataTypePtr> nested_typed_paths;
+    for (const auto & [path, type] : typed_paths)
+        if (path.size() > path_prefix_from_root.size() && path.starts_with(path_prefix_from_root))
+            nested_typed_paths.emplace(path.substr(path_prefix_from_root.size()), type);
+
+    std::unordered_set<String> nested_paths_to_skip;
+    for (const auto & path : paths_to_skip)
+        if (path.size() > path_prefix_from_root.size() && path.starts_with(path_prefix_from_root))
+            nested_paths_to_skip.insert(path.substr(path_prefix_from_root.size()));
+
+    /// Unlike literal SKIP paths, a SKIP REGEXP pattern isn't tied to one specific prefix -- it's
+    /// evaluated against the reconstructed root-relative path the same way SHARED REGEXP is (see
+    /// ObjectJSONNode::shouldSkipPath in JSONExtractTree.cpp), so it carries through unchanged
+    /// rather than being filtered/stripped by prefix membership.
+    if (shared_data_path_rules.empty() && nested_typed_paths.empty() && nested_paths_to_skip.empty() && path_regexps_to_skip.empty())
+        return getTypeOfNestedObjects();
+
+    return std::make_shared<DataTypeObject>(
+        schema_format,
+        std::move(nested_typed_paths),
+        std::move(nested_paths_to_skip),
+        path_regexps_to_skip,
+        max_dynamic_paths / NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR,
+        max_dynamic_types / NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR,
+        shared_data_path_rules,
+        /// A prefix is only meaningful -- and only accepted by the constructor -- alongside rules;
+        /// typed/SKIP-only projection with no SHARED REGEXP rules must get an empty one, matching
+        /// buildSubObjectTypeAndSerialization's own guard for the explicit ^-subcolumn accessor.
+        shared_data_path_rules.empty() ? String{} : shared_data_path_prefix + path_prefix_from_root);
 }
 
 DataTypePtr DataTypeObject::getDynamicType() const
@@ -871,6 +1027,425 @@ UnorderedMapWithMemoryTracking<String, SerializationPtr> DataTypeObject::getType
     for (const auto & [path, type] : typed_paths)
         result.emplace(path, type->getDefaultSerialization());
     return result;
+}
+
+namespace
+{
+constexpr std::string_view JSON_SHARED_DATA_PATH_PROVENANCE_TOP_PATTERN = "(?s:.*)";
+
+bool isJSONSharedDataPathProvenanceTop(const std::vector<JSONPathRegexpRule> & rules)
+{
+    return std::ranges::any_of(rules, [](const auto & rule)
+    {
+        return rule.mode == JSONPathRegexpMatchMode::Full
+            && rule.pattern == JSON_SHARED_DATA_PATH_PROVENANCE_TOP_PATTERN;
+    });
+}
+
+std::pair<std::vector<JSONPathRegexpRule>, String> makeJSONSharedDataPathProvenanceTop()
+{
+    return {
+        std::vector<JSONPathRegexpRule>{{String{JSON_SHARED_DATA_PATH_PROVENANCE_TOP_PATTERN}, JSONPathRegexpMatchMode::Full}},
+        String{}};
+}
+
+std::pair<std::vector<JSONPathRegexpRule>, String> joinJSONSharedDataPathPolicies(
+    const DataTypeObject & object,
+    const DataTypeObject & source_object)
+{
+    const auto & object_rules = object.getSharedDataPathRules();
+    const auto & source_rules = source_object.getSharedDataPathRules();
+
+    /// Provenance is a conservative, monotonic policy: once it reaches Top, every untyped path
+    /// stays in shared data. Keep Top canonical so repeated joins remain bounded and independent of
+    /// source-part order.
+    if (isJSONSharedDataPathProvenanceTop(object_rules) || isJSONSharedDataPathProvenanceTop(source_rules))
+        return makeJSONSharedDataPathProvenanceTop();
+
+    if (object_rules.empty())
+        return {source_rules, source_object.getSharedDataPathPrefix()};
+    if (source_rules.empty())
+        return {object_rules, object.getSharedDataPathPrefix()};
+
+    /// A rule is interpreted relative to its JSON node's root prefix. Policies with different
+    /// prefixes cannot be represented by one exact matcher at this node, so conservatively use Top
+    /// instead of interpreting either policy in the wrong namespace.
+    if (object.getSharedDataPathPrefix() != source_object.getSharedDataPathPrefix())
+        return makeJSONSharedDataPathProvenanceTop();
+
+    std::vector<JSONPathRegexpRule> rules = object_rules;
+    rules.insert(rules.end(), source_rules.begin(), source_rules.end());
+    std::sort(rules.begin(), rules.end());
+    rules.erase(std::unique(rules.begin(), rules.end()), rules.end());
+
+    if (rules.size() > JSONPathRegexpMatcher::MAX_RULES)
+        return makeJSONSharedDataPathProvenanceTop();
+
+    size_t total_pattern_bytes = 0;
+    for (const auto & rule : rules)
+    {
+        if (rule.pattern.size() > JSONPathRegexpMatcher::MAX_TOTAL_PATTERN_BYTES - total_pattern_bytes)
+            return makeJSONSharedDataPathProvenanceTop();
+        total_pattern_bytes += rule.pattern.size();
+    }
+
+    return {std::move(rules), object.getSharedDataPathPrefix()};
+}
+
+bool typesEqualIgnoringJSONSharedDataPathPolicy(const IDataType * from, const IDataType * to)
+{
+    if (from->equals(*to))
+        return true;
+
+    if (const auto * from_array = typeid_cast<const DataTypeArray *>(from))
+    {
+        const auto * to_array = typeid_cast<const DataTypeArray *>(to);
+        return to_array && typesEqualIgnoringJSONSharedDataPathPolicy(from_array->getNestedType().get(), to_array->getNestedType().get());
+    }
+
+    if (const auto * from_nullable = typeid_cast<const DataTypeNullable *>(from))
+    {
+        const auto * to_nullable = typeid_cast<const DataTypeNullable *>(to);
+        return to_nullable && typesEqualIgnoringJSONSharedDataPathPolicy(from_nullable->getNestedType().get(), to_nullable->getNestedType().get());
+    }
+
+    if (const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from))
+    {
+        const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to);
+        if (!to_tuple || from_tuple->getElementNames() != to_tuple->getElementNames())
+            return false;
+
+        const auto & from_elements = from_tuple->getElements();
+        const auto & to_elements = to_tuple->getElements();
+        if (from_elements.size() != to_elements.size())
+            return false;
+        for (size_t i = 0; i != from_elements.size(); ++i)
+        {
+            if (!typesEqualIgnoringJSONSharedDataPathPolicy(from_elements[i].get(), to_elements[i].get()))
+                return false;
+        }
+        return true;
+    }
+
+    if (const auto * from_map = typeid_cast<const DataTypeMap *>(from))
+    {
+        const auto * to_map = typeid_cast<const DataTypeMap *>(to);
+        return to_map && typesEqualIgnoringJSONSharedDataPathPolicy(from_map->getKeyType().get(), to_map->getKeyType().get())
+            && typesEqualIgnoringJSONSharedDataPathPolicy(from_map->getValueType().get(), to_map->getValueType().get());
+    }
+
+    const auto * from_json = typeid_cast<const DataTypeObject *>(from);
+    const auto * to_json = typeid_cast<const DataTypeObject *>(to);
+    if (!from_json || !to_json)
+        return false;
+
+    if (from_json->getSchemaFormat() != to_json->getSchemaFormat() || from_json->getMaxDynamicPaths() != to_json->getMaxDynamicPaths()
+        || from_json->getMaxDynamicTypes() != to_json->getMaxDynamicTypes() || from_json->getPathsToSkip() != to_json->getPathsToSkip()
+        || from_json->getPathRegexpsToSkip() != to_json->getPathRegexpsToSkip()
+        || from_json->getTypedPaths().size() != to_json->getTypedPaths().size())
+        return false;
+
+    for (const auto & [path, type] : from_json->getTypedPaths())
+    {
+        auto it = to_json->getTypedPaths().find(path);
+        if (it == to_json->getTypedPaths().end() || !typesEqualIgnoringJSONSharedDataPathPolicy(type.get(), it->second.get()))
+            return false;
+    }
+
+    return true;
+}
+
+/// Returns the index of the sole JSON-shaped element, or nullopt if zero or more than one element
+/// is JSON-shaped -- otherwise there's no single element to unambiguously attribute a policy to.
+std::optional<size_t> findUniqueJSONShapedElement(const DataTypes & elements)
+{
+    std::optional<size_t> found;
+    for (size_t i = 0; i != elements.size(); ++i)
+    {
+        if (!containsJSONObjectType(*elements[i]))
+            continue;
+        if (found)
+            return std::nullopt;
+        found = i;
+    }
+    return found;
+}
+
+DataTypePtr applyJSONSharedDataPathPolicyImpl(const DataTypePtr & type, const DataTypePtr & policy_source_type, bool merge_rules)
+{
+    /// A target/source pair can differ by exactly a Nullable wrapper when the provenance came from
+    /// an expression that added or removed nullability (e.g. assumeNotNull(j)/toNullable(j)) while
+    /// the underlying JSON structure is otherwise unrelated to that wrapper; look through the extra
+    /// Nullable on whichever side has it so the policy can still be found and merged underneath.
+    if (const auto * target_nullable = typeid_cast<const DataTypeNullable *>(type.get());
+        target_nullable && !typeid_cast<const DataTypeNullable *>(policy_source_type.get()))
+    {
+        auto nested = applyJSONSharedDataPathPolicyImpl(target_nullable->getNestedType(), policy_source_type, merge_rules);
+        if (nested == target_nullable->getNestedType())
+            return type;
+        return std::make_shared<DataTypeNullable>(std::move(nested));
+    }
+
+    if (const auto * source_nullable = typeid_cast<const DataTypeNullable *>(policy_source_type.get());
+        source_nullable && !typeid_cast<const DataTypeNullable *>(type.get()))
+        return applyJSONSharedDataPathPolicyImpl(type, source_nullable->getNestedType(), merge_rules);
+
+    /// Same idea for an expression that wraps its argument in a single-element array (e.g.
+    /// `array(j)`): the array's own element is the same JSON value `j` always was, so the policy
+    /// should still transfer to it even though the source column itself was never an Array.
+    if (const auto * target_array = typeid_cast<const DataTypeArray *>(type.get());
+        target_array && !typeid_cast<const DataTypeArray *>(policy_source_type.get()))
+    {
+        auto nested = applyJSONSharedDataPathPolicyImpl(target_array->getNestedType(), policy_source_type, merge_rules);
+        if (nested == target_array->getNestedType())
+            return type;
+        return std::make_shared<DataTypeArray>(std::move(nested));
+    }
+
+    /// The reverse shape, e.g. `arr[1]` over `arr Array(JSON(...))`: the expression's own output
+    /// type is bare, but the resolved source column still has the wrapper. An Array's element type
+    /// is always singular, so unwrapping the source side to reach it is unambiguous.
+    if (const auto * source_array = typeid_cast<const DataTypeArray *>(policy_source_type.get());
+        source_array && !typeid_cast<const DataTypeArray *>(type.get()))
+        return applyJSONSharedDataPathPolicyImpl(type, source_array->getNestedType(), merge_rules);
+
+    /// A tuple where exactly one element is JSON-shaped (e.g. `tuple(j)`, `tuple(j, 1)`) has an
+    /// unambiguous source; zero or 2+ JSON-shaped elements leaves no single element to target.
+    if (const auto * target_tuple = typeid_cast<const DataTypeTuple *>(type.get());
+        target_tuple && !typeid_cast<const DataTypeTuple *>(policy_source_type.get()))
+    {
+        auto index = findUniqueJSONShapedElement(target_tuple->getElements());
+        if (!index)
+            return type;
+
+        DataTypes elements = target_tuple->getElements();
+        auto nested = applyJSONSharedDataPathPolicyImpl(elements[*index], policy_source_type, merge_rules);
+        if (nested == elements[*index])
+            return type;
+
+        elements[*index] = std::move(nested);
+        if (target_tuple->hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(std::move(elements), target_tuple->getElementNames());
+        return std::make_shared<DataTypeTuple>(std::move(elements));
+    }
+
+    /// A source-side Tuple is not unwrapped by shape: the projection may have read any element
+    /// (e.g. CAST(tupleElement(t, 1) AS JSON) over Tuple(String, JSON) reads the String), so the
+    /// member actually read must come qualified from the AST (see descendJSONPolicySourceIntoMember
+    /// in MergeTreeDataWriter.cpp) rather than be guessed from the lone JSON-shaped sibling.
+    if (typeid_cast<const DataTypeTuple *>(policy_source_type.get()) && !typeid_cast<const DataTypeTuple *>(type.get()))
+        return type;
+
+    /// `map('k', j)`, `map(j, 1)`, or `map(j, j)`: DataTypeMap::isValidKeyType permits a JSON key
+    /// (it only excludes Nullable), so the JSON value isn't necessarily in just one side -- apply
+    /// the source policy to both sides independently (a no-op on whichever side isn't JSON-shaped)
+    /// rather than stopping at the first side that changes, so `map(j, j)` correctly updates both.
+    if (const auto * target_map = typeid_cast<const DataTypeMap *>(type.get());
+        target_map && !typeid_cast<const DataTypeMap *>(policy_source_type.get()))
+    {
+        auto nested_key = applyJSONSharedDataPathPolicyImpl(target_map->getKeyType(), policy_source_type, merge_rules);
+        auto nested_value = applyJSONSharedDataPathPolicyImpl(target_map->getValueType(), policy_source_type, merge_rules);
+        if (nested_key == target_map->getKeyType() && nested_value == target_map->getValueType())
+            return type;
+        return std::make_shared<DataTypeMap>(std::move(nested_key), std::move(nested_value));
+    }
+
+    /// A source-side Map is not unwrapped by shape either: which side the expression read
+    /// (mapKeys vs mapValues/m[k]) must come qualified from the AST, same as the Tuple case above.
+    if (typeid_cast<const DataTypeMap *>(policy_source_type.get()) && !typeid_cast<const DataTypeMap *>(type.get()))
+        return type;
+
+    if (const auto * object = typeid_cast<const DataTypeObject *>(type.get()))
+    {
+        const auto * source_object = typeid_cast<const DataTypeObject *>(policy_source_type.get());
+        if (!source_object)
+            return type;
+
+        const auto apply_typed_path_policies = [&]
+        {
+            auto result = object->getTypedPaths();
+            for (auto & [path, nested_type] : result)
+            {
+                if (auto it = source_object->getTypedPaths().find(path); it != source_object->getTypedPaths().end())
+                    nested_type = applyJSONSharedDataPathPolicyImpl(nested_type, it->second, merge_rules);
+            }
+            return result;
+        };
+
+        auto typed_paths = apply_typed_path_policies();
+
+        std::vector<JSONPathRegexpRule> rules;
+        String path_prefix;
+        if (merge_rules)
+            std::tie(rules, path_prefix) = joinJSONSharedDataPathPolicies(*object, *source_object);
+        else
+        {
+            rules = source_object->getSharedDataPathRules();
+            path_prefix = source_object->getSharedDataPathPrefix();
+        }
+
+        const bool typed_paths_unchanged = std::ranges::all_of(typed_paths, [&](const auto & entry)
+        {
+            const auto & [path, nested_type] = entry;
+            return nested_type == object->getTypedPaths().at(path);
+        });
+        if (typed_paths_unchanged
+            && rules == object->getSharedDataPathRules()
+            && path_prefix == object->getSharedDataPathPrefix())
+            return type;
+
+        const auto make_result = [&](std::unordered_map<String, DataTypePtr> result_typed_paths)
+        {
+            return std::make_shared<DataTypeObject>(
+                object->getSchemaFormat(),
+                std::move(result_typed_paths),
+                object->getPathsToSkip(),
+                object->getPathRegexpsToSkip(),
+                object->getMaxDynamicPaths(),
+                object->getMaxDynamicTypes(),
+                std::move(rules),
+                std::move(path_prefix));
+        };
+
+        try
+        {
+            if (merge_rules)
+            {
+                fiu_do_on(FailPoints::json_shared_regexp_force_combined_compile_failure,
+                    throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Injected combined SHARED REGEXP compile failure"););
+            }
+            return make_result(std::move(typed_paths));
+        }
+        catch (const Exception & e)
+        {
+            /// Both inputs were already compiled successfully, but their combined RE2::Set can
+            /// exceed its own memory budget even when the persisted rule-count/byte limits fit.
+            /// Internal provenance must never wedge a merge for that reason; saturate and retry.
+            if (!merge_rules || e.code() != ErrorCodes::CANNOT_COMPILE_REGEXP)
+                throw;
+
+            std::tie(rules, path_prefix) = makeJSONSharedDataPathProvenanceTop();
+            return make_result(apply_typed_path_policies());
+        }
+    }
+
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        const auto * source_array = typeid_cast<const DataTypeArray *>(policy_source_type.get());
+        if (!source_array)
+            return type;
+        auto nested_type = applyJSONSharedDataPathPolicyImpl(array->getNestedType(), source_array->getNestedType(), merge_rules);
+        if (nested_type == array->getNestedType())
+            return type;
+        return std::make_shared<DataTypeArray>(std::move(nested_type));
+    }
+
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        const auto * source_nullable = typeid_cast<const DataTypeNullable *>(policy_source_type.get());
+        if (!source_nullable)
+            return type;
+        auto nested_type = applyJSONSharedDataPathPolicyImpl(nullable->getNestedType(), source_nullable->getNestedType(), merge_rules);
+        if (nested_type == nullable->getNestedType())
+            return type;
+        return std::make_shared<DataTypeNullable>(std::move(nested_type));
+    }
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        const auto * source_tuple = typeid_cast<const DataTypeTuple *>(policy_source_type.get());
+        if (!source_tuple || tuple->getElements().size() != source_tuple->getElements().size())
+            return type;
+
+        DataTypes elements = tuple->getElements();
+        bool unchanged = true;
+        for (size_t i = 0; i != elements.size(); ++i)
+        {
+            elements[i] = applyJSONSharedDataPathPolicyImpl(elements[i], source_tuple->getElement(i), merge_rules);
+            unchanged &= elements[i] == tuple->getElement(i);
+        }
+        if (unchanged)
+            return type;
+        if (tuple->hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, tuple->getElementNames());
+        return std::make_shared<DataTypeTuple>(elements);
+    }
+
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        const auto * source_map = typeid_cast<const DataTypeMap *>(policy_source_type.get());
+        if (!source_map)
+            return type;
+        auto key_type = applyJSONSharedDataPathPolicyImpl(map->getKeyType(), source_map->getKeyType(), merge_rules);
+        auto value_type = applyJSONSharedDataPathPolicyImpl(map->getValueType(), source_map->getValueType(), merge_rules);
+        if (key_type == map->getKeyType() && value_type == map->getValueType())
+            return type;
+        return std::make_shared<DataTypeMap>(std::move(key_type), std::move(value_type));
+    }
+
+    return type;
+}
+}
+
+bool isJSONSharedDataPathPolicyOnlyChange(const IDataType * from, const IDataType * to)
+{
+    return !from->equals(*to) && typesEqualIgnoringJSONSharedDataPathPolicy(from, to);
+}
+
+DataTypePtr mergeJSONSharedDataPathRules(const DataTypePtr & type, const DataTypePtr & source_type)
+{
+    if (type == source_type || type->equals(*source_type))
+        return type;
+    return applyJSONSharedDataPathPolicyImpl(type, source_type, true);
+}
+
+DataTypePtr replaceJSONSharedDataPathPolicy(const DataTypePtr & type, const DataTypePtr & policy_source_type)
+{
+    return applyJSONSharedDataPathPolicyImpl(type, policy_source_type, false);
+}
+
+bool hasSaturatedJSONSharedDataPathPolicy(const IDataType & type)
+{
+    if (const auto * object = typeid_cast<const DataTypeObject *>(&type))
+    {
+        if (isJSONSharedDataPathProvenanceTop(object->getSharedDataPathRules()))
+            return true;
+        return std::ranges::any_of(object->getTypedPaths(), [](const auto & entry) { return hasSaturatedJSONSharedDataPathPolicy(*entry.second); });
+    }
+
+    if (const auto * array = typeid_cast<const DataTypeArray *>(&type))
+        return hasSaturatedJSONSharedDataPathPolicy(*array->getNestedType());
+
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+        return hasSaturatedJSONSharedDataPathPolicy(*nullable->getNestedType());
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
+        return std::ranges::any_of(tuple->getElements(), [](const auto & element) { return hasSaturatedJSONSharedDataPathPolicy(*element); });
+
+    if (const auto * map = typeid_cast<const DataTypeMap *>(&type))
+        return hasSaturatedJSONSharedDataPathPolicy(*map->getKeyType()) || hasSaturatedJSONSharedDataPathPolicy(*map->getValueType());
+
+    return false;
+}
+
+bool containsJSONObjectType(const IDataType & type)
+{
+    if (typeid_cast<const DataTypeObject *>(&type))
+        return true;
+
+    if (const auto * array = typeid_cast<const DataTypeArray *>(&type))
+        return containsJSONObjectType(*array->getNestedType());
+
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+        return containsJSONObjectType(*nullable->getNestedType());
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
+        return std::ranges::any_of(tuple->getElements(), [](const auto & element) { return containsJSONObjectType(*element); });
+
+    if (const auto * map = typeid_cast<const DataTypeMap *>(&type))
+        return containsJSONObjectType(*map->getKeyType()) || containsJSONObjectType(*map->getValueType());
+
+    return false;
 }
 
 static DataTypePtr createJSON(const ASTPtr & arguments)
@@ -901,9 +1476,11 @@ To declare a column of `JSON` type, you can use the following syntax:
 (
     max_dynamic_paths=N,
     max_dynamic_types=M,
+    shared_regexp_use_partial_match=0|1,
     some.path TypeName,
     SKIP path.to.skip,
-    SKIP REGEXP 'paths_regexp'
+    SKIP REGEXP 'paths_regexp',
+    SHARED REGEXP [FULL] 'paths_regexp'
 )
 ```
 Where the parameters in the syntax above are defined as:
@@ -912,9 +1489,21 @@ Where the parameters in the syntax above are defined as:
 |-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------|
 | `max_dynamic_paths`         | An optional parameter indicating how many paths can be stored separately as sub-columns across single block of data that is stored separately (for example across single data part for MergeTree table). <br/><br/>If this limit is exceeded, all other paths will be stored together in a single structure called [shared data](#shared-data-structure).<br/><br/>There are also [ways](#controlling-the-number-of-dynamic-paths) how to change the limit on dynamic paths without changing this parameter. | `1024`        |
 | `max_dynamic_types`         | An optional parameter between `1` and `255` indicating how many different data types can be stored separately inside a single path column with type `Dynamic` across single block of data that is stored separately (for example across single data part for MergeTree table). <br/><br/>If this limit is exceeded, all new types will be stored together in a single structure called `shared variant`.                                                                                    | `32`          |
+| `shared_regexp_use_partial_match` | Controls how `SHARED REGEXP` rules match flattened JSON paths. The default value `1` uses partial matching. Set it to `0` to require a full-string match. This parameter is stored in the JSON type and does not depend on input-format settings. | `1` |
 | `some.path TypeName`        | An optional type hint for particular path in the JSON. Such paths will be always stored as sub-columns with specified type.                                                                                                                                                                                                                                                                                                                                                                                  |               |
 | `SKIP path.to.skip`         | An optional hint for particular path that should be skipped during JSON parsing. Such paths will never be stored in the JSON column. If specified path is a nested JSON object, the whole nested object will be skipped.                                                                                                                                                                                                                                                                                     |               |
 | `SKIP REGEXP 'path_regexp'` | An optional hint with a regular expression that is used to skip paths during JSON parsing. All paths that match this regular expression will never be stored in the JSON column.                                                                                                                                                                                                                                                                                                                             |               |
+| `SHARED REGEXP 'path_regexp'` | An optional hint with a regular expression for paths that must always be stored in [shared data](#shared-data-structure). Matching paths are never promoted to dedicated dynamic-path sub-columns, regardless of `max_dynamic_paths` or how frequently they occur. This is useful for keeping high-cardinality path families from competing for dynamic-path slots. | |
+
+`SHARED REGEXP` rules are evaluated against the complete, root-relative flattened path. For example, the rule `^field1[.]field2[.]` matches `field1.field2.field3`; the value remains at that original path in shared data. Rules use RE2 partial matching by default, like `SKIP REGEXP`. Use `shared_regexp_use_partial_match=0` in the `JSON` type declaration when every rule must match the full path. A single rule can require a full-string match with `SHARED REGEXP FULL 'pattern'`; full-match and partial rules can be mixed in one declaration, and `SHOW CREATE TABLE` prints `FULL` on individual rules when modes are mixed. Typed paths take precedence over `SHARED REGEXP`, while `SKIP` and `SKIP REGEXP` still discard matching data.
+
+Derived JSON sub-object types can display an internal `shared_regexp_path_prefix` parameter. ClickHouse maintains this parameter automatically so root-relative matching remains stable across Native transport and persisted inferred schemas; it should not be set manually.
+
+Changing only the `SHARED REGEXP` policy with `ALTER TABLE ... MODIFY COLUMN` is metadata-only for a top-level `JSON` column and for `JSON` nested inside `Array`, `Nullable`, `Tuple`, or `Map`. For `JSON` nested inside `Variant`, such an `ALTER` is currently rejected with a `CANNOT_CONVERT_TYPE` error rather than being applied. Removing a rule does not re-promote data already placed in shared data during later merges by default. To let later merges and rewrites reconsider those paths for dynamic-path promotion, explicitly set the MergeTree table setting `allow_json_shared_data_paths_repromotion=1`.
+
+Unless `allow_json_shared_data_paths_repromotion` is enabled, each data part records the `SHARED REGEXP` rules under which its data was written, and a merge combines the recorded rules of all source parts. The combined rules apply to every row of the merged part, so paths matching a rule that was already removed from the table definition can still move to shared data during any later merge — including rows inserted after that rule was removed. The rules recorded in a part are visible in the `type` column of the `system.parts_columns` table.
+
+If the rules recorded across the merged parts cannot be combined exactly — more than 256 distinct rules or more than 1 MiB of patterns accumulated over the history of `SHARED REGEXP` alterations, or a combination that fails to compile — the merged part falls back to the single match-everything rule `SHARED REGEXP '(?s:.*)'` that keeps every untyped path in shared data, and a warning is logged. Later merges preserve this fallback. To undo it, set `allow_json_shared_data_paths_repromotion=1` and rewrite the column, for example with `OPTIMIZE TABLE ... FINAL` or `ALTER TABLE ... UPDATE <column> = <column>`.
 
 <WhenToUseJson />
 

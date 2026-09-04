@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/Statistics/Statistics.h>
@@ -12,6 +13,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Disks/SingleDiskVolume.h>
@@ -128,6 +130,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool allow_json_shared_data_paths_repromotion;
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
     extern const MergeTreeSettingsBool allow_vertical_merges_from_compact_to_wide_parts;
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
@@ -172,6 +175,16 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
+}
+
+namespace MutationHelpers
+{
+/// Defined in MutateTask.cpp; reused here to merge JSON SHARED REGEXP provenance from patch parts
+/// and to attach the merged per-column provenance types to a private metadata snapshot.
+DataTypePtr mergeJSONSharedDataPathRulesFromPatchParts(
+    DataTypePtr type, const String & column_name, const PatchPartsForReader & patch_parts, bool & inputs_saturated);
+StorageMetadataPtr rebuildMetadataWithColumnTypes(
+    const StorageMetadataPtr & base_metadata, const NamesAndTypesList & columns_with_new_types);
 }
 
 /// Transform that builds statistics for columns and doesn't change the chunk.
@@ -687,6 +700,110 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
 
+    /// Build rename conversions once per source part and reuse them for the provenance and
+    /// expiration checks below. The final reader conversions are rebuilt after patch parts are
+    /// added to the snapshot because those conversions also carry patch readers.
+    std::vector<AlterConversionsPtr> rename_conversions;
+    rename_conversions.reserve(global_ctx->future_part->parts.size());
+    for (const auto & part : global_ctx->future_part->parts)
+    {
+        rename_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context
+#if CLICKHOUSE_CLOUD
+            , nullptr
+#endif
+            ));
+    }
+
+    /// Each source part's JSON type records the policy that placed paths in shared data. Preserve
+    /// that policy in the output part by default so removing a rule does not silently re-promote
+    /// existing paths during a later merge. Resolve pending renames back to each source name.
+    if (!(*global_ctx->data_settings)[MergeTreeSetting::allow_json_shared_data_paths_repromotion])
+    {
+        std::vector<AlterConversionsPtr> patch_conversions;
+        patch_conversions.reserve(global_ctx->future_part->patch_parts.size());
+        for (const auto & patch_part : global_ctx->future_part->patch_parts)
+        {
+            patch_conversions.push_back(MergeTreeData::getAlterConversionsForPart(patch_part, mutations_snapshot, global_ctx->context
+#if CLICKHOUSE_CLOUD
+                , nullptr
+#endif
+                ));
+        }
+
+        /// Rebuilt projections need the same patch-part provenance fallback the storage columns
+        /// get below (see the loop over global_ctx->storage_columns), so build a rename-aware view
+        /// once here for MergeTreeDataWriter::writeTempProjectionPart to consume later. mode/
+        /// source_parts/source_data_version describe how to apply a patch's data, which provenance
+        /// lookup never does -- it only reads the patch part's own declared column type -- so those
+        /// fields are left at their defaults.
+        global_ctx->projection_patch_parts.reserve(global_ctx->future_part->patch_parts.size());
+        for (size_t patch_index = 0; patch_index != global_ctx->future_part->patch_parts.size(); ++patch_index)
+        {
+            auto patch_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
+                global_ctx->future_part->patch_parts[patch_index], patch_conversions[patch_index]);
+            global_ctx->projection_patch_parts.push_back(PatchPartInfoForReader{
+                .mode = PatchMode::Merge,
+                .part = std::move(patch_for_reader),
+                .source_parts = {},
+                .source_data_version = 0,
+                .perform_alter_conversions = true,
+                /// As in PatchPartIndex's own `PatchMode::Merge` case: only `MergeOnKey` needs the key.
+                .sorting_key = nullptr,
+                .stored_sorting_key_columns = {}});
+        }
+
+        for (auto & storage_column : global_ctx->storage_columns)
+        {
+            /// Track whether any input already carried the saturated match-everything policy to
+            /// warn only when this merge introduces it.
+            bool provenance_saturated_on_input = hasSaturatedJSONSharedDataPathPolicy(*storage_column.type);
+
+            for (size_t part_index = 0; part_index != global_ctx->future_part->parts.size(); ++part_index)
+            {
+                const auto & part = global_ctx->future_part->parts[part_index];
+                String source_name = storage_column.name;
+                const auto & conversions = rename_conversions[part_index];
+                for (const auto & rename : conversions->getRenameMap())
+                {
+                    if (rename.rename_to == storage_column.name)
+                    {
+                        source_name = rename.rename_from;
+                        break;
+                    }
+                }
+
+                if (auto source_column = part->tryGetColumn(source_name))
+                {
+                    provenance_saturated_on_input = provenance_saturated_on_input || hasSaturatedJSONSharedDataPathPolicy(*source_column->type);
+                    storage_column.type = mergeJSONSharedDataPathRules(storage_column.type, source_column->type);
+                }
+            }
+
+            storage_column.type = MutationHelpers::mergeJSONSharedDataPathRulesFromPatchParts(
+                storage_column.type, storage_column.name, global_ctx->projection_patch_parts, provenance_saturated_on_input);
+
+            if (!provenance_saturated_on_input && hasSaturatedJSONSharedDataPathPolicy(*storage_column.type))
+                LOG_WARNING(
+                    ctx->log,
+                    "Cannot combine SHARED REGEXP rules of column {} of table {} from the source parts within the limits "
+                    "({} rules, {} total pattern bytes). Part {} falls back to SHARED REGEXP '(?s:.*)': all untyped JSON paths "
+                    "will be stored in shared data. To recompute the placement, rewrite the column with the "
+                    "allow_json_shared_data_paths_repromotion table setting enabled",
+                    storage_column.name,
+                    global_ctx->data->getStorageID().getNameForLogs(),
+                    JSONPathRegexpMatcher::MAX_RULES,
+                    JSONPathRegexpMatcher::MAX_TOTAL_PATTERN_BYTES,
+                    global_ctx->future_part->name);
+        }
+    }
+
+    /// Readers and merge transforms take their result types from the storage snapshot rather
+    /// than from the new part metadata. Give this merge a private metadata copy carrying the
+    /// accumulated per-part placement provenance, without changing the live table metadata.
+    if (auto merge_metadata = MutationHelpers::rebuildMetadataWithColumnTypes(global_ctx->metadata_snapshot, global_ctx->storage_columns);
+        merge_metadata != global_ctx->metadata_snapshot)
+        global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, std::move(merge_metadata));
+
     /// Determine columns that are absent in all source parts—either fully expired or never written—and mark them as
     /// expired to avoid unnecessary reads or writes during merges.
     ///
@@ -735,13 +852,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /// rename is pending), the physical data will belong to `new` only after the rename
         /// materializes, so fall back to expiring `new` and let the rename mutation re-derive it.
         NameSet renamed_column_targets;
-        for (const auto & part : global_ctx->future_part->parts)
+        for (size_t part_index = 0; part_index != global_ctx->future_part->parts.size(); ++part_index)
         {
-            auto conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context
-#if CLICKHOUSE_CLOUD
-                , nullptr
-#endif
-                );
+            const auto & conversions = rename_conversions[part_index];
             for (const auto & rename : conversions->getRenameMap())
             {
                 if ((columns_present_in_parts.contains(rename.rename_from)
@@ -859,7 +972,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     if ((*merge_tree_settings)[MergeTreeSetting::materialize_statistics_on_merge])
     {
-        global_ctx->gathered_data.statistics = ColumnsStatistics(global_ctx->metadata_snapshot->getColumns());
+        global_ctx->gathered_data.statistics = ColumnsStatistics(global_ctx->storage_snapshot->metadata->getColumns());
     }
 
     if (global_ctx->merge_may_reduce_rows)
@@ -1609,7 +1722,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
     {
         auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
         auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-            *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+            *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context,
+            global_ctx->future_part->parts, global_ctx->projection_patch_parts, global_ctx->alter_conversions);
 
         tmp_part->finalize();
         tmp_part->part->getDataPartStorage().commitTransaction();
@@ -1651,7 +1765,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+                *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context,
+                global_ctx->future_part->parts, global_ctx->projection_patch_parts, global_ctx->alter_conversions);
 
             temp_part->finalize();
             temp_part->part->getDataPartStorage().commitTransaction();
@@ -1930,6 +2045,8 @@ public:
         , merge_block_size_bytes(merge_block_size_bytes_)
         , max_dynamic_subcolumns(max_dynamic_subcolumns_)
         , is_result_sparse(is_result_sparse_)
+        /// The header has exactly 1 column: this step gathers a single column from all source parts.
+        , result_type(input_header_->getByPosition(0).type)
     {}
 
     String getName() const override { return "ColumnGatherer"; }
@@ -1951,7 +2068,8 @@ public:
             merge_block_size_rows,
             merge_block_size_bytes,
             max_dynamic_subcolumns,
-            is_result_sparse);
+            is_result_sparse,
+            result_type);
 
         pipeline.addTransform(std::move(transform));
     }
@@ -1983,6 +2101,7 @@ private:
     const UInt64 merge_block_size_bytes;
     const std::optional<size_t> max_dynamic_subcolumns;
     const bool is_result_sparse;
+    const DataTypePtr result_type;
 };
 
 MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline

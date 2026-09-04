@@ -5,8 +5,14 @@
 #include <Common/assert_cast.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <IO/ReadHelpers.h>
 #include <Disks/createVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -25,6 +31,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Common/ColumnsHashing.h>
@@ -41,6 +48,10 @@
 #include <Common/quoteString.h>
 
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Poco/String.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
@@ -93,6 +104,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool allow_json_shared_data_paths_repromotion;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsBool fsync_after_insert;
     extern const MergeTreeSettingsBool fsync_part_directory;
@@ -1180,6 +1192,912 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     return temp_part;
 }
 
+namespace MutationHelpers
+{
+/// Defined in MutateTask.cpp; reused here so a projection materialized from a lightweight-update
+/// patch keeps the same provenance protection APPLY PATCHES already gives the main part.
+DataTypePtr mergeJSONSharedDataPathRulesFromPatchParts(
+    DataTypePtr type, const String & column_name, const PatchPartsForReader & patch_parts, bool & inputs_saturated);
+}
+
+/// projection.metadata's columns are keyed by the projection's analyzed output name, which for a
+/// non-trivial SELECT-list expression (e.g. `assumeNotNull(j)`, `materialize(j)`) is the rendered
+/// expression text, not any single source column's own name -- see ProjectionsDescription.cpp's
+/// choice of QueryProcessingStage: without a WHERE clause or aggregation, the header (and thus a
+/// materialized part with no prior projection sub-part to read from) is instead built straight
+/// from the source columns verbatim, so the *same* SELECT item can end up named either way
+/// depending on the projection. Collect every identifier referenced anywhere in each SELECT item
+/// (covers both outcomes, plus multi-column expressions like `if(cond, j, k)`) so the fallback
+/// below can still find the right physical column either way.
+/// Like IAST::collectIdentifierNames, but skips if()/multiIf() conditions and masks lambda formal
+/// parameters (matching RequiredSourceColumnsVisitor), so a bound name can't shadow a real column.
+static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNameSet & names, std::unordered_set<String> & masked_names);
+
+/// Convenience overload for callers that don't need masking carried in from an outer scope.
+static IdentifierNameSet collectValueCarryingIdentifierNames(const IAST & node)
+{
+    IdentifierNameSet names;
+    std::unordered_set<String> masked_names;
+    collectValueCarryingIdentifierNames(node, names, masked_names);
+    return names;
+}
+
+/// A lambda formal is used by the body when it appears bare (`x`) or through a member (`x.doc`):
+/// the member access still reads the formal, so the matching higher-order argument donates provenance.
+static bool lambdaParamIsUsedInBody(const String & param_name, const IdentifierNameSet & body_names)
+{
+    if (body_names.contains(param_name))
+        return true;
+    const String prefix = param_name + ".";
+    auto it = body_names.lower_bound(prefix);
+    return it != body_names.end() && it->starts_with(prefix);
+}
+
+/// If args[0] is `lambda((p1, ..., pn) -> body)` with n == args.size() - 1 params (the shape shared
+/// by arrayFold and the array-mapping higher-order functions), returns the params tuple and body.
+static std::pair<const ASTFunction *, const IAST *> extractLambdaParamsAndBody(const ASTs & args)
+{
+    const auto * lambda_arg = args[0]->as<ASTFunction>();
+    if (!lambda_arg || lambda_arg->name != "lambda" || !lambda_arg->arguments || lambda_arg->arguments->children.size() != 2)
+        return {nullptr, nullptr};
+    const auto * params_tuple = lambda_arg->arguments->children[0]->as<ASTFunction>();
+    if (!params_tuple || params_tuple->name != "tuple" || !params_tuple->arguments
+        || params_tuple->arguments->children.size() != args.size() - 1)
+        return {nullptr, nullptr};
+    return {params_tuple, lambda_arg->arguments->children[1].get()};
+}
+
+/// Member step for a constant subscript: `arr[i]` and `m[k]` are the same function, and only the
+/// source type tells them apart, so name the step here and resolve it during the type descent.
+static constexpr std::string_view SUBSCRIPT_MEMBER = "[]";
+
+static const IAST * unwrapTransparentProjectionExpression(const IAST & node);
+
+/// "t.doc" / "t.1" for tupleElement(t, 'doc' | 1) chains, "m.keys"/"m.values" for mapKeys/mapValues(m),
+/// "x.[]" for a constant subscript, over a plain column base; nullopt when the base is not a plain
+/// (possibly nested) column reference. Transparent wrappers are peeled at every step, so
+/// `tupleElement(assumeNotNull(t), 'doc')` still names `t.doc` instead of falling back to `t`.
+static std::optional<String> tryGetMemberQualifiedName(const IAST & wrapped_node)
+{
+    const IAST & node = *unwrapTransparentProjectionExpression(wrapped_node);
+    if (const auto * identifier = node.as<ASTIdentifier>())
+        return identifier->name();
+
+    const auto * function = node.as<ASTFunction>();
+    if (!function || !function->arguments)
+        return std::nullopt;
+    const auto & args = function->arguments->children;
+
+    if (function->name == "tupleElement" && args.size() == 2)
+    {
+        const auto * literal = args[1]->as<ASTLiteral>();
+        if (!literal)
+            return std::nullopt;
+        String member;
+        if (literal->value.getType() == Field::Types::String)
+            member = literal->value.safeGet<String>();
+        else if (literal->value.getType() == Field::Types::UInt64)
+            member = toString(literal->value.safeGet<UInt64>());
+        else
+            return std::nullopt;
+        if (auto base = tryGetMemberQualifiedName(*args[0]))
+            return *base + "." + member;
+        return std::nullopt;
+    }
+
+    if ((function->name == "mapKeys" || function->name == "mapValues") && args.size() == 1)
+    {
+        if (auto base = tryGetMemberQualifiedName(*args[0]))
+            return *base + "." + (function->name == "mapKeys" ? "keys" : "values");
+        return std::nullopt;
+    }
+
+    if (function->name == "arrayElement" && args.size() == 2 && args[1]->as<ASTLiteral>())
+    {
+        if (auto base = tryGetMemberQualifiedName(*args[0]))
+            return *base + "." + String(SUBSCRIPT_MEMBER);
+        return std::nullopt;
+    }
+
+    return std::nullopt;
+}
+
+/// `x -> tupleElement(x, 'doc')` bound to `arr` reads one member of the array's elements, so the
+/// donor is `arr.doc` (the member descent looks through the Array) rather than the whole `arr`.
+/// False when the body also reads the formal bare, or the bound source has no qualified name:
+/// then the caller's whole-source fallback is the only safe answer.
+static bool tryAddMemberQualifiedLambdaSource(
+    const String & param_name,
+    const IdentifierNameSet & body_names,
+    const IAST & source,
+    IdentifierNameSet & names,
+    const std::unordered_set<String> & masked_names)
+{
+    if (body_names.contains(param_name))
+        return false;
+    auto source_name = tryGetMemberQualifiedName(source);
+    if (!source_name)
+        return false;
+    if (masked_names.contains(source_name->substr(0, source_name->find('.'))))
+        return false;
+
+    const String prefix = param_name + ".";
+    bool added = false;
+    for (auto it = body_names.lower_bound(prefix); it != body_names.end() && it->starts_with(prefix); ++it)
+    {
+        names.insert(*source_name + it->substr(param_name.size()));
+        added = true;
+    }
+    return added;
+}
+
+static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNameSet & names, std::unordered_set<String> & masked_names)
+{
+    if (const auto * identifier = node.as<ASTIdentifier>())
+    {
+        if (!masked_names.contains(identifier->name()))
+            names.insert(identifier->name());
+        return;
+    }
+
+    if (const auto * function = node.as<ASTFunction>(); function && function->arguments)
+    {
+        const auto & args = function->arguments->children;
+        if (function->name == "lambda" && args.size() == 2)
+        {
+            const auto * lambda_args_tuple = args[0]->as<ASTFunction>();
+            if (lambda_args_tuple && lambda_args_tuple->name == "tuple" && lambda_args_tuple->arguments)
+            {
+                std::vector<String> newly_masked;
+                for (const auto & param : lambda_args_tuple->arguments->children)
+                    if (const auto * param_identifier = param->as<ASTIdentifier>(); param_identifier && masked_names.insert(param_identifier->name()).second)
+                        newly_masked.push_back(param_identifier->name());
+
+                collectValueCarryingIdentifierNames(*args[1], names, masked_names);
+
+                for (const auto & name : newly_masked)
+                    masked_names.erase(name);
+                return;
+            }
+        }
+        /// Member access reads one side of its source; qualify the candidate with that member so the
+        /// resolver descends into it instead of donating the source's sibling policies.
+        if (function->name == "tupleElement" || function->name == "mapKeys" || function->name == "mapValues"
+            || function->name == "arrayElement")
+        {
+            if (auto qualified = tryGetMemberQualifiedName(node))
+            {
+                const String root = qualified->substr(0, qualified->find('.'));
+                if (!masked_names.contains(root) && !masked_names.contains(*qualified))
+                    names.insert(*qualified);
+                return;
+            }
+        }
+        if (Poco::toLower(function->name) == "if" && args.size() == 3)
+        {
+            collectValueCarryingIdentifierNames(*args[1], names, masked_names);
+            collectValueCarryingIdentifierNames(*args[2], names, masked_names);
+            return;
+        }
+        if (function->name == "multiIf" && args.size() >= 3)
+        {
+            for (size_t i = 0; i < args.size(); ++i)
+                if (!(i % 2 == 0 && i != args.size() - 1))
+                    collectValueCarryingIdentifierNames(*args[i], names, masked_names);
+            return;
+        }
+        /// These (and mapFilter/mapSort/... Map adapters over the same array Impls) only select/order/
+        /// count/split the *first* collection's own elements, so the lambda and the trailing
+        /// condition/sort-key collections are not donors either (like if()'s condition).
+        static const std::unordered_set<String> predicate_only_higher_order_functions = {
+            "arrayFilter", "arrayExists", "arrayAll", "arrayCount",
+            "arrayFirst", "arrayFirstOrNull", "arrayLast", "arrayLastOrNull",
+            "arrayFirstIndex", "arrayLastIndex",
+            "arrayFill", "arrayReverseFill",
+            "arraySort", "arrayReverseSort", "arrayPartialSort", "arrayPartialReverseSort",
+            "arraySplit", "arrayReverseSplit",
+            "arrayCompact",
+            "arrayTopK", "arrayBottomK",
+            "mapFilter", "mapExists", "mapAll",
+            "mapSort", "mapReverseSort", "mapPartialSort", "mapPartialReverseSort",
+        };
+        /// arrayPartialSort([f,] limit, arr, ...) / arrayTopK([f,] K, arr, ...) put a scalar count
+        /// between the lambda and the collection whose elements they return.
+        static const std::unordered_set<String> predicate_only_with_leading_count = {
+            "arrayPartialSort", "arrayPartialReverseSort",
+            "arrayTopK", "arrayBottomK",
+            "mapPartialSort", "mapPartialReverseSort",
+        };
+        if (!args.empty() && predicate_only_higher_order_functions.contains(function->name))
+        {
+            const auto * lambda_arg = args[0]->as<ASTFunction>();
+            if (lambda_arg && lambda_arg->name == "lambda")
+            {
+                const size_t source_index = predicate_only_with_leading_count.contains(function->name) ? 2 : 1;
+                if (source_index < args.size())
+                    collectValueCarryingIdentifierNames(*args[source_index], names, masked_names);
+                return;
+            }
+        }
+        if (function->name == "arrayFold" && args.size() >= 3)
+        {
+            /// arrayFold's params[0] is the accumulator, with no array of its own; seed can itself
+            /// become the result (e.g. an empty array), so unlike the arrays it's always a donor.
+            auto [lambda_params_tuple, lambda_body] = extractLambdaParamsAndBody(args);
+            if (lambda_params_tuple)
+            {
+                IdentifierNameSet body_names = collectValueCarryingIdentifierNames(*lambda_body);
+
+                const auto & params = lambda_params_tuple->arguments->children;
+                for (size_t i = 1; i < params.size(); ++i)
+                {
+                    const auto * param_identifier = params[i]->as<ASTIdentifier>();
+                    if (!param_identifier || !lambdaParamIsUsedInBody(param_identifier->name(), body_names))
+                        continue;
+                    /// Same member-qualified substitution the generic branch below makes: a body that only
+                    /// reads `x.doc` donates `arr.doc`, not the whole `arr`, which would then be refused as
+                    /// a tuple source and lose the element's own rules.
+                    if (!tryAddMemberQualifiedLambdaSource(param_identifier->name(), body_names, *args[i], names, masked_names))
+                        collectValueCarryingIdentifierNames(*args[i], names, masked_names);
+                }
+                collectValueCarryingIdentifierNames(*args.back(), names, masked_names);
+                return;
+            }
+        }
+        /// arrayMap((x, y) -> y, arr, meta_arr): only arrays whose bound parameter is actually
+        /// referenced in the body feed the output, not every array argument unconditionally.
+        if (!args.empty() && !predicate_only_higher_order_functions.contains(function->name))
+        {
+            auto [lambda_params_tuple, lambda_body] = extractLambdaParamsAndBody(args);
+            if (lambda_params_tuple)
+            {
+                IdentifierNameSet body_names = collectValueCarryingIdentifierNames(*lambda_body);
+
+                const auto & params = lambda_params_tuple->arguments->children;
+                for (size_t i = 0; i != params.size(); ++i)
+                {
+                    const auto * param_identifier = params[i]->as<ASTIdentifier>();
+                    if (!param_identifier || !lambdaParamIsUsedInBody(param_identifier->name(), body_names))
+                        continue;
+                    if (!tryAddMemberQualifiedLambdaSource(param_identifier->name(), body_names, *args[1 + i], names, masked_names))
+                        collectValueCarryingIdentifierNames(*args[1 + i], names, masked_names);
+                }
+                return;
+            }
+        }
+    }
+
+    for (const auto & child : node.children)
+        collectValueCarryingIdentifierNames(*child, names, masked_names);
+}
+
+/// tuple(j1, j2)/arrayZip(j1, j2)/map(j1, j2), and the lambda producers arrayMap(... -> tuple(...))
+/// and mapApply, feed *different* structural slots from different identifiers; these let the caller
+/// merge each slot's own candidates against only that slot's type.
+struct ProjectionOutputProvenance
+{
+    std::vector<String> flat_candidates;
+    std::vector<std::vector<String>> tuple_element_candidates;
+    bool is_array_zip = false;
+    std::vector<String> map_key_candidates;
+    std::vector<String> map_value_candidates;
+    bool is_map = false;
+    /// `flat_candidates` are whole-output donors selected per row (the branches of a conditional),
+    /// not different slots, so each one is aligned with the entire result and they merge together.
+    bool aligned_alternatives = false;
+    /// The map is the element of an Array, as built by arrayMap((k, v) -> map(k, v), ...).
+    bool is_map_in_array = false;
+};
+
+/// materialize(x)/CAST(x, T) and the nullability wrappers don't change x's own AST structure; look
+/// through them so a wrapped tuple(...)/map(...)/arrayZip(...) still gets per-slot handling below
+/// (a reshaping CAST just fails the shape check at merge time and falls back safely).
+static const IAST * unwrapTransparentProjectionExpression(const IAST & node)
+{
+    const IAST * current = &node;
+    while (true)
+    {
+        const auto * function = current->as<ASTFunction>();
+        if (!function || !function->arguments)
+            break;
+
+        const auto & args = function->arguments->children;
+        if ((function->name == "materialize" || function->name == "toNullable" || function->name == "assumeNotNull")
+            && args.size() == 1)
+            current = args[0].get();
+        else if ((function->name == "CAST" || function->name == "_CAST") && args.size() == 2)
+            current = args[0].get();
+        else
+            break;
+    }
+    return current;
+}
+
+static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutputToSourceIdentifiers(const ProjectionDescription & projection)
+{
+    std::unordered_map<String, ProjectionOutputProvenance> output_to_sources;
+    const auto * select_query = projection.query_ast->as<ASTSelectQuery>();
+    if (!select_query || !select_query->select())
+        return output_to_sources;
+
+    for (const auto & child : select_query->select()->children)
+    {
+        ProjectionOutputProvenance provenance;
+
+        IdentifierNameSet names = collectValueCarryingIdentifierNames(*child);
+        provenance.flat_candidates.assign(names.begin(), names.end());
+
+        if (const auto * function = unwrapTransparentProjectionExpression(*child)->as<ASTFunction>(); function && function->arguments)
+        {
+            const auto & args = function->arguments->children;
+            if ((function->name == "tuple" || function->name == "arrayZip" || function->name == "arrayZipUnaligned")
+                && args.size() >= 2)
+            {
+                /// arrayZipUnaligned has arrayZip's Array(Tuple(...)) contract, only with Nullable
+                /// slots - which the policy merge already looks through.
+                provenance.is_array_zip = (function->name != "tuple");
+                for (const auto & arg : args)
+                {
+                    IdentifierNameSet element_names = collectValueCarryingIdentifierNames(*arg);
+                    provenance.tuple_element_candidates.emplace_back(element_names.begin(), element_names.end());
+                }
+            }
+            else if (function->name == "map" && args.size() >= 2 && args.size() % 2 == 0)
+            {
+                provenance.is_map = true;
+                for (size_t i = 0; i < args.size(); ++i)
+                {
+                    IdentifierNameSet pair_names = collectValueCarryingIdentifierNames(*args[i]);
+                    auto & target = (i % 2 == 0) ? provenance.map_key_candidates : provenance.map_value_candidates;
+                    target.insert(target.end(), pair_names.begin(), pair_names.end());
+                }
+            }
+            else if ((function->name == "if" && args.size() == 3)
+                     || (function->name == "multiIf" && args.size() >= 3 && args.size() % 2 == 1))
+            {
+                /// A conditional picks one branch per row, so slot i of the result is fed by slot i of
+                /// every branch. Union the branches slot-wise rather than leaving the flat candidate
+                /// list to the self-only fallback, which drops every donor once the output holds more
+                /// than one JSON node.
+                ASTs branches;
+                if (function->name == "if")
+                {
+                    branches.push_back(args[1]);
+                    branches.push_back(args[2]);
+                }
+                else
+                {
+                    for (size_t i = 1; i + 1 < args.size(); i += 2)
+                        branches.push_back(args[i]);
+                    branches.push_back(args.back());
+                }
+
+                /// Slots only line up if every branch rebuilds the output the same structural way,
+                /// so a mix of shapes - or any shape without slot-wise handling - falls through to
+                /// the flat candidates.
+                auto branch_kind = [](const ASTFunction & branch_function) -> std::string_view
+                {
+                    if (branch_function.name == "tuple")
+                        return "tuple";
+                    /// arrayZipUnaligned shares arrayZip's Array(Tuple(...)) contract, as above.
+                    if (branch_function.name == "arrayZip" || branch_function.name == "arrayZipUnaligned")
+                        return "arrayZip";
+                    if (branch_function.name == "map")
+                        return "map";
+                    return {};
+                };
+
+                std::vector<const ASTFunction *> branch_functions;
+                std::string_view kind;
+                size_t arity = 0;
+                for (const auto & branch : branches)
+                {
+                    const auto * branch_function = unwrapTransparentProjectionExpression(*branch)->as<ASTFunction>();
+                    if (!branch_function || !branch_function->arguments)
+                    {
+                        branch_functions.clear();
+                        break;
+                    }
+                    const std::string_view this_kind = branch_kind(*branch_function);
+                    const size_t branch_arity = branch_function->arguments->children.size();
+                    /// tuple/arrayZip are read slot by slot, so their arity has to agree across
+                    /// branches; map unions its two halves, so only an even count matters.
+                    const bool arity_ok = (this_kind == "map") ? (branch_arity % 2 == 0) : (!arity || branch_arity == arity);
+                    if (this_kind.empty() || branch_arity < 2 || !arity_ok || (!kind.empty() && this_kind != kind))
+                    {
+                        branch_functions.clear();
+                        break;
+                    }
+                    kind = this_kind;
+                    arity = branch_arity;
+                    branch_functions.push_back(branch_function);
+                }
+
+                if (!branch_functions.empty() && kind == "map")
+                {
+                    provenance.is_map = true;
+                    for (const auto * branch_function : branch_functions)
+                    {
+                        const auto & branch_args = branch_function->arguments->children;
+                        for (size_t i = 0; i != branch_args.size(); ++i)
+                        {
+                            IdentifierNameSet pair_names = collectValueCarryingIdentifierNames(*branch_args[i]);
+                            auto & target = (i % 2 == 0) ? provenance.map_key_candidates : provenance.map_value_candidates;
+                            target.insert(target.end(), pair_names.begin(), pair_names.end());
+                        }
+                    }
+                }
+                else if (!branch_functions.empty())
+                {
+                    provenance.is_array_zip = (kind == "arrayZip");
+                    provenance.tuple_element_candidates.resize(arity);
+                    for (const auto * branch_function : branch_functions)
+                    {
+                        for (size_t slot = 0; slot != arity; ++slot)
+                        {
+                            IdentifierNameSet slot_names
+                                = collectValueCarryingIdentifierNames(*branch_function->arguments->children[slot]);
+                            auto & target = provenance.tuple_element_candidates[slot];
+                            target.insert(target.end(), slot_names.begin(), slot_names.end());
+                        }
+                    }
+                }
+                else
+                {
+                    /// No branch-local structure. The branches may still each be a whole-output donor
+                    /// - the aligned shapes this file already preserves at top level, such as
+                    /// `assumeNotNull(t)` or `arrayElement(arr, 1)`. Those are alternatives for the
+                    /// same output rather than different slots, so each is aligned with all of it and
+                    /// they can be merged together instead of falling into the multi-JSON drop below.
+                    Names alternatives;
+                    bool every_branch_is_one_donor = true;
+                    for (const auto & branch : branches)
+                    {
+                        IdentifierNameSet branch_names = collectValueCarryingIdentifierNames(*branch);
+                        if (branch_names.size() != 1)
+                        {
+                            every_branch_is_one_donor = false;
+                            break;
+                        }
+                        alternatives.push_back(*branch_names.begin());
+                    }
+
+                    if (every_branch_is_one_donor)
+                    {
+                        /// Drops the condition's own identifiers, which donate nothing.
+                        provenance.flat_candidates = std::move(alternatives);
+                        provenance.aligned_alternatives = true;
+                    }
+                }
+            }
+            else if (function->name == "mapApply" && args.size() == 2)
+            {
+                /// mapApply((k, v) -> (key_expr, value_expr), m) rebuilds the map slot-wise. Its lambda
+                /// takes two formals over a single map argument, so extractLambdaParamsAndBody's arity
+                /// rule does not apply; a formal stands for one half of the source map, which the member
+                /// descent can name as `m.keys` / `m.values`.
+                const auto * lambda_arg = args[0]->as<ASTFunction>();
+                const auto * params_tuple = lambda_arg && lambda_arg->name == "lambda" && lambda_arg->arguments
+                        && lambda_arg->arguments->children.size() == 2
+                    ? lambda_arg->arguments->children[0]->as<ASTFunction>()
+                    : nullptr;
+                /// The body may sit under a transparent wrapper: mapApply((k, v) -> materialize(tuple(k, v)), m).
+                const auto * body_tuple = params_tuple
+                    ? unwrapTransparentProjectionExpression(*lambda_arg->arguments->children[1])->as<ASTFunction>()
+                    : nullptr;
+                /// The map may be named through members too: mapApply((k, v) -> ..., tupleElement(t, 'm')).
+                auto map_name = tryGetMemberQualifiedName(*args[1]);
+                if (params_tuple && params_tuple->name == "tuple" && params_tuple->arguments
+                    && params_tuple->arguments->children.size() == 2 && map_name
+                    && body_tuple && body_tuple->name == "tuple" && body_tuple->arguments
+                    && body_tuple->arguments->children.size() == 2)
+                {
+                    std::unordered_map<String, String> param_to_member;
+                    for (size_t i = 0; i != 2; ++i)
+                        if (const auto * param_identifier = params_tuple->arguments->children[i]->as<ASTIdentifier>())
+                            param_to_member.emplace(
+                                param_identifier->name(), *map_name + (i == 0 ? ".keys" : ".values"));
+
+                    provenance.is_map = true;
+                    for (size_t i = 0; i != 2; ++i)
+                    {
+                        auto & target = (i == 0) ? provenance.map_key_candidates : provenance.map_value_candidates;
+                        for (const auto & name : collectValueCarryingIdentifierNames(*body_tuple->arguments->children[i]))
+                        {
+                            const size_t dot = name.find('.');
+                            auto member_it = param_to_member.find(dot == String::npos ? name : name.substr(0, dot));
+                            if (member_it == param_to_member.end())
+                                target.push_back(name);
+                            else
+                                target.push_back(dot == String::npos ? member_it->second : member_it->second + name.substr(dot));
+                        }
+                    }
+                }
+            }
+            else if (function->name == "arrayMap" && args.size() >= 2)
+            {
+                /// arrayMap((x, y) -> tuple(x, y), arr1, arr2) builds Array(Tuple(...)) element-wise:
+                /// reconstruct per-slot candidates by substituting each lambda parameter with its
+                /// bound array argument, so the whole-type merge cannot cross slots.
+                auto [lambda_params_tuple, lambda_body] = extractLambdaParamsAndBody(args);
+                /// The body may sit under a transparent wrapper: arrayMap((x, y) -> materialize(tuple(x, y)), ...).
+                const auto * body_function = lambda_body ? unwrapTransparentProjectionExpression(*lambda_body)->as<ASTFunction>() : nullptr;
+                const auto & body_args_ptr = body_function ? body_function->arguments : nullptr;
+                const size_t body_arity = body_args_ptr ? body_args_ptr->children.size() : 0;
+                const bool body_is_tuple = body_function && body_function->name == "tuple" && body_arity >= 2;
+                /// arrayMap((k, v) -> map(k, v), ...) builds Array(Map(...)) element-wise the same way,
+                /// except the body's arguments alternate key and value instead of naming slots.
+                const bool body_is_map = body_function && body_function->name == "map" && body_arity >= 2 && body_arity % 2 == 0;
+
+                if (lambda_params_tuple && (body_is_tuple || body_is_map))
+                {
+                    std::unordered_map<String, const IAST *> param_to_source;
+                    const auto & params = lambda_params_tuple->arguments->children;
+                    for (size_t i = 0; i != params.size(); ++i)
+                        if (const auto * param_identifier = params[i]->as<ASTIdentifier>())
+                            param_to_source.emplace(param_identifier->name(), args[1 + i].get());
+
+                    /// Rewrites each lambda formal back to the array argument bound to it.
+                    auto resolve_slot = [&](const IAST & slot)
+                    {
+                        IdentifierNameSet slot_names = collectValueCarryingIdentifierNames(slot);
+                        std::vector<String> slot_candidates;
+                        for (const auto & name : slot_names)
+                        {
+                            const size_t dot = name.find('.');
+                            auto source_it = param_to_source.find(dot == String::npos ? name : name.substr(0, dot));
+                            if (source_it == param_to_source.end())
+                            {
+                                slot_candidates.push_back(name);
+                                continue;
+                            }
+                            if (dot == String::npos)
+                            {
+                                IdentifierNameSet source_names = collectValueCarryingIdentifierNames(*source_it->second);
+                                slot_candidates.insert(slot_candidates.end(), source_names.begin(), source_names.end());
+                            }
+                            else if (auto source_name = tryGetMemberQualifiedName(*source_it->second))
+                            {
+                                /// `x.doc` with x bound to `arr` or to a member-qualified source such
+                                /// as `tupleElement(t, 'arr')`: name it `arr.doc` / `t.arr.doc` and let
+                                /// the member descent in resolveMemberQualifiedPolicySource do the rest.
+                                slot_candidates.push_back(*source_name + name.substr(dot));
+                            }
+                        }
+                        return slot_candidates;
+                    };
+
+                    const auto & body_args = body_args_ptr->children;
+                    if (body_is_map)
+                    {
+                        provenance.is_map = true;
+                        provenance.is_map_in_array = true;
+                        for (size_t i = 0; i != body_args.size(); ++i)
+                        {
+                            auto slot_candidates = resolve_slot(*body_args[i]);
+                            auto & target = (i % 2 == 0) ? provenance.map_key_candidates : provenance.map_value_candidates;
+                            target.insert(target.end(), slot_candidates.begin(), slot_candidates.end());
+                        }
+                    }
+                    else
+                    {
+                        provenance.is_array_zip = true;
+                        for (const auto & slot : body_args)
+                            provenance.tuple_element_candidates.push_back(resolve_slot(*slot));
+                    }
+                }
+            }
+        }
+
+        if (!provenance.flat_candidates.empty() || !provenance.tuple_element_candidates.empty() || provenance.is_map)
+            output_to_sources.emplace(child->getAliasOrColumnName(), std::move(provenance));
+    }
+    return output_to_sources;
+}
+
+/// Number of JSON nodes anywhere in the type, walking the same containers as containsJSONObjectType.
+static size_t countJSONObjectTypes(const IDataType & type)
+{
+    if (typeid_cast<const DataTypeObject *>(&type))
+        return 1;
+    if (const auto * array = typeid_cast<const DataTypeArray *>(&type))
+        return countJSONObjectTypes(*array->getNestedType());
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+        return countJSONObjectTypes(*nullable->getNestedType());
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
+    {
+        size_t count = 0;
+        for (const auto & element : tuple->getElements())
+            count += countJSONObjectTypes(*element);
+        return count;
+    }
+    if (const auto * map = typeid_cast<const DataTypeMap *>(&type))
+        return countJSONObjectTypes(*map->getKeyType()) + countJSONObjectTypes(*map->getValueType());
+    return 0;
+}
+
+/// One member step of a qualified candidate: Tuple elements by name or 1-based number, Map sides by
+/// "keys"/"values", a constant subscript by "[]"; Array/Nullable wrappers are looked through (member
+/// access maps over arrays).
+static DataTypePtr descendJSONPolicySourceIntoMember(DataTypePtr type, std::string_view member)
+{
+    while (true)
+    {
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+            type = nullable->getNestedType();
+        else if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+            type = array->getNestedType();
+        else
+            break;
+    }
+
+    /// A constant subscript: on a Map it selects the value side, on an Array it selects the element,
+    /// which the wrapper peeling above has already reached.
+    if (member == SUBSCRIPT_MEMBER)
+    {
+        if (const auto * subscripted_map = typeid_cast<const DataTypeMap *>(type.get()))
+            return subscripted_map->getValueType();
+        return type;
+    }
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        if (tuple->hasExplicitNames())
+        {
+            auto position = tuple->tryGetPositionByName(String(member));
+            if (position)
+                return tuple->getElements()[*position];
+        }
+        UInt64 index = 0;
+        if (tryParse(index, member.data(), member.size()) && index >= 1 && index <= tuple->getElements().size())
+            return tuple->getElements()[index - 1];
+        return nullptr;
+    }
+
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        if (member == "keys")
+            return map->getKeyType();
+        if (member == "values")
+            return map->getValueType();
+        return nullptr;
+    }
+
+    return nullptr;
+}
+
+/// A name containing the "[]" step is never a physical column or subcolumn name, but a JSON column
+/// resolves any dotted tail as a path subcolumn, which would donate a policy-free Dynamic type.
+static bool containsSubscriptMemberStep(std::string_view name)
+{
+    return name.contains(String(".") + String(SUBSCRIPT_MEMBER));
+}
+
+/// Resolves a member-qualified candidate ("t.doc", "m.values", "t.2") against `try_get_column`: takes
+/// the longest prefix that is a physical column and descends the remaining members through its type,
+/// so only the member the projection actually read donates its policy.
+template <typename TryGetColumn>
+static DataTypePtr resolveMemberQualifiedPolicySource(const String & candidate_name, TryGetColumn && try_get_column)
+{
+    for (size_t pos = candidate_name.rfind('.'); pos != String::npos;
+         pos = (pos == 0 ? String::npos : candidate_name.rfind('.', pos - 1)))
+    {
+        auto prefix = candidate_name.substr(0, pos);
+        if (containsSubscriptMemberStep(prefix))
+            continue;
+
+        auto base = try_get_column(prefix);
+        if (!base)
+            continue;
+
+        DataTypePtr current = base->type;
+        size_t member_begin = pos + 1;
+        while (current && member_begin <= candidate_name.size())
+        {
+            size_t member_end = candidate_name.find('.', member_begin);
+            if (member_end == String::npos)
+                member_end = candidate_name.size();
+            current = descendJSONPolicySourceIntoMember(
+                current, std::string_view(candidate_name).substr(member_begin, member_end - member_begin));
+            member_begin = member_end + 1;
+        }
+        return current;
+    }
+    return nullptr;
+}
+
+/// Mirrors applyJSONSharedDataPathPoliciesForMutation (MutateTask.cpp) for a projection's own declared
+/// columns: prefer each source's own projection part, else fall back to that source's main columns.
+/// `source_part_alter_conversions` is parallel to `source_parts`: a source part written before a
+/// column rename still has the old physical name, so `tryGetColumn` on it (and on its own projection
+/// sub-part, which is renamed in lockstep with the main part) needs the candidate name mapped back
+/// through that part's own pending renames first, the same way computeJSONProvenanceType
+/// (MutateTask.cpp) and MergeTask's own base-part provenance merge already do.
+static DataTypePtr resolveJSONSharedDataPathPolicyForCandidates(
+    DataTypePtr type,
+    const Names & candidate_names,
+    const ProjectionDescription & projection,
+    const MergeTreeData::DataPartsVector & source_parts,
+    const PatchPartsForReader & patch_parts,
+    const std::vector<AlterConversionsPtr> & source_part_alter_conversions)
+{
+    for (size_t source_index = 0; source_index != source_parts.size(); ++source_index)
+    {
+        const auto & source_part = source_parts[source_index];
+        const AlterConversionsPtr * alter_conversions = source_index < source_part_alter_conversions.size()
+            ? &source_part_alter_conversions[source_index]
+            : nullptr;
+
+        /// A rebuild can add a column to the projection that an existing projection sub-part
+        /// doesn't have yet (see MergeTask::prepareProjectionsToMergeAndRebuild); the fallback
+        /// to the source's own main column must apply per-column, not only when no sub-part
+        /// exists at all, or such a column silently skips provenance merging entirely.
+        const auto & source_projection_parts = source_part->getProjectionParts();
+        auto projection_part_it = source_projection_parts.find(projection.name);
+
+        const auto try_get_source_column = [&](String name) -> std::optional<NameAndTypePair>
+        {
+            if (alter_conversions && *alter_conversions && (*alter_conversions)->isColumnRenamed(name))
+                name = (*alter_conversions)->getColumnOldName(name);
+            std::optional<NameAndTypePair> column;
+            if (projection_part_it != source_projection_parts.end())
+                column = projection_part_it->second->tryGetColumn(name);
+            if (!column)
+                column = source_part->tryGetColumn(name);
+            return column;
+        };
+
+        for (const auto & candidate_name : candidate_names)
+        {
+            DataTypePtr policy_source_type;
+            /// See containsSubscriptMemberStep(): "arr.[]" must not be taken as a JSON path subcolumn.
+            if (containsSubscriptMemberStep(candidate_name))
+            {
+                policy_source_type = resolveMemberQualifiedPolicySource(candidate_name, try_get_source_column);
+            }
+            else if (auto source_column = try_get_source_column(candidate_name))
+            {
+                policy_source_type = source_column->type;
+            }
+            else if (candidate_name.contains('.'))
+            {
+                policy_source_type = resolveMemberQualifiedPolicySource(candidate_name, try_get_source_column);
+            }
+
+            if (policy_source_type)
+                type = mergeJSONSharedDataPathRules(type, policy_source_type);
+        }
+    }
+
+    bool inputs_saturated = false;
+    for (const auto & candidate_name : candidate_names)
+    {
+        type = MutationHelpers::mergeJSONSharedDataPathRulesFromPatchParts(type, candidate_name, patch_parts, inputs_saturated);
+
+        /// That lookup only knows physical column names. A member-qualified candidate needs the same
+        /// base-column descent the source-part branch above does, or a patch part that is the only
+        /// remaining record of the retired policy contributes nothing.
+        if (!candidate_name.contains('.'))
+            continue;
+
+        for (const auto & patch : patch_parts)
+        {
+            const auto try_get_patch_column = [&](String name) -> std::optional<NameAndTypePair>
+            {
+                if (const auto & patch_conversions = patch.part->getAlterConversions();
+                    patch_conversions && patch_conversions->isColumnRenamed(name))
+                    name = patch_conversions->getColumnOldName(name);
+                return patch.part->tryGetColumn(name);
+            };
+
+            if (auto member_type = resolveMemberQualifiedPolicySource(candidate_name, try_get_patch_column))
+            {
+                inputs_saturated = inputs_saturated || hasSaturatedJSONSharedDataPathPolicy(*member_type);
+                type = mergeJSONSharedDataPathRules(type, member_type);
+            }
+        }
+    }
+
+    return type;
+}
+
+static void applyJSONSharedDataPathPoliciesForProjection(
+    NamesAndTypesList & result_columns,
+    const ProjectionDescription & projection,
+    const MergeTreeData::DataPartsVector & source_parts,
+    const PatchPartsForReader & patch_parts,
+    const std::vector<AlterConversionsPtr> & source_part_alter_conversions)
+{
+    auto output_to_sources = getProjectionOutputToSourceIdentifiers(projection);
+
+    for (auto & result_column : result_columns)
+    {
+        auto it = output_to_sources.find(result_column.name);
+        const ProjectionOutputProvenance * provenance = it != output_to_sources.end() ? &it->second : nullptr;
+        bool handled_structurally = false;
+
+        if (provenance && !provenance->tuple_element_candidates.empty())
+        {
+            DataTypePtr element_container_type = result_column.type;
+            const DataTypeArray * target_array = nullptr;
+            if (provenance->is_array_zip)
+            {
+                target_array = typeid_cast<const DataTypeArray *>(element_container_type.get());
+                if (target_array)
+                    element_container_type = target_array->getNestedType();
+            }
+
+            if (const auto * target_tuple = typeid_cast<const DataTypeTuple *>(element_container_type.get());
+                target_tuple && target_tuple->getElements().size() == provenance->tuple_element_candidates.size()
+                && (!provenance->is_array_zip || target_array))
+            {
+                DataTypes elements = target_tuple->getElements();
+                for (size_t i = 0; i != elements.size(); ++i)
+                    elements[i] = resolveJSONSharedDataPathPolicyForCandidates(
+                        elements[i], provenance->tuple_element_candidates[i], projection,
+                        source_parts, patch_parts, source_part_alter_conversions);
+
+                DataTypePtr new_tuple = target_tuple->hasExplicitNames()
+                    ? std::make_shared<DataTypeTuple>(elements, target_tuple->getElementNames())
+                    : std::make_shared<DataTypeTuple>(elements);
+                result_column.type = provenance->is_array_zip
+                    ? DataTypePtr(std::make_shared<DataTypeArray>(std::move(new_tuple)))
+                    : new_tuple;
+                handled_structurally = true;
+            }
+        }
+        else if (provenance && provenance->is_map)
+        {
+            DataTypePtr map_container_type = result_column.type;
+            const DataTypeArray * target_array = nullptr;
+            if (provenance->is_map_in_array)
+            {
+                target_array = typeid_cast<const DataTypeArray *>(map_container_type.get());
+                if (target_array)
+                    map_container_type = target_array->getNestedType();
+            }
+
+            if (const auto * target_map = typeid_cast<const DataTypeMap *>(map_container_type.get());
+                target_map && (!provenance->is_map_in_array || target_array))
+            {
+                auto key_type = resolveJSONSharedDataPathPolicyForCandidates(
+                    target_map->getKeyType(), provenance->map_key_candidates, projection,
+                    source_parts, patch_parts, source_part_alter_conversions);
+                auto value_type = resolveJSONSharedDataPathPolicyForCandidates(
+                    target_map->getValueType(), provenance->map_value_candidates, projection,
+                    source_parts, patch_parts, source_part_alter_conversions);
+                DataTypePtr new_map = std::make_shared<DataTypeMap>(std::move(key_type), std::move(value_type));
+                result_column.type = provenance->is_map_in_array
+                    ? DataTypePtr(std::make_shared<DataTypeArray>(std::move(new_map)))
+                    : new_map;
+                handled_structurally = true;
+            }
+        }
+
+        if (!handled_structurally)
+        {
+            Names candidate_names = {result_column.name};
+            if (provenance)
+            {
+                Names non_self_candidates;
+                for (const auto & name : provenance->flat_candidates)
+                    if (name != result_column.name)
+                        non_self_candidates.push_back(name);
+                /// Several flat candidates over an output with several JSON nodes cannot be attributed
+                /// without crossing slots; one aligned donor can - the merge still shape-checks it.
+                /// Conditional alternatives are each aligned with the whole output, so several of
+                /// them are attributable for the same reason a single donor is.
+                if (countJSONObjectTypes(*result_column.type) <= 1 || non_self_candidates.size() == 1
+                    || provenance->aligned_alternatives)
+                    candidate_names.insert(candidate_names.end(), non_self_candidates.begin(), non_self_candidates.end());
+            }
+
+            result_column.type = resolveJSONSharedDataPathPolicyForCandidates(
+                result_column.type, candidate_names, projection, source_parts, patch_parts, source_part_alter_conversions);
+        }
+    }
+}
+
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     const String & part_name,
     bool is_temp,
@@ -1189,7 +2107,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     const ProjectionDescription & projection,
     MergeTreeIndices indices,
     bool merge_is_needed,
-    bool try_adaptive_codec)
+    bool try_adaptive_codec,
+    const MergeTreeData::DataPartsVector & source_parts,
+    const PatchPartsForReader & patch_parts,
+    const std::vector<AlterConversionsPtr> & source_part_alter_conversions)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     const auto & metadata_snapshot = projection.metadata;
@@ -1211,6 +2132,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     new_data_part->is_temp = is_temp;
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+
+    /// A merge/mutation-driven rewrite must not silently re-promote paths a retired SHARED REGEXP
+    /// rule once forced into shared data; a fresh insert (merge_is_needed=false) has no such history.
+    if (merge_is_needed && !(*data_settings)[MergeTreeSetting::allow_json_shared_data_paths_repromotion])
+        applyJSONSharedDataPathPoliciesForProjection(columns, projection, source_parts, patch_parts, source_part_alter_conversions);
+
     SerializationInfo::Settings settings
     {
         static_cast<double>((*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
@@ -1308,7 +2235,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         /*blocks_are_granules_size=*/ false,
         data.getContext()->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr),
-        try_adaptive_codec);
+        try_adaptive_codec,
+        /// A fresh insert's projection block has no historical placement to reconsider; only
+        /// merge/mutation-driven rewrites (merge_is_needed) should read this table setting.
+        /*reconsider_json_shared_data_placement=*/ merge_is_needed && (*data_settings)[MergeTreeSetting::allow_json_shared_data_paths_repromotion]);
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
@@ -1349,7 +2279,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         projection,
         std::move(indices),
         merge_is_needed,
-        /*try_adaptive_codec=*/ false);
+        /*try_adaptive_codec=*/ false,
+        /// A fresh insert's projection block has no prior projection, main part, or patch to read provenance from.
+        /*source_parts=*/ {},
+        /*patch_parts=*/ {},
+        /*source_part_alter_conversions=*/ {});
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
@@ -1360,7 +2294,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,
     size_t block_num,
-    ContextPtr context)
+    ContextPtr context,
+    const MergeTreeData::DataPartsVector & source_parts,
+    const PatchPartsForReader & patch_parts,
+    const std::vector<AlterConversionsPtr> & source_part_alter_conversions)
 {
     const auto & table_settings = data.getSettings();
     auto indices = collectSkipIndicesToMaterialize(
@@ -1380,7 +2317,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         projection,
         std::move(indices),
         /*merge_is_needed=*/ true,
-        /*try_adaptive_codec=*/ true);
+        /*try_adaptive_codec=*/ true,
+        source_parts,
+        patch_parts,
+        source_part_alter_conversions);
 
     new_part->part->temp_projection_block_number = block_num;
     return new_part;
