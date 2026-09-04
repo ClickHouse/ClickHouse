@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Processors/QueryPlan/StepManifest.h>
 
 namespace DB
 {
@@ -24,6 +25,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
@@ -59,7 +61,53 @@ ReadFromStorageStep::ReadFromStorageStep(
         processor->setStorageLimits(query_info.storage_limits);
 }
 
+namespace
+{
+
+constexpr auto READ_FROM_STORAGE_MANIFEST = StepManifest<ReadFromStorageStep, ReadFromStorageWire>("ReadFromStorage")
+    .nameIntroducedIn(1)
+    .baseFormat(field("storage_name", WireFieldClass::Logical, &ReadFromStorageWire::storage_name));
+
+}
+
+ReadFromStorageWire ReadFromStorageStep::toWire() const
+{
+    /// Not a logical error: a caller (e.g. the distributed-plan serializability check) may probe an
+    /// unsupported plan, and a logical error would abort debug/fuzzer builds instead of being handled.
+    if (storage->getName() != "SystemOne")
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ReadFromStorageStep serialization is implemented only for StorageSystemOne, got: {}", storage->getName());
+    return ReadFromStorageWire{storage->getName()};
+}
+
+QueryPlanStepPtr ReadFromStorageStep::fromWire(ReadFromStorageWire wire, Deserialization & ctx)
+{
+    if (wire.storage_name != "SystemOne")
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ReadFromStorageStep deserialization is implemented only for StorageSystemOne, got: {}", wire.storage_name);
+
+    /// "Fake" system.one represented by a chunk with single row
+    auto column = DataTypeUInt8().createColumnConst(1, 0u)->convertToFullColumnIfConst();
+    Chunk chunk({ std::move(column) }, 1);
+    auto source = std::make_shared<SourceFromSingleChunk>(ctx.output_header, std::move(chunk));
+    source->addTotalRowsApprox(1);
+    return std::make_unique<ReadFromPreparedSource>(Pipe(source));
+}
+
 void ReadFromStorageStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(READ_FROM_STORAGE_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr ReadFromStorageStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(READ_FROM_STORAGE_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void ReadFromStorageStep::serializeLegacy(Serialization & ctx) const
 {
     /// Not a logical error: a caller (e.g. the distributed-plan serializability check) may probe an
     /// unsupported plan, and a logical error would abort debug/fuzzer builds instead of being handled.
@@ -74,7 +122,7 @@ bool ReadFromStorageStep::isSerializable() const
     return storage && storage->getName() == "SystemOne";
 }
 
-std::unique_ptr<IQueryPlanStep> ReadFromStorageStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr ReadFromStorageStep::deserializeLegacy(Deserialization & ctx)
 {
     String storage_name;
     readStringBinary(storage_name, ctx.in);
@@ -94,7 +142,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromStorageStep::deserialize(Deserialization
 void registerReadFromStorageStep(QueryPlanStepRegistry & registry);
 void registerReadFromStorageStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("ReadFromStorage", ReadFromStorageStep::deserialize);
+    registerManifest<READ_FROM_STORAGE_MANIFEST>(registry, ReadFromStorageStep::deserialize);
 }
 
 }

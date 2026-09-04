@@ -291,6 +291,25 @@ format 1 introduced_in 12
   field distributed_read_param_name Physical String
   field read_in_order Logical optional<ReadInOrder>
   initializers 0000000000000000000000000000
+name ReadFromStorage introduced_in 1 full_digest always logical_digest always
+format 1 introduced_in 12
+  field storage_name Logical String
+  initializers 00
+name ReadFromTable introduced_in 1 full_digest always logical_digest always
+format 1 introduced_in 12
+  field table Logical String
+  field final Logical bool
+  field sample_size_ratio Logical optional<Rational>
+  field sample_offset_ratio Logical optional<Rational>
+  field use_parallel_replicas Physical bool
+  initializers 0000000000
+name ReadFromTableFunction introduced_in 1 full_digest always logical_digest always
+format 1 introduced_in 12
+  field serialized_ast Logical String
+  field final Logical bool
+  field sample_size_ratio Logical optional<Rational>
+  field sample_offset_ratio Logical optional<Rational>
+  initializers 00000000
 name ReadNothing introduced_in 1 full_digest always logical_digest always
 format 1 introduced_in 12
   initializers 

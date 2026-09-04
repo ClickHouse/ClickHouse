@@ -24,6 +24,8 @@ protected:
     Pipe pipe;
 };
 
+struct ReadFromStorageWire;
+
 class ReadFromStorageStep final : public ReadFromPreparedSource
 {
 public:
@@ -39,11 +41,24 @@ public:
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `ReadFromPreparedSource.cpp` declares.
+    ReadFromStorageWire toWire() const;
+    static QueryPlanStepPtr fromWire(ReadFromStorageWire wire, Deserialization & ctx);
+
 private:
+    /// Streams below the framed format.
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     StoragePtr storage;
 
     ContextPtr context;
     SelectQueryInfo query_info;
+};
+
+/// What `ReadFromStorageStep` puts on the wire in the framed format. Only `system.one` is serialized.
+struct ReadFromStorageWire
+{
+    String storage_name;
 };
 
 }
