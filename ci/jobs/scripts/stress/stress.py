@@ -986,6 +986,41 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def hung_check_failure_name(hung_check_log: Path) -> str:
+    """Name the hung-check failure after what actually happened.
+
+    A hung check that fails is not always a hang. The variant seen regularly in
+    CI is a server that is alive and answers every connection with
+    `MEMORY_LIMIT_EXCEEDED`, because the global memory tracker sits far above
+    the memory the process really uses -- the reported "would use" is often
+    above the memory of the machine while `current RSS` is a few GiB. Every
+    allocation then fails, down to the zero-byte check at the start of a
+    connection, so `clickhouse-test` never reaches the processlist and reports
+    no hung query at all. Filing that under "possible deadlock found" sends
+    investigators after a hang that does not exist and hides how often the
+    memory tracker breaks, so report it as itself.
+    """
+    deadlock = "Hung check failed, possible deadlock found"
+    memory_limit = False
+    try:
+        with open(hung_check_log, "r", encoding="utf-8", errors="replace") as log:
+            for line in log:
+                # The processlist was reached and did show hung queries: a hang,
+                # whatever else the log holds.
+                if "Found hung queries in processlist" in line:
+                    return deadlock
+                if "(total) memory limit exceeded" in line:
+                    memory_limit = True
+    except OSError as ex:
+        logging.warning("Failed to read %s: %s", hung_check_log, ex)
+        return deadlock
+
+    if memory_limit:
+        return "Server rejects all queries, (total) memory limit exceeded"
+
+    return deadlock
+
+
 def collect_stacktrace_dumps(output_folder: Path) -> None:
     # stdout keeps only a trimmed preview of the server stacktrace dumps;
     # the full dumps are written to the working directory.
@@ -1162,7 +1197,7 @@ def run_stress_test(args: argparse.Namespace) -> None:
                     )
 
                 hung_check_status = (
-                    "Hung check failed, possible deadlock found\tFAIL\t\\N\t"
+                    f"{hung_check_failure_name(hung_check_log)}\tFAIL\t\\N\t"
                     f"{info_field}\n"
                 )
                 with open(
