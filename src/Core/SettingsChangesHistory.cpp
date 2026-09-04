@@ -1461,10 +1461,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"max_table_size_rows", 0, 0, "New setting to limit the total number of rows in active data parts of the table."},
             {"max_table_size_bytes_compressed", 0, 0, "New setting to limit the total number of compressed bytes across all active and inactive data parts of the table."},
             {"max_table_size_bytes_uncompressed", 0, 0, "New setting to limit the total number of uncompressed bytes across all active and inactive data parts of the table."},
-        });
-
-        addSettingsChanges(merge_tree_settings_changes_history, "26.8",
-        {
             {"object_shared_data_target_chunk_rows", 8192, 8192, "New setting"},
         });
 
