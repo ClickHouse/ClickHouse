@@ -66,6 +66,12 @@ configure_file(
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/private/config/config.hh.in
         ${BSONCXX_BINARY_DIR}/lib/bsoncxx/private/config/config.hh
 )
+# As of r4.5.0 the v_noabi config header is generated rather than shipped in
+# `include/`, so it has to be configured like the v1 headers above.
+configure_file(
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp.in
+        ${BSONCXX_BINARY_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp
+)
 
 # Aggregate forward-declaration headers. Upstream generates these by globbing
 # all `*-fwd.hpp` files and concatenating them into a single `fwd.hpp` umbrella.
@@ -152,6 +158,7 @@ set(MONGOCXX_SOURCES
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/bulk_write.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/change_stream.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/client.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/client_bulk_write.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/client_encryption.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/client_session.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/collection.cpp
@@ -203,6 +210,9 @@ set(MONGOCXX_SOURCES
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/insert_one_result.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/instance.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/logger.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/oidc_callback.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/oidc_callback_params.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/oidc_credential.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/pipeline.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/pool.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/range_options.cpp
@@ -347,6 +357,12 @@ configure_file(
 configure_file(
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/config/config.hh.in
         ${MONGOCXX_BINARY_DIR}/lib/mongocxx/private/config/config.hh
+)
+# As of r4.5.0 the v_noabi config header is generated rather than shipped in
+# `include/`, so it has to be configured like the v1 headers above.
+configure_file(
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/config/config.hpp.in
+        ${MONGOCXX_BINARY_DIR}/lib/mongocxx/v_noabi/mongocxx/config/config.hpp
 )
 
 # Aggregate forward-declaration headers, mirroring upstream's umbrella `fwd.hpp`.
