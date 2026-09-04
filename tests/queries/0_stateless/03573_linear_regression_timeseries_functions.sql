@@ -25,7 +25,7 @@ select [
 
 SELECT groupArraySorted(20)((timestamp::Decimal(20,3), value)) FROM ts_raw_data;
 
-SET allow_experimental_ts_to_grid_aggregate_function = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 WITH
     1734955380 AS start, 1734955680 AS end, 15 AS step, 300 AS window, 60 as predict_offset,

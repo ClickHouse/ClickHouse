@@ -5,8 +5,8 @@
 -- two-stacks) stays on recompute; the other functions always recompute. A window (1000) much wider than the data
 -- extent (300..700) makes a run of grid points share the identical full bucket set (memo hits), while the edges
 -- (buckets entering/leaving) force recomputes.
-SET allow_experimental_time_series_aggregate_functions = 1;
-SET allow_experimental_ts_to_grid_aggregate_function = 1;
+SET enable_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 DROP TABLE IF EXISTS ts_memo;
 CREATE TABLE ts_memo (timestamp DateTime, value Float64) ENGINE = MergeTree ORDER BY timestamp;

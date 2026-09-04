@@ -5,8 +5,8 @@
 -- `BPW_TO_FORCE_TWO_STACKS` — so the two regression functions run on two-stacks while the rest recompute, and the
 -- window slides across the data so buckets both enter and leave.
 -- Covers a whole-multiple window (`window % step == 0`) and a window that splits each step (`window % step != 0`).
-SET allow_experimental_time_series_aggregate_functions = 1;
-SET allow_experimental_ts_to_grid_aggregate_function = 1;
+SET enable_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 DROP TABLE IF EXISTS ts_two_stacks;
 CREATE TABLE ts_two_stacks (timestamp DateTime, value Float64) ENGINE = MergeTree ORDER BY timestamp;

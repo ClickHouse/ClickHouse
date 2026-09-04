@@ -50,7 +50,7 @@ feature_tier_1_path = "/etc/clickhouse-server/config.d/allow_feature_tier_1.xml"
 # These settings are used as examples of their tier. If one changes tier in the future, please replace
 # it with another setting of the same tier. If there is none, feel free to comment out the affected test.
 EXPERIMENTAL_SETTING = (
-    "allow_experimental_time_series_table"  # also in configs/users.d/users.xml
+    "enable_time_series_table"  # also in configs/users.d/users.xml
 )
 BETA_SETTING = "allow_experimental_lightweight_update"
 

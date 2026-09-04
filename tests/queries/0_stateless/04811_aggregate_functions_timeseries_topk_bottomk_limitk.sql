@@ -5,11 +5,11 @@ DROP TABLE IF EXISTS topk_input;
 DROP TABLE IF EXISTS topk_states;
 
 -- The functions are experimental and disabled by default.
-SET allow_experimental_time_series_aggregate_functions = 0;
-SET allow_experimental_time_series_table = 0;
+SET enable_time_series_aggregate_functions = 0;
+SET enable_time_series_table = 0;
 SELECT timeSeriesTopKMasks(1, 1::UInt64, [1.]::Array(Nullable(Float64))); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
 
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 SELECT '-- timeSeries*Masks: basic selection, ties, NULLs, k = 0, k > N';
 

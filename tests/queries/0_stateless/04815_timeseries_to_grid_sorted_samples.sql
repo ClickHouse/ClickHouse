@@ -4,7 +4,7 @@
 -- duplicate timestamps must give the same results as sorted unique input on every path (plain adds, in-memory merges
 -- of partial states, serialized-state merges).
 
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 -- The baseline: every function over sorted input with unique timestamps.
 SELECT 'sorted unique baseline (rate, increase, delta, changes, resets, deriv, predict, resample):';

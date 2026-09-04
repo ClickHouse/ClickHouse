@@ -21,7 +21,7 @@ MAIN_HTTP_TIMESERIES_TABLE = "prometheus_http"
 node = cluster.add_instance(
     "node",
     main_configs=["configs/http_port.xml"],
-    user_configs=["configs/allow_experimental_time_series_table.xml"],
+    user_configs=["configs/enable_time_series_table.xml"],
 )
 
 

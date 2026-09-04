@@ -1,8 +1,8 @@
 -- Tests the window-aligned sub-grid: when `window > step` and `window % step != 0`, each step cell is split
 -- into two buckets at `T_g - (window % step)`. Exercises every timeSeries*ToGrid function across the
 -- split / whole-multiple / window==step / window<step geometry regimes on small grids (recompute path).
-SET allow_experimental_time_series_aggregate_functions = 1;
-SET allow_experimental_ts_to_grid_aggregate_function = 1;
+SET enable_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 DROP TABLE IF EXISTS ts_split;
 CREATE TABLE ts_split (timestamp DateTime, value Float64) ENGINE = MergeTree ORDER BY timestamp;

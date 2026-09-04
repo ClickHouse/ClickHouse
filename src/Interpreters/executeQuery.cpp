@@ -240,7 +240,7 @@ namespace Setting
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsFloat min_os_cpu_wait_time_ratio_to_throw;
     extern const SettingsFloat max_os_cpu_wait_time_ratio_to_throw;
-    extern const SettingsBool allow_experimental_time_series_table;
+    extern const SettingsBool enable_time_series_table;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
@@ -2313,8 +2313,8 @@ static BlockIO executeQueryImpl(
         }
         else if (settings[Setting::dialect] == Dialect::promql && !internal)
         {
-            if (!settings[Setting::allow_experimental_time_series_table])
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PromQL dialect is disabled (turn on setting 'allow_experimental_time_series_table')");
+            if (!settings[Setting::enable_time_series_table])
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PromQL dialect is disabled (turn on setting 'enable_time_series_table')");
             ParserPrometheusQuery parser(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }

@@ -23,8 +23,8 @@
 -- the adversarial grid `[INT64_MIN, -1, INT64_MAX - 1]` (`bucket_count = 3`) that
 -- triggers both overflow patterns in the pre-fix code.
 
-SET allow_experimental_ts_to_grid_aggregate_function = 1;
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 DROP TABLE IF EXISTS ts_insert_overflow;
 CREATE TABLE ts_insert_overflow (timestamp DateTime64(0) NOT NULL, value Float64 NOT NULL)

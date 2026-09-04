@@ -7,7 +7,7 @@
             -->
             <compatibility>24.10</compatibility>
 
-            <allow_experimental_time_series_table>0</allow_experimental_time_series_table>
+            <enable_time_series_table>0</enable_time_series_table>
         </default>
     </profiles>
     <users>

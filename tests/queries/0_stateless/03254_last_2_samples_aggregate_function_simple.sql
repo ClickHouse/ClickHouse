@@ -1,4 +1,4 @@
-SET allow_experimental_ts_to_grid_aggregate_function=1;
+SET enable_time_series_aggregate_functions=1;
 SET optimize_on_insert = 1;
 
 -- Table for raw data

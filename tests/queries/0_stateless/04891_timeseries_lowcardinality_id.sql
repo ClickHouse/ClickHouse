@@ -8,7 +8,7 @@
 -- and the whole-metric primary-key range conditions are still emitted. Queries behave
 -- exactly as with a plain `Tuple(UInt64, UUID)` id.
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS ts_lc;

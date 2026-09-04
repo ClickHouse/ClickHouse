@@ -3,7 +3,7 @@
 -- `extractIntParameter` did not accept `Decimal64` parameters produced by the
 -- aggregate function's own parameter serialization.
 
-SET allow_experimental_ts_to_grid_aggregate_function = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 CREATE TABLE ts_data (timestamp DateTime('UTC'), value Float64) ENGINE = MergeTree() ORDER BY tuple();
 

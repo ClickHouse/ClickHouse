@@ -8,8 +8,8 @@
 -- picked the nanosecond interval regardless of the timestamp scale, and passed the
 -- offset as a Decimal literal, which the interval functions do not accept.
 
-SET allow_experimental_time_series_table = 1;
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_table = 1;
+SET enable_time_series_aggregate_functions = 1;
 SET session_timezone = 'UTC'; -- the reference contains rendered DateTime64 values
 
 DROP TABLE IF EXISTS ts;

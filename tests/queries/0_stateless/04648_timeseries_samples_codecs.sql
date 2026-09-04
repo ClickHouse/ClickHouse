@@ -8,7 +8,7 @@
 -- explicitly declared columns keep the user's codecs (or none), and the normalized
 -- table round-trips through DETACH/ATTACH unchanged.
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts_codecs;
 CREATE TABLE ts_codecs ENGINE = TimeSeries;

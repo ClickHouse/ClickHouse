@@ -8809,11 +8809,11 @@ Enable experimental functions for natural language processing.
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
 Enable experimental hash functions
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_time_series_table, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine. Possible values:
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
 - 1 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is enabled.
-)", PRIVATE_PREVIEW) \
+)", PRIVATE_PREVIEW, allow_experimental_time_series_table) \
     DECLARE(Bool, time_series_prefer_recent_samples_table, true, R"(
 Read from the recent samples table of a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table instead of the main samples table when the whole requested time range fits in the TTL window of the recent samples table (see the `recent_samples_ttl_seconds` setting of the TimeSeries table engine).
 )", PRIVATE_PREVIEW) \
@@ -9147,9 +9147,9 @@ Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optim
 )", EXPERIMENTAL) \
     \
     /** timeSeries* aggregate functions (private preview). */ \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_time_series_aggregate_functions, false, R"(
 timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
-)", PRIVATE_PREVIEW, allow_experimental_ts_to_grid_aggregate_function) \
+)", PRIVATE_PREVIEW, allow_experimental_time_series_aggregate_functions, allow_experimental_ts_to_grid_aggregate_function) \
     \
     DECLARE(String, promql_database, "", R"(
 Specifies the database name used by the 'promql' dialect. Empty string means the current database.

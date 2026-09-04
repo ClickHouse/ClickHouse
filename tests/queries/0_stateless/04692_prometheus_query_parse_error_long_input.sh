@@ -12,7 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --query "CREATE TABLE ts ENGINE = TimeSeries"
+$CLICKHOUSE_CLIENT --enable_time_series_table 1 --query "CREATE TABLE ts ENGINE = TimeSeries"
 
 # The error message quotes the query, so it carries the NUL padding - strip it, `grep` treats input
 # with NUL bytes as binary and matches nothing.

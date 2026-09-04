@@ -1,7 +1,7 @@
 -- Element counts stored in the states of the time series aggregate functions come from untrusted data,
 -- so deserialization must not allocate memory for the claimed number of elements.
 
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 -- A valid state of `timeSeriesGroupArray`: format version, number of elements, the timestamps, the values.
 SELECT finalizeAggregation(CAST(unhex('0100' || '0200000000000000' || 'E803000000000000' || 'D007000000000000' || '000000000000F83F' || '0000000000000440') AS AggregateFunction(timeSeriesGroupArray, DateTime64(3, 'UTC'), Float64)));

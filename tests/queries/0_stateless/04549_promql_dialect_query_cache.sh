@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -m -q "
+$CLICKHOUSE_CLIENT --enable_time_series_table 1 -m -q "
 CREATE TABLE ts_data (id UUID, timestamp DateTime64(3, 'UTC'), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp);
 CREATE TABLE ts_tags (
     id UUID,
@@ -23,7 +23,7 @@ INSERT INTO ts_data VALUES ('00000000-0000-0000-0000-000000000001', toDateTime64
 
 promql_client()
 {
-    $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --use_query_cache 1 "$@"
+    $CLICKHOUSE_CLIENT --enable_time_series_table 1 --dialect promql --promql_table ts --use_query_cache 1 "$@"
 }
 
 echo "-- 'auto' evaluation time transpiles to now(), the query cache must reject it by default"

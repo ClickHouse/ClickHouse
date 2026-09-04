@@ -21,8 +21,8 @@
 -- sums, scale conversion, etc.) and uses the explicit `common::*Overflow` helpers
 -- in `base/arithmeticOverflow.h` wherever overflow detection is required.
 
-SET allow_experimental_ts_to_grid_aggregate_function = 1;
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 DROP TABLE IF EXISTS ts_decimal_overflow;
 CREATE TABLE ts_decimal_overflow (timestamp DateTime64(3) NOT NULL, value Float64 NOT NULL)

@@ -16,8 +16,8 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_time_series_aggregate_functions;
-    extern const SettingsBool allow_experimental_time_series_table;
+    extern const SettingsBool enable_time_series_aggregate_functions;
+    extern const SettingsBool enable_time_series_table;
 }
 
 
@@ -57,10 +57,10 @@ namespace
 
     AggregateFunctionPtr createAggregateFunctionTimeseriesGroupArray(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
     {
-        if (settings && (*settings)[Setting::allow_experimental_time_series_aggregate_functions] == 0 && (*settings)[Setting::allow_experimental_time_series_table] == 0)
+        if (settings && (*settings)[Setting::enable_time_series_aggregate_functions] == 0 && (*settings)[Setting::enable_time_series_table] == 0)
             throw Exception(
                 ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
-                "Aggregate function {} is experimental and disabled by default. Enable it with setting allow_experimental_time_series_aggregate_functions",
+                "Aggregate function {} is in private preview and disabled by default. Enable it with setting enable_time_series_aggregate_functions",
                 name);
 
         assertNoParameters(name, parameters);
@@ -110,7 +110,7 @@ The samples can be passed in one of three forms:
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
 :::note
-This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
+This function is in private preview, enable it by setting `enable_time_series_aggregate_functions=true`.
 :::
     )";
     FunctionDocumentation::Syntax syntax = R"(
@@ -128,7 +128,7 @@ timeSeriesGroupArray(samples)
     {
         "Basic usage with individual values",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values
@@ -150,7 +150,7 @@ FROM
     {
         "Passing multiple samples of timestamps and values as arrays of equal size",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values

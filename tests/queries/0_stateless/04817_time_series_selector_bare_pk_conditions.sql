@@ -11,7 +11,7 @@
 -- applied by an outer SELECT over the filtered subquery, so they run only on the rows which
 -- passed the filter.
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS ts_tags;
