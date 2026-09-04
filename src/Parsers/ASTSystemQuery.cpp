@@ -670,6 +670,27 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::FREE_MEMORY:
         case Type::RESET_DDL_WORKER:
             break;
+        case Type::DROP_SERIAL_ID:
+        {
+            if (if_exists)
+            {
+                ostr << ' ';
+                print_keyword("IF EXISTS");
+            }
+            ostr << ' ' << quoteString(serial_id_name);
+            break;
+        }
+        case Type::RESET_SERIAL_ID:
+        {
+            ostr << ' ' << quoteString(serial_id_name);
+            if (serial_id_reset_value.has_value())
+            {
+                ostr << ' ';
+                print_keyword("TO");
+                ostr << ' ' << *serial_id_reset_value;
+            }
+            break;
+        }
         case Type::SYNC_FILESYSTEM_CACHE:
         {
             if (!filesystem_cache_name.empty())
@@ -750,6 +771,10 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
         w.writeString("queue_path", queue_path);
     if (!fail_point_name.empty())
         w.writeString("fail_point_name", fail_point_name);
+    if (!serial_id_name.empty())
+        w.writeString("serial_id_name", serial_id_name);
+    if (serial_id_reset_value.has_value())
+        w.writeUInt("serial_id_reset_value", *serial_id_reset_value);
     if (fail_point_action != FailPointAction::UNSPECIFIED)
         w.writeString("fail_point_action", std::string(magic_enum::enum_name(fail_point_action)));
     if (!delta_kernel_tracing_level.empty())
@@ -936,6 +961,9 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     schema_cache_format = r.getString("schema_cache_format");
     queue_path = r.getString("queue_path");
     fail_point_name = r.getString("fail_point_name");
+    serial_id_name = r.getString("serial_id_name");
+    if (r.has("serial_id_reset_value"))
+        serial_id_reset_value = r.getUInt("serial_id_reset_value");
     if (r.has("fail_point_action"))
     {
         String action_str = r.getString("fail_point_action");

@@ -267,6 +267,63 @@ enum class SystemQueryTargetType : uint8_t
     return true;
 }
 
+[[nodiscard]] static bool parseSerialIDName(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected)
+{
+    ASTPtr ast;
+    if (ParserStringLiteral{}.parse(pos, ast, expected))
+    {
+        res->serial_id_name = ast->as<ASTLiteral &>().value.safeGet<String>();
+        return true;
+    }
+    if (ParserIdentifier{}.parse(pos, ast, expected))
+    {
+        res->serial_id_name = ast->as<ASTIdentifier &>().name();
+        return true;
+    }
+    return false;
+}
+
+/// Accept both `SYSTEM <ACTION> name ON CLUSTER cluster` and the formatted/DDL form
+/// `SYSTEM <ACTION> ON CLUSTER cluster name`.
+[[nodiscard]] static bool parseSerialIDQuery(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, bool is_drop)
+{
+    String cluster;
+    bool parsed_on_cluster = false;
+
+    if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
+            return false;
+        parsed_on_cluster = true;
+    }
+
+    if (is_drop && ParserKeyword{Keyword::IF_EXISTS}.ignore(pos, expected))
+        res->if_exists = true;
+
+    if (!parseSerialIDName(res, pos, expected))
+        return false;
+
+    if (!is_drop)
+    {
+        if (ParserKeyword{Keyword::TO}.ignore(pos, expected))
+        {
+            ASTPtr ast;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            res->serial_id_reset_value = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+        }
+    }
+
+    if (!parsed_on_cluster && ParserKeyword{Keyword::ON}.ignore(pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
+            return false;
+    }
+
+    res->cluster = cluster;
+    return true;
+}
+
 bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     if (!ParserKeyword{Keyword::SYSTEM}.ignore(pos, expected))
@@ -1111,6 +1168,18 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 #endif
         case Type::RESET_DDL_WORKER: {
             if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+            break;
+        }
+        case Type::DROP_SERIAL_ID:
+        {
+            if (!parseSerialIDQuery(res, pos, expected, /*is_drop=*/true))
+                return false;
+            break;
+        }
+        case Type::RESET_SERIAL_ID:
+        {
+            if (!parseSerialIDQuery(res, pos, expected, /*is_drop=*/false))
                 return false;
             break;
         }

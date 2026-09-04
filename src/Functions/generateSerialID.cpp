@@ -215,6 +215,7 @@ Generates and returns sequential numbers starting from the previous counter valu
 This function takes a string argument - a series identifier, and an optional starting value.
 The server should be configured with Keeper.
 The series are stored in Keeper nodes under the path, which can be configured in [`series_keeper_path`](/reference/settings/server-settings/settings/other#series_keeper_path) in the server configuration.
+Use `SYSTEM RESET SERIAL ID 'name' [TO n]` to set a series back to `n` (default 0), and `SYSTEM DROP SERIAL ID [IF EXISTS] 'name'` to remove it.
     )";
     FunctionDocumentation::Syntax syntax = "generateSerialID(series_identifier[, start_value])";
     FunctionDocumentation::Arguments arguments = {

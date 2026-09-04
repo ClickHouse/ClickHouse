@@ -42,6 +42,8 @@
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Interpreters/JIT/CHJIT.h>
 #include <Interpreters/JIT/CompileRegexp.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -169,6 +171,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsDouble cannot_allocate_thread_fault_injection_probability;
+    extern const ServerSettingsString series_keeper_path;
 }
 
 namespace MergeTreeSetting
@@ -1357,6 +1360,61 @@ BlockIO InterpreterSystemQuery::execute()
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without JEMalloc");
 #endif
 
+        case Type::DROP_SERIAL_ID:
+        case Type::RESET_SERIAL_ID:
+        {
+            const bool is_drop = query.type == Type::DROP_SERIAL_ID;
+            getContext()->checkAccess(is_drop ? AccessType::SYSTEM_DROP_SERIAL_ID : AccessType::SYSTEM_RESET_SERIAL_ID);
+
+            if (query.serial_id_name.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Serial ID series name cannot be empty");
+
+            String series_name = escapeForFileName(query.serial_id_name);
+            if (series_name.size() > 100)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Series name '{}' is too long", series_name);
+
+            const String keeper_root = getContext()->getServerSettings()[ServerSetting::series_keeper_path];
+            const String serial_path = std::filesystem::path(keeper_root) / series_name;
+            auto keeper = getContext()->getZooKeeper();
+
+            if (is_drop)
+            {
+                auto code = keeper->tryRemove(serial_path);
+                if (code == Coordination::Error::ZNONODE)
+                {
+                    if (!query.if_exists)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Serial ID series '{}' does not exist", query.serial_id_name);
+                }
+                else if (code != Coordination::Error::ZOK)
+                    throw zkutil::KeeperException::fromPath(code, serial_path);
+            }
+            else
+            {
+                if (!keeper->exists(keeper_root))
+                {
+                    keeper->createAncestors(keeper_root);
+                    keeper->createIfNotExists(keeper_root, "");
+                }
+
+                const String value = toString(query.serial_id_reset_value.value_or(0));
+                auto code = keeper->trySet(serial_path, value);
+                if (code == Coordination::Error::ZNONODE)
+                {
+                    code = keeper->tryCreate(serial_path, value, zkutil::CreateMode::Persistent);
+                    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+                        throw zkutil::KeeperException::fromPath(code, serial_path);
+                    if (code == Coordination::Error::ZNODEEXISTS)
+                    {
+                        code = keeper->trySet(serial_path, value);
+                        if (code != Coordination::Error::ZOK)
+                            throw zkutil::KeeperException::fromPath(code, serial_path);
+                    }
+                }
+                else if (code != Coordination::Error::ZOK)
+                    throw zkutil::KeeperException::fromPath(code, serial_path);
+            }
+            break;
+        }
         case Type::RESET_DDL_WORKER:
             getContext()->checkAccess(AccessType::SYSTEM_RESET_DDL_WORKER);
             getContext()->getDDLWorker().requestToResetState();
@@ -3219,6 +3277,16 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RESET_DDL_WORKER:
         {
             required_access.emplace_back(AccessType::SYSTEM_RESET_DDL_WORKER);
+            break;
+        }
+        case Type::DROP_SERIAL_ID:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_DROP_SERIAL_ID);
+            break;
+        }
+        case Type::RESET_SERIAL_ID:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RESET_SERIAL_ID);
             break;
         }
         case Type::ALLOCATE_MEMORY:
