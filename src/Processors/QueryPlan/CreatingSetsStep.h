@@ -106,6 +106,25 @@ private:
     PreparedSetsCachePtr prepared_sets_cache;
 };
 
+/// Visit every `FutureSetFromSubquery` reachable from `root` (which may be null). Sets do not live
+/// only in the plan's own nodes: a set's source is a plan of its own (that is where a nested `IN`
+/// keeps its set), and the parallel-replicas local branch hangs off `ReadFromLocalParallelReplicaStep`
+/// rather than being a child node. Both have to be followed or a walk misses exactly the sets that
+/// get rebuilt. Plans owned through `getChildPlans` are deliberately left out - see the walk itself.
+///
+/// `visit` returns whether to descend into that set's own source plan. A caller that has just adopted a
+/// built set for it says no: the source plan is then dead - `makePlansForSets` skips a set that is
+/// already built - so the sets nested in it are never created and must not be treated as live.
+void forEachSubquerySet(const QueryPlan * root, const std::function<bool(FutureSetFromSubquery &)> & visit);
+
+/// Collect every set in `plan` that is already filled, keyed by `FutureSet::getHash`.
+BuiltSetsByHashPtr collectBuiltSets(const QueryPlan & plan);
+
+/// Adopt sets that `built` already filled into the matching (still empty) sets of `plan`, so that
+/// optimizing `plan` does not re-run those subqueries. Sets with no match are left untouched and
+/// build as usual.
+void reuseBuiltSets(QueryPlan & plan, const BuiltSetsByHashPtr & built);
+
 void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subqueries, ContextPtr context);
 
 void addDelayedCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context);

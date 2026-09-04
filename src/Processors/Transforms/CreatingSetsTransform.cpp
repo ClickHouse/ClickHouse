@@ -10,10 +10,16 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
 #include <exception>
 
+
+namespace ProfileEvents
+{
+    extern const Event SetsBuiltFromSubquery;
+}
 
 namespace DB
 {
@@ -251,6 +257,7 @@ Chunk CreatingSetsTransform::generate()
         });
 
         set_and_key->set->finishInsert();
+        ProfileEvents::increment(ProfileEvents::SetsBuiltFromSubquery);
         if (promise_to_build)
         {
             promise_to_build->set_value(set_and_key->set);
