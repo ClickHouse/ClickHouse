@@ -809,9 +809,9 @@ static void logQueryFinishImpl(
         if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
             && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
         {
-            /// Empty unless the QUERY_START row was logged and built them already. Settings cannot change
+            /// Unset unless the QUERY_START row was logged and built them already. Settings cannot change
             /// while the query runs, so building them here gives the same values.
-            if (settings[Setting::log_query_settings] && elem.query_settings.empty())
+            if (settings[Setting::log_query_settings] && !elem.query_settings)
                 elem.query_settings = settings.changedToFlatMap();
 
             if (auto query_log = context->getQueryLog())
@@ -951,7 +951,7 @@ void logQueryException(
     if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
         && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
     {
-        if (settings[Setting::log_query_settings] && elem.query_settings.empty())
+        if (settings[Setting::log_query_settings] && !elem.query_settings)
             elem.query_settings = settings.changedToFlatMap();
 
         if (auto query_log = context->getQueryLog())

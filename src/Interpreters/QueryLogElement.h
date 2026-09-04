@@ -112,7 +112,8 @@ struct QueryLogElement
     /// element owns all its memory - see SystemLogBase::add.
     std::optional<ProfileEvents::Counters::Snapshot> profile_counters;
     std::map<String, UInt64> async_read_counters;
-    FlatStringMap query_settings;
+    /// Unset when the settings were not dumped, which is not the same as a query that changed none.
+    std::optional<FlatStringMap> query_settings;
 
     bool is_internal{};
 
