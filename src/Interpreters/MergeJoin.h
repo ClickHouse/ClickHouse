@@ -15,6 +15,7 @@ class TableJoin;
 class MergeJoinCursor;
 struct MergeJoinEqualRange;
 class RowBitmaps;
+class ExpressionActions;
 enum class JoinTableSide : uint8_t;
 
 class MergeJoin : public IJoin
@@ -31,6 +32,9 @@ public:
         size_t left_key_tail{};
         size_t right_position{};
         size_t right_block{};
+        /// With a mixed JOIN ON condition: whether row i of the sorted left block has already
+        /// produced at least one result row. Carried across continuations of the same block.
+        IColumn::Filter left_row_matched{};
 
         bool empty() const { return block.empty(); }
     };
@@ -108,6 +112,20 @@ private:
     String mask_column_name_left;
     String mask_column_name_right;
 
+    /// Non-equi condition from JOIN ON that uses columns of both tables (e.g. `t1.x < t2.y`).
+    /// It is evaluated on candidate pairs that matched the equality keys; only pairs where it is
+    /// true are joined.
+    std::shared_ptr<const ExpressionActions> mixed_join_expression;
+
+    /// A source column of `mixed_join_expression`: its name, type and the side to take it from.
+    struct MixedConditionColumn
+    {
+        String name;
+        DataTypePtr type;
+        bool from_right;
+    };
+    std::vector<MixedConditionColumn> mixed_condition_columns;
+
     /// Each block stores first and last row from corresponding sorted block on disk
     Blocks min_max_right_blocks;
     std::shared_ptr<SortedBlocksBuffer> left_blocks_buffer;
@@ -147,7 +165,7 @@ private:
     template <bool is_all>
     std::optional<NotProcessed> extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
                              size_t left_position, size_t left_key_tail, size_t right_position,
-                             size_t right_block_number);
+                             size_t right_block_number, IColumn::Filter && left_row_matched);
 
     void mergeRightBlocks();
 
@@ -174,11 +192,38 @@ private:
 
     template <bool is_all> /// ALL or ANY
     bool leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows);
+                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows,
+                  IColumn::Filter * left_row_matched);
     bool semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & matched_rows);
+                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows,
+                  IColumn::Filter * left_row_matched);
     bool allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
                   MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows);
+
+    /// Support for a mixed JOIN ON condition (`mixed_join_expression`).
+
+    void validateMixedJoinExpression();
+
+    /// Evaluates the condition on the cross product of left rows [left_start, left_start + left_length)
+    /// and right rows [right_start, right_start + right_length). Returns a full UInt8 column of
+    /// left_length * right_length rows in [right][left] order: NULL results become 0.
+    ColumnPtr evaluateMixedJoinExpression(const Block & left_block, size_t left_start, size_t left_length,
+                                          const Block & right_block, size_t right_start, size_t right_length) const;
+
+    /// ALL-strictness analog of joinEquals: emits only candidate pairs that pass the condition.
+    /// Marks used right rows per row and sets bits of joined left rows in `left_row_matched` (if not null).
+    /// Returns false when the range was cut by `max_rows` (same contract as joinEquals).
+    bool joinEqualsWithMixedCondition(const Block & left_block, RightBlockInfo & right_block_info,
+                                      const Columns & right_columns_to_add_, MutableColumns & left_columns,
+                                      MutableColumns & right_columns, MergeJoinEqualRange & range, size_t max_rows,
+                                      IColumn::Filter * left_row_matched);
+
+    /// ANY/SEMI analog: emits the first passing pair for each left row of the range that has no
+    /// output yet (per `left_row_matched`), and marks emitted rows in it.
+    void joinAnyWithMixedCondition(const Block & left_block, const Block & right_block,
+                                   const Columns & right_columns_to_add_, MutableColumns & left_columns,
+                                   MutableColumns & right_columns, const MergeJoinEqualRange & range,
+                                   IColumn::Filter & left_row_matched) const;
 
     Block modifyRightBlock(const Block & src_block) const;
     bool saveRightBlock(Block && block);
