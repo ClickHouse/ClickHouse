@@ -1,5 +1,5 @@
 #pragma once
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
 #include <cstdint>
 #if defined(OS_FREEBSD)
 #include <unistd.h>
@@ -46,6 +46,9 @@ private:
 #if defined(OS_FREEBSD)
     size_t pagesize;
     pid_t self;
+#endif
+#if defined(OS_SUNOS)
+    int psinfo_fd;
 #endif
 };
 
