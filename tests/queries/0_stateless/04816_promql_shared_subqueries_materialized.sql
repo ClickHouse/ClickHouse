@@ -53,12 +53,17 @@ INSERT INTO prometheus (metric_name, tags, time_series) VALUES
 SELECT '-- or, range';
 SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) or last_over_time(n[10])', 100, 130, 10) ORDER BY tags;
 SELECT '-- or, range: identical result with materialization disabled';
+-- the analyzer warns that MATERIALIZED is ignored with the setting disabled
+SET send_logs_level = 'error';
 SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) or last_over_time(n[10])', 100, 130, 10) ORDER BY tags SETTINGS enable_materialized_cte = 0;
+SET send_logs_level = 'warning';
 
 SELECT '-- topk(2), range';
 SELECT * FROM prometheusQueryRange('prometheus', 'topk(2, last_over_time(m[10]))', 100, 130, 10) ORDER BY tags;
 SELECT '-- topk(2), range: identical result with materialization disabled';
+SET send_logs_level = 'error';
 SELECT * FROM prometheusQueryRange('prometheus', 'topk(2, last_over_time(m[10]))', 100, 130, 10) ORDER BY tags SETTINGS enable_materialized_cte = 0;
+SET send_logs_level = 'warning';
 
 SELECT '-- sparse or preserves both sides at different steps';
 SELECT count() AS series_count, sum(length(time_series)) AS sample_count
@@ -134,9 +139,11 @@ FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'topk(2, last_ove
 
 SELECT '-- explicitly disabling the setting restores the inlined plan: the left side of `or` is read twice again';
 SET enable_materialized_cte = 0;
+SET send_logs_level = 'error';
 SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_table_reads,
        countIf(explain LIKE '%MaterializingCTEs%') > 0 AS uses_materialized_cte
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) or last_over_time(n[10])', 100, 130, 10));
+SET send_logs_level = 'warning';
 
 DROP TABLE prometheus;
 DROP TABLE tags_table;
