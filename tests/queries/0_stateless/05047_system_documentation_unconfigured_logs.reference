@@ -1,0 +1,3 @@
+error_log	0	src/Interpreters/SystemLog.h	1	1
+query_log	0	src/Interpreters/SystemLog.h	1	1
+trace_log	0	src/Interpreters/SystemLog.h	1	1
