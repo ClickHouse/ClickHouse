@@ -33,7 +33,7 @@ namespace YTsaurusSetting
 
 YTsaurusTableSourceStaticTable::YTsaurusTableSourceStaticTable(
     YTsaurusClientPtr client_, const String & cypress_path_, std::pair<size_t, size_t> rows_range_, const YTsaurusTableSourceOptions & source_options_, const SharedHeader & sample_block_, const UInt64 & max_block_size_)
-    : ISource(sample_block_)
+    : ISource(std::make_shared<const Block>(sample_block_->cloneEmpty()))
     , client(std::move(client_))
     , cypress_path(cypress_path_)
     , rows_range(std::move(rows_range_))
@@ -70,7 +70,7 @@ YTsaurusTableSourceDynamicTableSelect::YTsaurusTableSourceDynamicTableSelect(
     bool format_skip_unknown_columns_,
     std::optional<String> select_rows_columns_,
     YTsaurusTableLockPtr table_lock_)
-    : ISource(sample_block_)
+    : ISource(std::make_shared<const Block>(sample_block_->cloneEmpty()))
     , client(std::move(client_))
     , cypress_path(cypress_path_)
     , sample_block(sample_block_)
@@ -111,7 +111,7 @@ YTsaurusTableSourceDynamicTableLookup::YTsaurusTableSourceDynamicTableLookup(
     size_t lookup_max_rows_per_query_,
     ThrottlerPtr lookup_throttler_,
     YTsaurusTableLockPtr table_lock_)
-    : ISource(sample_block_)
+    : ISource(std::make_shared<const Block>(sample_block_->cloneEmpty()))
     , client(std::move(client_))
     , cypress_path(cypress_path_)
     , sample_block(sample_block_)

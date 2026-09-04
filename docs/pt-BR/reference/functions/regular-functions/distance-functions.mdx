@@ -207,9 +207,9 @@ SELECT L2DistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 ```
 
 ```response title=Response
-┌─L2DistanceTransposed([0, 1], [1, 2], 16)─┐
-│                       1.3922918381215914 │
-└──────────────────────────────────────────┘
+┌─L2DistanceTransposed(vec, [1, 2], 16)─┐
+│                    1.3922918381215914 │
+└───────────────────────────────────────┘
 ```
 
 <div id="L2DistanceTransposedQuantized">
@@ -229,7 +229,7 @@ L2DistanceTransposedQuantized(vectors, reference, p[, used_dims])
 **Argumentos**
 
 * `vectors` — Vetores de códigos `quantizeBFloat16ToInt8`. [`QBit(Int8, UInt64[, UInt64])`](/pt-BR/reference/data-types/qbit)
-* `reference` — Vetor de referência (consulta): um array de `Float` (a consulta, comparada com precisão `Float32` -- uma consulta `Float64` é convertida para `Float32`) ou um `Array(Int8)` de códigos `quantizeBFloat16ToInt8` desquantizados em tempo de execução. [`Array(Float32)`](/pt-BR/reference/data-types/array) ou [`Array(Int8)`](/pt-BR/reference/data-types/array)
+* `reference` — Vetor de referência (consulta): um array de `Float` (a consulta, comparada com precisão `Float32` -- uma consulta `Float64` é reduzida para `Float32`) ou um `Array(Int8)` de códigos `quantizeBFloat16ToInt8` desquantizados em tempo de execução. [`Array(Float32)`](/pt-BR/reference/data-types/array) ou [`Array(Int8)`](/pt-BR/reference/data-types/array)
 * `p` — Número dos bits mais altos de cada código `QBit` armazenado a serem usados (de 1 a 8). Menos bits reconstroem um quantizador embutido mais grosseiro usando os centroides de média condicional gaussiana dos intervalos de prefixo Lloyd-Max existentes, para E/S mais rápida, com menor precisão; 8 bits correspondem à reconstrução com precisão total. `p` trunca apenas o `QBit` armazenado; uma referência `Array(Int8)` é sempre reconstruída com precisão total de 8 bits. [`UInt`](/pt-BR/reference/data-types/int-uint)
 * `used_dims` — Opcional. Número de dimensões iniciais a serem lidas, para uma busca de dimensão reduzida (Matryoshka) em um `QBit` com stride. Deve ser um múltiplo do stride do QBit que não exceda sua dimensão, e o vetor de referência deve ter pelo menos essa quantidade de elementos (quaisquer elementos extras no final são ignorados). Apenas os grupos de stride que abrangem essas dimensões são lidos. [`UInt`](/pt-BR/reference/data-types/int-uint)
 
@@ -245,6 +245,12 @@ Retorna a distância aproximada de norma 2. Sempre retorna `Float64`. [`Float64`
 CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
 SELECT L2DistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
+```
+
+```response title=Response
+┌─L2DistanceTransposedQuantized(vec, CAST('[0.1, -0.5]', 'Array(Float32)'), 8)─┐
+│                                                         0.004942022755037076 │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="L2Norm">
@@ -357,9 +363,9 @@ SELECT L2SquaredDistance([1, 2, 3], [0, 0, 0])
 ```
 
 ```response title=Response
-┌─L2SquaredDis⋯ [0, 0, 0])─┐
-│                       14 │
-└──────────────────────────┘
+┌─L2SquaredDistance([1, 2, 3], [0, 0, 0])─┐
+│                                      14 │
+└─────────────────────────────────────────┘
 ```
 
 <div id="L2SquaredNorm">
@@ -716,9 +722,9 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 ```
 
 ```response title=Response
-┌─cosineDistanceTransposed([0, 1], [1, 2], 16)─┐
-│                          0.10557280905788935 │
-└──────────────────────────────────────────────┘
+┌─cosineDistanceTransposed(vec, [1, 2], 16)─┐
+│                       0.10557280905788935 │
+└───────────────────────────────────────────┘
 ```
 
 <div id="cosineDistanceTransposedQuantized">
@@ -754,6 +760,12 @@ Retorna a distância de cosseno aproximada (um menos a similaridade de cosseno).
 CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
 SELECT cosineDistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
+```
+
+```response title=Response
+┌─cosineDistanceTransposedQuantized(vec, CAST('[0.1, -0.5]', 'Array(Float32)'), 8)─┐
+│                                                          0.000027192636379513857 │
+└──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dotProductTransposed">
@@ -794,9 +806,9 @@ SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
 ```
 
 ```response title=Response
-┌─dotProductTransposed([0, 1], [1, 2], 16)─┐
-│                                   2.0625 │
-└──────────────────────────────────────────┘
+┌─dotProductTransposed(vec, [1, 2], 16)─┐
+│                                2.0625 │
+└───────────────────────────────────────┘
 ```
 
 <div id="dotProductTransposedQuantized">
@@ -816,7 +828,7 @@ dotProductTransposedQuantized(vectors, reference, p[, used_dims])
 **Argumentos**
 
 * `vectors` — Vetores de códigos `quantizeBFloat16ToInt8`. [`QBit(Int8, UInt64[, UInt64])`](/pt-BR/reference/data-types/qbit)
-* `reference` — Vetor de referência (consulta): um array de `Float` (a consulta, comparada com precisão `Float32` -- uma consulta `Float64` é convertida para `Float32`), ou um `Array(Int8)` de códigos `quantizeBFloat16ToInt8` desquantizados em tempo de execução. [`Array(Float32)`](/pt-BR/reference/data-types/array) ou [`Array(Int8)`](/pt-BR/reference/data-types/array)
+* `reference` — Vetor de referência (consulta): um array de `Float` (a consulta, comparada com precisão `Float32` -- uma consulta `Float64` é reduzida para `Float32`), ou um `Array(Int8)` de códigos `quantizeBFloat16ToInt8` desquantizados em tempo de execução. [`Array(Float32)`](/pt-BR/reference/data-types/array) ou [`Array(Int8)`](/pt-BR/reference/data-types/array)
 * `p` — Número de bits mais altos de cada código `QBit` armazenado a serem usados (de 1 a 8). Menos bits reconstroem um quantizador embutido mais grosseiro usando os centroides de média condicional gaussiana dos intervalos de prefixo Lloyd-Max existentes, para E/S mais rápida, com menor precisão; 8 bits correspondem à reconstrução com precisão total. `p` trunca apenas o `QBit` armazenado; uma referência `Array(Int8)` é sempre reconstruída com precisão total de 8 bits. [`UInt`](/pt-BR/reference/data-types/int-uint)
 * `used_dims` — Opcional. Número de dimensões iniciais a serem lidas, para uma busca de dimensão reduzida (Matryoshka) em um `QBit` com stride. Deve ser um múltiplo do stride do QBit que não exceda sua dimensão, e o vetor de referência deve ter pelo menos esse número de elementos (quaisquer elementos extras no final são ignorados). Somente os grupos de stride que abrangem essas dimensões são lidos. [`UInt`](/pt-BR/reference/data-types/int-uint)
 
@@ -832,6 +844,12 @@ Retorna o produto escalar aproximado dos dois vetores. Sempre retorna `Float64`.
 CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
 SELECT dotProductTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
+```
+
+```response title=Response
+┌─dotProductTransposedQuantized(vec, CAST('[0.1, -0.5]', 'Array(Float32)'), 8)─┐
+│                                                          0.25834959745407104 │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}
