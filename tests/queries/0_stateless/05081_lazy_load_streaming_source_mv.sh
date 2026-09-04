@@ -66,6 +66,6 @@ echo 2 > "${DIR}/with_mv/b.csv"
 wait_for_count 2
 
 ${CLICKHOUSE_CLIENT} --query "select a from ${DB}.dst order by a"
-${CLICKHOUSE_CLIENT} --query "drop database ${DB}"
+${CLICKHOUSE_CLIENT} --query "drop database ${DB} sync"
 
 rm -rf -- "${DIR}"
