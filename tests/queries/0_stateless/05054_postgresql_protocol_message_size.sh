@@ -127,6 +127,20 @@ sock.sendall(b"Q" + struct.pack(">i", 4 + len(body)) + body)
 print("query with a smuggled tail:", first_reply(sock))
 sock.close()
 
+# A `Query` that declares more bytes than the client sends and then closes the write side of the
+# connection. The declared length is a frame boundary in both directions, so the message must be
+# rejected instead of being executed with the part of the payload that did arrive.
+sock = connect()
+startup(sock, user_plain)
+sock.recv(4096)
+sock.sendall(b"p" + struct.pack(">i", 4 + 2) + b"x\x00")
+read_until_ready(sock)
+body = b"SELECT 1\x00"
+sock.sendall(b"Q" + struct.pack(">i", 4 + len(body) + 1000) + body)
+sock.shutdown(socket.SHUT_WR)
+print("query shorter than declared:", outcome(sock))
+sock.close()
+
 # An oversized `Sync`, whose parser reads nothing at all: its payload must not survive the message
 # boundary and be reinterpreted as the next message.
 sock = connect()

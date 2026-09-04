@@ -296,6 +296,53 @@ TEST(PostgreSQLProtocol, ReceiveRealignsAfterFailedParsing)
     EXPECT_EQ(next->query, "SELECT 4");
 }
 
+TEST(PostgreSQLProtocol, ReceiveRejectsFrameShorterThanDeclared)
+{
+    /// The declared length is a frame boundary in both directions: a frame that ends before it -
+    /// the client declared more bytes than it sent and then closed the write side - must be
+    /// rejected, not parsed from the bytes that did arrive. This holds whether the parser stops on
+    /// its own terminator (`Query`, `PasswordMessage`) or reads to the end of the frame
+    /// (`SASLResponse`).
+    auto truncated = [](const std::string & payload)
+    {
+        std::string bytes;
+        /// A thousand bytes of the declared frame are never sent.
+        putInt32(bytes, static_cast<Int32>(payload.size() + sizeof(Int32) + 1000));
+        bytes += payload;
+        return bytes;
+    };
+
+    std::string query_payload = "SELECT 1";
+    query_payload.push_back('\0');
+
+    std::string password_payload = "x";
+    password_payload.push_back('\0');
+
+    {
+        std::string bytes = truncated(query_payload);
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        WriteBufferFromOwnString out;
+        Messaging::MessageTransport mt(&in, &out);
+        EXPECT_THROW(mt.receive<Messaging::Query>(), Exception);
+    }
+
+    {
+        std::string bytes = truncated(password_payload);
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        WriteBufferFromOwnString out;
+        Messaging::MessageTransport mt(&in, &out);
+        EXPECT_THROW(mt.receive<Messaging::PasswordMessage>(), Exception);
+    }
+
+    {
+        std::string bytes = truncated("c=biws,r=nonce,p=proof");
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        WriteBufferFromOwnString out;
+        Messaging::MessageTransport mt(&in, &out);
+        EXPECT_THROW(mt.receive<Messaging::SASLResponse>(), Exception);
+    }
+}
+
 TEST(PostgreSQLProtocol, CommandCompletePreservesUInt64RowCount)
 {
     WriteBufferFromOwnString out;

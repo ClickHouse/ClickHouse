@@ -9,7 +9,6 @@
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include <Common/scope_guard_safe.h>
 #include <Common/Base64.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -230,17 +229,40 @@ public:
 
         std::unique_ptr<TMessage> message = std::make_unique<TMessage>();
 
-        /// The declared length is a frame boundary, not merely an upper bound: whatever the parser
-        /// leaves unread must not be taken for the beginning of the next message. The remainder of
-        /// the frame is skipped even when parsing throws, so that the stream stays aligned and the
-        /// connection can resynchronize on the next message.
-        size_t unparsed_bytes = 0;
+        /// The declared length is an exact frame boundary, not merely an upper bound. `read_no_more`
+        /// stops the parser at the boundary, so that it cannot consume the message that follows;
+        /// `read_no_less` turns a frame that ends before the boundary - the client declared more
+        /// bytes than it sent - into an error, instead of a message parsed from whatever arrived.
+        const size_t payload_size = static_cast<size_t>(size) - sizeof(size);
+        LimitReadBuffer limited_in(*in, {.read_no_less = payload_size, .read_no_more = payload_size});
+
+        try
         {
-            LimitReadBuffer limited_in(*in, {.read_no_more = static_cast<size_t>(size) - sizeof(size)});
-            SCOPE_EXIT_SAFE({ unparsed_bytes = limited_in.ignoreAll(); });
             message->deserialize(limited_in);
         }
+        catch (...)
+        {
+            /// The stream has to stay aligned on a message boundary even when parsing fails: the
+            /// handler answers with an error and goes on reading, so the unread rest of this frame
+            /// would otherwise be taken for the beginning of the next message. Whether skipping it
+            /// succeeded cannot be reported from here without replacing the original error, which
+            /// is the more informative one, so a failure is only logged.
+            try
+            {
+                limited_in.ignoreAll();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot skip the rest of the message received from client");
+            }
+            throw;
+        }
 
+        /// A message carrying more bytes than its parser consumed is rejected instead of being
+        /// silently truncated: the remainder belongs to no message the server understands, and
+        /// accepting it would let a client smuggle a whole message into the tail of another one.
+        /// A frame shorter than declared does not reach this point - `limited_in` throws instead.
+        const size_t unparsed_bytes = limited_in.ignoreAll();
         if (unparsed_bytes != 0)
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
                             "Message of {} bytes received from client has {} bytes left unparsed", size, unparsed_bytes);
