@@ -31,8 +31,8 @@ TABLE_ZK="/clickhouse/tables/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/t"
 
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${AUX} SYNC SETTINGS ignore_drop_queries_probability = 0" 2>/dev/null ||:
-    ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${RDB} SYNC SETTINGS ignore_drop_queries_probability = 0" 2>/dev/null ||:
+    ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${AUX} SYNC" 2>/dev/null ||:
+    ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${RDB} SYNC" 2>/dev/null ||:
     ${CLICKHOUSE_KEEPER_CLIENT} -q "rmr '${DB_ZK}'" 2>/dev/null ||:
     # The second replica is dropped while DETACHed, which leaves its replica znode behind, so the
     # explicit table path has to be removed here or a re-run would find a stale replica.
