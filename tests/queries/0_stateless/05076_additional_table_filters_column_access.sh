@@ -19,6 +19,7 @@ DROP USER IF EXISTS $u_low, $u_alias, $u_view;
 CREATE TABLE t (id UInt8, public_label String, secret_token String, tup Tuple(a String), alias_col String ALIAS secret_token) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t VALUES (1, 'customer_1', 'prod_customer_token_25_8_secret', ('ta')), (2, 'customer_2', 'other_customer_private_token', ('tb'));
 CREATE TABLE d (id UInt8, public_label String, secret_token String) ENGINE = Distributed(test_shard_localhost, currentDatabase(), t);
+CREATE TABLE d3 (id UInt8, public_label String, secret_token String) ENGINE = Distributed(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t);
 CREATE VIEW v_inv SQL SECURITY INVOKER AS SELECT id, public_label FROM t;
 CREATE VIEW v_def SQL SECURITY DEFINER DEFINER = CURRENT_USER AS SELECT id, public_label FROM t;
 
@@ -28,6 +29,7 @@ CREATE USER $u_view IDENTIFIED WITH plaintext_password BY 'password';
 
 GRANT SELECT(id, public_label) ON $DB.t TO $u_low;
 GRANT SELECT(id, public_label) ON $DB.d TO $u_low;
+GRANT SELECT(id, public_label) ON $DB.d3 TO $u_low;
 GRANT SELECT ON $DB.v_inv TO $u_low;
 GRANT SELECT(alias_col) ON $DB.t TO $u_alias;
 GRANT SELECT ON $DB.v_def TO $u_view;
@@ -101,11 +103,21 @@ run "$u_low" "SELECT count() FROM t SETTINGS enable_analyzer=$analyzer, cluster_
 echo "-- analyzer=$analyzer: 17 parallel replicas custom key (sampling) over granted column"
 run "$u_low" "SELECT count() FROM t SETTINGS enable_analyzer=$analyzer, cluster_for_parallel_replicas = 'test_shard_localhost', max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'id', parallel_replicas_count = 2, parallel_replica_offset = 1"
 
+# `d3` spans one shard with three replicas, so the initiator ships the key to the replicas instead of applying it.
+# The read is wrapped in a subquery because the initiator sets `distributed_group_by_no_merge` on this path and would
+# otherwise return one unmerged partial count per replica, in a non-deterministic order.
+echo "-- analyzer=$analyzer: 18 custom key shipped to the replicas, over denied column"
+run "$u_low" "SELECT sum(c) FROM (SELECT count() AS c FROM d3) SETTINGS enable_analyzer=$analyzer, max_parallel_replicas = 3, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'secret_token = ''$T'''"
+
+echo "-- analyzer=$analyzer: 19 custom key shipped to the replicas, over granted column"
+run "$u_low" "SELECT sum(c) FROM (SELECT count() AS c FROM d3) SETTINGS enable_analyzer=$analyzer, max_parallel_replicas = 3, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'id'"
+
 done
 
 $CLICKHOUSE_CLIENT -n -q "
 DROP VIEW IF EXISTS v_def;
 DROP VIEW IF EXISTS v_inv;
+DROP TABLE IF EXISTS d3;
 DROP TABLE IF EXISTS d;
 DROP TABLE IF EXISTS t;
 DROP USER IF EXISTS $u_low, $u_alias, $u_view;

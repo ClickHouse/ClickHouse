@@ -32,6 +32,10 @@ ACCESS_DENIED
 ACCESS_DENIED
 -- analyzer=1: 17 parallel replicas custom key (sampling) over granted column
 1
+-- analyzer=1: 18 custom key shipped to the replicas, over denied column
+ACCESS_DENIED
+-- analyzer=1: 19 custom key shipped to the replicas, over granted column
+2
 -- analyzer=0: 01 control
 ACCESS_DENIED
 -- analyzer=0: 02 filter over denied column
@@ -66,3 +70,7 @@ ACCESS_DENIED
 ACCESS_DENIED
 -- analyzer=0: 17 parallel replicas custom key (sampling) over granted column
 1
+-- analyzer=0: 18 custom key shipped to the replicas, over denied column
+ACCESS_DENIED
+-- analyzer=0: 19 custom key shipped to the replicas, over granted column
+2

@@ -2091,6 +2091,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     else if (auto * distributed = typeid_cast<StorageDistributed *>(storage.get());
                              distributed && query_context->canUseParallelReplicasCustomKeyForCluster(*distributed->getCluster()))
                     {
+                        /// The key is evaluated on the replicas on behalf of this user.
+                        auto custom_key_ast = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *query_context);
+                        checkAccessRightsForFilter(
+                            buildFilterQueryTree(custom_key_ast, table_expression_query_info.table_expression, query_context),
+                            table_expression_query_info.table_expression,
+                            query_context);
+
                         planner_context->getMutableQueryContext()->setSetting("distributed_group_by_no_merge", 2);
                         /// We disable prefer_localhost_replica because if one of the replicas is local it will create a single local plan
                         /// instead of executing the query with multiple replicas
@@ -2660,6 +2667,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         if (auto cluster = query_context->getClusterForParallelReplicas();
                             query_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
                         {
+                            /// The key is evaluated on the replicas on behalf of this user.
+                            auto custom_key_ast = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *query_context);
+                            checkAccessRightsForFilter(
+                                buildFilterQueryTree(custom_key_ast, table_expression_query_info.table_expression, query_context),
+                                table_expression_query_info.table_expression,
+                                query_context);
+
                             planner_context->getMutableQueryContext()->setSetting("prefer_localhost_replica", Field{0});
                             auto modified_query_info = select_query_info;
                             modified_query_info.cluster = std::move(cluster);
