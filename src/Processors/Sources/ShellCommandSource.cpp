@@ -21,7 +21,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/AutoFinalizedWriteBuffer.h>
 
 #include <Common/SharedMemoryRegion.h>
 #include <Common/DoubleBufferedProducer.h>
@@ -34,6 +33,7 @@
 #include <Core/Block.h>
 #include <Core/Field.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstring>
@@ -67,6 +67,7 @@ namespace ErrorCodes
     extern const int CANNOT_POLL;
     extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
     extern const int UDF_EXECUTION_FAILED;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Version of the shared-memory control protocol between the server and an executable UDF.
@@ -1030,14 +1031,18 @@ namespace
             set(region.data() + written, region.size() - written);
         }
 
-        /// The serialization is over: everything is already in the region and there is nothing to
-        /// flush - except a byte that landed in the spare slot, which means the region has to grow
-        /// to hold it after all. Going through `next` instead would ask for that growth even when
-        /// the input ended exactly at the end of the region.
+        /// The serialization is over and everything is already in the region, so there is nothing
+        /// to flush here. In particular the region must not grow from this method: `finalize`
+        /// blocks memory-limit exceptions for its whole body, so a growth started here would commit
+        /// its pages without `max_memory_usage` ever being enforced. Draining the spare byte is the
+        /// writer's job (any `next` does it, under the memory limit) - see serializeInto, which is
+        /// also why this buffer is never finalized implicitly from a destructor.
         void finalizeImpl() override
         {
             if (offset() != 0 && working_buffer.begin() == overflow.data())
-                moveOverflowIntoRegion(count());
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Shared-memory region buffer is finalized with a byte past the end of the region; "
+                    "it has to be flushed with `next` first");
 
             bytes += offset();
             set(nullptr, 0);
@@ -1280,7 +1285,7 @@ namespace
                 /// the worker has to be discarded.
                 if (preparing_input)
                     command_can_be_reused = true;
-                else
+                else if (!command_can_be_reused)
                     command_is_invalid = true;
                 throw;
             }
@@ -1373,7 +1378,10 @@ namespace
             /// Serialize into the region itself, growing it on demand (up to shared_memory_max_size)
             /// whenever it fills up. The command asks for more room later if its result does not fit
             /// next to the input.
-            AutoFinalizedWriteBuffer<WriteBufferToSharedMemoryRegion> write_buffer(
+            /// Deliberately not auto-finalized: on the exception path the buffer is destroyed while
+            /// the stack unwinds, which holds nothing back (everything written is already in the
+            /// region), and a `finalize` from a destructor could not report a problem anyway.
+            WriteBufferToSharedMemoryRegion write_buffer(
                 *regions[index],
                 /// The input is serialized straight into the region, so its total size is known only
                 /// once it is over: every request for room is a lower bound on what it needs.
@@ -1382,6 +1390,12 @@ namespace
 
             auto output_format = context->getOutputFormat(format, write_buffer, input_header);
             formatBlock(output_format, input_block);
+
+            /// `formatBlock` flushes the format into the buffer, which also moves a byte that ended
+            /// up in its spare slot into the region. Do it explicitly all the same: it is what grows
+            /// the region under this query's memory limit, and `finalize` may not do it (see
+            /// WriteBufferToSharedMemoryRegion::finalizeImpl).
+            write_buffer.next();
             write_buffer.finalize();
 
             return write_buffer.count();
@@ -1434,7 +1448,19 @@ namespace
                             "than the current one ({} bytes)",
                             requested_size, regions[index]->size());
 
-                    ensureRegionFits(index, requested_size, "The region size requested by the command");
+                    try
+                    {
+                        ensureRegionFits(index, requested_size, "The region size requested by the command");
+                    }
+                    catch (...)
+                    {
+                        /// The child answered this request in full and is waiting for the next one,
+                        /// so a region that cannot grow that far (a memory limit, the configured
+                        /// cap) leaves it at a clean protocol boundary, like a failure while the
+                        /// input was being prepared: the pooled worker stays reusable.
+                        command_can_be_reused = true;
+                        throw;
+                    }
                     continue;
                 }
 
@@ -1566,9 +1592,12 @@ namespace
                     "({} bytes, maximum {} bytes): increase shared_memory_max_size",
                     what, required_is_lower_bound ? "at least " : "", required, region.size(), shared_memory_max_size);
 
-            size_t new_size = region.size();
-            while (new_size < required)
-                new_size = new_size <= shared_memory_max_size / 2 ? new_size * 2 : shared_memory_max_size;
+            /// Double, so that repeated growth stays amortized - the input is serialized straight
+            /// into the region and asks for one byte at a time - but never past the cap, and never
+            /// less than a caller that knows its exact requirement asked for. Taking the cap
+            /// whenever doubling overshoots it would commit (and `posix_fallocate`) the whole
+            /// configured maximum for a chunk that needs a little more room.
+            size_t new_size = std::max(required, std::min(region.size() * 2, shared_memory_max_size));
 
             size_t added = new_size - region.size();
 

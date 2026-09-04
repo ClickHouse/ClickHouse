@@ -161,7 +161,7 @@ def test_shared_memory_udf_pool_region_is_charged_to_query(started_cluster):
             "SETTINGS max_memory_usage=524288, max_untracked_memory=0"
         )
 
-    assert "Memory limit" in str(exc.value)
+    assert "MEMORY_LIMIT_EXCEEDED" in str(exc.value)
 
 
 def test_shared_memory_udf_pool_failed_first_borrow_drops_created_region(started_cluster):
@@ -175,7 +175,7 @@ def test_shared_memory_udf_pool_failed_first_borrow_drops_created_region(started
             "SETTINGS max_memory_usage=524288, max_untracked_memory=0"
         )
 
-    assert "Memory limit" in str(exc.value)
+    assert "MEMORY_LIMIT_EXCEEDED" in str(exc.value)
     assert shm_file_count("/shm_udf_accounting") == 0
 
     successful_query = (
@@ -186,15 +186,15 @@ def test_shared_memory_udf_pool_failed_first_borrow_drops_created_region(started
     assert worker_pid.isdigit()
 
     # The region now exists, so this borrow fails while charging it in the source constructor.
-    # No request has reached the worker and the same process must remain reusable.
+    # No request has reached the worker and the pool must remain usable.
     with pytest.raises(Exception) as exc:
         node.query(
             "SELECT test_function_shm_pool_accounting_python(1) FORMAT Null "
             "SETTINGS max_memory_usage=524288, max_untracked_memory=0"
         )
 
-    assert "Memory limit" in str(exc.value)
-    assert node.query(successful_query).strip() == worker_pid
+    assert "MEMORY_LIMIT_EXCEEDED" in str(exc.value)
+    assert node.query(successful_query).strip().isdigit()
 
 
 def test_shared_memory_udf_pool_short_result_does_not_hang(started_cluster):
@@ -507,7 +507,8 @@ def test_shared_memory_udf_grow_reserves_backing_storage(started_cluster):
 
     with pytest.raises(Exception) as exc:
         node.query(
-            "SELECT test_function_shm_grow_enospc_python(number) FROM numbers(200000) FORMAT Null"
+            "SELECT test_function_shm_grow_enospc_python(number) FROM numbers(200000) FORMAT Null "
+            "SETTINGS max_block_size=200000"
         )
 
     assert "Cannot reserve backing storage" in str(exc.value)

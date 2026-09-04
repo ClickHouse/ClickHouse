@@ -41,24 +41,9 @@
         <command>echo_shm.py</command>
     </function>
 
-    <!-- Shared-memory transport with pipelined double buffering. -->
-    <function>
-        <type>executable_pool</type>
-        <name>bench_shm_pipeline</name>
-        <return_type>String</return_type>
-        <argument><type>String</type></argument>
-        <format>TabSeparated</format>
-        <pool_size>16</pool_size>
-        <use_shared_memory>1</use_shared_memory>
-        <shared_memory_size>134217728</shared_memory_size>
-        <shared_memory_pipeline>1</shared_memory_pipeline>
-        <command>echo_shm.py</command>
-    </function>
-
     <!--
-      Compute-heavy variants (echo_shm_busy.py adds per-chunk CPU work). These show that the
-      pipelined transport wins when the command's per-chunk compute dominates: the server serializes
-      the next chunk while the command is busy with the current one.
+      Compute-heavy variant: echo_shm_busy.py adds per-chunk CPU work, so the command's compute
+      time dominates the server-side serialization instead of the other way round.
     -->
     <function>
         <type>executable_pool</type>
@@ -72,16 +57,4 @@
         <command>echo_shm_busy.py</command>
     </function>
 
-    <function>
-        <type>executable_pool</type>
-        <name>bench_shm_busy_pipeline</name>
-        <return_type>String</return_type>
-        <argument><type>String</type></argument>
-        <format>TabSeparated</format>
-        <pool_size>16</pool_size>
-        <use_shared_memory>1</use_shared_memory>
-        <shared_memory_size>134217728</shared_memory_size>
-        <shared_memory_pipeline>1</shared_memory_pipeline>
-        <command>echo_shm_busy.py</command>
-    </function>
 </functions>

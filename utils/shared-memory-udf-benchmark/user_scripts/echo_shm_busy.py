@@ -1,10 +1,9 @@
 #!/usr/bin/python3
 
 # Same shared-memory echo transport as echo_shm.py, but with artificial per-chunk CPU work added
-# before replying. This models a UDF whose per-chunk compute time (t_c) dominates the server-side
-# serialization time (t_s), which is exactly the regime where the pipelined transport
-# (shared_memory_pipeline) wins: the server serializes the next chunk on a background thread while
-# this process is busy computing the current one.
+# before replying. This models a UDF whose per-chunk compute time dominates the server-side
+# serialization time, so that the benchmark measures a command doing real work rather than the
+# transport alone.
 #
 # The amount of work is controlled by the SHM_UDF_BUSY_ITERS environment variable (default 400000):
 # a fixed integer mixing loop run once per chunk, so per-chunk compute is substantial and tunable.

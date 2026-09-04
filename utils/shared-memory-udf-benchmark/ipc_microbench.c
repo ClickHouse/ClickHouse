@@ -45,6 +45,23 @@ static double now_sec(void)
     return ts.tv_sec + ts.tv_nsec * 1e-9;
 }
 
+// A chunk size that does not fit into memory must fail loudly here, not by writing through the
+// NULL that `malloc` returned in the memset that follows every call. `alignment` of 0 means plain
+// `malloc`; otherwise the size is rounded up, because `aligned_alloc` wants a multiple of the
+// alignment and the chunk size comes from the command line.
+static void *alloc_or_die(size_t size, size_t alignment)
+{
+    void *result = NULL;
+    if (!alignment)
+        result = malloc(size);
+    else {
+        size_t rounded = size + (alignment - size % alignment) % alignment;
+        if (rounded >= size) result = aligned_alloc(alignment, rounded);
+    }
+    if (!result) { fprintf(stderr, "Cannot allocate %zu bytes\n", size); exit(1); }
+    return result;
+}
+
 static void full_write(int fd, const void *buf, size_t n)
 {
     const char *p = buf;
@@ -69,7 +86,7 @@ static void bench_pipe(void)
 {
     int data[2], ack[2];
     if (pipe(data) || pipe(ack)) { perror("pipe"); exit(1); }
-    char *buf = malloc(CHUNK), *rcv = malloc(CHUNK);
+    char *buf = alloc_or_die(CHUNK, 0), *rcv = alloc_or_die(CHUNK, 0);
     memset(buf, 'x', CHUNK);
 
     pid_t pid = fork();
@@ -95,7 +112,7 @@ static void bench_shared(const char *name, int fd)
     if (region == MAP_FAILED) { perror("mmap"); exit(1); }
     int go[2], ack[2];
     if (pipe(go) || pipe(ack)) { perror("pipe"); exit(1); }
-    char *buf = malloc(CHUNK), *rcv = malloc(CHUNK);
+    char *buf = alloc_or_die(CHUNK, 0), *rcv = alloc_or_die(CHUNK, 0);
     memset(buf, 'x', CHUNK);
 
     pid_t pid = fork();
@@ -118,7 +135,7 @@ static void bench_vmsplice(void)
 {
     int data[2], ack[2];
     if (pipe(data) || pipe(ack)) { perror("pipe"); exit(1); }
-    char *buf = aligned_alloc(4096, CHUNK), *rcv = malloc(CHUNK);
+    char *buf = alloc_or_die(CHUNK, 4096), *rcv = alloc_or_die(CHUNK, 0);
     memset(buf, 'x', CHUNK);
 
     pid_t pid = fork();

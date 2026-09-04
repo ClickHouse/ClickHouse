@@ -96,7 +96,7 @@ The command `mmap`s the file at the given path, parses the input, computes the r
 | `offset`        | varint                 | Present when `status` is `0`: start offset of the serialized output               |
 | `size`          | varint                 | Present when `status` is `0`: size of the serialized output in bytes              |
 | `required_size` | varint                 | Present when `status` is `2`: total size in bytes the region must have            |
-| `message`       | length-prefixed string | Present for any other `status`: an error message, surfaced by the server          |
+| `message`       | length-prefixed string | Present for any other `status`: an error message of at most 64 KiB, surfaced by the server |
 
 Notes:
 
