@@ -519,6 +519,35 @@ def main():
         Shell.check("pwd")
         res = results[-1].is_ok()
 
+        if build_type == BuildTypes.AMD_WINDOWS and res:
+            # Run what was just linked. Until this existed the Windows port was only ever
+            # compiled, so every runtime assumption in it - the terminal and console-encoding
+            # queries, the socket and file-mapping wrappers, `setThreadName`, the loopback
+            # `WakeupFd` - was untested, and the build doc had to say so. `clickhouse-local`
+            # answering a trivial query exercises the whole startup path: configuration,
+            # the temporary data directory, the thread pools and one query pipeline.
+            #
+            # Wine, not an emulator: this job runs on an `amd64` runner (see
+            # `ci/defs/job_configs.py`) precisely so the `x86_64` PE executes natively.
+            # `WINEPREFIX` under the job's own tmp directory keeps the prefix out of `$HOME`,
+            # and `wineboot --init` creates it up front so the query does not race the
+            # first-run bootstrap. `WINEDEBUG=-all` silences Wine's own diagnostics; a real
+            # failure still comes out of ClickHouse on stderr.
+            wine_prefix = f"{Utils.cwd()}/ci/tmp/wineprefix"
+            wine_env = "WINEDEBUG=-all WINEPREFIX=" + wine_prefix
+            results.append(
+                Result.from_commands_run(
+                    name="Run clickhouse.exe under Wine",
+                    command=[
+                        f"{wine_env} wine64 wineboot --init",
+                        f"{wine_env} wine64 {build_dir}/programs/clickhouse.exe --version",
+                        f'{wine_env} wine64 {build_dir}/programs/clickhouse.exe local --query "SELECT 1"',
+                    ],
+                    with_info=True,
+                )
+            )
+            res = results[-1].is_ok()
+
         # Apply BOLT post-link optimization if profiles are available
         if res and use_bolt:
             clickhouse_binary = f"{build_dir}/programs/clickhouse"

@@ -76,6 +76,19 @@ RUN fetch() { \
     && dpkg -i /tmp/mingw-w64-common.deb /tmp/mingw-w64-x86-64-dev.deb \
     && rm /tmp/mingw-w64-common.deb /tmp/mingw-w64-x86-64-dev.deb
 
+# Wine, to run the `clickhouse.exe` the Windows cross-build just produced. Nothing else in the
+# image needs it, and it is installed on `amd64` only: an `x86_64` PE needs an `x86_64` host, and
+# the ARM build of Wine ships no `x86` emulator, so there it would be dead weight.
+#
+# `wine64` rather than the `wine` metapackage, and without recommends: the metapackage pulls in
+# the whole i386 multiarch half, and a 64-bit PE does not need it.
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+        apt-get update \
+        && apt-get install --yes --no-install-recommends --verbose-versions wine64 \
+        && apt-get clean \
+        && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*; \
+    fi
+
 # Optional PGO+BOLT optimized toolchain override
 ARG TOOLCHAIN_COMMIT=bbbf2c95d11bed6a3dbabcc9cb2a65d02cfda55e
 # S3 directory of that commit's artifacts. Praktika owns the prefix layout and

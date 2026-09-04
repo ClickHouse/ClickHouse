@@ -11,10 +11,10 @@ binaries that run on Windows. There is no native Windows build - the Windows bin
 always cross-compiled, as they are for macOS and FreeBSD.
 
 :::note
-The Windows port **links but has never been run**. `clickhouse.exe` is produced by every CI
-build, and nothing has yet executed a single instruction of it - the development host is
-`aarch64` and its Wine has no `x86` emulator. Running it on an `x86-64` Windows machine is the
-next step. [Remaining work](#remaining-work) is an inventory of what is left after that, by
+The Windows port is **not finished**. CI links `clickhouse.exe` on every pull request and then
+executes it under Wine (see [CI](#ci)) - `clickhouse-local` over a trivial query, which is as
+far as the port has been run. Nothing has been run on a real Windows machine, and no test suite
+runs against it. [Remaining work](#remaining-work) is an inventory of what is left, by
 subsystem.
 :::
 
@@ -125,10 +125,12 @@ Not built for Windows, and why:
 
 What stands between a binary that links and one that works.
 
-**Run it.** Nothing here has been executed, only compiled and linked, so every runtime
-assumption in it is untested. This is the one item that blocks all the others from being
-meaningful. See the Wine note above: an `x86_64` PE binary needs an `x86_64` host or an
-emulator such as FEX.
+**Run more of it.** CI executes `clickhouse.exe local --query "SELECT 1"` under Wine on every
+pull request - the startup path and one pipeline. Everything past that is still unexecuted: the
+client against a real server, `clickhouse-local` over actual files, any of the test suites, and
+the binary on a real Windows machine rather than on Wine. Note for a development host that is
+not `x86_64`: an `x86_64` PE needs an `x86_64` host, or an emulator such as FEX, which Wine on
+ARM does not ship.
 
 **Debug info.** The build passes `-g0` on Windows. A PE image cannot exceed 4 GiB, the DWARF
 for this binary is several times that on its own, and PE has no `.gnu_debuglink` equivalent to
@@ -176,5 +178,15 @@ page.
 The `Build (amd_windows)` job builds `clickhouse` and `clickhouse-windows-ported`. It is
 defined by `BuildTypes.AMD_WINDOWS` in `ci/defs/defs.py`, its cmake flags in
 `ci/jobs/build_clickhouse.py`, and it runs in the `clickhouse/binary-builder` image, which
-installs `mingw-w64`. The job publishes no artifact: the binary has not been run, so there is
-nothing worth handing to anyone yet.
+installs `mingw-w64`. The job publishes no artifact: `clickhouse.exe` is not something to hand
+to anyone yet.
+
+The job then **runs** what it built, under Wine: `clickhouse.exe --version` and
+`clickhouse.exe local --query "SELECT 1"`. That is why this cross-build, alone among the ones
+here, runs on an `amd64` runner - an `x86_64` PE needs an `x86_64` host, and the ARM build of
+Wine ships no `x86` emulator - and why `binary-builder` installs `wine64` on `amd64`.
+`clickhouse-local` answering a trivial query covers the whole startup path: configuration, the
+temporary data directory, the thread pools and one query pipeline. Everything the port
+implements for Windows - the console queries, the socket and file-mapping wrappers,
+`setThreadName`, the loopback `WakeupFd` - was written against the documentation and had never
+been executed before this step existed, so this is where those assumptions are checked.
