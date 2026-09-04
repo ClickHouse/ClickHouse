@@ -533,9 +533,23 @@ KeeperSnapshotManager::KeeperSnapshotManager(
                             it->info->path,
                             it->info->disk->getName(),
                             *it->marker_path);
-                        it->info->disk->removeFileIfExists(*it->marker_path);
+                        removeKeeperFileIfExists(it->info->disk, *it->marker_path);
                         it->marker_path.reset();
                         ++it;
+                        continue;
+                    }
+
+                    if (!marker && marker.error() == KeeperMoveMarkerParseError::LegacyEmpty)
+                    {
+                        LOG_TRACE(
+                            log,
+                            "Removing incomplete snapshot {} and legacy marker {} from disk {}",
+                            it->info->path,
+                            *it->marker_path,
+                            it->info->disk->getName());
+                        removeKeeperFileIfExists(it->info->disk, it->info->path);
+                        removeKeeperFileIfExists(it->info->disk, *it->marker_path);
+                        it = candidates.erase(it);
                         continue;
                     }
 
@@ -554,7 +568,7 @@ KeeperSnapshotManager::KeeperSnapshotManager(
                             it->info->path,
                             it->info->disk->getName(),
                             *it->marker_path);
-                        it->info->disk->removeFileIfExists(*it->marker_path);
+                        removeKeeperFileIfExists(it->info->disk, *it->marker_path);
                         it->marker_path.reset();
                         ++it;
                         continue;
@@ -566,8 +580,8 @@ KeeperSnapshotManager::KeeperSnapshotManager(
                         it->info->path,
                         it->info->disk->getName(),
                         *it->marker_path);
-                    it->info->disk->removeFileIfExists(it->info->path);
-                    it->info->disk->removeFileIfExists(*it->marker_path);
+                    removeKeeperFileIfExists(it->info->disk, it->info->path);
+                    removeKeeperFileIfExists(it->info->disk, *it->marker_path);
                     it = candidates.erase(it);
                 }
 
@@ -587,7 +601,7 @@ KeeperSnapshotManager::KeeperSnapshotManager(
                         *fallback->marker_path,
                         fallback->info->path,
                         fallback->info->disk->getName());
-                    fallback->info->disk->removeFileIfExists(*fallback->marker_path);
+                    removeKeeperFileIfExists(fallback->info->disk, *fallback->marker_path);
                     fallback->marker_path.reset();
                     fallback->has_unknown_marker_version = false;
                 }
@@ -667,15 +681,15 @@ KeeperSnapshotManager::KeeperSnapshotManager(
                 duplicate->path,
                 duplicate->disk->getName(),
                 log_idx);
-            duplicate->disk->removeFileIfExists(duplicate->path);
+            removeKeeperFileIfExists(duplicate->disk, duplicate->path);
             if (duplicate->recovery_marker_path)
-                duplicate->disk->removeFileIfExists(*duplicate->recovery_marker_path);
+                removeKeeperFileIfExists(duplicate->disk, *duplicate->recovery_marker_path);
         }
     }
     for (const auto & marker : orphan_markers)
     {
         LOG_TRACE(log, "Removing orphaned snapshot move marker {} from disk {}", marker.second, marker.first->getName());
-        marker.first->removeFileIfExists(marker.second);
+        removeKeeperFileIfExists(marker.first, marker.second);
     }
 }
 

@@ -345,6 +345,12 @@ public:
         DB::DiskLocal::removeFile(path);
     }
 
+    void removeFileIfExists(const String & path) override
+    {
+        removals.push_back({path, liveGuardPaths()});
+        DB::DiskLocal::removeFileIfExists(path);
+    }
+
     struct Removal
     {
         std::string path;
@@ -1487,6 +1493,52 @@ TEST_P(CoordinationTest, StartupRemovesValidatedSnapshotMarkerImmediately)
     EXPECT_FALSE(disk->existsFile("tmp_" + path));
     ASSERT_NO_THROW(state_machine->init());
     EXPECT_EQ(committedNodeData(state_machine->getStorageUnsafe(), "/survives"), "complete");
+}
+
+TEST_P(CoordinationTest, StartupRemovesPartialSnapshotWithLegacyEmptyMarker)
+{
+    ChangelogDirTest snapshots("./snapshots_partial_legacy_marker");
+    ChangelogDirTest rocks("./rocksdb_partial_legacy_marker");
+    auto ctx = makeContextForSnapshotApply(GetParam(), snapshots.path, rocks.path);
+    const auto disk = ctx->getSnapshotDisk();
+
+    constexpr std::string_view previous_path = "snapshot_9_previous.bin.zstd";
+    const auto previous = makeSingleNodeSnapshotBuffer(ctx, 9, "/previous", "complete");
+    writeSnapshotBufferToFile(disk, String(previous_path), previous);
+
+    constexpr std::string_view partial_path = "snapshot_10_partial0.bin.zstd";
+    const auto next = makeSingleNodeSnapshotBuffer(ctx, 10, "/next", "partial");
+    writeSnapshotBufferToFile(disk, String(partial_path), sliceBuffer(next, 0, next->size() / 2));
+    writeMoveMarker(disk, String(partial_path), /*legacy=*/true);
+
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    EXPECT_FALSE(disk->existsFile(String(partial_path)));
+    EXPECT_FALSE(disk->existsFile("tmp_" + String(partial_path)));
+    ASSERT_NO_THROW(state_machine->init());
+    EXPECT_EQ(state_machine->last_commit_index(), 9);
+    EXPECT_EQ(committedNodeData(state_machine->getStorageUnsafe(), "/previous"), "complete");
+}
+
+TEST_P(CoordinationTest, StartupSnapshotCleanupSyncsParentDirectory)
+{
+    ChangelogDirTest snapshots("./snapshots_startup_cleanup_sync");
+    ChangelogDirTest rocks("./rocksdb_startup_cleanup_sync");
+    auto ctx = makeContextForSnapshotApply(GetParam(), snapshots.path, rocks.path);
+    auto disk = std::make_shared<DirSyncCountingDisk>("SnapshotDisk", snapshots.path);
+    ctx->setSnapshotDisk(disk);
+    ctx->setLatestSnapshotDisk(disk);
+
+    constexpr std::string_view path = "snapshot_10_version1.bin.zstd";
+    const auto buffer = makeSingleNodeSnapshotBuffer(ctx, 10, "/survives", "complete");
+    writeSnapshotBufferToFile(disk, String(path), buffer);
+    writeMoveMarker(disk, String(path), /*legacy=*/false);
+
+    DB::KeeperSnapshotManager manager(3, ctx, true);
+    ASSERT_EQ(disk->removalLog().size(), 1);
+    EXPECT_EQ(disk->removalLog().front().path, "tmp_" + String(path));
+    EXPECT_TRUE(disk->removalLog().front().live_guard_paths.contains(""));
+    EXPECT_FALSE(disk->liveGuardPaths().contains(""));
 }
 
 TEST_P(CoordinationTest, StartupPreservesOnlySnapshotCandidateWithInvalidMarker)

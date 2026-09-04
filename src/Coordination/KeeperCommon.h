@@ -121,6 +121,9 @@ KeeperMoveMarkerParseResult readKeeperMoveMarker(const DiskPtr & disk, const std
 KeeperFileDigest computeKeeperFileDigest(ReadBuffer & input);
 KeeperFileDigest computeKeeperFileDigest(const DiskPtr & disk, const std::string & path);
 
+/// Remove a Keeper file while holding a sync guard for its parent directory.
+void removeKeeperFileIfExists(const DiskPtr & disk, const std::string & path);
+
 enum class KeeperMoveError : uint8_t
 {
     FailedBeforeMarkerPublication,

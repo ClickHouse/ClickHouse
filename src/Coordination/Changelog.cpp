@@ -3742,7 +3742,7 @@ Changelog::Changelog(
                                     it->description->path,
                                     it->description->disk->getName(),
                                     it->marker->path);
-                                it->marker->disk->removeFileIfExists(it->marker->path);
+                                removeKeeperFileIfExists(it->marker->disk, it->marker->path);
                                 it->marker.reset();
                                 ++it;
                                 continue;
@@ -3763,7 +3763,7 @@ Changelog::Changelog(
                                     it->description->path,
                                     it->description->disk->getName(),
                                     it->marker->path);
-                                it->marker->disk->removeFileIfExists(it->marker->path);
+                                removeKeeperFileIfExists(it->marker->disk, it->marker->path);
                                 it->marker.reset();
                                 ++it;
                                 continue;
@@ -3775,8 +3775,8 @@ Changelog::Changelog(
                                 it->description->path,
                                 it->description->disk->getName(),
                                 it->marker->path);
-                            it->description->disk->removeFileIfExists(it->description->path);
-                            it->marker->disk->removeFileIfExists(it->marker->path);
+                            removeKeeperFileIfExists(it->description->disk, it->description->path);
+                            removeKeeperFileIfExists(it->marker->disk, it->marker->path);
                             it = candidates.erase(it);
                         }
 
@@ -3793,7 +3793,7 @@ Changelog::Changelog(
                                 fallback->marker->path,
                                 fallback->description->path,
                                 fallback->description->disk->getName());
-                            fallback->marker->disk->removeFileIfExists(fallback->marker->path);
+                            removeKeeperFileIfExists(fallback->marker->disk, fallback->marker->path);
                             fallback->marker.reset();
                             fallback->has_unknown_marker_version = false;
                         }
@@ -3853,7 +3853,7 @@ Changelog::Changelog(
         for (const auto & marker : orphan_markers)
         {
             LOG_TRACE(log, "Removing orphaned changelog move marker {} from disk {}", marker.second, marker.first->getName());
-            marker.first->removeFileIfExists(marker.second);
+            removeKeeperFileIfExists(marker.first, marker.second);
         }
 
         if (existing_changelogs.empty())

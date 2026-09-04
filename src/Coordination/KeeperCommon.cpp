@@ -175,6 +175,12 @@ KeeperFileDigest computeKeeperFileDigest(const DiskPtr & disk, const std::string
     return computeKeeperFileDigest(*input);
 }
 
+void removeKeeperFileIfExists(const DiskPtr & disk, const std::string & path)
+{
+    SyncGuardPtr directory_sync_guard = disk->getDirectorySyncGuard(fs::path(path).parent_path().generic_string());
+    disk->removeFileIfExists(path);
+}
+
 KeeperMoveResult moveFileBetweenDisks(
     DiskPtr disk_from,
     const std::string & path_from,
