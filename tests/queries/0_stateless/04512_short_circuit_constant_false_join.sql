@@ -129,5 +129,5 @@ SELECT 'Distributed plan is not broken by the short-circuit';
 -- off (the functional-test profile sets max_rows_to_group_by = 10G by default).
 SELECT count() FROM dist a INNER JOIN dist b ON a.k = b.k AND 1 = 2
     SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
-             enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0,
+             enable_parallel_replicas = 0,
              max_rows_to_group_by = 0;

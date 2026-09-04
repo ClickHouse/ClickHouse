@@ -63,9 +63,9 @@ SELECT array(toInt32(5), toDateTime('1998-06-16'), toInt8(5)) AS a, toTypeName(a
 ```
 
 ```response title=Response
-Received exception from server (version 25.4.3):
-Code: 386. DB::Exception: Received from localhost:9000. DB::Exception:
-There is no supertype for types Int32, DateTime, Int8 ...
+┌─a───────────────────────────┬─toTypeName(a)─────────────────────────┐
+│ [5,'1998-06-16 00:00:00',5] │ Array(Variant(DateTime, Int32, Int8)) │
+└─────────────────────────────┴───────────────────────────────────────┘
 ```
 
 <div id="arrayAUCPR">
@@ -205,7 +205,7 @@ SELECT arrayAutocorrelation([1, 2, 3, 4, 5]);
 ```
 
 ```response title=Response
-[1, 0.4, -0.1, -0.4, -0.4]
+[1,0.4,-0.1,-0.4,-0.4]
 ```
 
 **对称**
@@ -215,7 +215,7 @@ SELECT arrayAutocorrelation([10, 20, 10]);
 ```
 
 ```response title=Response
-[1, -0.6666666666666669, 0.16666666666666674]
+[1,-0.6666666666666669,0.16666666666666674]
 ```
 
 **常量**
@@ -225,7 +225,7 @@ SELECT arrayAutocorrelation([5, 5, 5]);
 ```
 
 ```response title=Response
-[nan, nan, nan]
+[nan,nan,nan]
 ```
 
 **受限**
@@ -235,7 +235,7 @@ SELECT arrayAutocorrelation([1, 2, 3, 4, 5], 2);
 ```
 
 ```response title=Response
-[1, 0.4]
+[1,0.4]
 ```
 
 <div id="arrayAvg">
@@ -444,7 +444,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 ```
 
 ```response title=Response
-[1, 2, 3, 4, 5, 6]
+[1,2,3,4,5,6]
 ```
 
 <div id="arrayCount">
@@ -501,7 +501,7 @@ arrayCumSum([func,] arr1[, arr2, ... , arrN])
 
 **参数**
 
-* `func` — 可选。应用于数组各位置元素的 Lambda 函数。[`Lambda function`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `func` — 可选。应用于数组各位置元素的 Lambda 函数。[`Lambda 函数`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
 * `arr1` — 由数值组成的源数组。[`Array(T)`](/zh/reference/data-types/array)
 * `[arr2, ..., arrN]` — 可选。其他大小相同的数组；如果指定了 Lambda 函数，则会作为参数传递给它。[`Array(T)`](/zh/reference/data-types/array)
 
@@ -518,7 +518,7 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 ```
 
 ```response title=Response
-[1, 2, 3, 4]
+[1,2,3,4]
 ```
 
 **使用 Lambda 表达式**
@@ -528,7 +528,7 @@ SELECT arrayCumSum(x -> x * 2, [1, 2, 3]) AS res
 ```
 
 ```response title=Response
-[2, 6, 12]
+[2,6,12]
 ```
 
 <div id="arrayCumSumNonNegative">
@@ -547,7 +547,7 @@ arrayCumSumNonNegative([func,] arr1[, arr2, ... , arrN])
 
 **参数**
 
-* `func` — 可选。一个 Lambda 函数，用于对每个位置上的数组元素进行处理。[`Lambda function`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `func` — 可选。一个 Lambda 函数，用于对每个位置上的数组元素进行处理。[`Lambda 函数`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
 * `arr1` — 由数值组成的源数组。[`Array(T)`](/zh/reference/data-types/array)
 * `[arr2, ..., arrN]` — 可选。其他大小相同的数组；如果指定了 Lambda 函数，这些数组会作为参数传递给该函数。[`Array(T)`](/zh/reference/data-types/array)
 
@@ -564,7 +564,7 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 ```
 
 ```response title=Response
-[1, 2, 0, 1]
+[1,2,0,1]
 ```
 
 **配合 lambda**
@@ -574,7 +574,7 @@ SELECT arrayCumSumNonNegative(x -> x * 2, [1, -2, 3]) AS res
 ```
 
 ```response title=Response
-[2, 0, 6]
+[2,0,6]
 ```
 
 <div id="arrayDifference">
@@ -702,7 +702,7 @@ SELECT arrayDotProduct([1, 2, 3], [4, 5, 6]) AS res, toTypeName(res);
 ```
 
 ```response title=Response
-32    UInt16
+32	UInt16
 ```
 
 **Tuple 示例**
@@ -712,7 +712,7 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 ```
 
 ```response title=Response
-32    Float64
+32	Float64
 ```
 
 <div id="arrayElement">
@@ -738,6 +738,8 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 
 运算符 `[n]` 提供相同的功能。
 
+第一个参数也可以是 [QBit](/zh/reference/data-types/qbit)：以 QBit 元素类型的完整精度重建第 n 个向量元素时，只会读取包含该元素的 stride group 的位平面。
+
 **语法**
 
 ```sql
@@ -746,7 +748,7 @@ arrayElement(arr, n)
 
 **参数**
 
-* `arr` — 要搜索的数组。[`Array(T)`](/zh/reference/data-types/array)。 - `n` — 要获取的元素位置，或位置数组。位置可以为 Nullable。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Array((U)Int*)`](/zh/reference/data-types/array)。
+* `arr` — 要搜索的数组。[`Array(T)`](/zh/reference/data-types/array) 或 [`QBit`](/zh/reference/data-types/qbit)。 - `n` — 要获取的元素位置，或位置数组。位置可以为 Nullable。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Array((U)Int*)`](/zh/reference/data-types/array)。
 
 **返回值**
 
@@ -867,7 +869,7 @@ SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 ```
 
 ```response title=Response
-NULL
+\N
 ```
 
 **索引数组**
@@ -1005,7 +1007,7 @@ arrayEnumerateDenseRanked(clear_depth, arr, max_array_depth)
 **基本用法**
 
 ```sql title=Query
--- 当 clear_depth=1 且 max_array_depth=1 时，结果与 arrayEnumerateDense 的输出相同。
+-- With clear_depth=1 and max_array_depth=1, the result is identical to what arrayEnumerateDense would give.
 
 SELECT arrayEnumerateDenseRanked(1,[10, 20, 10, 30],1);
 ```
@@ -1017,12 +1019,14 @@ SELECT arrayEnumerateDenseRanked(1,[10, 20, 10, 30],1);
 **与多维数组配合使用**
 
 ```sql title=Query
--- 在此示例中，arrayEnumerateDenseRanked 用于获取一个数组，指示多维数组中每个元素在相同值的元素中的排列位置。
--- 对于传入数组的第一行 [10, 10, 30, 20]，结果的对应第一行为 [1, 1, 2, 3]，
--- 表示 10 是在位置 1 和 2 首次出现的第 1 个数字，30 是在位置 3 首次出现的第 2 个数字，
--- 20 是在位置 4 首次出现的第 3 个数字。
--- 对于第二行 [40, 50, 10, 30]，结果的对应第二行为 [4,5,1,2]，表示 40 和 50 分别是该行位置 1 和 2 出现的第 4 和第 5 个数字，
--- 另一个 10（首次出现的数字）位于位置 3，30（第 2 个出现的数字）位于最后一个位置。
+-- In this example, arrayEnumerateDenseRanked is used to obtain an array indicating, for each element of the
+-- multidimensional array, what its position is among elements of the same value.
+-- For the first row of the passed array, [10, 10, 30, 20], the corresponding first row of the result is [1, 1, 2, 3],
+-- indicating that 10 is the first number encountered in position 1 and 2, 30 the second number encountered in position 3
+-- and 20 is the third number encountered in position 4.
+-- For the second row, [40, 50, 10, 30], the corresponding second row of the result is [4,5,1,2], indicating that 40
+-- and 50 are the fourth and fifth numbers encountered in position 1 and 2 of that row, that another 10
+-- (the first encountered number) is in position 3 and 30 (the second number encountered) is in the last position.
 
 SELECT arrayEnumerateDenseRanked(1,[[10,10,30,20],[40,50,10,30]],2);
 ```
@@ -1034,13 +1038,13 @@ SELECT arrayEnumerateDenseRanked(1,[[10,10,30,20],[40,50,10,30]],2);
 **clear&#95;depth 增大时的示例**
 
 ```sql title=Query
--- 将 clear_depth 改为 2 后，枚举将对每一行分别重新开始。
+-- Changing clear_depth=2 results in the enumeration occurring separately for each row anew.
 
 SELECT arrayEnumerateDenseRanked(2,[[10,10,30,20],[40,50,10,30]],2);
 ```
 
 ```response title=Response
-[[1, 1, 2, 3], [1, 2, 3, 4]]
+[[1,1,2,3],[1,2,3,4]]
 ```
 
 <div id="arrayEnumerateUniq">
@@ -1079,7 +1083,7 @@ SELECT arrayEnumerateUniq([10, 20, 10, 30]);
 ```
 
 ```response title=Response
-[1, 1, 2, 1]
+[1,1,2,1]
 ```
 
 **多个数组**
@@ -1095,37 +1099,38 @@ SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]);
 **ARRAY JOIN 聚合**
 
 ```sql title=Query
--- 每个目标 ID 都会计算转化次数（Goals 嵌套数据结构中的每个元素代表一个已达成的目标，即一次转化）
--- 以及会话数。若不使用 ARRAY JOIN，我们会通过 sum(Sign) 来统计会话数。但在这种情况下，
--- 由于行数已被嵌套的 Goals 结构扩展，为了确保每个会话只被计算一次，我们对
--- arrayEnumerateUniq(Goals.ID) 函数的返回值应用了一个条件。
+-- Each goal ID has a calculation of the number of conversions (each element in the Goals nested data structure is a goal that was reached, which we refer to as a conversion)
+-- and the number of sessions. Without ARRAY JOIN, we would have counted the number of sessions as sum(Sign). But in this particular case,
+-- the rows were multiplied by the nested Goals structure, so in order to count each session one time after this, we apply a condition to the
+-- value of the arrayEnumerateUniq(Goals.ID) function.
+
+CREATE TABLE visits (CounterID UInt32, Sign Int8, Goals Nested(ID UInt32)) ENGINE = Memory;
+
+INSERT INTO visits VALUES
+    (160656, 1, [53225, 53225, 56600]),
+    (160656, 1, [53225, 2825062]),
+    (160656, 1, [56600, 56600, 2825062]),
+    (160657, 1, [53225]);
 
 SELECT
     Goals.ID AS GoalID,
     sum(Sign) AS Reaches,
     sumIf(Sign, num = 1) AS Visits
-FROM test.visits
+FROM visits
 ARRAY JOIN
     Goals,
     arrayEnumerateUniq(Goals.ID) AS num
 WHERE CounterID = 160656
 GROUP BY GoalID
-ORDER BY Reaches DESC
+ORDER BY Reaches DESC, GoalID
 LIMIT 10
 ```
 
 ```response title=Response
 ┌──GoalID─┬─Reaches─┬─Visits─┐
-│   53225 │    3214 │   1097 │
-│ 2825062 │    3188 │   1097 │
-│   56600 │    2803 │    488 │
-│ 1989037 │    2401 │    365 │
-│ 2830064 │    2396 │    910 │
-│ 1113562 │    2372 │    373 │
-│ 3270895 │    2262 │    812 │
-│ 1084657 │    2262 │    345 │
-│   56599 │    2260 │    799 │
-│ 3271094 │    2256 │    812 │
+│   53225 │       3 │      2 │
+│   56600 │       3 │      2 │
+│ 2825062 │       2 │      2 │
 └─────────┴─────────┴────────┘
 ```
 
@@ -1160,57 +1165,57 @@ arrayEnumerateUniqRanked(clear_depth, arr, max_array_depth)
 **示例 1**
 
 ```sql title=Query
--- 当 clear_depth=1 且 max_array_depth=1 时，arrayEnumerateUniqRanked 的结果
--- 与对同一数组使用 arrayEnumerateUniq 所得结果相同。
+-- With clear_depth=1 and max_array_depth=1, the result of arrayEnumerateUniqRanked
+-- is identical to that which arrayEnumerateUniq would give for the same array.
 
 SELECT arrayEnumerateUniqRanked(1, [1, 2, 1], 1);
 ```
 
 ```response title=Response
-[1, 1, 2]
+[1,1,2]
 ```
 
 **示例 2**
 
 ```sql title=Query
--- 当 clear_depth=1 且 max_array_depth=1 时，arrayEnumerateUniqRanked 的结果
--- 与对同一数组使用 arrayEnumerateUniq 所得结果相同。
-
-SELECT arrayEnumerateUniqRanked(1, [[1, 2, 3], [2, 2, 1], [3]], 2);", "[[1, 1, 1], [2, 3, 2], [2]]
-```
-
-```response title=Response
-[1, 1, 2]
-```
-
-**示例 3**
-
-```sql title=Query
--- 在此示例中，arrayEnumerateUniqRanked 用于获取一个数组，
--- 该数组指示多维数组中每个元素在相同值的元素中的出现次序。
--- 对于传入数组的第一行 [1, 2, 3]，对应结果为 [1, 1, 1]，
--- 表示 1、2 和 3 均为首次出现。
--- 对于传入数组的第二行 [2, 2, 1]，对应结果为 [2, 3, 3]，
--- 表示 2 分别为第二次和第三次出现，1 为第二次出现。
--- 同理，对于传入数组的第三行 [3]，对应结果为 [2]，
--- 表示 3 为第二次出现。
+-- with clear_depth=1 and max_array_depth=1, the result of arrayEnumerateUniqRanked
+-- is identical to that which arrayEnumerateUniqwould give for the same array.
 
 SELECT arrayEnumerateUniqRanked(1, [[1, 2, 3], [2, 2, 1], [3]], 2);
 ```
 
 ```response title=Response
-[[1, 1, 1], [2, 3, 2], [2]]
+[[1,1,1],[2,3,2],[2]]
+```
+
+**示例 3**
+
+```sql title=Query
+-- In this example, arrayEnumerateUniqRanked is used to obtain an array indicating,
+-- for each element of the multidimensional array, what its position is among elements
+-- of the same value. For the first row of the passed array, [1, 2, 3], the corresponding
+-- result is [1, 1, 1], indicating that this is the first time 1, 2 and 3 are encountered.
+-- For the second row of the provided array, [2, 2, 1], the corresponding result is [2, 3, 3],
+-- indicating that 2 is encountered for a second and third time, and 1 is encountered
+-- for the second time. Likewise, for the third row of the provided array [3] the
+-- corresponding result is [2] indicating that 3 is encountered for the second time.
+
+SELECT arrayEnumerateUniqRanked(1, [[1, 2, 3], [2, 2, 1], [3]], 2);
+```
+
+```response title=Response
+[[1,1,1],[2,3,2],[2]]
 ```
 
 **示例 4**
 
 ```sql title=Query
--- 将 clear_depth 改为 2 后，每行的元素将被单独枚举。
+-- Changing clear_depth=2, results in elements being enumerated separately for each row.
 SELECT arrayEnumerateUniqRanked(2,[[1, 2, 3],[2, 2, 1],[3]], 2);
 ```
 
 ```response title=Response
-[[1, 1, 1], [1, 2, 1], [1]]
+[[1,1,1],[1,2,1],[1]]
 ```
 
 <div id="arrayExcept">
@@ -1253,7 +1258,7 @@ SELECT arrayExcept([1, 2, 3, 2, 4], [3, 5])
 ```
 
 ```response title=Response
-[1, 2, 2, 4]
+[1,2,2,4]
 ```
 
 **with&#95;nulls1**
@@ -1263,7 +1268,7 @@ SELECT arrayExcept([1, NULL, 2, NULL], [2])
 ```
 
 ```response title=Response
-[1, NULL, NULL]
+[1,NULL,NULL]
 ```
 
 **with&#95;nulls2**
@@ -1283,7 +1288,7 @@ SELECT arrayExcept(['apple', 'banana', 'cherry'], ['banana', 'date'])
 ```
 
 ```response title=Response
-['apple', 'cherry']
+['apple','cherry']
 ```
 
 <div id="arrayExists">
@@ -1355,7 +1360,7 @@ SELECT arrayFill(x -> not isNull(x), [1, null, 2, null]) AS res
 ```
 
 ```response title=Response
-[1, 1, 2, 2]
+[1,1,2,2]
 ```
 
 **含两个数组的示例**
@@ -1365,7 +1370,7 @@ SELECT arrayFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], [10, 2,
 ```
 
 ```response title=Response
-[5, 5, 6, 6]
+[5,5,6,6]
 ```
 
 <div id="arrayFilter">
@@ -1460,7 +1465,7 @@ SELECT arrayFirst(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)
 ```
 
 ```response title=Response
-0 UInt8
+0	UInt8
 ```
 
 <div id="arrayFirstIndex">
@@ -1550,7 +1555,7 @@ SELECT arrayFirstOrNull(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(re
 ```
 
 ```response title=Response
-NULL Nullable(UInt8)
+\N	Nullable(UInt8)
 ```
 
 <div id="arrayFlatten">
@@ -1593,7 +1598,7 @@ SELECT arrayFlatten([[[1]], [[2], [3]]]);
 ```
 
 ```response title=Response
-[1, 2, 3]
+[1,2,3]
 ```
 
 <div id="arrayFold">
@@ -1755,6 +1760,8 @@ Introduced in: v1.1.0
 各列中的所有值都会被直接复制，但应用此函数的那一列除外；
 该列中的值会被替换为对应的数组元素值。
 
+`unnest` (自 26.5 版本起) 是函数调用形式中 `arrayJoin` 的不区分大小写别名 (`SELECT unnest(arr)`) 。不支持 PostgreSQL 表源语法 (`FROM unnest(...)`、`CROSS JOIN UNNEST(...)` 和 `LATERAL`) 。对于此类查询，请使用 `ARRAY JOIN` 子句。
+
 `arrayJoin` (包括通过其 `unnest` 别名) 不能用于在 join 期间求值的 `JOIN ON` 条件，因为此类条件必须
 保持行数不变。仅应用于一侧的条件，以及基于 `arrayJoin` 的相等键，会在 join 前被
 提取，因此不受影响。不含析取条件的 `ALL INNER JOIN` 条件也不受影响，
@@ -1790,11 +1797,11 @@ SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 ```
 
 ```response title=Response
-┌─dst─┬─\'Hello\'─┬─src─────┐
-│   1 │ Hello     │ [1,2,3] │
-│   2 │ Hello     │ [1,2,3] │
-│   3 │ Hello     │ [1,2,3] │
-└─────┴───────────┴─────────┘
+┌─dst─┬─'Hello'─┬─src─────┐
+│   1 │ Hello   │ [1,2,3] │
+│   2 │ Hello   │ [1,2,3] │
+│   3 │ Hello   │ [1,2,3] │
+└─────┴─────────┴─────────┘
 ```
 
 **arrayJoin 会影响查询的各个部分**
@@ -2014,7 +2021,7 @@ SELECT arrayFirst(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)
 ```
 
 ```response title=Response
-0 UInt8
+0	UInt8
 ```
 
 <div id="arrayLastIndex">
@@ -2104,7 +2111,7 @@ SELECT arrayLastOrNull(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res
 ```
 
 ```response title=Response
-NULL Nullable(UInt8)
+\N	Nullable(UInt8)
 ```
 
 <div id="arrayLevenshteinDistance">
@@ -2183,7 +2190,7 @@ SELECT arrayLevenshteinDistanceWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 
 
 始于版本：v1.1.0
 
-返回一个通过对原始数组中的每个元素应用 lambda function 而生成的数组。
+返回一个通过对原始数组中的每个元素应用 Lambda 函数而生成的数组。
 
 **语法**
 
@@ -2193,12 +2200,12 @@ arrayMap(func, arr)
 
 **参数**
 
-* `func` — 一个作用于源数组 (`x`) 和条件数组 (`y`) 元素的 lambda 函数。[`Lambda 函数`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `func` — 一个作用于源数组 (`x`) 和条件数组 (`y`) 元素的 Lambda 函数。[`Lambda 函数`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
 * `arr` — 要处理的 N 个数组。[`Array(T)`](/zh/reference/data-types/array)
 
 **返回值**
 
-返回由 lambda 函数结果组成的数组 [`Array(T)`](/zh/reference/data-types/array)
+返回由 Lambda 函数结果组成的数组 [`Array(T)`](/zh/reference/data-types/array)
 
 **示例**
 
@@ -2209,7 +2216,7 @@ SELECT arrayMap(x -> (x + 2), [1, 2, 3]) as res;
 ```
 
 ```response title=Response
-[3, 4, 5]
+[3,4,5]
 ```
 
 **从不同数组中创建由元素组成的元组**
@@ -2219,7 +2226,7 @@ SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
 ```
 
 ```response title=Response
-[(1, 4),(2, 5),(3, 6)]
+[(1,4),(2,5),(3,6)]
 ```
 
 <div id="arrayMax">
@@ -2350,7 +2357,7 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
 ```
 
 ```response title=Response
-(0.18055555555555558, 0.2638888888888889, 0.6842105263157896)
+(0.18055555555555558,0.2638888888888889,0.6842105263157896)
 ```
 
 <div id="arrayPartialReverseSort">
@@ -2396,7 +2403,7 @@ SELECT arrayPartialReverseSort(2, [5, 9, 1, 3])
 ```
 
 ```response title=Response
-[9, 5, 1, 3]
+[9,5,1,3]
 ```
 
 **simple&#95;string**
@@ -2416,7 +2423,7 @@ SELECT arrayResize(arrayPartialReverseSort(2, [5, 9, 1, 3]), 2)
 ```
 
 ```response title=Response
-[9, 5]
+[9,5]
 ```
 
 **lambda&#95;simple**
@@ -2426,7 +2433,7 @@ SELECT arrayPartialReverseSort((x) -> -x, 2, [5, 9, 1, 3])
 ```
 
 ```response title=Response
-[1, 3, 5, 9]
+[1,3,5,9]
 ```
 
 **lambda&#95;complex**
@@ -2436,7 +2443,7 @@ SELECT arrayPartialReverseSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 ```
 
 ```response title=Response
-[0, 1, 2]
+[0,1,2]
 ```
 
 <div id="arrayPartialShuffle">
@@ -2494,7 +2501,7 @@ SELECT arrayPartialShuffle([1, 2, 3, 4])
 ```
 
 ```response title=Response
-[4, 1, 3, 2]
+[2,3,4,1]
 ```
 
 **random&#95;seed**
@@ -2514,7 +2521,7 @@ SELECT arrayPartialShuffle([1, 2, 3, 4], 2, 41)
 ```
 
 ```response title=Response
-[3, 2, 1, 4]
+[3,2,1,4]
 ```
 
 **物化**
@@ -2524,18 +2531,18 @@ SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffl
 ```
 
 ```response title=Response
-┌─arrayPartial⋯4]), 2, 42)─┬─arrayPartial⋯ 3], 2, 42)─┐
-│ [3,2,1,4]                │ [3,2,1]                  │
-│ [3,2,1,4]                │ [3,2,1]                  │
-│ [4,3,2,1]                │ [3,2,1]                  │
-│ [1,4,3,2]                │ [3,2,1]                  │
-│ [3,4,1,2]                │ [3,2,1]                  │
-│ [1,2,3,4]                │ [3,2,1]                  │
-│ [1,4,3,2]                │ [3,2,1]                  │
-│ [1,4,3,2]                │ [3,2,1]                  │
-│ [3,1,2,4]                │ [3,2,1]                  │
-│ [1,3,2,4]                │ [3,2,1]                  │
-└──────────────────────────┴──────────────────────────┘
+┌─arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42)─┬─arrayPartialShuffle([1, 2, 3], 2, 42)─┐
+│ [3,2,1,4]                                             │ [3,2,1]                               │
+│ [3,2,1,4]                                             │ [3,1,2]                               │
+│ [4,3,2,1]                                             │ [1,3,2]                               │
+│ [1,4,3,2]                                             │ [2,1,3]                               │
+│ [3,4,1,2]                                             │ [3,2,1]                               │
+│ [1,2,3,4]                                             │ [3,2,1]                               │
+│ [1,4,3,2]                                             │ [1,2,3]                               │
+│ [1,4,3,2]                                             │ [3,2,1]                               │
+│ [3,1,2,4]                                             │ [3,2,1]                               │
+│ [1,3,2,4]                                             │ [2,1,3]                               │
+└───────────────────────────────────────────────────────┴───────────────────────────────────────┘
 ```
 
 <div id="arrayPartialSort">
@@ -2581,7 +2588,7 @@ SELECT arrayPartialSort(2, [5, 9, 1, 3])
 ```
 
 ```response title=Response
-[1, 3, 5, 9]
+[1,3,5,9]
 ```
 
 **simple&#95;string**
@@ -2591,7 +2598,7 @@ SELECT arrayPartialSort(2, ['expenses', 'lasso', 'embolism', 'gladly'])
 ```
 
 ```response title=Response
-['embolism', 'expenses', 'gladly', 'lasso']
+['embolism','expenses','gladly','lasso']
 ```
 
 **retain&#95;sorted**
@@ -2601,7 +2608,7 @@ SELECT arrayResize(arrayPartialSort(2, [5, 9, 1, 3]), 2)
 ```
 
 ```response title=Response
-[1, 3]
+[1,3]
 ```
 
 **lambda&#95;simple**
@@ -2611,7 +2618,7 @@ SELECT arrayPartialSort((x) -> -x, 2, [5, 9, 1, 3])
 ```
 
 ```response title=Response
-[9, 5, 1, 3]
+[9,5,1,3]
 ```
 
 **lambda&#95;complex**
@@ -2621,7 +2628,7 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 ```
 
 ```response title=Response
-[2, 1, 0]
+[2,1,0]
 ```
 
 <div id="arrayPopBack">
@@ -2655,7 +2662,7 @@ SELECT arrayPopBack([1, 2, 3]) AS res;
 ```
 
 ```response title=Response
-[1, 2]
+[1,2]
 ```
 
 <div id="arrayPopFront">
@@ -2689,7 +2696,7 @@ SELECT arrayPopFront([1, 2, 3]) AS res;
 ```
 
 ```response title=Response
-[2, 3]
+[2,3]
 ```
 
 <div id="arrayProduct">
@@ -3076,7 +3083,7 @@ SELECT arrayRemove([1, 2, 2, 3], 2)
 ```
 
 ```response title=Response
-[1, 3]
+[1,3]
 ```
 
 **示例 2**
@@ -3086,7 +3093,7 @@ SELECT arrayRemove(['a', NULL, 'b', NULL], NULL)
 ```
 
 ```response title=Response
-['a', 'b']
+['a','b']
 ```
 
 <div id="arrayResize">
@@ -3192,13 +3199,13 @@ arrayReverseFill(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr
 
 **参数**
 
-* `func(x[, y1, ..., yN])` — 一个 lambda 函数，对源数组 (`x`) 和条件数组 (`y`) 中的元素进行处理。[`Lambda function`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `func(x[, y1, ..., yN])` — 一个 Lambda 函数，对源数组 (`x`) 和条件数组 (`y`) 中的元素进行处理。[`Lambda 函数`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
 * `source_arr` — 要处理的源数组。[`Array(T)`](/zh/reference/data-types/array)
-* `[, cond1_arr, ... , condN_arr]` — 可选。N 个条件数组，为 lambda 函数提供额外参数。[`Array(T)`](/zh/reference/data-types/array)
+* `[, cond1_arr, ... , condN_arr]` — 可选。N 个条件数组，为 Lambda 函数提供额外参数。[`Array(T)`](/zh/reference/data-types/array)
 
 **返回值**
 
-返回一个数组，其中源数组中的元素会被替换为 lambda 函数的结果。[`Array(T)`](/zh/reference/data-types/array)
+返回一个数组，其中源数组中的元素会被替换为 Lambda 函数的结果。[`Array(T)`](/zh/reference/data-types/array)
 
 **示例**
 
@@ -3209,7 +3216,7 @@ SELECT arrayReverseFill(x -> not isNull(x), [1, null, 2, null]) AS res
 ```
 
 ```response title=Response
-[1, 2, 2, NULL]
+[1,2,2,NULL]
 ```
 
 **两个数组的示例**
@@ -3219,7 +3226,7 @@ SELECT arrayReverseFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], 
 ```
 
 ```response title=Response
-[5, 6, 6, 2]
+[5,6,6,2]
 ```
 
 <div id="arrayReverseSort">
@@ -3313,7 +3320,7 @@ SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 ```
 
 ```response title=Response
-[[1], [2, 3, 4], [5]]
+[[1],[2,3,4],[5]]
 ```
 
 <div id="arrayRotateLeft">
@@ -3495,7 +3502,7 @@ SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2) as res;
 ```
 
 ```response title=Response
-[0, 0, 1, 2, 3, 4]
+[0,0,1,2,3,4]
 ```
 
 **n 为负值时**
@@ -3505,7 +3512,7 @@ SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], -2) as res;
 ```
 
 ```response title=Response
-[3, 4, 5, 6, 0, 0]
+[3,4,5,6,0,0]
 ```
 
 **使用默认值**
@@ -3515,7 +3522,7 @@ SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2, 42) as res;
 ```
 
 ```response title=Response
-[42, 42, 1, 2, 3, 4]
+[42,42,1,2,3,4]
 ```
 
 <div id="arrayShingles">
@@ -3550,7 +3557,7 @@ SELECT arrayShingles([1, 2, 3, 4], 3) as res;
 ```
 
 ```response title=Response
-[[1, 2, 3], [2, 3, 4]]
+[[1,2,3],[2,3,4]]
 ```
 
 <div id="arrayShuffle">
@@ -3652,6 +3659,8 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 
 返回数组的一个切片，其中包含 `NULL` 元素。
 
+第一个参数也可以是 [QBit](/zh/reference/data-types/qbit)：结果为所选维度上的 QBit (即投影到维度子集) 。在这种情况下，`offset` 和 `length` 必须是常量，因为 QBit 的维度是其类型的一部分，且切片必须至少选择一个维度。与 QBit 的 stride 分组边界对齐的切片会保留 stride，并复用存储的比特平面流，无需复制。
+
 **语法**
 
 ```sql
@@ -3660,7 +3669,7 @@ arraySlice(arr, offset [, length])
 
 **参数**
 
-* `arr` — 要切片的数组。[`Array(T)`](/zh/reference/data-types/array)
+* `arr` — 要切片的数组。[`Array(T)`](/zh/reference/data-types/array) 或 [`QBit`](/zh/reference/data-types/qbit)
 * `offset` — 相对于数组边界的偏移量。正值表示从左侧开始偏移，负值表示从右侧开始偏移。数组元素从 `1` 开始编号。[`(U)Int*`](/zh/reference/data-types/int-uint)
 * `length` — 所需切片的长度。如果指定负值，函数返回一个开区间切片 `[offset, array_length - length]`。如果省略该值，函数返回切片 `[offset, the_end_of_array]`。[`(U)Int*`](/zh/reference/data-types/int-uint)
 
@@ -3677,7 +3686,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
 ```
 
 ```response title=Response
-[2, NULL, 4]
+[2,NULL,4]
 ```
 
 <div id="arraySort">
@@ -3779,7 +3788,7 @@ SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 ```
 
 ```response title=Response
-[[1, 2, 3], [4, 5]]
+[[1,2,3],[4,5]]
 ```
 
 <div id="arraySum">
@@ -3996,7 +4005,7 @@ SELECT arrayTranspose([[1, 2], [3, 4]])
 ```
 
 ```response title=Response
-[[1, 3], [2, 4]]
+[[1,3],[2,4]]
 ```
 
 **非方阵**
@@ -4006,7 +4015,7 @@ SELECT arrayTranspose([[1, 2, 3], [4, 5, 6]])
 ```
 
 ```response title=Response
-[[1, 4], [2, 5], [3, 6]]
+[[1,4],[2,5],[3,6]]
 ```
 
 **String 类型元素**
@@ -4016,7 +4025,7 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 ```
 
 ```response title=Response
-[['a', 'c'], ['b', 'd']]
+[['a','c'],['b','d']]
 ```
 
 <div id="arrayUnion">
@@ -4150,7 +4159,7 @@ SELECT arrayWithConstant(3, 1)
 ```
 
 ```response title=Response
-[1, 1, 1]
+[1,1,1]
 ```
 
 <div id="arrayZip">
@@ -4184,7 +4193,7 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 ```
 
 ```response title=Response
-[('a', 5), ('b', 2), ('c', 1)]
+[('a',5),('b',2),('c',1)]
 ```
 
 <div id="arrayZipUnaligned">
@@ -4218,7 +4227,7 @@ SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
 ```
 
 ```response title=Response
-[('a', 1),(NULL, 2),(NULL, 3)]
+[('a',1),(NULL,2),(NULL,3)]
 ```
 
 <div id="countEqual">
@@ -4648,7 +4657,7 @@ SELECT emptyArrayToSingle(a), emptyArrayToSingle(b), emptyArrayToSingle(c) FROM 
 
 ```response title=Response
 ┌─emptyArrayToSingle(a)─┬─emptyArrayToSingle(b)─┬─emptyArrayToSingle(c)───┐
-│ [0]                   │ ['']                  │ ['1970-01-01 01:00:00'] │
+│ [0]                   │ ['']                  │ ['1970-01-01 00:00:00'] │
 └───────────────────────┴───────────────────────┴─────────────────────────┘
 ```
 
@@ -4938,7 +4947,8 @@ SELECT hasAll([1], ['a'])
 ```
 
 ```response title=Response
-抛出 NO_COMMON_TYPE 异常
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString/Enum and some of them are not. (NO_COMMON_TYPE)
 ```
 
 **嵌套数组**
@@ -5019,7 +5029,8 @@ SELECT hasAny([[1, 2], [3, 4]], ['a', 'c'])
 ```
 
 ```response title=Response
-会引发 `NO_COMMON_TYPE` 异常
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types Array(UInt8), String because some of them are Array and some of them are not. (NO_COMMON_TYPE)
 ```
 
 **嵌套数组**
@@ -5048,7 +5059,7 @@ SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [1, 2]])
 * `NULL` 会作为一个值处理。换句话说，`hasSubstr([1, 2, NULL, 3, 4], [2,3])` 将返回 `0`。但是，`hasSubstr([1, 2, NULL, 3, 4], [2,NULL,3])` 将返回 `1`
 * 两个数组中值的顺序都很重要。
 
-如果两个数组中的任意元素不具有共同超类型，则会引发 `NO_COMMON_TYPE` 异常。
+如果两个数组中的任意元素不具有公共类型，则会引发 `NO_COMMON_TYPE` 异常。
 
 **语法**
 
@@ -5144,7 +5155,8 @@ SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])
 ```
 
 ```response title=Response
-引发 `NO_COMMON_TYPE` 异常
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString/Enum and some of them are not. (NO_COMMON_TYPE)
 ```
 
 <div id="indexOf">
@@ -5254,8 +5266,8 @@ Introduced in：v1.1.0
 * 对于 QBit 参数：计算向量的维度。
 * 如果应用于 FixedString 或 QBit 参数，该函数是一个常量表达式。
 
-请注意，字符串中的字节数不等于 Unicode“码点”的数量，也不等于 Unicode“字素簇”的数量
-(也就是我们通常所说的“字符”) ，也不等于字符串的可见宽度。
+请注意，字符串中的字节数不等于 Unicode &quot;码点&quot;的数量，也不等于 Unicode &quot;字素簇&quot;的数量
+(也就是我们通常所说的&quot;字符&quot;) ，也不等于字符串的可见宽度。
 
 字符串中可以包含 ASCII NULL 字节，这些字节也会被计入。
 
@@ -5344,9 +5356,9 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 ```
 
 ```response title=Response
-┌─str─┬─length(str)──┬─lengthUTF8(str)─┐
-│ ábc │            4 │               3 │
-└─────┴──────────────┴─────────────────┘
+┌─str─┬─length(str)─┬─lengthUTF8(str)─┐
+│ ábc │           4 │               3 │
+└─────┴─────────────┴─────────────────┘
 ```
 
 <div id="notEmpty">
@@ -5637,9 +5649,9 @@ SELECT replicate(1, ['a', 'b', 'c']);
 ```
 
 ```response title=Response
-┌─replicate(1, ['a', 'b', 'c'])───┐
-│ [1, 1, 1]                       │
-└─────────────────────────────────┘
+┌─replicate(1, ['a', 'b', 'c'])─┐
+│ [1,1,1]                       │
+└───────────────────────────────┘
 ```
 
 <div id="reverse">
@@ -5673,7 +5685,7 @@ SELECT reverse([1, 2, 3, 4]);
 ```
 
 ```response title=Response
-[4, 3, 2, 1]
+[4,3,2,1]
 ```
 
 **字符串反转**
@@ -5683,7 +5695,7 @@ SELECT reverse('abcd');
 ```
 
 ```response title=Response
-'dcba'
+dcba
 ```
 
 {/*AUTOGENERATED_END*/}

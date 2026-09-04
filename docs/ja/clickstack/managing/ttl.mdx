@@ -50,7 +50,7 @@ ClickHouse のパーティション化では、カラムまたは SQL 式に基�
 
 有効期限 (TTL) を変更するには、次のいずれかの方法を使用します。
 
-1. **テーブルのスキーマを変更する (推奨)&#x20;**。この方法では、たとえば [clickhouse-client](/ja/concepts/features/interfaces/cli) または [Cloud SQL Console](/ja/products/cloud/features/sql-console-features/sql-console) を使って ClickHouse インスタンスに接続する必要があります。たとえば、次の DDL を使用して `otel_logs` テーブルの 有効期限 (TTL) を変更できます。
+1. **テーブルのスキーマを変更する (推奨)&#x20;**。この方法では、たとえば [clickhouse-client](/ja/concepts/features/interfaces/client) または [Cloud SQL Console](/ja/products/cloud/features/sql-console-features/sql-console) を使って ClickHouse インスタンスに接続する必要があります。たとえば、次の DDL を使用して `otel_logs` テーブルの 有効期限 (TTL) を変更できます。
 
 ```sql
 ALTER TABLE default.otel_logs

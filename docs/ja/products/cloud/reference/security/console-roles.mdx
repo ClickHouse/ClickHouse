@@ -43,6 +43,7 @@ ClickHouse には、ユーザー管理用の組織レベルのロールが 4 つ
 </div>
 
 SQL コンソールのロールの割り当て方法については、[SQL コンソールのロール割り当ての管理](/ja/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)を参照してください。
+個別の SQL コンソールユーザーのデータベース権限をカスタマイズするには、[SQL コンソールのユーザーとロール](/ja/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles)を参照してください。
 
 | Role                  | Description                                   |
 | --------------------- | --------------------------------------------- |
@@ -57,7 +58,7 @@ SQL コンソールのロールの割り当て方法については、[SQL コ�
 
 | Permission                                                                                                                         | Description                                                                                                                        |
 | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| **組織** ([詳細情報](/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users))                              | 組織レベルの権限                                                                                                                           |
+| **組織** ([詳細情報](/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users))                                        | 組織レベルの権限                                                                                                                           |
 | control-plane:organization:view                                                                                                    | 組織の詳細と読み取り専用のメタデータを表示します。                                                                                                          |
 | control-plane:organization:manage                                                                                                  | 組織設定とユーザーを管理します。                                                                                                                   |
 | control-plane:organization:create-service                                                                                          | 組織内に新しいサービスを作成します。                                                                                                                 |
@@ -80,7 +81,7 @@ SQL コンソールのロールの割り当て方法については、[SQL コ�
 | control-plane:service:manage-backups                                                                                               | サービスのバックアップを作成、管理、復元します。                                                                                                           |
 | **IP access list** ([詳細情報](/ja/products/cloud/guides/security/connectivity/setting-ip-filters))                                       | IP Access List とネットワークフィルタリングの管理                                                                                                   |
 | control-plane:service:manage-ip-access-list                                                                                        | サービスの IP Access List とネットワークフィルタリングを管理します。                                                                                         |
-| **Generative AI** ([詳細情報](/ja/products/cloud/features/ai-ml/ask-ai))                                                                  | Generative AI 機能の設定                                                                                                                |
+| **Generative AI** ([詳細情報](/ja/products/cloud/features/ai-ml/aichat/using-ai-chat))                                                    | Generative AI 機能の設定                                                                                                                |
 | control-plane:service:manage-generative-ai                                                                                         | サービスの Generative AI 機能と設定を構成・管理します。                                                                                                |
 | **Query API endpoints** ([詳細情報](/ja/products/cloud/guides/sql-console/query-endpoints))                                               | クエリ API エンドポイント                                                                                                                    |
 | control-plane:service:view-query-api-endpoints                                                                                     | クエリ API エンドポイントとその構成を表示します。                                                                                                        |
