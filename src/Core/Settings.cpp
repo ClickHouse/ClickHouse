@@ -9353,7 +9353,7 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     void dumpToMapColumn(IColumn * column, bool changed_only = true);
 
     /// The changed settings as an owning name -> value-string map (same values as dumpToMapColumn).
-    std::map<String, String> changedToMap() const;
+    FlatStringMap changedToFlatMap() const;
 
     /// Check that there is no user-level settings at the top level in config.
     /// This is a common source of mistake (user don't know where to write user-level setting).
@@ -9455,18 +9455,23 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
     offsets.push_back(offsets.back() + size);
 }
 
-std::map<String, String> SettingsImpl::changedToMap() const
+FlatStringMap SettingsImpl::changedToFlatMap() const
 {
-    std::map<String, String> result;
+    FlatStringMap result;
 
     const auto & accessor = Traits::Accessor::instance();
-    for (size_t i = 0; i < accessor.size(); ++i)
+    const size_t num_settings = accessor.size();
+    for (size_t i = 0; i < num_settings; ++i)
+    {
         if (accessor.isValueChanged(*this, i))
-            result.emplace(accessor.getName(i), accessor.getValueString(*this, i));
+            result.add(accessor.getName(i), accessor.getValueString(*this, i));
+    }
 
     for (const auto & custom : custom_settings_map)
+    {
         if (custom.second.changed)
-            result.emplace(custom.first, custom.second.toString());
+            result.add(custom.first, custom.second.toString());
+    }
 
     return result;
 }
@@ -9810,9 +9815,9 @@ void Settings::dumpToMapColumn(IColumn * column, bool changed_only) const
     impl->dumpToMapColumn(column, changed_only);
 }
 
-std::map<String, String> Settings::changedToMap() const
+FlatStringMap Settings::changedToFlatMap() const
 {
-    return impl->changedToMap();
+    return impl->changedToFlatMap();
 }
 
 void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out)
