@@ -4,6 +4,7 @@
 #if USE_AVRO
 
 #include <filesystem>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <base/types.h>
@@ -13,28 +14,81 @@
 namespace DB
 {
 
+/// RAII handle for the Paimon incremental-read processing lock.
+///
+/// The handle owns the Keeper session that created the lock node instead of
+/// reaching for PaimonStreamState::keeper, which is a mutable member that a
+/// concurrent query may replace with a freshly established session (see
+/// PaimonStreamState::setKeeper).  Without this, a reader whose session died
+/// mid-read would borrow the new session and successfully overwrite another
+/// consumer's watermark or delete another consumer's lock.
+///
+/// Every mutation guarded by the lock must add `addFenceOps` to its transaction.
+/// Together with the pinned session, this makes supported lock-loss paths fail
+/// closed. External deletion or recreation of `processing_lock` is unsupported.
+class PaimonProcessingLock
+{
+public:
+    PaimonProcessingLock(
+        zkutil::ZooKeeperPtr keeper_,
+        std::filesystem::path path_,
+        String token_,
+        Int64 session_id_,
+        Int32 version_);
+
+    ~PaimonProcessingLock();
+
+    PaimonProcessingLock(const PaimonProcessingLock &) = delete;
+    PaimonProcessingLock & operator=(const PaimonProcessingLock &) = delete;
+
+    /// Check the expected lock-node version as additional fail-closed validation.
+    /// Must be added to every transaction that mutates lock-protected state.
+    void addFenceOps(Coordination::Requests & ops) const;
+
+    /// The session that acquired the lock. Lock-protected state must be
+    /// mutated through it, never through PaimonStreamState::keeper.
+    zkutil::ZooKeeper & getKeeper() const { return *keeper; }
+
+    const std::filesystem::path & getPath() const { return path; }
+
+private:
+    zkutil::ZooKeeperPtr keeper;
+    std::filesystem::path path;
+    String token;
+    Int64 session_id;
+    Int32 version;
+};
+
+using PaimonProcessingLockPtr = std::unique_ptr<PaimonProcessingLock>;
+
 /// Manages the incremental read state for Paimon tables using ClickHouse Keeper.
 /// This is similar to how Kafka2 stores offsets in Keeper, but for Paimon snapshot IDs.
 ///
 /// Keeper path structure:
 ///   {keeper_path}/
 ///   ├── committed_snapshot      # Last consumed snapshot ID (advanced at read time)
-///   ├── processing_lock         # Ephemeral lock to prevent concurrent incremental reads
+///   ├── processing_lock         # Ephemeral lock to prevent concurrent incremental reads.
+///   │                           # Its value is an ownership token:
+///   │                           # {replica_name}/{server_uuid}/{keeper_session_id}
 ///   └── replicas/
 ///       └── {replica_name}/
 ///           └── is_active       # Ephemeral node indicating replica is active
 ///
 /// The workflow is:
-/// 1. Read committed_snapshot from Keeper
-/// 2. Find all snapshots > committed_snapshot
-/// 3. Acquire processing_lock (ephemeral). If exists, wait/fail/cleanup stale.
-/// 4. Collect data files and advance committed_snapshot
-/// 5. Release processing_lock (delete or session-expire)
+/// 1. Acquire processing_lock (ephemeral). If it exists, fail: another read is in progress.
+/// 2. Read committed_snapshot from Keeper
+/// 3. Find all snapshots > committed_snapshot
+/// 4. Collect data files and advance committed_snapshot, fenced by the lock
+/// 5. Release processing_lock (only if we still own it)
 /// 6. Return data to the consumer for processing
 ///
 /// Note: committed_snapshot is advanced before data consumption completes
 /// (At-Most-Once). If processing fails after commit, the skipped snapshots
 /// will not be re-read on retry.
+///
+/// Every disagreement between this state and reality fails closed: the watermark
+/// only ever moves forward, only under a lock this server still owns, and only
+/// through the session that took that lock. Nothing here silently repairs state.
 class PaimonStreamState
 {
 public:
@@ -52,17 +106,16 @@ public:
     /// Set new Keeper session
     void setKeeper(zkutil::ZooKeeperPtr keeper_);
 
-    /// Get the last committed snapshot ID, returns -1 if none
+    /// Get the last committed snapshot ID, returns nullopt if none
     std::optional<Int64> getCommittedSnapshotId() const;
 
-    /// Acquire processing lock (ephemeral). Throws on contention.
-    void acquireProcessingLock();
+    /// Acquire the processing lock (ephemeral). Throws on contention.
+    /// The returned handle releases the lock when destroyed.
+    PaimonProcessingLockPtr acquireProcessingLock();
 
-    /// Release processing lock (best-effort).
-    void releaseProcessingLock();
-
-    /// Commit snapshot as successfully processed
-    void setCommittedSnapshot(Int64 snapshot_id);
+    /// Advance the committed watermark, fenced by the processing lock.
+    /// Throws INVALID_STATE if the lock was lost or the watermark would move backwards.
+    void setCommittedSnapshot(const PaimonProcessingLock & lock, Int64 snapshot_id);
 
     /// Initialize Keeper nodes if they don't exist
     void initializeKeeperNodes();
@@ -80,12 +133,6 @@ public:
     const String & getKeeperPath() const { return keeper_path; }
 
 private:
-    /// Remove processing lock if exists (used for cleanup)
-    void removeProcessingLock();
-
-    /// Write a value to Keeper node (create or update)
-    void writeToKeeper(const std::filesystem::path & path, const String & value);
-
     /// Read a value from Keeper node
     std::optional<String> readFromKeeper(const std::filesystem::path & path) const;
 
@@ -116,4 +163,3 @@ using PaimonStreamStatePtr = std::shared_ptr<PaimonStreamState>;
 }
 
 #endif
-

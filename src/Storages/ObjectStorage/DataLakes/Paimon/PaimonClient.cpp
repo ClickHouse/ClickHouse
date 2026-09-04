@@ -62,6 +62,25 @@ extern const int CANNOT_PARSE_NUMBER;
 /// Use the same value as the minimum read buffer size so it is read in one underlying request.
 constexpr size_t PAIMON_HINT_FILE_SIZE = 64;
 
+namespace
+{
+
+Int64 parseSnapshotVersionFromPath(const String & relative_file_path)
+{
+    String file_name(relative_file_path.begin() + relative_file_path.find_last_of('/') + 1, relative_file_path.end());
+    String version_string = file_name.substr(file_name.find(PAIMON_SNAPSHOT_PREFIX) + strlen(PAIMON_SNAPSHOT_PREFIX));
+    Int64 current_version = 0;
+    auto [_, ec] = std::from_chars(version_string.data(), version_string.data() + version_string.size(), current_version);
+    if (ec != std::errc())
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon snapshot file: {} version: {} is invalid.", file_name, version_string);
+    }
+    return current_version;
+}
+
+}
+
 PaimonSnapshot::PaimonSnapshot(const Poco::JSON::Object::Ptr & json_object)
 {
     Paimon::getValueFromJSON(id, json_object, "id");
@@ -256,25 +275,63 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapsho
     std::vector<std::pair<Int64, String>> snapshot_files_with_versions;
     snapshot_files_with_versions.reserve(snapshot_files.size());
 
-    auto parse_version = [](const String & relative_file_path)
-    {
-        String file_name(relative_file_path.begin() + relative_file_path.find_last_of('/') + 1, relative_file_path.end());
-        String version_string = file_name.substr(file_name.find(PAIMON_SNAPSHOT_PREFIX) + strlen(PAIMON_SNAPSHOT_PREFIX));
-        Int64 current_version = 0;
-        auto [_, ec] = std::from_chars(version_string.data(), version_string.data() + version_string.size(), current_version);
-        if (ec != std::errc())
-        {
-            throw Exception(
-                ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon snapshot file: {} version: {} is invalid.", file_name, version_string);
-        }
-        return current_version;
-    };
-
     for (const auto & path : snapshot_files)
     {
-        snapshot_files_with_versions.emplace_back(std::make_pair(parse_version(path), path));
+        snapshot_files_with_versions.emplace_back(std::make_pair(parseSnapshotVersionFromPath(path), path));
     }
     return *std::max_element(snapshot_files_with_versions.begin(), snapshot_files_with_versions.end());
+}
+
+std::optional<Int64> PaimonTableClient::getEarliestSnapshotId()
+{
+    const auto snapshot_dir = std::filesystem::path(table_location) / PAIMON_SNAPSHOT_DIR;
+
+    /// Try the EARLIEST hint first, but only trust it when it agrees with the directory:
+    /// the hint must point at an existing snapshot whose predecessor is already gone.
+    StoredObject earliest_hint_object(snapshot_dir / PAIMON_SNAPSHOT_EARLIEST_HINT);
+    if (object_storage->exists(earliest_hint_object))
+    {
+        auto read_settings = getPaimonMetadataReadSettings(/*disable_filesystem_cache=*/true);
+        read_settings.local_fs_settings.buffer_size
+            = std::max(read_settings.local_fs_settings.buffer_size, PAIMON_HINT_FILE_SIZE);
+        read_settings.remote_fs_settings.buffer_size
+            = std::max(read_settings.remote_fs_settings.buffer_size, PAIMON_HINT_FILE_SIZE);
+
+        auto hint_data = object_storage->readSmallObjectAndGetObjectMetadata(earliest_hint_object, read_settings, PAIMON_HINT_FILE_SIZE);
+        const String & hint_version_string = hint_data.data;
+        Int64 hinted_version = -1;
+        const auto * end = hint_version_string.data() + hint_version_string.size();
+        auto [ptr, ec] = std::from_chars(hint_version_string.data(), end, hinted_version);
+        if (ec != std::errc() || ptr != end || hinted_version <= 0 || hinted_version == std::numeric_limits<Int64>::max())
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon snapshot hint file content: {} is invalid.", hint_version_string);
+        }
+
+        StoredObject hinted_object(snapshot_dir / (PAIMON_SNAPSHOT_PREFIX + std::to_string(hinted_version)));
+        StoredObject previous_object(snapshot_dir / (PAIMON_SNAPSHOT_PREFIX + std::to_string(hinted_version - 1)));
+        if (object_storage->exists(hinted_object) && !object_storage->exists(previous_object))
+            return hinted_version;
+    }
+
+    /// The hint is missing or stale - the snapshot directory is the source of truth.
+    auto snapshot_files = listFiles(
+        *object_storage,
+        table_location,
+        PAIMON_SNAPSHOT_DIR,
+        [](const RelativePathWithMetadata & path_with_metadata)
+        {
+            String relative_path = path_with_metadata.relative_path;
+            String file_name(relative_path.begin() + relative_path.find_last_of('/') + 1, relative_path.end());
+            return file_name.starts_with(PAIMON_SNAPSHOT_PREFIX);
+        });
+    if (snapshot_files.empty())
+        return std::nullopt;
+
+    Int64 earliest = std::numeric_limits<Int64>::max();
+    for (const auto & path : snapshot_files)
+        earliest = std::min(earliest, parseSnapshotVersionFromPath(path));
+    return earliest;
 }
 
 PaimonSnapshot PaimonTableClient::getSnapshot(const std::pair<Int64, String> & snapshot_meta_info)

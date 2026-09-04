@@ -18,6 +18,14 @@ USER_FILES_PATH = f"{CLICKHOUSE_WORKDIR}/user_files"
 CH_TABLE_NAME = "paimon_inc_read"
 CH_TABLE_NAME_WITH_LIMIT = "paimon_inc_read_with_limit"
 CH_TABLE_NAME_AT_MOST_ONCE = "paimon_inc_read_at_most_once"
+CH_TABLE_NAME_SESSION_LOSS = "paimon_inc_read_session_loss"
+CH_TABLE_NAME_MONOTONIC = "paimon_inc_read_monotonic"
+CH_TABLE_NAME_CURSOR_AHEAD = "paimon_inc_read_cursor_ahead"
+CH_TABLE_NAME_TRANSIENT_ERROR = "paimon_inc_read_transient_error"
+CH_TABLE_NAME_CONCURRENT = "paimon_inc_read_concurrent"
+CH_TABLE_NAME_EXPIRED = "paimon_inc_read_expired"
+CH_TABLE_NAME_HOLE = "paimon_inc_read_hole"
+CH_TABLE_NAME_EXPIRED_PREFIX = "paimon_inc_read_expired_prefix"
 CH_MV_PAIMON_TABLE = "paimon_mv_source"
 CH_MV_MERGETREE_TABLE = "paimon_mv_dest"
 CH_MV_NAME = "paimon_refresh_mv"
@@ -125,6 +133,25 @@ def _clean_warehouse(container_id: str, warehouse_dir: str):
         [f'docker exec {container_id} bash -c "rm -rf {warehouse_dir}"'],
         shell=True,
     )
+
+
+def _warehouse_shell(container_id: str, command: str):
+    run_and_check([f"docker exec {container_id} bash -c '{command}'"], shell=True)
+
+
+def _wait_for_znode(zk, path: str, *, present: bool = True, timeout: float = 60):
+    deadline = time.monotonic() + timeout
+    while (zk.exists(path) is not None) != present:
+        assert time.monotonic() < deadline, (
+            f"znode {path} was still {'absent' if present else 'present'} after {timeout}s"
+        )
+        time.sleep(0.2)
+
+
+def _drain_baseline(count_query: str, warm_up_rows: str):
+    """Consume the warm-up snapshot so the stream starts from a known watermark."""
+    _wait_until_query_result(count_query, warm_up_rows, database="default")
+    _wait_until_query_result(count_query, "0\n", database="default")
 
 
 def test_paimon_incremental_read_via_paimon_table_engine(started_cluster):
@@ -334,6 +361,586 @@ def test_paimon_incremental_read_at_most_once_on_crash(started_cluster):
     assert node.query(f"SELECT count() FROM paimonLocal('{table_path}')") == "11\n"
 
     node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_AT_MOST_ONCE} SYNC;")
+
+
+def test_paimon_incremental_read_session_loss_fails_loudly(started_cluster):
+    """A read cannot borrow the replacement Keeper session after losing its own.
+
+    Reader A is parked after collecting snapshot 2 but before committing its watermark.
+    `SYSTEM RECONNECT ZOOKEEPER` then closes the session that owns A's processing lock.
+    Reader B establishes a new session, consumes snapshot 2 and advances the watermark.
+    When A resumes, it must fail without delivering the same snapshot again or changing
+    B's watermark. This directly reproduces the session-replacement race fixed by the
+    session-pinned `PaimonProcessingLock`."""
+    writer_container_id = cluster.get_instance_docker_id("paimon-incremental-writer")
+
+    warehouse_name = "warehouse_session_loss"
+    warehouse_uri = f"file://{USER_FILES_PATH}/{warehouse_name}/"
+    warehouse_dir = f"{USER_FILES_PATH}/{warehouse_name}"
+    table_path = f"{warehouse_dir}/test.db/test_table"
+    keeper_path = f"/clickhouse/paimon_session_loss_{uuid.uuid4().hex}"
+
+    _clean_warehouse(writer_container_id, warehouse_dir)
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=0, rows_per_commit=1, commit_times=1)
+    _create_clickhouse_table_for_paimon_incremental_read(
+        CH_TABLE_NAME_SESSION_LOSS, table_path, keeper_path=keeper_path
+    )
+    count_query = f"SELECT count() FROM {CH_TABLE_NAME_SESSION_LOSS}"
+    _drain_baseline(count_query, "1\n")
+
+    node.query(
+        "SYSTEM ENABLE FAILPOINT paimon_incremental_read_pause_before_watermark_commit"
+    )
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=1, rows_per_commit=10, commit_times=1)
+
+    reader_result = {}
+    reader = threading.Thread(
+        target=lambda: reader_result.update(
+            zip(("out", "err"), node.query_and_get_answer_with_error(count_query))
+        )
+    )
+    reader.start()
+
+    zk = cluster.get_kazoo_client("zoo1")
+    try:
+        lock_path = f"{keeper_path}/processing_lock"
+        node.query(
+            "SYSTEM WAIT FAILPOINT "
+            "paimon_incremental_read_pause_before_watermark_commit PAUSE",
+            timeout=60,
+        )
+        assert reader.is_alive(), (
+            f"reader A returned before its Keeper session was replaced: {reader_result!r}"
+        )
+        _wait_for_znode(zk, lock_path, present=True)
+
+        old_session_id = int(
+            node.query(
+                "SELECT client_id FROM system.zookeeper_connection WHERE name = 'default'"
+            ).strip()
+        )
+
+        # Close the real session that A acquired the lock with. Keeper removes its
+        # ephemeral lock; B must establish a new session through the normal read path.
+        node.query("SYSTEM RECONNECT ZOOKEEPER")
+        _wait_for_znode(zk, lock_path, present=False)
+
+        competing_out, competing_error = node.query_and_get_answer_with_error(count_query)
+        assert not competing_error, f"reader B failed after reconnect: {competing_error!r}"
+        assert competing_out == "10\n", (
+            f"reader B did not consume snapshot 2: {competing_out!r}"
+        )
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"2"
+
+        new_session_id = int(
+            node.query(
+                "SELECT client_id FROM system.zookeeper_connection WHERE name = 'default'"
+            ).strip()
+        )
+        assert new_session_id != old_session_id, (
+            "`SYSTEM RECONNECT ZOOKEEPER` did not replace the Keeper session"
+        )
+
+        node.query(
+            "SYSTEM DISABLE FAILPOINT paimon_incremental_read_pause_before_watermark_commit"
+        )
+        reader.join(timeout=120)
+        assert not reader.is_alive(), "the reader thread never finished"
+
+        assert reader_result.get("err"), (
+            f"reader A succeeded through reader B's Keeper session: {reader_result!r}"
+        )
+        assert reader_result.get("out") != "10\n", (
+            f"reader A delivered snapshot 2 after losing its session: {reader_result!r}"
+        )
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"2", (
+            "reader A changed the watermark committed by reader B"
+        )
+    finally:
+        node.query(
+            "SYSTEM DISABLE FAILPOINT paimon_incremental_read_pause_before_watermark_commit"
+        )
+        zk.stop()
+        reader.join(timeout=60)
+
+    node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_SESSION_LOSS} SYNC;")
+
+
+def test_paimon_incremental_read_watermark_is_monotonic(started_cluster):
+    """The watermark must never move backwards.
+
+    A read is parked before its commit while the watermark is advanced underneath it,
+    so its own commit would move the cursor back and re-deliver snapshots that were
+    already acknowledged. It must fail instead.
+
+    The read holds `processing_lock` at that point, so a competing consumer cannot be
+    what moves the cursor - it could not acquire the lock. What reaches the cursor
+    anyway is the documented operator recovery, `set '<paimon_keeper_path>/committed_snapshot'`,
+    which is a plain Keeper write and does not consult the lock. This check is the only
+    thing standing between that and a silently rewound cursor."""
+    writer_container_id = cluster.get_instance_docker_id("paimon-incremental-writer")
+
+    warehouse_name = "warehouse_monotonic"
+    warehouse_uri = f"file://{USER_FILES_PATH}/{warehouse_name}/"
+    warehouse_dir = f"{USER_FILES_PATH}/{warehouse_name}"
+    table_path = f"{warehouse_dir}/test.db/test_table"
+    keeper_path = f"/clickhouse/paimon_monotonic_{uuid.uuid4().hex}"
+
+    _clean_warehouse(writer_container_id, warehouse_dir)
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=0, rows_per_commit=1, commit_times=1)
+    _create_clickhouse_table_for_paimon_incremental_read(
+        CH_TABLE_NAME_MONOTONIC, table_path, keeper_path=keeper_path
+    )
+    count_query = f"SELECT count() FROM {CH_TABLE_NAME_MONOTONIC}"
+    _drain_baseline(count_query, "1\n")
+
+    node.query(
+        "SYSTEM ENABLE FAILPOINT paimon_incremental_read_pause_before_watermark_commit"
+    )
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=1, rows_per_commit=10, commit_times=1)
+
+    reader_result = {}
+    reader = threading.Thread(
+        target=lambda: reader_result.update(
+            zip(("out", "err"), node.query_and_get_answer_with_error(count_query))
+        )
+    )
+    reader.start()
+
+    zk = cluster.get_kazoo_client("zoo1")
+    try:
+        _wait_for_znode(zk, f"{keeper_path}/processing_lock", present=True)
+        assert reader.is_alive(), (
+            f"the reader returned before the watermark was moved: {reader_result!r}"
+        )
+        # An operator resets the cursor forward while this read is in flight.
+        zk.set(f"{keeper_path}/committed_snapshot", b"2")
+
+        node.query(
+            "SYSTEM DISABLE FAILPOINT paimon_incremental_read_pause_before_watermark_commit"
+        )
+        reader.join(timeout=120)
+        assert not reader.is_alive(), "the reader thread never finished"
+
+        assert "INVALID_STATE" in reader_result.get("err", ""), (
+            f"the watermark was allowed to move backwards: {reader_result!r}"
+        )
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"2"
+    finally:
+        node.query(
+            "SYSTEM DISABLE FAILPOINT paimon_incremental_read_pause_before_watermark_commit"
+        )
+        zk.stop()
+        reader.join(timeout=60)
+
+    node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_MONOTONIC} SYNC;")
+
+
+def test_paimon_incremental_read_cursor_ahead_of_warehouse(started_cluster):
+    """A cursor left ahead of the warehouse must fail, not report "no new data".
+
+    The warehouse is rewound below the committed watermark. Reporting an empty
+    result here (which a plain `committed >= latest` comparison does) silently and
+    permanently drops every later commit at an id below the stale watermark."""
+    writer_container_id = cluster.get_instance_docker_id("paimon-incremental-writer")
+
+    warehouse_name = "warehouse_cursor_ahead"
+    warehouse_uri = f"file://{USER_FILES_PATH}/{warehouse_name}/"
+    warehouse_dir = f"{USER_FILES_PATH}/{warehouse_name}"
+    table_path = f"{warehouse_dir}/test.db/test_table"
+    keeper_path = f"/clickhouse/paimon_cursor_ahead_{uuid.uuid4().hex}"
+
+    _clean_warehouse(writer_container_id, warehouse_dir)
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=0, rows_per_commit=1, commit_times=1)
+    _create_clickhouse_table_for_paimon_incremental_read(
+        CH_TABLE_NAME_CURSOR_AHEAD, table_path, keeper_path=keeper_path
+    )
+    count_query = f"SELECT count() FROM {CH_TABLE_NAME_CURSOR_AHEAD}"
+    _drain_baseline(count_query, "1\n")
+
+    # Snapshots 2 and 3, both consumed: the watermark reaches 3.
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=1, rows_per_commit=10, commit_times=2)
+    _wait_until_query_result(count_query, "20\n", database="default")
+
+    zk = cluster.get_kazoo_client("zoo1")
+    try:
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"3"
+
+        # Drop the top of the snapshot range so it ends below the cursor. No Paimon
+        # operation produces this: expiration removes a prefix, and rollback lowers the
+        # LATEST hint before deleting anything (RollbackHelper.cleanSnapshots), so a
+        # rollback that died mid-way leaves LATEST too low, never too high. Getting the
+        # cursor ahead of the warehouse is out-of-band by nature anyway - no Paimon
+        # operation knows the Keeper cursor exists - so the state is built by hand.
+        #
+        # LATEST is deliberately left at 3 rather than lowered with the deletion, which
+        # makes this a torn state on purpose: getLatestTableSnapshotInfo has to notice the
+        # hint is stale and fall back to listing instead of trusting it.
+        _warehouse_shell(
+            writer_container_id,
+            f"rm -f {table_path}/snapshot/snapshot-2 {table_path}/snapshot/snapshot-3",
+        )
+
+        deadline = time.monotonic() + 60
+        error = ""
+        while time.monotonic() < deadline:
+            error = node.query_and_get_answer_with_error(count_query)[1]
+            if error:
+                break
+            time.sleep(0.5)
+
+        assert "INVALID_STATE" in error, (
+            f"a cursor ahead of the warehouse was silently reported as no new data: {error!r}"
+        )
+        assert "clickhouse-keeper-client" in error, (
+            f"the error does not tell the operator how to recover: {error!r}"
+        )
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"3", (
+            "the failing read modified the cursor"
+        )
+
+        # The documented recovery: point the cursor at the warehouse's current head.
+        zk.set(f"{keeper_path}/committed_snapshot", b"1")
+        _wait_until_query_result(count_query, "0\n", database="default")
+    finally:
+        zk.stop()
+
+    node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_CURSOR_AHEAD} SYNC;")
+
+
+def test_paimon_incremental_read_transient_error_does_not_burn_snapshot(started_cluster):
+    """A snapshot that fails to load must not be mistaken for an expired one.
+
+    Only snapshots below the warehouse's earliest id are legitimately gone. Any
+    other failure is real: advancing the watermark past it would drop a committed
+    snapshot permanently, so the read must fail and stay retryable."""
+    writer_container_id = cluster.get_instance_docker_id("paimon-incremental-writer")
+
+    warehouse_name = "warehouse_transient"
+    warehouse_uri = f"file://{USER_FILES_PATH}/{warehouse_name}/"
+    warehouse_dir = f"{USER_FILES_PATH}/{warehouse_name}"
+    table_path = f"{warehouse_dir}/test.db/test_table"
+    keeper_path = f"/clickhouse/paimon_transient_{uuid.uuid4().hex}"
+
+    _clean_warehouse(writer_container_id, warehouse_dir)
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=0, rows_per_commit=1, commit_times=1)
+    _create_clickhouse_table_for_paimon_incremental_read(
+        CH_TABLE_NAME_TRANSIENT_ERROR, table_path, keeper_path=keeper_path
+    )
+    count_query = f"SELECT count() FROM {CH_TABLE_NAME_TRANSIENT_ERROR}"
+    _drain_baseline(count_query, "1\n")
+
+    # Snapshots 2 and 3 are pending. Snapshot 2 is corrupted while 3 stays intact, so the
+    # failure happens inside the incremental scan rather than while resolving the latest
+    # snapshot. Snapshot 1 is still present, so 2 is above the warehouse's earliest id and
+    # cannot have been expired.
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=1, rows_per_commit=10, commit_times=2)
+    snapshot_file = f"{table_path}/snapshot/snapshot-2"
+    _warehouse_shell(writer_container_id, f"cp {snapshot_file} {snapshot_file}.bak")
+    _warehouse_shell(writer_container_id, f"echo not-json > {snapshot_file}")
+
+    zk = cluster.get_kazoo_client("zoo1")
+    try:
+        deadline = time.monotonic() + 60
+        error = ""
+        while time.monotonic() < deadline:
+            error = node.query_and_get_answer_with_error(count_query)[1]
+            if error:
+                break
+            time.sleep(0.5)
+
+        assert error, "an unreadable snapshot was silently skipped"
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"1", (
+            "the watermark advanced past a snapshot that could not be read"
+        )
+        # The raw backend error alone does not say which table stalled or how to move on.
+        assert "snapshot 2" in error, (
+            f"the error does not name the snapshot that could not be read: {error!r}"
+        )
+        assert "clickhouse-keeper-client" in error, (
+            f"the error does not tell the operator how to abandon the snapshot: {error!r}"
+        )
+
+        # The snapshot becomes readable again: nothing was lost.
+        _warehouse_shell(writer_container_id, f"mv {snapshot_file}.bak {snapshot_file}")
+        _wait_until_query_result(count_query, "20\n", database="default", retries=120)
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"3"
+    finally:
+        zk.stop()
+
+    node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_TRANSIENT_ERROR} SYNC;")
+
+
+def test_paimon_incremental_read_concurrent_reader_is_not_a_rewind(started_cluster):
+    """Another consumer getting ahead of us is not a rewound warehouse.
+
+    A read pins its snapshot state during analysis but reads the watermark at
+    execution time, under the processing lock. A second consumer sharing the cursor
+    can complete a whole poll in that gap and leave the watermark above the pinned
+    state without anything being rolled back. Reporting that as a rewind would be a
+    false alarm, and the recovery command in that error would rewind the cursor to
+    the stale pinned id and re-deliver snapshots the other consumer already sent."""
+    writer_container_id = cluster.get_instance_docker_id("paimon-incremental-writer")
+
+    warehouse_name = "warehouse_concurrent"
+    warehouse_uri = f"file://{USER_FILES_PATH}/{warehouse_name}/"
+    warehouse_dir = f"{USER_FILES_PATH}/{warehouse_name}"
+    table_path = f"{warehouse_dir}/test.db/test_table"
+    keeper_path = f"/clickhouse/paimon_concurrent_{uuid.uuid4().hex}"
+
+    _clean_warehouse(writer_container_id, warehouse_dir)
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=0, rows_per_commit=1, commit_times=1)
+    _create_clickhouse_table_for_paimon_incremental_read(
+        CH_TABLE_NAME_CONCURRENT, table_path, keeper_path=keeper_path
+    )
+    count_query = f"SELECT count() FROM {CH_TABLE_NAME_CONCURRENT}"
+    _drain_baseline(count_query, "1\n")
+
+    # Snapshot 2 exists, so the parked reader below pins snapshot 2.
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=1, rows_per_commit=10, commit_times=1)
+
+    # The failpoint pauses once, so only this reader parks - the competing poll below
+    # runs straight through.
+    node.query(
+        "SYSTEM ENABLE FAILPOINT paimon_incremental_read_pause_before_processing_lock"
+    )
+    parked_result = {}
+    parked = threading.Thread(
+        target=lambda: parked_result.update(
+            zip(("out", "err"), node.query_and_get_answer_with_error(count_query))
+        )
+    )
+    parked.start()
+
+    zk = cluster.get_kazoo_client("zoo1")
+    try:
+        # Wait until the reader has actually reached the failpoint rather than guessing.
+        # The warehouse name makes this match specific to this test, so it cannot be
+        # satisfied by a line another test left in the shared server log.
+        node.wait_for_log_line(
+            f"Paimon incremental read of '.*{warehouse_name}.*' pinned snapshot_id=2",
+            timeout=60,
+        )
+        assert parked.is_alive(), (
+            f"the reader returned before the competing poll ran: {parked_result!r}"
+        )
+
+        # Snapshot 3 lands and another consumer drains 2..3 while the first reader is
+        # parked with snapshot 2 pinned.
+        _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=11, rows_per_commit=10, commit_times=1)
+        zk.set(f"{keeper_path}/committed_snapshot", b"3")
+
+        node.query(
+            "SYSTEM DISABLE FAILPOINT paimon_incremental_read_pause_before_processing_lock"
+        )
+        parked.join(timeout=120)
+        assert not parked.is_alive(), "the reader thread never finished"
+
+        # Watermark 3 > pinned snapshot 2, but the warehouse head is also 3: nothing was
+        # rewound, so this is simply no new data.
+        assert not parked_result.get("err"), (
+            f"a concurrent reader's progress was reported as a rewound warehouse: {parked_result!r}"
+        )
+        assert parked_result.get("out") == "0\n", (
+            f"expected no new data, got {parked_result!r}"
+        )
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"3", (
+            "the cursor was moved by a read that had nothing to do"
+        )
+    finally:
+        node.query(
+            "SYSTEM DISABLE FAILPOINT paimon_incremental_read_pause_before_processing_lock"
+        )
+        zk.stop()
+        parked.join(timeout=60)
+
+    node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_CONCURRENT} SYNC;")
+
+
+def test_paimon_incremental_read_expired_snapshot_is_skipped(started_cluster):
+    """Snapshots Paimon expired must still be skipped, under every EARLIEST hint state.
+
+    This is the other half of the "unreadable snapshot fails the read" rule: only ids
+    below the warehouse's earliest snapshot may be skipped, so if resolving `earliest`
+    stops working, a table that merely expired old snapshots would stall forever. The
+    three phases below re-run the same scan with the hint absent, valid, and stale."""
+    writer_container_id = cluster.get_instance_docker_id("paimon-incremental-writer")
+
+    warehouse_name = "warehouse_expired"
+    warehouse_uri = f"file://{USER_FILES_PATH}/{warehouse_name}/"
+    warehouse_dir = f"{USER_FILES_PATH}/{warehouse_name}"
+    table_path = f"{warehouse_dir}/test.db/test_table"
+    snapshot_dir = f"{table_path}/snapshot"
+    keeper_path = f"/clickhouse/paimon_expired_{uuid.uuid4().hex}"
+
+    _clean_warehouse(writer_container_id, warehouse_dir)
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=0, rows_per_commit=1, commit_times=1)
+    _create_clickhouse_table_for_paimon_incremental_read(
+        CH_TABLE_NAME_EXPIRED, table_path, keeper_path=keeper_path
+    )
+    count_query = f"SELECT count() FROM {CH_TABLE_NAME_EXPIRED}"
+    _drain_baseline(count_query, "1\n")
+
+    # Snapshots 2, 3 and 4, then delete ids 1..2 the way Paimon expiration does - it always
+    # expires starting at the earliest id, so what it removes is a prefix. Snapshot 2 is now
+    # below the earliest surviving id (3) and must be skipped; 3 and 4 must be delivered.
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=1, rows_per_commit=10, commit_times=3)
+    _warehouse_shell(
+        writer_container_id, f"rm -f {snapshot_dir}/snapshot-1 {snapshot_dir}/snapshot-2"
+    )
+
+    zk = cluster.get_kazoo_client("zoo1")
+    try:
+        # Each phase rewinds the cursor and re-runs the identical scan, so any difference in
+        # outcome is attributable to how EARLIEST was resolved.
+        for phase, hint_setup in (
+            # No hint at all: earliest must come from listing the snapshot directory.
+            ("hint absent", f"rm -f {snapshot_dir}/EARLIEST"),
+            # A hint that agrees with the directory: the fast path.
+            # printf, not echo: Paimon hint files hold the bare number, and the parser
+            # rejects trailing bytes - the same way it already does for LATEST.
+            ("hint valid", f"printf 3 > {snapshot_dir}/EARLIEST"),
+            # A hint left behind pointing at an expired snapshot. Trusting it would put
+            # earliest back at 1, which would make snapshot 2 look like a real error.
+            ("hint stale", f"printf 1 > {snapshot_dir}/EARLIEST"),
+        ):
+            _warehouse_shell(writer_container_id, hint_setup)
+            zk.set(f"{keeper_path}/committed_snapshot", b"1")
+
+            out, error = node.query_and_get_answer_with_error(count_query)
+            assert not error, f"[{phase}] an expired snapshot was treated as an error: {error!r}"
+            assert out == "20\n", f"[{phase}] expected snapshots 3 and 4, got {out!r}"
+            assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"4", (
+                f"[{phase}] the watermark did not advance past the expired snapshot"
+            )
+    finally:
+        zk.stop()
+
+    node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_EXPIRED} SYNC;")
+
+
+def test_paimon_incremental_read_expired_prefix_is_skipped_in_one_step(started_cluster):
+    """An expired prefix costs one resolution, not one per missing id.
+
+    This is the shape the skip path exists for: a consumer that fell behind while Paimon
+    expired everything it had not consumed yet. Resolving `earliest` per missing id would
+    make the poll quadratic - a cursor at 1 with only ids 90000..100000 surviving would
+    issue a failed read plus a directory listing ~90000 times, and `max_consume_snapshots`
+    does not bound it because skipped ids never count towards the limit. Nothing below
+    `earliest` exists, so the whole prefix must be settled at once.
+
+    The prefix here is short enough to run quickly; what makes the test meaningful is the
+    log assertion, since walking the prefix would emit one line per missing id."""
+    writer_container_id = cluster.get_instance_docker_id("paimon-incremental-writer")
+
+    warehouse_name = "warehouse_expired_prefix"
+    warehouse_uri = f"file://{USER_FILES_PATH}/{warehouse_name}/"
+    warehouse_dir = f"{USER_FILES_PATH}/{warehouse_name}"
+    table_path = f"{warehouse_dir}/test.db/test_table"
+    snapshot_dir = f"{table_path}/snapshot"
+    keeper_path = f"/clickhouse/paimon_expired_prefix_{uuid.uuid4().hex}"
+
+    _clean_warehouse(writer_container_id, warehouse_dir)
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=0, rows_per_commit=1, commit_times=1)
+    _create_clickhouse_table_for_paimon_incremental_read(
+        CH_TABLE_NAME_EXPIRED_PREFIX, table_path, keeper_path=keeper_path
+    )
+    count_query = f"SELECT count() FROM {CH_TABLE_NAME_EXPIRED_PREFIX}"
+    # Leaves the cursor at snapshot 1.
+    _drain_baseline(count_query, "1\n")
+
+    # Snapshots 2..6, then expire the prefix 1..5 the way Paimon does. The cursor is at 1,
+    # so ids 2, 3, 4 and 5 are all missing and only snapshot 6 survives to be delivered.
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=1, rows_per_commit=10, commit_times=5)
+    _warehouse_shell(
+        writer_container_id,
+        f"rm -f {snapshot_dir}/snapshot-1 {snapshot_dir}/snapshot-2 {snapshot_dir}/snapshot-3 "
+        f"{snapshot_dir}/snapshot-4 {snapshot_dir}/snapshot-5",
+    )
+    _warehouse_shell(writer_container_id, f"printf 6 > {snapshot_dir}/EARLIEST")
+
+    skip_marker = "were expired by Paimon"
+    skips_before = int(node.count_in_log(skip_marker))
+
+    zk = cluster.get_kazoo_client("zoo1")
+    try:
+        out, error = node.query_and_get_answer_with_error(count_query)
+        assert not error, f"the expired prefix was treated as an error: {error!r}"
+        assert out == "10\n", f"expected only snapshot 6, got {out!r}"
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"6", (
+            "the watermark did not advance past the expired prefix"
+        )
+    finally:
+        zk.stop()
+
+    # One line for the whole prefix. Walking it id by id would log four.
+    skips_after = int(node.count_in_log(skip_marker))
+    assert skips_after - skips_before == 1, (
+        f"expected the prefix to be settled in one step, got {skips_after - skips_before} skips"
+    )
+    assert node.grep_in_log("Snapshot ids 2..5 were expired by Paimon"), (
+        "the skip did not cover the whole expired prefix"
+    )
+
+    node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_EXPIRED_PREFIX} SYNC;")
+
+
+def test_paimon_incremental_read_missing_snapshot_is_not_expiration(started_cluster):
+    """A hole in the middle of the snapshot range is not expiration.
+
+    Paimon only deletes snapshots from the ends of the id range, so the surviving ids are
+    always contiguous. A snapshot that is missing while older ones are still present was
+    therefore not expired - something else lost it. Treating every missing file as expired
+    (which is what assuming "removed by compaction" amounts to) would drop it silently."""
+    writer_container_id = cluster.get_instance_docker_id("paimon-incremental-writer")
+
+    warehouse_name = "warehouse_hole"
+    warehouse_uri = f"file://{USER_FILES_PATH}/{warehouse_name}/"
+    warehouse_dir = f"{USER_FILES_PATH}/{warehouse_name}"
+    table_path = f"{warehouse_dir}/test.db/test_table"
+    snapshot_file = f"{table_path}/snapshot/snapshot-3"
+    keeper_path = f"/clickhouse/paimon_hole_{uuid.uuid4().hex}"
+
+    _clean_warehouse(writer_container_id, warehouse_dir)
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=0, rows_per_commit=1, commit_times=1)
+    _create_clickhouse_table_for_paimon_incremental_read(
+        CH_TABLE_NAME_HOLE, table_path, keeper_path=keeper_path
+    )
+    count_query = f"SELECT count() FROM {CH_TABLE_NAME_HOLE}"
+    _drain_baseline(count_query, "1\n")
+
+    # Snapshots 2, 3 and 4. Snapshot 1 stays, so earliest is 1 and the missing snapshot 3
+    # sits above it - it cannot be explained by expiration.
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=1, rows_per_commit=10, commit_times=3)
+    _warehouse_shell(writer_container_id, f"cp {snapshot_file} {snapshot_file}.bak")
+    _warehouse_shell(writer_container_id, f"rm -f {snapshot_file}")
+
+    zk = cluster.get_kazoo_client("zoo1")
+    try:
+        deadline = time.monotonic() + 60
+        error = ""
+        while time.monotonic() < deadline:
+            error = node.query_and_get_answer_with_error(count_query)[1]
+            if error:
+                break
+            time.sleep(0.5)
+
+        assert error, "a missing snapshot above the earliest id was silently skipped"
+        assert "snapshot 3" in error, (
+            f"the error does not name the missing snapshot: {error!r}"
+        )
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"1", (
+            "the watermark advanced past a snapshot that was not expired"
+        )
+
+        # Put it back: nothing was lost, all three snapshots are delivered.
+        _warehouse_shell(writer_container_id, f"mv {snapshot_file}.bak {snapshot_file}")
+        _wait_until_query_result(count_query, "30\n", database="default", retries=120)
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"4"
+    finally:
+        zk.stop()
+
+    node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_HOLE} SYNC;")
 
 
 def test_paimon_to_mergetree_via_refresh_mv(started_cluster):
