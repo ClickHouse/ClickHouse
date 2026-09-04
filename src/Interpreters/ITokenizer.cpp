@@ -323,7 +323,7 @@ SplitByRegexpTokenizer::SplitByRegexpTokenizer(const String & regexp_)
     , regexp_str(regexp_)
     /// `no_capture = true`: only the whole match (group 0) is ever read via `nextRegexpMatch`, so tracking
     /// capture groups would only waste work (a larger `MatchVec` resized on every match).
-    , regexp(std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, true, false>(regexp_)))
+    , regexp(std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp</*is_like*/ false, /*is_similar_to*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(regexp_)))
 {
 }
 

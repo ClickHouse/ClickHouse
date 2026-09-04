@@ -4836,7 +4836,7 @@ static const std::unordered_set<String> lambda_accepting_funcs = []
 
 static const std::vector<std::unordered_set<String>> & swapFuncs
     = { /// String pattern matching operators
-        {"ilike", "like", "match", "notILike", "notLike"},
+        {"ilike", "like", "similarTo", "match", "notILike", "notLike", "notSimilarTo"},
         /// Set membership operators (the shared IN family list)
         std::unordered_set<String>(in_variants.begin(), in_variants.end()),
         /// Null predicate and conversion functions
