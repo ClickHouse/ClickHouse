@@ -20,13 +20,12 @@
 namespace DB::QueryPlanOptimizations
 {
 
-/// The read steps run in the order of the root's conjuncts and each filters the block the next one sees,
-/// so a condition whose value depends on its block would observe a different one than it does alone.
-/// `blockSize` and `rand` have that dependence without being stateful, hence both properties.
-static bool prewhereDependsOnItsBlock(const PrewhereInfo & prewhere_info)
+/// The threshold filter changes a block's rows: inside the PREWHERE each read step filters the block the
+/// next one sees, and a `WHERE` left above the read is handed blocks the read already shrank. `blockSize`
+/// and `rand` have that dependence on their own block without being stateful, hence both properties.
+static bool dependsOnItsBlock(const ActionsDAG & actions)
 {
-    return prewhere_info.prewhere_actions.hasStatefulFunctions()
-        || prewhere_info.prewhere_actions.hasNonDeterministic();
+    return actions.hasStatefulFunctions() || actions.hasNonDeterministic();
 }
 
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
@@ -205,13 +204,14 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
         && (!sort_column_tuple_type || !sort_column_tuple_type->getElements().empty())
         && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types);
 
-    /// A stamped read is kept local by `applyParallelReplicas`, which runs before the threshold filter
-    /// is installed, so a PREWHERE the filter cannot share has to be excluded here as well: stamping
-    /// such a read would cost plan-based parallel replicas and add no filter.
+    /// Decided here rather than where the filter is built: `applyParallelReplicas` keeps a stamped read
+    /// local and runs before that, so stamping a read the filter is then refused on would cost
+    /// plan-based parallel replicas and add no filter.
     if (use_dynamic_filtering)
     {
         const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo();
-        if (prewhere_info && prewhereDependsOnItsBlock(*prewhere_info))
+        if ((prewhere_info && dependsOnItsBlock(prewhere_info->prewhere_actions))
+            || (filter_step && dependsOnItsBlock(filter_step->getExpression())))
             use_dynamic_filtering = false;
     }
 
@@ -313,7 +313,7 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     if (existing_prewhere_info)
     {
         /// A PREWHERE promoted after the read was stamped reaches this point unchecked.
-        if (prewhereDependsOnItsBlock(*existing_prewhere_info))
+        if (dependsOnItsBlock(existing_prewhere_info->prewhere_actions))
             return;
 
         ActionsDAG combined = existing_prewhere_info->prewhere_actions.clone();

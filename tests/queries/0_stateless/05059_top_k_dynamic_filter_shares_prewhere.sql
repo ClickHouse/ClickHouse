@@ -109,6 +109,13 @@ SELECT
     (SELECT groupArray(k) FROM (SELECT k FROM t_topk_blocksize PREWHERE blockSize() > 100 ORDER BY k LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 0)
   = (SELECT groupArray(k) FROM (SELECT k FROM t_topk_blocksize PREWHERE blockSize() > 100 ORDER BY k LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 1);
 
+-- Such a condition is not filtered underneath when it is left above the read either: the threshold shrinks
+-- the blocks the `WHERE` is handed. With an explicit PREWHERE present the `WHERE` stays there, since
+-- `optimize_prewhere_after_pushdown` is off by default. The PREWHERE itself is one the filter does share.
+SELECT
+    (SELECT groupArray(k) FROM (SELECT k FROM t_topk_blocksize PREWHERE k % 10 < 9 WHERE blockSize() > 100 ORDER BY k LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 0)
+  = (SELECT groupArray(k) FROM (SELECT k FROM t_topk_blocksize PREWHERE k % 10 < 9 WHERE blockSize() > 100 ORDER BY k LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 1);
+
 DROP TABLE t_topk_blocksize;
 
 -- A stored column whose name is the name the threshold filter's own column gets must not be taken
