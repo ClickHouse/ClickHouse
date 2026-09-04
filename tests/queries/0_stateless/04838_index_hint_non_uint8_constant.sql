@@ -20,7 +20,10 @@ SELECT 'truthy', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND index
 SELECT 'truthy', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND indexHint(toLowCardinality(toNullable(256)));
 SELECT 'truthy', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND indexHint(256, 512);
 
--- Types with no boolean interpretation contribute no filter (WHERE rejects them outright).
+-- Types with no boolean interpretation contribute no filter (WHERE rejects them outright). The empty
+-- string carries the type default, which is what separates that from a boolean reading: comparing a
+-- default against itself is false and would prune, while contributing no filter leaves every row.
+SELECT 'no boolean', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND indexHint('');
 SELECT 'no boolean', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND indexHint(toUInt256(256));
 SELECT 'no boolean', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND indexHint(toInt128(256));
 SELECT 'no boolean', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND indexHint(toDecimal32(256, 0));
