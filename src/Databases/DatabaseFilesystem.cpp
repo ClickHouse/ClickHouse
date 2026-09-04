@@ -166,11 +166,14 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
         return nullptr;
 
     /// Every reader of a file in one query shares the counter that decides when the rename happens, so
-    /// such a table is memoised for that query, the way `file()` is. The memo keys on the changed
-    /// settings of the resolving context, so a rule the query set is resolved by the query's context.
+    /// such a table is memoised for that query, the way the `file` table function is.
     if (renames_after_processing && context_->hasQueryContext())
     {
         auto query_context = context_->getQueryContext();
+        /// The memo builds the table with the context it is handed and keys on that context's changed
+        /// settings, so the query's context is what makes the references of one query share a table.
+        /// A rule a sub-query set locally is not among the query's settings, so resolving it there
+        /// would build a table that renames by another rule, or does not rename at all.
         const bool rule_is_the_query_setting
             = query_context->getSettingsRef()[Setting::rename_files_after_processing].value
             == context_->getSettingsRef()[Setting::rename_files_after_processing].value;
