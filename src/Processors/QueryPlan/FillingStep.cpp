@@ -17,8 +17,8 @@ namespace ErrorCodes
 /// A generated row defaults every `ORDER BY` key that is neither filled nor part of the filling
 /// sorting prefix. That breaks the order only for a key which some filled key follows: past the last
 /// filled key a comparison never reaches it, because a generated row already differs from its
-/// neighbours on a filled key.
-static bool sortingIsPreserved(const SortDescription & sort_description, bool use_with_fill_by_sorting_prefix)
+/// neighbours on a filled key. The keys ahead of the first such key keep their order.
+static size_t preservedSortPrefixSize(const SortDescription & sort_description, bool use_with_fill_by_sorting_prefix)
 {
     size_t begin = 0;
     if (use_with_fill_by_sorting_prefix)
@@ -32,9 +32,14 @@ static bool sortingIsPreserved(const SortDescription & sort_description, bool us
 
     for (size_t i = begin; i < last_with_fill; ++i)
         if (!sort_description[i].with_fill)
-            return false;
+            return i;
 
-    return true;
+    return sort_description.size();
+}
+
+static bool sortingIsPreserved(const SortDescription & sort_description, bool use_with_fill_by_sorting_prefix)
+{
+    return preservedSortPrefixSize(sort_description, use_with_fill_by_sorting_prefix) == sort_description.size();
 }
 
 static ITransformingStep::Traits getTraits(bool preserves_sorting)
@@ -67,6 +72,18 @@ FillingStep::FillingStep(
     , interpolate_description(interpolate_description_)
     , use_with_fill_by_sorting_prefix(use_with_fill_by_sorting_prefix_)
 {
+}
+
+Names FillingStep::getPreservedSortPrefixColumns() const
+{
+    const size_t size = preservedSortPrefixSize(sort_description, use_with_fill_by_sorting_prefix);
+
+    Names columns;
+    columns.reserve(size);
+    for (size_t i = 0; i < size; ++i)
+        columns.push_back(sort_description[i].column_name);
+
+    return columns;
 }
 
 void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)

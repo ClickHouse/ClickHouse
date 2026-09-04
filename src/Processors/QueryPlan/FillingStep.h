@@ -26,6 +26,9 @@ public:
 
     const SortDescription & getSortDescription() const override { return sort_description; }
 
+    /// The leading `ORDER BY` keys that a generated row cannot default, so the output stays sorted by them.
+    Names getPreservedSortPrefixColumns() const;
+
 private:
     void updateOutputHeader() override;
 

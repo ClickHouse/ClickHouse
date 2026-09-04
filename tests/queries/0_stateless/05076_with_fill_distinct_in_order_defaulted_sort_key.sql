@@ -1,11 +1,12 @@
 -- A generated `WITH FILL` row writes a default value into every `ORDER BY` key that is neither filled nor
--- part of the filling sorting prefix, so the stream stops being ordered by that key and `DISTINCT` in
--- order must not run `DistinctSortedStreamTransform` over it.
--- The labelled line after each result reports (sorted transform chosen, hash transform chosen). C1, C2 and
--- D are sensitivity controls: shapes that do stay ordered must keep the sorted transform, so refusing the
--- optimization for every `WITH FILL` query also fails this test.
+-- part of the filling sorting prefix, so the stream stops being ordered by that key and `DISTINCT` in order
+-- must not group by it. The keys ahead of it stay ordered and must keep driving the optimization.
+-- The labelled line after each result reports (sorted transform chosen, hash transform chosen). C1, C2, D
+-- and F are sensitivity controls: shapes that do stay ordered must keep the sorted transform, so refusing
+-- the optimization for every `WITH FILL` query also fails this test.
 
--- A: two `WITH FILL` keys with a non-fill key between them, so generated rows default `s`.
+-- A: two `WITH FILL` keys with a non-fill key between them, so generated rows default `s`. The order by `i`
+-- survives and still drives the sorted transform; only `s` must be left out of it, which is what A2 detects.
 SELECT DISTINCT * FROM (
     SELECT * FROM values('i Int64, s String, d Int64', (1, 'a', 1), (1, 'a', 5))
     ORDER BY i ASC WITH FILL, s ASC, d ASC WITH FILL
@@ -89,5 +90,21 @@ FROM (EXPLAIN PIPELINE
     SELECT DISTINCT * FROM (
         SELECT * FROM values('i Int64, s String', (1, 'a'), (1, 'b'), (3, 'c'))
         ORDER BY i ASC WITH FILL, s ASC
+    )
+) SETTINGS optimize_distinct_in_order = 1;
+
+-- F: `DISTINCT` on a key ahead of the defaulted one. That key is still ordered, so the sorted transform
+-- must survive: it hashes nothing here, while the hash transform charges `max_bytes_in_distinct`.
+SELECT count() FROM (
+    SELECT DISTINCT i FROM (
+        SELECT number * 2 AS i, 'x' AS s, 1 AS d FROM numbers(1000)
+        ORDER BY i ASC WITH FILL, s ASC, d ASC WITH FILL
+    )
+) SETTINGS optimize_distinct_in_order = 1, max_bytes_in_distinct = 1024;
+SELECT 'F', countIf(explain ILIKE '%DistinctSortedStreamTransform%') > 0, countIf(explain ILIKE '%DistinctTransform%') > 0
+FROM (EXPLAIN PIPELINE
+    SELECT DISTINCT i FROM (
+        SELECT number * 2 AS i, 'x' AS s, 1 AS d FROM numbers(1000)
+        ORDER BY i ASC WITH FILL, s ASC, d ASC WITH FILL
     )
 ) SETTINGS optimize_distinct_in_order = 1;

@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/NegativeLimitByStep.h>
@@ -151,6 +152,15 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
     {
         if (transforming->getDataStreamTraits().preserves_sorting)
             return std::move(*properties);
+
+        /// The trait is all-or-nothing, but filling breaks the order only from the first `ORDER BY` key
+        /// that a generated row defaults, so the keys ahead of it are still sorted.
+        if (const auto * filling_step = typeid_cast<const FillingStep *>(transforming))
+        {
+            auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, filling_step->getPreservedSortPrefixColumns());
+            if (!prefix.empty())
+                return {std::move(prefix), properties->sort_scope};
+        }
     }
 
     if (auto * union_step = typeid_cast<UnionStep *>(parent->step.get()))
