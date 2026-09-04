@@ -5,8 +5,9 @@ SET allow_experimental_time_time64_type = 1;
 SELECT CAST(9999999::Int64, 'Time64') = CAST(3599999::Int64, 'Time64') SETTINGS date_time_overflow_behavior = 'saturate';
 SELECT toInt64(CAST(9999999::Int64, 'Time64')) SETTINGS date_time_overflow_behavior = 'saturate';
 
--- Float64 -> Time64: same issue (it clamped to the much wider DateTime64 range).
-SELECT CAST(9999999.0::Float64, 'Time64') = CAST(3599999.0::Float64, 'Time64') SETTINGS date_time_overflow_behavior = 'saturate';
+-- Float64 -> Time64: same issue (it clamped to the much wider DateTime64 range). A fractional source saturates to
+-- the exact tick boundary `999:59:59.999`, not to the whole second.
+SELECT CAST(9999999.0::Float64, 'Time64') = toTime64('999:59:59.999', 3) SETTINGS date_time_overflow_behavior = 'saturate';
 SELECT toInt64(CAST(9999999.0::Float64, 'Time64')) SETTINGS date_time_overflow_behavior = 'saturate';
 
 -- UInt64 -> Time64: baseline, already clamped correctly.

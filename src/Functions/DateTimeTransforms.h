@@ -81,6 +81,30 @@ inline time_t minWholeSecondsForDateTime64(Int64 scale_multiplier)
     return std::max<Int64>(MIN_DATETIME64_TIMESTAMP, std::numeric_limits<Int64>::min() / scale_multiplier);
 }
 
+/// The exact tick range of a `DateTime64` with the given scale multiplier. Unlike the whole-second bounds above, the
+/// upper bound keeps the fractional tail of the last representable second (`9999-12-31 23:59:59.999...`), unless the
+/// `Int64` runs out first (scale 9). The lower bound is the midnight of `0000-01-01`, which has no fractional tail
+/// below it. Range checks of fractional inputs (floating-point or decimal) must use these, otherwise a representable
+/// value such as `9999-12-31 23:59:59.5` is treated as overflow.
+inline Int64 maxTicksForDateTime64(Int64 scale_multiplier)
+{
+    const Int128 ticks = static_cast<Int128>(MAX_DATETIME64_TIMESTAMP) * scale_multiplier + (scale_multiplier - 1);
+    return static_cast<Int64>(std::min<Int128>(ticks, std::numeric_limits<Int64>::max()));
+}
+
+inline Int64 minTicksForDateTime64(Int64 scale_multiplier)
+{
+    const Int128 ticks = static_cast<Int128>(MIN_DATETIME64_TIMESTAMP) * scale_multiplier;
+    return static_cast<Int64>(std::max<Int128>(ticks, std::numeric_limits<Int64>::min()));
+}
+
+/// `Time64` spans `-999:59:59.999...` to `999:59:59.999...`; the ticks always fit an `Int64` (below 3.6 * 10^15 at
+/// scale 9), so no clipping is needed. The lower bound is the negation of the upper one.
+inline Int64 maxTicksForTime64(Int64 scale_multiplier)
+{
+    return static_cast<Int64>(MAX_TIME_TIMESTAMP) * scale_multiplier + (scale_multiplier - 1);
+}
+
 /// The window of day numbers whose midnight in `time_zone` is representable as a `DateTime64` with the given scale
 /// multiplier, intersected with the `Date32` range. Because of the scale-dependent bounds above, a perfectly valid
 /// `Date32` value such as `9999-12-31` has no scale-9 representation at all, so a `Date32` -> `DateTime64` conversion

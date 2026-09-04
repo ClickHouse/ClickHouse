@@ -686,33 +686,35 @@ ColumnPtr convertNumberToDateTime64OrTime64OrNull(const ColumnsWithTypeAndName &
     auto col_null_map_to = ColumnUInt8::create(input_rows_count, false);
     auto & vec_null_map_to = col_null_map_to->getData();
 
-    const auto scale_multiplier = DecimalUtils::scaleMultiplier<typename ToFieldType::NativeType>(scale);
+    const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<typename ToFieldType::NativeType>(scale);
 
-    Int64 min_whole = 0;
-    Int64 max_whole = 0;
+    /// The exact tick range of the result type, including the fractional tail of the last second (see
+    /// maxTicksForDateTime64 / maxTicksForTime64); for `DateTime64` it is scale-dependent because the ticks are
+    /// stored in an Int64. Integer sources are whole seconds, so for them the check reduces to the whole-second window.
+    Int64 min_ticks = 0;
+    Int64 max_ticks = 0;
     if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
     {
-        /// The bounds are scale-dependent because the ticks are stored in an Int64 (see maxWholeSecondsForDateTime64).
-        min_whole = minWholeSecondsForDateTime64(scale_multiplier);
-        max_whole = maxWholeSecondsForDateTime64(scale_multiplier);
+        min_ticks = minTicksForDateTime64(scale_multiplier);
+        max_ticks = maxTicksForDateTime64(scale_multiplier);
     }
     else
     {
-        max_whole = MAX_TIME_TIMESTAMP;
-        min_whole = -MAX_TIME_TIMESTAMP;
+        max_ticks = maxTicksForTime64(scale_multiplier);
+        min_ticks = -max_ticks;
     }
+    const Int64 min_whole = min_ticks / scale_multiplier;
+    const Int64 max_whole = max_ticks / scale_multiplier;
 
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         const FromFieldType from = vec_from[i];
 
         bool is_out_of_range = false;
+        Int64 ticks = 0;
         if constexpr (is_floating_point<FromFieldType>)
-            /// Compare in the `Float64` domain: it represents every narrower floating-point value and the
-            /// whole-second bounds exactly. A non-finite value is not representable in the result type either.
-            is_out_of_range = !isFinite(from)
-                || static_cast<Float64>(from) < static_cast<Float64>(min_whole)
-                || static_cast<Float64>(from) > static_cast<Float64>(max_whole);
+            /// A non-finite value is not representable in the result type either.
+            is_out_of_range = !isFinite(from) || !floatSecondsToTicks(from, scale_multiplier, min_ticks, max_ticks, ticks);
         else if constexpr (is_signed_v<FromFieldType>)
             is_out_of_range = from < min_whole || from > max_whole;
         else
@@ -724,7 +726,7 @@ ColumnPtr convertNumberToDateTime64OrTime64OrNull(const ColumnsWithTypeAndName &
             vec_null_map_to[i] = true;
         }
         else if constexpr (is_floating_point<FromFieldType>)
-            vec_to[i] = convertToDecimal<FromDataType, ToDataType>(from, scale);
+            vec_to[i] = ToFieldType(ticks);
         else
             vec_to[i] = DecimalUtils::decimalFromComponentsWithMultiplier<ToFieldType>(static_cast<Int64>(from), 0, scale_multiplier);
     }
@@ -761,23 +763,22 @@ ColumnPtr convertDecimalToDateTime64OrTime64Accurate(const ColumnsWithTypeAndNam
 
     const auto scale_multiplier = DecimalUtils::scaleMultiplier<ToNativeType>(scale);
 
-    Int64 min_whole = 0;
-    Int64 max_whole = 0;
+    /// The exact tick range of the result type, including the fractional tail of the last second
+    /// (`9999-12-31 23:59:59.999` for `DateTime64(3)`, `±999:59:59.999` for `Time64(3)`): a whole-second
+    /// envelope would reject those valid values, even when the source already has the result type.
+    ToNativeType min_ticks = 0;
+    ToNativeType max_ticks = 0;
     if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
     {
-        /// The bounds are scale-dependent because the ticks are stored in an Int64 (see maxWholeSecondsForDateTime64).
-        min_whole = minWholeSecondsForDateTime64(scale_multiplier);
-        max_whole = maxWholeSecondsForDateTime64(scale_multiplier);
+        /// Scale-dependent because the ticks are stored in an Int64 (see maxTicksForDateTime64).
+        min_ticks = minTicksForDateTime64(scale_multiplier);
+        max_ticks = maxTicksForDateTime64(scale_multiplier);
     }
     else
     {
-        max_whole = MAX_TIME_TIMESTAMP;
-        min_whole = -MAX_TIME_TIMESTAMP;
+        max_ticks = maxTicksForTime64(scale_multiplier);
+        min_ticks = -max_ticks;
     }
-
-    /// Both products fit an `Int64` by construction of the whole-second bounds above.
-    const ToNativeType min_ticks = static_cast<ToNativeType>(min_whole) * scale_multiplier;
-    const ToNativeType max_ticks = static_cast<ToNativeType>(max_whole) * scale_multiplier;
 
     for (size_t i = 0; i < input_rows_count; ++i)
     {
