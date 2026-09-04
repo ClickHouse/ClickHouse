@@ -1,0 +1,6 @@
+modify direct=0	50000
+modify direct=1	50000
+drop-add direct=0	0
+drop-add direct=1	0
+drop-rename direct=0	50001
+drop-rename direct=1	50001

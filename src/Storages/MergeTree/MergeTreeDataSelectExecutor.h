@@ -314,12 +314,13 @@ public:
         MergeTreeReaderSettings reader_settings,
         LoggerPtr log);
 
-    /// Check if a skip index can be used when there are lightweight updates.
-    /// Returns an error message if the index depends on a column that will be updated on the fly.
+    /// Check if a skip index can be used for a part under pending mutations.
+    /// Returns an error message if the index depends on a column whose part data is stale
+    /// (updated on the fly, dropped, or renamed into by a pending mutation).
     static std::expected<void, PreformattedMessage> canUseIndex(
         const MergeTreeIndexPtr & index,
         const StorageMetadataPtr & metadata_snapshot,
-        const NameSet & all_updated_columns);
+        const AlterConversions & alter_conversions);
 
 
 };
