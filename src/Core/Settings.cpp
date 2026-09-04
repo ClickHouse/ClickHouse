@@ -9629,8 +9629,12 @@ const ResolvedCompatibilityHistory & getResolvedCompatibilityHistory()
                 if (accessor.getTier(index) == SettingsTierType::OBSOLETE)
                     continue;
 
-                resolved_changes.push_back(
-                    {index, &change.previous_value, accessor.getValue(default_settings, index) == change.previous_value});
+                /// `default_settings` holds every setting as it is with nothing changed, which is what
+                /// a setting the walk has not touched yet holds too.
+                const bool previous_value_is_default
+                    = accessor.getValue(default_settings, index) == change.previous_value;
+
+                resolved_changes.push_back({index, &change.previous_value, previous_value_is_default});
             }
             result.emplace_back(version, std::move(resolved_changes));
         }
