@@ -939,6 +939,120 @@ def test_optimize_manifest_files_with_deletes(started_cluster_iceberg_with_spark
     assert spark_ids == list(range(20, 100))
 
 
+@pytest.mark.parametrize("format_version", ["2"])
+def test_optimize_manifest_files_all_deleted(started_cluster_iceberg_with_spark, format_version):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    storage_type = "local"
+    TABLE_NAME = "test_optimize_manifest_all_deleted_v" + format_version + "_" + get_uuid_str()
+
+    # Copy-on-write delete rewrites/removes data files; a predicate matching every row removes all of
+    # them, leaving the current snapshot's DATA manifest with only DELETED entries and no live files.
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES (
+            'format-version' = '{format_version}',
+            'write.delete.mode' = 'copy-on-write'
+        )
+        """
+    )
+
+    # Several inserts so the pre-delete state has more than one data manifest.
+    for lo in range(0, 40, 10):
+        spark.sql(
+            f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range({lo}, {lo + 10})"
+        )
+
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id >= 0")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 0
+
+    # --- Precondition: prove we actually reach the partitions_map.empty() path. ---
+    table_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/"
+    metadata_dir = f"{table_path}metadata"
+
+    # (1) The current snapshot has zero live data files, so `getFilesWithoutDeleted(DATA)` returns
+    # nothing and `partitions_map` is collected empty. system.iceberg_files resolves inheritance and
+    # lists only live (non-deleted) files of the current snapshot.
+    live_data_files = int(
+        instance.query(
+            f"SELECT count() FROM system.iceberg_files "
+            f"WHERE database = currentDatabase() AND table = '{TABLE_NAME}' AND content = 'DATA'"
+        )
+    )
+    assert live_data_files == 0, f"expected zero live data files, got {live_data_files}"
+
+    # (2) The current snapshot's manifest list still references at least one DATA manifest whose
+    # entries are all DELETED. This makes `num_data_manifests` >= 1 (so the cheap pre-check passes and
+    # we reach the guard) while the collected `partitions_map` is empty. Scope to the current snapshot
+    # via its snap-<id>-*.avro manifest list, since older snapshots' manifests hold live entries.
+    current_snapshot_id = get_last_snapshot(table_path)
+    snap_files = (
+        instance.exec_in_container(
+            ["bash", "-c", f"find '{metadata_dir}' -maxdepth 1 -name 'snap-{current_snapshot_id}-*.avro' -type f"]
+        )
+        .strip()
+        .splitlines()
+    )
+    assert len(snap_files) == 1, f"expected one current manifest list, got {snap_files}"
+
+    manifest_paths = (
+        instance.query(f"SELECT manifest_path FROM file('{snap_files[0]}', Avro) FORMAT TSV")
+        .strip()
+        .splitlines()
+    )
+    assert manifest_paths, "current snapshot's manifest list has no manifests"
+
+    live_data_entries = 0
+    deleted_data_entries = 0
+    for manifest_path in manifest_paths:
+        basename = manifest_path.rstrip("/").split("/")[-1]
+        entries = (
+            instance.query(
+                f"SELECT status, tupleElement(data_file, 'content') AS c "
+                f"FROM file('{metadata_dir}/{basename}', Avro) FORMAT TSV"
+            )
+            .strip()
+            .splitlines()
+        )
+        for entry in entries:
+            status, content = entry.split("\t")
+            if int(content) != 0:  # data files only
+                continue
+            if int(status) == 2:  # DELETED
+                deleted_data_entries += 1
+            else:
+                live_data_entries += 1
+
+    assert deleted_data_entries > 0, (
+        "the #111216 shape was not reproduced: current snapshot has no DATA manifest with deleted entries"
+    )
+    assert live_data_entries == 0, f"expected no live data-file entries, found {live_data_entries}"
+
+    # With min_count_to_compact = 0 the cheap pre-check always passes, so compaction reaches the
+    # (previously crashing) rewrite path. It must complete without touching the empty table.
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": 0,
+        },
+    )
+
+    # The server must still be alive and the table still empty and readable.
+    assert int(instance.query("SELECT 1")) == 1
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 0
+
+
 @pytest.mark.parametrize("storage_type", ["s3"])
 def test_optimize_manifest_files_v3_rejected(started_cluster_iceberg_with_spark, storage_type):
     """
