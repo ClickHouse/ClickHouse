@@ -601,6 +601,31 @@ TEST(QueryPlanSerialization, PayloadTailIsSkippedForANewerStepFormat)
     EXPECT_NO_THROW(deserializePlan(writeEnvelopeToString(outline, {payload.str()})));
 }
 
+TEST(QueryPlanOutline, BodyIsAHardReadBoundary)
+{
+    registerStepsOnce();
+
+    /// A head that declares a one-byte body, whose single byte says the outline is one byte long.
+    /// Reading that one outline byte would step past the body into what follows it on the
+    /// connection. The reader must stop at the body's end and leave the trailing bytes untouched.
+    WriteBufferFromOwnString buf;
+    writeVarUInt(UInt64(DBMS_QUERY_PLAN_SERIALIZATION_VERSION), buf);
+    writeVarUInt(UInt64(DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE), buf);
+    writeVarUInt(UInt64(1), buf); /// body_size
+    writeVarUInt(UInt64(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE), buf); /// min_reader
+    writeVarUInt(UInt64(1), buf); /// outline_size, the one and only body byte
+    writeCString("SENTINEL", buf);
+    buf.finalize();
+
+    ReadBufferFromString in(buf.str());
+    EXPECT_THROW(QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0), Exception);
+
+    /// Nothing past the one-byte body was consumed.
+    String rest;
+    readStringUntilEOF(rest, in);
+    EXPECT_EQ(rest, "SENTINEL");
+}
+
 TEST(QueryPlanOutline, WriteReadRoundTrip)
 {
     registerStepsOnce();

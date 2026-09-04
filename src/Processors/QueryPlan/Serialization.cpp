@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 
+#include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -411,22 +412,6 @@ static UInt64 readBodySize(ReadBuffer & in, const ContextPtr & context)
     return body_size;
 }
 
-/// Takes the body off the stream without decoding any of it. The head declares its size for every
-/// format kind, so a plan that will be discarded -- or one this server cannot read -- costs no
-/// allocation and leaves the connection positioned at whatever follows.
-static void skipPlanBody(ReadBuffer & in, UInt64 body_size)
-{
-    try
-    {
-        in.ignore(body_size);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(fmt::format("while skipping a query plan body of {} bytes", body_size));
-        throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN, "Query plan body is truncated: {}", e.message());
-    }
-}
-
 QueryPlanAndSets QueryPlan::deserializeEnvelope(
     ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags,
     size_t max_type_complexity, UInt64 min_reader_plan_version, UInt64 body_size)
@@ -653,22 +638,39 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         UInt64 min_reader_plan_version = 0;
         readVarUInt(min_reader_plan_version, in);
 
+        /// The body is exactly `body_size` bytes and every read of it goes through this buffer, so
+        /// nothing inside the plan can read into the bytes that follow it on the connection, whatever
+        /// a size or a count in the body claims. Draining it to the end leaves the connection
+        /// positioned at whatever comes next, so a plan this server refuses costs the query and not
+        /// the connection.
+        LimitReadBuffer body(in, {.read_no_more = body_size});
+
         /// The plan is only being drained off the connection: no steps are built and no set data
         /// is decoded.
         if (flags.skip_data)
         {
-            skipPlanBody(in, body_size);
+            body.ignoreAll();
             return {};
         }
 
-        /// Every rejection below takes the body off the stream first, so a plan this server cannot
-        /// read costs the query and not the connection.
+        /// Every rejection below drains the body first. A drain that fails means the stream ended
+        /// mid-body, and the error saying why the plan was refused is the useful one to report.
+        auto drain_body = [&]
+        {
+            try
+            {
+                body.ignoreAll();
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+            }
+        };
 
         /// An unknown body layout is refused on the kind alone. Trusting `min_reader` here would put
         /// the whole grammar at the mercy of a future writer computing it correctly.
         if (format_kind != DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE)
         {
-            skipPlanBody(in, body_size);
+            drain_body();
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "The query plan uses body format {} which this server does not know", format_kind);
         }
@@ -676,7 +678,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         const UInt64 supported_version = QueryPlanStepRegistry::instance().supportedVersion();
         if (min_reader_plan_version > supported_version)
         {
-            skipPlanBody(in, body_size);
+            drain_body();
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "The query plan requires serialization version {} while this server supports up to {}",
                 min_reader_plan_version, supported_version);
@@ -686,36 +688,22 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         /// version. A stream saying otherwise is malformed, whatever the two numbers are.
         if (min_reader_plan_version > version)
         {
-            skipPlanBody(in, body_size);
+            drain_body();
             throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
                 "The query plan was written at version {} but says it needs a reader of version {}",
                 version, min_reader_plan_version);
         }
 
-        /// Anything the body reader throws leaves its remaining frames on the stream, so they are
-        /// taken off here: a plan this server cannot read costs the query and not the connection.
-        /// Covers every reason at once -- a refused outline, a step that would not read its
-        /// payload, a set that failed to decode -- rather than the ones a check remembered to.
-        const size_t body_start = in.count();
+        /// Anything the body reader throws leaves its remaining frames on the buffer, so they are
+        /// taken off here. Covers every reason at once -- a refused outline, a step that would not
+        /// read its payload, a set that failed to decode -- rather than the ones a check remembered to.
         try
         {
-            return deserializeEnvelope(in, context, flags, max_type_complexity, min_reader_plan_version, body_size);
+            return deserializeEnvelope(body, context, flags, max_type_complexity, min_reader_plan_version, body_size);
         }
         catch (...)
         {
-            const size_t consumed = in.count() - body_start;
-            if (consumed < body_size)
-            {
-                try
-                {
-                    skipPlanBody(in, body_size - consumed);
-                }
-                catch (...) // NOLINT(bugprone-empty-catch)
-                {
-                    /// Ok to drop: a drain that fails means the stream really did end there, and
-                    /// the error saying why the plan was refused is the useful one to report.
-                }
-            }
+            drain_body();
             throw;
         }
     }
