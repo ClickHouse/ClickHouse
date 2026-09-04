@@ -654,14 +654,19 @@ void S3ObjectStorage::copyObject( // NOLINT
 {
     auto current_client = client.get();
     auto settings_ptr = s3_settings.get();
+    const bool guarded_copy = !write_settings.object_storage_write_if_none_match.empty();
     auto source_info = S3::getObjectInfo(
         *current_client,
         uri.bucket,
         object_from.remote_path,
         /*version_id=*/{},
         /*with_metadata=*/false,
-        /*with_tags=*/!write_settings.object_storage_write_if_none_match.empty()
-            && write_settings.object_storage_copy_preserve_source_tags);
+        /*with_tags=*/false);
+    /// A guarded copy re-uploads the object, so the tags are read explicitly rather than through the
+    /// `HeadObject` tag count, which restricted credentials do not get to see.
+    std::optional<ObjectAttributes> source_tags;
+    if (guarded_copy && write_settings.object_storage_copy_preserve_source_tags)
+        source_tags = S3::getObjectTags(*current_client, uri.bucket, object_from.remote_path);
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
     const auto read_settings_to_use = patchSettings(read_settings);
 
@@ -681,11 +686,9 @@ void S3ObjectStorage::copyObject( // NOLINT
         object_to_attributes,
         S3CopyFileSettings{
             .if_none_match = write_settings.object_storage_write_if_none_match,
-            .source_headers = write_settings.object_storage_write_if_none_match.empty()
-                ? std::optional<S3::ObjectHeaders>{}
-                : std::optional<S3::ObjectHeaders>{source_info.headers},
-            .source_tags = write_settings.object_storage_write_if_none_match.empty() ? std::optional<ObjectAttributes>{}
-                                                                                     : std::optional<ObjectAttributes>{source_info.tags}});
+            .source_headers = guarded_copy ? std::optional<S3::ObjectHeaders>{source_info.headers}
+                                           : std::optional<S3::ObjectHeaders>{},
+            .source_tags = std::move(source_tags)});
 }
 
 void S3ObjectStorage::shutdown()

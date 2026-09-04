@@ -504,7 +504,12 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                             object_from.remote_path,
                             /*version_id=*/{},
                             /*with_metadata=*/true,
-                            /*with_tags=*/!move_if_none_match.empty() && settings.after_processing_move_preserve_tags);
+                            /*with_tags=*/false);
+                        /// A guarded move re-uploads the object, so the tags are read explicitly rather than through
+                        /// the `HeadObject` tag count, which restricted credentials do not get to see.
+                        std::optional<ObjectAttributes> source_tags;
+                        if (!move_if_none_match.empty() && settings.after_processing_move_preserve_tags)
+                            source_tags = S3::getObjectTags(*src_client, src_bucket, object_from.remote_path);
                         const auto provenance = move_if_none_match.empty() ? std::optional<ObjectAttributes>{}
                                                                            : makeMoveProvenance(
                                                                                  source_info.metadata,
@@ -534,8 +539,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                                     .if_none_match = move_if_none_match,
                                     .source_headers = move_if_none_match.empty() ? std::optional<S3::ObjectHeaders>{}
                                                                                  : std::optional<S3::ObjectHeaders>{source_info.headers},
-                                    .source_tags = move_if_none_match.empty() ? std::optional<ObjectAttributes>{}
-                                                                              : std::optional<ObjectAttributes>{source_info.tags}});
+                                    .source_tags = std::move(source_tags)});
                         }
                         catch (const Exception & e)
                         {
