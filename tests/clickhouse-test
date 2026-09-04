@@ -1089,6 +1089,18 @@ def get_transactions_list(args):
 LLDB_TIMEOUT = 30
 LLDB_SLOW_BUILD_TIMEOUT = 120
 
+LLDB_BACKTRACE_MARKER = "(lldb) thread backtrace all"
+
+
+def lldb_backtraces_only(dump: str) -> str:
+    """The part of an lldb --batch dump from the backtraces on.
+
+    Attaching prints a stop summary with frame #0 and disassembly for every
+    thread before lldb echoes the first command.
+    """
+    _, marker, rest = dump.partition(LLDB_BACKTRACE_MARKER)
+    return marker + rest if marker else dump
+
 
 # collect server stacktraces using lldb (used uniformly on Linux and macOS)
 def get_stacktraces_from_lldb(pid, timeout: float = LLDB_TIMEOUT):
@@ -1429,10 +1441,18 @@ def print_c_stacktraces(
             truncated = TRUNCATED_ON_TIMEOUT_MARKER in bt
             block = f"=== PID {pid} ({label}) ===\n{bt}"
             _append_stacktrace_log(C_STACKTRACES_LOG, block)
-            print(trim_for_log(block, 100))
+            backtraces = lldb_backtraces_only(block)
+            print(trim_for_log(backtraces, 100))
+            # The attach summary lists every thread too, so a dump that stopped
+            # before the marker holds thread headers but no backtrace to count.
+            threads = (
+                f" for {len(re.findall(r'^[* ] *thread #', backtraces, re.M))} threads"
+                if LLDB_BACKTRACE_MARKER in block
+                else ""
+            )
             print(
-                f"({'partial' if truncated else 'full'} lldb backtrace saved to "
-                f"{C_STACKTRACES_LOG})"
+                f"({'partial' if truncated else 'full'} lldb backtrace{threads} "
+                f"saved to {C_STACKTRACES_LOG})"
             )
         else:
             print(f"Got suspiciously small stacktraces from {pid}: {bt}")
