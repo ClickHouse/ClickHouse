@@ -87,6 +87,8 @@ def generate_cluster_def(common_path, port, azure_container):
                 <skip_access_check>true</skip_access_check>
                 <account_name>devstoreaccount1</account_name>
                 <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
+                <!-- Placeholder changed by test_azure_disk_client_rebuilt_only_on_change -->
+                <max_tries>10</max_tries>
             </disk_azure_common>
             <disk_s3_with_cache>
                 <type>cache</type>
@@ -120,6 +122,7 @@ def started_cluster():
             SCRIPT_DIR, f"{cluster.instances_dir_name}/node1/database/user_files"
         )
         conf_path = generate_cluster_def(user_files_path + "/", port, "mycontainer")
+        cluster.disks_config_name = os.path.basename(conf_path)
 
         cluster.add_instance(
             "node1",
@@ -458,3 +461,61 @@ def test_cluster_table_function(started_cluster, storage_type, with_cache):
         int(instance.query(f"SELECT count() FROM {table_function_expr_cluster}"))
         == 100 * 3
     )
+
+
+def azure_clients_created(instance):
+    return int(
+        instance.query(
+            "SELECT sum(value) FROM system.events WHERE event = 'AzureClients'"
+        ).strip()
+    )
+
+
+def test_azure_disk_client_rebuilt_only_on_change(started_cluster):
+    # A table on a disk works on a copy of the disk's object storage and applies the disk's
+    # config on every query. The Azure client must be rebuilt only when something it is built
+    # from changes.
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = f"test_azure_disk_client_{get_uuid_str()}"
+
+    write_iceberg_from_df(spark, generate_data(spark, 0, 100), TABLE_NAME)
+    default_upload_directory(
+        started_cluster,
+        "azure",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    storage_path = f"var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    ch_table = f"{TABLE_NAME}_azure"
+    instance.query(
+        f"CREATE TABLE {ch_table} ENGINE=Iceberg('{storage_path}', 'Parquet') SETTINGS disk = 'disk_azure_common'"
+    )
+    assert instance.query(f"SELECT count() FROM {ch_table}").strip() == "100"
+
+    # Repeated queries must not rebuild the client.
+    before = azure_clients_created(instance)
+    for _ in range(3):
+        assert instance.query(f"SELECT count() FROM {ch_table}").strip() == "100"
+    assert azure_clients_created(instance) == before
+
+    config_path = (
+        f"/etc/clickhouse-server/config.d/{started_cluster.disks_config_name}"
+    )
+    try:
+        # An SDK retry option the client is built from: exactly one rebuild on the next
+        # query, then none.
+        instance.replace_in_config(config_path, "<max_tries>10<", "<max_tries>11<")
+        instance.query("SYSTEM RELOAD CONFIG")
+        before = azure_clients_created(instance)
+        assert instance.query(f"SELECT count() FROM {ch_table}").strip() == "100"
+        assert azure_clients_created(instance) == before + 1
+        for _ in range(3):
+            assert instance.query(f"SELECT count() FROM {ch_table}").strip() == "100"
+        assert azure_clients_created(instance) == before + 1
+    finally:
+        instance.replace_in_config(config_path, "<max_tries>11<", "<max_tries>10<")
+        instance.query("SYSTEM RELOAD CONFIG")
+
+    instance.query(f"DROP TABLE {ch_table} SYNC")

@@ -150,7 +150,7 @@ ObjectStoragePtr AzureObjectStorage::cloneImpl() const
 {
     /// `ContainerClient` is a thin copyable wrapper around the Azure SDK client, so the copy
     /// can later replace its client without affecting this storage.
-    return std::make_shared<AzureObjectStorage>(
+    auto copy = std::make_shared<AzureObjectStorage>(
         name,
         auth_method,
         std::make_unique<AzureBlobStorage::ContainerClient>(*client.get()),
@@ -159,6 +159,12 @@ ObjectStoragePtr AzureObjectStorage::cloneImpl() const
         object_namespace,
         description,
         common_key_prefix);
+
+    std::lock_guard lock(client_inputs_mutex);
+    /// The copy is not shared with anyone yet; its mutex is taken to satisfy the thread safety analysis.
+    std::lock_guard copy_lock(copy->client_inputs_mutex);
+    copy->client_inputs = client_inputs;
+    return copy;
 }
 
 ObjectStorageKeyGeneratorPtr AzureObjectStorage::createKeyGenerator() const
@@ -672,20 +678,38 @@ void AzureObjectStorage::applyNewSettings(
     const ApplyNewSettingsOptions & options)
 {
     auto new_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
+    ClientInputs new_inputs{
+        .sdk_max_retries = new_settings->sdk_max_retries,
+        .sdk_retry_initial_backoff_ms = new_settings->sdk_retry_initial_backoff_ms,
+        .sdk_retry_max_backoff_ms = new_settings->sdk_retry_max_backoff_ms,
+    };
     settings.set(std::move(new_settings));
 
     if (!options.allow_client_change)
         return;
 
+    new_inputs.endpoint = AzureBlobStorage::processEndpoint(config, config_prefix);
+    new_inputs.auth_config = AzureBlobStorage::readAuthConfig(config, config_prefix);
+
+    /// This method may run on every query of a table working on a copy of a disk's object storage (see
+    /// `StorageObjectStorageConfiguration::update`), so the client is rebuilt only when something it is built
+    /// from changed. The request throttlers are built from the session settings of the query that created the
+    /// client and are deliberately not compared: the client of a disk must not follow user sessions. The config
+    /// reload of a server disk forces the rebuild (see `DiskObjectStorage::applyNewSettings`).
+    std::lock_guard lock(client_inputs_mutex);
+    if (!options.force_client_rebuild && client_inputs == new_inputs)
+        return;
+
     bool is_client_for_disk = client.get()->IsClientForDisk();
 
     AzureBlobStorage::ConnectionParams params;
-    params.endpoint = AzureBlobStorage::processEndpoint(config, config_prefix);
-    params.auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix);
+    params.endpoint = new_inputs.endpoint;
+    params.auth_method = AzureBlobStorage::getAuthMethod(new_inputs.auth_config);
     params.client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *settings.get(), is_client_for_disk);
 
     auto new_client = AzureBlobStorage::getContainerClient(params, /*readonly=*/ true);
     client.set(std::move(new_client));
+    client_inputs = std::move(new_inputs);
 }
 
 }
