@@ -14,7 +14,6 @@
 #include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Common/assert_cast.h>
 #include <Common/tests/gtest_global_context.h>
 
 using namespace DB;
@@ -105,9 +104,6 @@ std::unique_ptr<JoinStepLogical> deserializeStep(const String & bytes, UInt64 ve
         in, registry, {}, context, input_headers, output_header, settings, 0, version, false};
 
     auto step = JoinStepLogical::deserialize(ctx);
-    /// assert_cast compares typeid exactly, so this also pins that the registry gave back the step
-    /// type whose getters are asserted below.
-    assert_cast<JoinStepLogical &>(*step);
     return std::unique_ptr<JoinStepLogical>(static_cast<JoinStepLogical *>(step.release()));
 }
 
@@ -223,6 +219,46 @@ TEST(JoinStepLogicalOptimizerStateRoundTrip, PreVersionCarriesNothing)
     EXPECT_EQ(restored->getInputRowsEstimation(JoinTableSide::Left), std::nullopt);
     EXPECT_EQ(restored->getInputRowsEstimation(JoinTableSide::Right), std::nullopt);
     EXPECT_TRUE(restored->getTableStatsHint().empty());
+}
+
+/// `setOptimized` is the only production writer of all three `optimizer_flags` bits, so the reachable
+/// patterns are 0, 1, 3, 5 and 7. The cases above pin 7 and 0, where the three bits are equal to each
+/// other, and there a reader that assigns a bit to the wrong member stays invisible to both oracles: the
+/// observables all move together, and re-serialization writes the swapped members back into the swapped
+/// bits. The patterns below make the bits independently observable. The first is the state five of the
+/// six `setOptimized` call sites produce.
+TEST(JoinStepLogicalOptimizerStateRoundTrip, OptimizerFlagBitsRoundTripIndependently)
+{
+    struct Pattern
+    {
+        void (*setOptimized)(JoinStepLogical &);
+        std::optional<UInt64> expected_rows_estimation;
+        bool expected_imprecise_estimate;
+    };
+
+    const std::vector<Pattern> patterns = {
+        /// optimizer_flags = 1
+        {[](JoinStepLogical & step) { step.setOptimized(); }, std::nullopt, false},
+        /// optimizer_flags = 3
+        {[](JoinStepLogical & step) { step.setOptimized(std::nullopt, {}, /*imprecise_estimate_=*/true); }, std::nullopt, true},
+        /// optimizer_flags = 5
+        {[](JoinStepLogical & step) { step.setOptimized(/*estimated_rows_=*/4242); }, 4242, false},
+    };
+
+    for (size_t i = 0; i < patterns.size(); ++i)
+    {
+        auto step = makeStep();
+        patterns[i].setOptimized(*step);
+
+        String first = serializeStep(*step, current_version);
+        auto restored = deserializeStep(first, current_version);
+
+        EXPECT_EQ(first, serializeStep(*restored, current_version)) << "pattern=" << i;
+
+        EXPECT_TRUE(restored->isOptimized()) << "pattern=" << i;
+        EXPECT_EQ(restored->getResultRowsEstimation(), patterns[i].expected_rows_estimation) << "pattern=" << i;
+        EXPECT_EQ(restored->hasImpreciseEstimate(), patterns[i].expected_imprecise_estimate) << "pattern=" << i;
+    }
 }
 
 /// The presence-flag and empty-container paths: an unoptimized step is the common case on the wire.

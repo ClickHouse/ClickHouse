@@ -2263,7 +2263,7 @@ void JoinStepLogical::serialize(Serialization & ctx) const
     join_operator.serialize(ctx.out, actions_dag.get());
     serializeNodeList(ctx.out, actions_dag->getNodeToIdMap(), actions_after_join);
 
-    /// A step that crosses the wire arrives in the same optimizer state as one produced by `clone`.
+    /// A step that crosses the wire arrives in the same join optimizer state as one produced by `clone`.
     /// The state is left out of a plan cache key because `optimized` and the estimates differ between
     /// the single-node and the parallel-replicas plan build, and those two builds have to hash alike.
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_OPTIMIZER_STATE && !ctx.for_cache_key)

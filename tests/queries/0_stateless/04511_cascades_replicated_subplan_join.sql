@@ -34,7 +34,7 @@ SET query_plan_merge_filter_into_join_condition = 1;
 SET query_plan_remove_unused_columns = 1;
 SET enable_join_transitive_predicates = 1;
 -- Join reordering also takes row count estimates from the process-global hash table statistics, which
--- any join that ran earlier in the same server fills in, so the plans below would depend on that history.
+-- an earlier hash join on the same server fills in, so the plans below would depend on that history.
 SET use_hash_table_stats_for_join_reordering = 0;
 SET param__internal_cascades_cluster_node_count = 4;
 SET param__internal_cascades_cost_config = '{"sequential_weight":32,"network_weight":1,"exchange_fixed_overhead":1,"work_weight":1}';
