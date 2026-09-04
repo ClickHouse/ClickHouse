@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
@@ -896,10 +897,20 @@ void SortingStep::describePipeline(FormatSettings & settings) const
     }
 }
 
+namespace
+{
+
+/// The payload of `SortingStep` stays hand-written; the manifest declares the name only.
+constexpr auto SORTING_MANIFEST = StepManifest<SortingStep, NoWire>("Sorting")
+    .nameIntroducedIn(1)
+    .customSerialization();
+
+}
+
 void registerSortingStep(QueryPlanStepRegistry & registry);
 void registerSortingStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Sorting", SortingStep::deserialize);
+    registerManifest<SORTING_MANIFEST>(registry, SortingStep::deserialize);
 }
 
 }

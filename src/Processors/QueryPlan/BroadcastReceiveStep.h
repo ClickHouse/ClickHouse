@@ -5,6 +5,8 @@
 namespace DB
 {
 
+struct BroadcastReceiveWire;
+
 /// Receive part of BroadcastExchangeStep
 class BroadcastReceiveStep : public ISourceStep
 {
@@ -27,9 +29,25 @@ public:
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `BroadcastReceiveStep.cpp` declares.
+    BroadcastReceiveWire toWire() const;
+    static QueryPlanStepPtr fromWire(BroadcastReceiveWire wire, Deserialization & ctx);
+
 private:
+    /// Streams below the framed format.
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     const String exchange_id;
     const Strings source_shards;
+};
+
+/// What `BroadcastReceiveStep` puts on the wire in the framed format.
+struct BroadcastReceiveWire
+{
+    String exchange_id;
+    Strings source_shards;
+
+    bool operator==(const BroadcastReceiveWire &) const = default;
 };
 
 }

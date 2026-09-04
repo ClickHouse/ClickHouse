@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/Transforms/CubeTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -216,10 +217,20 @@ QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)
     return std::make_unique<CubeStep>(ctx.input_headers.front(), std::move(params), final, use_nulls);
 }
 
+namespace
+{
+
+/// The payload of `CubeStep` stays hand-written; the manifest declares the name only.
+constexpr auto CUBE_MANIFEST = StepManifest<CubeStep, NoWire>("Cube")
+    .nameIntroducedIn(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_CUBE_STEP)
+    .customSerialization();
+
+}
+
 void registerCubeStep(QueryPlanStepRegistry & registry);
 void registerCubeStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Cube", CubeStep::deserialize);
+    registerManifest<CUBE_MANIFEST>(registry, CubeStep::deserialize);
 }
 
 }

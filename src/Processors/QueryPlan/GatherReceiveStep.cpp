@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/Sources/NativeCompressedSource.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
@@ -50,7 +51,45 @@ void GatherReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, cons
     }
 }
 
+namespace
+{
+
+constexpr auto GATHER_RECEIVE_MANIFEST = StepManifest<GatherReceiveStep, GatherReceiveWire>("GatherReceive")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("exchange_id", WireFieldClass::Logical, &GatherReceiveWire::exchange_id),
+        field("num_buckets", WireFieldClass::Physical, &GatherReceiveWire::num_buckets),
+        field("maintain_sort_description", WireFieldClass::Logical, &GatherReceiveWire::maintain_sort_description));
+
+}
+
+GatherReceiveWire GatherReceiveStep::toWire() const
+{
+    return GatherReceiveWire{exchange_id, num_buckets, maintain_sort_description};
+}
+
+QueryPlanStepPtr GatherReceiveStep::fromWire(GatherReceiveWire wire, Deserialization & ctx)
+{
+    return std::make_unique<GatherReceiveStep>(
+        ctx.output_header, std::move(wire.exchange_id), wire.num_buckets, std::move(wire.maintain_sort_description));
+}
+
 void GatherReceiveStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(GATHER_RECEIVE_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr GatherReceiveStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(GATHER_RECEIVE_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void GatherReceiveStep::serializeLegacy(Serialization & ctx) const
 {
     writeStringBinary(exchange_id, ctx.out);
     writeVarUInt(num_buckets, ctx.out);
@@ -59,7 +98,7 @@ void GatherReceiveStep::serialize(Serialization & ctx) const
         serializeSortDescription(*maintain_sort_description, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> GatherReceiveStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr GatherReceiveStep::deserializeLegacy(Deserialization & ctx)
 {
     String exchange_id;
     readStringBinary(exchange_id, ctx.in);
@@ -82,7 +121,7 @@ std::unique_ptr<IQueryPlanStep> GatherReceiveStep::deserialize(Deserialization &
 void registerGatherReceiveStep(QueryPlanStepRegistry & registry);
 void registerGatherReceiveStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("GatherReceive", GatherReceiveStep::deserialize);
+    registerManifest<GATHER_RECEIVE_MANIFEST>(registry, GatherReceiveStep::deserialize);
 }
 
 }

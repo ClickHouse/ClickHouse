@@ -42,13 +42,16 @@ SharedHeader makeHeader()
     return std::make_shared<const Block>(Block({ColumnWithTypeAndName(type->createColumn(), type, "arr")}));
 }
 
+/// The newest stream below the framed format: the flags byte these tests inspect exists only there.
+constexpr UInt64 legacy_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE - 1;
+
 /// Serialize a step through the production path and return its byte stream.
-String serializeStep(const IQueryPlanStep & step)
+String serializeStep(const IQueryPlanStep & step, UInt64 version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
 {
     WriteBufferFromOwnString out;
     SerializedSetsRegistry registry;
     IQueryPlanStep::Serialization ctx{out, registry};
-    ctx.version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+    ctx.version = version;
     step.serialize(ctx);
     return out.str();
 }
@@ -59,7 +62,7 @@ String serializeStep(const IQueryPlanStep & step)
 /// what QueryPlan::deserialize hands each step (it builds a fresh object per step and fills it only
 /// from the names that step's serializeSettings wrote). Since ArrayJoinStep::serializeSettings
 /// writes only max_block_size, a defaulted settings object is itself part of the assertion.
-QueryPlanStepPtr deserializeStep(const String & bytes, const SharedHeader & header)
+QueryPlanStepPtr deserializeStep(const String & bytes, const SharedHeader & header, UInt64 version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
 {
     ReadBufferFromString in(bytes);
     DeserializedSetsRegistry registry;
@@ -68,7 +71,7 @@ QueryPlanStepPtr deserializeStep(const String & bytes, const SharedHeader & head
     ContextPtr context = getContext().context;
 
     IQueryPlanStep::Deserialization ctx{
-        in, registry, {}, context, input_headers, header, settings, 0, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, false};
+        in, registry, {}, context, input_headers, header, settings, 0, version, false};
 
     return ArrayJoinStep::deserialize(ctx);
 }
@@ -79,24 +82,29 @@ struct RoundTrip
     String second;  /// bytes written by re-serializing the restored step
 };
 
-/// serialize -> deserialize -> serialize.
-///
-/// enable_lazy_columns_replication is private and deliberately has no getter, so the restored
-/// step's value is observed by serializing it again: the second stream can carry the flag bit only
-/// if the restored member is true. That also pins the whole wire format, not just one accessor.
-RoundTrip roundTrip(bool is_left, bool is_unaligned, bool enable_lazy_columns_replication)
+ArrayJoinStep makeStep(bool is_left, bool is_unaligned, bool enable_lazy_columns_replication)
 {
-    auto header = makeHeader();
-    ArrayJoinStep step(
-        header,
+    return ArrayJoinStep(
+        makeHeader(),
         ArrayJoin{Names{"arr"}, is_left},
         is_unaligned,
         /*max_block_size_=*/65536,
         enable_lazy_columns_replication);
+}
 
-    String first = serializeStep(step);
-    auto restored = deserializeStep(first, header);
-    return {first, serializeStep(*restored)};
+/// serialize -> deserialize -> serialize, in the older stream layout.
+///
+/// enable_lazy_columns_replication is private and deliberately has no getter, so the restored
+/// step's value is observed by serializing it again: the second stream can carry the flag bit only
+/// if the restored member is true. That also pins the whole older layout, not just one accessor.
+RoundTrip roundTrip(bool is_left, bool is_unaligned, bool enable_lazy_columns_replication)
+{
+    auto header = makeHeader();
+    ArrayJoinStep step = makeStep(is_left, is_unaligned, enable_lazy_columns_replication);
+
+    String first = serializeStep(step, legacy_version);
+    auto restored = deserializeStep(first, header, legacy_version);
+    return {first, serializeStep(*restored, legacy_version)};
 }
 
 UInt8 flagsByte(const String & bytes)
@@ -176,8 +184,9 @@ Block roundTripAndExecute(bool enable_lazy_columns_replication, const ContextPtr
 /// ArrayJoinStep::deserialize used to take the value from the per-step
 /// QueryPlanSerializationSettings object, which ArrayJoinStep::serializeSettings never populates,
 /// so a deserialized ArrayJoinStep always fell back to the plan DECLARE default (false) and the
-/// executing node did eager column replication no matter what the initiator ran with. The value now
-/// travels in the step's own flags byte.
+/// executing node did eager column replication no matter what the initiator ran with. In the older
+/// stream the value travels in the step's own flags byte; in the framed stream it is a member of the
+/// wire struct.
 TEST(ArrayJoinStepSerializationRoundTrip, LazyColumnsReplicationTrueSurvives)
 {
     auto result = roundTrip(/*is_left=*/false, /*is_unaligned=*/false, /*enable_lazy_columns_replication=*/true);
@@ -215,6 +224,31 @@ TEST(ArrayJoinStepSerializationRoundTrip, FlagsBitsAreIndependent)
     }
 }
 
+/// The framed stream carries every value of the wire struct; the restored step declares the same
+/// wire struct as the original, and re-serializing it gives the same bytes.
+TEST(ArrayJoinStepSerializationRoundTrip, FramedStreamKeepsEveryFlag)
+{
+    auto header = makeHeader();
+    for (bool is_left : {false, true})
+    {
+        for (bool is_unaligned : {false, true})
+        {
+            for (bool lazy : {false, true})
+            {
+                ArrayJoinStep step = makeStep(is_left, is_unaligned, lazy);
+                String first = serializeStep(step);
+                auto restored = deserializeStep(first, header);
+                auto wire = dynamic_cast<ArrayJoinStep &>(*restored).toWire();
+                EXPECT_EQ(wire.is_left, is_left);
+                EXPECT_EQ(wire.is_unaligned, is_unaligned);
+                EXPECT_EQ(wire.enable_lazy_columns_replication, lazy);
+                EXPECT_EQ(wire.columns, Names{"arr"});
+                EXPECT_EQ(first, serializeStep(*restored));
+            }
+        }
+    }
+}
+
 /// Backward compatibility: a plan written by a server that predates the flag bit has bit 4 clear.
 /// Such a stream must still deserialize, and must yield eager replication (false), which is exactly
 /// what those servers do. This pins the graceful-degradation contract the whole approach rests on.
@@ -231,8 +265,8 @@ TEST(ArrayJoinStepSerializationRoundTrip, OldFormatByteWithoutBit4YieldsFalse)
         writeVarUInt(1, out);
         writeStringBinary(String("arr"), out);
 
-        auto restored = deserializeStep(out.str(), header);
-        EXPECT_EQ(flagsByte(serializeStep(*restored)) & 4, 0) << "old_flags=" << static_cast<int>(old_flags);
+        auto restored = deserializeStep(out.str(), header, legacy_version);
+        EXPECT_EQ(flagsByte(serializeStep(*restored, legacy_version)) & 4, 0) << "old_flags=" << static_cast<int>(old_flags);
     }
 }
 

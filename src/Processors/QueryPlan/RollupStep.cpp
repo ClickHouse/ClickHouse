@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/Transforms/RollupTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -176,10 +177,20 @@ QueryPlanStepPtr RollupStep::deserialize(Deserialization & ctx)
     return std::make_unique<RollupStep>(ctx.input_headers.front(), std::move(params), final, use_nulls);
 }
 
+namespace
+{
+
+/// The payload of `RollupStep` stays hand-written; the manifest declares the name only.
+constexpr auto ROLLUP_MANIFEST = StepManifest<RollupStep, NoWire>("Rollup")
+    .nameIntroducedIn(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROLLUP_STEP)
+    .customSerialization();
+
+}
+
 void registerRollupStep(QueryPlanStepRegistry & registry);
 void registerRollupStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Rollup", RollupStep::deserialize);
+    registerManifest<ROLLUP_MANIFEST>(registry, RollupStep::deserialize);
 }
 
 }

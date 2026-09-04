@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
@@ -6674,10 +6675,20 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     return step;
 }
 
+namespace
+{
+
+/// The payload of `ReadFromMergeTree` stays hand-written; the manifest declares the name only.
+constexpr auto READ_FROM_MERGE_TREE_MANIFEST = StepManifest<ReadFromMergeTree, NoWire>("ReadFromMergeTree")
+    .nameIntroducedIn(1)
+    .customSerialization();
+
+}
+
 void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry);
 void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("ReadFromMergeTree", ReadFromMergeTree::deserialize);
+    registerManifest<READ_FROM_MERGE_TREE_MANIFEST>(registry, ReadFromMergeTree::deserialize);
 }
 
 }

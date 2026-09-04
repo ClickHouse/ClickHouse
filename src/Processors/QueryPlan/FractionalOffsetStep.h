@@ -6,6 +6,8 @@
 namespace DB
 {
 
+struct FractionalOffsetWire;
+
 /// Executes Fractional OFFSET (without LIMIT). See FractionalOffsetTransform.
 class FractionalOffsetStep : public ITransformingStep
 {
@@ -24,10 +26,25 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `FractionalOffsetStep.cpp` declares.
+    FractionalOffsetWire toWire() const;
+    static QueryPlanStepPtr fromWire(FractionalOffsetWire wire, Deserialization & ctx);
+
 private:
+    /// Streams below the framed format.
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     void updateOutputHeader() override { output_header = input_headers.front(); }
 
     Float64 fractional_offset;
+};
+
+/// What `FractionalOffsetStep` puts on the wire in the framed format.
+struct FractionalOffsetWire
+{
+    Float64 fractional_offset = 0;
+
+    bool operator==(const FractionalOffsetWire &) const = default;
 };
 
 }

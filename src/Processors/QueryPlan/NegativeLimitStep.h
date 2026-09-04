@@ -5,6 +5,8 @@
 namespace DB
 {
 
+struct NegativeLimitWire;
+
 /// Executes Negative LIMIT. See NegativeLimitTransform.
 class NegativeLimitStep : public ITransformingStep
 {
@@ -31,9 +33,16 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `NegativeLimitStep.cpp` declares.
+    NegativeLimitWire toWire() const;
+    static QueryPlanStepPtr fromWire(NegativeLimitWire wire, Deserialization & ctx);
+
     bool hasCorrelatedExpressions() const override { return false; }
 
 private:
+    /// Streams below the framed format.
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     void updateOutputHeader() override
     {
         output_header = input_headers.front();
@@ -44,6 +53,20 @@ private:
     bool with_ties;
     const SortDescription description;
     bool is_shard_limit = false;
+};
+
+/// What `NegativeLimitStep` puts on the wire in the framed format.
+struct NegativeLimitWire
+{
+    UInt64 limit = 0;
+    UInt64 offset = 0;
+    bool with_ties = false;
+    /// Empty unless `with_ties`; one byte on the wire when empty.
+    SortDescription description;
+    /// Reaches the transform, so the receiver needs it to build the same pipeline.
+    bool is_shard_limit = false;
+
+    bool operator==(const NegativeLimitWire &) const = default;
 };
 
 }

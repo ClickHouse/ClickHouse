@@ -5,6 +5,8 @@
 namespace DB
 {
 
+struct GatherReceiveWire;
+
 /// Receive part of GatherExchangeStep
 class GatherReceiveStep : public ISourceStep
 {
@@ -27,11 +29,29 @@ public:
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `GatherReceiveStep.cpp` declares.
+    GatherReceiveWire toWire() const;
+    static QueryPlanStepPtr fromWire(GatherReceiveWire wire, Deserialization & ctx);
+
 private:
+    /// Streams below the framed format.
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     const String exchange_id;
     const size_t num_buckets;
     const std::optional<SortDescription> maintain_sort_description;
 };
 
+
+/// What `GatherReceiveStep` puts on the wire in the framed format.
+struct GatherReceiveWire
+{
+    String exchange_id;
+    UInt64 num_buckets = 0;
+    /// Present when the gather keeps the input order.
+    std::optional<SortDescription> maintain_sort_description;
+
+    bool operator==(const GatherReceiveWire &) const = default;
+};
 
 }

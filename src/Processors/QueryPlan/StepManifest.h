@@ -129,6 +129,11 @@ struct WireFormat
     std::tuple<Fields...> fields;
 };
 
+/// The wire struct of a step that keeps a hand-written serializer: nothing is declared.
+struct NoWire
+{
+};
+
 /// Digest eligibility predicates over the wire struct, the per-instance eligibility of PR 116196.
 struct Eligible
 {
@@ -339,6 +344,11 @@ template <typename T, typename A>
 inline constexpr bool is_vector<std::vector<T, A>> = true;
 
 template <typename T>
+inline constexpr bool is_pair = false;
+template <typename A, typename B>
+inline constexpr bool is_pair<std::pair<A, B>> = true;
+
+template <typename T>
 inline constexpr bool is_codec
     = std::is_same_v<T, SortDescription> || std::is_same_v<T, ActionsDAG> || std::is_same_v<T, AggregateDescriptions>
     || std::is_same_v<T, TableExpressionModifiers::Rational>;
@@ -385,7 +395,7 @@ void write(const T & value, IQueryPlanStep::Serialization & ctx)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "A negative enum value has no wire encoding");
         writeVarUInt(UInt64(underlying), out);
     }
-    else if constexpr (std::is_same_v<T, Float64>)
+    else if constexpr (std::is_same_v<T, Float64> || std::is_same_v<T, Float32>)
         writeBinaryLittleEndian(value, out);
     else if constexpr (std::is_same_v<T, String>)
         writeStringBinary(value, out);
@@ -394,6 +404,11 @@ void write(const T & value, IQueryPlanStep::Serialization & ctx)
         writeBinary(UInt8(value.has_value() ? 1 : 0), out);
         if (value.has_value())
             write(*value, ctx);
+    }
+    else if constexpr (WireDetail::is_pair<T>)
+    {
+        write(value.first, ctx);
+        write(value.second, ctx);
     }
     else if constexpr (WireDetail::is_vector<T>)
     {
@@ -441,7 +456,7 @@ void read(T & value, IQueryPlanStep::Deserialization & ctx)
             WireDetail::throwCannotParse("an enum value is out of range for its member");
         value = static_cast<T>(wide);
     }
-    else if constexpr (std::is_same_v<T, Float64>)
+    else if constexpr (std::is_same_v<T, Float64> || std::is_same_v<T, Float32>)
         readBinaryLittleEndian(value, in);
     else if constexpr (std::is_same_v<T, String>)
     {
@@ -464,6 +479,11 @@ void read(T & value, IQueryPlanStep::Deserialization & ctx)
         }
         else
             value.reset();
+    }
+    else if constexpr (WireDetail::is_pair<T>)
+    {
+        read(value.first, ctx);
+        read(value.second, ctx);
     }
     else if constexpr (WireDetail::is_vector<T>)
     {
@@ -498,10 +518,14 @@ String typeName()
         return "enum" + std::to_string(sizeof(std::underlying_type_t<T>) * 8);
     else if constexpr (std::is_same_v<T, Float64>)
         return "Float64";
+    else if constexpr (std::is_same_v<T, Float32>)
+        return "Float32";
     else if constexpr (std::is_same_v<T, String>)
         return "String";
     else if constexpr (WireDetail::is_optional<T>)
         return "optional<" + typeName<typename T::value_type>() + ">";
+    else if constexpr (WireDetail::is_pair<T>)
+        return "pair<" + typeName<typename T::first_type>() + "," + typeName<typename T::second_type>() + ">";
     else if constexpr (WireDetail::is_vector<T>)
         return "vector<" + typeName<typename T::value_type>() + ">";
     else
@@ -643,6 +667,7 @@ QueryPlanStepRegistry::StepSerializationInfo manifestRegistryInfo(const Manifest
 {
     QueryPlanStepRegistry::StepSerializationInfo info;
     info.introduced_in_plan_version = manifest.name_introduced_in;
+    info.has_wire_struct = !manifest.custom;
     for (UInt64 ordinal = 2; ordinal <= Manifest::formatCount(); ++ordinal)
         info.payload_formats[ordinal] = {QueryPlanStepRegistry::PayloadChange::Append, /*min_plan_version=*/0};
     return info;

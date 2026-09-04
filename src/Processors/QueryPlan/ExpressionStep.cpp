@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -123,12 +124,54 @@ void ExpressionStep::updateOutputHeader()
     output_header = std::make_shared<const Block>(ExpressionTransform::transformHeader(*input_headers.front(), actions_dag));
 }
 
+namespace
+{
+
+constexpr auto EXPRESSION_MANIFEST = StepManifest<ExpressionStep, ExpressionWire>("Expression")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("actions_dag", WireFieldClass::Logical, &ExpressionWire::actions_dag),
+        field("prevent_input_removal", WireFieldClass::Physical, &ExpressionWire::prevent_input_removal));
+
+}
+
+ExpressionWire ExpressionStep::toWire() const
+{
+    return ExpressionWire{actions_dag.clone(), prevent_input_removal};
+}
+
+QueryPlanStepPtr ExpressionStep::fromWire(ExpressionWire wire, Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ExpressionStep must have one input stream");
+
+    auto step = std::make_unique<ExpressionStep>(ctx.input_headers.front(), std::move(wire.actions_dag));
+    if (wire.prevent_input_removal)
+        step->setPreventInputRemoval();
+    return step;
+}
+
 void ExpressionStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(EXPRESSION_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr ExpressionStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(EXPRESSION_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void ExpressionStep::serializeLegacy(Serialization & ctx) const
 {
     actions_dag.serialize(ctx.out, ctx.registry);
 }
 
-QueryPlanStepPtr ExpressionStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr ExpressionStep::deserializeLegacy(Deserialization & ctx)
 {
     ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
     if (ctx.input_headers.size() != 1)
@@ -257,7 +300,7 @@ QueryPlanStepPtr ExpressionStep::clone() const
 void registerExpressionStep(QueryPlanStepRegistry & registry);
 void registerExpressionStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Expression", ExpressionStep::deserialize);
+    registerManifest<EXPRESSION_MANIFEST>(registry, ExpressionStep::deserialize);
 }
 
 }

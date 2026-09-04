@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/BroadcastReceiveStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
@@ -31,7 +32,43 @@ void BroadcastReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, c
     pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), 0, &processors);
 }
 
+namespace
+{
+
+constexpr auto BROADCAST_RECEIVE_MANIFEST = StepManifest<BroadcastReceiveStep, BroadcastReceiveWire>("BroadcastReceive")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("exchange_id", WireFieldClass::Logical, &BroadcastReceiveWire::exchange_id),
+        field("source_shards", WireFieldClass::Physical, &BroadcastReceiveWire::source_shards));
+
+}
+
+BroadcastReceiveWire BroadcastReceiveStep::toWire() const
+{
+    return BroadcastReceiveWire{exchange_id, source_shards};
+}
+
+QueryPlanStepPtr BroadcastReceiveStep::fromWire(BroadcastReceiveWire wire, Deserialization & ctx)
+{
+    return std::make_unique<BroadcastReceiveStep>(ctx.output_header, std::move(wire.exchange_id), std::move(wire.source_shards));
+}
+
 void BroadcastReceiveStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(BROADCAST_RECEIVE_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr BroadcastReceiveStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(BROADCAST_RECEIVE_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void BroadcastReceiveStep::serializeLegacy(Serialization & ctx) const
 {
     writeStringBinary(exchange_id, ctx.out);
     writeVarUInt(source_shards.size(), ctx.out);
@@ -39,7 +76,7 @@ void BroadcastReceiveStep::serialize(Serialization & ctx) const
         writeStringBinary(shard_id, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> BroadcastReceiveStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr BroadcastReceiveStep::deserializeLegacy(Deserialization & ctx)
 {
     String exchange_id;
     readStringBinary(exchange_id, ctx.in);
@@ -59,7 +96,7 @@ std::unique_ptr<IQueryPlanStep> BroadcastReceiveStep::deserialize(Deserializatio
 void registerBroadcastReceiveStep(QueryPlanStepRegistry & registry);
 void registerBroadcastReceiveStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("BroadcastReceive", BroadcastReceiveStep::deserialize);
+    registerManifest<BROADCAST_RECEIVE_MANIFEST>(registry, BroadcastReceiveStep::deserialize);
 }
 
 }

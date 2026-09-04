@@ -4,6 +4,8 @@
 namespace DB
 {
 
+struct UnionWire;
+
 /// Unite several logical streams of data into single logical stream with specified structure.
 class UnionStep : public IQueryPlanStep
 {
@@ -37,15 +39,34 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `UnionStep.cpp` declares.
+    UnionWire toWire() const;
+    static QueryPlanStepPtr fromWire(UnionWire wire, Deserialization & ctx);
+
     QueryPlanStepPtr clone() const override;
 
     bool hasCorrelatedExpressions() const override { return false; }
 
 private:
+    /// Streams below the framed format.
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     void updateOutputHeader() override;
 
     size_t max_threads;
     bool allow_narrowing;
+};
+
+/// What `UnionStep` puts on the wire in the framed format. `max_threads` is not on it: zero makes
+/// the executing server derive it from its own settings, which is the right source for a per-machine
+/// thread cap.
+struct UnionWire
+{
+    /// Only the planner knows whether this union may be narrowed (SQL UNION) or feeds an
+    /// order-sensitive consumer that forbids it.
+    bool allow_narrowing = false;
+
+    bool operator==(const UnionWire &) const = default;
 };
 
 }

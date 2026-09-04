@@ -7,6 +7,8 @@
 namespace DB
 {
 
+struct ShuffleSendWire;
+
 /// Send part of ShuffleExchangeStep
 class ShuffleSendStep final : public IQueryPlanStep
 {
@@ -36,13 +38,32 @@ public:
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `ShuffleSendStep.cpp` declares.
+    ShuffleSendWire toWire() const;
+    static QueryPlanStepPtr fromWire(ShuffleSendWire wire, Deserialization & ctx);
+
 private:
+    /// Streams below the framed format.
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     void updateOutputHeader() override {}
 
     const String exchange_id;
     const Names key_names;
     const DataTypes hash_cast_types;
     const size_t num_buckets;
+};
+
+/// What `ShuffleSendStep` puts on the wire in the framed format.
+struct ShuffleSendWire
+{
+    String exchange_id;
+    Names key_names;
+    UInt64 num_buckets = 0;
+    /// One name per key, empty for a key that is hashed as it is.
+    Strings hash_cast_type_names;
+
+    bool operator==(const ShuffleSendWire &) const = default;
 };
 
 }

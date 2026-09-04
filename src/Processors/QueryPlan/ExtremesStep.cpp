@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -31,12 +32,46 @@ void ExtremesStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     pipeline.addExtremesTransform();
 }
 
+namespace
+{
+
+constexpr auto EXTREMES_MANIFEST = StepManifest<ExtremesStep, ExtremesWire>("Extremes")
+    .nameIntroducedIn(1)
+    .baseFormat();
+
+}
+
+ExtremesWire ExtremesStep::toWire() const
+{
+    return {};
+}
+
+QueryPlanStepPtr ExtremesStep::fromWire(ExtremesWire, Deserialization & ctx)
+{
+    return std::make_unique<ExtremesStep>(ctx.input_headers.front());
+}
+
 void ExtremesStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(EXTREMES_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr ExtremesStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(EXTREMES_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void ExtremesStep::serializeLegacy(Serialization & ctx) const
 {
     (void)ctx;
 }
 
-QueryPlanStepPtr ExtremesStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr ExtremesStep::deserializeLegacy(Deserialization & ctx)
 {
     return std::make_unique<ExtremesStep>(ctx.input_headers.front());
 }
@@ -49,7 +84,7 @@ QueryPlanStepPtr ExtremesStep::clone() const
 void registerExtremesStep(QueryPlanStepRegistry & registry);
 void registerExtremesStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Extremes", ExtremesStep::deserialize);
+    registerManifest<EXTREMES_MANIFEST>(registry, ExtremesStep::deserialize);
 }
 
 }

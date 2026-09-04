@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/Sources/NativeCompressedSource.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
@@ -30,7 +31,43 @@ void ShuffleReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, con
     pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), 0, &processors);
 }
 
+namespace
+{
+
+constexpr auto SHUFFLE_RECEIVE_MANIFEST = StepManifest<ShuffleReceiveStep, ShuffleReceiveWire>("ShuffleReceive")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("exchange_id", WireFieldClass::Logical, &ShuffleReceiveWire::exchange_id),
+        field("source_shards", WireFieldClass::Physical, &ShuffleReceiveWire::source_shards));
+
+}
+
+ShuffleReceiveWire ShuffleReceiveStep::toWire() const
+{
+    return ShuffleReceiveWire{exchange_id, source_shards};
+}
+
+QueryPlanStepPtr ShuffleReceiveStep::fromWire(ShuffleReceiveWire wire, Deserialization & ctx)
+{
+    return std::make_unique<ShuffleReceiveStep>(ctx.output_header, std::move(wire.exchange_id), std::move(wire.source_shards));
+}
+
 void ShuffleReceiveStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(SHUFFLE_RECEIVE_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr ShuffleReceiveStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(SHUFFLE_RECEIVE_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void ShuffleReceiveStep::serializeLegacy(Serialization & ctx) const
 {
     writeStringBinary(exchange_id, ctx.out);
     writeVarUInt(source_shards.size(), ctx.out);
@@ -38,7 +75,7 @@ void ShuffleReceiveStep::serialize(Serialization & ctx) const
         writeStringBinary(shard_id, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> ShuffleReceiveStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr ShuffleReceiveStep::deserializeLegacy(Deserialization & ctx)
 {
     String exchange_id;
     readStringBinary(exchange_id, ctx.in);
@@ -58,7 +95,7 @@ std::unique_ptr<IQueryPlanStep> ShuffleReceiveStep::deserialize(Deserialization 
 void registerShuffleReceiveStep(QueryPlanStepRegistry & registry);
 void registerShuffleReceiveStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("ShuffleReceive", ShuffleReceiveStep::deserialize);
+    registerManifest<SHUFFLE_RECEIVE_MANIFEST>(registry, ShuffleReceiveStep::deserialize);
 }
 
 }

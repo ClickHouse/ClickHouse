@@ -23,6 +23,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
@@ -1248,10 +1249,20 @@ void AggregatingStep::setFinal(bool new_value)
     updateOutputHeader();
 }
 
+namespace
+{
+
+/// The payload of `AggregatingStep` stays hand-written; the manifest declares the name only.
+constexpr auto AGGREGATING_MANIFEST = StepManifest<AggregatingStep, NoWire>("Aggregating")
+    .nameIntroducedIn(1)
+    .customSerialization();
+
+}
+
 void registerAggregatingStep(QueryPlanStepRegistry & registry);
 void registerAggregatingStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Aggregating", AggregatingStep::deserialize);
+    registerManifest<AGGREGATING_MANIFEST>(registry, AggregatingStep::deserialize);
 }
 
 

@@ -55,6 +55,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
@@ -2359,11 +2360,21 @@ std::optional<UInt64> JoinStepLogical::getInputRowsEstimation(JoinTableSide side
         return right_relation.estimated_rows;
 }
 
+namespace
+{
+
+/// The payload of `JoinStepLogical` stays hand-written; the manifest declares the name only.
+constexpr auto JOIN_MANIFEST = StepManifest<JoinStepLogical, NoWire>("Join")
+    .nameIntroducedIn(1)
+    .customSerialization();
+
+}
+
 void registerJoinStep(QueryPlanStepRegistry & registry);
 
 void registerJoinStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Join", JoinStepLogical::deserialize);
+    registerManifest<JOIN_MANIFEST>(registry, JoinStepLogical::deserialize);
 }
 
 

@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/WindowTransform.h>
@@ -388,10 +389,20 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
         streams_fan_out);
 }
 
+namespace
+{
+
+/// The payload of `WindowStep` stays hand-written; the manifest declares the name only.
+constexpr auto WINDOW_MANIFEST = StepManifest<WindowStep, NoWire>("Window")
+    .nameIntroducedIn(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP)
+    .customSerialization();
+
+}
+
 void registerWindowStep(QueryPlanStepRegistry & registry);
 void registerWindowStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Window", WindowStep::deserialize);
+    registerManifest<WINDOW_MANIFEST>(registry, WindowStep::deserialize);
 }
 
 }

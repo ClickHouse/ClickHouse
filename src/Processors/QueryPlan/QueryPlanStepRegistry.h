@@ -44,6 +44,11 @@ public:
         /// 0 means the step is as old as plan serialization itself.
         UInt64 introduced_in_plan_version = 0;
 
+        /// Set when a manifest declares the payload and the framework writes it: the step's content
+        /// is then available as a plain wire struct, which a converter to another plan format can
+        /// read without knowing the step class.
+        bool has_wire_struct = false;
+
         /// The newest payload format this server writes and knows in full.
         UInt64 maxFormatVersion() const { return payload_formats.empty() ? 1 : payload_formats.rbegin()->first; }
 

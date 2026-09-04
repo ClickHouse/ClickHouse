@@ -6,6 +6,8 @@
 namespace DB
 {
 
+struct BroadcastSendWire;
+
 /// Send part of BroadcastExchangeStep
 /// Copies all data to each of the destination buckets
 class BroadcastSendStep final : public IQueryPlanStep
@@ -30,11 +32,27 @@ public:
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `BroadcastSendStep.cpp` declares.
+    BroadcastSendWire toWire() const;
+    static QueryPlanStepPtr fromWire(BroadcastSendWire wire, Deserialization & ctx);
+
 private:
+    /// Streams below the framed format.
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     void updateOutputHeader() override {}
 
     const String exchange_id;
     const size_t num_buckets;
+};
+
+/// What `BroadcastSendStep` puts on the wire in the framed format.
+struct BroadcastSendWire
+{
+    String exchange_id;
+    UInt64 num_buckets = 0;
+
+    bool operator==(const BroadcastSendWire &) const = default;
 };
 
 }

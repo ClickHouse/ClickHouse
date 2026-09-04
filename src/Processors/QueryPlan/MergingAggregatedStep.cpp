@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
@@ -399,10 +400,20 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     return merging_aggregated_step;
 }
 
+namespace
+{
+
+/// The payload of `MergingAggregatedStep` stays hand-written; the manifest declares the name only.
+constexpr auto MERGING_AGGREGATED_MANIFEST = StepManifest<MergingAggregatedStep, NoWire>("MergingAggregated")
+    .nameIntroducedIn(1)
+    .customSerialization();
+
+}
+
 void registerMergingAggregatedStep(QueryPlanStepRegistry & registry);
 void registerMergingAggregatedStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("MergingAggregated", MergingAggregatedStep::deserialize);
+    registerManifest<MERGING_AGGREGATED_MANIFEST>(registry, MergingAggregatedStep::deserialize);
 }
 
 }
