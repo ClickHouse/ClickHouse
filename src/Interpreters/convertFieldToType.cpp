@@ -228,6 +228,25 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
+    /// `convertFieldToType` unwraps `to_type` but passes the source type as it was written, so a
+    /// constant declared `Nullable(DateTime64)` or `LowCardinality(DateTime64)` arrives wrapped.
+    /// Every test below reads the hint through `WhichDataType`, and several of the branches they
+    /// guard then `static_cast` it to a concrete type, so the wrapper has to come off once here
+    /// rather than at each use: left on, every test reads false and the conversion falls through
+    /// to the type mismatch at the end - which is the failure this function was changed to avoid,
+    /// reappearing for a semantically identical query that happens to name a wrapped type.
+    /// A null source is rejected by `convertFieldToType` before this point, so the value carried
+    /// under a `Nullable` hint is always a real one.
+    while (from_type_hint)
+    {
+        if (const auto * nullable_hint = typeid_cast<const DataTypeNullable *>(from_type_hint))
+            from_type_hint = nullable_hint->getNestedType().get();
+        else if (const auto * low_cardinality_hint = typeid_cast<const DataTypeLowCardinality *>(from_type_hint))
+            from_type_hint = low_cardinality_hint->getDictionaryType().get();
+        else
+            break;
+    }
+
     if (from_type_hint && from_type_hint->equals(type))
     {
         return src;
@@ -617,20 +636,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
 
         /// An Enum arrives as its underlying number, but `CAST(enum AS String)` uses the name.
-        /// Only `to_type` is unwrapped by the caller, so unwrap the hint here.
-        const IDataType * unwrapped_hint = from_type_hint;
-        while (unwrapped_hint)
-        {
-            if (const auto * nullable_hint = typeid_cast<const DataTypeNullable *>(unwrapped_hint))
-                unwrapped_hint = nullable_hint->getNestedType().get();
-            else if (const auto * low_cardinality_hint = typeid_cast<const DataTypeLowCardinality *>(unwrapped_hint))
-                unwrapped_hint = low_cardinality_hint->getDictionaryType().get();
-            else
-                break;
-        }
-
+        /// The hint was unwrapped on entry, so a `Nullable`/`LowCardinality` Enum reaches this too.
         /// Re-enter so that a `FixedString` target still zero-pads the name to its width.
-        if (const auto * enum_from_type = dynamic_cast<const IDataTypeEnum *>(unwrapped_hint))
+        if (const auto * enum_from_type = dynamic_cast<const IDataTypeEnum *>(from_type_hint))
             return convertFieldToTypeImpl(
                 enum_from_type->castToName(src), type, nullptr, format_settings, strict, convert_inexact_floats);
 
