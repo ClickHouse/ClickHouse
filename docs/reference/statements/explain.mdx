@@ -1064,6 +1064,42 @@ The number comes from the column-statistic selectivity of `b < 10` (about 10 row
 
 If neither path is available (e.g. `empirical = 0` and no column statistics defined), the estimator reports `source: applicability_only` and a conservative `skip_ratio: 0.0%`.
 
+**Hypothetical projections**
+
+A normal projection is estimated the same way, against the parts the query would read after primary-key and partition pruning:
+
+```sql
+CREATE TABLE t (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100;
+INSERT INTO t SELECT number, number % 100, number FROM numbers(10000);
+CREATE HYPOTHETICAL PROJECTION p_b ON t (SELECT a, b, v ORDER BY b);
+EXPLAIN WHATIF SELECT count() FROM t WHERE b = 42;
+```
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+  est_bytes:   80.79 KiB
+
+With p_b (projection (normal), hypothetical):
+  status:       applicable
+  marks:        2
+  rows:         200
+  est_bytes:    4.69 KiB
+  skip_ratio:   98.0%
+  verdict:      would be chosen, it reads fewer marks than the base table
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+  elapsed_us:       1126
+```
+
+`marks`, `rows` and `est_bytes` are what the projection read itself would touch, not a share of the base-table read, because a projection granule holds different rows than a base granule. `skip_ratio` is signed: a projection that would read *more* marks than the base table shows a negative value. `verdict` applies the optimizer's own rule — it switches to a projection only when that reads strictly fewer marks — so a candidate can be `applicable` and still not be chosen.
+
 ### EXPLAIN TABLE OVERRIDE {#explain-table-override}
 
 Shows the result of a table override on a table schema accessed through a table function.
