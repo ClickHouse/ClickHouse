@@ -2026,10 +2026,14 @@ public:
     /// Adding calendar intervals.
     /// Implementation specific behaviour when delta is too big.
 
-    NO_SANITIZE_UNDEFINED Time addDays(Time t, Int64 delta) const
+    template <typename DateTime>
+    requires std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>
+    NO_SANITIZE_UNDEFINED Time addDays(DateTime t, Int64 delta) const
     {
-        if (unlikely(isOutOfLUTRange(t)))
-            return addDaysOutOfRange(t, delta);
+        /// DateTime (UInt32) cannot represent values outside of the lookup table, so only DateTime64 takes the escape path.
+        if constexpr (!std::is_same_v<DateTime, UInt32>)
+            if (unlikely(isOutOfLUTRange(static_cast<Time>(t))))
+                return addDaysOutOfRange(t, delta);
 
         const LUTIndex index = findIndexInRange(t);
 
