@@ -8,9 +8,14 @@
 
 drop table if exists t_clear_materialized_by_merge;
 
+-- `max_bytes_to_merge_at_max_space_in_pool = 1` leaves the merge to `OPTIMIZE ... FINAL`, which
+-- ignores that limit, so the part name asserted below is the result of that one merge and not of a
+-- background merge racing it - a background merge of the two parts followed by `OPTIMIZE ... FINAL`
+-- rewriting the single result would produce `all_1_2_2` instead.
 create table t_clear_materialized_by_merge (x UInt64, y UInt64, s String)
 engine = MergeTree order by x
-settings min_rows_for_wide_part = 100000000, min_bytes_for_wide_part = 1000000000;
+settings min_rows_for_wide_part = 100000000, min_bytes_for_wide_part = 1000000000,
+    max_bytes_to_merge_at_max_space_in_pool = 1;
 
 insert into t_clear_materialized_by_merge select number, number, 'str_' || toString(number) from numbers(3);
 insert into t_clear_materialized_by_merge select number, number, 'str_' || toString(number) from numbers(3, 3);
