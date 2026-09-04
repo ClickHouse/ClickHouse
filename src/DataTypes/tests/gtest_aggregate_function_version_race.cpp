@@ -31,6 +31,16 @@ DataTypePtr makeVersionedAggType()
     return type;
 }
 
+/// `count` state is a single counter and its `serialize` ignores the version parameter, so there is
+/// no second representation a version could select between: `isVersioned` is the base class's false.
+DataTypePtr makeUnversionedAggType()
+{
+    auto type = DataTypeFactory::instance().get("AggregateFunction(count, UInt64)");
+    /// Guard the test's own premise: if this ever becomes versioned, the setup is invalid.
+    EXPECT_FALSE(typeid_cast<const DataTypeAggregateFunction &>(*type).isVersioned());
+    return type;
+}
+
 const DataTypeAggregateFunction & asAgg(const DataTypePtr & type)
 {
     const auto * agg = typeid_cast<const DataTypeAggregateFunction *>(type.get());
@@ -121,16 +131,15 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, PreservesCustomNameOfNonAggregateTy
     ASSERT_EQ(point->getName(), "Point");
 }
 
-/// A wrapper whose only aggregate child is UNVERSIONED (uniq) must be left untouched:
-/// no leaf is replaced, so the outer Nested/Array/Tuple must NOT be rebuilt (that would drop the
-/// Nested custom name and rewrite the Native type name / ATTACH encoding from Nested(...) to
-/// plain Array(Tuple(...))).
+/// A wrapper whose only aggregate child is UNVERSIONED must be left untouched:
+/// no leaf is replaced, so the outer `Nested`/`Array`/`Tuple` must NOT be rebuilt (that would drop
+/// the `Nested` custom name and rewrite the Native type name / ATTACH encoding from `Nested(...)` to
+/// plain `Array(Tuple(...))`).
 GTEST_TEST(DataTypeAggregateFunctionVersion, UnversionedLeafPreservesNestedCustomName)
 {
     tryRegisterAggregateFunctions();
 
-    /// uniq is not versioned, so no leaf is ever replaced under this Nested wrapper.
-    DataTypePtr nested = DataTypeFactory::instance().get("Nested(s AggregateFunction(uniq, UInt64))");
+    DataTypePtr nested = createNested({makeUnversionedAggType()}, {"s"});
     const String name_before = nested->getName();
     ASSERT_TRUE(name_before.starts_with("Nested("));
     const IDataType * nested_ptr_before = nested.get();

@@ -13,11 +13,11 @@ CREATE TABLE t_explicit_default_on
     e UInt64 CODEC(Default, NONE)   -- compound, Default first -> stays explicit, no adaptive T64
 )
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 1, allow_suspicious_codecs = 1;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1, allow_suspicious_codecs = 1;
 
 CREATE TABLE t_explicit_default_off AS t_explicit_default_on
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 0, allow_suspicious_codecs = 1;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0, allow_suspicious_codecs = 1;
 
 SELECT 'Adaptive ON';
 INSERT INTO t_explicit_default_on SELECT number, number, number, number, number FROM numbers(50000);

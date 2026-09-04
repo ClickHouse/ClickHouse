@@ -62,13 +62,23 @@ Nous montrons brièvement comment l’index primaire clairsemé est utilisé pou
 
 <br />
 
-① La requête d’exemple inclut un prédicat sur les deux colonnes de la clé primaire : `town = 'LONDON' AND street = 'OXFORD STREET'`.
+<Steps>
+  <Step title="Analyser le prédicat de la requête">
+    La requête d’exemple inclut un prédicat sur les deux colonnes de la clé primaire : `town = 'LONDON' AND street = 'OXFORD STREET'`.
+  </Step>
 
-② Pour accélérer la requête, ClickHouse charge en mémoire l’index primaire de la table.
+  <Step title="Charger l’index primaire">
+    Pour accélérer la requête, ClickHouse charge en mémoire l’index primaire de la table.
+  </Step>
 
-③ Il parcourt ensuite les entrées de l’index pour identifier les granules susceptibles de contenir des lignes correspondant au prédicat — autrement dit, les granules qui ne peuvent pas être ignorées.
+  <Step title="Identifier les granules correspondantes">
+    Il parcourt ensuite les entrées de l’index pour identifier les granules susceptibles de contenir des lignes correspondant au prédicat — autrement dit, les granules qui ne peuvent pas être ignorées.
+  </Step>
 
-④ Ces granules potentiellement pertinentes sont ensuite chargées et [traitées](/fr/concepts/core-concepts/query-parallelism) en mémoire, avec les granules correspondantes de toute autre colonne requise pour la requête.
+  <Step title="Charger et traiter les granules">
+    Ces granules potentiellement pertinentes sont ensuite chargées et [traitées](/fr/concepts/core-concepts/query-parallelism) en mémoire, avec les granules correspondantes de toute autre colonne requise pour la requête.
+  </Step>
+</Steps>
 
 <div id="monitoring-primary-indexes">
   ## Suivi des index primaires
