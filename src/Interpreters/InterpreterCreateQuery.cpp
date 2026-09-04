@@ -807,6 +807,19 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
     ASTCreateQuery & create, LoadingStrictnessLevel mode)
 {
+    /// CLONE AS only makes sense with a source table: the partition-attach step performed after table
+    /// creation needs real partitions to copy. Reject CLONE AS SELECT / CLONE AS table_function for a
+    /// fresh CREATE and for a user-supplied full ATTACH definition (an ATTACH that carries an explicit
+    /// schema, so `attach_short_syntax` is false and it goes through the create-like path). Short ATTACH
+    /// (`ATTACH TABLE t;`) and SECONDARY_CREATE (`DatabaseReplicated` internal queries, `RESTORE`) stay
+    /// permissive so previously-validated metadata that persisted these forms still loads. Server startup
+    /// does not reach this function (tables are loaded via `createTableFromAST`), so it is unaffected.
+    const bool is_fresh_create = mode <= LoadingStrictnessLevel::CREATE;
+    const bool is_full_user_attach = mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax;
+    if ((is_fresh_create || is_full_user_attach) && create.is_clone_as && create.as_table.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "CLONE AS requires a source table name, not a SELECT query or table function");
+
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);
 
