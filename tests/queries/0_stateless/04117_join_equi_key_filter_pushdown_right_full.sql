@@ -418,4 +418,11 @@ SELECT 'INNER JOIN ON, cross-type equi-key under a predicate reading constness: 
 SELECT l.a FROM inner_ic_wide AS l INNER JOIN (SELECT toInt32(0) AS b) AS r ON l.a = r.b
 WHERE isConstant(l.a) = 0 ORDER BY 1;
 
+-- Reading it from inside a lambda body is the same predicate: the formal parameter comes from a constant
+-- array here, so the substituted key is constant on both sides of `if` and the whole read turns constant.
+
+SELECT 'INNER JOIN ON, equi-key under a predicate reading constness inside a lambda body: result';
+SELECT l.a FROM inner_ic_wide AS l INNER JOIN (SELECT toInt32(0) AS b) AS r ON l.a = r.b
+WHERE arrayExists(y -> isConstant(if(y, l.a, l.a)) = 0, [1]) ORDER BY 1;
+
 DROP TABLE inner_ic_wide;

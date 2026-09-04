@@ -86,3 +86,5 @@ INNER JOIN ON, cross-type equi-key with a JSON path in shared data on one side: 
 {"x":1}	{"x":1}
 INNER JOIN ON, cross-type equi-key under a predicate reading constness: result
 0
+INNER JOIN ON, equi-key under a predicate reading constness inside a lambda body: result
+0
