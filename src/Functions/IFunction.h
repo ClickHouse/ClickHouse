@@ -111,6 +111,14 @@ protected:
       */
     virtual bool useDefaultImplementationForReplicatedColumns() const { return true; }
 
+    /** Mirrors `IFunctionBase::isDeterministicInScopeOfQuery`. False for functions such as `rand`
+      * or `generateUUIDv4`, which may return a different value for every row. Such a function must
+      * be evaluated once per output row, so it cannot use the default implementation for replicated
+      * columns: that one evaluates the function once per distinct row of the nested column and
+      * expands the single result to every row replicated from it.
+      */
+    virtual bool isDeterministicInScopeOfQuery() const { return true; }
+
     /** Some arguments could remain constant during this implementation.
       */
     virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
