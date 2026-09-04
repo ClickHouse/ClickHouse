@@ -696,21 +696,21 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
             return "long";
         case TypeIndex::DateTime64:
         {
-            /// Iceberg has two timestamp precisions, and `IcebergSchemaProcessor` maps them
-            /// back to `DateTime64(6)` (`timestamp`) and `DateTime64(9)` (`timestamp_ns`).
-            /// Metadata-derived rewrite paths (compaction, mutations) reconstruct partition
-            /// types that way, so a `timestamp_ns` partition field must be accepted here too.
-            const auto scale = getDecimalScale(*type);
-            if (scale != 6 && scale != 9)
+            /// Only the Iceberg `timestamp` precision (`DateTime64(6)`) is written. Iceberg
+            /// `timestamp_ns` (`DateTime64(9)`, Avro `timestamp-nanos`) is rejected on purpose:
+            /// the manifest reader (`AvroSchemaReader::avroNodeToDataType`) only understands
+            /// `timestamp-millis`/`timestamp-micros`, so a `timestamp-nanos` partition value
+            /// would be read back as a raw `Int64` and break the partition-summary rewrite path.
+            if (getDecimalScale(*type) != 6)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Unsupported type for Iceberg: {}. Only DateTime64(6) (Iceberg `timestamp`) and DateTime64(9) "
-                    "(Iceberg `timestamp_ns`) are supported",
+                    "Unsupported type for Iceberg: {}. Only DateTime64(6) (Iceberg `timestamp`) is supported "
+                    "for partition fields",
                     type->getName());
 
             Poco::JSON::Object::Ptr timestamp_type = new Poco::JSON::Object;
             timestamp_type->set("type", "long");
-            timestamp_type->set("logicalType", scale == 6 ? "timestamp-micros" : "timestamp-nanos");
+            timestamp_type->set("logicalType", "timestamp-micros");
             timestamp_type->set("adjust-to-utc", assert_cast<const DataTypeDateTime64 &>(*type).hasExplicitTimeZone());
             return timestamp_type;
         }
