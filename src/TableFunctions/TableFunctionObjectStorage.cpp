@@ -444,14 +444,14 @@ FROM s3(
 
 Suppose that we have several files with following URIs on S3:
 
-- 'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_1.csv'
-- 'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_2.csv'
-- 'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_3.csv'
-- 'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_4.csv'
-- 'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another_prefix/some_file_1.csv'
-- 'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another_prefix/some_file_2.csv'
-- 'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another_prefix/some_file_3.csv'
-- 'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another_prefix/some_file_4.csv'
+- 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_1.csv'
+- 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_2.csv'
+- 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_3.csv'
+- 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_4.csv'
+- 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another_prefix/some_file_1.csv'
+- 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another_prefix/some_file_2.csv'
+- 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another_prefix/some_file_3.csv'
+- 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another_prefix/some_file_4.csv'
 
 Count the number of rows in files ending with numbers from 1 to 3:
 
