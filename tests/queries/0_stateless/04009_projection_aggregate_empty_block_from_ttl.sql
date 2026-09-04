@@ -5,8 +5,8 @@
 -- The projection must handle this gracefully instead of throwing a LOGICAL_ERROR.
 --
 -- Key conditions to reproduce:
--- 1. TTL with WHERE clause disables the `all_data_dropped` optimization in TTLTransform,
---    so the merge pipeline processes blocks normally instead of short-circuiting.
+-- 1. A WHERE-clause TTL is evaluated per row, so the merge pipeline processes blocks normally
+--    and hands the filtered result to the projection.
 -- 2. Parts inserted BEFORE ADD PROJECTION lack the projection, forcing it to be rebuilt
 --    (not merged) during OPTIMIZE, which calls calculateProjections on each block.
 -- 3. All rows are already expired, so TTLDeleteAlgorithm removes all rows,

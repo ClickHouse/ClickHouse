@@ -1,6 +1,7 @@
 -- a TTLDrop merge keeps rows the current expression does not expire
 100
 1
+1
 -- a TTLDrop range honours the byte budget
 1
 -- an expired part larger than the byte budget is still dropped

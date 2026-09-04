@@ -9,8 +9,10 @@ DROP TABLE IF EXISTS t_ttl_vertical;
 DROP TABLE IF EXISTS t_ttl_column_wide;
 DROP TABLE IF EXISTS t_ttl_column_compact;
 DROP TABLE IF EXISTS t_ttl_materialize;
+DROP TABLE IF EXISTS t_ttl_mutation_no_stage;
 DROP TABLE IF EXISTS t_ttl_still_deletes;
 DROP TABLE IF EXISTS t_ttl_group_by;
+DROP TABLE IF EXISTS t_ttl_group_by_control;
 DROP TABLE IF EXISTS t_ttl_patch_part;
 
 SELECT '-- rows TTL, horizontal merge';
@@ -103,6 +105,24 @@ SELECT count(), sum(v) FROM t_ttl_materialize;
 SELECT delete_ttl_info_min > now() FROM system.parts
 WHERE database = currentDatabase() AND table = 't_ttl_materialize' AND active;
 
+SELECT '-- a mutation that runs no TTL stage does not empty the part';
+
+-- `ttl_only_drop_parts` lets a mutation drop a part whose rows are all expired, which is decided from
+-- the bounds the new part inherited from its source. A mutation whose commands need no reading stage
+-- never recomputes them, so the inherited bounds are the retired rule's. TTL merges stay stopped for
+-- the whole case, so emptying the part here can only come from the mutation.
+CREATE TABLE t_ttl_mutation_no_stage (ts DateTime, v UInt64, c UInt64)
+ENGINE = MergeTree ORDER BY tuple() TTL ts + INTERVAL 1 SECOND
+SETTINGS min_bytes_for_wide_part = 0, ttl_only_drop_parts = 1;
+-- `STOP MERGES` would also stop mutations and `mutations_sync = 2` would then wait forever.
+SYSTEM STOP TTL MERGES t_ttl_mutation_no_stage;
+INSERT INTO t_ttl_mutation_no_stage VALUES (now() - INTERVAL 1 DAY, 42, 1);
+ALTER TABLE t_ttl_mutation_no_stage MODIFY TTL ts + INTERVAL 10 YEAR
+SETTINGS materialize_ttl_after_modify = 0;
+-- `DROP COLUMN` is a file rename, so nothing is read and no TTL stage is built.
+ALTER TABLE t_ttl_mutation_no_stage DROP COLUMN c SETTINGS mutations_sync = 2;
+SELECT count(), sum(v) FROM t_ttl_mutation_no_stage;
+
 SELECT '-- genuinely expired rows are still deleted';
 
 CREATE TABLE t_ttl_still_deletes (ts DateTime, v UInt64) ENGINE = MergeTree ORDER BY tuple()
@@ -132,6 +152,16 @@ SELECT arrayMap(x -> x > now(), group_by_ttl_info.min) FROM system.parts
 WHERE database = currentDatabase() AND table = 't_ttl_group_by' AND active
   AND notEmpty(group_by_ttl_info.min);
 
+SELECT '-- GROUP BY TTL, in-range control: an expired rule does roll the key up';
+
+-- Without this the case above cannot tell a preserved rule from a fixture that never rolls up.
+CREATE TABLE t_ttl_group_by_control (k UInt64, ts DateTime, v UInt64) ENGINE = MergeTree ORDER BY k
+TTL ts + INTERVAL 1 SECOND GROUP BY k SET v = max(v)
+SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_ttl_group_by_control VALUES (1, now() - INTERVAL 1 DAY, 10), (1, now() - INTERVAL 1 DAY, 20);
+OPTIMIZE TABLE t_ttl_group_by_control FINAL;
+SELECT count(), sum(v) FROM t_ttl_group_by_control;
+
 SELECT '-- a patch part that un-expires rows is honoured';
 
 CREATE TABLE t_ttl_patch_part (id UInt64, ts DateTime) ENGINE = MergeTree ORDER BY id
@@ -151,6 +181,8 @@ DROP TABLE t_ttl_vertical;
 DROP TABLE t_ttl_column_wide;
 DROP TABLE t_ttl_column_compact;
 DROP TABLE t_ttl_materialize;
+DROP TABLE t_ttl_mutation_no_stage;
 DROP TABLE t_ttl_still_deletes;
 DROP TABLE t_ttl_group_by;
+DROP TABLE t_ttl_group_by_control;
 DROP TABLE t_ttl_patch_part;

@@ -3419,6 +3419,11 @@ private:
 
     bool isRowsMaxTTLExpired() const
     {
+        /// With no TTL stage in the pipeline, `new_data_part->ttl_infos` is still the source part's
+        /// copy, so it says nothing about this part's rows.
+        if (ctx->execute_ttl_type == ExecuteTTLType::NONE)
+            return false;
+
         const auto ttl = ctx->new_data_part->ttl_infos.table_ttl;
         return ttl.max && ttl.max <= ctx->time_of_mutation;
     }

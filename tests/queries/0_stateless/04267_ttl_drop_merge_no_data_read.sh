@@ -209,7 +209,7 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_drop_idx;"
 # TTLPartDropMergeSelector assigns TTLDrop based on part_max_ttl even with
 # a WHERE clause, and the WHERE clause can only be answered per row.
 # -------------------------------------------------------------------
-echo "-- Case 4: WHERE-clause TTL is not short-circuited"
+echo "-- Case 4: TTLDrop with a WHERE-clause TTL"
 
 ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE t_ttl_where_no_shortcircuit
@@ -301,7 +301,7 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_drop_then_insert;"
 # How many rows the sources pushed depends on the granule size, so assert only
 # that they were read at all.
 # -------------------------------------------------------------------
-echo "-- Case 6: Rows TTL + column TTL is not short-circuited"
+echo "-- Case 6: TTLDrop with a rows TTL and a column TTL"
 
 ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE t_ttl_col
@@ -352,7 +352,7 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_col;"
 # another TTLDrop merge. Filter by length(merged_from) > 1 to only
 # look at the merge that actually combined two source parts.
 # -------------------------------------------------------------------
-echo "-- Case 7: Rows TTL + GROUP BY TTL is not short-circuited"
+echo "-- Case 7: TTLDrop with a rows TTL and a GROUP BY TTL"
 
 ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE t_ttl_groupby

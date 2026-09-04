@@ -49,6 +49,10 @@ ${CLICKHOUSE_CLIENT} -q "
     WHERE database = currentDatabase() AND table = 't_ttl_drop_reeval'
       AND event_type = 'MergeParts' AND merge_reason = 'TTLDropMerge'
     ORDER BY event_time DESC LIMIT 1"
+# The merge also rewrites the stored bounds, so the part is no longer a trap for the next merge.
+${CLICKHOUSE_CLIENT} -q "
+    SELECT delete_ttl_info_min > now() FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_ttl_drop_reeval' AND active"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_drop_reeval"
 
 echo "-- a TTLDrop range honours the byte budget"

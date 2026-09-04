@@ -81,8 +81,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
             return pack(ctx, std::move(merge_ranges), MergeType::TTLDrop);
 
         /// A part larger than the byte budget is refused by every range, so expired data on a full
-        /// disk could never be freed. Only the byte budget is exempted here: `max_size_rows` is
-        /// finite exactly when a text or vector index would throw while being built above it.
+        /// disk could never be freed.
         std::vector<MergeConstraint> single_part_constraints;
         single_part_constraints.reserve(ctx.merge_constraints.size());
         for (const auto & constraint : ctx.merge_constraints)
