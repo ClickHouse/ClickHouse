@@ -131,15 +131,9 @@ public:
     NativeORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
-    std::optional<size_t> readNumberOrRows() override;
 
 private:
-    void initializeIfNeeded();
-
     const FormatSettings format_settings;
-    std::unique_ptr<orc::Reader> file_reader;
-    std::atomic<int> is_stopped{0};
-    bool initialized = false;
 };
 
 class ORCColumnToCHColumn

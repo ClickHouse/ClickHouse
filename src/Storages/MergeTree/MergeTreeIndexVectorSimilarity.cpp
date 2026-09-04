@@ -307,9 +307,9 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAnd
 namespace
 {
 
-/// Check a few things to prevent undefined behavior further down in Usearch
+/// Check two things to prevent undefined behavior further down in Usearch
 /// - No vector element is +inf, -inf or nan.
-/// - In the case of i8 quantization (which is obscure): additionally, the squared vector magnitude must be non-zero and finite.
+/// - In the case of i8 quantization (which is obscure): additionally, the vector magnitude must not be zero.
 template <typename T>
 void checkVectorIsSane(
     const T * vector,
@@ -342,9 +342,9 @@ void checkVectorIsSane(
         }
     }
 
-    if (scalar_kind == unum::usearch::scalar_kind_t::i8_k && (magnitude_squared == 0.0 || !std::isfinite(magnitude_squared)))
+    if (scalar_kind == unum::usearch::scalar_kind_t::i8_k && magnitude_squared == 0.0)
         throw Exception(error_code,
-            "Zero-magnitude or non-finite vectors for vector similarity index ({}) are not supported with `i8` quantization", context);
+            "Zero-magnitude vectors for vector similarity index ({}) are not supported with `i8` quantization", context);
 }
 
 template <typename Column>

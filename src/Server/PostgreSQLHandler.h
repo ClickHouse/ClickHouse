@@ -40,7 +40,6 @@ public:
         bool ssl_enabled_,
         bool secure_required_,
         Int32 connection_id_,
-        std::optional<String> default_session_user_,
         VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());

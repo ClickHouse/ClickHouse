@@ -45,18 +45,12 @@ void addMergingFinal(
     MergeTreeData::MergingParams merging_params,
     const StorageMetadataPtr & metadata_snapshot,
     size_t max_block_size_rows,
-    bool enable_vertical_final,
-    bool read_in_reverse)
+    bool enable_vertical_final)
 {
     auto header = pipe.getSharedHeader();
     size_t num_outputs = pipe.numOutputPorts();
 
     auto now = time(nullptr);
-
-    /// Only the Replacing merging algorithm supports reading in the reverse order
-    /// (see `ReadFromMergeTree::requestReadingInOrder`).
-    if (read_in_reverse && merging_params.mode != MergeTreeData::MergingParams::Replacing)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading in reverse order with FINAL is supported only for ReplacingMergeTree");
 
     auto get_merging_processor = [&]() -> MergingTransformPtr
     {
@@ -83,7 +77,7 @@ void addMergingFinal(
 
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false, /*cleanup*/ !merging_params.is_deleted_column.empty(), enable_vertical_final, read_in_reverse);
+                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false, /*cleanup*/ !merging_params.is_deleted_column.empty(), enable_vertical_final);
 
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingTransform>(header, num_outputs,

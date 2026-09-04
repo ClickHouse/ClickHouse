@@ -17,7 +17,7 @@ ClickHouse Cloud は、コンピュート、ストレージ、[データ転送](
 
 <Note>
   * 価格は AWS の us-east-1 リージョンの料金に基づいています。
-  * 該当するデータ転送料金については、[こちら](/ja/products/cloud/reference/billing/network-data-transfer)をご覧ください。
+  * 該当するデータ転送料金と ClickPipes の料金については、[こちら](/ja/products/cloud/reference/billing/network-data-transfer)をご覧ください。
 </Note>
 
 <div id="basic-from-6652-per-month">
@@ -276,7 +276,7 @@ WHERE name = <your table name>
 </div>
 
 ClickHouse のクエリログには、ClickHouse Cloud でワークロードを実行するコストの見積もりに利用できる[主要なメトリクス](/ja/reference/system-tables/query_log)が記録されます。
-セルフマネージド ClickHouse から ClickHouse Cloud に移行するには、[`remoteSecure`](/ja/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) または [`BACKUP` および `RESTORE`](/ja/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore) を使用します。さらにご不明な点がある場合は、[ClickHouse Cloud Support](https://console.clickhouse.cloud/support) までお問い合わせください。
+セルフマネージドから ClickHouse Cloud への移行の詳細については、[移行ドキュメント](/ja/get-started/migrate/oss-to-cloud/clickhouse-to-cloud)を参照してください。さらにご不明な点がある場合は、[ClickHouse Cloud Support](https://console.clickhouse.cloud/support) までお問い合わせください。
 
 <div id="what-billing-options-are-available-for-clickhouse-cloud">
   ### ClickHouse Cloud ではどのような請求オプションを利用できますか？
@@ -351,7 +351,8 @@ ClickHouse Cloud コンソールで Organization &gt; Billing に移動します
   ### クレジットカードを追加し、トライアル期間とトライアルクレジットの有効期限が切れる前にアップグレードした場合、料金は発生しますか？
 </div>
 
-ユーザーがトライアル期間中にクレジットカードを追加した場合、トライアルクレジットが使い切られるか有効期限が切れるまでのいずれか早い時点まで、引き続きトライアルクレジットから差し引かれます。支払い方法を追加した後も、トライアルクレジットは30日間のトライアル期間の終了時に有効期限が切れます。トライアルクレジットが使い切られるか有効期限が切れた後は、登録済みのクレジットカードに請求されます。トライアルクレジットの有効期限は、ClickHouse Cloud コンソールの Billing ページで確認できます。
+ユーザーが30日間のトライアル期間が終了する前にトライアルから有料プランへ移行し、トライアルで付与されたクレジットがまだ残っている場合は、
+最初の30日間のトライアル期間中は引き続きそのトライアルクレジットから差し引かれ、30日間の終了後にクレジットカードへ請求されます。
 
 <div id="how-can-i-keep-track-of-my-spending">
   ### 支出をどのように把握できますか？
@@ -490,4 +491,4 @@ warehouse を使わない場合、データエンジニアのクエリに必要�
   ## ClickPipes の料金
 </div>
 
-ClickPipes の課金については、専用の[「ClickPipes」セクション](/ja/products/cloud/reference/billing/clickpipes/index)をご覧ください。
+ClickPipes の課金については、専用の[「ClickPipes の課金」セクション](/ja/products/cloud/reference/billing/clickpipes/index)をご覧ください。

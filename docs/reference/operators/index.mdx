@@ -1,6 +1,6 @@
 ---
 description: 'Documentation for Operators'
-sidebarTitle: 'Overview'
+sidebarTitle: 'Operators'
 slug: /sql-reference/operators/
 title: 'Operators'
 doc_type: 'reference'
@@ -11,10 +11,6 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 ## Access Operators {#access-operators}
 
 `a[N]` – Access to an element of an array. The `arrayElement(a, N)` function.
-`N` can also be an array of integers, in which case the elements at all of those positions are returned as an array,
-the same as `arrayMap(i -> a[i], N)`. The positions may be nullable. A `NULL` position produces `NULL` when the element type
-can be wrapped in `Nullable`; for element types that cannot be inside `Nullable` (such as `Array`, `Map`), it produces
-the default value of the element type, the same as for a scalar `NULL` index.
 
 `a.N` – Access to a tuple element. The `tupleElement(a, N)` function.
 
@@ -78,20 +74,6 @@ For tuple subtraction: [tupleMinus](/reference/functions/regular-functions/tuple
 
 ### ilike function {#ilike-function}
 `a ILIKE b` – The `ilike(a, b)` function.
-
-### match function {#match-function}
-`a REGEXP b` – The `match(a, b)` function.
-
-`a ~ b` – The `match(a, b)` function (PostgreSQL-style regular expression match).
-
-### notMatch function {#notmatch-function}
-`a !~ b` – The `notMatch(a, b)` function (checks that `a` does not match the regular expression `b`).
-
-### matchCaseInsensitive function {#matchcaseinsensitive-function}
-`a ~* b` – The `matchCaseInsensitive(a, b)` function (case-insensitive regular expression match).
-
-### notMatchCaseInsensitive function {#notmatchcaseinsensitive-function}
-`a !~* b` – The `notMatchCaseInsensitive(a, b)` function (checks that `a` does not match the regular expression `b` case-insensitively).
 
 ### BETWEEN function {#between-function}
 `a BETWEEN b AND c` – The same as `a >= b AND a <= c`.
@@ -428,7 +410,7 @@ The result type depends on the operand types:
 | `Date32` | `Time64(s)` | `DateTime64(s)` |
 
 <Note>
-The result uses the [session timezone](/reference/settings/session-settings/other#session_timezone) (or server default timezone if no session timezone is set). The [`date_time_overflow_behavior`](/reference/settings/formats/date-time#date_time_overflow_behavior) setting controls what happens when the result is outside the representable range.
+The result uses the [session timezone](/reference/settings/session-settings#session_timezone) (or server default timezone if no session timezone is set). The [`date_time_overflow_behavior`](/reference/settings/formats#date_time_overflow_behavior) setting controls what happens when the result is outside the representable range.
 </Note>
 
 Examples:
@@ -473,9 +455,9 @@ The postfix operators `AT TIME ZONE` and `AT LOCAL` convert a `DateTime` or `Dat
 | `expr AT TIME ZONE zone` | `toTimeZone(expr, zone)` |
 | `expr AT LOCAL` | `toTimeZone(expr, timeZone())` |
 
-`zone` can be any constant string expression that evaluates to a valid timezone name (e.g. `'America/Denver'`, `'UTC'`, or `concat('America', '/', 'Denver')`). Because `AT TIME ZONE` desugars to `toTimeZone`, the same timezone-argument rules apply: non-constant expressions such as a column reference require [`allow_nonconst_timezone_arguments = 1`](/reference/settings/session-settings/allow#allow_nonconst_timezone_arguments).
+`zone` can be any constant string expression that evaluates to a valid timezone name (e.g. `'America/Denver'`, `'UTC'`, or `concat('America', '/', 'Denver')`). Because `AT TIME ZONE` desugars to `toTimeZone`, the same timezone-argument rules apply: non-constant expressions such as a column reference require [`allow_nonconst_timezone_arguments = 1`](/reference/settings/session-settings#allow_nonconst_timezone_arguments).
 
-`AT LOCAL` uses the current [session timezone](/reference/settings/session-settings/other#session_timezone) (or the server default if no session timezone is set). On `Distributed` tables, `session_timezone` must be explicitly set; when it is empty, `timeZone()` is shard-local and cannot be used as a constant `toTimeZone` argument, causing an `ILLEGAL_COLUMN` exception.
+`AT LOCAL` uses the current [session timezone](/reference/settings/session-settings#session_timezone) (or the server default if no session timezone is set). On `Distributed` tables, `session_timezone` must be explicitly set; when it is empty, `timeZone()` is shard-local and cannot be used as a constant `toTimeZone` argument, causing an `ILLEGAL_COLUMN` exception.
 
 <Note>
 Unlike PostgreSQL, where `timestamp without time zone AT TIME ZONE zone` re-interprets the wall-clock value as being in the given zone before converting, ClickHouse always keeps the same absolute point in time and only changes the timezone label used for display. Both forms are equivalent to `toTimeZone` and do not alter the underlying timestamp.
@@ -591,7 +573,7 @@ ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
   - `0` otherwise.
 - For other values, the `IS NULL` operator always returns `0`.
 
-Can be optimized by enabling the [optimize_functions_to_subcolumns](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](/reference/data-types/nullable#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NULL FROM table` transforms to `SELECT n.null FROM TABLE`.
+Can be optimized by enabling the [optimize_functions_to_subcolumns](/reference/settings/session-settings#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](/reference/data-types/nullable#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NULL FROM table` transforms to `SELECT n.null FROM TABLE`.
 
 {/* */}
 
@@ -624,7 +606,7 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 └───┴───┘
 ```
 
-Can be optimized by enabling the [optimize_functions_to_subcolumns](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](/reference/data-types/nullable#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NOT NULL FROM table` transforms to `SELECT NOT n.null FROM TABLE`.
+Can be optimized by enabling the [optimize_functions_to_subcolumns](/reference/settings/session-settings#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](/reference/data-types/nullable#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NOT NULL FROM table` transforms to `SELECT NOT n.null FROM TABLE`.
 
 ## Checking Boolean Values {#checking-boolean-values}
 

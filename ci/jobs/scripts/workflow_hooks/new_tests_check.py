@@ -84,6 +84,10 @@ def has_new_integration_test_docker_images(changed_files):
     return False
 
 
+def has_ci_report_link(pr_body):
+    return "s3.amazonaws.com/clickhouse-test-reports" in pr_body
+
+
 # Per-arch Bugfix Validation job names that this post-hook OR's together.
 # Each per-arch job runs the new/modified test on master HEAD and on the PR;
 # the per-arch runner inverts the test status (XFAIL): the job reports OK
@@ -101,14 +105,14 @@ _BUGFIX_VALIDATE_PER_ARCH_JOB_NAMES = (
 )
 
 
-def per_arch_validation_states():
-    """Return the per-arch Bugfix Validation sub-results of the current workflow
-    result, in report order. Empty when none is present or the file is unreadable.
+def any_bugfix_validation_passed():
+    """Return True iff at least one per-arch Bugfix Validation job in the
+    current workflow result reported a success status (OK / XFAIL).
 
-    This is the snapshot as this post-hook sees it, which is not necessarily a job's
-    final status: `_finish_workflow` runs the post-hooks before it reconciles jobs
-    that GitHub has not completed, so a job read here as `PENDING` can end up
-    `ERROR` in the published report.
+    SKIPPED jobs do NOT count as a pass: a job that filter_job skipped
+    because the corresponding test type wasn't changed has no opinion on
+    whether the bug was validated. We use `is_success()` (strict - OK or
+    XFAIL only) rather than `is_ok()` (which treats SKIPPED as OK).
     """
     info = Info()
     try:
@@ -120,55 +124,24 @@ def per_arch_validation_states():
             f"WARNING: failed to read workflow result for "
             f"[{info.workflow_name}]: {e}"
         )
-        return []
-    return [
-        sub
-        for sub in workflow_result.results
-        if sub.name in _BUGFIX_VALIDATE_PER_ARCH_JOB_NAMES
-    ]
-
-
-def describe_per_arch_validation(states):
-    """Render the observed per-arch state, one line per job, with the reason the job
-    recorded for itself: its own `info`, then every note attached to it. A job dropped
-    behind a failed dependency carries an empty `info` and names the upstream job that
-    failed in a note instead. The `info` is what tells apart a `SKIPPED` that
-    `filter_job` produced because this PR changed no test of that type from a
-    `SKIPPED` the validator produced because the test still passed on master HEAD.
-    """
-    if not states:
-        return (
-            "No per-arch Bugfix validation job is present in the workflow result "
-            "as seen by this check."
+        return False
+    matched = []
+    passed = []
+    for sub in workflow_result.results:
+        if sub.name in _BUGFIX_VALIDATE_PER_ARCH_JOB_NAMES:
+            matched.append((sub.name, sub.status))
+            if sub.is_success():
+                passed.append(sub.name)
+    if matched:
+        print(
+            f"Bugfix validation per-arch jobs: {matched} - "
+            f"passed: {passed if passed else 'none'}"
         )
-    lines = ["Bugfix validation as seen by this check:"]
-    for sub in states:
-        recorded = [sub.info] + [
-            str(note.get("message", ""))
-            for note in ((sub.ext or {}).get("notes") or [])
-        ]
-        reason = " | ".join(
-            part.strip()
-            for chunk in recorded
-            for part in chunk.splitlines()
-            if part.strip()
+    else:
+        print(
+            "WARNING: no Bugfix Validation per-arch jobs found in workflow "
+            "result - were they all filtered/skipped?"
         )
-        lines.append(f"  {sub.name}: {sub.status}" + (f" ({reason})" if reason else ""))
-    return "\n".join(lines)
-
-
-def any_bugfix_validation_passed(states=None):
-    """Return True iff at least one per-arch Bugfix Validation job reported a
-    success status: `OK` or `XFAIL`, i.e. `Result.is_success` rather than `Result.is_ok`,
-    which would also accept `SKIPPED`. A job that `filter_job` skipped because the
-    corresponding test type wasn't changed has no opinion on whether the bug was
-    validated, so `SKIPPED` cannot count as a pass.
-    """
-    if states is None:
-        states = per_arch_validation_states()
-    passed = [sub.name for sub in states if sub.is_success()]
-    if passed:
-        print(f"Bugfix validation passed on: {passed}")
     return bool(passed)
 
 
@@ -200,7 +173,13 @@ def unit_bugfix_validation_refuted():
 
 
 def check():
-    _title, _body, labels = GH.get_pr_title_body_labels()
+    # read actual PR body from GH API - fallback to workflow context if failed
+    title, body, labels = GH.get_pr_title_body_labels()
+    if body:
+        pr_body = body
+    else:
+        print("WARNING: Failed to get PR body from GH API - using workflow context")
+        pr_body = Info().pr_body
     if not labels:
         labels = Info().pr_labels
 
@@ -219,25 +198,29 @@ def check():
 
     # Branching by what kinds of new tests the PR adds. The structure
     # below is deliberately mutually exclusive on the FT/IT-vs-rest axis
-    # so the unit-only shortcut cannot bypass per-arch Bugfix Validation
-    # when the PR adds functional or integration regression tests. (Bot
-    # reviews on PR #103541, 2026-05-03 / 2026-05-04 - concerns #5 and #6.)
+    # so neither the unit-only shortcut nor the CI-report-link fallback
+    # can bypass per-arch Bugfix Validation when the PR adds functional
+    # or integration regression tests. (Bot reviews on PR #103541,
+    # 2026-05-03 / 2026-05-04 - concerns #5 and #6.)
 
     # New functional or integration regression tests exist. Those tests
     # MUST validate on at least one arch (the bug reproduces on master
-    # HEAD and is fixed on the PR). The presence of an additional unit
-    # test alongside FT/IT does not relax this requirement either.
+    # HEAD and is fixed on the PR). The CI-report-link fallback is NOT
+    # accepted here - it would let an unvalidated FT/IT regression test
+    # through and weaken the contract this hook enforces. The presence
+    # of an additional unit test alongside FT/IT does not relax this
+    # requirement either.
     if has_ft or has_it:
-        states = per_arch_validation_states()
-        if any_bugfix_validation_passed(states):
+        if any_bugfix_validation_passed():
             print(
                 "At least one per-arch Bugfix Validation job validated the bug - pass"
             )
             return True
-        print(describe_per_arch_validation(states))
         print(
-            "A bug fix is validated when at least one per-arch Bugfix validation "
-            "job reports OK or XFAIL; none did."
+            "No per-arch Bugfix Validation job validated the bug - the test "
+            "either passes on master HEAD on every arch (so it's not actually "
+            "a regression test for the fix) or every arch errored out. See "
+            "the per-arch Bugfix validation jobs in the report."
         )
         return False
 
@@ -276,7 +259,16 @@ def check():
         )
         return True
 
-    # No new tests at all.
+    # No new tests at all. Allow a link to a CI report in the PR body as
+    # proof the bug exists and was fixed (operator-supplied evidence in
+    # lieu of an automated test). This fallback applies only here - it
+    # does NOT override per-arch Bugfix Validation when FT/IT tests are
+    # present (see the branch above).
+    if has_ci_report_link(pr_body):
+        print(
+            "No new tests have been added, but the PR description has a link to a CI report - pass"
+        )
+        return True
     print("No new tests have been added")
     return False
 

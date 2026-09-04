@@ -132,14 +132,7 @@ Block TableFunctionFormat::parseData(const ColumnsDescription & columns, const S
 
     /// In case when data contains more then 1 block we combine
     /// them all to one big block (this is considered a rare case).
-    Block res = concatenateBlocks(blocks);
-
-    /// When no rows are produced the result carries no columns, which would make
-    /// `StorageValues` unable to resolve them. Preserve the inferred structure.
-    if (res.columns() == 0)
-        res = reader->getHeader().cloneEmpty();
-
-    return res;
+    return concatenateBlocks(blocks);
 }
 
 StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool /*is_insert_query*/) const
@@ -182,7 +175,7 @@ format(format_name, [structure], data)
 - `structure` - Structure of the table. Optional. Format 'column1_name column1_type, column2_name column2_type, ...'.
 - `data` — String literal or constant expression that returns a string containing data in specified format
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A table with data parsed from `data` argument according to specified format and specified or extracted structure.
 

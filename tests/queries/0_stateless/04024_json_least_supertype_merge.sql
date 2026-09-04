@@ -126,6 +126,7 @@ DROP TABLE json_regexp_m;
 DROP TABLE json_regexp_t1;
 DROP TABLE json_regexp_t2;
 
+-- Test: old analyzer also works.
 DROP TABLE IF EXISTS json_old_t1;
 DROP TABLE IF EXISTS json_old_t2;
 DROP TABLE IF EXISTS json_old_m;
@@ -135,6 +136,7 @@ CREATE TABLE json_old_t2 (json JSON(SKIP y)) ENGINE = MergeTree() ORDER BY tuple
 CREATE TABLE json_old_m ENGINE = Merge(currentDatabase(), 'json_old_t.*');
 
 SELECT 'old analyzer';
+SELECT count() FROM json_old_m SETTINGS enable_analyzer = 0;
 SELECT count() FROM json_old_m SETTINGS enable_analyzer = 1;
 
 DROP TABLE json_old_m;

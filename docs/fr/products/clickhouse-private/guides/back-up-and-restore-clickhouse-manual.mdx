@@ -1,0 +1,68 @@
+---
+noindex: true
+title: "Sauvegarder et restaurer ClickHouse (manuel)"
+sidebarTitle: "Sauvegarde et restauration"
+description: "Effectuez des sauvegardes et des restaurations manuelles des données ClickHouse à l’aide de commandes SQL et du stockage S3."
+---
+
+Effectuez des sauvegardes et des restaurations manuelles des données ClickHouse à l’aide de commandes SQL et du stockage S3. Pour la syntaxe complète, consultez la [documentation de sauvegarde ClickHouse upstream](https://clickhouse.com/docs/operations/backup).
+
+Pour les opérations de sauvegarde via l’API, consultez [Gérer les sauvegardes via l’API](/fr/products/clickhouse-private/guides/manage-backups-via-the-private-api).
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* Un bucket S3 dans la même région que votre cluster
+* Le rôle IAM associé au compte de service Kubernetes doit pouvoir lire, écrire et lister le bucket
+
+<div id="s3-path-format">
+  ## Format du chemin S3
+</div>
+
+Toutes les commandes de sauvegarde utilisent le chemin S3 suivant :
+
+```text
+https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID
+```
+
+| Variable             | Description                                                                                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `$REGION`            | Région S3 (par ex. : `us-west-2`)                                                                                                |
+| `$S3_BUCKET`         | Nom du bucket S3 pour les sauvegardes                                                                                            |
+| `$CLUSTER_S3_PREFIX` | Préfixe de clé S3 du cluster, indiqué dans la ressource `clickhousecluster`, sous `spec.s3.keyPrefix` (par ex. : `ch-s3-{uuid}`) |
+| `$BACKUP_ID`         | Identifiant unique (UUID) de cette sauvegarde                                                                                    |
+
+<div id="perform-a-full-backup">
+  ## Effectuer une sauvegarde complète
+</div>
+
+Depuis l’un des pods serveur, exécutez :
+
+```sql
+BACKUP TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas, TABLE system.functions, ALL EXCEPT DATABASES INFORMATION_SCHEMA,information_schema, system TO S3('https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID') SETTINGS id='$BACKUP_ID' ASYNC;
+```
+
+La sauvegarde s’exécute de façon asynchrone. Suivez sa progression dans la table [`system.backups`](https://clickhouse.com/docs/operations/system-tables/backups) :
+
+```sql
+SELECT * FROM system.backups WHERE id = '$BACKUP_ID';
+```
+
+<div id="incremental-backups">
+  ## Sauvegardes incrémentielles
+</div>
+
+Consultez [Effectuer une sauvegarde incrémentielle](https://clickhouse.com/docs/operations/backup#take-an-incremental-backup) dans la documentation upstream.
+
+<div id="restore-from-a-backup">
+  ## Restaurer à partir d’une sauvegarde
+</div>
+
+Exécutez sur le cluster sur lequel vous souhaitez restaurer :
+
+```sql
+RESTORE ALL FROM S3('https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID') SETTINGS id='$RESTORE_ID', allow_different_database_def=true;
+```
+
+`$RESTORE_ID` est n’importe quel identifiant unique que vous attribuez à l’opération de restauration.

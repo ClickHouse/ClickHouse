@@ -16,41 +16,18 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 
 存储已执行查询的元数据和统计信息，例如开始时间、耗时、错误消息、资源使用情况以及其他执行细节。它不存储查询结果。
 
-您可以在服务器配置的 [query&#95;log](/zh/reference/settings/server-settings/settings/query#query_log) 部分修改查询日志设置。
+您可以在服务器配置的 [query&#95;log](/zh/reference/settings/server-settings/settings#query_log) 部分修改查询日志设置。
 
-您可以通过设置 [log&#95;queries = 0](/zh/reference/settings/session-settings/log-queries#log_queries) 来禁用查询日志。我们不建议关闭日志，因为此表中的信息对于排查问题非常重要。
+您可以通过设置 [log&#95;queries = 0](/zh/reference/settings/session-settings#log_queries) 来禁用查询日志。我们不建议关闭日志，因为此表中的信息对于排查问题非常重要。
 
-数据的刷写周期在 [query&#95;log](/zh/reference/settings/server-settings/settings/query#query_log) 服务器设置部分的 `flush_interval_milliseconds` 参数中设置。要强制刷写，请使用 [SYSTEM FLUSH LOGS](/zh/reference/statements/system#flush-logs) 查询。
+数据的刷写周期在 [query&#95;log](/zh/reference/settings/server-settings/settings#query_log) 服务器设置部分的 `flush_interval_milliseconds` 参数中设置。要强制刷写，请使用 [SYSTEM FLUSH LOGS](/zh/reference/statements/system#flush-logs) 查询。
 
 ClickHouse 不会自动从该表中删除数据。更多详细信息，请参见 [Introduction](/zh/reference/system-tables/overview#system-tables-introduction)。
 
 `system.query_log` 表会记录两类查询：
 
-1. 初始 (顶级) 查询。
-2. 由其他查询发起的子查询，包括用于分布式执行的查询以及诸如视图评估等内部子查询。对于这些查询，原始初始查询的信息会显示在 `initial_*` 列中。
-
-<Tip>
-  **默认过滤初始查询**
-
-  通常，每次查询 `system.query_log` 时都添加 `is_initial_query = 1`。这会排除子查询，从而不会将各个处理步骤与初始查询分开计数。此过滤器并不表示查询由客户端提交，因为服务器内部工作也可以是初始查询。
-
-  当您需要追踪初始查询及保留其 ID 的子查询时，请改用 `initial_query_id`。初始查询的 `initial_query_id` 和 `query_id` 值相同，而同一事件链中的子查询会保留初始查询的 `initial_query_id`，并拥有自己的 `query_id`。并非初始查询启动的所有工作都会以这种方式关联：服务器分派的工作可能会使用新的 `initial_query_id` 启动新的初始查询事件链，例如远程 [`QueryRunner`](/zh/reference/engines/table-engines/special/query-runner#cluster-mode) 分派。
-
-  ```sql
-  SELECT
-      hostname,
-      type,
-      query_id,
-      initial_query_id,
-      is_initial_query,
-      query
-  FROM system.query_log
-  WHERE initial_query_id = '<query_id_of_initial_query>'
-  ORDER BY event_time_microseconds;
-  ```
-
-  如果关联的子查询可以在其他节点上运行，请在每个节点上查询 `system.query_log`，例如使用 [`clusterAllReplicas`](/zh/reference/functions/table-functions/cluster)。
-</Tip>
+1. 由客户端直接运行的初始查询。
+2. 由其他查询发起的子查询 (用于分布式查询执行) 。对于这类查询，父查询的信息会显示在 `initial_*` 列中。
 
 根据查询的状态 (参见 `type` 列) ，每个查询会在 `query_log` 表中创建一行或两行：
 
@@ -58,9 +35,9 @@ ClickHouse 不会自动从该表中删除数据。更多详细信息，请参见
 2. 如果在查询处理期间发生错误，则会创建两个事件，类型分别为 `QueryStart` 和 `ExceptionWhileProcessing`。
 3. 如果在启动查询之前发生错误，则会创建一个类型为 `ExceptionBeforeStart` 的事件。
 
-您可以使用 [log&#95;queries&#95;probability](/zh/reference/settings/session-settings/log-queries#log_queries_probability) 设置来减少记录到 `query_log` 表中的查询数量。
+您可以使用 [log&#95;queries&#95;probability](/zh/reference/settings/session-settings#log_queries_probability) 设置来减少记录到 `query_log` 表中的查询数量。
 
-您可以使用 [log&#95;formatted&#95;queries](/zh/reference/settings/session-settings/log#log_formatted_queries) 设置将格式化后的查询记录到 `formatted_query` 列。
+您可以使用 [log&#95;formatted&#95;queries](/zh/reference/settings/session-settings#log_formatted_queries) 设置将格式化后的查询记录到 `formatted_query` 列。
 
 <div id="columns">
   ## 列
@@ -97,19 +74,19 @@ ClickHouse 不会自动从该表中删除数据。更多详细信息，请参见
 * `exception_code` ([Int32](/zh/reference/data-types/int-uint)) — 异常代码。
 * `exception` ([String](/zh/reference/data-types/string)) — 异常信息。
 * `stack_trace` ([String](/zh/reference/data-types/string)) — 堆栈跟踪。如果查询成功完成，则为空字符串。
-* `is_initial_query` ([UInt8](/zh/reference/data-types/int-uint)) — 查询是否为初始查询。可能的值：1 — 初始 (顶层) 查询，0 — 由另一条查询发起的子查询，包括用于分布式执行的查询和内部子查询。
+* `is_initial_query` ([UInt8](/zh/reference/data-types/int-uint)) — 查询类型。可能的值：1 — 查询由客户端发起，0 — 查询由另一条查询在分布式查询执行过程中发起。
 * `connection_address` ([IPv6](/zh/reference/data-types/ipv6)) — 发起连接的客户端 IP 地址。通过代理连接时，此地址为代理的地址。
 * `connection_port` ([UInt16](/zh/reference/data-types/int-uint)) — 建立连接的客户端端口。通过代理连接时，该端口为代理端口。
 * `user` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 发起当前查询的用户名。
 * `query_id` ([String](/zh/reference/data-types/string)) — 查询 ID。
 * `address` ([IPv6](/zh/reference/data-types/ipv6)) — 用于执行查询的 IP 地址。若通过代理连接且设置了 `auth_use_forwarded_address`，这里显示的将是客户端地址，而非代理地址。
 * `port` ([UInt16](/zh/reference/data-types/int-uint)) — 用于发起查询的客户端端口。若通过代理连接且设置了 `auth_use_forwarded_address`，则此处显示的是客户端端口，而非代理端口。
-* `initial_user` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 同一查询链中执行初始查询的用户名。
-* `initial_query_id` ([String](/zh/reference/data-types/string)) — 同一查询链中初始查询的 ID。
-* `initial_address` ([IPv6](/zh/reference/data-types/ipv6)) — 同一查询链中发起初始查询的 IP 地址。
-* `initial_port` ([UInt16](/zh/reference/data-types/int-uint)) — 同一查询链中发起初始查询的客户端端口。
-* `initial_query_start_time` ([DateTime](/zh/reference/data-types/datetime)) — 同一查询链中初始查询的开始时间。
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/zh/reference/data-types/datetime64)) — 同一查询链中初始查询的开始时间，精确到微秒。
+* `initial_user` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 执行初始查询的用户名 (用于分布式查询执行) 。
+* `initial_query_id` ([String](/zh/reference/data-types/string)) — 初始查询 ID (用于分布式查询执行) 。
+* `initial_address` ([IPv6](/zh/reference/data-types/ipv6)) — 发起父查询时所使用的 IP 地址。
+* `initial_port` ([UInt16](/zh/reference/data-types/int-uint)) — 发起父查询时使用的客户端端口。
+* `initial_query_start_time` ([DateTime](/zh/reference/data-types/datetime)) — 初始查询的开始时间 (用于分布式查询执行) 。
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/zh/reference/data-types/datetime64)) — 初始查询开始时间，精确到微秒 (适用于分布式查询执行) 。
 * `authenticated_user` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 该会话中已通过身份验证的用户名。
 * `interface` ([UInt8](/zh/reference/data-types/int-uint)) — 发起查询所使用的接口。可能的值：1 — TCP，2 — HTTP。
 * `is_secure` ([UInt8](/zh/reference/data-types/int-uint)) — 表示查询是否通过安全接口执行的标志
@@ -123,15 +100,13 @@ ClickHouse 不会自动从该表中删除数据。更多详细信息，请参见
 * `client_version_patch` ([UInt32](/zh/reference/data-types/int-uint)) — clickhouse-client 或其他 TCP 客户端版本的补丁版本号部分。
 * `script_query_number` ([UInt32](/zh/reference/data-types/int-uint)) — 在 clickhouse-client 中，多查询脚本中的查询编号。
 * `script_line_number` ([UInt32](/zh/reference/data-types/int-uint)) — 在包含多个查询的脚本中，clickhouse-client 使用的查询起始行号。
-* `http_method` ([UInt8](/zh/reference/data-types/int-uint)) — 发起该查询的 HTTP 方法。可能的值：0 - 查询通过 TCP 接口发起，1 - 使用了 GET 方法，2 - 使用了 POST 方法，4 - 使用了 PUT 方法，5 - 使用了 DELETE 方法，6 - 使用了 HEAD 方法。
+* `http_method` ([UInt8](/zh/reference/data-types/int-uint)) — 发起该查询的 HTTP 方法。可能的值：0 — 查询通过 TCP 接口发起，1 — 使用了 GET 方法，2 — 使用了 POST 方法。
 * `http_user_agent` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — HTTP 查询中传递的 HTTP 请求头 UserAgent。
 * `http_referer` ([String](/zh/reference/data-types/string)) — 在 HTTP 查询中传递的 HTTP 请求头 Referer (包含发出该查询的页面的完整或部分地址) 。
 * `forwarded_for` ([String](/zh/reference/data-types/string)) — 在 HTTP 查询里传递的 HTTP 请求头 X-Forwarded-For。
 * `quota_key` ([String](/zh/reference/data-types/string)) — 在 quotas 设置中指定的配额键 (请参见 keyed) 。
 * `distributed_depth` ([UInt64](/zh/reference/data-types/int-uint)) — 查询在各服务器之间被转发的次数。
 * `revision` ([UInt32](/zh/reference/data-types/int-uint)) — ClickHouse 修订号。
-* `http_handler_name` ([String](/zh/reference/data-types/string)) — 调用该查询的 SQL 定义 HTTP handler (CREATE HANDLER) 的名称。若该查询并非通过此类 handler 调用，则为空。
-* `http_request_url` ([String](/zh/reference/data-types/string)) — 调用该查询的 HTTP 请求路径 (不含查询字符串) 。为避免持久化敏感请求参数，省略了查询字符串。对于非 HTTP 查询，该值为空。
 * `log_comment` ([String](/zh/reference/data-types/string)) — 日志注释。可设置为任意字符串，长度不超过 max&#95;query&#95;size。若未定义，则为空字符串。
 * `thread_ids` ([Array(UInt64)](/zh/reference/data-types/array)) — 参与执行查询的线程 ID。这些线程不一定是同时运行的。
 * `peak_threads_usage` ([UInt64](/zh/reference/data-types/int-uint)) — 同时执行该查询的线程数上限。
@@ -172,13 +147,7 @@ ClickHouse 不会自动从该表中删除数据。更多详细信息，请参见
 **基本示例**
 
 ```sql
-SELECT *
-FROM system.query_log
-WHERE type = 'QueryFinish'
-  AND is_initial_query = 1
-ORDER BY query_start_time DESC
-LIMIT 1
-FORMAT Vertical;
+SELECT * FROM system.query_log WHERE type = 'QueryFinish' ORDER BY query_start_time DESC LIMIT 1 FORMAT Vertical;
 ```
 
 ```text

@@ -21,7 +21,7 @@ Grafana は、ClickHouse のオブザーバビリティデータを可視化す�
 Grafana で ClickHouse データソースを設定する際、このプラグインでは、ログとトレース用のデフォルトのデータベースとテーブル、およびそれらのテーブルが OTel スキーマに準拠しているかどうかを指定できます。これにより、Grafana でログとトレースを正しく表示するために必要なカラムをプラグインが返せるようになります。デフォルトの OTel スキーマに変更を加えていて独自のカラム名を使いたい場合は、それらを指定できます。time (`Timestamp`) 、log level (`SeverityText`) 、message body (`Body`) などでデフォルトの OTel カラム名を使用している場合は、変更は不要です。
 
 <Info>
-  **HTTP または ネイティブプロトコル**
+  **HTTP または Native**
 
   Grafana は HTTP またはネイティブプロトコルのいずれかで ClickHouse に接続できます。後者にはわずかなパフォーマンス上の利点がありますが、Grafana ユーザーが発行する集計クエリでは、その差を体感できることはほとんどありません。一方、HTTP プロトコルは通常、プロキシや内部確認を行いやすいという利点があります。
 </Info>
@@ -52,12 +52,12 @@ SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as t
   ### ログからトレースへ
 </div>
 
-ログに トレース ID が含まれていれば、特定のログ行から対応するトレースへ移動できます。
+ログに trace ID が含まれていれば、特定のログ行から対応するトレースへ移動できます。
 
 <Image img="/images/use-cases/observability/observability-17.webp" alt="ログからトレースへ" size="lg" border />
 
 <div id="traces">
-  ## トレース
+  ## Traces
 </div>
 
 上記のログ表示と同様に、Grafana がトレースを表示するために必要なカラムが揃っていれば (たとえば OTel スキーマを使用している場合) 、クエリビルダーが必要なクエリを自動的に組み立てます。`Query Type: Traces` を選択して `Run Query` をクリックすると、次のようなクエリが生成されて実行されます (内容は設定したカラムによって異なります。以下は OTel の使用を前提としています) 。
@@ -77,7 +77,7 @@ WHERE ( Timestamp >= $__fromTime AND Timestamp <= $__toTime )
 
 このクエリは、Grafana が想定するカラム名を返し、以下に示すようなトレースのテーブルを表示します。`duration` やその他のカラムでのフィルタリングは、SQL を記述しなくても行えます。
 
-<Image img="/images/use-cases/observability/observability-18.webp" alt="トレース" size="lg" border />
+<Image img="/images/use-cases/observability/observability-18.webp" alt="Traces" size="lg" border />
 
 より複雑なクエリを記述したい場合は、`SQL エディタ` に切り替えることができます。
 

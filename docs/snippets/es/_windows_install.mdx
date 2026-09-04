@@ -15,7 +15,9 @@ title: Instalación en Windows
 </Note>
 
 <Steps>
-  <Step title="Instalar WSL" id="install-wsl">
+  <Step>
+    ## Instalar WSL
+
     Abre Windows PowerShell como administrador y ejecuta el siguiente comando:
 
     ```bash
@@ -30,7 +32,9 @@ title: Instalación en Windows
     ```
   </Step>
 
-  <Step title="Instalar ClickHouse mediante un script con curl" id="install-clickhouse-via-script-using-curl">
+  <Step>
+    ## Instalar ClickHouse mediante un script con curl
+
     Ejecuta el siguiente comando para instalar ClickHouse mediante un script con curl:
 
     ```bash
@@ -45,7 +49,9 @@ title: Instalación en Windows
     ```
   </Step>
 
-  <Step title="Iniciar clickhouse-local" id="start-clickhouse-local">
+  <Step>
+    ## Iniciar clickhouse-local
+
     `clickhouse-local` te permite procesar archivos locales y remotos usando la
     potente sintaxis SQL de ClickHouse, sin necesidad de configuración. Los datos de las tablas se almacenan
     en una ubicación temporal, lo que significa que, después de reiniciar `clickhouse-local`,
@@ -58,7 +64,9 @@ title: Instalación en Windows
     ```
   </Step>
 
-  <Step title="Iniciar clickhouse-server" id="start-clickhouse-server">
+  <Step>
+    ## Iniciar clickhouse-server
+
     Si quieres conservar los datos, te conviene ejecutar `clickhouse-server`. Puedes
     iniciar el servidor de ClickHouse con el siguiente comando:
 
@@ -67,7 +75,9 @@ title: Instalación en Windows
     ```
   </Step>
 
-  <Step title="Iniciar clickhouse-client" id="start-clickhouse-client">
+  <Step>
+    ## Iniciar clickhouse-client
+
     Con el servidor en ejecución, abre una nueva ventana de terminal y ejecuta el siguiente comando
     para iniciar `clickhouse-client`:
 

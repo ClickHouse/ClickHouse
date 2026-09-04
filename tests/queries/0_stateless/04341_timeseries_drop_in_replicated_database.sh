@@ -16,7 +16,7 @@ ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --query "CREATE DATABASE
 
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --allow_experimental_time_series_table 1 --query "CREATE TABLE ${db}.ts ENGINE = TimeSeries"
 
-# Outer TimeSeries table + 4 inner tables (metrics, samples, tags, recentsamples).
+# Outer TimeSeries table + 3 inner tables (metrics, samples, tags).
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${db}'"
 
 # Before the fix the background dropTableFinally task retried the inner-table drop forever,

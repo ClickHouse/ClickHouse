@@ -16,6 +16,7 @@
 SELECT '-- bot repro: arrayJoin with empty-array prefix';
 SELECT arrayJoin(if(number < 3, [], [number])) FROM numbers(100) LIMIT 3 SETTINGS allow_experimental_analyzer = 1;
 SELECT '-- bot repro, old analyzer';
+SELECT arrayJoin(if(number < 3, [], [number])) FROM numbers(100) LIMIT 3 SETTINGS allow_experimental_analyzer = 0;
 
 -- The same bug shape but with a heterogeneous expansion: rows 0..1 produce
 -- two elements each, so a pre-`arrayJoin` source limit of 3 produces only
@@ -45,11 +46,13 @@ DROP TABLE t_arrayjoin_limit_no_sort;
 SELECT '-- loop() source, LIMIT 3';
 SELECT arrayJoin(if(number < 3, [], [number])) FROM loop(numbers(100)) LIMIT 3 SETTINGS allow_experimental_analyzer = 1;
 SELECT '-- loop() source, old analyzer';
+SELECT arrayJoin(if(number < 3, [], [number])) FROM loop(numbers(100)) LIMIT 3 SETTINGS allow_experimental_analyzer = 0;
 SELECT '-- loop() source, optimizations disabled';
 SELECT arrayJoin(if(number < 3, [], [number])) FROM loop(numbers(100)) LIMIT 3 SETTINGS query_plan_enable_optimizations = 0;
 SELECT '-- loop() source, LIMIT 3 OFFSET 1';
 SELECT arrayJoin(if(number < 3, [], [number])) FROM loop(numbers(100)) LIMIT 3 OFFSET 1;
 SELECT '-- loop() source, ARRAY JOIN clause, old analyzer';
+SELECT x FROM loop(numbers(100)) ARRAY JOIN if(number < 3, [], [number]) AS x LIMIT 3 SETTINGS allow_experimental_analyzer = 0;
 
 -- The trivial-LIMIT optimization must still fire when there is no `arrayJoin`:
 -- a plain `loop()` read is an infinite source, so `LIMIT 3` only terminates

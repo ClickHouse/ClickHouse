@@ -28,7 +28,7 @@ BYOC deployments utilize **Network Load Balancers (NLBs)** to manage and route t
 - Typically enabled by default when using a customer-managed VPC.
 - Disabled by default when using a ClickHouse-managed dedicated VPC.
 
-You can enable the private load balancer for your BYOC infrastructure directly in the ClickHouse Cloud console. For other endpoint adjustments (for example, removing the public load balancer), work with **ClickHouse Cloud Support**.
+You can work with **ClickHouse Cloud Support** to adjust which endpoints are enabled based on your requirements.
 
 ### Private Load Balancer Security Group for AWS {#private-load-balancer-security-group}
 
@@ -46,9 +46,9 @@ To set up the security group for your private load balancer:
 All changes to private load balancer security groups must be performed by ClickHouse Support. This ensures configuration consistency and avoids conflicts within the ClickHouse Cloud-managed environment.
 </Note>
 
-## PrivateLink, Private Service Connect, or Private Link {#privatelink-or-private-service-connect}
+## PrivateLink or Private Service Connect {#privatelink-or-private-service-connect}
 
-For maximum network isolation and security, BYOC deployments can use **AWS PrivateLink**, **GCP Private Service Connect**, or **Azure Private Link**. These options allow your applications to connect privately to ClickHouse Cloud services without requiring VPC/VNet peering or exposing endpoints to the public internet.
+For maximum network isolation and security, BYOC deployments can use **AWS PrivateLink** or **GCP Private Service Connect**. These options allow your applications to connect privately to ClickHouse Cloud services without requiring VPC peering or exposing endpoints to the public internet.
 
 For step-by-step setup instructions, see the [Private Networking Setup guide](/products/bring-your-own-cloud/onboarding/network).
 

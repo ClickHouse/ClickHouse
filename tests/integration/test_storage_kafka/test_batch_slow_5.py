@@ -1,6 +1,7 @@
 """Long running tests, longer than 30 seconds"""
 
 
+from kafka import KafkaAdminClient
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -48,7 +49,9 @@ def kafka_setup_teardown():
 
 
 def test_formats_errors(kafka_cluster):
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
 
     for format_name in [
         "Template",

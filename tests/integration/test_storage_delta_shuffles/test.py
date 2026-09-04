@@ -25,9 +25,6 @@ from pyspark.sql.types import (
 from decimal import Decimal
 from pyspark.sql.window import Window
 
-# Imported for its fork-safe gateway launch: pyspark's own preexec_fn runs
-# Python in the forked child, which can deadlock in a threaded worker.
-from helpers import spark_tools  # noqa: F401
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_access_key, minio_secret_key
@@ -302,12 +299,8 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     # (OSS) build and fails outright rather than silently falling back to a
     # single local stage. Pin that today's behaviour is a clean error, not a
     # silent no-op, so implementing distributed `DeltaLake` reads in OSS is a
-    # deliberate, visible change to this test. Which gate fires first depends
-    # on the plan shape, so match the failure class, not one message.
-    with pytest.raises(
-        QueryRuntimeException,
-        match="is not serializable for remote execution|make_distributed_plan",
-    ):
+    # deliberate, visible change to this test.
+    with pytest.raises(QueryRuntimeException, match="is not serializable for remote execution"):
         instance.query(
             f"SELECT count() FROM {TABLE_NAME}",
             settings={

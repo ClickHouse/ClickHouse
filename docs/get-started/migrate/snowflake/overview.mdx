@@ -142,9 +142,9 @@ ClickHouse outperforms Snowflake for real-time analytics applications in the fol
   node specific and not [transactionally consistent](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design),
   making it [better suited ](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)
   to real-time analytics. Users also have granular control over its use
-  with the ability to control its use on a [per-query basis](/reference/settings/session-settings/use-query#use_query_cache),
-  its [precise size](/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes),
-  whether a [query is cached](/reference/settings/session-settings/enable#enable_writes_to_query_cache)
+  with the ability to control its use on a [per-query basis](/reference/settings/session-settings#use_query_cache),
+  its [precise size](/reference/settings/session-settings#query_cache_max_size_in_bytes),
+  whether a [query is cached](/reference/settings/session-settings#enable_writes_to_query_cache)
   (limits on duration or required number of executions), and whether it's
   only [passively used](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design#using-logs-and-settings).
 

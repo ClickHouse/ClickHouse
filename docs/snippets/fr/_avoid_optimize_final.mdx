@@ -8,11 +8,7 @@ Chaque insertion crée une nouvelle part contenant des fichiers de colonnes tri�
 
 Au fil du temps, des processus d’arrière-plan fusionnent les petites parts en parts plus grandes afin de réduire la fragmentation et d’améliorer les performances des requêtes.
 
-<div className="ch-image-md">
-  <Frame>
-    <img src="/images/bestpractices/simple_merges.webp" alt="Fusions simples" />
-  </Frame>
-</div>
+<Image img="/images/bestpractices/simple_merges.webp" size="md" alt="Fusions simples" />
 
 Même s’il peut être tentant de déclencher manuellement cette fusion à l’aide de :
 
@@ -53,7 +49,7 @@ Ces étapes sont **très gourmandes en CPU et en E/S** et peuvent fortement soll
   ### Il ignore les garde-fous de sécurité
 </div>
 
-Normalement, ClickHouse évite de fusionner des parts de plus de ~150 Go (paramétrable via [max&#95;bytes&#95;to&#95;merge&#95;at&#95;max&#95;space&#95;in&#95;pool](/fr/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool)). Mais `OPTIMIZE FINAL` **ignore ce garde-fou**, ce qui signifie :
+Normalement, ClickHouse évite de fusionner des parts de plus de ~150 Go (paramétrable via [max&#95;bytes&#95;to&#95;merge&#95;at&#95;max&#95;space&#95;in&#95;pool](/fr/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)). Mais `OPTIMIZE FINAL` **ignore ce garde-fou**, ce qui signifie :
 
 * Il peut tenter de fusionner **plusieurs parts de 150 Go** en une seule part énorme
 * Cela peut entraîner des **temps de fusion très longs**, une **forte pression sur la mémoire** ou même des **erreurs de mémoire insuffisante**

@@ -21,10 +21,7 @@
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
-#include <Parsers/ASTCreateHandlerQuery.h>
-#include <Parsers/ASTDropHandlerQuery.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 
 
 namespace DB
@@ -34,7 +31,6 @@ namespace Setting
     extern const SettingsBool ignore_on_cluster_for_replicated_named_collections_queries;
     extern const SettingsBool ignore_on_cluster_for_replicated_access_entities_queries;
     extern const SettingsBool ignore_on_cluster_for_replicated_udf_queries;
-    extern const SettingsBool ignore_on_cluster_for_replicated_handler_queries;
 }
 
 static bool isUserDefinedFunctionQuery(const ASTPtr & query)
@@ -63,12 +59,6 @@ static bool isNamedCollectionQuery(const ASTPtr & query)
         || query->as<ASTAlterNamedCollectionQuery>();
 }
 
-static bool isHandlerQuery(const ASTPtr & query)
-{
-    return query->as<ASTCreateHandlerQuery>()
-        || query->as<ASTDropHandlerQuery>();
-}
-
 ASTPtr removeOnClusterClauseIfNeeded(const ASTPtr & query, ContextPtr context, const WithoutOnClusterASTRewriteParams & params)
 {
     auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query.get());
@@ -84,10 +74,7 @@ ASTPtr removeOnClusterClauseIfNeeded(const ASTPtr & query, ContextPtr context, c
             && context->getAccessControl().containsStorage(ReplicatedAccessStorage::STORAGE_TYPE))
         || (isNamedCollectionQuery(query)
             && context->getSettingsRef()[Setting::ignore_on_cluster_for_replicated_named_collections_queries]
-            && NamedCollectionFactory::instance().usesReplicatedStorage())
-        || (isHandlerQuery(query)
-            && context->getSettingsRef()[Setting::ignore_on_cluster_for_replicated_handler_queries]
-            && SQLDefinedHandlersFactory::instance().isReplicated()))
+            && NamedCollectionFactory::instance().usesReplicatedStorage()))
     {
         LOG_DEBUG(getLogger("removeOnClusterClauseIfNeeded"), "ON CLUSTER clause was ignored for query {}", query->getID());
         return query_on_cluster->getRewrittenASTWithoutOnCluster(params);

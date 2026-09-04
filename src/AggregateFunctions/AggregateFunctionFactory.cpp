@@ -171,22 +171,12 @@ String AggregateFunctionFactory::getAssociatedNameByNullsAction(const String & n
     /// combinator can name the shared tuple state after the action-adjusted base aggregate without
     /// instantiating a specific element. `name` is expected to be already alias-resolved by the caller;
     /// the lowercase fallbacks mirror how getImpl() looks up case-insensitive functions.
-    ///
-    /// The maps hold only base aggregate names, but the -Tuple combinator's nested name can itself
-    /// carry further combinator suffixes (e.g. anyRespectNullsStateTuple nests anyRespectNullsState).
-    /// getImpl() applies `action` at the base of that chain when it instantiates the elements, so the
-    /// shared name must be adjusted at the base of the chain too: strip combinator suffixes, adjust,
-    /// and re-append. Otherwise the name would identify a different state than the elements actually
-    /// hold, and a -State type-name round-trip (e.g. via a distributed query) would reconstruct a
-    /// mismatched function.
     if (action == NullsAction::RESPECT_NULLS)
     {
         if (auto it = respect_nulls.find(name); it != respect_nulls.end())
             return it->second;
         if (auto it = respect_nulls.find(Poco::toLower(name)); it != respect_nulls.end())
             return it->second;
-        if (auto adjusted = getAssociatedNameUnderCombinatorSuffix(name, action))
-            return *adjusted;
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} does not support RESPECT NULLS", name);
     }
 
@@ -196,32 +186,10 @@ String AggregateFunctionFactory::getAssociatedNameByNullsAction(const String & n
             return it->second;
         if (auto it = ignore_nulls.find(Poco::toLower(name)); it != ignore_nulls.end())
             return it->second;
-        if (auto adjusted = getAssociatedNameUnderCombinatorSuffix(name, action))
-            return *adjusted;
         /// IGNORE NULLS is the default for functions without an explicit transform.
     }
 
     return name;
-}
-
-std::optional<String> AggregateFunctionFactory::getAssociatedNameUnderCombinatorSuffix(const String & name, NullsAction action) const
-{
-    /// A name that is a registered function (or alias) is a base name: `action` applies to it directly,
-    /// so its combinator-looking tail (e.g. sumMap) must not be stripped.
-    const String resolved = getAliasToOrName(name);
-    if (aggregate_functions.contains(resolved) || case_insensitive_aggregate_functions.contains(Poco::toLower(resolved)))
-        return {};
-
-    AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name);
-    if (!combinator)
-        return {};
-
-    const String & suffix = combinator->getName();
-    String nested_name = name.substr(0, name.size() - suffix.size());
-    if (nested_name.empty())
-        return {};
-
-    return getAssociatedNameByNullsAction(getAliasToOrName(nested_name), action) + suffix;
 }
 
 

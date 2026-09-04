@@ -1017,7 +1017,7 @@ GROUP BY UserId
 
 ## Parallel vs sequential processing {#materialized-views-parallel-vs-sequential}
 
-As shown in the previous example, a table can act as the source for multiple Materialized Views. The order in which these are executed depends on the setting [`parallel_view_processing`](/reference/settings/session-settings/parallel#parallel_view_processing).
+As shown in the previous example, a table can act as the source for multiple Materialized Views. The order in which these are executed depends on the setting [`parallel_view_processing`](/reference/settings/session-settings#parallel_view_processing).
 
 By default, this setting is equal to `0` (`false`), meaning Materialized Views are executed sequentially in `uuid` order.
 

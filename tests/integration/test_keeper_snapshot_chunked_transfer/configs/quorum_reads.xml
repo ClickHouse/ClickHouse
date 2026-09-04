@@ -1,7 +1,0 @@
-<clickhouse>
-    <keeper_server>
-        <coordination_settings>
-            <quorum_reads>true</quorum_reads>
-        </coordination_settings>
-    </keeper_server>
-</clickhouse>

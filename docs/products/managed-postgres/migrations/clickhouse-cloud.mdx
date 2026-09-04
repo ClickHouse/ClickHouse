@@ -1,0 +1,196 @@
+---
+slug: /cloud/managed-postgres/migrations/clickhouse-cloud
+sidebarTitle: 'ClickHouse Cloud'
+title: Migrate to Managed Postgres using ClickHouse Cloud
+description: 'Learn how to migrate your PostgreSQL database to ClickHouse Managed Postgres using the built-in Data sources import wizard in ClickHouse Cloud.'
+keywords: ['postgres', 'postgresql', 'logical replication', 'migration', 'data transfer', 'managed postgres', 'data sources', 'import']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/components/Image.jsx";
+
+<BetaBadge/>
+
+ClickHouse Cloud includes a built-in import wizard that migrates your external PostgreSQL database into a Managed Postgres service. The wizard handles the source connection, schema export and import, replication settings, and table selection in five guided steps.
+
+## Prerequisites {#prerequisites}
+- Access to your source PostgreSQL database with a user that has replication privileges.
+- A ClickHouse Managed Postgres service as the migration target. If you don't have one yet, see the [quickstart](/products/managed-postgres/quickstart).
+- `pg_dump` and `psql` installed on your local machine. Both ship with the standard PostgreSQL client tools.
+
+## Considerations before migrating {#considerations}
+- **DDL propagation**: continuous replication (CDC) captures DML operations and `ADD COLUMN`. Other DDL changes such as `DROP COLUMN` and `ALTER COLUMN` aren't propagated and must be applied manually on the target.
+
+<Steps>
+<Step title="Connect to your source database" id="step-1-connect">
+Open the [ClickHouse Cloud console](https://clickhouse.cloud) and select your Managed Postgres service.
+
+<Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="Managed Postgres service card in the ClickHouse Cloud services list" size="lg" border />
+
+In the left sidebar, click **Data sources**.
+
+<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Data sources entry in the Managed Postgres service sidebar" size="lg" border />
+
+Click **Start import**.
+
+<Image img="/images/managed-postgres/pgpg/startimport.webp" alt="Data sources page with Start import button" size="lg" border />
+
+Fill in the connection details for your source PostgreSQL database: host, port, username, password, and database name. Enable **TLS** if your source requires it.
+
+If you require a private connection to your source database, you can opt for **SSH tunneling** and provide the necessary SSH details. This allows the migration to securely connect to databases that aren't publicly accessible.
+
+Choose an ingestion method:
+
+- **Initial load + CDC** — copies existing data, then keeps the target in sync with ongoing changes.
+- **Initial load only** — one-time copy, no ongoing replication.
+- **CDC only** — skips the initial copy and replicates only new changes from this point forward.
+
+<Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="Step 1: source database connection form with ingestion method options" size="lg" border />
+
+Click **Next**.
+
+</Step>
+<Step title="Export your database schema" id="step-2-export-schema">
+The wizard displays a `pg_dump` command pre-filled with your source connection details. Run it in a terminal:
+
+<Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="Step 2: pg_dump command for schema export" size="lg" border />
+
+```shell
+pg_dump \
+  -h <source_host> \
+  -U <source_user> \
+  -d <source_database> \
+  --schema-only \
+  -f pg.sql
+```
+
+This creates `pg.sql` in your current directory.
+
+<Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="Terminal output after running pg_dump" size="lg" border />
+
+Click **Next**.
+
+</Step>
+<Step title="Import the schema into your Managed Postgres service" id="step-3-import-schema">
+Select the destination database from the dropdown, or click **Create a new database** to provision one.
+
+The wizard displays a `psql` command to apply the schema dump to your Managed Postgres service. Run it in a terminal:
+
+<Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="Step 3: psql command for schema import" size="lg" border />
+
+```shell
+psql \
+  -h <target_host> \
+  -p 5432 \
+  -U <target_user> \
+  -d <target_database> \
+  -f pg.sql
+```
+
+<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="Terminal output after running psql schema import" size="lg" border />
+
+Click **Next**.
+
+</Step>
+<Step title="Configure ingestion settings" id="step-4-ingestion-settings">
+Specify the publication to use for logical replication. If you leave this blank, a publication is created automatically.
+
+Expand **Advanced replication settings** to tune throughput:
+
+| Setting | Default | Description |
+|---|---|---|
+| Sync interval (seconds) | 10 | How frequently the replication slot is polled |
+| Parallel threads for initial load | 4 | Number of threads for the bulk copy phase |
+| Pull batch size | 100,000 | Rows fetched per replication batch |
+| Snapshot number of rows per partition | 100000 | Partition size for large table snapshots |
+| Snapshot number of tables in parallel | 1 | Tables snapshotted concurrently |
+
+<Image img="/images/managed-postgres/pgpg/advancedsettings.webp" alt="Step 4: ingestion settings form with publication and advanced replication options" size="lg" border />
+
+Click **Next**.
+
+</Step>
+<Step title="Select tables" id="step-5-select-tables">
+Select the tables you want to replicate. Tables are grouped by schema. Select individual tables or expand a schema to pick all of them.
+
+<Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="Step 5: table picker grouped by schema with Create migration button" size="lg" border />
+
+Click **Create migration**.
+
+</Step>
+</Steps>
+
+## Monitor the migration {#monitor}
+After creating the migration, you'll see it listed in **Data sources** with a **Running** status.
+
+<Image img="/images/managed-postgres/pgpg/migrationlist.webp" alt="Data sources list showing a running migration" size="lg" border />
+
+Click the migration to open the detail view. The **Tables** tab shows the initial load progress for each table, including rows processed, partitions, and average time per partition. The **Metrics** tab shows replication lag and throughput once CDC begins.
+
+<Image img="/images/managed-postgres/pgpg/initialload.webp" alt="Migration detail view showing initial load stats per table" size="lg" border />
+
+## Post-migration tasks {#post-migration}
+Once the initial load is complete and, if using CDC, replication lag is near zero:
+
+**Validate row counts.** Spot-check critical tables on both source and target before switching traffic:
+
+```sql
+SELECT COUNT(*) FROM public.orders;
+```
+
+**Stop writes on the source.** Pause application writes. To enforce read-only mode during cutover:
+
+```sql
+ALTER DATABASE <source_db> SET default_transaction_read_only = on;
+```
+
+**Confirm replication is caught up.** Compare the latest row on source and target:
+
+```sql
+-- Run on both source and target
+SELECT MAX(id), MAX(updated_at) FROM public.orders;
+```
+
+**Reset sequences.** Align sequences with the current maximum values in each table:
+
+```sql
+DO $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN
+        SELECT
+            n.nspname AS schema_name,
+            c.relname AS table_name,
+            a.attname AS column_name,
+            pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) AS seq_name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_attribute a ON a.attrelid = c.oid
+        WHERE c.relkind = 'r'
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+            AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+    LOOP
+        IF r.seq_name IS NOT NULL THEN
+            EXECUTE format(
+                'SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM %I.%I), 0) + 1, false)',
+                r.seq_name, r.column_name, r.schema_name, r.table_name
+            );
+        END IF;
+    END LOOP;
+END $$;
+```
+
+**Cut over application traffic.** Point reads and writes to your Managed Postgres service and monitor for errors, constraint violations, and replication health.
+
+**Clean up.**  Once you've cut over and confirmed the new service is healthy, delete the migration from **Data sources**. If you used CDC, drop the replication slot from the source to free resources:
+
+```sql
+SELECT pg_drop_replication_slot('<slot_name>');
+```
+
+## Next steps {#next-steps}
+- [Managed Postgres quickstart](/products/managed-postgres/quickstart)
+- [Managed Postgres connection details](/products/managed-postgres/connection)
+- [ClickPipes Postgres FAQ](/integrations/clickpipes/postgres/faq)

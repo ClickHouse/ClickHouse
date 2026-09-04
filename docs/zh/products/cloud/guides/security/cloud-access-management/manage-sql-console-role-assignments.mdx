@@ -1,0 +1,82 @@
+---
+slug: /cloud/guides/sql-console/manage-sql-console-role-assignments
+sidebarTitle: '管理 SQL 控制台角色分配'
+title: '配置 SQL 控制台角色分配'
+description: '介绍如何管理 SQL 控制台角色分配的指南'
+doc_type: 'guide'
+keywords: ['SQL 控制台', '角色分配', '访问管理', '权限', '安全']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<Warning>
+  此设置已弃用。对于已迁移到自定义角色的组织，此设置已由角色创建页面上的新设置取代。有关更多信息，请参阅 [管理 Cloud 用户](/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users)。
+</Warning>
+
+> 本指南介绍如何配置 SQL 控制台角色分配，它决定了整个控制台的访问权限，以及用户在 Cloud 控制台中可使用的功能。
+
+<Steps>
+  <Step>
+    ### 访问服务设置
+
+    在服务页面上，点击您要调整 SQL 控制台访问设置的服务右上角菜单。
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/1_service_settings.webp" size="lg" />
+
+    在弹出菜单中选择 `settings`。
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/2_service_settings.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### 调整 SQL 控制台访问权限
+
+    在“安全”部分下，找到“SQL 控制台访问”区域：
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/3_service_settings.webp" size="md" />
+  </Step>
+
+  <Step>
+    ### 更新 Service Admin 的设置
+
+    选择 Service Admin 的下拉菜单，以更改 Service Admin 角色的访问控制设置：
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/4_service_settings.webp" size="md" />
+
+    您可以从以下角色中选择：
+
+    | 角色            |
+    | ------------- |
+    | `No access`   |
+    | `Read only`   |
+    | `Full access` |
+  </Step>
+
+  <Step>
+    ### 更新 Service Read Only 的设置
+
+    选择 Service Read Only 的下拉菜单，以更改 Service Read Only 角色的访问控制设置：
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/5_service_settings.webp" size="md" />
+
+    您可以从以下角色中选择：
+
+    | 角色            |
+    | ------------- |
+    | `No access`   |
+    | `Read only`   |
+    | `Full access` |
+  </Step>
+
+  <Step>
+    ### 查看有权访问的用户
+
+    点击用户数量即可查看该服务的用户概览：
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/6_service_settings.webp" size="md" />
+
+    页面右侧会打开一个标签页，显示用户总数及其角色：
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/7_service_settings.webp" size="md" />
+  </Step>
+</Steps>

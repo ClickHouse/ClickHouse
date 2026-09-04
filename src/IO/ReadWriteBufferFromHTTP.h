@@ -90,10 +90,6 @@ private:
     bool has_not_found_url = false;
 
     OutStreamCallback out_stream_callback;
-    /// When set, the request body produced by `out_stream_callback` is sent with a fixed
-    /// Content-Length instead of chunked transfer encoding. Some HTTP servers (e.g. the
-    /// Snowflake Horizon Iceberg REST catalog) reject chunked request bodies.
-    std::optional<size_t> out_stream_fixed_content_length;
     RedirectCallback redirect_callback;
 
     Poco::URI current_uri;
@@ -164,7 +160,6 @@ private:
         size_t max_redirects_,
         bool enable_url_encoding_,
         OutStreamCallback out_stream_callback_,
-        std::optional<size_t> out_stream_fixed_content_length_,
         bool use_external_buffer_,
         bool http_skip_not_found_url_,
         HTTPHeaderEntries http_header_entries_,
@@ -223,7 +218,6 @@ class BuilderRWBufferFromHTTP
     size_t max_redirects = 0;
     bool enable_url_encoding = false;
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = nullptr;
-    std::optional<size_t> out_stream_fixed_content_length = std::nullopt;
     ReadWriteBufferFromHTTP::RedirectCallback redirect_callback = nullptr;
     bool use_external_buffer = false;
     bool http_skip_not_found_url = false;
@@ -253,7 +247,6 @@ public:
     setterMember(withRedirects, max_redirects)
     setterMember(withEnableUrlEncoding, enable_url_encoding)
     setterMember(withOutCallback, out_stream_callback)
-    setterMember(withOutCallbackFixedContentLength, out_stream_fixed_content_length)
     setterMember(withRedirectCallback, redirect_callback)
     setterMember(withHeaders, http_header_entries)
     setterMember(withExternalBuf, use_external_buffer)
@@ -262,17 +255,7 @@ public:
 #undef setterMember
 /// NOLINTEND(bugprone-macro-parentheses)
 
-    /// Authenticate with HTTP Basic credentials (no header is sent when they are empty).
     ReadWriteBufferFromHTTPPtr create(const Poco::Net::HTTPBasicCredentials & credentials_);
-
-    /// Authenticate with a bearer token (`Authorization: Bearer <token>`; no header when empty).
-    ReadWriteBufferFromHTTPPtr createWithBearerToken(const std::string & bearer_token_);
-
-    /// Authenticate with the bearer token when it is non-empty, otherwise with the Basic
-    /// credentials: both occupy the `Authorization` header, so a request carries one or the
-    /// other, never both.
-    ReadWriteBufferFromHTTPPtr createWithBearerToken(
-        const std::string & bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_);
 };
 
 /// Fills `credentials` from the userinfo component of `uri` (e.g. `http://user:pass@host`).

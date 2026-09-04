@@ -13,7 +13,7 @@ doc_type: 'guide'
 
 ClickHouse accepts trace context HTTP headers, as described by the [W3C recommendation](https://www.w3.org/TR/trace-context/). It also accepts trace context over a native protocol that is used for communication between ClickHouse servers or between the client and server. For manual testing, trace context headers conforming to the Trace Context recommendation can be supplied to `clickhouse-client` using `--opentelemetry-traceparent` and `--opentelemetry-tracestate` flags.
 
-If no parent trace context is supplied or the provided trace context does not comply with W3C standard above, ClickHouse can start a new trace, with probability controlled by the [opentelemetry_start_trace_probability](/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability) setting.
+If no parent trace context is supplied or the provided trace context does not comply with W3C standard above, ClickHouse can start a new trace, with probability controlled by the [opentelemetry_start_trace_probability](/reference/settings/session-settings#opentelemetry_start_trace_probability) setting.
 
 ## Propagating the trace context {#propagating-the-trace-context}
 
@@ -84,7 +84,7 @@ The tags or attributes are saved as two parallel arrays, containing the keys and
 
 ## Log-query-settings {#log-query-settings}
 
-Setting [log_query_settings](/reference/settings/session-settings/log-query#log_query_settings) allows log changes to query settings during query execution. When enabled, any modifications made to query settings will be recorded in the OpenTelemetry span log. This feature is particularly useful in production environments for tracking configuration changes that may affect query performance.
+Setting [log_query_settings](/reference/settings/session-settings) allows log changes to query settings during query execution. When enabled, any modifications made to query settings will be recorded in the OpenTelemetry span log. This feature is particularly useful in production environments for tracking configuration changes that may affect query performance.
 
 ## Integration with monitoring systems {#integration-with-monitoring-systems}
 

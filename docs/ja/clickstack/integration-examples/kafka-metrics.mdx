@@ -35,7 +35,9 @@ OpenTelemetry JMX Metric Gatherer コンテナーを実行してメトリクス�
 * OpenTelemetry JMX Metric Gatherer JAR (ダウンロード手順は以下)
 
 <Steps>
-  <Step title="ClickStack API key を取得する" id="get-api-key">
+  <Step>
+    #### ClickStack API key を取得する
+
     JMX Metric Gatherer はデータを ClickStack の OTLP エンドポイントに送信します。このエンドポイントでは認証が必要です。
 
     1. ClickStack の URL (例: http://localhost:8080) で HyperDX を開きます
@@ -52,7 +54,9 @@ OpenTelemetry JMX Metric Gatherer コンテナーを実行してメトリクス�
     ```
   </Step>
 
-  <Step title="OpenTelemetry JMX Metric Gatherer をダウンロードする" id="download-jmx">
+  <Step>
+    #### OpenTelemetry JMX Metric Gatherer をダウンロードする
+
     JMX Metric Gatherer の JAR をダウンロードします:
 
     ```bash
@@ -61,7 +65,9 @@ OpenTelemetry JMX Metric Gatherer コンテナーを実行してメトリクス�
     ```
   </Step>
 
-  <Step title="Kafka JMX が有効であることを確認する" id="verify-jmx">
+  <Step>
+    #### Kafka JMX が有効であることを確認する
+
     Kafka ブローカーで JMX が有効になっていることを確認してください。Docker デプロイメントの場合:
 
     ```yaml
@@ -71,7 +77,7 @@ OpenTelemetry JMX Metric Gatherer コンテナーを実行してメトリクス�
         environment:
           JMX_PORT: 9999
           KAFKA_JMX_HOSTNAME: kafka
-          # ... other Kafka configuration
+          # ... その他のKafka設定
         ports:
           - "9092:9092"
           - "9999:9999"
@@ -90,7 +96,9 @@ OpenTelemetry JMX Metric Gatherer コンテナーを実行してメトリクス�
     ```
   </Step>
 
-  <Step title="Docker Compose で JMX Metric Gatherer をデプロイする" id="deploy-jmx">
+  <Step>
+    #### Docker Compose で JMX Metric Gatherer をデプロイする
+
     この例では、Kafka、JMX Metric Gatherer、ClickStack を含む一連の構成をまとめて示します。サービス名とエンドポイントは、既存のデプロイメントに合わせて調整してください。
 
     ```yaml
@@ -168,7 +176,9 @@ OpenTelemetry JMX Metric Gatherer コンテナーを実行してメトリクス�
     * `10000` - 収集間隔 (ミリ秒単位、10 秒)
   </Step>
 
-  <Step title="HyperDX でメトリクスを確認する" id="verify-metrics">
+  <Step>
+    #### HyperDX でメトリクスを確認する
+
     HyperDX にログインし、メトリクスが送信されていることを確認します。
 
     1. Chart Explorer に移動します
@@ -186,10 +196,10 @@ OpenTelemetry JMX Metric Gatherer コンテナーを実行してメトリクス�
     アクティビティを発生させて、さらに多くのメトリクスを表示するには:
 
     ```bash
-    # Create a test topic
+    # テストトピックを作成する
     docker exec kafka bash -c "unset JMX_PORT && kafka-topics --create --topic test-topic --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1"
 
-    # Send test messages
+    # テストメッセージを送信する
     echo -e "Message 1\nMessage 2\nMessage 3" | docker exec -i kafka bash -c "unset JMX_PORT && kafka-console-producer --topic test-topic --bootstrap-server kafka:9092"
     ```
 
@@ -203,10 +213,12 @@ OpenTelemetry JMX Metric Gatherer コンテナーを実行してメトリクス�
   ## デモデータセット
 </div>
 
-本番システムを構成する前に Kafka メトリクス インテグレーションを試したい方向けに、実際に近い Kafka メトリクスのパターンを含む事前生成済みのデータセットを用意しています。
+本番システムを構成する前に Kafka Metrics インテグレーションを試したい方向けに、実際に近い Kafka メトリクスのパターンを含む事前生成済みのデータセットを用意しています。
 
 <Steps>
-  <Step title="サンプルのメトリクスデータセットをダウンロードする" id="download-sample">
+  <Step>
+    #### サンプルのメトリクスデータセットをダウンロードする
+
     事前生成済みのメトリクスファイルをダウンロードします (実際に近いパターンを含む 29 時間分の Kafka メトリクス) :
 
     ```bash
@@ -228,7 +240,9 @@ OpenTelemetry JMX Metric Gatherer コンテナーを実行してメトリクス�
     * **20:00-22:00: 夜間の減少** - 夜間レベルまで急激に低下
   </Step>
 
-  <Step title="ClickStack を起動する" id="start-clickstack">
+  <Step>
+    #### ClickStack を起動する
+
     ClickStack インスタンスを起動します:
 
     ```bash
@@ -238,7 +252,9 @@ OpenTelemetry JMX Metric Gatherer コンテナーを実行してメトリクス�
     ```
   </Step>
 
-  <Step title="ClickStack にメトリクスを読み込む" id="load-metrics">
+  <Step>
+    #### ClickStack にメトリクスを読み込む
+
     メトリクスを ClickHouse に直接読み込みます:
 
     ```bash
@@ -252,7 +268,9 @@ OpenTelemetry JMX Metric Gatherer コンテナーを実行してメトリクス�
     ```
   </Step>
 
-  <Step title="HyperDX でメトリクスを確認する" id="verify-demo-metrics">
+  <Step>
+    #### HyperDX でメトリクスを確認する
+
     読み込み後、メトリクスをすばやく確認するには、あらかじめ用意されたダッシュボードを使うのが最も簡単です。
 
     ダッシュボードをインポートして Kafka メトリクス全体をまとめて表示するには、[ダッシュボードと可視化](#dashboards) セクションに進んでください。
@@ -272,11 +290,13 @@ OpenTelemetry JMX Metric Gatherer コンテナーを実行してメトリクス�
 ClickStack で Kafka の監視を始める際に役立つよう、Kafka メトリクス用の基本的な可視化を用意しています。
 
 <Steps>
-  <Step title="ダッシュボード設定ファイルをダウンロード" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-metrics-dashboard.json'} download="kafka-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">ダッシュボード設定ファイルをダウンロード</TrackedLink>。
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-metrics-dashboard.json'} download="kafka-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">ダウンロード</TrackedLink> ダッシュボード設定ファイル
   </Step>
 
-  <Step title="あらかじめ用意されたダッシュボードをインポートする" id="import-dashboard">
+  <Step>
+    #### あらかじめ用意されたダッシュボードをインポートする
+
     1. HyperDX を開き、Dashboards セクションに移動します
     2. 右上の三点リーダー内にある **Import Dashboard** をクリックします
 
@@ -287,7 +307,9 @@ ClickStack で Kafka の監視を始める際に役立つよう、Kafka メト�
     <Image img="/images/clickstack/kafka/import-kafka-dashboard.webp" alt="インポート完了ダイアログ" />
   </Step>
 
-  <Step title="ダッシュボードを表示する" id="created-dashboard">
+  <Step>
+    #### ダッシュボードを表示する
+
     ダッシュボードが作成され、すべての可視化があらかじめ設定された状態で表示されます。
 
     <Image img="/images/clickstack/kafka/kafka-metrics-dashboard.webp" alt="Kafka メトリクスダッシュボード" />
@@ -410,11 +432,11 @@ docker exec <jmx-exporter-container> sh -c "timeout 2 bash -c 'cat < /dev/null >
 * 一意の`kafka.broker.id` resource attributeを持つJMX Metric Gathererインスタンスを追加して、複数のKafkaブローカーを監視します
 
 <div id="going-to-production">
-  ## 本番環境に向けて
+  ## 本番環境への移行
 </div>
 
-このガイドでは、JMX Metric Gatherer から ClickStack の OTLPエンドポイントに直接メトリクスを送信します。これは、テストや小規模な導入には適しています。
+このガイドでは、JMX Metric Gatherer から ClickStack の OTLPエンドポイントへメトリクスを直接送信します。これは、テストや小規模なデプロイメントには適しています。
 
-本番環境では、独自の OpenTelemetry Collector をエージェントとしてデプロイし、JMX エクスポーター からメトリクスを受信して ClickStack に転送してください。これにより、バッチ処理、耐障害性、一元的な設定管理が可能になります。
+本番環境では、独自の OpenTelemetry Collector を agent としてデプロイし、JMX Exporter からメトリクスを受信して ClickStack に転送してください。これにより、バッチ処理、耐障害性、一元的な設定管理が可能になります。
 
-本番環境向けのデプロイパターンや collector の設定例については、[OpenTelemetry で取り込む](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。
+本番環境向けのデプロイメントパターンや collector の設定例については、[OpenTelemetry による取り込み](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。

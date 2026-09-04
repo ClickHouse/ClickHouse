@@ -10,13 +10,13 @@ integration:
   - category: 'data_ingestion'
 ---
 
-import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import ClickHouseSupportedBadge from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
 هذا هو [موصل sink الرسمي لـ Apache Flink](https://github.com/ClickHouse/flink-connector-clickhouse) والمدعوم من ClickHouse. وقد بُني باستخدام [AsyncSinkBase](https://cwiki.apache.org/confluence/display/FLINK/FLIP-171%3A+Async+Sink) في Flink و[Java client](https://github.com/ClickHouse/clickhouse-java) الرسمي لـ ClickHouse.
 
-يدعم هذا الموصل واجهة برمجة تطبيقات DataStream في Apache Flink. ومن [المخطط دعم Table API في إصدار لاحق](https://github.com/ClickHouse/flink-connector-clickhouse/issues/42).
+يدعم هذا الموصل واجهة DataStream API في Apache Flink. ومن [المخطط دعم Table API في إصدار لاحق](https://github.com/ClickHouse/flink-connector-clickhouse/issues/42).
 
 <div id="requirements">
   ## المتطلبات
@@ -147,7 +147,7 @@ flink-connector-clickhouse-${flink_version}-${stable_version}-all.jar
     ```java
     public static void main(String[] args) {
         // قم بتهيئة ClickHouseClient
-        ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
 
         // أنشئ ElementConverter
         ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
@@ -161,7 +161,7 @@ flink-connector-clickhouse-${flink_version}-${stable_version}-all.jar
                 MAX_BATCH_SIZE_IN_BYTES,
                 MAX_TIME_IN_BUFFER_MS,
                 MAX_RECORD_SIZE_IN_BYTES,
-                clientConfig
+                clickHouseClientConfig
         );
 
         csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
@@ -243,7 +243,7 @@ flink-connector-clickhouse-${flink_version}-${stable_version}-all.jar
         "insert_deduplicate", "1"
     );
 
-    ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(
+    ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(
         url,
         username,
         password,
@@ -351,7 +351,7 @@ ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
         MAX_BATCH_SIZE_IN_BYTES,
         MAX_TIME_IN_BUFFER_MS,
         MAX_RECORD_SIZE_IN_BYTES,
-        clientConfig
+        clickHouseClientConfig
 );
 csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
 ```
@@ -443,7 +443,7 @@ com.clickhouse.client.api.ServerException: Code: 33. DB::Exception: Cannot read 
 
 [//]: #
 
-[//]: # "**السبب**: إذا فشل إدراج سجل واحد أو أكثر في دفعة Flink إلى ClickHouse بسبب فشل قابل لإعادة المحاولة، فسيعيد الموصل محاولة **الدفعة بالكامل**. إذا كانت [إزالة تكرار الإدراج](https://clickhouse.com/docs/guides/developer/deduplicating-inserts-on-retries#query-level-insert-deduplication) معطّلة، فقد يؤدي ذلك إلى وصول سجلات مكررة إلى جدول ClickHouse الخاص بك. وإلا، فمن الممكن أن تكون نافذة إزالة التكرار أو مدة النافذة صغيرة جدًا، بحيث تنتهي صلاحية الكتل قبل أن يعيد الموصل محاولتها."
+[//]: # "**السبب**: إذا فشل إدراج سجل واحد أو أكثر في دفعة Flink إلى ClickHouse بسبب فشل قابل لإعادة المحاولة، فسيعيد الموصل محاولة **الدفعة بالكامل**. إذا كانت [إزالة تكرار الإدراج](https://clickhouse.com/docs/guides/developer/deduplicating-inserts-on-retries#query-level-insert-deduplication) معطلة، فقد يؤدي ذلك إلى وصول سجلات مكررة إلى جدول ClickHouse الخاص بك. وإلا، فمن الممكن أن تكون نافذة إزالة التكرار أو مدة النافذة صغيرة جدًا، بحيث تنتهي صلاحية الكتل قبل أن يعيد الموصل محاولتها."
 
 [//]: #
 
@@ -453,9 +453,9 @@ com.clickhouse.client.api.ServerException: Code: 33. DB::Exception: Cannot read 
 
 [//]: # "  1. تأكد من أن إعداد الجلسة على الخادم `insert_deduplicate=1` (راجع [المثال](#client-options) أعلاه لمعرفة كيفية تعيينه، إذا لزم الأمر). لاحظ أن `insert_deduplicate` مفعّل افتراضيًا للجداول المكررة."
 
-[//]: # "  2. إذا لزم الأمر، فزِد أحد إعدادي جدول `MergeTree` أو كليهما: [`replicated_deduplication_window`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) أو [`replicated_deduplication_window_seconds`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)."
+[//]: # "  2. إذا لزم الأمر، فزِد أحد إعدادي جدول `MergeTree` أو كليهما: [`replicated_deduplication_window`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#replicated_deduplication_window) أو [`replicated_deduplication_window_seconds`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#replicated_deduplication_window_seconds)."
 
-[//]: # "- إذا كان جدولك يستخدم محرك جدول `*MergeTree` غير مكرر، فزِد إعداد جدول `MergeTree` [`non_replicated_deduplication_window`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)."
+[//]: # "- إذا كان جدولك يستخدم محرك جدول `*MergeTree` غير مكرر، فزِد إعداد جدول `MergeTree` [`non_replicated_deduplication_window`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#non_replicated_deduplication_window)."
 
 [//]: #
 

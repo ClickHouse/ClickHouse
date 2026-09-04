@@ -980,19 +980,3 @@ TEST(PostgreSQLProtocol, CopyDataRejectsLengthBelowFour)
     EXPECT_NO_THROW(msg.deserialize(in));
     EXPECT_EQ(msg.query, "ab");
 }
-
-TEST(PostgreSQLProtocol, CommandCompletePreservesUInt64RowCount)
-{
-    WriteBufferFromOwnString out;
-    Messaging::CommandComplete response(Messaging::CommandComplete::SELECT, std::numeric_limits<UInt64>::max());
-    response.serialize(out);
-    out.finalize();
-
-    std::string expected;
-    expected.push_back('C');
-    putInt32(expected, 32);
-    expected += "SELECT 18446744073709551615";
-    expected.push_back('\0');
-
-    EXPECT_EQ(out.str(), expected);
-}

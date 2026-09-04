@@ -1,0 +1,138 @@
+---
+noindex: true
+title: "ترقية ClickHouse Private"
+description: "رقِّ مكونات ClickHouse Private — المشغِّل وعنقود ClickHouse ‏(Keeper + الخادم) — إلى إصدار جديد."
+---
+
+رقِّ مكونات ClickHouse Private — المشغِّل وعنقود ClickHouse ‏(Keeper + الخادم) — إلى إصدار جديد.
+
+> **أفضل الممارسات:** نفِّذ الترقية دائمًا أولًا على عنقود مرحلي أو اختباري قبل تطبيقها على بيئة الإنتاج. ونوصي بشدة بأن يكون لديك عنقود اختبار مخصص يحاكي بيئة الإنتاج كجزء من عملية الترقية القياسية.
+
+<div id="pre-upgrade-checklist">
+  ## قائمة التحقق قبل الترقية
+</div>
+
+قبل بدء الترقية:
+
+1. **تحقّق من سلامة العنقود** — تأكّد من أن جميع كبسولات الخادم وKeeper قيد التشغيل وجاهزة، وأن حالة CR الخاصة بـ `ClickhouseCluster` لا تعرض أي أخطاء:
+
+   ```bash
+   kubectl get clickhousecluster -A
+   ```
+
+   لا تتابع إذا كانت أي كبسولات تدخل في حلقة تعطل وإعادة تشغيل، أو إذا كان العنقود في حالة متدهورة.
+
+2. **(يوصى بذلك بشدة في بيئات الإنتاج) أنشئ نسخة احتياطية كاملة** لعنقودك — راجع [النسخ الاحتياطي لـ ClickHouse واستعادته](/ar/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual). تحقّق من اكتمال النسخ الاحتياطي بنجاح (`status = BACKUP_DONE` في `system.backups`) قبل المتابعة.
+
+3. **تأكّد من أن الإصدار السابق متاح للتراجع** — تحقّق من أن إصدارات الحِزم البرمجية السابقة لا تزال متاحة في ECR الداخلي لديك. ويكفي وجود الصور وحزم Helm لإجراء التراجع بسرعة عند الحاجة.
+
+4. **انسخ جميع الصور الخاصة بالإصدار الجديد إلى ECR الداخلي لديك**. استخدم [مرجع إصدارات المكوّنات](/ar/products/clickhouse-private/reference/component-versions) للإصدار المستهدف.
+
+5. **شغّل فحوصات Preflight**. تتحقق فحوصات Preflight من المتطلبات الإضافية، وتفحص أيضًا علامات الميزات التي لم يعد يُنصح باستخدامها. لمزيد من التفاصيل، راجع صفحة [كيفية: تشغيل فحوصات Preflight](/ar/products/clickhouse-private/guides/run-preflight-checks).
+
+<div id="upgrade-procedure">
+  ## إجراء الترقية
+</div>
+
+<Steps>
+  <Step>
+    ### 1. ترقية مخطط Helm للمُشغِّل
+
+    أبقِ جميع قيم helm الحالية كما هي، مع تحديث إصدارات المُشغِّل فقط إلى الإصدارات المستهدفة الجديدة.
+
+    ```bash
+    helm upgrade clickhouse-operator oci://$YOUR_ECR/helm/clickhouse-operator-helm \
+      --version <new-version> \
+      -f values.yaml \
+      -n clickhouse-operator-system
+    ```
+
+    > **ملاحظة:** قد تؤدي ترقية المُشغِّل إلى إعادة تشغيل متدرجة لجميع عناقيد ClickHouse التي يديرها. إذا كان لديك عدة عناقيد وتريد التحقق من الترقية على أحدها قبل السماح للمُشغِّل بمواءمة العناقيد الأخرى، فراجع [حماية العناقيد أثناء الترقية](#protecting-clusters-during-upgrade) أدناه.
+  </Step>
+
+  <Step>
+    ### 2. التحقق من المُشغِّل بعد الترقية
+
+    تأكد من أن عملية نشر المُشغِّل قيد التشغيل وبحالة سليمة:
+
+    ```bash
+    kubectl rollout status deployment -n clickhouse-operator-system
+    kubectl get deployments clickhouse-operator-clickhouse-operator-helm -n clickhouse-operator-system
+    kubectl logs -n clickhouse-operator-system deployment/clickhouse-operator-clickhouse-operator-helm
+    ```
+
+    تحقق من عدم وجود أخطاء في السجلات، وأن جميع العناقيد المُدارة تمت مواءمتها بنجاح:
+
+    ```bash
+    kubectl get clickhousecluster -A
+    ```
+  </Step>
+
+  <Step>
+    ### 3. ترقية مخطط Helm لـ onprem-clickhouse-cluster
+
+    رقِّ مخطط helm `onprem-clickhouse-cluster` لكل عنقود. أبقِ جميع قيم helm الحالية كما هي، مع تحديث إصدارات صور ClickHouse server وKeeper فقط إلى الإصدارات المستهدفة الجديدة.
+
+    ```bash
+    helm upgrade <cluster-release-name> oci://$YOUR_ECR/helm/onprem-clickhouse-cluster \
+      --version <new-chart-version> \
+      -n <namespace> \
+      -f values.yaml \
+      --set server.version=<new-server-version> \
+      --set keeper.version=<new-keeper-version>
+    ```
+
+    سيؤدي ذلك إلى **إعادة تشغيل متدرجة لكبسولات Keeper والخادم** (كبسولة واحدة في كل مرة). كرر ذلك لكل عنقود.
+  </Step>
+
+  <Step>
+    ### 4. التحقق من العنقود بعد الترقية
+
+    بعد اكتمال إعادة التشغيل المتدرجة، تأكد من أن العنقود بحالة سليمة:
+
+    ```bash
+    kubectl get clickhousecluster -n <namespace>
+    kubectl get pods -n <namespace>
+    ```
+
+    يجب أن تكون جميع الكبسولات في حالة `Running`، وألا يُظهر المورد المخصص `ClickhouseCluster` أي أخطاء. ولمزيد من التحقق من الاتصال، نفِّذ port-forward لخدمة ClickHouse (راجع قسم Port-forward في [البرنامج التعليمي](/ar/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks) ذي الصلة) ثم شغِّل استعلامًا اختباريًا.
+  </Step>
+</Steps>
+
+<div id="protecting-clusters-during-upgrade">
+  ## حماية العناقيد أثناء الترقية
+</div>
+
+إذا كنت تدير عدة عناقيد ضمن مشغّل واحد وتريد التحقق من ترقية المشغّل على عنقود واحد قبل السماح له بمواءمة العناقيد الأخرى (على سبيل المثال، الاختبار على عنقود staging قبل production)، فأوقِف المواءمة على عناقيد محددة باستخدام التعليق التوضيحي `clickhouse.com/skip-reconcile`.
+
+أضف التعليق التوضيحي إلى أي عنقود تريد حمايته قبل ترقية المشغّل:
+
+```bash
+kubectl patch clickhousecluster c-default-xx-01 -n ns-default-xx-01 \
+  --type='merge' \
+  -p '{"metadata": {"annotations": {"clickhouse.com/skip-reconcile": "true"}}}'
+```
+
+يتجاوز المشغّل مواءمة العناقيد المعلَّمة بتعليق توضيحي بالكامل — لذلك لا تُطبَّق أي عمليات إعادة تشغيل أو تغييرات على الإعدادات. وبعد التحقّق من نجاح الترقية على عنقود الاختبار لديك، أزل التعليق التوضيحي للسماح للمشغّل باستئناف عملية المواءمة المعتادة:
+
+```bash
+kubectl patch clickhousecluster c-default-xx-01 -n ns-default-xx-01 \
+  --type='json' \
+  -p='[{"op": "remove", "path": "/metadata/annotations/clickhouse.com~1skip-reconcile"}]'
+```
+
+تأكد من أن المشغّل قد لاحظ التعليق التوضيحي من خلال التحقق من سجلاته والبحث عن:
+
+```text
+Skip ClickhouseCluster reconcile req ... because it has clickhouse.com/skip-reconcile annotation
+```
+
+<div id="rollback">
+  ## التراجع
+</div>
+
+إذا اكتُشفت مشكلات بعد الترقية:
+
+* **التراجع عن المشغّل:** أعد نشر الإصدار السابق من مخطط Helm الخاص بالمشغّل.
+* **التراجع عن العنقود:** أعد نشر الإصدار السابق من مخطط Helm الخاص بـ `onprem-clickhouse-cluster` مع إصدارات صور الخادم وKeeper السابقة.
+* **استعادة البيانات:** إذا كانت هناك شبهة بوجود مشكلات في البيانات، فاستعد البيانات من النسخة الاحتياطية التي أُخذت ضمن قائمة التحقق السابقة للترقية — راجع [نسخ ClickHouse احتياطيًا واستعادته](/ar/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual).
