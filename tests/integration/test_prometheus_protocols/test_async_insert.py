@@ -160,7 +160,7 @@ def test_async_insert_flush_timeout_is_clamped():
         )
 
     # 1e10 seconds is accepted by the setting but overflows the millisecond-to-nanosecond
-    # conversion that wait_for() performs; capped at one year it outlasts the flush.
+    # conversion that `wait_for` performs; capped at one year it outlasts the flush.
     response = remote_write("clamped_pos_metric", 10000000000)
     assert response.status_code == 204
     # No retry here: the acknowledgement means the wait outlasted the flush.
