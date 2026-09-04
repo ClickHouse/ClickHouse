@@ -180,6 +180,51 @@ SELECT ts, c FROM (
     SELECT tenant, ts, count() OVER (PARTITION BY tenant) AS c FROM t_pr_read_mode ORDER BY ts
 ) WHERE tenant = 42 LIMIT 5;
 
+SELECT 'the shipped query carries its own SETTINGS';
+-- A jointly scoped `SETTINGS` clause gives the shipped query its own context, and its value is the one
+-- that governs what the replicas run - see 04746_distributed_plan_execute_locally_subquery_settings. So
+-- the decision has to be read from there and not from the ambient query, in both directions.
+SET parallel_replicas_filter_pushdown = 0;
+SET allow_push_predicate_ast_for_distributed_subqueries = 1;
+
+SELECT 'off outside, on inside: the replicas do get it';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT ts FROM (SELECT * FROM t_pr_read_mode ORDER BY ts SETTINGS parallel_replicas_filter_pushdown = 1)
+    WHERE tenant = 42 LIMIT 5
+)
+WHERE explain LIKE '%Read type%';
+SELECT ts FROM (SELECT * FROM t_pr_read_mode ORDER BY ts SETTINGS parallel_replicas_filter_pushdown = 1)
+WHERE tenant = 42 LIMIT 5;
+
+SELECT 'on outside, off inside: they do not';
+SET parallel_replicas_filter_pushdown = 1;
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT ts FROM (SELECT * FROM t_pr_read_mode ORDER BY ts SETTINGS parallel_replicas_filter_pushdown = 0)
+    WHERE tenant = 42 LIMIT 5
+)
+WHERE explain LIKE '%Read type%';
+SELECT ts FROM (SELECT * FROM t_pr_read_mode ORDER BY ts SETTINGS parallel_replicas_filter_pushdown = 0)
+WHERE tenant = 42 LIMIT 5;
+
+SELECT 'on outside, AST push-down off inside: they do not either';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT ts FROM (
+        SELECT * FROM t_pr_read_mode ORDER BY ts
+        SETTINGS allow_push_predicate_ast_for_distributed_subqueries = 0
+    ) WHERE tenant = 42 LIMIT 5
+)
+WHERE explain LIKE '%Read type%';
+SELECT ts FROM (
+    SELECT * FROM t_pr_read_mode ORDER BY ts
+    SETTINGS allow_push_predicate_ast_for_distributed_subqueries = 0
+) WHERE tenant = 42 LIMIT 5;
+
 DROP TABLE b_pr_read_mode;
 DROP VIEW v_sorted_pr_read_mode;
 DROP VIEW v_pr_read_mode;

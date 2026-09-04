@@ -21,7 +21,9 @@ class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
 
 /// Whether `parallel_replicas_filter_pushdown` would really splice `pushed_down_filters` into the query
-/// shipped to the remote replicas - every reason it can decline, asked ahead of the splice itself:
+/// shipped to the remote replicas - every reason it can decline, asked ahead of the splice itself, and
+/// every setting read from that query's own context rather than the ambient one:
+///  - the setting itself must be on for the shipped query;
 ///  - the query must read a single table, or the predicate has no side to be attributed to;
 ///  - it must be one `PredicateRewriteVisitor` rewrites at all, so no `FINAL`, no `LIMIT`, and no window
 ///    function in the `SELECT` list;
@@ -33,6 +35,10 @@ using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasRe
 ///
 /// An `IN` set's temporary table is not registered here, so a predicate needing one is answered no; that
 /// is the safe direction, and such a predicate reaches the local plan by the other route anyway.
+/// The context the shipped query carries its own SETTINGS in - a jointly scoped subquery gets one of
+/// its own, and its values, not the ambient ones, govern what the replicas run.
+ContextPtr getShippedQueryContext(const QueryTreeNodePtr & query_tree, const ContextPtr & fallback);
+
 bool canAddFiltersToShippedQuery(
     const ASTPtr & query_ast,
     const QueryTreeNodePtr & query_tree,

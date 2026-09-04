@@ -1211,7 +1211,7 @@ static bool fixedColumnMayChangeReadMode(const QueryPlan * plan)
     return false;
 }
 
-size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
+size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
 {
     if (parent_node->children.size() != 1)
         return 0;
@@ -1490,10 +1490,11 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// announces `WithOrder` against the replicas' `Default`.
         ///
         /// The replicas get it only by the splice into their query, which declines for queries it cannot
-        /// rewrite and conditions it cannot express - so put this condition to it rather than trusting
-        /// the setting. A join runtime filter it can never carry, and never has to: see `mayFixColumn`.
-        const bool replicas_get_the_condition = settings.parallel_replicas_filter_pushdown_reaches_replicas
-            && parallel_replicas_local_plan->shippedQueryCanCarry(filter->getExpression());
+        /// rewrite and conditions it cannot express - so put this condition to it rather than trusting a
+        /// setting, all the more since `parallel_replicas_filter_pushdown` is jointly scoped and the
+        /// value that governs is the shipped query's own. A join runtime filter it can never carry, and
+        /// never has to: see `mayFixColumn`.
+        const bool replicas_get_the_condition = parallel_replicas_local_plan->shippedQueryCanCarry(filter->getExpression());
 
         if (replicas_get_the_condition || !fixedColumnMayChangeReadMode(parallel_replicas_local_plan->getQueryPlan()))
         {

@@ -237,12 +237,6 @@ struct QueryPlanOptimizationSettings
 
     std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
 
-    /// `parallel_replicas_filter_pushdown`, narrowed to the cases where the condition really ends up in
-    /// the replicas' query. It is carried there by rewriting the query AST (`addFilters`), so it needs
-    /// `allow_push_predicate_ast_for_distributed_subqueries`, and it is lost when the replicas run a
-    /// serialized plan instead of the AST. Whoever pushes a condition into the initiator's local plan on
-    /// the strength of the replicas having it too must consult this, not the setting.
-    bool parallel_replicas_filter_pushdown_reaches_replicas = false;
     bool enable_parallel_replicas = false;
 };
 

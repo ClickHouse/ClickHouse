@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
@@ -498,20 +499,33 @@ static QueryTreeNodePtr findSingleShippedTableExpression(const QueryTreeNodePtr 
     return is_table(table_expressions.front()) ? table_expressions.front() : nullptr;
 }
 
-/// What the shipped query alone decides about taking a pushed-down predicate: the setting must allow the
-/// rewrite, the query must read a single table (`findSingleShippedTableExpression`), and it must be one
-/// `PredicateRewriteVisitor` will rewrite at all - a `FINAL`, a `LIMIT`, or a `SELECT` list carrying a
-/// window function bars every predicate alike (`canRewriteSubquery`).
+ContextPtr getShippedQueryContext(const QueryTreeNodePtr & query_tree, const ContextPtr & fallback)
+{
+    if (const auto * query_node = query_tree ? query_tree->as<QueryNode>() : nullptr)
+        return query_node->getContext();
+    if (const auto * union_node = query_tree ? query_tree->as<UnionNode>() : nullptr)
+        return union_node->getContext();
+    return fallback;
+}
+
+/// What the shipped query alone decides about taking a pushed-down predicate: the settings must allow
+/// the rewrite, the query must read a single table (`findSingleShippedTableExpression`), and it must be
+/// one `PredicateRewriteVisitor` will rewrite at all - a `FINAL`, a `LIMIT`, or a `SELECT` list carrying
+/// a window function bars every predicate alike (`canRewriteSubquery`).
+///
+/// Every setting here is read from the shipped query's own context, never the ambient one: a jointly
+/// scoped `SETTINGS` clause gives the subquery its own, and its value is the one that governs what the
+/// replicas run. See `04746_distributed_plan_execute_locally_subquery_settings`.
 static bool shippedQueryCanTakeAPredicate(
     const ASTPtr & query_ast,
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
-    const ContextPtr & context)
+    const ContextPtr & shipped_query_context)
 {
     if (!query_ast || !query_tree || !planner_context)
         return false;
 
-    const auto & settings = context->getSettingsRef();
+    const auto & settings = shipped_query_context->getSettingsRef();
     if (!settings[Setting::allow_push_predicate_ast_for_distributed_subqueries])
         return false;
 
@@ -522,12 +536,15 @@ static bool shippedQueryCanTakeAPredicate(
         getSelectQuery(query_ast),
         settings[Setting::enable_optimize_predicate_expression_to_final_subquery],
         settings[Setting::allow_push_predicate_when_subquery_contains_with],
-        context);
+        shipped_query_context);
 }
 
 /// The predicate to splice into the shipped query, or null when it cannot be spliced. `external_tables`
 /// is where an `IN` set's temporary table gets registered; a caller that only wants the answer passes
 /// null and gets a no for such a predicate, which is the safe direction.
+/// `context` is the one the rewrite acts on - `tryBuildAdditionalFilterAST` registers an `IN` set's
+/// temporary table in it - while the settings that decide whether to rewrite at all come from the
+/// shipped query's own context.
 static ASTPtr tryBuildShippedQueryPredicate(
     const ASTPtr & query_ast,
     const QueryTreeNodePtr & query_tree,
@@ -538,7 +555,7 @@ static ASTPtr tryBuildShippedQueryPredicate(
 {
     /// Ask what the query decides first: `tryBuildAdditionalFilterAST` can register external tables, and
     /// there is no point doing that for a query no predicate can enter.
-    if (!shippedQueryCanTakeAPredicate(query_ast, query_tree, planner_context, context))
+    if (!shippedQueryCanTakeAPredicate(query_ast, query_tree, planner_context, getShippedQueryContext(query_tree, context)))
         return nullptr;
 
     /// We are building a set with projection names and a map with execution names here.
@@ -565,8 +582,13 @@ bool canAddFiltersToShippedQuery(
     ContextMutablePtr context,
     const ActionsDAG * pushed_down_filters)
 {
+    /// This one is the parallel-replicas caller's own gate - `ReadFromRemote`'s plain distributed path
+    /// reaches `addFilters` without it - and like the rest it is read from the shipped query's context.
+    if (!getShippedQueryContext(query_tree, context)->getSettingsRef()[Setting::parallel_replicas_filter_pushdown])
+        return false;
+
     if (!pushed_down_filters)
-        return shippedQueryCanTakeAPredicate(query_ast, query_tree, planner_context, context);
+        return shippedQueryCanTakeAPredicate(query_ast, query_tree, planner_context, getShippedQueryContext(query_tree, context));
 
     return tryBuildShippedQueryPredicate(query_ast, query_tree, planner_context, nullptr, context, *pushed_down_filters)
         != nullptr;
@@ -1159,7 +1181,8 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDes
 
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown] && filter_actions_dag)
+    if (filter_actions_dag
+        && getShippedQueryContext(query_tree, context)->getSettingsRef()[Setting::parallel_replicas_filter_pushdown])
         addFilters(&external_tables, context, query_ast, query_tree, planner_context, *filter_actions_dag);
 
     Pipes pipes = addPipes(query_ast, output_header);
