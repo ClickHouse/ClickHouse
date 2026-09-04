@@ -6,18 +6,18 @@
 
 namespace DB
 {
-void MemorySpillScheduler::checkAndSpill(ISpillable * processor)
+size_t MemorySpillScheduler::checkAndSpill(ISpillable * processor)
 {
     if (!enable || !getHardLimit())
-        return;
+        return 0;
 
     auto stats = processor->getMemoryStats();
     auto * selected_processor = selectSpilledProcessor(processor, stats);
 
     if (processor == selected_processor)
-    {
-        processor->spillOnSize(stats.spillable_memory_bytes);
-    }
+        return processor->spill(stats.spillable_memory_bytes);
+
+    return 0;
 }
 
 Int64 MemorySpillScheduler::getHardLimit()

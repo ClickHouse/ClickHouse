@@ -396,7 +396,7 @@ void FillingRightJoinSideTransform::work()
     set_totals = for_totals;
 }
 
-ProcessorMemoryStats FillingRightJoinSideTransform::getMemoryStats()
+ProcessorMemoryStats FillingRightJoinSideTransform::getMemoryStats() const
 {
     if (!spillable)
         return {};
@@ -409,14 +409,14 @@ ProcessorMemoryStats FillingRightJoinSideTransform::getMemoryStats()
     return res;
 }
 
-bool FillingRightJoinSideTransform::spillOnSize(size_t bytes)
+size_t FillingRightJoinSideTransform::spill(size_t /*bytes*/)
 {
-    if (spillable && join->getSpillableBytes() >= bytes)
-    {
-        join->requestSpill();
-        return true;
-    }
-    return false;
+    if (!spillable)
+        return 0;
+    const size_t before = join->getSpillableBytes();
+    join->requestSpill();
+    const size_t after = join->getSpillableBytes();
+    return before > after ? before - after : 0;
 }
 
 DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(

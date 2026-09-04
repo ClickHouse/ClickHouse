@@ -18,7 +18,7 @@ public:
     explicit MemorySpillScheduler(bool enable_ = false) : enable(enable_) {}
     ~MemorySpillScheduler() = default;
 
-    void checkAndSpill(ISpillable * processor);
+    size_t checkAndSpill(ISpillable * processor);
     void remove(ISpillable * processor);
 
 private:

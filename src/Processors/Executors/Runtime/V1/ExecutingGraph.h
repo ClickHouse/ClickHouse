@@ -19,7 +19,6 @@ namespace DB
 namespace Runtime::V1
 {
 
-/// Graph of executing pipeline.
 class ExecutingGraph
 {
     struct Node;
@@ -119,7 +118,7 @@ public:
     using DequeWithMemoryTracker = boost::container::devector<IProcessor *, AllocatorWithMemoryTracking<IProcessor *>>;
     using Queue = std::queue<IProcessor *, DequeWithMemoryTracker>;
 
-    explicit ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_);
+    ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_);
 
     /// Traverse graph the first time to update all the childless nodes.
     void initializeExecution(Queue & queue, Queue & async_queue);

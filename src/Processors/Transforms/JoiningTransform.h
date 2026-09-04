@@ -144,8 +144,8 @@ public:
     void work() override;
 
     ISpillable * getSpillable() override { return spillable ? this : nullptr; }
-    ProcessorMemoryStats getMemoryStats() override;
-    bool spillOnSize(size_t bytes) override;
+    ProcessorMemoryStats getMemoryStats() const override;
+    size_t spill(size_t bytes) override;
 
 private:
     JoinPtr join;

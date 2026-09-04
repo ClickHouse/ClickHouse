@@ -7,11 +7,14 @@
 #include <chrono>
 #include <memory>
 #include <mutex>
+#include <base/defines.h>
 
 class MemoryTracker;
 
 namespace DB
 {
+
+class ISpillable;
 
 /// `MemoryReservation` bridges a running query and the memory scheduler: the scheduler caps each
 /// workload's memory while the query's `MemoryTracker` stays the source of truth. It backs:
@@ -60,8 +63,17 @@ public:
     // Sync actual size with MemoryTracker, issues and waits increase/decrease requests as needed.
     void syncWithMemoryTracker(const MemoryTracker * memory_tracker);
 
+    /// Reclaimable memory of the query's spillable processors, keyed by the object that owns the
+    /// state so that processors sharing it are counted once.
+    void updateReclaimable(const ISpillable * spillable, ResourceCost total_bytes);
+    void removeReclaimable(const ISpillable * spillable);
+
+    [[nodiscard]] ResourceCost takeSpillRequest(const ISpillable * spillable, ResourceCost spillable_bytes);
+    void finishSpill(const ISpillable * spillable, ResourceCost settled_bytes, ResourceCost new_spillable_memory_bytes, const MemoryTracker * memory_tracker);
+
 private:
     void throwIfNeeded();
+    void reportReclaimable(bool force = false, ResourceCost settled_bytes = 0);
 
     // Unlinks this allocation from the scheduler and waits until removal completes.
     // Used both by the destructor and by the constructor when admission fails, so a throwing
@@ -75,12 +87,17 @@ private:
     void decreaseApproved(const DecreaseRequest & decrease) override;
     void allocationFailed(const std::exception_ptr & reason) override;
 
-    const ResourceCost reserved_size; // value of `reserve_memory` query setting
+    const ResourceCost reserved_size;
+
+    /// Keeps reclaimable totals from reaching the queue out of order.
+    /// Query threads take this lock first, read the total under `MemoryReservation::mutex`,
+    /// then release `MemoryReservation::mutex` before calling the queue while still holding this lock.
+    /// Scheduler callbacks never take this lock. Do not hold it across `syncWithMemoryTracker`.
+    std::mutex reclaimable_report_mutex;
 
     /// Protects all the fields in this allocation that may be accessed from the scheduler thread.
-    /// Lock ordering: AllocationQueue::mutex -> MemoryReservation::mutex (scheduler thread acquires
-    /// AllocationQueue::mutex first, then calls callbacks that acquire this mutex).
-    /// User-thread paths release this mutex before calling queue operations.
+    /// Scheduler callbacks may acquire this mutex under `AllocationQueue::mutex`.
+    /// Query threads release it before acquiring `reclaimable_report_mutex` or calling queue operations.
     std::mutex mutex;
     std::condition_variable cv;
 
@@ -102,9 +119,20 @@ private:
         void apply();
     } metrics;
 
+    /// Scheduler requested spilling
+    ResourceCost enqueued_spill = 0;
+    /// Whether a processor is currently spilling.
+    size_t spills_in_flight = 0;
+
+    /// Sum of the last reported per-object reclaimable estimates.
+    ResourceCost reclaimable_total = 0;
+    /// Last total sent to the scheduler (small updates are not sent)
+    ResourceCost reported_reclaimable = 0;
+
     /// Introspection
     CurrentMetrics::Increment approved_increment;
     CurrentMetrics::Increment demand_increment;
+    CurrentMetrics::Increment reclaimable_increment;
 };
 
 using MemoryReservationPtr = std::unique_ptr<MemoryReservation>;

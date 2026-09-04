@@ -7,10 +7,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
-#include <Common/ThreadStatus.h>
-#include <Common/MemorySpillScheduler.h>
 
 #include <algorithm>
 #include <memory>
@@ -422,12 +419,6 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial
                 const auto last_status = node.last_processor_status;
                 IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
                 node.last_processor_status = status;
-                if (status == IProcessor::Status::Finished && CurrentThread::getGroup())
-                {
-                    if (auto * spillable = processor.getSpillable())
-                        CurrentThread::getGroup()->memory_spill_scheduler->remove(spillable);
-                }
-
                 if (profile_processors)
                 {
                     /// NeedData

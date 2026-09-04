@@ -2,25 +2,62 @@
 
 #include <Common/ProcessorMemoryStats.h>
 
+#include <boost/core/noncopyable.hpp>
+
+#include <atomic>
 #include <cstddef>
 
 namespace DB
 {
 
+struct MemoryReservation;
+
 /// Memory spilling interface of a processor.
-/// Aggregate, join and sort processors can be spillable.
+/// Aggregation, join, sorting, and `DISTINCT` processors can be spillable.
 ///
 /// Kept separate from IProcessor so that the spilling API can evolve without
 /// recompiling every translation unit that uses processors.
-class ISpillable
+///
+/// If processes shares spilling/memory state, it should share ISpillable object.
+class ISpillable : private boost::noncopyable
 {
 public:
     virtual ~ISpillable() = default;
 
-    virtual ProcessorMemoryStats getMemoryStats() = 0;
+    virtual ProcessorMemoryStats getMemoryStats() const = 0;
 
-    // If the in-memory data's size is not larger then bytes, it doesn't spill
-    virtual bool spillOnSize(size_t bytes) = 0;
+    /// Request to spill @at_least_bytes and return how many had been spilled
+    /// May return less than requested; the scheduler rechecks memory before requesting more.
+    virtual size_t spill(size_t at_least_bytes) = 0;
+
+    /// Register each owning processor before execution starts.
+    void registerProcessor()
+    {
+        active_processors.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    /// Called once per processor on `Finished`; the last owner removes scheduler accounting.
+    void unregisterProcessor();
+
+private:
+    friend struct MemoryReservation;
+
+    /// Registered processors that have not reached `Finished`. Keep shared accounting until the last one finishes.
+    /// Registration precedes execution; processors sharing this object may finish concurrently.
+    std::atomic<size_t> active_processors{0};
+
+    /// Accounting belongs to one query's `MemoryReservation`, whose mutex protects these fields.
+    /// A shared spillable object must not be reused across reservations.
+    struct SpillAccounting
+    {
+        /// Bound when reporting under the reservation mutex. Read by the last owner after the
+        /// acquire decrement of `active_processors`, once all owners have stopped reporting.
+        MemoryReservation * reservation = nullptr;
+        Int64 reclaimable = 0;
+        bool in_progress = false;
+    };
+
+    mutable SpillAccounting spill_accounting;
 };
 
 }
