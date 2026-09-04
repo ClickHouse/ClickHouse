@@ -17,7 +17,7 @@ ClickHouse Connect is a core database driver providing interoperability with a w
 
 - The main interfaces are the synchronous `Client` and native aiohttp-based `AsyncClient` in `clickhouse_connect.driver`. The driver package also provides query and insert contexts, streaming helpers, DB-API support, and lower-level HTTP methods.
 - The `clickhouse_connect.datatypes` package serializes and deserializes ClickHouse types using the ClickHouse Native binary columnar format.
-- The optional Cython extensions in `clickhouse_connect.driverc` accelerate common serialization, conversion, and buffering paths. A pure Python path remains available on platforms where the extensions cannot be built.
+- The optional Cython extensions in `clickhouse_connect.driverc` accelerate common serialization, conversion, and buffering paths. A pure Python path remains available on platforms where the extensions cannot be built. An experimental opt-in [Rust codec](/integrations/language-clients/python/rust-codec) can replace Native format processing entirely.
 - The package ships PEP 561 type information, so downstream type checkers consume annotations for the public driver, DB-API, and SQLAlchemy surfaces.
 - The [SQLAlchemy](https://www.sqlalchemy.org/) dialect in `clickhouse_connect.cc_sqlalchemy` supports SQLAlchemy Core, schema reflection, ClickHouse-specific query clauses and table engines, and Alembic migrations. Basic ORM reads and inserts work, but the dialect is designed for analytical workloads rather than full unit-of-work ORM behavior.
 - The core driver and [ClickHouse Connect SQLAlchemy](/integrations/language-clients/python/sqlalchemy) implementation are the preferred method for connecting ClickHouse to Apache Superset. Use the `ClickHouse Connect` database connection, or `clickhousedb` SQLAlchemy dialect connection string.
@@ -60,6 +60,7 @@ pip install "clickhouse-connect[polars]"     # Polars
 pip install "clickhouse-connect[sqlalchemy]" # SQLAlchemy dialect
 pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
 pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
+pip install "clickhouse-connect[rust,arrow]" # Experimental Rust codec evaluation setup
 pip install "clickhouse-connect[tzdata]"     # IANA time zones on minimal systems
 ```
 
@@ -67,6 +68,32 @@ ClickHouse Connect can also be installed from source:
 
 * `git clone` the [GitHub repository](https://github.com/ClickHouse/clickhouse-connect).
 * Change to the project root and run `pip install .`. The build system installs Cython automatically to compile the optional C extensions.
+
+### Source build modes {#source-build-modes}
+
+Source builds support three modes. Default and required modes fail if Cython is unavailable or `cythonize()` fails. Skip mode does not import Cython.
+
+| Mode | Command | Behavior |
+| --- | --- | --- |
+| Default | `pip install .` | Attempts to compile the C extensions. If the compiler or linker fails, the build falls back to a pure Python install. |
+| Pure Python | `CLICKHOUSE_CONNECT_SKIP_CYTHON=1 pip install .` | Builds pure Python without attempting the extensions. |
+| Required | `CLICKHOUSE_CONNECT_REQUIRE_C=1 pip install .` | Fails the build if the extensions cannot be compiled. Recommended for CI and for building redistributable wheels. |
+
+Setting both `CLICKHOUSE_CONNECT_SKIP_CYTHON=1` and `CLICKHOUSE_CONNECT_REQUIRE_C=1` is an error.
+
+Default fallback wheels contain no compiled extensions but retain platform and interpreter tags. Only skip mode produces `py3-none-any`. `pip` can cache a fallback wheel built from an index sdist and reuse it for a compatible Python and platform after the compiler is fixed. Clear it with:
+
+```bash
+pip cache remove clickhouse_connect
+```
+
+Check whether all three extension modules are present. This prints `True` when they are:
+
+```bash
+python -c "from importlib.util import find_spec; print(all(find_spec(m) for m in ('clickhouse_connect.driverc.buffer', 'clickhouse_connect.driverc.dataconv', 'clickhouse_connect.driverc.npconv')))"
+```
+
+Importing `clickhouse_connect.driverc.npconv` directly also requires NumPy to be installed.
 
 The installed version is available as `clickhouse_connect.__version__`.
 

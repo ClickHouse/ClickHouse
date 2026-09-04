@@ -197,6 +197,19 @@ bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type,
     return true;
 }
 
+bool DataTypeAggregateFunction::nameMatchesState(const String & state_type_name, const AggregateFunctionPtr & function, size_t version)
+{
+    auto state_type = DataTypeFactory::instance().tryGet(state_type_name);
+    const auto * aggregate_state_type = typeid_cast<const DataTypeAggregateFunction *>(state_type.get());
+    if (!aggregate_state_type)
+        return false;
+
+    if (aggregate_state_type->getVersion() != version)
+        return false;
+
+    return strictEquals(aggregate_state_type->function->getNormalizedStateType(), function->getNormalizedStateType());
+}
+
 void DataTypeAggregateFunction::updateHashImpl(SipHash & hash) const
 {
     hash.update(getFunctionName());
