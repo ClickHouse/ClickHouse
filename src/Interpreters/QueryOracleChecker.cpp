@@ -238,7 +238,9 @@ String stripAggregateCombinators(String name)
 }
 
 /// True if `name`, after removing zero or more combinator suffixes, names an
-/// entry of `non_deterministic_functions` (matched case-insensitively).
+/// entry of `non_deterministic_functions` (matched case-insensitively), either
+/// directly or through an aggregate-function alias (`array_agg` -> `groupArray`,
+/// `medianTDigest` -> `quantileTDigest`, `lttb` -> `largestTriangleThreeBuckets`).
 /// Membership must be tested at EVERY stripping stage, not only at the
 /// fixpoint: real aggregate names can themselves end in a combinator-looking
 /// word, e.g. `groupUniqArrayOrNull` strips to `groupUniqArray` (a set
@@ -246,9 +248,10 @@ String stripAggregateCombinators(String name)
 /// `groupUniq`, which the set does not contain.
 bool isOracleUnsafeFunctionName(String name)
 {
+    const auto & aggregate_factory = AggregateFunctionFactory::instance();
     while (true)
     {
-        if (non_deterministic_functions_lower.contains(Poco::toLower(name)))
+        if (non_deterministic_functions_lower.contains(Poco::toLower(aggregate_factory.getAliasToOrName(name))))
             return true;
         if (!stripLongestCombinatorSuffix(name))
             return false;
