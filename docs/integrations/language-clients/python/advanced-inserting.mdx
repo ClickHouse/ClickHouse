@@ -47,6 +47,7 @@ It is normally unnecessary to override a write format, but the methods in `click
 | Float32               | float                   |                   |                                                                                                             |
 | Float64               | float                   |                   |                                                                                                             |
 | Decimal               | decimal.Decimal         |                   |                                                                                                             |
+| Interval*             | int                     |                   | Values are signed 64-bit counts in the interval type's unit.                                                |
 | String                | str or bytes            |                   | A column must consistently contain text or bytes.                                                           |
 | FixedString           | bytes                   | string            | String values are padded with zero bytes. Empty bytes are written as all zero bytes.                        |
 | Enum[8,16]            | str or int              |                   | Insert labels as strings or their underlying integer values.                                                |
@@ -55,16 +56,18 @@ It is normally unnecessary to override a write format, but the methods in `click
 | DateTime              | datetime.datetime       | int               | Integer values are interpreted as epoch seconds.                                                            |
 | DateTime64            | datetime.datetime       | int               | Integer values are interpreted as ticks at the column precision.                                            |
 | Time                  | datetime.timedelta      | int, string, time | Integer values are interpreted as seconds.                                                                  |
-| Time64                | datetime.timedelta      | int, string, time | Integer values are interpreted as ticks at the column precision.                                            |
+| Time64                | datetime.timedelta      | int, string, time | Scales 0 through 9 are supported. Integer values are interpreted as ticks at the column precision. NumPy timedelta values and DataFrame inserts work at every scale. Python time types are limited to microseconds. |
 | IPv4                  | `ipaddress.IPv4Address` | string            | Properly formatted strings can be inserted as IPv4 addresses                                                |
 | IPv6                  | `ipaddress.IPv6Address` | string            | Properly formatted strings can be inserted as IPv6 addresses                                                |
-| Tuple                 | dict or tuple           |                   |                                                                                                             |
+| Tuple                 | dict or tuple           |                   | Use `()` for `Tuple()`.                                                                                    |
 | Map                   | dict                    |                   |                                                                                                             |
 | Nested                | Sequence[dict]          |                   |                                                                                                             |
 | UUID                  | uuid.UUID               | string            | Properly formatted strings can be inserted as ClickHouse UUIDs                                              |
 | JSON                  | dict                    | string            | Dictionaries and JSON object strings are supported. The legacy `Object('json')` type is not supported.      |
 | Variant               | object                  |                   | Values use native member serialization. Use `clickhouse_connect.datatypes.dynamic.typed_variant` when Python types are ambiguous. |
 | Dynamic               | object                  |                   | Values are currently inserted through their String representation.                                          |
+| MultiPoint            | Sequence[tuple]         |                   | Each point is a 2-tuple. Inserting MultiPoint values requires ClickHouse 26.8 or later.                       |
+| Geometry              | tuple or list           |                   | Point values are 2-tuples. Wrap list-based values, including MultiPoint, with `typed_variant` to select a geometry member. |
 | QBit                  | Sequence[float]         |                   | NumPy is used automatically for faster bit transposition when installed.                                    |
 
 ### Specialized insert methods {#specialized-insert-methods}
