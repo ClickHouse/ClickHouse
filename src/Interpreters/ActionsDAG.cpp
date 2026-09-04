@@ -3596,11 +3596,9 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, right_stream_allowed_nodes, false);
     auto both_streams_push_down_conjunctions = getConjunctionNodes(predicate, both_streams_allowed_nodes, false);
 
-    /// A both-streams conjunct has its equivalent inputs replaced by the opposite side's column below, so
-    /// it must read no more than that column's value: `isConstant` and `toColumnTypeName` answer differently
-    /// for the same value depending on constness, and a replacement can be constant where the input is not.
-    /// A lambda body describes every argument of its call: the ones it does not capture arrive as its
-    /// formal parameters.
+    /// A both-streams conjunct has its equivalent inputs replaced by the opposite side's column below, so it
+    /// must read no more than that column's value: a replacement can be constant where the input is not.
+    /// A lambda body reads the call's arguments too: the ones it does not capture arrive as formal parameters.
     static constexpr auto is_representation_read = [](const IFunctionBase & function) { return !function.isDeterministic(); };
     auto call_reads_representation = [](const Node * node)
     {
