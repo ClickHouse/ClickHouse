@@ -3680,12 +3680,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
             limit_length = lim_info.limit_length;
         }
 
-        const Settings & range_settings = context->getSettingsRef();
-        bool always_read_till_end = range_settings[Setting::exact_rows_before_limit];
-        if (query.group_by_with_totals && !query.orderBy())
-            always_read_till_end = true;
-        if (!query.group_by_with_totals && hasWithTotalsInAnySubqueryInFromClause(query))
-            always_read_till_end = true;
+        const bool always_read_till_end = limitAlwaysReadsTillEnd(query, context->getSettingsRef());
 
         const auto & header = query_plan.getCurrentHeader();
 
