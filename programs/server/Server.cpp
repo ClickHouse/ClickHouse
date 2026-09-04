@@ -1861,6 +1861,11 @@ try
 
         async_metrics->stop();
 
+        /// Signal and close Keeper TCP handlers before shutting down the global context.
+        /// An idle handler may be blocked in a socket poll and otherwise delay this shutdown.
+        global_context->signalKeeperDispatcherShutdown();
+        close_keeper_connections();
+
         /** Ask to cancel background jobs all table engines,
           *  and also query_log.
           * It is important to do early, not in destructor of Context, because
@@ -1871,11 +1876,6 @@ try
         global_context->shutdown();
 
         LOG_DEBUG(log, "Shut down storages.");
-
-        /// Signal Keeper TCP handlers to close before waiting for connections,
-        /// otherwise they keep running indefinitely and block shutdown.
-        global_context->signalKeeperDispatcherShutdown();
-
         size_t current_connections = 0;
         if (!servers_to_start_before_tables.empty())
         {
@@ -1888,9 +1888,6 @@ try
                     current_connections += server.currentConnections();
                 }
             }
-
-            close_keeper_connections();
-
             if (current_connections)
                 LOG_INFO(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
             else
