@@ -57,8 +57,8 @@ public:
     void syncWithMemoryTracker(const MemoryTracker * memory_tracker);
 
     void setReclaimable(ResourceCost reclaimable_total);
-    void finishSpill(ResourceCost reclaimable_total);
 
+    void finishSpill();
     [[nodiscard]] ResourceCost takeSpillRequest();
 
 private:

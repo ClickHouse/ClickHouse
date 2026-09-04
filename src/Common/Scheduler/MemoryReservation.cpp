@@ -194,15 +194,17 @@ void MemoryReservation::setReclaimable(ResourceCost reclaimable_total)
     ProfileEvents::increment(ProfileEvents::MemoryReservationReclaimableBytes, reclaimable_total);
 }
 
-void MemoryReservation::finishSpill(ResourceCost reclaimable_total)
+void MemoryReservation::finishSpill()
 {
-    size_t effective_reclaimed = std::max(reclaimable_total, processing_spill);
+    size_t reclaimed = 0;
     {
         std::lock_guard lock(mutex);
-        enqueued_spill -= effective_reclaimed;
+        chassert(processing_spill == enqueued_spill);
+        reclaimed = processing_spill;
+        enqueued_spill = 0;
         processing_spill = 0;
     }
-    queue.finishSpill(*this, reclaimable_total);
+    queue.finishSpill(*this, reclaimed);
 }
 
 ResourceCost MemoryReservation::takeSpillRequest()
