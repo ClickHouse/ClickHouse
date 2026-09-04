@@ -173,7 +173,7 @@ std::optional<ColumnDefinition> tryResolveColumnDefinition(const ColumnNode & co
 
     for (size_t i = 0; i < projection_columns.size(); ++i)
     {
-        if (projection_columns[i].name == column_node.getColumnName())
+        if (projection_columns[i].name == column_node.getColumnName() && projection_columns[i].type->equals(*column_node.getColumnType()))
             return ColumnDefinition{projection_nodes[i], source_query_node};
     }
 
