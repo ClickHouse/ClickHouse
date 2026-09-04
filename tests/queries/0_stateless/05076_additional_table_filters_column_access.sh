@@ -33,23 +33,25 @@ GRANT SELECT(alias_col) ON $DB.t TO $u_alias;
 GRANT SELECT ON $DB.v_def TO $u_view;
 "
 
+err_file="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.err"
+
+# On success print only stdout; on failure print the error code name from the trailing (CODE_NAME) token.
 function run()
 {
     local user=$1
     local query=$2
     local out
-    out=$($CLICKHOUSE_CLIENT --user "$user" --password password -q "$query" 2>&1)
-    if [ $? -eq 0 ]; then
+    if out=$($CLICKHOUSE_CLIENT --user "$user" --password password -q "$query" 2>"$err_file"); then
         echo "$out"
     else
-        echo "$out" | grep -o "ACCESS_DENIED\|UNKNOWN_IDENTIFIER\|[A-Z_]*_ERROR" | head -1
+        grep -oE '\([A-Z_]+\)' "$err_file" | tail -1 | tr -d '()'
     fi
 }
 
 for analyzer in 1 0; do
 
 echo "-- analyzer=$analyzer: 01 control"
-run "$u_low" "SELECT count() FROM t WHERE secret_token = 'T' SETTINGS enable_analyzer=$analyzer"
+run "$u_low" "SELECT count() FROM t WHERE secret_token = '$T' SETTINGS enable_analyzer=$analyzer"
 
 echo "-- analyzer=$analyzer: 02 filter over denied column"
 run "$u_low" "SELECT count() FROM t SETTINGS enable_analyzer=$analyzer, additional_table_filters = {'t': 'secret_token = ''$T'''}"
@@ -108,3 +110,5 @@ DROP TABLE IF EXISTS d;
 DROP TABLE IF EXISTS t;
 DROP USER IF EXISTS $u_low, $u_alias, $u_view;
 "
+
+rm -f "$err_file"
