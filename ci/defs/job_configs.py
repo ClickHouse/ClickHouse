@@ -1013,6 +1013,45 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
     )
+    # MasterCI-only: run the plain (non-sanitizer) full stateless suite against the
+    # optimized release binary instead of the plain `binary` build that PRs use (the
+    # `arm_binary` jobs of `functional_tests_jobs`). On master we want to exercise the
+    # actual release binary (PGO/BOLT). These replace the `arm_binary` jobs in the
+    # master workflow (see `ci/workflows/master.py`); PR/backport/release keep using
+    # `functional_tests_jobs`. The `arm_binary` build itself stays - integration tests
+    # and Keeper stress need it. The arm runner labels mirror the `arm_binary` jobs;
+    # the amd side has no plain full-suite job before this, so it mirrors `amd_debug`
+    # and is split into 2 batches per parallel/sequential flavor.
+    functional_tests_master_release_jobs = common_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="arm_release, parallel",
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            requires=[ArtifactNames.CH_ARM_RELEASE],
+        ),
+        Job.ParamSet(
+            parameter="arm_release, sequential",
+            runs_on=RunnerLabels.ARM_SMALL,
+            requires=[ArtifactNames.CH_ARM_RELEASE],
+        ),
+        *[
+            Job.ParamSet(
+                parameter=f"amd_release, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+                requires=[ArtifactNames.CH_AMD_RELEASE],
+            )
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
+        ],
+        *[
+            Job.ParamSet(
+                parameter=f"amd_release, sequential, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_SMALL,
+                requires=[ArtifactNames.CH_AMD_RELEASE],
+            )
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
+        ],
+    )
     functional_tests_jobs_coverage = common_ft_job_config.parametrize(
         *[
             Job.ParamSet(
