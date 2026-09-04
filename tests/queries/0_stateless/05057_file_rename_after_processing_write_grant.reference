@@ -32,7 +32,7 @@ intact
 WRITE ON FILE
 intact
 0
---- a Filesystem database does not cache the rename rule for later queries
+--- a DESCRIBE with the rule set arms nothing in the Filesystem cache for a later query
 7
 intact
 7

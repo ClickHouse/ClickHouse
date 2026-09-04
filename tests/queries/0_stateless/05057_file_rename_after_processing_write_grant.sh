@@ -138,7 +138,7 @@ ${CLICKHOUSE_CLIENT} --user "${READER}" -q \
 file_state dist_insert_denied
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}.dst"
 
-echo '--- a Filesystem database does not cache the rename rule for later queries'
+echo '--- a DESCRIBE with the rule set arms nothing in the Filesystem cache for a later query'
 ${CLICKHOUSE_CLIENT} -q "
 CREATE DATABASE ${FS_DB} ENGINE = Filesystem('${FILES_DIR}');
 GRANT SELECT ON ${FS_DB}.* TO ${READER};
