@@ -45,6 +45,7 @@ public:
         CLEAR_QUERY_CONDITION_CACHE,
         CLEAR_ENCRYPTION_HEADERS_CACHE,
         CLEAR_QUERY_CACHE,
+        CLEAR_VECTOR_QUERY_PLAN_CACHE,
         CLEAR_COMPILED_EXPRESSION_CACHE,
         CLEAR_ICEBERG_METADATA_CACHE,
         CLEAR_PAIMON_METADATA_CACHE,
@@ -199,6 +200,7 @@ public:
     UInt64 untracked_memory_size{};
 
     std::optional<String> query_result_cache_tag;
+    std::optional<String> vector_query_plan_cache_tag;
 
     String filesystem_cache_name;
     String distributed_cache_server_id;

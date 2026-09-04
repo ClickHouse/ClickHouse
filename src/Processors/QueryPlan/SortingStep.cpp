@@ -315,6 +315,7 @@ void SortingStep::updateLimit(size_t limit_)
         use_buffering = false;
 }
 
+
 void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bool use_buffering_, bool apply_virtual_row_conversions_)
 {
     type = Type::FinishSorting;

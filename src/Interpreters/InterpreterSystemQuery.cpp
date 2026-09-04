@@ -568,6 +568,12 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->clearQueryResultCache(query.query_result_cache_tag);
             break;
         }
+        case Type::CLEAR_VECTOR_QUERY_PLAN_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_QUERY_PLAN_CACHE);
+            getContext()->clearVectorQueryPlanCache(query.vector_query_plan_cache_tag);
+            break;
+        }
         case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
 #if USE_EMBEDDED_COMPILER
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
@@ -2820,6 +2826,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_DROP_ENCRYPTION_HEADERS_CACHE);
             break;
         case Type::CLEAR_QUERY_CACHE:
+        case Type::CLEAR_VECTOR_QUERY_PLAN_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_QUERY_CACHE);
             break;
         case Type::CLEAR_COMPILED_EXPRESSION_CACHE:

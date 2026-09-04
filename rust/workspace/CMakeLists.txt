@@ -94,6 +94,29 @@ if (ENABLE_SKIM)
     clickhouse_config_crate_flags(_ch_rust_skim_rust)
     target_include_directories(_ch_rust_skim_rust INTERFACE skim/include)
     add_library(ch_rust::skim ALIAS _ch_rust_skim_rust)
+
+    # Fix COMDAT linker errors with --gc-sections:
+    # 1. Remove .eh_frame (eliminates DW.ref.__gxx_personality_v0 references).
+    # 2. Rename __clang_call_terminate to a unique per-file name so each .o's
+    #    COMDAT group has a distinct signature that the linker won't deduplicate,
+    #    avoiding "relocation refers to a symbol in a discarded section" errors.
+    # Unlike PRQL/polyglot we do NOT strip symbols because cxx-rs generates
+    # many C++ symbols that must all remain visible.
+    if (NOT CMAKE_AR MATCHES "dummy_compiler_linker" AND NOT SANITIZE AND NOT OS_DARWIN
+        AND NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "ppc64le")
+        set(_skim_lib "${CMAKE_CURRENT_BINARY_DIR}/lib_ch_rust_skim_rust.a")
+        add_custom_target(strip_skim_symbols
+            COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/partial_link_rust.sh"
+                "${_skim_lib}" "${CMAKE_AR}" "${CMAKE_OBJCOPY}"
+            DEPENDS cargo-build__ch_rust_skim_rust
+            COMMENT "Fixing SKIM COMDAT sections to avoid gc-sections linker errors"
+            VERBATIM
+        )
+        add_dependencies(_ch_rust_skim_rust strip_skim_symbols)
+        if (TARGET localize_rust_c__ch_rust_skim_rust)
+            add_dependencies(strip_skim_symbols localize_rust_c__ch_rust_skim_rust)
+        endif()
+    endif ()
 endif()
 
 add_subdirectory (wasmtime)

@@ -2645,6 +2645,18 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
     return analyzed_result_ptr;
 }
 
+bool ReadFromMergeTree::hasTextIndexInMetadata() const
+{
+    if (!storage_snapshot || !storage_snapshot->metadata)
+        return false;
+
+    const auto & secondary_indices = storage_snapshot->metadata->getSecondaryIndices();
+    return std::ranges::any_of(secondary_indices, [](const auto & index)
+    {
+        return index.type == "text";
+    });
+}
+
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWithoutQueryConditionCache() const
 {
     /// Deliberately not stored in `analyzed_result_ptr`: the result must not become the analysis of the

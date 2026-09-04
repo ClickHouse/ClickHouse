@@ -21,12 +21,16 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
+#include <Interpreters/Cache/VectorQueryPlanCache.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
 #include <Backups/BackupsInMemoryHolder.h>
 
 #include <Poco/AutoPtr.h>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 
 #include "config.h"
 
@@ -34,6 +38,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <sstream>
 
 
 namespace Poco::Net
@@ -390,6 +395,7 @@ protected:
     /// `ClientInfo::http_handler_name` / `http_request_url`) so that they are serialized on distributed
     /// fan-out and remain visible to `currentHandler()` / `currentRequestURL()` on remote shards.
     bool can_use_query_result_cache = false;
+    bool can_use_vector_query_plan_cache = false;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
@@ -1106,6 +1112,58 @@ public:
     const QueryAccessInfo & getQueryAccessInfo() const { return *getQueryAccessInfoPtr(); }
     QueryAccessInfoPtr getQueryAccessInfoPtr() const { return query_access_info; }
     void setQueryAccessInfo(QueryAccessInfoPtr other) { query_access_info = other; }
+    String serializeQueryAccessInfo()
+    {
+        std::lock_guard lock(query_access_info->mutex);
+        Poco::JSON::Object json;
+        auto setToArray = [](const std::set<std::string> & s)
+        {
+            Poco::JSON::Array arr;
+            for (const auto & item : s)
+                arr.add(item);
+            return arr;
+        };
+
+        json.set("databases", setToArray(query_access_info->databases));
+        json.set("tables", setToArray(query_access_info->tables));
+        json.set("columns", setToArray(query_access_info->columns));
+        json.set("partitions", setToArray(query_access_info->partitions));
+        json.set("projections", setToArray(query_access_info->projections));
+        json.set("views", setToArray(query_access_info->views));
+        json.set("row_policies", setToArray(query_access_info->row_policies));
+
+        std::ostringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        json.stringify(out);
+        return out.str();
+    }
+
+    QueryAccessInfoPtr deserializeQueryAccessInfo(const String & data)
+    {
+        auto info = std::make_shared<QueryAccessInfo>();
+        std::lock_guard lock(info->mutex);
+        Poco::JSON::Parser parser;
+        auto json = parser.parse(data).extract<Poco::JSON::Object::Ptr>();
+        auto arrayToSet = [](Poco::JSON::Array::Ptr arr)
+        {
+            std::set<std::string> s;
+            if (arr)
+            {
+                for (unsigned i = 0; i < static_cast<unsigned>(arr->size()); ++i)
+                    s.insert(arr->getElement<std::string>(i));
+            }
+            return s;
+        };
+
+        info->databases = arrayToSet(json->getArray("databases"));
+        info->tables = arrayToSet(json->getArray("tables"));
+        info->columns = arrayToSet(json->getArray("columns"));
+        info->partitions = arrayToSet(json->getArray("partitions"));
+        info->projections = arrayToSet(json->getArray("projections"));
+        info->views = arrayToSet(json->getArray("views"));
+        info->row_policies = arrayToSet(json->getArray("row_policies"));
+
+        return info;
+    }
 
     void addQueryAccessInfo(
         const StorageID & table_id,
@@ -1641,6 +1699,16 @@ public:
     void clearQueryResultCache(const std::optional<String> & tag) const;
     bool getCanUseQueryResultCache() const;
     void setCanUseQueryResultCache(bool can_use_query_result_cache_);
+
+    /// Query plan cache is independent from query result cache.
+    std::shared_ptr<VectorQueryPlanCache> getVectorQueryPlanCache() const;
+    /// Initialize query plan cache (separate from query result cache).
+    void setVectorQueryPlanCache(size_t max_size_in_bytes, size_t max_entries);
+    /// Update query plan cache configuration from config.
+    void updateVectorQueryPlanCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    void clearVectorQueryPlanCache(const std::optional<String> & tag) const;
+    bool getCanUseVectorQueryPlanCache() const;
+    void setCanUseVectorQueryPlanCache(bool can_use_vector_query_plan_cache_);
 
 #if USE_AVRO
     void setIcebergMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);

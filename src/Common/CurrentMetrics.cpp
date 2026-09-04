@@ -413,6 +413,8 @@
     M(MMapCacheCells, "The number of files opened with `mmap` (mapped in memory). This is used for queries with the setting `local_filesystem_read_method` set to  `mmap`. The files opened with `mmap` are kept in the cache to avoid costly TLB flushes.") \
     M(QueryCacheBytes, "Total size of the query cache in bytes") \
     M(QueryCacheEntries, "Total number of entries in the query cache") \
+    M(VectorQueryPlanCacheBytes, "Total size of the vector query plan cache in bytes") \
+    M(VectorQueryPlanCacheEntries, "Total number of entries in the vector query plan cache") \
     M(QueryConditionCacheBytes, "Total size of the query condition cache in bytes") \
     M(QueryConditionCacheEntries, "Total number of entries in the query condition cache") \
     M(EncryptionHeaderCacheBytes, "Total size of the encryption header cache in bytes") \
