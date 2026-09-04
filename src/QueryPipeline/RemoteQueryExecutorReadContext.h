@@ -26,7 +26,12 @@ class RemoteQueryExecutorReadContext : public AsyncTaskExecutor
 {
 public:
     explicit RemoteQueryExecutorReadContext(
-        RemoteQueryExecutor & executor_, bool suspend_when_query_sent_, bool read_packet_type_separately_);
+        RemoteQueryExecutor & executor_,
+        bool suspend_when_query_sent_,
+        bool read_packet_type_separately_,
+        OpenTelemetry::SpanAttributes initial_span_attributes_ = {},
+        UInt64 initial_span_start_time_us_ = 0,
+        UInt64 initial_span_id_ = 0);
 
     ~RemoteQueryExecutorReadContext() override;
 
@@ -120,6 +125,8 @@ private:
 
 #else
 
+#include <Common/OpenTelemetryTraceContext.h>
+
 namespace DB
 {
 class RemoteQueryExecutorReadContext
@@ -127,6 +134,8 @@ class RemoteQueryExecutorReadContext
 public:
     void cancel() {}
     void setTimer() {}
+    bool addSpanAttribute(OpenTelemetry::SpanAttribute) noexcept { return false; }
+    void setSpanStatus(OpenTelemetry::SpanStatus, String) noexcept {}
     void skipDrainOnCancel() {}
 };
 

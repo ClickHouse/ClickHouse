@@ -207,6 +207,9 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             shard_info.pool);
 
         remote_query_executor->setLogger(log);
+        /// The cluster of a *Cluster function uses every replica as a shard, so `shard_num`
+        /// identifies the fan-out entry rather than a shard of the original cluster definition.
+        remote_query_executor->setShardScope({storage->getClusterName(), shard_info.shard_num});
         Pipe pipe{std::make_shared<RemoteSource>(
             remote_query_executor,
             add_agg_info,

@@ -1,11 +1,15 @@
 === async_query_sending_for_remote=0 ===
 sendQuery CLIENT span: OK	task span: OK
+CLIENT span parents under fragment span: OK
 remote query parents under CLIENT span: OK
 sampled trace joins remote query: OK	sampled sendQuery CLIENT span: OK
 === async_query_sending_for_remote=1 ===
 sendQuery CLIENT span: OK	task span: OK
+CLIENT span parents under fragment span: OK
 remote query parents under CLIENT span: OK
 sampled trace joins remote query: OK	sampled sendQuery CLIENT span: OK
+=== async_socket_for_remote=0 ===
+CLIENT span parents under fragment span: OK
 === cancellation ===
 task span emitted on cancellation: OK
 server is alive: OK

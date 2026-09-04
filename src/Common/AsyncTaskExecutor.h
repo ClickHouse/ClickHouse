@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <vector>
 #include <base/types.h>
 #include <Common/Epoll.h>
 #include <Common/StackfulCoroutine.h>
@@ -50,8 +51,23 @@ public:
 class AsyncTaskExecutor
 {
 public:
-    /// operation_name_ is used as the name of the OpenTelemetry span covering one execution of the task
-    AsyncTaskExecutor(std::unique_ptr<AsyncTask> task_, String operation_name_);
+    /// operation_name_: is used as the name of the OpenTelemetry span covering one execution of the task.
+    /// initial_span_attributes_: are added to that span (columns from opentelemetry table)
+    /// A span created before the construction attaches span_id and initial_start_time to this Executor
+    AsyncTaskExecutor(
+        std::unique_ptr<AsyncTask> task_,
+        String operation_name_,
+        OpenTelemetry::SpanAttributes initial_span_attributes_ = {},
+        UInt64 initial_span_start_time_us_ = 0,
+        UInt64 initial_span_id_ = 0);
+
+    /// Add an attribute to the span covering the current (and any future) execution of the task in a thread-safe way.
+    /// return false for any allocation failure, because losing a span attribute must not fail the task itself.
+    bool addSpanAttribute(OpenTelemetry::SpanAttribute attribute) noexcept;
+
+    /// Record the outcome of the current task execution on its span in a thread-safe way. The status is buffered and
+    /// applied to the span when the routine exits.
+    void setSpanStatus(OpenTelemetry::SpanStatus status, String message) noexcept;
 
     /// Resume task execution. This method returns when task is completed or suspended.
     void resume();
@@ -119,6 +135,8 @@ private:
 
     void createCoroutine();
     void destroyCoroutine();
+    /// makes sure we flush current span data (attributes and buffered status) to the span in case of unwind or a cancelled fiber
+    void flushSpanData(OpenTelemetry::Span & span) noexcept;
 
     CoroutineStack coroutine_stack;
     StackfulCoroutine coroutine;
@@ -134,6 +152,20 @@ private:
 
     /// Spans created inside the task belong to the query trace.
     const OpenTelemetry::TracingContextOnThread parent_trace_context;
+
+    /// Guards span_attributes. A dedicated mutex, making sure addSpanAttribute can be called from inside the fiber
+    std::mutex span_attributes_mutex;
+    /// Attributes for the span covering one execution of the task. Copied onto the span when the routine exits.
+    OpenTelemetry::SpanAttributes span_attributes;
+    /// Buffered outcome of the current task execution, applied to the span when the routine exits.
+    OpenTelemetry::SpanStatus span_status = OpenTelemetry::SpanStatus::UNSET;
+    String span_status_message;
+    /// Start time of a span handed over by the caller, adopted by the span of the first task
+    /// A task rerun after restart() gets a fresh span.
+    UInt64 initial_span_start_time_us = 0;
+    /// Id of a span handed over by the caller, adopted by the span of the first task execution.
+    /// Consumed one-shot: a task rerun after restart() gets a freshly generated span id.
+    UInt64 initial_span_id = 0;
 };
 
 String getSocketTimeoutExceededMessageByTimeoutType(AsyncEventTimeoutType type, Poco::Timespan timeout, const String & socket_description);

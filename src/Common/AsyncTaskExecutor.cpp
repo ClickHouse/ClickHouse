@@ -1,4 +1,7 @@
+#include <utility>
+
 #include <Common/AsyncTaskExecutor.h>
+#include <Common/Exception.h>
 #include <base/scope_guard.h>
 #include <fmt/format.h>
 
@@ -6,11 +9,62 @@
 namespace DB
 {
 
-AsyncTaskExecutor::AsyncTaskExecutor(std::unique_ptr<AsyncTask> task_, String operation_name_)
+AsyncTaskExecutor::AsyncTaskExecutor(
+    std::unique_ptr<AsyncTask> task_,
+    String operation_name_,
+    OpenTelemetry::SpanAttributes initial_span_attributes_,
+    UInt64 initial_span_start_time_us_,
+    UInt64 initial_span_id_)
     : task(std::move(task_))
     , operation_name(std::move(operation_name_))
     , parent_trace_context(OpenTelemetry::CurrentContext())
+    , span_attributes(std::move(initial_span_attributes_))
+    , initial_span_start_time_us(initial_span_start_time_us_)
+    , initial_span_id(initial_span_id_)
 {
+}
+
+bool AsyncTaskExecutor::addSpanAttribute(OpenTelemetry::SpanAttribute attribute) noexcept
+{
+    std::lock_guard guard(span_attributes_mutex);
+    try
+    {
+        span_attributes.push_back(std::move(attribute));
+        return true;
+    }
+    catch (...) /// Ok: noexcept, allocation failure
+    {
+        /// so we can handle MEMORY_LIMIT_EXCEEDED or any other exception without failing
+        return false;
+    }
+}
+
+void AsyncTaskExecutor::setSpanStatus(OpenTelemetry::SpanStatus status, String message) noexcept
+{
+    std::lock_guard guard(span_attributes_mutex);
+    if (span_status != OpenTelemetry::SpanStatus::UNSET)
+        return;
+    span_status = status;
+    span_status_message = std::move(message);
+}
+
+void AsyncTaskExecutor::flushSpanData(OpenTelemetry::Span & span) noexcept
+{
+    std::lock_guard guard(span_attributes_mutex);
+    if (span.isTraceEnabled())
+    {
+        /// Span::addAttribute never throws, attributes are best-effort
+        for (const auto & attribute : span_attributes)
+            span.addAttribute(attribute);
+
+        span.status_code = span_status;
+        span.status_message = std::move(span_status_message);
+    }
+
+    /// The buffered status belongs to this execution only: a task rerun after restart()
+    /// must not inherit the previous outcome.
+    span_status = OpenTelemetry::SpanStatus::UNSET;
+    span_status_message.clear();
 }
 
 void AsyncTaskExecutor::resume()
@@ -87,7 +141,22 @@ struct AsyncTaskExecutor::Routine
     void operator()(SuspendCallback suspend_callback)
     {
         /// Stores the fiber-local tracing context from the thread that created the executor and open one span per task execution.
-        OpenTelemetry::TracingContextHolder trace_context_holder(executor.operation_name, executor.parent_trace_context);
+        /// A non-zero initial span id continues a span opened before the executor existed.
+        OpenTelemetry::TracingContextHolder trace_context_holder(
+            executor.operation_name,
+            executor.parent_trace_context,
+            std::exchange(executor.initial_span_id, 0ULL));
+
+        /// A non-zero initial start time hands over a span opened before the executor existed
+        /// Otherwise keep the current time set by the holder. The exchange makes the handover one-shot
+        if (trace_context_holder.root_span.isTraceEnabled())
+        {
+            if (UInt64 initial_start_time_us = std::exchange(executor.initial_span_start_time_us, 0ULL))
+                trace_context_holder.root_span.start_time_us = initial_start_time_us;
+        }
+
+        /// Copy the buffered attributes and status onto the span right before it is finished
+        SCOPE_EXIT({ executor.flushSpanData(trace_context_holder.root_span); });
 
         auto async_callback = AsyncCallback{executor, suspend_callback};
         try
@@ -104,6 +173,11 @@ struct AsyncTaskExecutor::Routine
         catch (...)
         {
             executor.exception = std::current_exception();
+
+            /// The tracing holder logs the span when this scope exits: record the failure first,
+            /// otherwise failed task executions are logged with an UNSET status.
+            if (trace_context_holder.root_span.isTraceEnabled())
+                executor.setSpanStatus(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(/*with_stacktrace=*/false));
         }
 
         executor.routine_is_finished = true;

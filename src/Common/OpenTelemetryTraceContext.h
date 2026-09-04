@@ -69,6 +69,8 @@ public:
     }
 };
 
+using SpanAttributes = std::vector<SpanAttribute>;
+
 /// See https://opentelemetry.io/docs/reference/specification/trace/api/#spankind
 enum class SpanKind : uint8_t
 {
@@ -110,11 +112,12 @@ struct Span
     SpanKind kind = SpanKind::INTERNAL;
     SpanStatus status_code = SpanStatus::UNSET;
     String status_message = {};
-    std::vector<SpanAttribute> attributes = {};
+    SpanAttributes attributes = {};
 
     /// Following methods are declared as noexcept to make sure they're exception safe.
     /// This is because sometimes they will be called in exception handlers/dtor.
     /// Returns true if attribute is successfully added and false otherwise.
+    bool addAttribute(SpanAttribute attribute) noexcept;
     bool addAttribute(std::string_view name, UInt64 value) noexcept;
     bool addAttributeIfNotZero(std::string_view name, UInt64 value) noexcept;
     bool addAttribute(std::string_view name, std::string_view value) noexcept;
@@ -202,12 +205,17 @@ struct TracingContextHolder
     {
     }
 
-    /// Initialize a tracing context on a child thread based on the context from the parent thread
-    TracingContextHolder(std::string_view _operation_name, const TracingContextOnThread & _parent_thread_trace_context)
+    /// Initialize a tracing context on a child thread based on the context from the parent thread.
+    /// A non-zero _initial_span_id makes the root span adopt that id instead of generating one,
+    /// so that spans which already reference it as their parent stay attached to the trace tree.
+    TracingContextHolder(std::string_view _operation_name,
+        const TracingContextOnThread & _parent_thread_trace_context,
+        UInt64 _initial_span_id = 0)
         : TracingContextHolder(_operation_name,
             _parent_thread_trace_context,
             nullptr,
-            _parent_thread_trace_context.span_log)
+            _parent_thread_trace_context.span_log,
+            _initial_span_id)
     {
     }
 
@@ -226,7 +234,8 @@ struct TracingContextHolder
     TracingContextHolder(std::string_view _operation_name,
         TracingContext _parent_trace_context,
         const Settings* settings_ptr,
-        const std::weak_ptr<OpenTelemetrySpanLog> & _log);
+        const std::weak_ptr<OpenTelemetrySpanLog> & _log,
+        UInt64 _initial_span_id = 0);
 
     ~TracingContextHolder();
 
@@ -248,7 +257,7 @@ struct SpanHolder : public Span
 
     SpanHolder(std::string_view _operation_name,
                SpanKind _kind,
-               std::vector<SpanAttribute> _attributes,
+               SpanAttributes _attributes,
                bool create_trace_if_not_exists = false);
 
     ~SpanHolder();
@@ -260,6 +269,21 @@ struct SpanHolder : public Span
     bool trace_created = false;
     /// All changes made to the current tracing context while the scope is active need to be restored.
     UInt8 old_trace_flags;
+};
+
+/// Makes an existing detached span the parent of spans created on this thread while in scope.
+/// No-op when span_id_ is 0 or tracing is not enabled on this thread.
+struct ParentSpanGuard
+{
+    explicit ParentSpanGuard(UInt64 span_id_);
+    ~ParentSpanGuard();
+
+    ParentSpanGuard(const ParentSpanGuard &) = delete;
+    ParentSpanGuard & operator=(const ParentSpanGuard &) = delete;
+
+private:
+    UInt64 old_span_id = 0;
+    bool active = false;
 };
 
 }

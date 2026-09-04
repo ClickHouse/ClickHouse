@@ -3,6 +3,7 @@
 #include <Client/ConnectionPool.h>
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/UniqueLock.h>
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
@@ -59,6 +60,14 @@ public:
         std::shared_ptr<TaskIterator> task_iterator = nullptr;
         std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator = nullptr;
         std::optional<IConnections::ReplicaInfo> replica_info = {};
+    };
+
+    /// Identifies the shard this executor reads for, for introspection (OpenTelemetry span
+    /// attributes). Filled only where the caller acts on behalf of a cluster shard.
+    struct ShardScope
+    {
+        String cluster;
+        UInt32 shard_num = 0;
     };
 
     /// Takes a connection pool for a node (not cluster)
@@ -216,6 +225,9 @@ public:
 
     void setMainTable(StorageID main_table_) { main_table = std::move(main_table_); }
 
+    /// Must be called before sending the query.
+    void setShardScope(ShardScope shard_scope_) { chassert(!sent_query); shard_scope = std::move(shard_scope_); }
+
     void setLogger(LoggerPtr logger) { log = logger; }
 
     void setUnavailableShardTracker(UnavailableShardTrackerPtr tracker) { unavailable_shard_tracker = std::move(tracker); }
@@ -277,6 +289,17 @@ private:
     Tables external_tables;
     QueryProcessingStage::Enum stage;
     QueryProcessingStage::Enum query_plan_fallback_stage = QueryProcessingStage::Complete;
+
+    /// Shard identification for the OpenTelemetry span covering this executor.
+    ShardScope shard_scope;
+
+    /// Span covering the whole fragment execution on the synchronous path (no read context
+    /// fiber): connection establishing, query sending and packet reading until `EndOfStream`,
+    /// an exception or a cancel.
+    std::unique_ptr<OpenTelemetry::Span> sync_fragment_span;
+    /// Captured when the span is created: the thread finishing the span may have no
+    /// tracing context of its own.
+    std::weak_ptr<OpenTelemetrySpanLog> sync_fragment_span_log;
 
     std::optional<Extension> extension;
     /// Initiator identifier for distributed task processing
@@ -377,6 +400,9 @@ private:
     void processMergeTreeReadTaskRequest(ParallelReadRequest request);
     void processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement);
 
+    /// The body of finish(): cancels the query and drains the remaining packets.
+    void finishUnlocked() TSA_REQUIRES(was_cancelled_mutex);
+
     /// If wasn't sent yet, send request to cancel all connections to replicas
     void cancelUnlocked() TSA_REQUIRES(was_cancelled_mutex);
     void tryCancel(const char * reason) TSA_REQUIRES(was_cancelled_mutex);
@@ -389,6 +415,26 @@ private:
 
     /// Process packet for read and return data block if possible.
     ReadResult processPacket(Packet packet);
+
+    /// The synchronous receive/process loop of read(): reads packets until they produce a result.
+    ReadResult readLoop();
+
+    /// Attributes identifying the query fragment this executor runs, for the OpenTelemetry span
+    /// covering it (the read context fiber span or the synchronous-path fragment span).
+    OpenTelemetry::SpanAttributes getFragmentSpanAttributes() const;
+
+    /// Record the fragment's outcome on whichever span covers it: writes the detached
+    /// synchronous-path span to the span log, or buffers the status onto the read context fiber span,
+    /// which is applied when the fiber exits. Write-once on both paths: the first recorded outcome wins.
+    /// The synchronous-path span is guarded by `was_cancelled_mutex`: callers that can still reach it
+    /// (everything before the read context exists, except the destructor) must hold the mutex.
+    /// The fiber-span path is thread-safe on its own.
+    void finishFragmentSpan(OpenTelemetry::SpanStatus status, String status_message = {}) noexcept;
+
+    /// Record a shard failure tolerated by `skip_unavailable_shards` as ERROR on the fragment
+    /// span, tagged with the `clickhouse.shard_skipped` attribute. The query keeps going, but the
+    /// fragment failed, and it must stay discoverable by `status_code` in the span log.
+    void finishFragmentSpanForSkippedShard(String status_message) noexcept;
 };
 
 ThrottlerPtr getThrottler(const ContextPtr & context);

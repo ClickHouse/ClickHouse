@@ -1,0 +1,6 @@
+1
+no-connection skip on async path marks span ERROR: OK
+1
+no-connection skip on sync path marks span ERROR: OK
+query with ignored remote exception succeeded
+ignored remote exception marks span ERROR: OK
