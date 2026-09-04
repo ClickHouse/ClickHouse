@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderBitSet.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
+#include <Processors/QueryPlan/Optimizations/joinOrderDP.h>
 
 #include <Common/Exception.h>
 #include <IO/Operators.h>
@@ -60,6 +61,7 @@ DPJoinEntryPtr GreedyJoinOrderOptimizer::solve()
     while (components.size() > 1)
     {
         std::shared_ptr<DPJoinEntry> best_plan = nullptr;
+        bool best_plan_equi_connected = false;
         size_t best_i = 0;
         size_t best_j = 0;
 
@@ -76,16 +78,23 @@ DPJoinEntryPtr GreedyJoinOrderOptimizer::solve()
                     continue;
 
                 auto edges = getApplicableExpressions(query_graph, left->relations, right->relations);
-                bool connected = !edges.empty()
-                    || query_graph.areTransitivelyConnected(left->relations, right->relations);
+                bool transitively_connected = query_graph.areTransitivelyConnected(left->relations, right->relations);
+                bool equi_connected = hasEquiConnection(edges, left->relations, right->relations) || transitively_connected;
+                bool connected = equi_connected
+                    || std::ranges::any_of(edges, [&](const auto * e) { return connects(e, left->relations, right->relations); });
                 if (!connected && best_plan)
                     continue;
 
                 auto selectivity = computeSelectivity(query_graph, dp_table, expression_selectivity, edges, left->relations, right->relations);
                 auto current_cost = computeJoinCost(left, right, selectivity);
-                if (!best_plan || current_cost < best_plan->cost)
+                /// An equi-connected pair always supersedes one without an equi key, regardless of
+                /// cost: without an equi predicate the cost estimate is essentially a cross product
+                /// (a relation without a row estimate makes it look arbitrarily small), so such a
+                /// pair that happened to be evaluated first must not shadow valid equi-joined plans.
+                if (!best_plan || (equi_connected && !best_plan_equi_connected)
+                    || (equi_connected == best_plan_equi_connected && current_cost < best_plan->cost))
                 {
-                    if (join_kind == JoinKind::Inner && !connected)
+                    if (join_kind == JoinKind::Inner && edges.empty() && !transitively_connected)
                         join_kind = JoinKind::Cross;
                     auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
                     JoinOperator join_operator(join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified);
@@ -103,6 +112,7 @@ DPJoinEntryPtr GreedyJoinOrderOptimizer::solve()
                     }
                     applied_edges = std::move(edges);
                     best_plan = std::make_shared<DPJoinEntry>(left, right, current_cost, cardinality, std::move(join_operator));
+                    best_plan_equi_connected = equi_connected;
                     best_i = i;
                     best_j = j;
                 }

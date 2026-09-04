@@ -1,0 +1,18 @@
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter (Post Join Actions)
+        Join (JOIN FillRightFirst)
+          Expression (Left Pre Join Actions)
+            Filter (Post Join Actions)
+              Join (JOIN FillRightFirst)
+                Expression (Left Pre Join Actions)
+                  Expression (Change column names to column identifiers)
+                    ReadFromMergeTree (default.ta)
+                Expression (Right Pre Join Actions)
+                  Expression (Change column names to column identifiers)
+                    ReadFromMergeTree (default.tc)
+          Expression (Right Pre Join Actions)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.tb)
+285

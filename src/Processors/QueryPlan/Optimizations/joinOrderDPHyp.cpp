@@ -149,8 +149,8 @@ void DPHypJoinOrderOptimizer::tryJoin(const BitSet & left_rels, const BitSet & r
         /// Predicates spanning 2+ relations were already applied in a sub-join.
         /// Single-table or constant predicates (e.g. moved into `ON` by
         /// `query_plan_merge_filter_into_join_condition`) are not handled by `dphyp` here;
-        /// `dpsize` attaches them at the smallest containing join, but `dphyp` would need
-        /// extra bookkeeping to avoid double-application. For now, mark the query as
+        /// `dpsize` and `dpsub` attach them at the leaf join of their relation, but `dphyp` would
+        /// need extra bookkeeping to avoid double-application. For now, mark the query as
         /// unsupported and let `solve` return `nullptr` so the fallback chain runs.
         if (predicate->getSourceRelations().count() < 2)
         {

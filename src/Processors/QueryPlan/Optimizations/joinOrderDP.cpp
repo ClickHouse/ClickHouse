@@ -15,6 +15,20 @@ bool connects(const JoinActionRef * predicate, const BitSet & left, const BitSet
     return areIntersecting(participating, left) && areIntersecting(participating, right);
 }
 
+bool hasEquiConnection(const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right)
+{
+    for (const auto * edge : edges)
+    {
+        auto [op, lhs, rhs] = edge->asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+            continue;
+        const auto & sources = edge->getSourceRelations();
+        if ((sources & left) && (sources & right))
+            return true;
+    }
+    return false;
+}
+
 DPJoinEntryPtr evaluateJoin(
     const QueryGraph & query_graph,
     PlanMemo & dp_table,
