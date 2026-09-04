@@ -733,6 +733,7 @@
             "reference/functions/table-functions/s3Cluster",
             "reference/functions/table-functions/sqlite",
             "reference/functions/table-functions/timeSeriesData",
+            "reference/functions/table-functions/timeSeriesHistograms",
             "reference/functions/table-functions/timeSeriesMetrics",
             "reference/functions/table-functions/timeSeriesSamples",
             "reference/functions/table-functions/timeSeriesSelector",

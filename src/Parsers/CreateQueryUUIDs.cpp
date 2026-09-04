@@ -7,6 +7,8 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTViewTargets.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 
 
@@ -121,6 +123,12 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
                 }
                 if (recent_samples_enabled)
                     generate_target_uuid(ViewTarget::RecentSamples);
+
+                /// The "histograms" target is optional: its inner table exists only when the CREATE query
+                /// declares it (an explicit HISTOGRAMS clause, or the `store_native_histograms` setting, which
+                /// normalizeTimeSeriesDefinition() has already materialized into the target by this point).
+                if (query.targets && query.targets->tryGetTarget(ViewTarget::Histograms))
+                    generate_target_uuid(ViewTarget::Histograms);
             }
         }
     }

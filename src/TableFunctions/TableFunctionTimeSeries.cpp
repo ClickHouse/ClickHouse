@@ -187,6 +187,25 @@ SELECT * FROM timeSeriesMetrics('db_name', 'time_series_table');
 ```
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
 
+    factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Histograms>>(
+        {.description = R"DOCS_MD(
+`timeSeriesHistograms(db_name.time_series_table)` - Returns the [histograms](/reference/engines/table-engines/integrations/time-series#histograms-table) table
+used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine
+and which was created with a `HISTOGRAMS` target or the `store_native_histograms` setting:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries SETTINGS store_native_histograms = 1
+```
+
+The following queries are equivalent:
+
+```sql
+SELECT * FROM timeSeriesHistograms(db_name.time_series_table);
+SELECT * FROM timeSeriesHistograms('db_name.time_series_table');
+SELECT * FROM timeSeriesHistograms('db_name', 'time_series_table');
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+
     factory.registerFunction<TableFunctionTimeSeriesSelector>(
         {.description = R"DOCS_MD(
 Reads time series from a TimeSeries table filtered by a selector and with timestamps in a specified interval.
