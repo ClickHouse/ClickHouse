@@ -40,15 +40,14 @@ def test_options_and_settings_propagation(started_cluster):
     assert completed_process.returncode == 0
     assert output.replace("\n\x00", "\n") == "{\"getSetting('max_threads')\":42}\n"
 
+
 def test_no_dump_schema(started_cluster):
     # The interactive embedded client refuses batch-only schema dumps instead of ignoring them.
     # Paramiko sends the hyphenated option name that OpenSSH's client rejects.
     pkey = paramiko.Ed25519Key.from_private_key_file(f"{SCRIPT_DIR}/keys/lucy_ed25519")
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(
-        hostname=instance.ip_address, port=9022, username="lucy", pkey=pkey
-    )
+    client.connect(hostname=instance.ip_address, port=9022, username="lucy", pkey=pkey)
 
     stdin, stdout, stderr = client.exec_command(
         "SELECT 1;", environment={"dump-schema": ""}
