@@ -166,9 +166,18 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
         return nullptr;
 
     /// Every reader of a file in one query shares the counter that decides when the rename happens, so
-    /// a table carrying a rule is memoised for that query, the way `file()` itself is resolved.
+    /// such a table is memoised for that query, the way `file()` is. The memo keys on the changed
+    /// settings of the resolving context, so a rule the query set is resolved by the query's context.
     if (renames_after_processing && context_->hasQueryContext())
-        return context_->getQueryContext()->executeTableFunction(ast_function_ptr, table_function, context_);
+    {
+        auto query_context = context_->getQueryContext();
+        const bool rule_is_the_query_setting
+            = query_context->getSettingsRef()[Setting::rename_files_after_processing].value
+            == context_->getSettingsRef()[Setting::rename_files_after_processing].value;
+
+        return query_context->executeTableFunction(
+            ast_function_ptr, table_function, rule_is_the_query_setting ? ContextPtr(query_context) : context_);
+    }
 
     /// TableFunctionFile throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(ast_function_ptr, context_, name);

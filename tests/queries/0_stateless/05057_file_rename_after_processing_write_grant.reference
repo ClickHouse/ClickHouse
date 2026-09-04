@@ -45,6 +45,9 @@ renamed
 --- two references to one armed table in a query read the same table, renamed once at the end
 1	1
 renamed
+--- and they still share it when one of them also changed an unrelated setting of its own
+1	1
+renamed
 --- a URL database over file:// is gated the same way
 WRITE ON FILE
 intact
