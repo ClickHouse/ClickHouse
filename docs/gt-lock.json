@@ -7,36 +7,36 @@
       "versionId": "5e8eb2f148cc34089a58ef566bc0123f2ef0726c9083366bf4815bd39bf74645",
       "translations": {
         "ko": {
-          "updatedAt": "2026-09-04T18:14:41.119Z",
+          "updatedAt": "2026-09-04T18:58:18.751Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-04T18:14:41.259Z",
+          "updatedAt": "2026-09-04T18:58:18.894Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-04T18:14:41.505Z",
+          "updatedAt": "2026-09-04T18:58:19.190Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-04T18:14:41.730Z",
+          "updatedAt": "2026-09-04T18:58:19.482Z",
           "fileName": "docs.json",
           "postProcessHash": "894d205f2980fce08b20153bdb5da6b5dfc63baa61711efdbf8f5de3c897f84d"
         },
         "es": {
-          "updatedAt": "2026-09-04T18:14:40.816Z",
+          "updatedAt": "2026-09-04T18:58:18.440Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-04T18:14:41.617Z",
+          "updatedAt": "2026-09-04T18:58:19.337Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-04T18:14:41.388Z",
+          "updatedAt": "2026-09-04T18:58:19.044Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-09-04T18:14:40.992Z",
+          "updatedAt": "2026-09-04T18:58:18.607Z",
           "fileName": "docs.json"
         }
       },
@@ -12669,47 +12669,47 @@
     },
     {
       "fileId": "7a8c54ccfb29da7ba6f4ca7a3dfb55a9cf7ccc61b462fbf7c644e5f2c3c132b6",
-      "versionId": "695723a2a4e61a52b4eeff5803de4efae3b1d613df6643a32a5361bdd96c408f",
+      "versionId": "4840277b9f6a247064a6189e78392ee71338bae8370f05855d84006518a9caab",
       "translations": {
-        "zh": {
-          "updatedAt": "2026-09-02T22:31:18.341Z",
-          "fileName": "zh/get-started/setup/install.mdx",
-          "postProcessHash": "454ac4f9307c3b02b5c95a82f78f6ee9f812fc1b3146dc7ba2991bcb5f1728b2"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-02T22:31:18.537Z",
-          "fileName": "pt-BR/get-started/setup/install.mdx",
-          "postProcessHash": "cc7130d592e4f30a425dc5b5becc8e526b415db9b95d2d2356acdb5c2edbd586"
-        },
-        "ja": {
-          "updatedAt": "2026-09-02T22:31:18.545Z",
-          "fileName": "ja/get-started/setup/install.mdx",
-          "postProcessHash": "2ed35690dc5ddb41126d1db4bf0151559c1bab80af8117cadabcb7e1a9067d25"
-        },
-        "ar": {
-          "updatedAt": "2026-09-02T22:31:18.746Z",
-          "fileName": "ar/get-started/setup/install.mdx",
-          "postProcessHash": "a50702333e0449a57f5c5e2e7aa6e29d8882de8ad2a5050a8e10fd10f3ca2a8a"
-        },
         "es": {
-          "updatedAt": "2026-09-02T22:31:18.757Z",
+          "updatedAt": "2026-09-04T18:58:23.099Z",
           "fileName": "es/get-started/setup/install.mdx",
-          "postProcessHash": "923283952e49ea92773d24666ebaa1da6247c118a9310b17c4f1dab6ab04d058"
-        },
-        "ru": {
-          "updatedAt": "2026-09-02T22:31:18.764Z",
-          "fileName": "ru/get-started/setup/install.mdx",
-          "postProcessHash": "c16044a9b2fa7e7e8b3f560b575adc8674d7c52a0054beab8e1025cebf7e8147"
+          "postProcessHash": "19433ea06555e34a239dca3bb412978289f77d0f9ccab0eb97a66b1ebe95406b"
         },
         "fr": {
-          "updatedAt": "2026-09-02T22:31:18.765Z",
+          "updatedAt": "2026-09-04T18:58:23.100Z",
           "fileName": "fr/get-started/setup/install.mdx",
-          "postProcessHash": "964d3705dc610d39c57d373c6d4be0b985781aa7d9104ca86dd7afc1ecc10b3b"
+          "postProcessHash": "b0260a7d8bccabe7930b579891e6d7eb0689232e6274455ed953ade8ca29dbaf"
         },
         "ko": {
-          "updatedAt": "2026-09-02T22:31:18.963Z",
+          "updatedAt": "2026-09-04T18:58:23.100Z",
           "fileName": "ko/get-started/setup/install.mdx",
-          "postProcessHash": "81a8788b576763280103803ff78971f2bf0d2ec564c8403a98fccce75101a06c"
+          "postProcessHash": "c9fb0c3f59103dd37f4b464591df027ce97929cfd88b543af444922d43d92852"
+        },
+        "ja": {
+          "updatedAt": "2026-09-04T18:58:23.101Z",
+          "fileName": "ja/get-started/setup/install.mdx",
+          "postProcessHash": "71fe53485395f8a8b027fcebd39955ae1d8211bc25a79238867a7d2f28d514eb"
+        },
+        "zh": {
+          "updatedAt": "2026-09-04T18:58:23.101Z",
+          "fileName": "zh/get-started/setup/install.mdx",
+          "postProcessHash": "fb91ab03b0b4dd399c8a97c56b1c3d5058abf048329f7f53dbb115ba625f19fb"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-04T18:58:23.101Z",
+          "fileName": "pt-BR/get-started/setup/install.mdx",
+          "postProcessHash": "a69e9fa32b907e9078190e0b633d4e001b0af1b6caca7ff4746564332914c50d"
+        },
+        "ru": {
+          "updatedAt": "2026-09-04T18:58:23.102Z",
+          "fileName": "ru/get-started/setup/install.mdx",
+          "postProcessHash": "94c4d662ef1b5341ebe103da31d79ca1ea9b8750ec49064b227d9f4ec3cb2ef3"
+        },
+        "ar": {
+          "updatedAt": "2026-09-04T18:58:23.102Z",
+          "fileName": "ar/get-started/setup/install.mdx",
+          "postProcessHash": "07c063bfe9bbc74ef0afec05bcbd1ca068420fd010a2b98e1cad166240106dc7"
         }
       },
       "fileName": "get-started/setup/install.mdx"
@@ -83697,51 +83697,50 @@
     },
     {
       "fileId": "1c4fc17a5dd2925205dd97abf7641254d5e3b0b536bd6115686602932fa34973",
-      "versionId": "cd250f92a26b70f0a4c4706d208a2794b4664f0272187d77559243c3d0a97a42",
+      "versionId": "f824952819fd38ce299c0574339d57dd13721045b26709c7a5e45a6c9ddb9545",
       "translations": {
+        "ru": {
+          "updatedAt": "2026-09-04T18:58:23.096Z",
+          "fileName": "ru/products/cloud/guides/backups/configurable-backups.mdx",
+          "postProcessHash": "a770ce1df4be0a9a41cc920e85fb562bdfbecfab9f2cf56456b2c3e17f1abed6"
+        },
         "es": {
-          "updatedAt": "2026-08-14T10:41:08.117Z",
+          "updatedAt": "2026-09-04T18:58:23.097Z",
           "fileName": "es/products/cloud/guides/backups/configurable-backups.mdx",
-          "postProcessHash": "0cc43c6d6924c192cce1e0843a601b55423cad0cb1168f7a5ca07352989bc540"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.117Z",
-          "fileName": "ja/products/cloud/guides/backups/configurable-backups.mdx",
-          "postProcessHash": "978fc16ebed401ea411560237aa18aa70509cf0c540b9b8ac7a26440774f8779"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.118Z",
-          "fileName": "ko/products/cloud/guides/backups/configurable-backups.mdx",
-          "postProcessHash": "8462ecca2115dd3d664cd8269924994c6a78624ce54f25ee481d1e32b8fc9f67"
+          "postProcessHash": "96207dbcc3fa77c7c564ce9efbdbf0ebec1b5e635e671acc298a4732d3a2e768"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.118Z",
+          "updatedAt": "2026-09-04T18:58:23.097Z",
           "fileName": "pt-BR/products/cloud/guides/backups/configurable-backups.mdx",
-          "postProcessHash": "23a1801eb36fd5da82acb46a6c7ceda17a9ee6d2eb96a78e91869a98e620d438"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.119Z",
-          "fileName": "ru/products/cloud/guides/backups/configurable-backups.mdx",
-          "postProcessHash": "eaac0dbc86b55edbfdeb6c7d131ec9b61c9880bd24e3cea99ea125e3a2012f2f"
+          "postProcessHash": "5431e7842abe838387e89c3957bbcf885eeeea93bb835ce71f87230dfea5f616"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.119Z",
+          "updatedAt": "2026-09-04T18:58:23.098Z",
           "fileName": "zh/products/cloud/guides/backups/configurable-backups.mdx",
-          "postProcessHash": "65920c03df892fcd476349c542cdadafff5a614bd4cd1f72533bdceb9cc7cb58"
+          "postProcessHash": "53508cd5fb20cd15f39de10c725093eed2c40eb5c27737da9db0e2ad40600218"
         },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.119Z",
-          "fileName": "ar/products/cloud/guides/backups/configurable-backups.mdx",
-          "postProcessHash": "4479e2dcfa795f37430a60fcf0596032caf0c3e9a47a3f5b993935c15e58a8e7"
+        "ko": {
+          "updatedAt": "2026-09-04T18:58:23.098Z",
+          "fileName": "ko/products/cloud/guides/backups/configurable-backups.mdx",
+          "postProcessHash": "ae2b59d7d95a3dde5bb79b3329083254ea5fc04c5bd71111e6efdd8fe9185bff"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.119Z",
+          "updatedAt": "2026-09-04T18:58:23.098Z",
           "fileName": "fr/products/cloud/guides/backups/configurable-backups.mdx",
-          "postProcessHash": "885404fc6f4e8b871aae848a767b7d9712509f44a2908b505d36537cf56b4340"
+          "postProcessHash": "bba71f68a97158bc966469bef1641c90d8332ac22752e0c13f830198ce9b6d81"
+        },
+        "ja": {
+          "updatedAt": "2026-09-04T18:58:23.099Z",
+          "fileName": "ja/products/cloud/guides/backups/configurable-backups.mdx",
+          "postProcessHash": "9b65a25b3d9b5c44795b94d1471c433ce71a342eb1f6ccabbad19f9d12958d16"
+        },
+        "ar": {
+          "updatedAt": "2026-09-04T18:58:23.099Z",
+          "fileName": "ar/products/cloud/guides/backups/configurable-backups.mdx",
+          "postProcessHash": "23d80c8f84bcc85701685a4a984badb557316f8b3d92b8adee29e7f66393ecaa"
         }
       },
-      "fileName": "products/cloud/guides/backups/configurable-backups.mdx",
-      "staged": false
+      "fileName": "products/cloud/guides/backups/configurable-backups.mdx"
     },
     {
       "fileId": "7f2ab809e38b0dd375adccd00b2c077061ca9dc4f9078149319b16e131d36aee",
@@ -137708,6 +137707,53 @@
         }
       },
       "fileName": "snippets/clickpipes/_postgres_clickpipe_cli.mdx"
+    },
+    {
+      "fileId": "64acf038bce6e529ecb2d91e394925123ee975c7a352c703cd2dcb68d968d106",
+      "versionId": "ac5979e62e95b1e7f9e8de93a64a4f7200d07a1ff61ebf17d72dc7c1d1d591bd",
+      "translations": {
+        "ru": {
+          "updatedAt": "2026-09-04T18:58:23.102Z",
+          "fileName": "snippets/ru/cloud/backups/_configurable_backups_cli.mdx",
+          "postProcessHash": "392cf42f78004bd6dcc446d6a4a2925323ca7ca9fd229ad0d43d290777fe67a3"
+        },
+        "es": {
+          "updatedAt": "2026-09-04T18:58:23.103Z",
+          "fileName": "snippets/es/cloud/backups/_configurable_backups_cli.mdx",
+          "postProcessHash": "40ee42c7551d5b35a5378c6dcef7c209814926ed9f3c47fa43446005b12bedff"
+        },
+        "ja": {
+          "updatedAt": "2026-09-04T18:58:23.103Z",
+          "fileName": "snippets/ja/cloud/backups/_configurable_backups_cli.mdx",
+          "postProcessHash": "5c62e043b36d7f797c223efb3cf783cb9cfe9fc25103ee568ecdfeeb2d08c268"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-04T18:58:23.103Z",
+          "fileName": "snippets/pt-BR/cloud/backups/_configurable_backups_cli.mdx",
+          "postProcessHash": "7a11716aebd53dc72095aa3d0f41518834853241478bdd96291c09c92a269ba5"
+        },
+        "fr": {
+          "updatedAt": "2026-09-04T18:58:23.104Z",
+          "fileName": "snippets/fr/cloud/backups/_configurable_backups_cli.mdx",
+          "postProcessHash": "fb4a90309d829da394a56b925e6ef466c37e7533f35e4d8430f9ec79f2f2739e"
+        },
+        "ar": {
+          "updatedAt": "2026-09-04T18:58:23.104Z",
+          "fileName": "snippets/ar/cloud/backups/_configurable_backups_cli.mdx",
+          "postProcessHash": "5bc842c7d9d55414f3b859ab7032c79350af0f6c165fbbec3462ea395f9d5f50"
+        },
+        "zh": {
+          "updatedAt": "2026-09-04T18:58:23.104Z",
+          "fileName": "snippets/zh/cloud/backups/_configurable_backups_cli.mdx",
+          "postProcessHash": "14f24ef5643ec67f66381e14224935b3daa94f19d3ac12f92bb3bbfa7cd47c05"
+        },
+        "ko": {
+          "updatedAt": "2026-09-04T18:58:23.104Z",
+          "fileName": "snippets/ko/cloud/backups/_configurable_backups_cli.mdx",
+          "postProcessHash": "b2a439789b8b6a5a4a1263fc1cdd698b21e81ea03051e816e98f438e9a96e8bc"
+        }
+      },
+      "fileName": "snippets/cloud/backups/_configurable_backups_cli.mdx"
     }
   ]
 }

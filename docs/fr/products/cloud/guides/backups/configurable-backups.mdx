@@ -10,21 +10,36 @@ doc_type: 'guide'
 import { CloudNotSupportedBadge } from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/fr/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 import { Image } from "/snippets/fr/components/Image.jsx";
+import ConfigurableBackupsCLI from "/snippets/fr/cloud/backups/_configurable_backups_cli.mdx";
 
-<ScalePlanFeatureBadge feature="Sauvegardes configurables" linking_verb_are="True" />
+<Visibility for="agents">
+  <ConfigurableBackupsCLI />
+</Visibility>
 
-Pour configurer la planification des sauvegardes d’un service, accédez à l’onglet **Settings** de la console, puis cliquez sur **Modifier la configuration des sauvegardes**.
+<Visibility for="humans">
+  <View title="Interface Cloud">
+    <ScalePlanFeatureBadge feature="Sauvegardes configurables" linking_verb_are="True" />
 
-<Image img="/images/cloud/manage/backup-settings.webp" size="lg" alt="Configurer les paramètres de sauvegarde" border />
+    Pour configurer la planification des sauvegardes d’un service, accédez à l’onglet **Settings** de la console, puis cliquez sur **Modifier la configuration des sauvegardes**.
 
-Un onglet s’ouvre alors à droite, dans lequel vous pouvez sélectionner les valeurs de rétention, de fréquence et d’heure de début. Vous devrez enregistrer les paramètres choisis pour qu’ils prennent effet.
+    <Image img="/images/cloud/manage/backup-settings.webp" size="lg" alt="Configurer les paramètres de sauvegarde" border />
 
-<Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="Sélectionner la rétention et la fréquence des sauvegardes" border />
+    Un onglet s’ouvre alors à droite, dans lequel vous pouvez sélectionner les valeurs de rétention, de fréquence et d’heure de début. Vous devrez enregistrer les paramètres choisis pour qu’ils prennent effet.
 
-<Note>
-  L’heure de début et la fréquence sont mutuellement exclusives. L’heure de début prévaut.
-</Note>
+    <Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="Sélectionner la rétention et la fréquence des sauvegardes" border />
 
-<Note>
-  Modifier la planification des sauvegardes peut entraîner des frais mensuels de stockage plus élevés, car certaines sauvegardes peuvent ne pas être couvertes par les sauvegardes par défaut du service. Voir [&quot;Comprendre le coût des sauvegardes&quot;](/fr/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost).
-</Note>
+    <Note>
+      L’heure de début et la fréquence sont mutuellement exclusives. L’heure de début prévaut.
+    </Note>
+
+    <Note>
+      Modifier la planification des sauvegardes peut entraîner des frais mensuels de stockage plus élevés, car certaines sauvegardes peuvent ne pas être couvertes par les sauvegardes par défaut du service. Voir [&quot;Comprendre le coût des sauvegardes&quot;](/fr/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost).
+    </Note>
+  </View>
+
+  <View title="CLI">
+    Vous pouvez suivre cette procédure vous-même, la scripter ou la confier à un AI agent. Basculez sur la vue **Interface Cloud** pour la version console.
+
+    <ConfigurableBackupsCLI />
+  </View>
+</Visibility>
