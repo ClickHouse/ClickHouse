@@ -809,7 +809,11 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
         referential_dependencies.addDependencies(StorageID{new_name, table_name}, removed_ref_deps);
         loading_dependencies.addDependencies(StorageID{new_name, table_name}, removed_loading_deps);
 
-        /// Re-key view_dependencies in both directions (table as MV, table as source).
+        /// `view_dependencies` is rewired in both directions: the table being renamed
+        /// may be a materialized view (incoming edges from its source) and/or a source
+        /// of materialized views (outgoing edges to its dependent MVs). Both sides must
+        /// be re-keyed under `new_name`, otherwise lookups by the new name fail and
+        /// inserts into the renamed source no longer reach its MVs.
         auto tables_from = view_dependencies.getDependents(StorageID{old_name, table_name});
         for (const auto & the_table_from : tables_from)
         {
@@ -824,6 +828,18 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
             view_dependencies.addDependency(StorageID{new_name, table_name}, view);
         }
 
+        /// `plain_view_dependencies` is re-keyed only on the side where the renamed table is the
+        /// plain view itself: the view keeps working under its new name, so its sources must report
+        /// it as `new_name.table_name` in `system.tables.dependencies_*`, and a later `ALTER` or `DROP`
+        /// of the view must find (and clean) its edges under the new name. The source side is
+        /// deliberately left alone: the graph is name-bound, and a plain view reading a table of the
+        /// renamed database still refers to it by the old name in its stored `SELECT`.
+        auto plain_view_sources = plain_view_dependencies.getDependents(StorageID{old_name, table_name});
+        for (const auto & source : plain_view_sources)
+        {
+            plain_view_dependencies.removeDependency(source, StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
+            plain_view_dependencies.addDependency(source, StorageID{new_name, table_name});
+        }
     }
 }
 
