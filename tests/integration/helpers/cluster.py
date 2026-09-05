@@ -4454,7 +4454,7 @@ class ClickHouseCluster:
             if self.docker_logs_proc is not None:
                 self.docker_logs_proc.kill()
 
-            if not sanitizer_assert_instance:
+            if not sanitizer_assert_instance and not ignore_sanitizer:
                 # Search for sinitizer signs in docker.log if it's still empty
                 with open(self.docker_logs_path, "r", errors="replace") as f:
                     for line in f:
