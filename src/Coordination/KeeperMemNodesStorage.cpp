@@ -6,7 +6,11 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 
+#include <fmt/ranges.h>
+
 #include <filesystem>
+#include <set>
+#include <unordered_set>
 #include <mutex>
 
 namespace DB
@@ -14,6 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -355,6 +360,163 @@ void KeeperMemNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader,
 
     reader.finishStreams(std::move(streams));
 
+    /// A snapshot that lost the root node `"/"` is catastrophically corrupted: every remaining node
+    /// looks like an orphan, so orphan cleanup would delete the entire data tree, and
+    /// `KeeperStorage::initializeSystemNodes` would then silently recreate `"/"` and `"/keeper"` —
+    /// Keeper would start with an empty database. This also covers a snapshot with no nodes at all,
+    /// which is corrupted for the same reason: every valid Keeper snapshot contains `"/"`. Refuse to
+    /// load such a snapshot regardless of `remove_orphaned_nodes_on_startup`.
+    if (!container.contains("/"))
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Snapshot is missing the root node '/' ({} nodes loaded). Refusing to load it: the whole data tree would be treated as "
+            "orphaned and Keeper would start with an empty database. Restore Keeper from a valid snapshot or from the changelog",
+            container.size());
+
+    /// Detect orphaned nodes — nodes whose parent is absent from the snapshot. Without special
+    /// handling, populating children sets below would fail with an opaque "Could not find key"
+    /// error when trying to update the missing parent.
+    std::unordered_set<std::string> orphan_paths;
+    for (const auto & itr : container)
+    {
+        if (itr.key != "/")
+        {
+            auto parent_path = Coordination::parentNodePath(itr.key);
+            if (!container.contains(parent_path))
+                orphan_paths.insert(std::string(itr.key));
+        }
+    }
+
+    bool orphans_removed = false;
+    if (!orphan_paths.empty())
+    {
+        /// Expand the orphan set to include all descendants of orphan roots.
+        /// A node whose ancestor is an orphan is itself an orphan.
+        for (const auto & itr : container)
+        {
+            if (itr.key == "/" || orphan_paths.contains(std::string(itr.key)))
+                continue;
+
+            auto path = Coordination::parentNodePath(itr.key);
+            while (path != "/")
+            {
+                if (orphan_paths.contains(std::string(path)))
+                {
+                    orphan_paths.insert(std::string(itr.key));
+                    break;
+                }
+                path = Coordination::parentNodePath(path);
+            }
+        }
+
+        /// Removing orphaned nodes requires all of:
+        /// 1. `remove_orphaned_nodes_on_startup` config option enabled (opt-in)
+        /// 2. digest disabled (to avoid digest mismatch during rolling upgrades)
+        /// 3. the snapshot is the latest local snapshot loaded from disk during server startup
+        ///    (`reader.allow_orphaned_nodes_removal`) and the server is still starting up
+        ///    (`Phase::INIT`). A snapshot received from another node — e.g. a follower applying
+        ///    a leader snapshot in `KeeperStateMachine::apply_snapshot`, which can happen even
+        ///    before the server phase flips to `RUNNING` — must be applied faithfully; silently
+        ///    cleaning orphans there would make the follower diverge from the rest of the cluster.
+        const bool remove_enabled = keeper_context->removeOrphanedNodesOnStartup();
+        const bool is_startup_load
+            = reader.allow_orphaned_nodes_removal && keeper_context->getServerState() == KeeperContext::Phase::INIT;
+        const bool can_remove = remove_enabled && !keeper_context->digestEnabled() && is_startup_load;
+
+        if (!can_remove)
+        {
+            const char * reason = !remove_enabled
+                ? "remove_orphaned_nodes_on_startup is disabled"
+                : keeper_context->digestEnabled()
+                    ? "digest_enabled is true; set keeper_server.digest_enabled=false to allow removal"
+                    : "removal is only allowed when loading the latest local snapshot during server startup, "
+                      "not when applying a snapshot received from another node";
+
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Found {} orphaned nodes in snapshot but cannot remove them: {}. "
+                "Set 'keeper_server.remove_orphaned_nodes_on_startup' to true and "
+                "'keeper_server.digest_enabled' to false, then restart, to allow removal",
+                orphan_paths.size(),
+                reason);
+        }
+
+        /// Digest is disabled here (see `can_remove`), so nodes' digests are not being
+        /// accumulated and removal cannot corrupt an already-computed digest.
+        chassert(out_digest == nullptr);
+
+        /// Identify orphan roots for concise logging
+        std::vector<std::string> orphan_roots;
+        for (const auto & path : orphan_paths)
+        {
+            auto parent = std::string(Coordination::parentNodePath(path));
+            if (!orphan_paths.contains(parent))
+                orphan_roots.push_back(path);
+        }
+        std::sort(orphan_roots.begin(), orphan_roots.end());
+
+        LOG_WARNING(
+            getLogger("KeeperMemNodeStorage"),
+            "Removing {} orphaned nodes ({} orphan roots) from snapshot. Roots: [{}]. "
+            "Note: this changes the local state only — enable 'remove_orphaned_nodes_on_startup' on all Keeper replicas and "
+            "restart them, otherwise this replica's state will diverge from its peers",
+            orphan_paths.size(),
+            orphan_roots.size(),
+            fmt::join(orphan_roots, ", "));
+
+        for (const auto & orphan : orphan_paths)
+        {
+            auto node_it = container.find(orphan);
+            if (node_it == container.end())
+                continue;
+
+            /// Decrement ACL usage count
+            reader.acl_map.removeUsage(node_it->value.stats.acl_id);
+
+            /// Clean up ephemeral, TTL and container-node bookkeeping
+            if (storage)
+                storage->nodeRemovedFromSnapshot(orphan, node_it->value.stats);
+
+            container.erase(orphan);
+        }
+        reader.acl_map.removeUnusedACLs();
+
+        /// The nodes we just removed are only part of the damage: their *missing* ancestors mark the
+        /// boundary between the tree we loaded and the tree that the raft log above this snapshot was
+        /// produced against. Record the topmost absent path of every pruned subtree so that
+        /// `KeeperStateMachine::findOrphanConflictInLogTail` can refuse to start if a local log entry
+        /// above the snapshot still references the damaged region.
+        ///
+        /// Computed after the erase loop on purpose: erasing makes strictly more paths absent, so
+        /// computing this earlier could stop at a path that is too deep and under-report the damage.
+        /// Walks the copied strings in `orphan_roots` rather than container keys, so no `string_view`
+        /// dangles across the erase above.
+        std::set<std::string> damage_roots;
+        for (const auto & orphan_root : orphan_roots)
+        {
+            /// The parent of an orphan root is absent by construction, and `"/"` is always present
+            /// (checked above), so this terminates without ever yielding `"/"`.
+            std::string_view damaged = Coordination::parentNodePath(orphan_root);
+            while (true)
+            {
+                auto parent = Coordination::parentNodePath(damaged);
+                if (container.contains(parent))
+                    break;
+                damaged = parent;
+            }
+            damage_roots.emplace(damaged);
+        }
+        reader.removed_orphan_subtree_roots.assign(damage_roots.begin(), damage_roots.end());
+
+        LOG_WARNING(
+            getLogger("KeeperMemNodeStorage"),
+            "Paths missing from the snapshot that root the removed subtrees: [{}]. Keeper will refuse to start if a local log entry "
+            "above this snapshot references any of them",
+            fmt::join(reader.removed_orphan_subtree_roots, ", "));
+
+        orphans_removed = true;
+    }
+
     LOG_TRACE(getLogger("KeeperMemNodeStorage"), "Building structure for children nodes");
 
     /// Populate children sets.
@@ -365,6 +527,34 @@ void KeeperMemNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader,
             auto parent_path = Coordination::parentNodePath(itr.key);
             container.updateValue(
                 parent_path, [path = itr.key](Node & value) { value.addChild(Coordination::getBaseNodeName(path)); });
+        }
+    }
+
+    if (orphans_removed)
+    {
+        /// A snapshot with orphaned nodes lost some nodes, so surviving ancestors can carry a stale
+        /// `numChildren` counter. Fix the counters to match the actual rebuilt children sets so that
+        /// the consistency check below passes.
+        for (const auto & itr : container)
+        {
+            auto actual_num_children = static_cast<int32_t>(itr.value.getChildren().size());
+            if (itr.value.stats.getNumChildren() != actual_num_children)
+            {
+                LOG_WARNING(
+                    getLogger("KeeperMemNodeStorage"),
+                    "Fixing stale numChildren counter for node {} after orphan removal: {} -> {}",
+                    itr.key,
+                    itr.value.stats.getNumChildren(),
+                    actual_num_children);
+
+                container.updateValue(
+                    itr.key,
+                    [actual_num_children](Node & value)
+                    {
+                        value.stats.setNumChildren(actual_num_children);
+                        value.invalidateDigestCache();
+                    });
+            }
         }
     }
 

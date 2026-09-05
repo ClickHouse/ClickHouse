@@ -26,6 +26,7 @@
 #include <base/errnoToString.h>
 #include <base/move_extend.h>
 #include <base/scope_guard.h>
+#include <fmt/ranges.h>
 #include <sys/mman.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/Exception.h>
@@ -151,7 +152,10 @@ void KeeperStateMachine::init()
             auto new_storage = KeeperStorage::create(
                 keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(),
                 superdigest, keeper_context, /* initialize_system_nodes */ false);
-            auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf, *new_storage);
+            /// Loading the latest local snapshot during startup — the only place where
+            /// `remove_orphaned_nodes_on_startup` recovery is allowed to remove orphaned nodes.
+            auto snapshot_deserialization_result
+                = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf, *new_storage, /*allow_orphaned_nodes_removal=*/ true);
             auto latest_snapshot_info = snapshot_manager.getLatestSnapshotInfo();
             chassert(latest_snapshot_info);
 
@@ -170,6 +174,9 @@ void KeeperStateMachine::init()
             advanceLatestSnapshotMeta(snapshot_deserialization_result.snapshot_meta);
             cluster_config = snapshot_deserialization_result.cluster_config;
             keeper_context->setLastCommitIndex(latest_snapshot_meta->get_last_log_idx());
+            /// Verified by `KeeperServer::startup` via `findOrphanConflictInLogTail` once the log store
+            /// is loaded -- we cannot check it here because the log store does not exist yet.
+            removed_orphan_subtree_roots = std::move(snapshot_deserialization_result.removed_orphan_subtree_roots);
         }
         catch (...)
         {
@@ -234,6 +241,360 @@ void KeeperStateMachine::preprocessUncommittedLogEntries(uint64_t start_idx, uin
             LOG_TRACE(log, "Preprocessed {}/{} entries", i + 1, entries->size());
     }
     LOG_INFO(log, "Preprocessing done");
+}
+
+namespace
+{
+
+/// How a request touches an enumerated path; decides which conflict predicate applies.
+enum class RequestPathKind
+{
+    /// The request resolves this path against the tree (reads it, creates it, removes it, ...).
+    Target,
+    /// The request mutates the stats of this node as the *parent* of its target: a create/remove
+    /// bumps the parent's `numChildren`, `cversion` and `pzxid`.
+    ParentStats,
+};
+
+/// Enumerate the node paths a request refers to, calling `f(std::string_view, RequestPathKind)` for
+/// each. Returns false for request types we do not recognise, so the caller can fail closed.
+///
+/// Keep in sync with `callOnConcreteRequestType` in KeeperStorageImpl.cpp: a new op num that is not
+/// listed here is reported as a conflict rather than silently skipped.
+template <typename F>
+bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
+{
+    using Coordination::OpNum;
+    switch (request.getOpNum())
+    {
+        case OpNum::Multi:
+        case OpNum::MultiRead:
+        {
+            /// `ZooKeeperMultiRequest::getPath()` returns an empty string, so the sub-requests
+            /// carry the actual paths and must be walked.
+            const auto & multi = dynamic_cast<const Coordination::ZooKeeperMultiRequest &>(request);
+            for (const auto & sub_request : multi.requests)
+            {
+                if (!sub_request)
+                    return false;
+                if (!forEachRequestPath(*sub_request, f))
+                    return false;
+            }
+            return true;
+        }
+        /// These touch no node path at all.
+        ///
+        /// `Sync` carries a path but never reads or writes the tree -- its handler ignores the storage
+        /// argument entirely and just echoes the path back (see `process(const ZooKeeperSyncRequest &,
+        /// KeeperStorage & /* storage */, ...)` in KeeperStorageImpl.cpp). Treating its path as touched
+        /// would make a harmless tail entry such as `Sync("/")` conflict with every removed subtree and
+        /// block recovery for no reason.
+        case OpNum::Heartbeat:
+        case OpNum::Auth:
+        case OpNum::Close:
+        case OpNum::SessionID:
+        case OpNum::Error:
+        case OpNum::Sync:
+            return true;
+        /// `SetWatches`/`SetWatches2` carry lists of paths rather than a single one (`getPath()` must not
+        /// be called on them: it dereferences `data_watches[0]` without checking that the list is
+        /// non-empty). `KeeperStorage::setWatches` resolves the data, child (list), and exist watch paths
+        /// against the tree -- whether the node exists and its `mzxid`/`pzxid` decide between an immediate
+        /// `DELETED`/`CHANGED`/`CREATED` watch event and re-registering the watch -- so a watch on a pruned
+        /// path would replay differently after orphan cleanup. The persistent watch lists of `SetWatches2`
+        /// are registered without consulting the tree, but they are checked all the same: a tail entry
+        /// naming a pruned path is evidence the log postdates state the snapshot lost, and being broader
+        /// than strictly necessary is the safe direction for this guard.
+        case OpNum::SetWatch:
+        case OpNum::SetWatch2:
+        {
+            const auto & set_watches = dynamic_cast<const Coordination::SetWatchesRequest &>(request);
+            for (const auto & path : set_watches.data_watches)
+                f(path, RequestPathKind::Target);
+            for (const auto & path : set_watches.child_watches)
+                f(path, RequestPathKind::Target);
+            for (const auto & path : set_watches.exist_watches)
+                f(path, RequestPathKind::Target);
+            if (const auto * set_watches2 = dynamic_cast<const Coordination::SetWatches2Request *>(&request))
+            {
+                for (const auto & path : set_watches2->persistent_watches)
+                    f(path, RequestPathKind::Target);
+                for (const auto & path : set_watches2->persistent_recursive_watches)
+                    f(path, RequestPathKind::Target);
+            }
+            return true;
+        }
+        /// Everything else has a meaningful single path.
+        case OpNum::Reconfig:
+        case OpNum::Get:
+        case OpNum::Exists:
+        case OpNum::Create:
+        case OpNum::Create2:
+        case OpNum::CreateContainer:
+        case OpNum::CreateIfNotExists:
+        case OpNum::CreateTTL:
+        case OpNum::Remove:
+        case OpNum::TryRemove:
+        case OpNum::RemoveRecursive:
+        case OpNum::Set:
+        case OpNum::SetACL:
+        case OpNum::GetACL:
+        case OpNum::List:
+        case OpNum::SimpleList:
+        case OpNum::FilteredList:
+        case OpNum::FilteredListWithStatsAndData:
+        case OpNum::ListRecursive:
+        case OpNum::Check:
+        case OpNum::CheckNotExists:
+        case OpNum::CheckStat:
+        case OpNum::AddWatch:
+        case OpNum::CheckWatch:
+        case OpNum::RemoveWatch:
+        {
+            const auto path = request.getPath();
+            f(path, RequestPathKind::Target);
+
+            /// A sequential create does not touch the path it carries: the storage appends a zero-padded
+            /// sequence number taken from the parent, so the node actually created is
+            /// `<path><seq_num>` (`path_created` in KeeperStorageImpl.cpp). We cannot know the sequence
+            /// number here, but the created node is always a direct child of the same parent, so any
+            /// conflict involving it implies the parent lies on the same root-to-leaf chain as the
+            /// removed subtree. Checking the parent as a target is therefore sound; it is deliberately a
+            /// little broader than strictly necessary, which is the safe direction for this guard.
+            if (const auto * create = dynamic_cast<const Coordination::ZooKeeperCreateRequest *>(&request);
+                create != nullptr && create->is_sequential)
+                f(Coordination::parentNodePath(path), RequestPathKind::Target);
+
+            /// Creates and removes also mutate the stats of the target's parent (`numChildren`,
+            /// `cversion`, `pzxid` -- see the create/remove handlers in KeeperStorageImpl.cpp), so a
+            /// sibling operation under a parent whose children were pruned replays against repaired
+            /// stats and silently diverges from replicas that still hold the lost children.
+            switch (request.getOpNum())
+            {
+                case OpNum::Create:
+                case OpNum::Create2:
+                case OpNum::CreateContainer:
+                case OpNum::CreateIfNotExists:
+                case OpNum::CreateTTL:
+                case OpNum::Remove:
+                case OpNum::TryRemove:
+                case OpNum::RemoveRecursive:
+                    f(Coordination::parentNodePath(path), RequestPathKind::ParentStats);
+                    break;
+                default:
+                    break;
+            }
+
+            return true;
+        }
+    }
+    return false;
+}
+
+/// A request path conflicts with a removed subtree root when the two lie on the same root-to-leaf
+/// chain:
+///  - the path is the root or below it: our tree lost those nodes, so the request resolves
+///    differently (`Create`/`Set` -> `ZNONODE`);
+///  - the path is a strict ancestor of the root: its children set and `numChildren` differ from the
+///    tree the log was written against, so e.g. `Remove` returns `ZOK` here but was `ZNOTEMPTY`, and
+///    `Create <root>` succeeds here but was `ZNODEEXISTS`.
+bool conflictsWithRemovedSubtree(std::string_view path, std::string_view subtree_root)
+{
+    return Coordination::matchPath(path, subtree_root) != Coordination::PathMatchResult::NOT_MATCH
+        || Coordination::matchPath(subtree_root, path) == Coordination::PathMatchResult::IS_CHILD;
+}
+
+/// Whether replaying an operation that mutates the stats of `parent` (as the parent of a created or
+/// removed node) diverges after the subtree rooted at `subtree_root` was removed. That is the case
+/// when the parent lies inside the removed region, or when it is the direct parent of the removed
+/// subtree root: its `numChildren` was repaired to exclude the lost children, so a replayed sibling
+/// create/remove updates it from a different base than on replicas that still hold them.
+///
+/// Deliberately narrower than `conflictsWithRemovedSubtree`: an ancestor further up the chain keeps
+/// identical stats on every replica (its direct children did not change), so a create/remove under it
+/// replays identically and must not block recovery -- otherwise any tail entry creating a node under
+/// `"/"` would conflict with every removed subtree.
+bool parentStatsDivergeWithRemovedSubtree(std::string_view parent, std::string_view subtree_root)
+{
+    return Coordination::matchPath(parent, subtree_root) != Coordination::PathMatchResult::NOT_MATCH
+        || parent == Coordination::parentNodePath(subtree_root);
+}
+
+}
+
+std::optional<KeeperStateMachine::OrphanLogTailConflict>
+KeeperStateMachine::findOrphanConflictInLogTail(uint64_t start_idx, uint64_t end_idx)
+{
+    if (removed_orphan_subtree_roots.empty())
+        return {};
+
+    const auto roots_str = fmt::format("{}", fmt::join(removed_orphan_subtree_roots, ", "));
+
+    start_idx = std::min(start_idx, end_idx);
+    if (start_idx == end_idx)
+    {
+        LOG_INFO(
+            log,
+            "No local log entries above the snapshot, nothing can reference the {} removed orphaned subtree root(s): [{}]",
+            removed_orphan_subtree_roots.size(),
+            roots_str);
+        removed_orphan_subtree_roots.clear();
+        return {};
+    }
+
+    /// Fail closed on anything that prevents us from reading the range. Neither branch is reachable
+    /// today (`KeeperServer::startup` attaches the log store first, and `Changelog` already refuses to
+    /// start on a gap between the snapshot and the oldest log entry), but a future reordering must
+    /// fail loudly instead of skipping the verification.
+    if (!log_store)
+    {
+        OrphanLogTailConflict conflict;
+        conflict.reason = "the log store is not available, so the local log tail cannot be verified";
+        return conflict;
+    }
+
+    if (log_store->start_index() > start_idx)
+    {
+        OrphanLogTailConflict conflict;
+        conflict.reason = fmt::format(
+            "log entries between the snapshot and the start of the log are missing (need from {}, log starts at {}), so the "
+            "local log tail cannot be verified",
+            start_idx,
+            log_store->start_index());
+        return conflict;
+    }
+
+    LOG_INFO(
+        log,
+        "Verifying local log entries [{}, {}) against {} removed orphaned subtree root(s): [{}]",
+        start_idx,
+        end_idx,
+        removed_orphan_subtree_roots.size(),
+        roots_str);
+
+    static constexpr uint64_t max_entries_without_warning = 1'000'000;
+    if (end_idx - start_idx > max_entries_without_warning)
+        LOG_WARNING(log, "There are {} local log entries to verify, this may take a while", end_idx - start_idx);
+
+    /// Read in batches: the same range is materialised again by `preprocessUncommittedLogEntries`
+    /// right after startup, so keep this verification's peak memory flat.
+    static constexpr uint64_t batch_size = 10'000;
+    for (uint64_t batch_begin = start_idx; batch_begin < end_idx; batch_begin += batch_size)
+    {
+        const uint64_t batch_end = std::min(batch_begin + batch_size, end_idx);
+        auto entries = log_store->log_entries(batch_begin, batch_end);
+        if (!entries || entries->size() != batch_end - batch_begin)
+        {
+            OrphanLogTailConflict conflict;
+            conflict.reason = fmt::format(
+                "the log store returned {} entries for the range [{}, {}), so the local log tail cannot be verified",
+                entries ? entries->size() : 0,
+                batch_begin,
+                batch_end);
+            return conflict;
+        }
+
+        for (size_t i = 0; i < entries->size(); ++i)
+        {
+            auto & entry = (*entries)[i];
+            const uint64_t log_idx = batch_begin + i;
+
+            if (!entry || entry->get_val_type() != nuraft::log_val_type::app_log)
+                continue;
+
+            std::shared_ptr<KeeperRequestForSession> request_for_session;
+            try
+            {
+                /// `final=true` keeps this scan out of `parsed_request_cache`: the entries are parsed
+                /// again during the real preprocessing pass and we must not disturb that.
+                request_for_session = parseRequest(entry->get_buf(), /*final=*/true);
+            }
+            catch (...)
+            {
+                OrphanLogTailConflict conflict;
+                conflict.log_idx = log_idx;
+                conflict.reason
+                    = fmt::format("the entry cannot be parsed ({}), so it cannot be verified", getCurrentExceptionMessage(false));
+                return conflict;
+            }
+
+            if (!request_for_session || !request_for_session->request)
+                continue;
+
+            const auto & request = *request_for_session->request;
+            std::optional<OrphanLogTailConflict> conflict;
+            const bool recognised = forEachRequestPath(
+                request,
+                [&](std::string_view path, RequestPathKind kind)
+                {
+                    if (conflict)
+                        return;
+
+                    /// Every request routed here carries a real path (the ones that do not are handled
+                    /// above), so this means a new request type was added without deciding which group it
+                    /// belongs to. Fail closed explicitly rather than leaning on what `matchPath` happens
+                    /// to return for an empty path.
+                    if (path.empty())
+                    {
+                        OrphanLogTailConflict empty_path;
+                        empty_path.log_idx = log_idx;
+                        empty_path.op_num = std::string{Coordination::opNumToString(request.getOpNum())};
+                        empty_path.reason = "the request has no path, so the nodes it touches cannot be determined";
+                        conflict = std::move(empty_path);
+                        return;
+                    }
+
+                    for (const auto & subtree_root : removed_orphan_subtree_roots)
+                    {
+                        const bool conflicts = kind == RequestPathKind::Target
+                            ? conflictsWithRemovedSubtree(path, subtree_root)
+                            : parentStatsDivergeWithRemovedSubtree(path, subtree_root);
+                        if (conflicts)
+                        {
+                            OrphanLogTailConflict found;
+                            found.log_idx = log_idx;
+                            found.op_num = std::string{Coordination::opNumToString(request.getOpNum())};
+                            found.request_path = std::string{path};
+                            found.subtree_root = subtree_root;
+                            found.reason = kind == RequestPathKind::Target
+                                ? "the entry references a path that was removed from the snapshot, or a parent of one"
+                                : "the entry creates or removes a node under a parent whose children were removed from the snapshot, "
+                                  "so the parent's stats would be updated from a repaired base";
+                            conflict = std::move(found);
+                            return;
+                        }
+                    }
+                });
+
+            if (!recognised)
+            {
+                OrphanLogTailConflict unrecognised;
+                unrecognised.log_idx = log_idx;
+                unrecognised.op_num = std::string{Coordination::opNumToString(request.getOpNum())};
+                unrecognised.reason = "the request type is not recognised, so the paths it touches cannot be determined";
+                return unrecognised;
+            }
+
+            if (conflict)
+                return conflict;
+        }
+
+        if ((batch_end - start_idx) % 50'000 == 0)
+            LOG_TRACE(log, "Verified {}/{} entries", batch_end - start_idx, end_idx - start_idx);
+    }
+
+    LOG_INFO(
+        log,
+        "Verified local log entries [{}, {}): none of them reference the {} removed orphaned subtree root(s)",
+        start_idx,
+        end_idx,
+        removed_orphan_subtree_roots.size());
+
+    /// One-shot startup token: clearing makes a second call a no-op and keeps a stale value from
+    /// surviving into a later `apply_snapshot` that replaces `storage`.
+    removed_orphan_subtree_roots.clear();
+    removed_orphan_subtree_roots.shrink_to_fit();
+    return {};
 }
 
 namespace
@@ -528,6 +889,11 @@ std::shared_ptr<KeeperRequestForSession> KeeperStateMachine::parseRequest(
 
 std::optional<KeeperDigest> KeeperStateMachine::preprocess(const KeeperRequestForSession & request_for_session, bool lock_mutex) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
+    /// `findOrphanConflictInLogTail` must have run (and cleared this) before any request is
+    /// preprocessed. If it did not, orphaned nodes were removed from the snapshot without verifying the
+    /// local log tail against them -- see `KeeperServer::startup`.
+    chassert(removed_orphan_subtree_roots.empty());
+
     const auto op_num = request_for_session.request->getOpNum();
 
     KeeperDigest digest_after_preprocessing;
@@ -931,7 +1297,11 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
                     storage = KeeperStorage::create(
                         keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(),
                         superdigest, keeper_context, /* initialize_system_nodes */ false);
-                    auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf, *storage);                    /// This repeats the pre-reset prefix check deliberately. It
+                    /// A snapshot received from another node must be applied faithfully — orphaned
+                    /// nodes must never be removed here, otherwise this replica would diverge.
+                    auto snapshot_deserialization_result
+                        = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf, *storage, /*allow_orphaned_nodes_removal=*/ false);
+                    /// This repeats the pre-reset prefix check deliberately. It
                     /// catches future divergence between
                     /// `deserializeSnapshotMetadataFromBuffer` and
                     /// `deserializeSnapshotFromBuffer`.

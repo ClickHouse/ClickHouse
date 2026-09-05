@@ -108,6 +108,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int OPENSSL_ERROR;
+    extern const int CORRUPTED_DATA;
 }
 
 using namespace std::chrono_literals;
@@ -763,6 +764,35 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
     auto log_store = state_manager->load_log_store();
     last_log_idx_on_disk = log_store->next_slot() - 1;
     LOG_TRACE(log, "Last local log idx {}", last_log_idx_on_disk.load());
+
+    /// `init()` above may have removed orphaned nodes from the snapshot
+    /// (`keeper_server.remove_orphaned_nodes_on_startup`). Only now, with the log store loaded, can we
+    /// tell whether there are local log entries above the snapshot -- those get re-preprocessed and
+    /// committed once the raft server starts (see the comment at the nuraft callback below), and with
+    /// digest checking disabled, which orphan removal requires, an entry referencing a removed path
+    /// would silently resolve differently instead of failing.
+    ///
+    /// This must stay between `setLogStore` above and `launchRaftServer` below: throwing here is a
+    /// clean startup failure, whereas failing later inside `KeeperStateMachine::preprocess` would
+    /// `abort()` the process.
+    if (auto conflict = state_machine->findOrphanConflictInLogTail(
+            state_machine->last_commit_index() + 1, last_log_idx_on_disk.load() + 1))
+    {
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Orphaned nodes were removed while loading the snapshot at index {}, but local log entry {}{}{} cannot be replayed on top "
+            "of the repaired tree: {}{}. Replaying it would silently produce a state that differs from the rest of the cluster, and "
+            "digest checking is disabled. Refusing to start. Recover this node from a healthy peer (stop it, remove its coordination "
+            "directory and let it re-sync from the leader), or restore its snapshots and changelog from a backup. Setting "
+            "'keeper_server.remove_orphaned_nodes_on_startup' back to false restores the original snapshot-load error",
+            state_machine->last_commit_index(),
+            conflict->log_idx,
+            conflict->op_num.empty() ? "" : fmt::format(" ({})", conflict->op_num),
+            conflict->request_path.empty() ? "" : fmt::format(" on '{}'", conflict->request_path),
+            conflict->reason,
+            conflict->subtree_root.empty() ? "" : fmt::format(" (removed subtree rooted at '{}')", conflict->subtree_root));
+    }
+
     if (state_machine->last_commit_index() >= last_log_idx_on_disk)
     {
         LOG_INFO(log, "No log preprocessing needed (last_commit_index={} >= last_log_idx_on_disk={})", state_machine->last_commit_index(), last_log_idx_on_disk.load());
