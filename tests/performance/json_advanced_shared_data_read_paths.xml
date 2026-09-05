@@ -1,0 +1,32 @@
+<test>
+    <!-- Reading an individual path (or a nested path) from JSON advanced shared data. The advanced
+         serializer now starts each path/substream in its own compressed block, so a selective read
+         decompresses only that path's data instead of the whole bucket it shares with other paths. -->
+    <create_query>
+        create table json_advanced_shared_data_top (json JSON(max_dynamic_paths=0))
+        engine=MergeTree order by tuple()
+        settings min_bytes_for_wide_part=0, min_rows_for_wide_part=0,
+                 object_shared_data_serialization_version='advanced',
+                 object_shared_data_serialization_version_for_zero_level_parts='advanced',
+                 object_shared_data_buckets_for_wide_part=1
+    </create_query>
+    <create_query>
+        create table json_advanced_shared_data_nested (json JSON(max_dynamic_paths=0))
+        engine=MergeTree order by tuple()
+        settings min_bytes_for_wide_part=0, min_rows_for_wide_part=0,
+                 object_shared_data_serialization_version='advanced',
+                 object_shared_data_serialization_version_for_zero_level_parts='advanced',
+                 object_shared_data_buckets_for_wide_part=1
+    </create_query>
+
+    <!-- top-level: a tiny path 'small' next to a large path 'big' in the same bucket -->
+    <fill_query>insert into json_advanced_shared_data_top select map('small', toString(number % 100), 'big', hex(randomString(4000))) from numbers(1000000)</fill_query>
+    <!-- nested: one Array(JSON) path 'items' whose objects have a large 'big' and a tiny 'small' -->
+    <fill_query>insert into json_advanced_shared_data_nested select '{"items":[' || arrayStringConcat(arrayMap(i -> '{"big":"' || hex(randomString(1000)) || '","small":"' || toString(i) || '"}', range(4)), ',') || ']}' from numbers(1000000)</fill_query>
+
+    <query>select json.small from json_advanced_shared_data_top format Null</query>
+    <query>select json.items[].small from json_advanced_shared_data_nested format Null</query>
+
+    <drop_query>drop table if exists json_advanced_shared_data_top</drop_query>
+    <drop_query>drop table if exists json_advanced_shared_data_nested</drop_query>
+</test>
