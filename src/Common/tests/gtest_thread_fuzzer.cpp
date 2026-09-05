@@ -195,7 +195,7 @@ void runChildCase(std::span<const char * const> child_env_vars, const char * chi
     /// Drain before waiting: a child that fills the pipe would block forever otherwise.
     std::string output;
     char buf[4096];
-    ssize_t got;
+    ssize_t got = 0;
     while ((got = read(fds[0], buf, sizeof(buf))) > 0)
         output.append(buf, static_cast<size_t>(got));
     close(fds[0]);
