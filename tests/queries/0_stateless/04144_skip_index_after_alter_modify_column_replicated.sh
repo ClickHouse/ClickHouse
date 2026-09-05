@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Tags: zookeeper
 
-# Test that skip indexes are properly handled when `ALTER MODIFY COLUMN` changes
-# the column type and the mutation has not yet been applied (ReplicatedMergeTree variant).
-# This verifies that `supportsSkipIndexesOnDataRead` disables the data-read phase
-# of skip-index application while there are pending alter mutations: in that phase
-# the index would be applied without the per-part `can_use_index` check, so the
-# on-disk index data (serialized with the old type) would be evaluated against the
-# new type and produce wrong results.
+# Test that a read cannot use a skip index whose on-disk data was serialized with the old column
+# type while an `ALTER MODIFY COLUMN` that changes that type is still pending (ReplicatedMergeTree
+# variant). Evaluating the old index data under the new type prunes granules that do match,
+# returning 0 rows instead of 128. Both phases of skip-index application refuse such an index per
+# part through `MergeTreeDataSelectExecutor::canUseIndex`, and `supportsSkipIndexesOnDataRead`
+# keeps the data-read phase out of this state as well, so the read below asserts the outcome and
+# not which of them produced it.
 #
 # Uses UInt64 → Float64 conversion because both types use 8-byte fixed-width
 # serialization: the old UInt64 bytes get reinterpreted as Float64 without a
@@ -18,10 +18,11 @@
 # `supportsSkipIndexesOnDataRead` (it disables itself when `read_overflow_mode = throw`
 # and `max_rows_to_read` is set, which `clickhouse-test` injects by default).
 #
-# Neither state below is reachable from pure SQL, hence a shell script: on
-# ReplicatedMergeTree one setting (`alter_sync`) gates the `ALTER`'s metadata wait and its
+# On ReplicatedMergeTree one setting (`alter_sync`) gates the `ALTER`'s metadata wait and its
 # mutation wait together, so no value of it leaves the pending state observable while also
-# reaching the applied state, and no later statement waits for a submitted mutation.
+# reaching the applied state, and no later statement waits for a submitted mutation. Both states
+# are therefore reached by polling `system.columns` / `system.mutations`, which is why this is a
+# shell script.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -70,12 +71,9 @@ done
 echo "$pending"
 
 ${CLICKHOUSE_CLIENT} -q "
--- The index data is now incompatible with the new type.
--- Without the fix, the data-read phase reads the on-disk index (serialized as UInt64)
--- using the new Float64 deserialization, producing tiny denormalized values that don't
--- match 300.0, so the index incorrectly skips all granules and returns 0 rows.
--- With the fix, the data-read phase is disabled while alter mutations are pending,
--- and the primary-key analysis correctly excludes the incompatible index per part.
+-- The on-disk index data is incompatible with the new type, so no path may use it to prune:
+-- read as Float64, the old UInt64 bytes become tiny denormalized values that do not match
+-- 300.0, which would skip every granule and return 0 rows instead of 128.
 SELECT count() FROM test_skip_index_alter_replicated WHERE value = 300.0 SETTINGS force_data_skipping_indices = 'idx_value', use_skip_indexes_on_data_read = 1, max_rows_to_read = 0;
 
 SYSTEM START MERGES test_skip_index_alter_replicated;
