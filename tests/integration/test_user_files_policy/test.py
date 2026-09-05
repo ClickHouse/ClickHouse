@@ -1355,3 +1355,25 @@ def test_parquet_lazy_materialization_only_on_plain_local_disk(node, lazy_expect
 
     explain = node.query("EXPLAIN " + query, settings=settings)
     assert ("LazilyReadFromFile" in explain) == lazy_expected
+
+
+@pytest.mark.parametrize(
+    "node", [node_local, node_s3, node_encrypted], ids=["local", "s3", "encrypted"]
+)
+@pytest.mark.parametrize("snappy_mode", ["basic", "framed"])
+def test_snappy_mode_round_trip_through_disk(node, snappy_mode):
+    """`snappy` has two incompatible wire formats and `snappy_mode` selects between them. The
+    disk-backed read helper used to ignore the setting and always decode `SnappyMode::Basic`,
+    so a file written with `snappy_mode = 'framed'` could be written but never read back under
+    `user_files_policy`. Both modes must round-trip on every disk type."""
+    filename = f"snappy_{snappy_mode}_{uuid.uuid4().hex}.csv.snappy"
+    node.query(
+        f"INSERT INTO FUNCTION file('{filename}', 'CSV', 'x UInt64') "
+        "SELECT number FROM numbers(10) "
+        f"SETTINGS engine_file_truncate_on_insert = 1, snappy_mode = '{snappy_mode}'"
+    )
+    result = node.query(
+        f"SELECT sum(x) FROM file('{filename}', 'CSV', 'x UInt64') "
+        f"SETTINGS snappy_mode = '{snappy_mode}'"
+    )
+    assert result.strip() == "45", result

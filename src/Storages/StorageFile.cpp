@@ -1263,8 +1263,9 @@ std::unique_ptr<ReadBuffer> createReadBufferFromDisk(
     ReadSettings read_settings = context->getReadSettings();
     std::unique_ptr<ReadBuffer> nested_buffer = disk->readFile(current_path, read_settings);
 
-    int zstd_window_log_max = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
-    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
+    const auto & file_settings = context->getSettingsRef();
+    int zstd_window_log_max = static_cast<int>(file_settings[Setting::zstd_window_log_max]);
+    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max, file_settings[Setting::snappy_mode]);
 }
 
 }
