@@ -41,6 +41,8 @@ SELECT tokens('%ab\\\\\\\\%cd%', 'ngrams', 2), tokensForLikePattern('%ab\\\\\\\\
 ['%a','ab','b\\','\\\\','\\\\','\\\\','\\%','%c','cd','d%']	['ab','b\\','\\\\','cd']
 SELECT tokens('%ab\\\\%cd%', 'ngrams', 2), tokensForLikePattern('%ab\\\\%cd%', 'ngrams', 2);
 ['%a','ab','b\\','\\\\','\\%','%c','cd','d%']	['ab','b\\','cd']
+SELECT tokens('%ab\\\\%cd%', 'ngrams', 1), tokensForLikePattern('%ab\\\\%cd%', 'ngrams', 1);
+['%','a','b','\\','\\','%','c','d','%']	['a','b','\\','c','d']
 -- Unsupported tokenizers should throw error
 SELECT 'unsupported tokenizers:';
 unsupported tokenizers:
