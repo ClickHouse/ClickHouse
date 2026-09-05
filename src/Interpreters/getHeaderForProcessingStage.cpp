@@ -56,7 +56,19 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
     select.tables()->children.resize(1);
 
     /// Also remove GROUP BY cause ExpressionAnalyzer would check if it has all aggregate columns but joined columns would be missed.
+    /// The `group_by_all` flag must not survive either: a re-analysis of this rewritten query
+    /// (e.g. for a child plan of StorageMerge) would otherwise re-expand GROUP BY ALL over the
+    /// replaced select list. The `order_by_all` flag is reset by setExpression itself when the
+    /// ORDER BY clause is removed below.
     select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
+    select.group_by_all = false;
+    /// The GROUP BY modifiers must not survive the removal of the clause either: with no
+    /// GROUP BY and no aggregates a leftover WITH TOTALS/ROLLUP/CUBE/GROUPING SETS flag makes
+    /// the interpreter reject the rewritten query as aggregation-free.
+    select.group_by_with_totals = false;
+    select.group_by_with_rollup = false;
+    select.group_by_with_cube = false;
+    select.group_by_with_grouping_sets = false;
     rewriter_result.aggregates.clear();
 
     /// Replace select list to remove joined columns
@@ -98,6 +110,23 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
     replace_where(select, ASTSelectQuery::Expression::PREWHERE);
     select.setExpression(ASTSelectQuery::Expression::HAVING, {});
     select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
+    /// INTERPOLATE can only exist together with ORDER BY ... WITH FILL, and RequiredSourceColumnsVisitor
+    /// traverses it independently of ORDER BY, so if it were kept, it could still reference columns
+    /// of the removed joined table.
+    select.setExpression(ASTSelectQuery::Expression::INTERPOLATE, {});
+    /// WINDOW definitions and LIMIT BY expressions are analyzed unconditionally as well
+    /// (ExpressionAnalyzer::makeWindowDescriptions and appendLimitBy), so they must not keep
+    /// references to columns of the removed joined table either. QUALIFY is cleared for the same
+    /// reason (and, like HAVING, it is a filter that cannot affect the header anyway).
+    select.setExpression(ASTSelectQuery::Expression::WINDOW, {});
+    select.setExpression(ASTSelectQuery::Expression::QUALIFY, {});
+    select.setExpression(ASTSelectQuery::Expression::LIMIT_BY, {});
+    select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, {});
+    select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, {});
+    select.limit_by_all = false;
+    /// LIMIT ... WITH TIES requires an ORDER BY clause, which was just removed;
+    /// a stale flag would be a logical error in InterpreterSelectQuery.
+    select.limit_with_ties = false;
 
     return true;
 }

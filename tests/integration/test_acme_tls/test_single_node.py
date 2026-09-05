@@ -66,3 +66,23 @@ def test_acme_authorization(started_single_replica_cluster):
         return
 
     raise Exception("Failed to get expected certificate issuer")
+
+
+def test_show_certificate(started_single_replica_cluster):
+    # Let Pebble know where to find our server
+    requests.post(
+        'http://10.5.11.3:8055/add-a',
+        json={'host': 'single.integration-tests.clickhouse.com', 'addresses': ['10.5.11.11']}
+    )
+
+    # With ACME the SSL context of the server never receives a certificate, so `showCertificate`
+    # has to report the certificate held by the certificate reloader.
+    certificate = ""
+    for _ in range(120):
+        certificate = node.query("SELECT showCertificate()")
+        if "CN=Pebble Intermediate CA" in certificate:
+            return
+
+        time.sleep(1)
+
+    raise Exception(f"showCertificate() did not report the ACME certificate: {certificate}")

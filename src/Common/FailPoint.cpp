@@ -69,6 +69,7 @@ static struct InitFiu
     ONCE(distributed_cache_fail_continue_request) \
     ONCE(distributed_cache_fail_choose_server) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
+    PAUSEABLE(file_segment_pause_before_write) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
     REGULAR(write_through_cache_fail) \
@@ -177,7 +178,8 @@ static struct InitFiu
     REGULAR(patch_parts_reverse_column_order) \
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
-    REGULAR(query_metric_log_delay_collect)
+    REGULAR(query_metric_log_delay_collect) \
+    ONCE(zk_send_thread_request_window_throw)
 
 namespace FailPoints
 {
