@@ -2515,6 +2515,40 @@ class TestCase:
             ]
         )
 
+    # The settings the server refuses to combine with use_query_cache when they are not
+    # 'throw' (QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE), because a non-throw mode
+    # can truncate the result. Keep in sync with executeQuery.cpp.
+    OVERFLOW_MODE_SETTINGS = (
+        "read_overflow_mode",
+        "read_overflow_mode_leaf",
+        "group_by_overflow_mode",
+        "sort_overflow_mode",
+        "result_overflow_mode",
+        "timeout_overflow_mode",
+        "set_overflow_mode",
+        "join_overflow_mode",
+        "transfer_overflow_mode",
+        "distinct_overflow_mode",
+    )
+
+    def has_non_throw_overflow_mode_in_test(self):
+        # Matches both a SQL assignment and a command line flag, which may separate the
+        # value with a space. 'throw', 'break' and 'any' are the only overflow modes.
+        pattern = re.compile(
+            r"\b(?:%s)\s*(?:=\s*)?'?(?:any|break)\b" % "|".join(self.OVERFLOW_MODE_SETTINGS),
+            re.IGNORECASE,
+        )
+        # A comment starts at `--` or `#` only when it is not part of a `--setting` flag.
+        comment = re.compile(r"(?<![-\w])--(?![-\w])|(?<!\w)#")
+        with open(self.case_file, "r", errors="replace") as handle:
+            for line in handle:
+                found = comment.search(line)
+                if found:
+                    line = line[: found.start()]
+                if pattern.search(line):
+                    return True
+        return False
+
     def add_effective_settings(self, client_options):
         new_options = ""
         if self.effective_settings:
@@ -2547,6 +2581,20 @@ class TestCase:
 
         current_value = os.environ.get("CLICKHOUSE_CLIENT_OPT", "")
         os.environ["CLICKHOUSE_CLIENT_OPT"] = f"{current_value} --allow_repeated_settings".strip()
+
+        # Must precede the `feature_tag_overrides` block below, which returns early.
+        if "use_query_cache=1" in os.environ["CLICKHOUSE_CLIENT_OPT"] and (
+            self.has_non_throw_overflow_mode_in_test()
+        ):
+            os.environ["CLICKHOUSE_CLIENT_OPT"] += " --use_query_cache=0"
+            client_options += " --use_query_cache=0"
+            # In cloud mode the same option is also carried over HTTP, where a
+            # repeated parameter likewise takes its last value.
+            url_params = os.environ.get("CLICKHOUSE_URL_PARAMS", "")
+            if "use_query_cache=1" in url_params:
+                os.environ["CLICKHOUSE_URL_PARAMS"] = (
+                    url_params + "&use_query_cache=0" if url_params else "use_query_cache=0"
+                )
 
         # Last, so that it beats an externally supplied --client-option that enabled the
         # feature: with --allow_repeated_settings the last occurrence takes effect. A SET
