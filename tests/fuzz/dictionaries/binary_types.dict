@@ -1,0 +1,72 @@
+# BinaryTypeIndex values from DataTypesBinaryEncoding.h
+# Each entry is a single-byte type index for the binary type encoding format.
+
+# Scalar types
+"\x00"  # Nothing
+"\x01"  # UInt8
+"\x02"  # UInt16
+"\x03"  # UInt32
+"\x04"  # UInt64
+"\x05"  # UInt128
+"\x06"  # UInt256
+"\x07"  # Int8
+"\x08"  # Int16
+"\x09"  # Int32
+"\x0A"  # Int64
+"\x0B"  # Int128
+"\x0C"  # Int256
+"\x0D"  # Float32
+"\x0E"  # Float64
+"\x0F"  # Date
+"\x10"  # Date32
+"\x11"  # DateTime (no timezone)
+"\x12"  # DateTime (with timezone)
+"\x13"  # DateTime64(P)
+"\x14"  # DateTime64(P, timezone)
+"\x15"  # String
+"\x16"  # FixedString(N)
+"\x17"  # Enum8
+"\x18"  # Enum16
+"\x19"  # Decimal32(P, S)
+"\x1A"  # Decimal64(P, S)
+"\x1B"  # Decimal128(P, S)
+"\x1C"  # Decimal256(P, S)
+"\x1D"  # UUID
+"\x1E"  # Array(T)
+"\x1F"  # Tuple (unnamed)
+"\x20"  # Tuple (named)
+"\x21"  # Set
+"\x22"  # Interval
+"\x23"  # Nullable(T)
+"\x24"  # Function
+"\x25"  # AggregateFunction
+"\x26"  # LowCardinality(T)
+"\x27"  # Map(K, V)
+"\x28"  # IPv4
+"\x29"  # IPv6
+"\x2A"  # Variant
+"\x2B"  # Dynamic
+"\x2C"  # Custom type
+"\x2D"  # Bool
+"\x2E"  # SimpleAggregateFunction
+"\x2F"  # Nested
+"\x30"  # JSON
+"\x31"  # BFloat16
+"\x32"  # Time
+"\x34"  # Time64(P)
+"\x36"  # QBit(T, N)
+
+# VarUInt encodings for small counts (1-byte encoding for values 0-127)
+"\x00"  # count = 0
+"\x01"  # count = 1
+"\x02"  # count = 2
+"\x03"  # count = 3
+"\x08"  # count = 8
+"\x10"  # count = 16
+"\x7F"  # count = 127
+
+# Interval kind bytes
+"\x03"  # Second
+"\x04"  # Minute
+"\x05"  # Hour
+"\x06"  # Day

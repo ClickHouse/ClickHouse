@@ -1,0 +1,2 @@
+clickhouse_add_executable(column_variant_fuzzer column_variant_fuzzer.cpp)
+target_link_libraries(column_variant_fuzzer PRIVATE dbms)
