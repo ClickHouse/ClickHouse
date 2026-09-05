@@ -291,6 +291,13 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     /// `AS MATERIALIZED` is honored by the analyzer only, so the generated SQL always runs the analyzer.
     getContext()->setSetting("allow_experimental_analyzer", true);
 
+    /// A shard that is this server itself is always read in-process, as the shard-target check assumes.
+    if (is_distributed_target)
+    {
+        getContext()->setSetting("prefer_localhost_replica", true);
+        getContext()->setSetting("enable_parallel_replicas", false);
+    }
+
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
     try

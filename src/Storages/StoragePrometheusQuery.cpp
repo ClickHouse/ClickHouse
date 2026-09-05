@@ -222,12 +222,15 @@ void StoragePrometheusQuery::readImpl(
     /// The generated SQL relies on `AS MATERIALIZED` to avoid evaluating subqueries referenced more than once
     /// repeatedly (see SQLSubqueryType::MATERIALIZED_TABLE), and that mark has effect only with the setting
     /// `enable_materialized_cte` enabled. Enable it unless the user set it explicitly.
-    auto query_context = context;
+    auto query_context = Context::createCopy(context);
     if (!context->getSettingsRef()[Setting::enable_materialized_cte].changed)
+        query_context->setSetting("enable_materialized_cte", true);
+
+    /// A shard that is this server itself is always read in-process, as the shard-target check assumes.
+    if (!config.evaluation_settings.cluster_name.empty())
     {
-        auto context_copy = Context::createCopy(context);
-        context_copy->setSetting("enable_materialized_cte", true);
-        query_context = context_copy;
+        query_context->setSetting("prefer_localhost_replica", true);
+        query_context->setSetting("enable_parallel_replicas", false);
     }
 
     InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);
