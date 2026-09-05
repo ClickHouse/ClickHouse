@@ -15,6 +15,7 @@
 #include <Interpreters/Access/getValidUntilFromAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/Access/ASTCreateTokenQuery.h>
@@ -26,6 +27,8 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <boost/algorithm/hex.hpp>
+
+#include <algorithm>
 
 #if USE_SSL
 #    include <openssl/err.h>
@@ -133,12 +136,17 @@ namespace
         if (default_ttl == 0)
             return 0;
 
-        /// Saturate at the largest deadline that displays exactly in every time zone, the same way the
-        /// `VALID FOR` path does, instead of overflowing `time_t` into a deadline in the past.
-        if (now < 0 || default_ttl > static_cast<UInt64>(MAX_VALID_UNTIL_TIME - now))
-            return MAX_VALID_UNTIL_TIME;
-
-        return now + static_cast<time_t>(default_ttl);
+        /// The default TTL means exactly `VALID FOR INTERVAL <default_ttl> SECOND`, so it is resolved by
+        /// the same call rather than by a second implementation of the same arithmetic: `now` stays
+        /// signed (a clock before 1970 yields a deadline that many seconds after that clock, and a
+        /// deadline which is still in the past is clamped to the smallest expired instant - fail-closed,
+        /// whereas treating a negative `now` as an overflow would saturate every default TTL at year
+        /// 9999), and a huge TTL saturates at the largest deadline which displays exactly in every time
+        /// zone. The TTL is capped at that same bound before it becomes a literal, because it is a
+        /// `UInt64` setting and a value beyond the `Int64` range has no interval representation.
+        const auto ttl_seconds = static_cast<Int64>(std::min<UInt64>(default_ttl, static_cast<UInt64>(MAX_VALID_UNTIL_TIME)));
+        auto interval = makeASTFunction("toIntervalSecond", make_intrusive<ASTLiteral>(Field(ttl_seconds)));
+        return getValidUntilFromAST(interval, context, /*is_interval=*/true, now);
     }
 }
 

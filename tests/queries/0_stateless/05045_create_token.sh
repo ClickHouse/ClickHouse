@@ -141,6 +141,10 @@ login_expect_error "human_password" "ACCESS_DENIED" "ALTER USER ${user} RESET AU
 echo "-- and it does not authorize adding an authentication method to another user"
 login_expect_error "human_password" "ACCESS_DENIED" "ALTER USER ${user2} ADD IDENTIFIED WITH plaintext_password BY 'x'"
 
+echo "-- A huge default TTL saturates at the largest supported deadline instead of overflowing"
+huge_valid_until=$(create_token "CREATE TOKEN SETTINGS create_token_default_ttl_seconds = 18446744073709551615" | cut -f2)
+admin "SELECT toDateTime64('${huge_valid_until}', 0) = toDateTime64(253402250399, 0)"
+
 echo "-- CREATE TOKEN does not support the ON CLUSTER clause"
 login "human_password" "CREATE TOKEN ON CLUSTER test_shard_localhost" 2>&1 | grep -m1 -o "SYNTAX_ERROR" | head -n 1
 

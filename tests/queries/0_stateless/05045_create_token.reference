@@ -44,6 +44,8 @@ ACCESS_DENIED
 ACCESS_DENIED
 -- and it does not authorize adding an authentication method to another user
 ACCESS_DENIED
+-- A huge default TTL saturates at the largest supported deadline instead of overflowing
+1
 -- CREATE TOKEN does not support the ON CLUSTER clause
 SYNTAX_ERROR
 -- The user still authenticates with the original password
