@@ -1,0 +1,7 @@
+<clickhouse>
+    <max_concurrent_queries>2</max_concurrent_queries>
+    <!-- The default; spelled out because this node exists to cover the
+         admission-queue-disabled behaviour of `replace_running_query`. -->
+    <enable_query_admission_queue>false</enable_query_admission_queue>
+    <admission_queue_alive_check_interval_ms>500</admission_queue_alive_check_interval_ms>
+</clickhouse>

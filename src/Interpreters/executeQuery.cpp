@@ -3984,6 +3984,16 @@ void executeQueryInBackground(std::string_view query, const ASTPtr & ast, Contex
     auto background_context = Context::createCopy(context);
     background_context->makeQueryContext();
 
+    /// A background query outlives the connection that submitted it, so it must not inherit the
+    /// transport-scoped liveness callback installed by the protocol handlers (`HTTPHandler` captures
+    /// the `HTTPServerRequest`, `TCPHandler` / `PostgreSQLHandler` / `MySQLHandler` capture the socket).
+    /// The handler returns as soon as the query is scheduled here, so consulting that callback from
+    /// `ProcessList::insert` — where an admission or `replace_running_query` wait may poll it long after
+    /// the request is gone — would touch dead transport state, and the client hanging up would cancel a
+    /// query that is explicitly detached from the connection. An empty callback makes those waits skip
+    /// the liveness loop, which is exactly the desired behaviour for a detached query.
+    background_context->setConnectionAliveCheck({});
+
     context->getBackgroundQueryPool().scheduleOrThrow([query_text = String(query), background_context]
     {
         try
@@ -4648,6 +4658,11 @@ void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_
     /// threads still hold raw pointers to it until io.onFinish() finalizes the pipeline, so releasing it here
     /// would be a data race.
     io.releaseQuerySlot();
+
+    /// Release the admission slot early (same timing as the query slot) to reduce slot hold time.
+    /// Without this, the admission slot is held until the `ProcessListEntry` destructor, which includes
+    /// query logging and HTTP response flushing.
+    io.releaseAdmissionSlot();
 
     /// The order is important here:
     /// - first we save finish_time, used for query_log/opentelemetry_span_log.finish_time_us;
