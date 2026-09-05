@@ -31,6 +31,10 @@
 #include <IO/SharedThreadPools.h>
 #include <Common/tests/gtest_global_context.h>
 
+#include <Poco/AutoPtr.h>
+#include <Poco/ConsoleChannel.h>
+#include <Poco/Logger.h>
+
 #include <rocksdb/env.h>
 #include <rocksdb/filter_policy.h>
 #include <rocksdb/options.h>
@@ -40,6 +44,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <string>
@@ -204,10 +209,14 @@ TEST_F(UniqueKeyProbeTest, SinglePartAllDead)
     EXPECT_EQ(probeKey(probe, 7).outcome, ProbeOutcome::FOUND_ALL_DEAD);
 }
 
-TEST_F(UniqueKeyProbeTest, NewestLiveWinsOverOlder)
+/// The newest part owns the live row and the older occurrence of the same key is bitmap-dead,
+/// which is what "a live key lives in <= 1 part" allows. Debug builds keep walking the snapshot
+/// after a key resolves (see `probe_validates_single_live_part`), so this also pins that the
+/// later dead hit does not downgrade the already-resolved result to `FOUND_ALL_DEAD`.
+TEST_F(UniqueKeyProbeTest, NewestLiveWinsOverOlderDead)
 {
     auto newest = makeTarget({{5, 9}});
-    auto older = makeTarget({{5, 1}});
+    auto older = makeTarget({{5, 1}}, /*dead_rows=*/{1});
     ASSERT_NE(newest, nullptr);
     ASSERT_NE(older, nullptr);
     auto probe = probeOver({newest, older}); /// newest-first
@@ -410,5 +419,47 @@ TEST_F(UniqueKeyProbeTest, DecodedRowOutOfPartBoundsThrows)
 
     storage->flushAndShutdown();
 }
+
+/// ---------- single-live-part invariant ----------
+
+/// INSERT-time dedup is meant to guarantee that a live key lives in at most one active part, so
+/// `UniqueKeyProbeSimple` verifies it: debug builds do not early-skip a resolved key, and a second
+/// live hit throws LOGICAL_ERROR. Release builds early-skip instead, so there is nothing to observe
+/// there — hence a debug-only death test (the LOGICAL_ERROR aborts rather than propagating, so it
+/// cannot be caught with EXPECT_THROW). Mirrors `ColumnArrayDeathTest.NonMonotonicOffsetsAreRejected`.
+///
+/// The guard tracks `probe_validates_single_live_part` in `UniqueKeyProbeSimple.cpp`: if that gate
+/// ever widens to `DEBUG_OR_SANITIZER_BUILD`, this one has to widen with it.
+#ifndef NDEBUG
+
+using UniqueKeyProbeDeathTest = UniqueKeyProbeTest;
+
+TEST_F(UniqueKeyProbeDeathTest, DuplicateLiveKeyAcrossPartsIsRejected)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    /// Key 5 live in two parts at once — the state the invariant forbids.
+    auto newest = makeTarget({{5, 9}});
+    auto older = makeTarget({{5, 1}});
+    ASSERT_NE(newest, nullptr);
+    ASSERT_NE(older, nullptr);
+    auto probe = probeOver({newest, older});
+
+    /// `abortOnFailedAssertion` reports through the root logger, which `LOG_IMPL` skips when no
+    /// channel is attached, so attach one to guarantee the matcher has the message to match.
+    /// The statement runs only in the death-test child, leaving the parent's logger state alone.
+    /// The matcher is a plain substring: gtest matches death-test patterns with POSIX extended
+    /// regular expressions or with its own simple engine depending on the platform.
+    EXPECT_DEATH(
+        {
+            Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
+            Poco::Logger::root().setChannel(channel);
+            Poco::Logger::root().setLevel("fatal");
+            probeKey(probe, 5);
+        },
+        "live in more than one part");
+}
+
+#endif
 
 #endif
