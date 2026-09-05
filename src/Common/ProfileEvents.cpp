@@ -512,6 +512,7 @@
     M(LoadedPrimaryIndexFiles, "Number of primary index files loaded.", ValueType::Number) \
     M(LoadedPrimaryIndexRows, "Number of rows of primary key loaded.", ValueType::Number) \
     M(LoadedPrimaryIndexBytes, "Number of rows of primary key loaded.", ValueType::Bytes) \
+    M(PackedSkipIndicesArchiveIndexLoads, "Number of reads of the index of a part's packed skip-indices archive. A part storage reads it at most once, lazily, on the first access to a skip index stored inside the archive; an index seeded from another part storage is not counted.", ValueType::Number) \
     \
     M(Merge, "Number of launched background merges.", ValueType::Number) \
     M(MergeSourceParts, "Number of source parts scheduled for merges.", ValueType::Number) \
