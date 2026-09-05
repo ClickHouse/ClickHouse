@@ -52,6 +52,14 @@ public:
         return IStorage::getInMemoryMetadataPtr(context_, bypass_metadata_cache);
     }
 
+    /// The loaded table, or `nullptr` while it has not been accessed yet. Unlike `getNested`, this
+    /// does not load it: a caller that only inspects tables must not be the one to trigger loading.
+    StoragePtr nestedIfLoaded() const
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested;
+    }
+
     StoragePtr getNested() const override
     {
         std::lock_guard lock{nested_mutex};
@@ -205,5 +213,31 @@ private:
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
     LoggerPtr log;
 };
+
+
+/// A table of a database with `lazy_load_tables` is a stand-in until it is first accessed, and a
+/// stand-in is not the engine it stands in for: a `dynamic_cast` of the catalog object to a concrete
+/// engine fails for it, silently. That is how a lagging `ReplicatedMergeTree` came to be reported as
+/// not replicated at all - and, one step further, as up to date. Resolve the stand-in before such a
+/// cast, with one of the two functions below.
+///
+/// This one loads the table, so it is for a caller that accesses the table it asked the catalog for
+/// anyway. It is null-safe, and the identity for a storage that is not a stand-in.
+inline StoragePtr resolveLazyTable(const StoragePtr & table)
+{
+    if (const auto * proxy = dynamic_cast<const StorageTableProxy *>(table.get()))
+        return proxy->getNested();
+    return table;
+}
+
+/// This one is for a caller that only inspects tables - every table in the catalog at once, typically.
+/// It resolves a stand-in whose table is already loaded and returns `nullptr` for one that is still
+/// untouched, so that inspecting tables does not load the catalog and defeat `lazy_load_tables`.
+inline StoragePtr resolveLazyTableIfLoaded(const StoragePtr & table)
+{
+    if (const auto * proxy = dynamic_cast<const StorageTableProxy *>(table.get()))
+        return proxy->nestedIfLoaded();
+    return table;
+}
 
 }
