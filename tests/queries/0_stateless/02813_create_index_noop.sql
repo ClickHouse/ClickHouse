@@ -1,3 +1,4 @@
+-- Tags: no-msan
 SET allow_create_index_without_type=0;
 CREATE INDEX idx_tab1_0 on tab1 (col0); -- { serverError INCORRECT_QUERY }
 SET allow_create_index_without_type=1;

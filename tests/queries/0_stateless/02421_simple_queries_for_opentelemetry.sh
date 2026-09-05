@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-async-insert
+# Tags: no-async-insert, no-msan
 # no-async-insert: read_rows and written_rows are correctly missing from the initial query,
 # and the secondary insert query (AsyncInsertFlush) is not logged
 

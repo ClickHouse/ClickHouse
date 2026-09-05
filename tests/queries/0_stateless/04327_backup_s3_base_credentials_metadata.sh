@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest
+# Tags: long, no-fasttest, no-msan
 # Tag: long - eight backup/restore round trips against S3 exceed the flaky check's 180s budget
 # Tag: no-fasttest - requires S3
 

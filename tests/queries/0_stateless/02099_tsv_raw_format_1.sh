@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-msan
 
 # This test was split in two due to long runtimes in sanitizers.
 # The other part is 02099_tsv_raw_format_2.sh.

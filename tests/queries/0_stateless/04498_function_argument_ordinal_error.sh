@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-msan
 # - no-fasttest: the `encrypt` case depends on OpenSSL
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

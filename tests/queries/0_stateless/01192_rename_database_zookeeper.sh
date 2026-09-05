@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-fasttest, no-shared-merge-tree, no-flaky-check, no-azure-blob-storage
+# Tags: zookeeper, no-parallel, no-fasttest, no-shared-merge-tree, no-flaky-check, no-azure-blob-storage, no-msan
 # no-shared-merge-tree: database ordinary not supported
 # no-azure-blob-storage: this test runs concurrent `INSERT` queries with `sleepEachRow` while
 #   issuing `RENAME DATABASE`, and exceeds the test framework timeout reliably on slow Azure

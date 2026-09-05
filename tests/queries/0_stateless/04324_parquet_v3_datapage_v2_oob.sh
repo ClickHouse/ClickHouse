@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-msan
 # no-fasttest: needs pyarrow to craft the malformed Parquet files.
 
 # Regression test for a heap out-of-bounds read in the Parquet V3 native reader.

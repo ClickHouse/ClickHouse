@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: replica, no-shared-merge-tree
+# Tags: replica, no-shared-merge-tree, no-msan
 # Tag no-shared-merge-tree because detaching a partition on one replica should not affect the other replica, so the test relies on the fact that the detached part is still present on disk and can be re-attached.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

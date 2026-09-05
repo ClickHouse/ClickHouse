@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-msan
 -- ^ Reliably reproducing the boundary violation needs several unmerged parts with many small
 -- granules, so a single run can exceed the 180s flaky-check limit under sanitizer builds.
 

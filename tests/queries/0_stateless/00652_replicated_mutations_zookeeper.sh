@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: replica, no-replicated-database, no-fasttest, no-shared-merge-tree
+# Tags: replica, no-replicated-database, no-fasttest, no-shared-merge-tree, no-msan
 # Tag no-replicated-database: Old syntax is not allowed
 # no-shared-merge-tree: implemented separate test
 

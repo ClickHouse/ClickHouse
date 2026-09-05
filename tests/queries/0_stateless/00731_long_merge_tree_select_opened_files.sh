@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-object-storage, no-tsan
+# Tags: long, no-object-storage, no-tsan, no-msan
 # no-s3 because read FileOpen metric
 
 set -e

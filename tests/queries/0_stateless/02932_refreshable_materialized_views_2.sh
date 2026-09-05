@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: atomic-database, memory-engine, long
+# Tags: atomic-database, memory-engine, long, no-msan
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

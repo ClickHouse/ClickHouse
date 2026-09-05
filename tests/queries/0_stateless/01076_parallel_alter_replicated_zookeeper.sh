@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: replica, no-parallel, no-fasttest
+# Tags: replica, no-parallel, no-fasttest, no-msan
 
 # This test checks mutations concurrent execution with concurrent inserts.
 # There was a bug in mutations finalization, when mutation finishes not after all

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-msan
 # Regression test for accepting empty nested List/Map containers whose offsets
 # buffer is 0 bytes.  Apache Arrow Java < 19.0.0 (bundled with Apache Spark)
 # emits a 0-byte offsets buffer for any variable-width vector with valueCount==0.

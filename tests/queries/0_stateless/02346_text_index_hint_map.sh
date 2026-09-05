@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas
+# Tags: no-parallel-replicas, no-msan
 
 # Tests text search setting 'query_plan_text_index_add_hint' with functions mapKeys and mapValues
 

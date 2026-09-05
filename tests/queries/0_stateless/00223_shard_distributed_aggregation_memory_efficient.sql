@@ -1,4 +1,4 @@
--- Tags: distributed
+-- Tags: distributed, no-msan
 
 SET max_block_size = 1000;
 

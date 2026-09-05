@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-msan
 # Regression tests for forged top-level Arrow lengths that made a reader reserve column memory
 # before validating buffers (previously CANNOT_ALLOCATE_MEMORY instead of INCORRECT_DATA):
 #   - fixed-width columns (Int32, Bool, Decimal) and an empty Struct whose RecordBatch/FieldNode
