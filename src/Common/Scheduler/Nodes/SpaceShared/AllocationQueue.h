@@ -84,7 +84,7 @@ private:
 
     size_t last_unique_id = 0;
     ResourceCost pending_allocations_size = 0;
-    /// Scheduler-thread only; forces parent re-evaluation even if the same increase is restored.
+    /// Cross-thread change notification; consumers clear it while holding `mutex`.
     std::atomic_bool memory_growth_suspension_changed = false;
     bool memory_growth_suspension_retry_requested = false;
 
