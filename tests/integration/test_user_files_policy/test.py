@@ -1377,3 +1377,32 @@ def test_snappy_mode_round_trip_through_disk(node, snappy_mode):
         f"SETTINGS snappy_mode = '{snappy_mode}'"
     )
     assert result.strip() == "45", result
+
+
+@pytest.mark.parametrize("node", [node_s3, node_encrypted], ids=["s3", "encrypted"])
+def test_distributed_format_rejected_on_non_plain_local(node):
+    """The `Distributed` format is read by `DistributedAsyncInsertSource`, which opens a
+    `ReadBufferFromFile` on the path it is handed instead of going through `IDisk`. On
+    `s3_plain` that path is an object key naming no local file, and on `DiskEncrypted` it is
+    the ciphertext backing path, so the combination must be refused rather than silently
+    reading unrelated - or encrypted - local bytes."""
+    err = node.query_and_get_error(
+        "SELECT * FROM file('distributed_reject.bin', 'Distributed')"
+    )
+    assert "Distributed format is not supported" in err, err
+
+    err = node.query_and_get_error(
+        "CREATE TABLE distributed_reject (x UInt64) "
+        "ENGINE = File(Distributed, 'distributed_reject.bin')"
+    )
+    assert "Distributed format is not supported" in err, err
+
+
+def test_distributed_format_allowed_on_plain_local_disk():
+    """A plain local policy disk must not be over-rejected: the path denotes the very local
+    file the disk would return, so `Distributed` stays available and fails only because there
+    is no such file."""
+    err = node_local.query_and_get_error(
+        "SELECT * FROM file('distributed_missing.bin', 'Distributed')"
+    )
+    assert "Distributed format is not supported" not in err, err

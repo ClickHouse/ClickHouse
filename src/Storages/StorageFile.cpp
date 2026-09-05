@@ -706,6 +706,28 @@ bool userFilesPathExists(const String & absolute_path, const Disks & disks)
     return disk->existsFile(relative) || disk->existsDirectory(relative);
 }
 
+/// The `Distributed` format is not read through `IDisk`: `DistributedAsyncInsertSource` opens a
+/// `ReadBufferFromFile` on the path it is handed. With `user_files_policy` that path is
+/// `disk->getPath()`-prefixed, and only a plain local disk makes it denote the same bytes the disk
+/// would return - on a remote disk (e.g. `s3_plain`) it is an object key that names no local file,
+/// and on `DiskEncrypted` it points at the ciphertext backing directory. Reject the combination up
+/// front instead of silently reading an unrelated - or encrypted - local file, mirroring the other
+/// call sites that gate a local-only feature on the disk type.
+void checkDistributedFormatIsAllowedOnUserFilesVolume(const String & format_name, const VolumePtr & user_files_volume)
+{
+    if (format_name != "Distributed" || !user_files_volume)
+        return;
+
+    for (const auto & disk : user_files_volume->getDisks())
+    {
+        if (!isPlainLocalDisk(*disk))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Distributed format is not supported "
+                "with non-plain-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
+                disk->getName());
+    }
+}
+
 namespace
 {
 
@@ -1883,6 +1905,8 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
 {
     if (format == "Distributed")
     {
+        checkDistributedFormatIsAllowedOnUserFilesVolume(*format, user_files_volume);
+
         if (paths.empty())
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Cannot get table structure from file, because no files match specified name");
 
@@ -2039,6 +2063,8 @@ StorageFile::StorageFile(FileSource file_source_, CommonArguments args)
     }
 
     file_renamer = FileRenamer(args.rename_after_processing);
+
+    checkDistributedFormatIsAllowedOnUserFilesVolume(args.format_name, user_files_volume);
 
     setStorageMetadata(args);
 }

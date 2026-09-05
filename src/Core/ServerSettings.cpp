@@ -1603,7 +1603,7 @@ The policy must have exactly one volume containing exactly one disk. If set, thi
 :::note
 Remote (non-plain-local) disks are supported only by the features that access user files through the disk interface: reading and writing whole files with the [file()](/sql-reference/table-functions/file) table function and the `File` table engine.
 
-Features that require a local filesystem path — for example the [filesystem()](/sql-reference/table-functions/filesystem) table function, `ATTACH ... FROM`, the `FileLog` engine, dictionary sources with the `FILE` type defined via DDL, and `catboostEvaluate` — still require the policy's disk to be a plain local disk and throw an exception otherwise.
+Features that require a local filesystem path — for example the [filesystem()](/sql-reference/table-functions/filesystem) table function, `ATTACH ... FROM`, the `FileLog` engine, dictionary sources with the `FILE` type defined via DDL, `catboostEvaluate`, and reading `file()` / `File` with `format = 'Distributed'` — still require the policy's disk to be a plain local disk and throw an exception otherwise.
 
 The following `file()` and `File` modes are not supported with `user_files_policy` at all, on any disk type, and throw an exception:
 - archive syntax (`file('archive.zip :: data.csv')`);
