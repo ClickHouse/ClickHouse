@@ -85,6 +85,230 @@
         FORMAT Null
     </query>
 
+    <!-- Exercise the vector-vector transformTags2() path with all unique pairs. -->
+    <query>
+        WITH
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number,
+                           timeSeriesTagsToGroup([('dest', toString(number))]) AS group
+                    FROM numbers(200000)
+                    ORDER BY number
+                )
+            ) AS dest_groups,
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number,
+                           timeSeriesTagsToGroup([('src', toString(number))]) AS group
+                    FROM numbers(200000)
+                    ORDER BY number
+                )
+            ) AS src_groups
+        SELECT timeSeriesCopyTags(
+                   dest_groups[number % 200000 + 1],
+                   src_groups[number % 200000 + 1],
+                   ['src'])
+        FROM numbers(2000000)
+        SETTINGS max_threads = 1, max_block_size = 200000
+        FORMAT Null
+    </query>
+
+    <!-- Exercise the vector-vector transformTags2() path with a small repeated pair set across multiple blocks. -->
+    <query>
+        WITH
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number,
+                           timeSeriesTagsToGroup([('dest', toString(number))]) AS group
+                    FROM numbers(32)
+                    ORDER BY number
+                )
+            ) AS dest_groups,
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number,
+                           timeSeriesTagsToGroup([('src', toString(number))]) AS group
+                    FROM numbers(32)
+                    ORDER BY number
+                )
+            ) AS src_groups
+        SELECT timeSeriesCopyTags(
+                   dest_groups[number % 32 + 1],
+                   src_groups[number % 32 + 1],
+                   ['src'])
+        FROM numbers(20000000)
+        SETTINGS max_threads = 1, max_block_size = 200000
+        FORMAT Null
+    </query>
+
+    <!-- Exercise the near-unique path with 99.9% unique pairs. -->
+    <query>
+        WITH
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number,
+                           timeSeriesTagsToGroup([('dest', toString(number))]) AS group
+                    FROM numbers(100000)
+                    ORDER BY number
+                )
+            ) AS dest_groups,
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number,
+                           timeSeriesTagsToGroup([('src', toString(number))]) AS group
+                    FROM numbers(100000)
+                    ORDER BY number
+                )
+            ) AS src_groups
+        SELECT timeSeriesCopyTags(
+                   dest_groups[if(number % 100000 &lt; 99900, number % 100000 + 1, 1)],
+                   src_groups[if(number % 100000 &lt; 99900, number % 100000 + 1, 1)],
+                   ['src'])
+        FROM numbers(1000000)
+        SETTINGS max_threads = 1, max_block_size = 100000
+        FORMAT Null
+    </query>
+
+    <!-- Exercise the near-unique path with 95% unique pairs. -->
+    <query>
+        WITH
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number,
+                           timeSeriesTagsToGroup([('dest', toString(number))]) AS group
+                    FROM numbers(100000)
+                    ORDER BY number
+                )
+            ) AS dest_groups,
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number,
+                           timeSeriesTagsToGroup([('src', toString(number))]) AS group
+                    FROM numbers(100000)
+                    ORDER BY number
+                )
+            ) AS src_groups
+        SELECT timeSeriesCopyTags(
+                   dest_groups[if(number % 100000 &lt; 95000, number % 100000 + 1, 1)],
+                   src_groups[if(number % 100000 &lt; 95000, number % 100000 + 1, 1)],
+                   ['src'])
+        FROM numbers(1000000)
+        SETTINGS max_threads = 1, max_block_size = 100000
+        FORMAT Null
+    </query>
+
+    <!-- Exercise the component-dedup path with 75% unique pairs. -->
+    <query>
+        WITH
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number,
+                           timeSeriesTagsToGroup([('dest', toString(number))]) AS group
+                    FROM numbers(100000)
+                    ORDER BY number
+                )
+            ) AS dest_groups,
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number,
+                           timeSeriesTagsToGroup([('src', toString(number))]) AS group
+                    FROM numbers(100000)
+                    ORDER BY number
+                )
+            ) AS src_groups
+        SELECT timeSeriesCopyTags(
+                   dest_groups[if(number % 100000 &lt; 75000, number % 100000 + 1, 1)],
+                   src_groups[if(number % 100000 &lt; 75000, number % 100000 + 1, 1)],
+                   ['src'])
+        FROM numbers(1000000)
+        SETTINGS max_threads = 1, max_block_size = 100000
+        FORMAT Null
+    </query>
+
+    <!-- Exercise the component-dedup path with 50% unique pairs. -->
+    <query>
+        WITH
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number,
+                           timeSeriesTagsToGroup([('dest', toString(number))]) AS group
+                    FROM numbers(100000)
+                    ORDER BY number
+                )
+            ) AS dest_groups,
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number,
+                           timeSeriesTagsToGroup([('src', toString(number))]) AS group
+                    FROM numbers(100000)
+                    ORDER BY number
+                )
+            ) AS src_groups
+        SELECT timeSeriesCopyTags(
+                   dest_groups[if(number % 100000 &lt; 50000, number % 100000 + 1, 1)],
+                   src_groups[if(number % 100000 &lt; 50000, number % 100000 + 1, 1)],
+                   ['src'])
+        FROM numbers(1000000)
+        SETTINGS max_threads = 1, max_block_size = 100000
+        FORMAT Null
+    </query>
+
+    <!-- Exercise the component-dedup path with 10% unique pairs. -->
+    <query>
+        WITH
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number,
+                           timeSeriesTagsToGroup([('dest', toString(number))]) AS group
+                    FROM numbers(100000)
+                    ORDER BY number
+                )
+            ) AS dest_groups,
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number,
+                           timeSeriesTagsToGroup([('src', toString(number))]) AS group
+                    FROM numbers(100000)
+                    ORDER BY number
+                )
+            ) AS src_groups
+        SELECT timeSeriesCopyTags(
+                   dest_groups[if(number % 100000 &lt; 10000, number % 100000 + 1, 1)],
+                   src_groups[if(number % 100000 &lt; 10000, number % 100000 + 1, 1)],
+                   ['src'])
+        FROM numbers(1000000)
+        SETTINGS max_threads = 1, max_block_size = 100000
+        FORMAT Null
+    </query>
+
     <!-- Exercise the same transformations through realistic instant PromQL aggregation and matching. -->
     <create_query>
         CREATE TABLE promql_tags_transform ENGINE = TimeSeries
@@ -101,6 +325,8 @@
 
     <query>SELECT * FROM prometheusQuery('promql_tags_transform', 'sum by (namespace) (foo)', 100) FORMAT Null</query>
     <query>SELECT * FROM prometheusQuery('promql_tags_transform', 'foo / on(pod) bar', 100) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQuery('promql_tags_transform', 'foo / on(pod) group_left(namespace) bar', 100) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQuery('promql_tags_transform', 'foo / on(pod) group_right(namespace) bar', 100) FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS promql_tags_transform</drop_query>
 </test>
