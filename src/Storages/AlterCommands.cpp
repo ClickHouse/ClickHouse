@@ -2094,6 +2094,13 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         if (command.column_statistics_decl != nullptr && !table->supportsStatistics())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support statistics", table->getName());
 
+        /// A `CHECK` constraint whose expression changes the number of rows cannot be checked at insert
+        /// time - see `ConstraintsDescription::assertConstraintPreservesRowCount`. `CREATE TABLE` enforces
+        /// the same invariant in `InterpreterCreateQuery::getTableProperties`, so an alter must not be a
+        /// way around it.
+        if (command.type == AlterCommand::ADD_CONSTRAINT || command.type == AlterCommand::MODIFY_CONSTRAINT)
+            ConstraintsDescription::assertConstraintPreservesRowCount(command.constraint_decl);
+
         /// Only a declaration this command persists: an already stored constraint of that shape must
         /// stay ALTER-able, including `DROP CONSTRAINT`, and a no-op command must keep succeeding.
         if (command.type == AlterCommand::ADD_CONSTRAINT || command.type == AlterCommand::MODIFY_CONSTRAINT)
