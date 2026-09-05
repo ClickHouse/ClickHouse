@@ -10,12 +10,14 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeString.h>
+#include <Formats/FormatFactory.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
 #include <Interpreters/Access/getValidUntilFromAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/Access/ASTCreateTokenQuery.h>
@@ -43,10 +45,13 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 create_token_default_ttl_seconds;
+    extern const SettingsString format;
+    extern const SettingsString output_format;
 }
 
 namespace ErrorCodes
 {
+    extern const int FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT;
     extern const int LOGICAL_ERROR;
     extern const int OPENSSL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
@@ -148,6 +153,36 @@ namespace
         auto interval = makeASTFunction("toIntervalSecond", make_intrusive<ASTLiteral>(Field(ttl_seconds)));
         return getValidUntilFromAST(interval, context, /*is_interval=*/true, now);
     }
+
+    /// Rejects an output format that cannot be used, before anything has been persisted.
+    ///
+    /// The result of a query is formatted after its interpreter has returned - by `executeQuery` over
+    /// HTTP, and by the client itself over the native protocol - so an unusable `FORMAT` clause would
+    /// otherwise be reported only once the authentication method has been added. The user would be left
+    /// with a method whose secret nobody knows: it cannot be used, there is no statement which drops a
+    /// single authentication method, and it still counts against `max_authentication_methods_per_user`.
+    ///
+    /// The resolution order is the one of `executeQuery`: the `output_format` and the `format` settings
+    /// override the `FORMAT` clause of the query. The server default is deliberately not checked - this
+    /// query did not ask for it, and over the native protocol the result is formatted by the client with
+    /// its own default, which the server does not know.
+    void checkRequestedOutputFormat(const ASTCreateTokenQuery & query, const ContextPtr & context)
+    {
+        const auto & settings = context->getSettingsRef();
+
+        String format_name = settings[Setting::output_format];
+        if (format_name.empty())
+            format_name = settings[Setting::format];
+        if (format_name.empty() && query.format_ast)
+            format_name = getIdentifierName(query.format_ast);
+        if (format_name.empty())
+            return;
+
+        const auto & format_factory = FormatFactory::instance();
+        format_factory.checkFormatName(format_name);
+        if (!format_factory.isOutputFormat(format_name))
+            throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output", format_name);
+    }
 }
 
 BlockIO InterpreterCreateTokenQuery::execute()
@@ -160,6 +195,10 @@ BlockIO InterpreterCreateTokenQuery::execute()
     const String user_name = getContext()->getUserName();
     if (user_name.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CREATE TOKEN is executed in a context which has no current user");
+
+    /// Before the statement changes anything: a token which cannot be shown to the user must not be
+    /// created at all (see `checkRequestedOutputFormat`).
+    checkRequestedOutputFormat(query, getContext());
 
     /// The deadline is resolved here rather than left to the statement below, so that the value
     /// reported back to the user is exactly the one stored on the authentication method: the

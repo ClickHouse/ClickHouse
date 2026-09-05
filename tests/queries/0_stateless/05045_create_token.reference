@@ -46,6 +46,11 @@ ACCESS_DENIED
 ACCESS_DENIED
 -- A huge default TTL saturates at the largest supported deadline instead of overflowing
 1
+-- An unusable FORMAT is rejected before the authentication method is added
+UNKNOWN_FORMAT
+FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT
+UNKNOWN_FORMAT
+no authentication method added
 -- CREATE TOKEN does not support the ON CLUSTER clause
 SYNTAX_ERROR
 -- The user still authenticates with the original password

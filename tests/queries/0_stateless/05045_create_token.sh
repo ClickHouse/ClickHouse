@@ -145,6 +145,14 @@ echo "-- A huge default TTL saturates at the largest supported deadline instead 
 huge_valid_until=$(create_token "CREATE TOKEN SETTINGS create_token_default_ttl_seconds = 18446744073709551615" | cut -f2)
 admin "SELECT toDateTime64('${huge_valid_until}', 0) = toDateTime64(253402250399, 0)"
 
+echo "-- An unusable FORMAT is rejected before the authentication method is added"
+methods_before=$(admin "SELECT length(auth_type) FROM system.users WHERE name = '${user}'")
+login "human_password" "CREATE TOKEN FORMAT NoSuchFormat" 2>&1 | grep -m1 -o "UNKNOWN_FORMAT" | head -n 1
+login "human_password" "CREATE TOKEN FORMAT MySQLDump" 2>&1 | grep -m1 -o "FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT" | head -n 1
+login "human_password" "CREATE TOKEN SETTINGS output_format = 'NoSuchFormat'" 2>&1 | grep -m1 -o "UNKNOWN_FORMAT" | head -n 1
+methods_after=$(admin "SELECT length(auth_type) FROM system.users WHERE name = '${user}'")
+test "$methods_before" = "$methods_after" && echo "no authentication method added"
+
 echo "-- CREATE TOKEN does not support the ON CLUSTER clause"
 login "human_password" "CREATE TOKEN ON CLUSTER test_shard_localhost" 2>&1 | grep -m1 -o "SYNTAX_ERROR" | head -n 1
 

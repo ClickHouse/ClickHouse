@@ -147,6 +147,12 @@ authentication methods, e.g. with `ALTER USER <name> IDENTIFIED WITH ...`, or us
 number of authentication methods a user may have at once is limited by the
 `max_authentication_methods_per_user` server setting.
 
+The secret is generated and stored by the query itself, so a `CREATE TOKEN` whose result never reaches the
+client - a connection lost while the row is being sent, or an `INTO OUTFILE` which the client cannot open -
+leaves an authentication method behind which nobody can use and which still counts against that limit. Nobody
+holds such a secret: it exists only while the query runs. A query rejected before it runs, including one whose
+`FORMAT` clause names a format that cannot be used, adds nothing.
+
 `CREATE TOKEN` does not support the `ON CLUSTER` clause. Use a replicated access storage (or run the query on
 every node with the equivalent `ALTER USER ... ADD IDENTIFIED WITH sha256_hash` statement) to make a token work
 across a cluster whose access entities are stored locally.
