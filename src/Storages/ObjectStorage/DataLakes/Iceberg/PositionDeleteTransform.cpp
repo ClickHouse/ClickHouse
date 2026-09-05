@@ -19,6 +19,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Formats/Impl/PuffinBlockInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
@@ -75,15 +76,12 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             continue;
         }
 
-
         auto object_path = position_deletes_object.file_path;
         auto object_metadata = object_storage->getObjectMetadata(object_path, /*with_tags=*/ false);
         auto object_info = RelativePathWithMetadata{object_path, object_metadata};
 
 
         String format = position_deletes_object.file_format;
-        if (boost::to_lower_copy(format) != "parquet")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Position deletes are supported only for parquet format");
 
         Block initial_header;
         {
@@ -126,6 +124,38 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         delete_sources.push_back(std::move(delete_format));
     }
+
+    for (const auto & deletion_vector_object : iceberg_object_info->info.deletion_deletes_objects)
+        readDeletionVector(deletion_vector_object);
+}
+
+void IcebergPositionDeleteTransform::readDeletionVector(const DeletionVectorObject & deletion_vector_object)
+{
+    if (boost::to_lower_copy(deletion_vector_object.file_format) != "puffin")
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Deletion vector `{}` must be stored in the Puffin format, but got {}",
+            deletion_vector_object.file_path,
+            deletion_vector_object.file_format);
+    }
+
+    const Int64 content_offset = deletion_vector_object.content_offset;
+    const Int64 content_size = deletion_vector_object.content_size_in_bytes;
+
+    auto object_metadata = object_storage->getObjectMetadata(deletion_vector_object.file_path, /*with_tags=*/ false);
+    auto object_info = RelativePathWithMetadata{deletion_vector_object.file_path, object_metadata};
+    auto read_buffer = createReadBuffer(object_info, object_storage, context, log);
+    read_buffer->seek(content_offset, SEEK_SET);
+
+    String blob(static_cast<size_t>(content_size), '\0');
+    read_buffer->readStrict(blob.data(), blob.size());
+
+    forEachDeletionVectorPosition(
+        blob,
+        [this](UInt64 position) { deletion_vector_rows.add(position); });
+
+    has_deletion_vectors = true;
 }
 
 size_t IcebergPositionDeleteTransform::getColumnIndex(const std::shared_ptr<IInputFormat> & delete_source, const String & column_name)
@@ -187,6 +217,9 @@ void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
 
 void IcebergBitmapPositionDeleteTransform::initialize()
 {
+    if (has_deletion_vectors)
+        bitmap.merge(deletion_vector_rows);
+
     for (auto & delete_source : delete_sources)
     {
         const auto position_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::positions_column_name);
@@ -256,6 +289,11 @@ void IcebergStreamingPositionDeleteTransform::fetchNewChunkFromSource(size_t del
 
 void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
 {
+    /// A deletion vector is a materialized bitmap, so there is nothing to stream: apply it first and
+    /// let the streaming merge below work on what is left.
+    if (has_deletion_vectors)
+        DeletionVectorTransform::transform(chunk, deletion_vector_rows);
+
     size_t num_rows = chunk.getNumRows();
     IColumn::Filter filter(num_rows, true);
     size_t num_rows_after_filtration = chunk.getNumRows();

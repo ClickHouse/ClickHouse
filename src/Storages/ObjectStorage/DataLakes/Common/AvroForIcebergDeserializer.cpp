@@ -309,6 +309,8 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 file_format,
                 /*lower_reference_data_file_path_ = */ std::nullopt,
                 /*upper_reference_data_file_path_ = */ std::nullopt,
+                /*content_offset_ = */ std::nullopt,
+                /*content_size_in_bytes_ = */ std::nullopt,
                 /*equality_ids*/ std::nullopt,
                 sort_order_id,
                 record_count,
@@ -343,6 +345,22 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                         upper_reference_data_file_path.emplace(Iceberg::IcebergPathFromMetadata::deserialize(upper.safeGet<String>()));
                 }
             }
+
+            std::optional<Int64> content_offset;
+            std::optional<Int64> content_size_in_bytes;
+            if (hasPath(c_data_file_content_offset))
+            {
+                Field content_offset_field = getValueFromRowByName(row_index, c_data_file_content_offset);
+                if (!content_offset_field.isNull())
+                    content_offset.emplace(content_offset_field.safeGet<Int64>());
+            }
+            if (hasPath(c_data_file_content_size_in_bytes))
+            {
+                Field content_size_field = getValueFromRowByName(row_index, c_data_file_content_size_in_bytes);
+                if (!content_size_field.isNull())
+                    content_size_in_bytes.emplace(content_size_field.safeGet<Int64>());
+            }
+
             return std::make_shared<const ParsedManifestFileEntry>(
                 FileContentType::POSITION_DELETE,
                 file_path_key,
@@ -358,6 +376,8 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 file_format,
                 lower_reference_data_file_path,
                 upper_reference_data_file_path,
+                content_offset,
+                content_size_in_bytes,
                 /*equality_ids*/ std::nullopt,
                 /*sort_order_id = */ std::nullopt,
                 record_count,
@@ -396,6 +416,8 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 file_format,
                 /*lower_reference_data_file_path_ = */ std::nullopt,
                 /*upper_reference_data_file_path_ = */ std::nullopt,
+                /*content_offset_ = */ std::nullopt,
+                /*content_size_in_bytes_ = */ std::nullopt,
                 equality_ids,
                 /*sort_order_id = */ std::nullopt,
                 record_count,

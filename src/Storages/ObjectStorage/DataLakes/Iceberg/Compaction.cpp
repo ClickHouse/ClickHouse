@@ -343,7 +343,7 @@ static void writeDataFiles(
         /// file without them (e.g. an ORC file newer than all position deletes) may be in any
         /// format, so the transform must be skipped for it.
         std::shared_ptr<IcebergBitmapPositionDeleteTransform> delete_file_transform;
-        if (!data_file->data_object_info->info.position_deletes_objects.empty())
+        if (data_file->data_object_info->info.hasPositionDeletes())
             delete_file_transform = std::make_shared<IcebergBitmapPositionDeleteTransform>(
                 sample_block,
                 data_file->data_object_info,

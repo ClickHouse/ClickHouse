@@ -1390,7 +1390,7 @@ void IcebergMetadata::addDeleteTransformers(
     if (!iceberg_object_info)
         return;
 
-    if (!iceberg_object_info->info.position_deletes_objects.empty())
+    if (iceberg_object_info->info.hasPositionDeletes())
     {
         builder.addSimpleTransform(
             [&](const SharedHeader & header)
