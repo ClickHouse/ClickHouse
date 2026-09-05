@@ -142,3 +142,26 @@ CREATE TABLE t_chained_alias
     b String ALIAS toJSONString(a),
     INDEX fts_chained b TYPE text(tokenizer = splitByNonAlpha)
 ) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+-- The index is built over its expression with every ALIAS expanded, so rewriting a link in that
+-- chain rebuilds it over something else - even when the link itself is typed consistently and the
+-- mistyped ALIAS beneath it is untouched.
+SET allow_deprecated_database_ordinary = 1;
+DROP DATABASE IF EXISTS db_05076_chain;
+CREATE DATABASE db_05076_chain ENGINE = Ordinary;
+
+ATTACH TABLE db_05076_chain.t_chain
+(
+    event String,
+    a String ALIAS JSONExtractKeys(event),
+    b String ALIAS toJSONString(a),
+    INDEX fts_chain b TYPE text(tokenizer = splitByNonAlpha)
+) ENGINE = MergeTree ORDER BY tuple();
+
+ALTER TABLE db_05076_chain.t_chain ADD COLUMN z UInt8;
+SELECT count() FROM system.columns WHERE database = 'db_05076_chain' AND table = 't_chain' AND name = 'z';
+
+ALTER TABLE db_05076_chain.t_chain
+    MODIFY COLUMN b String ALIAS toString(a); -- { serverError BAD_ARGUMENTS }
+
+DROP DATABASE db_05076_chain;

@@ -1387,11 +1387,28 @@ void MergeTreeData::checkProperties(
                                        if (old_index.name != index.name)
                                            return false;
 
+                                       /// The declaration carries the index type and its arguments,
+                                       /// which the expanded expression below does not: replacing the
+                                       /// index under its own name with a different tokenizer builds a
+                                       /// different index over the same expression.
                                        if (!old_index.definition_ast || !index.definition_ast
                                            || old_index.definition_ast->getTreeHash(/*ignore_aliases=*/true)
                                                != index.definition_ast->getTreeHash(/*ignore_aliases=*/true))
                                            return false;
 
+                                       /// The index is built over its expression with every ALIAS
+                                       /// expanded, so comparing that expanded form settles the index
+                                       /// declaration and the whole chain of ALIAS definitions beneath
+                                       /// it at once: editing any link rebuilds the index over
+                                       /// something else, even where the link itself is typed
+                                       /// consistently and the mistyped ALIAS under it did not move.
+                                       if (!old_index.expression_list_ast || !index.expression_list_ast
+                                           || old_index.expression_list_ast->getTreeHash(/*ignore_aliases=*/true)
+                                               != index.expression_list_ast->getTreeHash(/*ignore_aliases=*/true))
+                                           return false;
+
+                                       /// That expanded form is syntactic, so it does not move when a
+                                       /// column it reads is retyped. The resolved types do.
                                        if (!std::ranges::equal(
                                                old_index.data_types,
                                                index.data_types,
@@ -1399,34 +1416,10 @@ void MergeTreeData::checkProperties(
                                                { return old_type->equals(*new_type); }))
                                            return false;
 
-                                       const auto old_mistyped = findMistypedAliasColumnsOfTextIndex(
-                                           old_index, old_metadata.columns, type_context);
-
-                                       if (!std::ranges::equal(
-                                               old_mistyped | std::views::keys, mistyped_columns | std::views::keys))
-                                           return false;
-
-                                       /// The offending ALIAS has to be the same one, declared the same
-                                       /// way. Retyping it or pointing it at a different expression
-                                       /// builds a different unusable index under the same name, and the
-                                       /// resolved types can stay identical while it happens.
-                                       for (const auto & entry : mistyped_columns)
-                                       {
-                                           const String & column_name = entry.first;
-                                           const auto * old_column = old_metadata.columns.tryGet(column_name);
-                                           const auto * new_column = new_metadata.columns.tryGet(column_name);
-                                           if (!old_column || !new_column || !old_column->type->equals(*new_column->type))
-                                               return false;
-
-                                           const auto & old_expression = old_column->default_desc.expression;
-                                           const auto & new_expression = new_column->default_desc.expression;
-                                           if (!old_expression || !new_expression
-                                               || old_expression->getTreeHash(/*ignore_aliases=*/true)
-                                                   != new_expression->getTreeHash(/*ignore_aliases=*/true))
-                                               return false;
-                                       }
-
-                                       return true;
+                                       return std::ranges::equal(
+                                           findMistypedAliasColumnsOfTextIndex(old_index, old_metadata.columns, type_context)
+                                               | std::views::keys,
+                                           mistyped_columns | std::views::keys);
                                    });
 
                         if (!inherited)
