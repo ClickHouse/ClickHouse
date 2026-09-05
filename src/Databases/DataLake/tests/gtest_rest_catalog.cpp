@@ -63,6 +63,11 @@ enum class CatalogShape
     /// echoes the same top-level namespace for every parent. A REST catalog would recurse on this
     /// forever (gold -> gold.gold -> ...); a flat-namespace catalog must list the top level only.
     ParentIgnoringEcho,
+    /// Flat-namespace catalog (Apache Polaris federated to AWS Glue) that rejects `parent` with
+    /// HTTP 400 instead of ignoring it, and holds a table in its only top-level namespace.
+    ParentRejecting,
+    /// Rejects the client credentials at the OAuth token endpoint.
+    OAuthTokenRejected,
 };
 
 void writeJSON(Poco::Net::HTTPServerResponse & response, const std::string & body, Poco::Net::HTTPResponse::HTTPStatus status = Poco::Net::HTTPResponse::HTTP_OK)
@@ -136,6 +141,14 @@ public:
         {
             const std::string request_body(std::istreambuf_iterator<char>(request.stream()), {});
             ++token_requests;
+            if (shape == CatalogShape::OAuthTokenRejected)
+            {
+                writeError(
+                    response,
+                    Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED,
+                    R"({"error":"invalid_client","error_description":"Client secret does not match"})");
+                return;
+            }
             /// Horizon secret-only credentials omit client_id; standard REST includes it.
             if (request_body.contains("client_secret=") && !request_body.contains("client_id="))
             {
@@ -165,6 +178,12 @@ public:
             else if (shape == CatalogShape::ParentIgnoringEcho)
                 /// Ignores `parent` and echoes the top-level namespace back for any parent.
                 writeJSON(response, R"({"namespaces":[["gold"]]})");
+            else if (shape == CatalogShape::ParentRejecting)
+                writeError(
+                    response,
+                    Poco::Net::HTTPResponse::HTTP_BAD_REQUEST,
+                    R"({"error":{"message":"Malformed request: Glue dataCatalog does not support multipart namespace.",)"
+                    R"("type":"BadRequestException","code":400}})");
             else
                 writeJSON(response, R"({"namespaces":[]})");
             return;
@@ -172,7 +191,7 @@ public:
 
         if (path == "/v1/namespaces/namespace/tables")
         {
-            if (shape == CatalogShape::TopLevelTable)
+            if (shape == CatalogShape::TopLevelTable || shape == CatalogShape::ParentRejecting)
                 writeJSON(response, R"({"identifiers":[{"name":"table_a"}]})");
             else
                 writeJSON(response, R"({"identifiers":[]})");
@@ -313,7 +332,7 @@ void expectThrowsCode(std::function<void()> fn, int expected_code)
     }
 }
 
-bool restCatalogEmpty(CatalogShape shape)
+bool restCatalogEmpty(CatalogShape shape, bool flat_namespaces = false)
 {
     RestCatalogTestServer server(shape);
     auto context = DB::Context::createCopy(getContext().context);
@@ -327,9 +346,30 @@ bool restCatalogEmpty(CatalogShape shape)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        flat_namespaces,
         context);
 
     return catalog.empty();
+}
+
+DataLake::ICatalog::Namespaces restCatalogNamespaces(CatalogShape shape, bool flat_namespaces)
+{
+    RestCatalogTestServer server(shape);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    RestCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* catalog_credential */"",
+        /* auth_scope */"",
+        /* auth_header */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        flat_namespaces,
+        context);
+
+    return catalog.getNamespaces();
 }
 
 bool deltaSharingCatalogEmpty(CatalogShape shape)
@@ -346,6 +386,7 @@ bool deltaSharingCatalogEmpty(CatalogShape shape)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
         context);
 
     return catalog.empty();
@@ -377,6 +418,62 @@ TEST(RestCatalog, EmptyReturnsTrueWhenNoTablesExist)
     EXPECT_TRUE(restCatalogEmpty(CatalogShape::Empty));
 }
 
+TEST(RestCatalog, RejectedClientCredentialsReportTheOAuthError)
+{
+    RestCatalogTestServer server(CatalogShape::OAuthTokenRejected);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    try
+    {
+        RestCatalog catalog(
+            "warehouse",
+            server.getUrl(),
+            /* catalog_credential */"client-1:wrong-secret",
+            /* auth_scope */"PRINCIPAL_ROLE:ALL",
+            /* auth_header */"",
+            /* oauth_server_uri */"",
+            /* oauth_server_use_request_body */true,
+            /* flat_namespaces */false,
+            context);
+        FAIL() << "expected the rejected client credentials to fail the catalog construction";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
+        EXPECT_TRUE(e.message().contains("invalid_client")) << e.message();
+        EXPECT_TRUE(e.message().contains("Client secret does not match")) << e.message();
+        EXPECT_TRUE(e.message().contains("status 401")) << e.message();
+        EXPECT_FALSE(e.message().contains("wrong-secret")) << e.message();
+    }
+}
+
+TEST(RestCatalog, ParentFilterRejectionReportsFlatNamespacesSetting)
+{
+    try
+    {
+        restCatalogNamespaces(CatalogShape::ParentRejecting, /* flat_namespaces */false);
+        FAIL() << "expected the rejected `parent` filter to fail the namespace listing";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
+        EXPECT_TRUE(e.message().contains("flat_namespaces")) << e.message();
+        EXPECT_TRUE(e.message().contains("HTTP status: 400")) << e.message();
+    }
+}
+
+TEST(RestCatalog, FlatNamespacesSettingSkipsSubNamespaceListing)
+{
+    EXPECT_FALSE(restCatalogEmpty(CatalogShape::ParentRejecting, /* flat_namespaces */true));
+    EXPECT_EQ(restCatalogNamespaces(CatalogShape::ParentRejecting, /* flat_namespaces */true), ICatalog::Namespaces{"namespace"});
+}
+
+TEST(RestCatalog, FlatNamespacesSettingIgnoresEchoedParent)
+{
+    EXPECT_EQ(restCatalogNamespaces(CatalogShape::ParentIgnoringEcho, /* flat_namespaces */true), ICatalog::Namespaces{"gold"});
+}
+
 TEST(RestCatalog, TryGetTableMetadataDistinguishesMissingTableFromOtherErrors)
 {
     RestCatalogTestServer server(CatalogShape::TopLevelTable);
@@ -391,6 +488,7 @@ TEST(RestCatalog, TryGetTableMetadataDistinguishesMissingTableFromOtherErrors)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
         context);
 
     auto existing = TableMetadata().withLocation();
@@ -458,6 +556,7 @@ TEST(RestCatalog, ApplySettingsChangesWithoutAuthenticationRejected)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
         context);
 
     DB::SettingsChanges changes;
@@ -479,6 +578,7 @@ TEST(RestCatalog, ApplySettingsChangesCredentialMode)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
         context);
 
     EXPECT_EQ(catalog.getStateSnapshot()->client_id, "client-1");
@@ -520,6 +620,7 @@ TEST(RestCatalog, ApplySettingsChangesAuthHeaderMode)
         /* auth_header */"Authorization: Bearer token-1",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
         context);
 
     DB::SettingsChanges changes;
@@ -780,6 +881,7 @@ TEST(RestCatalog, HorizonCatalogAuthenticatesWithBarePAT)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */true,
+        /* flat_namespaces */false,
         context);
 
     EXPECT_EQ(catalog.getCatalogType(), DB::DatabaseDataLakeCatalogType::ICEBERG_HORIZON);
@@ -811,6 +913,7 @@ TEST(RestCatalog, HorizonCatalogRequiresCredentialOrAuthHeader)
                 /* auth_header */"",
                 /* oauth_server_uri */"",
                 /* oauth_server_use_request_body */true,
+                /* flat_namespaces */false,
                 context);
         },
         DB::ErrorCodes::BAD_ARGUMENTS);
@@ -830,6 +933,7 @@ TEST(RestCatalog, HorizonApplySettingsChangesBarePAT)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */true,
+        /* flat_namespaces */false,
         context);
 
     DB::SettingsChanges changes;

@@ -199,6 +199,7 @@ RestCatalog::RestCatalog(
     const std::string & auth_header_,
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
+    bool flat_namespaces_,
     DB::ContextPtr context_)
     : ICatalog(warehouse_)
     , DB::WithContext(context_)
@@ -207,6 +208,7 @@ RestCatalog::RestCatalog(
     , auth_scope(auth_scope_)
     , oauth_server_uri(oauth_server_uri_)
     , oauth_server_use_request_body(oauth_server_use_request_body_)
+    , flat_namespaces(flat_namespaces_)
 {
     CatalogState initial_state;
     if (!catalog_credential_.empty())
@@ -233,6 +235,7 @@ RestCatalog::RestCatalog(
     const std::string & auth_scope_,
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
+    bool flat_namespaces_,
     DB::ContextPtr context_)
     : ICatalog(warehouse_)
     , DB::WithContext(context_)
@@ -241,6 +244,7 @@ RestCatalog::RestCatalog(
     , auth_scope(auth_scope_)
     , oauth_server_uri(oauth_server_uri_)
     , oauth_server_use_request_body(oauth_server_use_request_body_)
+    , flat_namespaces(flat_namespaces_)
 {
 }
 
@@ -344,7 +348,7 @@ OneLakeCatalog::OneLakeCatalog(
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
     DB::ContextPtr context_)
-    : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, context_)
+    : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, /* flat_namespaces */false, context_)
 {
     CatalogState initial_state;
     initial_state.tenant_id = onelake_tenant_id;
@@ -629,8 +633,9 @@ HorizonCatalog::HorizonCatalog(
     const std::string & auth_header_,
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
+    bool flat_namespaces_,
     DB::ContextPtr context_)
-    : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, context_)
+    : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, flat_namespaces_, context_)
 {
     CatalogState initial_state;
     if (!catalog_credential_.empty())
@@ -976,7 +981,7 @@ BigLakeCatalog::BigLakeCatalog(
     const std::string & google_adc_quota_project_id_,
     DB::ContextPtr context_,
     bool allow_server_credentials_in_user_queries_)
-    : RestCatalog(warehouse_, base_url_, "", "", false, context_)
+    : RestCatalog(warehouse_, base_url_, "", "", false, /* flat_namespaces */false, context_)
     , google_project_id(google_project_id_)
     , google_service_account(google_service_account_)
     , google_metadata_service(google_metadata_service_)
@@ -1321,7 +1326,8 @@ void RestCatalog::getNamespacesRecursive(
         if (func)
             func(current_namespace);
 
-        getNamespacesRecursive(current_namespace, result, stop_condition, func);
+        if (!hasFlatNamespaces())
+            getNamespacesRecursive(current_namespace, result, stop_condition, func);
     }
 }
 
@@ -1343,9 +1349,12 @@ Poco::URI::QueryParameters RestCatalog::createParentNamespaceParams(const std::s
 
 bool RestCatalog::hasFlatNamespaces() const
 {
-    /// Catalogs whose namespaces are single-level and which ignore the `parent` filter when listing
-    /// namespaces. For these, sub-namespace listing is skipped (see `parseNamespaces`) so that an echo
-    /// of the parent is not turned into a fake child, which would otherwise recurse without bound.
+    /// Catalogs whose namespaces are single-level and which ignore or reject the `parent` filter when
+    /// listing namespaces. For these, sub-namespace listing is skipped so that an echo of the parent is
+    /// not turned into a fake child, which would otherwise recurse without bound.
+    if (flat_namespaces)
+        return true;
+
     const auto type = getCatalogType();
     return type == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
         || type == DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING
@@ -1416,12 +1425,21 @@ RestCatalog::Namespaces RestCatalog::listChildNamespaces(const std::string & bas
             "Received error while fetching list of namespaces from iceberg catalog `{}`. ",
             warehouse);
 
-        if (e.code() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+        if (!base_namespace.empty() && e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
             message += "Namespace provided in the `parent` query parameter is not found. ";
 
+        if (!base_namespace.empty()
+            && (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_BAD_REQUEST
+                || e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_IMPLEMENTED))
+            message += fmt::format(
+                "The catalog refused to list sub-namespaces of `{}`. If it supports only single-level "
+                "namespaces, recreate the database with `SETTINGS flat_namespaces = 1` so that only "
+                "top-level namespaces are listed. ",
+                base_namespace);
+
         message += fmt::format(
-            "Code: {}, status: {}, message: {}",
-            e.code(), e.getHTTPStatus(), e.displayText());
+            "Code: {}, HTTP status: {}, message: {}",
+            e.code(), static_cast<int>(e.getHTTPStatus()), e.displayText());
 
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "{}", message);
     }

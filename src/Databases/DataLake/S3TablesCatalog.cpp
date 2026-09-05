@@ -64,7 +64,7 @@ S3TablesCatalog::S3TablesCatalog(
     const CatalogSettings & catalog_settings_,
     DB::ContextPtr context_,
     bool allow_server_credentials_in_user_queries_)
-    : RestCatalog(warehouse_, base_url_, "", "", false, context_)
+    : RestCatalog(warehouse_, base_url_, "", "", false, /* flat_namespaces */false, context_)
     , region(region_)
     , storage_endpoint(catalog_settings_.storage_endpoint)
     , signing_service("s3tables")
