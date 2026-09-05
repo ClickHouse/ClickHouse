@@ -232,6 +232,15 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "FillingStep: INTERPOLATE source column '{}' is not required by the interpolate expression", name);
 
+            /// The transform stages the header column in a column of the expression's input type and
+            /// `insertFrom`s one into the other, which is only defined when the two types are the same.
+            /// The planner builds the expression's inputs from this very header, so they always are.
+            const auto & header_type = input_header.getByName(key).type;
+            if (!header_type->equals(*name_and_type->type))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "FillingStep: INTERPOLATE source column '{}' has type {} in the input header, but the "
+                    "interpolate expression expects {}", key, header_type->getName(), name_and_type->type->getName());
+
             /// The type comes from the DAG, never from the wire: it decides the column the transform
             /// stages the value in before executing the expression.
             required_columns_map[key] = *name_and_type;
@@ -249,6 +258,14 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
             if (!input_header.has(column.name))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "FillingStep: INTERPOLATE column '{}' is not present in the input header", column.name);
+
+            /// Each output is `insertFrom`-ed into the header column of the same name, so their types have
+            /// to agree; the planner casts the interpolate expression to that column's type for this reason.
+            const auto & header_type = input_header.getByName(column.name).type;
+            if (!header_type->equals(*column.type))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "FillingStep: INTERPOLATE column '{}' has type {} in the input header, but the "
+                    "interpolate expression produces {}", column.name, header_type->getName(), column.type->getName());
 
             result_columns_order.push_back(column.name);
         }
