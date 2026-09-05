@@ -19,7 +19,8 @@ namespace ErrorCodes
 
     <compression>
 
-        <!-- Set of options. Options are checked in a row. The last worked option wins. If none has worked, then lz4 is used. -->
+        <!-- Set of options. Options are checked in a row. The last worked option wins.
+             If none has worked, the size-aware built-in default is used (see below). -->
         <case>
 
             <!-- Conditions. All must be satisfied simultaneously. Some conditions may not be specified. -->
@@ -35,10 +36,29 @@ namespace ErrorCodes
                 ...
         </case>
     </compression>
+
+  * The built-in default (used when no `<case>` matched, including when there is no `<compression>`
+  * configuration at all) is size-aware: below `min_part_size_for_default_codec` the faster `LZ4` is
+  * used, at or above it the default codec (`ZSTD(3)`). This keeps compression cheap for small,
+  * frequently rewritten data while getting the better ratio for the bulk of the data.
+  *
+  * The threshold is applied to the size `choose` is called with, which is the size known when the codec
+  * has to be picked - before the data is written - exactly like the `min_part_size` conditions above.
+  * A freshly inserted part has no size yet and is passed `0`, so it starts as `LZ4`; a merge or a
+  * mutation passes the size of its source parts, so the bigger parts produced by background merges
+  * cross the threshold and switch to `ZSTD(3)`. It is therefore an estimate, not the size of the
+  * resulting part: a rewrite that shrinks its input - a `TTL DELETE`, deduplicating or collapsing
+  * merge, or a full-rewrite mutation - is classified by the input size and can emit a part below the
+  * threshold that is still `ZSTD(3)`. Basing it on the output size is not possible here, because the
+  * codec has to be chosen before the first block is compressed.
   */
 class CompressionCodecSelector
 {
 private:
+    /// The built-in default uses `LZ4` below this size and the default codec (`ZSTD(3)`) at or above it.
+    /// Matched against the size known at write time (see above), not against the resulting part size.
+    static constexpr size_t min_part_size_for_default_codec = 100 * 1024 * 1024;
+
     struct Element
     {
         size_t min_part_size = 0;
@@ -86,7 +106,13 @@ public:
     CompressionCodecPtr choose(size_t part_size, double part_size_ratio) const
     {
         const auto & factory = CompressionCodecFactory::instance();
-        CompressionCodecPtr res = factory.getDefaultCodec();
+
+        /// Size-aware built-in default: use the faster `LZ4` for small parts (where the ratio matters
+        /// less and the data is frequently merged and read), and the default codec (`ZSTD(3)`) for larger
+        /// parts (where the better ratio pays off). Explicit `<case>` rules below still take precedence.
+        CompressionCodecPtr res = part_size < min_part_size_for_default_codec
+            ? factory.get("LZ4", {})
+            : factory.getDefaultCodec();
 
         for (const auto & element : elements)
             if (element.check(part_size, part_size_ratio))

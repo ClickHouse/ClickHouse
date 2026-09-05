@@ -38,6 +38,24 @@
             <!-- Disable the query condition cache -->
             <use_query_condition_cache>0</use_query_condition_cache>
 
+            <!--
+                Pin network compression to `LZ4` for the performance comparison.
+
+                This repository changes the default `network_compression_method`
+                from `LZ4` to `ZSTD` (and `network_zstd_compression_level` from
+                `1` to `3`). That makes every `remote()`/`Distributed` test that
+                ships aggregation state over the socket slower on the tested
+                server (`ZSTD(3)` costs more CPU than `LZ4`), which would show up
+                as expected codec regressions and hide genuine algorithmic
+                changes. This mirrors the on-disk codec pin in
+                `config.d/compression.xml`: both the reference and the tested
+                server load this profile, so the network codec is identical on
+                both sides and the comparison measures query logic, not the
+                codec switch.
+            -->
+            <network_compression_method>LZ4</network_compression_method>
+            <network_zstd_compression_level>1</network_zstd_compression_level>
+
             <!-- Query profiler enabled only for prewarm queries explicitly (see perf.py)
                  This is needed for flamegraphs.  -->
             <query_profiler_real_time_period_ns>0</query_profiler_real_time_period_ns>
