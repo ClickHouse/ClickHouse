@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <mutex>
+#include <string_view>
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -127,6 +128,14 @@ public:
 private:
     /// The periodic task body.
     void run();
+
+    /// Publish `Follower` (running the leadership-loss callback) with the given reason for the log,
+    /// if this node is not already a follower. Serialized with `run` and `stop`.
+    void demoteToFollower(std::string_view reason);
+
+    /// Called by `run` right before it creates or claims a lease: a node that still considers itself
+    /// the leader at that point lost its lease unnoticed and must go through a full re-election.
+    void demoteBeforeTakeover();
 
     /// Try to write the lease file with conditional headers.
     /// Returns true if the write succeeded (we are the leader).

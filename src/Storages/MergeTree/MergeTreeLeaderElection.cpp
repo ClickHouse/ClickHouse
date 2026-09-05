@@ -16,6 +16,7 @@
 #include <Common/logger_useful.h>
 
 #include <base/JSON.h>
+#include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
 
 
@@ -127,13 +128,18 @@ void MergeTreeLeaderElection::stop()
 
 void MergeTreeLeaderElection::relinquishLeadership()
 {
+    demoteToFollower("after a write-side state reconciliation failure");
+}
+
+void MergeTreeLeaderElection::demoteToFollower(std::string_view reason)
+{
     std::lock_guard lock(leadership_change_mutex);
 
     bool was_leader = leadership_state.exchange(LeadershipState::Follower, std::memory_order_acq_rel) != LeadershipState::Follower;
     if (!was_leader)
         return;
 
-    LOG_WARNING(log, "Relinquishing leadership for lease at '{}' after a write-side state reconciliation failure", lease_path);
+    LOG_WARNING(log, "Relinquishing leadership for lease at '{}' {}", lease_path, reason);
     ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionLost);
     CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionLeader);
     CurrentMetrics::add(CurrentMetrics::MergeTreeLeaderElectionFollower);
@@ -238,6 +244,7 @@ void MergeTreeLeaderElection::run()
         {
             /// Lease file does not exist. Try to create it.
             LOG_TRACE(log, "Lease file does not exist at '{}', trying to create", lease_path);
+            demoteBeforeTakeover();
             became_leader = tryWriteLease(/* if_match= */ "", /* if_none_match= */ "*");
         }
         else
@@ -311,6 +318,7 @@ void MergeTreeLeaderElection::run()
                 /// failed takeover. Try to claim leadership.
                 LOG_INFO(log, "Leader lease at '{}' expired, corrupted, or has future timestamp (leader_id: {}), trying to claim",
                     lease_path, parsed.leader_id);
+                demoteBeforeTakeover();
                 became_leader = tryWriteLease(/* if_match= */ etag, /* if_none_match= */ "");
             }
             else
@@ -346,40 +354,11 @@ void MergeTreeLeaderElection::run()
         /// `LeaderSyncing` on every successful heartbeat would block writes.
         bool was_leader = leadership_state.load(std::memory_order_acquire) != LeadershipState::Follower;
 
-        if (became_leader && was_leader && !was_renewal_attempt)
-        {
-            /// We still considered ourselves the leader, yet the lease was not ours to renew: it had
-            /// expired, was rewritten by another node and expired again, or disappeared - all
-            /// unnoticed, typically because this heartbeat was stalled past `session_timeout` - and we
-            /// have just re-taken it through the claim/create path. Another node may have held the
-            /// lease and written into the table in between. Continuing as the same leader would keep
-            /// serving with a part set, block-number counter and deduplication log that predate its
-            /// writes, and would let writes admitted under the old lease commit. Treat it as a loss
-            /// followed by a fresh acquisition: publish `Follower` and run the loss callback here, then
-            /// fall through to the acquisition path below, which bumps the epoch and runs the
-            /// takeover sync exactly as for any other new leader.
-            LOG_WARNING(log,
-                "Re-took the lease at '{}' through a takeover while still serving as leader: the previous "
-                "lease expired unnoticed, so the table is reconciled with the shared storage as a new leader",
-                lease_path);
-            leadership_state.store(LeadershipState::Follower, std::memory_order_release);
-            ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionLost);
-            CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionLeader);
-            CurrentMetrics::add(CurrentMetrics::MergeTreeLeaderElectionFollower);
-            if (on_leadership_change)
-            {
-                /// Shielded like the other loss paths: the acquisition below must still run.
-                try
-                {
-                    on_leadership_change(false);
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(log, "Exception in leadership-loss callback");
-                }
-            }
-            was_leader = false;
-        }
+        /// A successful write through the create/claim path is always an acquisition here:
+        /// `demoteBeforeTakeover` published `Follower` before the write, so a node that still
+        /// considered itself the leader (its lease expired unnoticed) takes the epoch bump and the
+        /// takeover sync below like any other new leader.
+        chassert(!(became_leader && was_leader && !was_renewal_attempt));
 
         if (!became_leader)
             leadership_state.store(LeadershipState::Follower, std::memory_order_release);
@@ -479,6 +458,23 @@ void MergeTreeLeaderElection::run()
 
     if (!stopped.load(std::memory_order_acquire))
         task->scheduleAfter(heartbeat_interval_ms);
+}
+
+void MergeTreeLeaderElection::demoteBeforeTakeover()
+{
+    if (leadership_state.load(std::memory_order_acquire) == LeadershipState::Follower)
+        return;
+
+    /// We still consider ourselves the leader, yet the lease is not ours to renew: it has expired,
+    /// was taken over by another node and expired again, or disappeared - all unnoticed, typically
+    /// because this heartbeat was stalled past `session_timeout`. Another node may have written into
+    /// the table in between, so continuing as the same leader after re-taking the lease would keep
+    /// serving with a part set, block-number counter and deduplication log that predate its writes,
+    /// and would let writes admitted under the old lease commit. Publish `Follower` BEFORE the write:
+    /// `tryWriteLease` refreshes the lease freshness anchor, and a fresh lease must never be observed
+    /// together with the stale leader state. The successful write is then a regular acquisition -
+    /// new epoch, takeover sync - in `run`.
+    demoteToFollower("before re-taking a lease that expired unnoticed while this node was serving as leader");
 }
 
 bool MergeTreeLeaderElection::tryWriteLease(const String & if_match, const String & if_none_match)
