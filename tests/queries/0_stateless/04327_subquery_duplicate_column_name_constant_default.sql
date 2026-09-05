@@ -165,3 +165,9 @@ SELECT n FROM (SELECT [1] AS `n.x`, [2] AS `n.y`);
 -- Same hidden-name exclusion on the union and materialized-CTE nested-prefix surfaces.
 SELECT n FROM ((SELECT [1] AS `n.x`, * FROM (SELECT [2] AS `n.x`)) UNION ALL (SELECT [3] AS `n.x`, * FROM (SELECT [4] AS `n.x`))) ORDER BY 1;
 SELECT n FROM (WITH t AS MATERIALIZED (SELECT [1] AS `n.x`, * FROM (SELECT [2] AS `n.x`)) SELECT * FROM t) SETTINGS enable_materialized_cte = 1;
+
+-- Under `analyzer_compatibility_multiple_joins_qualify_column_names` a multi-join top-level
+-- projection qualifies its column names. A disambiguated duplicate carries the same qualifier as
+-- its siblings, so the generated internal name never reaches the header and the header is the same
+-- one the query had before the duplicate was disambiguated.
+DESCRIBE (SELECT * FROM (SELECT materialize(1) AS q, * FROM (SELECT 2 AS x, materialize(9) AS q)) AS s JOIN (SELECT 1 AS q) AS t ON 1 JOIN (SELECT 1 AS z) AS u ON 1) SETTINGS analyzer_compatibility_multiple_joins_qualify_column_names = 1;

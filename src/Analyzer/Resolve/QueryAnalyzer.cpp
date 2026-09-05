@@ -1907,8 +1907,20 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
             if (display_name_it != internal_name_to_display_name.end())
             {
                 std::string display_name(display_name_it->second);
-                /// Override the projection (display) name set by `qualifyColumnNodesWithProjectionNames`.
-                node_to_projection_name.insert_or_assign(matched_column_node, display_name);
+                /// Override the projection (display) name set by `qualifyColumnNodesWithProjectionNames`,
+                /// keeping any table qualifier it prefixed and replacing only the column-name component,
+                /// so a disambiguated duplicate is qualified exactly like its non-duplicate siblings.
+                std::string projection_name = display_name;
+                auto projection_name_it = node_to_projection_name.find(matched_column_node);
+                if (projection_name_it != node_to_projection_name.end())
+                {
+                    const auto & qualified_internal_name = projection_name_it->second;
+                    if (qualified_internal_name.size() > column_name.size()
+                        && qualified_internal_name.ends_with(column_name))
+                        projection_name = qualified_internal_name.substr(
+                            0, qualified_internal_name.size() - column_name.size()) + display_name;
+                }
+                node_to_projection_name.insert_or_assign(matched_column_node, std::move(projection_name));
                 column_name = std::move(display_name);
             }
         }
