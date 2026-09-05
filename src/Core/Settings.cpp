@@ -8762,6 +8762,9 @@ Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or 
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
 )", 0) \
+    DECLARE(Bool, enable_join_key_only_hash_tables, true, R"(
+Use hash tables that store the join keys alone, without a reference to a right row, for joins whose result can never contain a value taken from a right row: `LEFT ANTI`, and `LEFT SEMI` when no right column is selected. Such a table has a smaller cell and lets the right blocks be dropped instead of stored.
+)", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_join_lazy_indexing, 1000, R"(Control maximum limit value that allows to use query plan for lazy indexing optimization in JOIN. If zero, there is no limit.
 )", 0) \
     DECLARE(UInt64, query_plan_min_columns_for_join_lazy_indexing, 3, R"(
@@ -9134,6 +9137,10 @@ Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distri
 Enable the Cascades cost-based optimizer for distributed query plans.
 Takes effect only together with `make_distributed_plan = 1`: the setting alone does not change single-node query planning.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, cascades_aggregation_pushdown, true, R"(
+Consider pushing partial aggregation below a join (eager aggregation) as a cost-based alternative in the Cascades optimizer.
+Takes effect only together with `enable_cascades_optimizer = 1` and `make_distributed_plan = 1`.
+)", BETA) \
     DECLARE(Bool, enable_join_runtime_filters, true, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
 )", BETA) \

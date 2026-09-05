@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"cascades_aggregation_pushdown", false, true, "New setting to consider pushing partial aggregation below a join (eager aggregation) in the Cascades optimizer."},
             {"optimize_read_in_reverse_order_final", false, true, "New setting to enable the read-in-order optimization when reading in reverse order of the sorting key with the `FINAL` modifier from `ReplacingMergeTree` tables."},
             {"ast_fuzzer_oracle", false, false, "New setting to enable correctness oracle checks in the server-side AST fuzzer."},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
@@ -55,6 +56,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_ai_functions", false, false, "The setting is obsolete, AI functions are beta now and enabled by default."},
             {"ai_function_max_retries", 0, 1, "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."},
             {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
+            {"enable_join_key_only_hash_tables", false, true, "New setting to store the join keys alone, without a reference to a right row, in the hash tables of joins whose result can never contain a value taken from a right row (`LEFT ANTI`, and `LEFT SEMI` when no right column is selected)."},
             {"distributed_plan_read_in_order", false, false, "New setting to allow the read-in-order optimization for `ORDER BY` in a distributed query plan, so a sorted read of the table's sorting key can skip the sort and stop early. Off by default: only shapes where no exchange survives between the read and the sort are safe today."},
             {"distributed_cache_client_id", "", "", "New setting (CI tests only) to override the distributed cache client id per query."},
             {"query_plan_propagate_predicate_across_join", false, true, "New setting that lifts filter conjuncts across equi-join keys so primary-key pruning fires on both sides."},
