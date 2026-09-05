@@ -1,4 +1,5 @@
--- Tags: no-fasttest, no-ordinary-database
+-- Tags: no-parallel, no-fasttest, no-ordinary-database
+-- Tag no-parallel: Checks hits after warming the shared vector similarity index cache; concurrent tests can evict its entries.
 
 -- Tests the vector index cache.
 
