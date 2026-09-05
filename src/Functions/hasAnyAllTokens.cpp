@@ -463,18 +463,20 @@ This inconsistency is tolerated to improve the usability of full-text search.
 :::
     )";
     FunctionDocumentation::Syntax syntax_hasAnyTokens = R"(
-hasAnyTokens(input, needles)
+hasAnyTokens(input, needles[, tokenizer])
 )";
     FunctionDocumentation::Arguments arguments_hasAnyTokens = {
         {"input", "The input column.", {"String", "FixedString", "Nullable(String)", "Nullable(FixedString)", "Array(String)", "Array(FixedString)", "Array(Nullable(String))", "Array(Nullable(FixedString))"}},
         {"needles", "Tokens to be searched.", {"String", "Array(String)"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAnyTokens = {"Returns `1`, if there was at least one match. `0`, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAnyTokens = {
     {
         "Basic usage with a string needle",
         R"(
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -496,6 +498,8 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
     {
         "Specify needles to be searched for AS-IS (no tokenization) in an array",
         R"(
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -517,6 +521,8 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
     {
         "Generate needles using the `tokens` function",
         R"(
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -538,6 +544,8 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', 
     {
         "Usage examples for array and map columns",
         R"(
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -558,6 +566,8 @@ INSERT INTO log VALUES
     {
         "Example with an array column",
         R"(
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -584,6 +594,8 @@ SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
     {
         "Example with mapKeys",
         R"(
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -610,6 +622,8 @@ SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log
     {
         "Example with mapValues",
         R"(
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -671,18 +685,20 @@ This inconsistency is tolerated to improve the usability of full-text search.
 :::
     )";
     FunctionDocumentation::Syntax syntax_hasAllTokens = R"(
-hasAllTokens(input, needles)
+hasAllTokens(input, needles[, tokenizer])
 )";
     FunctionDocumentation::Arguments arguments_hasAllTokens = {
-        {"input", "The input column.", {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
+        {"input", "The input column.", {"String", "FixedString", "Nullable(String)", "Nullable(FixedString)", "Array(String)", "Array(FixedString)", "Array(Nullable(String))", "Array(Nullable(FixedString))"}},
         {"needles", "Tokens to be searched.", {"String", "Array(String)"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAllTokens = {"Returns 1, if all needles match. 0, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAllTokens = {
     {
         "Basic usage with a string needle",
         R"(
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -704,6 +720,8 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
     {
         "Specify needles to be searched for AS-IS (no tokenization) in an array",
         R"(
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -725,6 +743,8 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, ['a', 'd']);
     {
         "Generate needles using the `tokens` function",
         R"(
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -749,14 +769,16 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, tokens('a()d', 'splitByString', 
 SELECT hasAllTokens('abcdef', 'abc', 'ngrams(3)');
         )",
         R"(
-┌─hasAllTokens⋯ngrams(3)')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasAllTokens('abcdef', 'abc', 'ngrams(3)')─┐
+│                                          1 │
+└────────────────────────────────────────────┘
         )"
     },
     {
         "Usage examples for array and map columns",
         R"(
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -777,6 +799,8 @@ INSERT INTO log VALUES
     {
         "Example with an array column",
         R"(
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -803,6 +827,8 @@ SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
     {
         "Example with mapKeys",
         R"(
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -829,6 +855,8 @@ SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log
     {
         "Example with mapValues",
         R"(
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),

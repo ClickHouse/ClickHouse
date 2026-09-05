@@ -14,7 +14,7 @@ doc_type: 'reference'
 
 ロギングは、engine 固有の `handle_error_mode` 設定で `dead_letter_queue` を指定すると有効になります。
 
-データのフラッシュ間隔は、サーバー設定の [dead&#95;letter&#95;queue](/ja/reference/settings/server-settings/settings#dead_letter_queue) セクションにある `flush_interval_milliseconds` パラメータで設定します。フラッシュを強制するには、[SYSTEM FLUSH LOGS](/ja/reference/statements/system#flush-logs) クエリを使用します。
+データのフラッシュ間隔は、サーバー設定の [dead&#95;letter&#95;queue](/ja/reference/settings/server-settings/settings/other#dead_letter_queue) セクションにある `flush_interval_milliseconds` パラメータで設定します。フラッシュを強制するには、[SYSTEM FLUSH LOGS](/ja/reference/statements/system#flush-logs) クエリを使用します。
 
 ClickHouse はテーブルからデータを自動的に削除しません。詳細は [Introduction](/ja/reference/system-tables/overview#system-tables-introduction) を参照してください。
 

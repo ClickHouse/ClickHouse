@@ -113,9 +113,9 @@ SELECT YYYYMMDDToDate(20230911);
 ```
 
 ```response title=Response
-┌─toYYYYMMDD(20230911)─┐
-│           2023-09-11 │
-└──────────────────────┘
+┌─YYYYMMDDToDate(20230911)─┐
+│               2023-09-11 │
+└──────────────────────────┘
 ```
 
 <div id="YYYYMMDDToDate32">
@@ -186,13 +186,13 @@ Renvoie une valeur `DateTime` à partir des arguments fournis [`DateTime`](/fr/r
 **Exemple**
 
 ```sql title=Query
-SELECT YYYYMMDDToDateTime(20230911131415);
+SELECT YYYYMMDDhhmmssToDateTime(20230911131415);
 ```
 
 ```response title=Response
-┌──────YYYYMMDDhhmmssToDateTime(20230911131415)─┐
-│                           2023-09-11 13:14:15 │
-└───────────────────────────────────────────────┘
+┌─YYYYMMDDhhmmssToDateTime(20230911131415)─┐
+│                      2023-09-11 13:14:15 │
+└──────────────────────────────────────────┘
 ```
 
 <div id="YYYYMMDDhhmmssToDateTime64">
@@ -230,9 +230,9 @@ SELECT YYYYMMDDhhmmssToDateTime64(20230911131415, 3, 'Asia/Istanbul');
 ```
 
 ```response title=Response
-┌─YYYYMMDDhhmm⋯/Istanbul')─┐
-│  2023-09-11 13:14:15.000 │
-└──────────────────────────┘
+┌─YYYYMMDDhhmmssToDateTime64(20230911131415, 3, 'Asia/Istanbul')─┐
+│                                        2023-09-11 13:14:15.000 │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="addDate">
@@ -268,9 +268,9 @@ SELECT addDate(toDate('2018-01-01'), INTERVAL 3 YEAR)
 ```
 
 ```response title=Response
-┌─addDate(toDa⋯valYear(3))─┐
-│               2021-01-01 │
-└──────────────────────────┘
+┌─addDate(toDate('2018-01-01'), toIntervalYear(3))─┐
+│                                       2021-01-01 │
+└──────────────────────────────────────────────────┘
 ```
 
 <div id="addDays">
@@ -317,16 +317,16 @@ SELECT
 └────────────────────┴─────────────────────────┴────────────────────────────────┘
 ```
 
-**Utilisation d’une autre syntaxe INTERVAL**
+**Utilisation de la syntaxe INTERVAL alternative**
 
 ```sql title=Query
 SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 day)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯valDay(10))─┐
-│               1998-06-26 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalDay(10))─┐
+│                                          1998-06-26 │
+└─────────────────────────────────────────────────────┘
 ```
 
 <div id="addHours">
@@ -373,16 +373,16 @@ SELECT
 └─────────────────────┴──────────────────────────┴─────────────────────────────────┘
 ```
 
-**Utilisation de la syntaxe alternative d’INTERVAL**
+**Utilisation de la syntaxe INTERVAL alternative**
 
 ```sql title=Query
 SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 hour)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯alHour(10))─┐
-│      1998-06-16 10:00:00 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalHour(10))─┐
+│                                  1998-06-16 10:00:00 │
+└──────────────────────────────────────────────────────┘
 ```
 
 <div id="addInterval">
@@ -459,7 +459,7 @@ Renvoie `date_time` avec `num` microsecondes ajoutées [`DateTime64`](/fr/refere
 
 **Exemples**
 
-**Ajouter des microsecondes à différents types de date et heure**
+**Ajouter des microsecondes à différents types de dates et d’heures**
 
 ```sql title=Query
 WITH
@@ -483,9 +483,9 @@ SELECT dateAdd('1998-06-16'::DateTime, INTERVAL 10 microsecond)
 ```
 
 ```response title=Response
-┌─plus(CAST('19⋯osecond(10))─┐
-│ 1998-06-16 00:00:00.000010 │
-└────────────────────────────┘
+┌─plus(CAST('1998-06-16', 'DateTime'), toIntervalMicrosecond(10))─┐
+│                                      1998-06-16 00:00:00.000010 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="addMilliseconds">
@@ -513,7 +513,7 @@ Renvoie `datetime` plus `num` millisecondes [`DateTime64`](/fr/reference/data-ty
 
 **Exemples**
 
-**Ajouter des millisecondes à différents types de date et heure**
+**Ajouter des millisecondes à différents types de dates et d’heures**
 
 ```sql title=Query
 WITH
@@ -530,16 +530,16 @@ SELECT
 └─────────────────────────────────┴────────────────────────────────────────┘
 ```
 
-**Utilisation d&#39;une autre syntaxe INTERVAL**
+**Utilisation de la syntaxe INTERVAL alternative**
 
 ```sql title=Query
 SELECT dateAdd('1998-06-16'::DateTime, INTERVAL 10 millisecond)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯second(10))─┐
-│  1998-06-16 00:00:00.010 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'DateTime'), toIntervalMillisecond(10))─┐
+│                                         1998-06-16 00:00:00.010 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="addMinutes">
@@ -586,16 +586,16 @@ SELECT
 └───────────────────────┴────────────────────────────┴───────────────────────────────────┘
 ```
 
-**Utilisation d’une autre syntaxe INTERVAL**
+**Utilisation de la syntaxe INTERVAL alternative**
 
 ```sql title=Query
 SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 minute)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯Minute(10))─┐
-│      1998-06-16 00:10:00 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalMinute(10))─┐
+│                                    1998-06-16 00:10:00 │
+└────────────────────────────────────────────────────────┘
 ```
 
 <div id="addMonths">
@@ -642,16 +642,16 @@ SELECT
 └──────────────────────┴───────────────────────────┴──────────────────────────────────┘
 ```
 
-**Utilisation d&#39;une autre syntaxe INTERVAL**
+**Utilisation de la syntaxe INTERVAL alternative**
 
 ```sql title=Query
 SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 month)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯lMonth(10))─┐
-│               1999-04-16 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalMonth(10))─┐
+│                                            1999-04-16 │
+└───────────────────────────────────────────────────────┘
 ```
 
 <div id="addNanoseconds">
@@ -679,7 +679,7 @@ Renvoie `datetime` plus `num` nanosecondes [`DateTime64`](/fr/reference/data-typ
 
 **Exemples**
 
-**Ajouter des nanosecondes à différents types date-heure**
+**Ajouter des nanosecondes à différents types de dates et d’heures**
 
 ```sql title=Query
 WITH
@@ -703,9 +703,9 @@ SELECT dateAdd('1998-06-16'::DateTime, INTERVAL 1000 nanosecond)
 ```
 
 ```response title=Response
-┌─plus(CAST('199⋯osecond(1000))─┐
-│ 1998-06-16 00:00:00.000001000 │
-└───────────────────────────────┘
+┌─plus(CAST('1998-06-16', 'DateTime'), toIntervalNanosecond(1000))─┐
+│                                    1998-06-16 00:00:00.000001000 │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="addQuarters">
@@ -759,9 +759,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 quarter)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯uarter(10))─┐
-│               2000-12-16 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalQuarter(10))─┐
+│                                              2000-12-16 │
+└─────────────────────────────────────────────────────────┘
 ```
 
 <div id="addSeconds">
@@ -808,16 +808,16 @@ SELECT
 └───────────────────────┴────────────────────────────┴───────────────────────────────────┘
 ```
 
-**Utilisation d’une autre syntaxe INTERVAL**
+**Utilisation de la syntaxe INTERVAL alternative**
 
 ```sql title=Query
 SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 second)
 ```
 
 ```response title=Response
-┌─dateAdd('1998-06-16'::Date, INTERVAL 10 second)─┐
-│                             1998-06-16 00:00:10 │
-└─────────────────────────────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalSecond(10))─┐
+│                                    1998-06-16 00:00:10 │
+└────────────────────────────────────────────────────────┘
 ```
 
 <div id="addTupleOfIntervals">
@@ -909,9 +909,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 week)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯alWeek(10))─┐
-│               1998-08-25 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalWeek(10))─┐
+│                                           1998-08-25 │
+└──────────────────────────────────────────────────────┘
 ```
 
 <div id="addYears">
@@ -958,16 +958,16 @@ SELECT
 └─────────────────────┴──────────────────────────┴─────────────────────────────────┘
 ```
 
-**Utilisation d&#39;une autre syntaxe INTERVAL**
+**Utilisation de la syntaxe INTERVAL alternative**
 
 ```sql title=Query
 SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 year)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯alYear(10))─┐
-│               2008-06-16 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalYear(10))─┐
+│                                           2008-06-16 │
+└──────────────────────────────────────────────────────┘
 ```
 
 <div id="age">
@@ -1525,7 +1525,7 @@ formatDateTime(datetime, format[, timezone])
 
 **Arguments**
 
-* `datetime` — Une date ou une date et heure à formater. [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+* `datetime` — Une date/heure à formater. [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 * `format` — Chaîne de format avec des champs de remplacement. [`String`](/fr/reference/data-types/string)
 * `timezone` — Facultatif. Nom du fuseau horaire pour l’heure formatée. [`String`](/fr/reference/data-types/string)
 
@@ -1555,7 +1555,7 @@ SELECT formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')
 
 ```response title=Response
 ┌─formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')─┐
-│ 1234560                                                             │
+│ 123456                                                              │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1793,7 +1793,7 @@ fromModifiedJulianDayOrNull(day)
 
 **Valeur renvoyée**
 
-Renvoie la date sous forme textuelle pour un argument `day` valide, sinon `null`. [`Nullable(String)`](/fr/reference/data-types/nullable)
+Renvoie la date sous forme de texte pour un argument `day` valide, sinon `null`. [`Nullable(String)`](/fr/reference/data-types/nullable)
 
 **Exemples**
 
@@ -1805,12 +1805,12 @@ SELECT fromModifiedJulianDayOrNull(60000000); -- invalid argument, returns NULL
 ```
 
 ```response title=Response
-┌─fromModified⋯Null(58849)─┐
-│ 2020-01-01               │
-└──────────────────────────┘
-┌─fromModified⋯l(60000000)─┐
-│ ᴺᵁᴸᴸ                     │
-└──────────────────────────┘
+┌─fromModifiedJulianDayOrNull(58849)─┐
+│ 2020-01-01                         │
+└────────────────────────────────────┘
+┌─fromModifiedJulianDayOrNull(60000000)─┐
+│ ᴺᵁᴸᴸ                                  │
+└───────────────────────────────────────┘
 ```
 
 <div id="fromUTCTimestamp">
@@ -1895,7 +1895,7 @@ SELECT fromUnixTimestamp(423543535)
 
 ```response title=Response
 ┌─fromUnixTimestamp(423543535)─┐
-│          1983-06-04 10:58:55 │
+│          1983-06-04 02:58:55 │
 └──────────────────────────────┘
 ```
 
@@ -1907,7 +1907,7 @@ SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime
 
 ```response title=Response
 ┌─DateTime────────────┐
-│ 2009-02-11 14:42:23 │
+│ 2009-02-11 06:42:23 │
 └─────────────────────┘
 ```
 
@@ -2248,7 +2248,7 @@ Renvoie la date et l’heure actuelles au moment de l’analyse de la requête. 
 now([timezone])
 ```
 
-**Alias** : `current_timestamp`, `localtimestamp`
+**Alias** : `localtimestamp`, `current_timestamp`
 
 **Arguments**
 
@@ -2444,7 +2444,7 @@ FORMAT PrettyCompactMonoBlock
 
 Introduit dans : v23.6.0
 
-Renvoie le fuseau horaire du serveur, c’est-à-dire la valeur du paramètre [`timezone`](/fr/reference/settings/server-settings/settings#timezone).
+Renvoie le fuseau horaire du serveur, c’est-à-dire la valeur du paramètre [`timezone`](/fr/reference/settings/server-settings/settings/other#timezone).
 Si la fonction est exécutée dans le contexte d’une table distribuée, elle génère une colonne normale avec des valeurs correspondant à chaque shard. Sinon, elle renvoie une valeur constante.
 
 <Note>
@@ -2477,7 +2477,7 @@ SELECT serverTimeZone()
 
 ```response title=Response
 ┌─serverTimeZone()─┐
-│ UTC              │
+│ Etc/UTC          │
 └──────────────────┘
 ```
 
@@ -2525,7 +2525,7 @@ SELECT subDate(toDate('2018-01-01'), INTERVAL 3 YEAR)
 
 Introduit dans : v1.1.0
 
-Soustrait un nombre spécifié de jours à une date, une date et heure, ou une date ou date et heure encodée sous forme de chaîne.
+Soustrait un nombre spécifié de jours à une date, une date avec heure, ou une date ou date avec heure encodée sous forme de chaîne.
 
 **Syntaxe**
 
@@ -2563,16 +2563,16 @@ SELECT
 └─────────────────────────┴──────────────────────────────┴─────────────────────────────────────┘
 ```
 
-**Utilisation de la syntaxe alternative INTERVAL**
+**Utilisation de la syntaxe INTERVAL alternative**
 
 ```sql title=Query
 SELECT dateSub('1998-06-16'::Date, INTERVAL 10 day)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯valDay(10))─┐
-│               1998-06-06 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalDay(10))─┐
+│                                           1998-06-06 │
+└──────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractHours">
@@ -2626,9 +2626,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 hour)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯alHour(10))─┐
-│      1998-06-15 14:00:00 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalHour(10))─┐
+│                                   1998-06-15 14:00:00 │
+└───────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractInterval">
@@ -2685,7 +2685,7 @@ SELECT subtractInterval(INTERVAL 2 DAY, INTERVAL 1 DAY);
 
 Introduit dans : v22.6.0
 
-Soustrait un nombre donné de microsecondes à une date et heure ou à une date et heure encodée sous forme de chaîne.
+Soustrait un nombre donné de microsecondes à une date avec heure ou à une date avec heure encodée sous forme de chaîne.
 
 **Syntaxe**
 
@@ -2728,9 +2728,9 @@ SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 microsecond)
 ```
 
 ```response title=Response
-┌─minus(CAST('1⋯osecond(10))─┐
-│ 1998-06-15 23:59:59.999990 │
-└────────────────────────────┘
+┌─minus(CAST('1998-06-16', 'DateTime'), toIntervalMicrosecond(10))─┐
+│                                       1998-06-15 23:59:59.999990 │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractMilliseconds">
@@ -2739,7 +2739,7 @@ SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 microsecond)
 
 Introduit dans : v22.6.0
 
-Soustrait un nombre spécifié de millisecondes à une date et heure ou à une date et heure encodée sous forme de chaîne.
+Soustrait un nombre spécifié de millisecondes à une date avec heure ou à une date avec heure encodée sous forme de chaîne.
 
 **Syntaxe**
 
@@ -2754,7 +2754,7 @@ subtractMilliseconds(datetime, num)
 
 **Valeur renvoyée**
 
-`datetime` moins `num` millisecondes. [`DateTime64`](/fr/reference/data-types/datetime64)
+Renvoie `datetime` moins `num` millisecondes. [`DateTime64`](/fr/reference/data-types/datetime64)
 
 **Exemples**
 
@@ -2782,9 +2782,9 @@ SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 millisecond)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯second(10))─┐
-│  1998-06-15 23:59:59.990 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'DateTime'), toIntervalMillisecond(10))─┐
+│                                          1998-06-15 23:59:59.990 │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractMinutes">
@@ -2831,16 +2831,16 @@ SELECT
 └────────────────────────────┴─────────────────────────────────┴────────────────────────────────────────┘
 ```
 
-**Utilisation de la syntaxe alternative INTERVAL**
+**Utilisation de la syntaxe INTERVAL alternative**
 
 ```sql title=Query
 SELECT dateSub('1998-06-16'::Date, INTERVAL 10 minute)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯Minute(10))─┐
-│      1998-06-15 23:50:00 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalMinute(10))─┐
+│                                     1998-06-15 23:50:00 │
+└─────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractMonths">
@@ -2887,16 +2887,16 @@ SELECT
 └───────────────────────────┴────────────────────────────────┴───────────────────────────────────────┘
 ```
 
-**Utilisation d’une autre syntaxe INTERVAL**
+**Utilisation de la syntaxe INTERVAL alternative**
 
 ```sql title=Query
 SELECT dateSub('1998-06-16'::Date, INTERVAL 10 month)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯lMonth(10))─┐
-│               1997-08-16 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalMonth(10))─┐
+│                                             1997-08-16 │
+└────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractNanoseconds">
@@ -2948,9 +2948,9 @@ SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 nanosecond)
 ```
 
 ```response title=Response
-┌─minus(CAST('19⋯anosecond(10))─┐
-│ 1998-06-15 23:59:59.999999990 │
-└───────────────────────────────┘
+┌─minus(CAST('1998-06-16', 'DateTime'), toIntervalNanosecond(10))─┐
+│                                   1998-06-15 23:59:59.999999990 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractQuarters">
@@ -3060,9 +3060,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 second)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯Second(10))─┐
-│      1998-06-15 23:59:50 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalSecond(10))─┐
+│                                     1998-06-15 23:59:50 │
+└─────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractTupleOfIntervals">
@@ -3097,9 +3097,9 @@ WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVA
 ```
 
 ```response title=Response
-┌─subtractTupl⋯alYear(1)))─┐
-│               2016-12-31 │
-└──────────────────────────┘
+┌─subtractTupleOfIntervals(date, (toIntervalDay(1), toIntervalYear(1)))─┐
+│                                                            2016-12-31 │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractWeeks">
@@ -3153,9 +3153,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 week)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯alWeek(10))─┐
-│               1998-04-07 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalWeek(10))─┐
+│                                            1998-04-07 │
+└───────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractYears">
@@ -3209,9 +3209,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 year)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯alYear(10))─┐
-│               1988-06-16 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalYear(10))─┐
+│                                            1988-06-16 │
+└───────────────────────────────────────────────────────┘
 ```
 
 <div id="timeDiff">
@@ -3501,7 +3501,7 @@ SELECT timezoneOf(now());
 
 ```response title=Response
 ┌─timezoneOf(now())─┐
-│ Europe/Amsterdam  │
+│ Etc/UTC           │
 └───────────────────┘
 ```
 
@@ -3751,9 +3751,9 @@ SELECT toDaysSinceYearZero(toDate('2023-09-08'))
 ```
 
 ```response title=Response
-┌─toDaysSinceYearZero(toDate('2023-09-08')))─┐
-│                                     713569 │
-└────────────────────────────────────────────┘
+┌─toDaysSinceYearZero(toDate('2023-09-08'))─┐
+│                                    739136 │
+└───────────────────────────────────────────┘
 ```
 
 <div id="toHour">
@@ -3883,8 +3883,8 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 ```
 
 ```response title=Response
-┌─week1─┬─week2─┐
-│    40 │    40 │
+┌─year1─┬─year2─┐
+│  2024 │  2024 │
 └───────┴───────┘
 ```
 
@@ -3897,7 +3897,7 @@ Introduit dans : v1.1.0
 Arrondit une date ou une date avec heure au dernier jour du mois.
 
 <Note>
-  Le type de retour peut être configuré via le paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Le type de retour peut être configuré via le paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Syntaxe**
@@ -3939,7 +3939,7 @@ Introduit dans : v23.5.0
 Arrondit une date ou une date avec heure au samedi ou au dimanche suivant le plus proche.
 
 <Note>
-  Le type de retour peut être configuré en définissant [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Le type de retour peut être configuré en définissant [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Syntaxe**
@@ -3974,10 +3974,10 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-23
-toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-22
-toLastDayOfWeek(toDate('2023-04-23')):                   2023-04-23
-toLastDayOfWeek(toDate('2023-04-23'), 1):                2023-04-23
+toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')):    2023-04-22
+toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1): 2023-04-23
+toLastDayOfWeek(toDate('2023-04-23')):                 2023-04-29
+toLastDayOfWeek(toDate('2023-04-23'), 1):              2023-04-23
 ```
 
 <div id="toMicrosecond">
@@ -4051,9 +4051,9 @@ SELECT toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3));
 ```
 
 ```response title=Response
-┌──toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3))─┐
-│                                                        456 │
-└────────────────────────────────────────────────────────────┘
+┌─toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3))─┐
+│                                                       456 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 <div id="toMinute">
@@ -4162,12 +4162,12 @@ SELECT toModifiedJulianDayOrNull('0000-00-00'); -- invalid date, returns NULL
 ```
 
 ```response title=Response
-┌─toModifiedJu⋯020-01-01')─┐
-│                    58849 │
-└──────────────────────────┘
-┌─toModifiedJu⋯000-00-00')─┐
-│                     ᴺᵁᴸᴸ │
-└──────────────────────────┘
+┌─toModifiedJulianDayOrNull('2020-01-01')─┐
+│                                   58849 │
+└─────────────────────────────────────────┘
+┌─toModifiedJulianDayOrNull('0000-00-00')─┐
+│                                    ᴺᵁᴸᴸ │
+└─────────────────────────────────────────┘
 ```
 
 <div id="toMonday">
@@ -4179,7 +4179,7 @@ Introduit dans : v1.1.0
 Arrondit à l&#39;inférieur une date ou une date avec heure au lundi de la même semaine. Renvoie la date.
 
 <Note>
-  Le type de retour peut être configuré avec le paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Le type de retour peut être configuré avec le paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Syntaxe**
@@ -4393,9 +4393,9 @@ SELECT toRelativeDayNum(toDate('2023-04-01')) - toRelativeDayNum(toDate('2023-01
 ```
 
 ```response title=Response
-┌─minus(toRela⋯3-01-01')))─┐
-│                       90 │
-└──────────────────────────┘
+┌─minus(toRelativeDayNum(toDate('2023-04-01')), toRelativeDayNum(toDate('2023-01-01')))─┐
+│                                                                                    90 │
+└───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toRelativeHourNum">
@@ -4659,9 +4659,9 @@ SELECT toRelativeYearNum('2010-10-01'::DateTime) - toRelativeYearNum('2000-01-01
 ```
 
 ```response title=Response
-┌─minus(toRela⋯ateTime')))─┐
-│                       10 │
-└──────────────────────────┘
+┌─minus(toRelativeYearNum(CAST('2010-10-01', 'DateTime')), toRelativeYearNum(CAST('2000-01-01', 'DateTime')))─┐
+│                                                                                                          10 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toSecond">
@@ -4711,7 +4711,7 @@ Introduit dans : v1.1.0
 Arrondit à l’inférieur une date et heure au début de la journée.
 
 <Note>
-  Le type de retour peut être configuré en définissant [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Le type de retour peut être configuré en définissant [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Syntaxe**
@@ -4751,7 +4751,7 @@ Introduit dans : v1.1.0
 Arrondit à l&#39;inférieur la date avec heure au début de l&#39;intervalle de quinze minutes.
 
 <Note>
-  Le type de retour peut être configuré en définissant [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Le type de retour peut être configuré en définissant [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Syntaxe**
@@ -4794,10 +4794,10 @@ toStartOfFifteenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:15:00
 
 Introduit dans : v22.6.0
 
-Arrondit à l&#39;inférieur une date et heure au début de l&#39;intervalle de cinq minutes le plus proche.
+Arrondit à l&#39;inférieur une date avec heure au début de l&#39;intervalle de cinq minutes le plus proche.
 
 <Note>
-  Le type de retour peut être configuré à l&#39;aide du paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Le type de retour peut être configuré à l&#39;aide du paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Syntaxe**
@@ -4810,11 +4810,11 @@ toStartOfFiveMinutes(datetime)
 
 **Arguments**
 
-* `datetime` — Une date et heure à arrondir. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+* `datetime` — Une date avec heure à arrondir. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 
 **Valeur renvoyée**
 
-Renvoie la date et l&#39;heure arrondies au début de l&#39;intervalle de cinq minutes le plus proche. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+Renvoie la date avec heure arrondies au début de l&#39;intervalle de cinq minutes le plus proche. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 
 **Exemples**
 
@@ -4842,10 +4842,10 @@ toStartOfFiveMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:20:00
 
 Introduit dans : v1.1.0
 
-Arrondit à l’inférieur une date et heure au début de l’heure.
+Arrondit à l’inférieur une date avec heure au début de l’heure.
 
 <Note>
-  Le type de retour peut être configuré en définissant [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Le type de retour peut être configuré en définissant [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Syntaxe**
@@ -4856,11 +4856,11 @@ toStartOfHour(datetime)
 
 **Arguments**
 
-* `datetime` — Une date et heure à arrondir. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+* `datetime` — Une date avec heure à arrondir. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 
 **Valeur renvoyée**
 
-Renvoie la date et heure arrondie à l’inférieur au début de l’heure. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+Renvoie la date avec heure arrondie à l’inférieur au début de l’heure. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 
 **Exemples**
 
@@ -4872,9 +4872,9 @@ SELECT
 ```
 
 ```response title=Response
-┌─────────────────res─┬─toTypeName(res)─┐
-│ 2023-04-21 10:00:00 │ DateTime        │
-└─────────────────────┴─────────────────┘
+┌─toStartOfHour(toDateTime('2023-04-21 10:20:30'))─┐
+│                              2023-04-21 10:00:00 │
+└──────────────────────────────────────────────────┘
 ```
 
 <div id="toStartOfISOYear">
@@ -4886,7 +4886,7 @@ Introduite dans : v1.1.0
 Arrondit à l’inférieur une date ou une date avec heure au premier jour de l’année ISO, qui peut différer de l’année civile. Voir [ISO week date](https://en.wikipedia.org/wiki/ISO_week_date).
 
 <Note>
-  Le type de retour peut être configuré via le paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Le type de retour peut être configuré via le paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Syntaxe**
@@ -4981,9 +4981,9 @@ SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
 ```
 
 ```response title=Response
-┌─toStartOfInt⋯alMonth(1))─┐
-│               2023-01-01 │
-└──────────────────────────┘
+┌─toStartOfInterval(toDateTime('2023-01-15 14:30:00'), toIntervalMonth(1))─┐
+│                                                               2023-01-01 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Utilisation du point d’origine**
@@ -4993,9 +4993,9 @@ SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, t
 ```
 
 ```response title=Response
-┌─toStartOfInt⋯14:35:30'))─┐
-│      2023-01-01 14:44:30 │
-└──────────────────────────┘
+┌─toStartOfInterval(toDateTime('2023-01-01 14:45:00'), toIntervalMinute(1), toDateTime('2023-01-01 14:35:30'))─┐
+│                                                                                          2023-01-01 14:44:30 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toStartOfMicrosecond">
@@ -5004,7 +5004,7 @@ SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, t
 
 Introduit dans : v22.6.0
 
-Arrondit à l&#39;inférieur une date et heure au début des microsecondes.
+Arrondit à l&#39;inférieur une date avec heure au début des microsecondes.
 
 **Syntaxe**
 
@@ -5045,7 +5045,7 @@ SELECT toStartOfMicrosecond(dt64, 'Asia/Istanbul');
 
 ```response title=Response
 ┌─toStartOfMicrosecond(dt64, 'Asia/Istanbul')─┐
-│               2020-01-01 12:20:30.999999000 │
+│               2020-01-01 13:20:30.999999000 │
 └─────────────────────────────────────────────┘
 ```
 
@@ -5096,7 +5096,7 @@ SELECT toStartOfMillisecond(dt64, 'Asia/Istanbul');
 
 ```response title=Response
 ┌─toStartOfMillisecond(dt64, 'Asia/Istanbul')─┐
-│               2020-01-01 12:20:30.999000000 │
+│               2020-01-01 13:20:30.999000000 │
 └─────────────────────────────────────────────┘
 ```
 
@@ -5109,7 +5109,7 @@ Introduit dans : v1.1.0
 Arrondit à l’inférieur une date avec heure au début de la minute.
 
 <Note>
-  Le type de retour peut être configuré via le paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Le type de retour peut être configuré via le paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Syntaxe**
@@ -5153,7 +5153,7 @@ Introduit dans : v1.1.0
 Arrondit à l’inférieur une date ou une date avec heure au premier jour du mois.
 
 <Note>
-  Le type de retour peut être configuré avec le paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Le type de retour peut être configuré avec le paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Syntaxe**
@@ -5190,7 +5190,7 @@ SELECT toStartOfMonth(toDateTime('2023-04-21 10:20:30'))
 
 Introduit dans : v22.6.0
 
-Arrondit à l’inférieur une date et heure à la nanoseconde.
+Arrondit à l’inférieur une date avec heure à la nanoseconde.
 
 **Syntaxe**
 
@@ -5201,7 +5201,7 @@ toStartOfNanosecond(datetime[, timezone])
 **Arguments**
 
 * `datetime` — Date et heure. [`DateTime64`](/fr/reference/data-types/datetime64)
-* `timezone` — Facultatif. Fuseau horaire de la valeur de retour. S’il n’est pas spécifié, la fonction utilise celui du paramètre `value`. [`String`](/fr/reference/data-types/string)
+* `timezone` — Facultatif. fuseau horaire de la valeur renvoyée. S’il n’est pas spécifié, la fonction utilise celui du paramètre `value`. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -5231,7 +5231,7 @@ SELECT toStartOfNanosecond(dt64, 'Asia/Istanbul');
 
 ```response title=Response
 ┌─toStartOfNanosecond(dt64, 'Asia/Istanbul')─┐
-│              2020-01-01 12:20:30.999999999 │
+│              2020-01-01 13:20:30.999999999 │
 └────────────────────────────────────────────┘
 ```
 
@@ -5244,7 +5244,7 @@ Introduit dans : v1.1.0
 Arrondit à l’inférieur une date ou une date avec heure au premier jour du trimestre. Le premier jour du trimestre est le 1er janvier, le 1er avril, le 1er juillet ou le 1er octobre.
 
 <Note>
-  Le type de retour peut être configuré via le paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Le type de retour peut être configuré via le paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Syntaxe**
@@ -5335,7 +5335,7 @@ Introduit dans : v20.1.0
 Arrondit une date avec heure à l’inférieur jusqu’au début de l’intervalle de dix minutes le plus proche.
 
 <Note>
-  Le type de retour peut être configuré en définissant [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Le type de retour peut être configuré en définissant [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Syntaxe**
@@ -5381,7 +5381,7 @@ Introduit dans : v20.1.0
 Ramène une date ou une date avec heure au dimanche ou au lundi précédent le plus proche.
 
 <Note>
-  Le type de retour peut être configuré en définissant [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Le type de retour peut être configuré en définissant [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Syntaxe**
@@ -5415,11 +5415,11 @@ SELECT
 
 ```response title=Response
 Row 1:
-    ──────
-    toStartOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-17
-    toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-17
-    toStartOfWeek(toDate('2023-04-24')):                   2023-04-24
-    toStartOfWeek(toDate('2023-04-24'), 1):                2023-04-24
+──────
+toStartOfWeek(toDateTime('2023-04-21 10:20:30')):    2023-04-16
+toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1): 2023-04-17
+toStartOfWeek(toDate('2023-04-24')):                 2023-04-23
+toStartOfWeek(toDate('2023-04-24'), 1):              2023-04-24
 ```
 
 <div id="toStartOfYear">
@@ -5431,7 +5431,7 @@ Introduit dans : v1.1.0
 Arrondit à l’inférieur une date ou une date avec heure au premier jour de l’année. Renvoie la date sous forme d’objet `Date`.
 
 <Note>
-  Le type de retour peut être configuré via le paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  Le type de retour peut être configuré via le paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Syntaxe**
@@ -5466,33 +5466,41 @@ SELECT toStartOfYear(toDateTime('2023-04-21 10:20:30'))
   ## toTimeWithFixedDate
 </div>
 
-Introduit dans : v1.1.0
+Introduite dans : v25.5.0
 
-Extrait la composante horaire d&#39;une date ou d&#39;une date avec heure.
+Extrait la composante heure d&#39;une date avec heure.
 Le résultat renvoyé est un décalage par rapport à un instant fixe, actuellement `1970-01-02`,
-mais l&#39;instant exact est un détail d&#39;implémentation susceptible d&#39;évoluer à l&#39;avenir.
+mais cet instant précis est un détail d&#39;implémentation susceptible de changer à l&#39;avenir.
 
-`toTime` ne doit donc pas être utilisé seul.
-La fonction sert principalement à calculer la différence horaire entre deux dates ou deux dates avec heure, par exemple `toTime(dt1) - toTime(dt2)`.
+`toTimeWithFixedDate` ne doit donc pas être utilisée seule.
+La fonction sert principalement à calculer la différence de temps entre deux dates avec heure, par exemple `toTimeWithFixedDate(dt1) - toTimeWithFixedDate(dt2)`.
+
+Il s&#39;agit de la fonction legacy `toTime`, renommée dans la v25.5, car le nom `toTime` est désormais utilisé par
+[`toTime`](/fr/reference/functions/regular-functions/type-conversion-functions#toTime), qui convertit des valeurs vers le type de données
+[`Time`](/fr/reference/data-types/time).
+Elle reste accessible sous son ancien nom `toTime` lorsque le paramètre
+[`use_legacy_to_time`](/fr/reference/settings/session-settings#use_legacy_to_time) est activé (sa valeur par défaut est `0` depuis la v26.7, mais était `1` de la v25.6 à la v26.6).
+
+Si l&#39;argument `datetime` comporte des composantes inférieures à la seconde, elles sont supprimées de la valeur `DateTime` renvoyée, dont la précision est à la seconde.
 
 **Syntaxe**
 
 ```sql
-toTimeWithFixedDate(date[, timezone])
+toTimeWithFixedDate(datetime[, timezone])
 ```
 
 **Arguments**
 
-* `date` — Date à convertir en heure. [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+* `datetime` — Date et heure à convertir en heure. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 * `timezone` — Facultatif. Fuseau horaire de la valeur renvoyée. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
-Renvoie la composante heure d&#39;une date ou d&#39;une date avec heure, sous la forme d&#39;un décalage par rapport à un point fixe dans le temps (actuellement 1970-01-02). [`DateTime`](/fr/reference/data-types/datetime)
+Renvoie la composante horaire d’une date et heure sous la forme d’un décalage par rapport à un point fixe dans le temps (actuellement fixé au 1970-01-02). [`DateTime`](/fr/reference/data-types/datetime)
 
 **Exemples**
 
-**Calculer l&#39;écart horaire entre deux dates**
+**Calculer l’écart horaire entre deux dates**
 
 ```sql title=Query
 SELECT toTimeWithFixedDate('2025-06-15 12:00:00'::DateTime) - toTimeWithFixedDate('2024-05-10 11:00:00'::DateTime) AS result, toTypeName(result)
@@ -5502,6 +5510,31 @@ SELECT toTimeWithFixedDate('2025-06-15 12:00:00'::DateTime) - toTimeWithFixedDat
 ┌─result─┬─toTypeName(result)─┐
 │   3600 │ Int32              │
 └────────┴────────────────────┘
+```
+
+**Les fractions de seconde sont supprimées**
+
+```sql title=Query
+SELECT toTimeWithFixedDate(toDateTime64('1970-12-10 01:20:30.3000', 3)) AS result, toTypeName(result)
+```
+
+```response title=Response
+┌──────────────result─┬─toTypeName(result)─┐
+│ 1970-01-02 01:20:30 │ DateTime           │
+└─────────────────────┴────────────────────┘
+```
+
+**Même fonction appelée sous son nom legacy**
+
+```sql title=Query
+SET use_legacy_to_time = 1;
+SELECT toTime(toDateTime64('1970-12-10 01:20:30.3000', 3)) AS result, toTypeName(result)
+```
+
+```response title=Response
+┌──────────────result─┬─toTypeName(result)─┐
+│ 1970-01-02 01:20:30 │ DateTime           │
+└─────────────────────┴────────────────────┘
 ```
 
 <div id="toTimezone">
@@ -5687,7 +5720,7 @@ Pour les valeurs de mode correspondant à &quot;contient le 1er janvier&quot;, l
 Le nombre de jours de la nouvelle année contenus dans la semaine n’a pas d’importance, même s’il n’y en a qu’un seul.
 Autrement dit, si la dernière semaine de décembre contient le 1er janvier de l’année suivante, elle sera la semaine 1 de l’année suivante.
 
-Le premier argument peut également être spécifié sous forme de [`String`](/fr/reference/data-types/string) dans un format pris en charge par [`parseDateTime64BestEffort()`](/fr/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). La prise en charge des arguments de type chaîne n’existe que pour des raisons de compatibilité avec MySQL, requise par certains outils tiers. Comme la prise en charge des arguments de type chaîne pourrait à l’avenir dépendre de nouveaux paramètres de compatibilité MySQL, et que l’analyse de chaînes est généralement lente, il est recommandé de ne pas l’utiliser.
+Le premier argument peut également être spécifié sous forme de [`String`](/fr/reference/data-types/string) dans un format pris en charge par [`parseDateTime64BestEffort`](/fr/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). La prise en charge des arguments de type chaîne n’existe que pour des raisons de compatibilité avec MySQL, requise par certains outils tiers. Comme la prise en charge des arguments de type chaîne pourrait à l’avenir dépendre de nouveaux paramètres de compatibilité MySQL, et que l’analyse de chaînes est généralement lente, il est recommandé de ne pas l’utiliser.
 
 **Syntaxe**
 
@@ -5756,7 +5789,7 @@ SELECT toYYYYMM(now(), 'US/Eastern')
 
 ```response title=Response
 ┌─toYYYYMM(now(), 'US/Eastern')─┐
-│                        202303 │
+│                        202608 │
 └───────────────────────────────┘
 ```
 
@@ -5776,7 +5809,7 @@ toYYYYMMDD(datetime[, timezone])
 
 **Arguments**
 
-* `datetime` — Une date ou une date avec composante horaire à convertir. [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+* `datetime` — Une date ou une date avec heure à convertir. [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 * `timezone` — Facultatif. Fuseau horaire pour la conversion. S&#39;il est indiqué, le fuseau horaire doit être une constante de chaîne de caractères. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
@@ -5785,16 +5818,16 @@ Renvoie un nombre `UInt32` contenant l&#39;année, le mois et le jour (YYYY * 10
 
 **Exemples**
 
-**Convertir la date actuelle au format YYYYMMDD**
+**Convertir une date au format YYYYMMDD dans un autre fuseau horaire**
 
 ```sql title=Query
-SELECT toYYYYMMDD(now(), 'US/Eastern')
+SELECT toYYYYMMDD(toDateTime('2026-01-02 03:04:05', 'UTC'), 'US/Eastern')
 ```
 
 ```response title=Response
-┌─toYYYYMMDD(now(), 'US/Eastern')─┐
-│                        20230302 │
-└─────────────────────────────────┘
+┌─toYYYYMMDD(toDateTime('2026-01-02 03:04:05', 'UTC'), 'US/Eastern')─┐
+│                                                           20260101 │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toYYYYMMDDhhmmss">
@@ -5823,16 +5856,16 @@ Renvoie un nombre `UInt64` contenant l’année, le mois, le jour, l’heure, la
 
 **Exemples**
 
-**Convertir la date et l’heure actuelles au format YYYYMMDDhhmmss**
+**Convertir une date et une heure au format YYYYMMDDhhmmss**
 
 ```sql title=Query
-SELECT toYYYYMMDDhhmmss(now(), 'US/Eastern')
+SELECT toYYYYMMDDhhmmss(toDateTime('2023-03-02 16:22:09', 'UTC'), 'US/Eastern')
 ```
 
 ```response title=Response
-┌─toYYYYMMDDhhmmss(now(), 'US/Eastern')─┐
-│                        20230302112209 │
-└───────────────────────────────────────┘
+┌─toYYYYMMDDhhmmss(toDateTime('2023-03-02 16:22:09', 'UTC'), 'US/Eastern')─┐
+│                                                           20230302112209 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toYear">
@@ -5869,7 +5902,7 @@ SELECT toYear(toDateTime('2023-04-21 10:20:30'))
 
 ```response title=Response
 ┌─toYear(toDateTime('2023-04-21 10:20:30'))─┐
-│                                     2023  │
+│                                      2023 │
 └───────────────────────────────────────────┘
 ```
 
@@ -5919,7 +5952,7 @@ L’argument mode fonctionne comme celui de [`toWeek()`](/fr/reference/functions
 
 Avertissement : le numéro de semaine renvoyé par `toYearWeek()` peut être différent de celui renvoyé par `toWeek()`. `toWeek()` renvoie toujours le numéro de semaine dans le contexte de l’année donnée, et si `toWeek()` renvoie `0`, `toYearWeek()` renvoie la valeur correspondant à la dernière semaine de l’année précédente. Voir `prev_yearWeek` dans l’exemple ci-dessous.
 
-Le premier argument peut aussi être spécifié sous forme de [`String`](/fr/reference/data-types/string), dans un format pris en charge par [`parseDateTime64BestEffort()`](/fr/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). La prise en charge des arguments de type chaîne n’existe que pour des raisons de compatibilité avec MySQL, requise par certains outils tiers. Comme cette prise en charge pourrait à l’avenir dépendre de nouveaux paramètres de compatibilité MySQL et que l’analyse de chaînes est généralement lente, il est recommandé de ne pas l’utiliser.
+Le premier argument peut aussi être spécifié sous forme de [`String`](/fr/reference/data-types/string), dans un format pris en charge par [`parseDateTime64BestEffort`](/fr/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). La prise en charge des arguments de type chaîne n’existe que pour des raisons de compatibilité avec MySQL, requise par certains outils tiers. Comme cette prise en charge pourrait à l’avenir dépendre de nouveaux paramètres de compatibilité MySQL et que l’analyse de chaînes est généralement lente, il est recommandé de ne pas l’utiliser.
 
 **Syntaxe**
 
@@ -5992,7 +6025,7 @@ SELECT today() AS today, curdate() AS curdate, current_date() AS current_date FO
 ┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
 ┃      today ┃    curdate ┃ current_date ┃
 ┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ 2025-03-03 │ 2025-03-03 │   2025-03-03 │
+│ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
 └────────────┴────────────┴──────────────┘
 ```
 
@@ -6003,10 +6036,8 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 ```
 
 ```response title=Response
-┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
-┃      TODAY ┃    CURDATE ┃ CURRENT_DATE ┃
-┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ 2025-03-04 │ 2025-03-04 │   2025-03-04 │
+┌──────TODAY─┬────CURDATE─┬─CURRENT_DATE─┐
+│ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
 └────────────┴────────────┴──────────────┘
 ```
 
@@ -6047,10 +6078,10 @@ SELECT today() - 1;
 
 ```response title=Response
 ┌─yesterday()─┐
-│  2025-06-09 │
+│  2026-08-01 │
 └─────────────┘
 ┌─minus(today(), 1)─┐
-│        2025-06-09 │
+│        2026-08-01 │
 └───────────────────┘
 ```
 

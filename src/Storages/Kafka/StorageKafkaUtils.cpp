@@ -98,6 +98,10 @@ namespace ErrorCodes
 }
 
 
+/// An absolute upper bound on `kafka_num_consumers`, enforced regardless of `kafka_disable_num_consumers_limit`.
+/// A single consumer can read any number of partitions, so no realistic setup ever needs this many.
+static constexpr UInt64 MAX_KAFKA_NUM_CONSUMERS = 10000;
+
 void registerStorageKafka(StorageFactory & factory);
 void registerStorageKafka(StorageFactory & factory)
 {
@@ -219,6 +223,18 @@ void registerStorageKafka(StorageFactory & factory)
         if (num_consumers < 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of consumers can not be lower than 1");
+        }
+        /// `kafka_disable_num_consumers_limit` only lifts the limit derived from the CPU count, so that a large
+        /// machine can use more consumers. It must not let an absurd value through: the storage allocates one
+        /// consumer slot and one scheduling task per consumer, so a huge value ends up in a failed allocation
+        /// instead of a sensible error message.
+        if (num_consumers > MAX_KAFKA_NUM_CONSUMERS)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The number of consumers can not be bigger than {}, got {}",
+                MAX_KAFKA_NUM_CONSUMERS,
+                num_consumers);
         }
 
         if ((*kafka_settings)[KafkaSetting::kafka_max_block_size].changed && (*kafka_settings)[KafkaSetting::kafka_max_block_size].value < 1)
@@ -850,6 +866,12 @@ As the new engine is experimental, it is not production ready yet. There are few
 - Rapidly dropping and recreating the table or specifying the same ClickHouse Keeper path to different engines might cause issues. As best practice you can use the `{uuid}` in `kafka_keeper_path` to avoid clashing paths.
 - To make repeatable reads, messages cannot be consumed from multiple partitions on a single thread. On the other hand, the Kafka consumers have to be polled regularly to keep them alive. As a result of these two objectives, we decided to only allow creating multiple consumers if `kafka_thread_per_consumer` is enabled, otherwise it is too complicated to avoid issues regarding polling consumers regularly.
 - When using partition affinity, all shards must use the same `kafka_shard_count`; otherwise some partitions may be consumed by multiple shards or remain unconsumed.
+
+## Data durability {#data-durability}
+
+The `Kafka` engine can silently lose already-consumed rows if the OS page cache is discarded before the inserted data is written to disk. After a batch is pushed to the dependent materialized views, the consumed offset is committed (to the broker, or to ClickHouse Keeper when `kafka_keeper_path` is set), which lets the consumer resume past those messages. The inserted rows, however, are only durable once the target part is fsynced, which does not happen synchronously by default (`fsync_after_insert = 0`). If the page cache is lost after the offset is committed but before the target part is fsynced, the consumer resumes past those messages on restart, so the rows are lost with no error and `count()` is simply smaller. A plain process kill does not expose this, because the kernel keeps the page cache and eventually writes it back. A loss of the page cache does expose it; examples are a device-level power loss and an unclean host or kernel reset.
+
+For the recommended materialized-view consumption path (the offset is committed only after the whole insert pipeline finishes), setting `fsync_after_insert = 1` (and `fsync_part_directory = 1`) on the target `MergeTree` tables makes the inserted parts durable before the offset is committed, which narrows this window substantially. The setting must be enabled on every `MergeTree` table the batch is inserted into, including cascaded materialized-view targets; any such table left at the default can still lose its part. Asynchronous intermediaries do not gain durability from this setting alone: for example a `Distributed` target inserts in the background when `distributed_foreground_insert = 0`, which is the default outside ClickHouse Cloud, so it needs its own durability settings or synchronous insertion. The mitigation also does not apply where the offset is committed before the insert has finished. That is the case with a direct `INSERT ... SELECT ... FROM <kafka_table>` and `kafka_commit_on_select = 1`, and on the broker-backed engine with `kafka_commit_every_batch = 1`; the latter setting is ignored when `kafka_keeper_path` is set, so it cannot cause an intermediate commit there.
 
 **See Also**
 

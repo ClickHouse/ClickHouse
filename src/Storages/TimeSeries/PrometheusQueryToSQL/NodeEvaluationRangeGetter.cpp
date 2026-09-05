@@ -69,7 +69,9 @@ NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const Prome
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "end_time is not specified");
         if (*settings_.start_time > *settings_.end_time)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "start_time must not be greater than end_time");
-        if (*settings_.start_time < *settings_.end_time)
+        const bool has_range = *settings_.start_time < *settings_.end_time;
+        const bool is_query_range = settings_.mode == PrometheusQueryEvaluationMode::QUERY_RANGE;
+        if (has_range || is_query_range)
         {
             if (!settings_.step)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "step is not specified");
@@ -78,8 +80,11 @@ NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const Prome
         }
         range.start_time = *settings_.start_time;
         range.end_time = *settings_.end_time;
-        range.step = (*settings_.start_time < *settings_.end_time) ? *settings_.step : DurationType{0};
+        range.step = (has_range || is_query_range) ? *settings_.step : DurationType{0};
     }
+
+    query_start_time = range.start_time;
+    query_end_time = range.end_time;
 
     visitNode(root, range);
     setWindows();
@@ -102,10 +107,23 @@ void NodeEvaluationRangeGetter::visitChildren(const Node * node, const NodeEvalu
             const auto * offset_node = static_cast<const PrometheusQueryTree::Offset *>(node);
             const auto * expression = offset_node->getExpression();
             NodeEvaluationRange expression_range = range;
-            if (auto timestamp = offset_node->at_timestamp)
+            switch (offset_node->at_modifier)
             {
-                expression_range.start_time = *timestamp;
-                expression_range.end_time = *timestamp;
+                case PrometheusQueryTree::Offset::AtModifier::None:
+                    break;
+                case PrometheusQueryTree::Offset::AtModifier::Timestamp:
+                    chassert(offset_node->at_timestamp);
+                    expression_range.start_time = *offset_node->at_timestamp;
+                    expression_range.end_time = *offset_node->at_timestamp;
+                    break;
+                case PrometheusQueryTree::Offset::AtModifier::Start:
+                    expression_range.start_time = query_start_time;
+                    expression_range.end_time = query_start_time;
+                    break;
+                case PrometheusQueryTree::Offset::AtModifier::End:
+                    expression_range.start_time = query_end_time;
+                    expression_range.end_time = query_end_time;
+                    break;
             }
             if (auto offset_value = offset_node->offset_value)
             {

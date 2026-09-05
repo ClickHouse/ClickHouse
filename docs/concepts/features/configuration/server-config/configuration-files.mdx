@@ -17,7 +17,7 @@ The ClickHouse server can be configured with configuration files in XML or YAML 
 In most installation types, the ClickHouse server runs with `/etc/clickhouse-server/config.xml` as the default configuration file, but it is also possible to specify the location of the configuration file manually at server startup using command line option `--config-file` or `-C`.
 Additional configuration files may be placed into directory `config.d/` relative to the main configuration file, for example into directory `/etc/clickhouse-server/config.d/`.
 Files in this directory and the main configuration are merged in a preprocessing step before the configuration is applied in ClickHouse server.
-Configuration files are merged in alphabetical order.
+Configuration fragments are merged in lexicographical order by their full paths. For files in the standard `config.d/` directory, this is equivalent to ordering by file name. The legacy `conf.d/` directory is also merged; because `conf.d` sorts before `config.d`, all its fragments are processed first when both directories exist.
 To simplify updates and improve modularization, it is a best practice to keep the default `config.xml` file unmodified and place additional customization into `config.d/`.
 The ClickHouse keeper configuration lives in `/etc/clickhouse-keeper/keeper_config.xml`.
 Similarly, additional configuration files for Keeper need to be placed in `/etc/clickhouse-keeper/keeper_config.d/`.
@@ -318,6 +318,7 @@ The `config.xml` file can specify a separate config with user settings, profiles
 User configuration can be split into separate files similar to `config.xml` and `config.d/`.
 The directory name is defined as `users_config` setting without `.xml` postfix concatenated with `.d`.
 The directory `users.d` is used by default, as `users_config` defaults to `users.xml`.
+User configuration fragments are merged in lexicographical order by their full paths. For files in the standard `users.d/` directory, this is equivalent to ordering by file name. The legacy `conf.d/` directory is also merged; because `conf.d` sorts before `users.d`, all its fragments are processed first when both directories exist.
 
 Note that configuration files are first [merged](#merging) taking into account settings, and includes are processed after that.
 

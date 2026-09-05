@@ -15,13 +15,15 @@ AWS의 ClickHouse BYOC는 VPC Peering과 AWS PrivateLink를 포함해 2가지 �
   ## 사전 요구 사항
 </div>
 
-VPC 피어링과 Privatelink에 공통으로 필요한 단계입니다.
+VPC 피어링과 PrivateLink에 공통으로 필요한 단계입니다.
 
 <div id="step-enable-private-load-balancer-for-clickhouse-byoc">
   ### ClickHouse BYOC용 프라이빗 로드 밸런서 활성화
 </div>
 
-Private Load Balancer를 활성화하려면 ClickHouse 지원팀에 문의하십시오.
+ClickHouse Cloud 콘솔에서 BYOC 인프라의 **프라이빗 로드 밸런서**를 활성화하십시오.
+
+<Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC 프라이빗 로드 밸런서 활성화" border />
 
 <div id="aws-vpc-peering">
   ## VPC 피어링 설정
@@ -84,8 +86,8 @@ ClickHouse BYOC의 VPC 피어링을 생성하거나 삭제하려면 다음 단�
 
 ClickHouse에 비공개로 액세스하려면, 사용자 피어링 VPC에서 안전하게 연결할 수 있도록 프라이빗 로드 밸런서와 엔드포인트가 프로비저닝됩니다. 프라이빗 엔드포인트는 퍼블릭 엔드포인트 형식을 따르며 `-private` 접미사가 붙습니다. 예시:
 
-* **Public endpoint**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
-* **Private endpoint**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
+* **Public endpoint**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+* **Private endpoint**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
 
 선택 사항으로, 피어링이 정상적으로 작동하는 것을 확인한 후 ClickHouse BYOC의 퍼블릭 로드 밸런서 제거를 요청할 수 있습니다.
 
@@ -93,95 +95,98 @@ ClickHouse에 비공개로 액세스하려면, 사용자 피어링 VPC에서 안
   ## PrivateLink 설정
 </div>
 
-AWS PrivateLink는 VPC 피어링이나 인터넷 게이트웨이 없이도 ClickHouse BYOC 서비스에 안전한 비공개 연결을 제공합니다. 트래픽은 전적으로 AWS 네트워크 내부에서만 흐르며, 퍼블릭 인터넷을 통과하지 않습니다.
-
-<Steps>
-  <Step title="PrivateLink Setup 요청" id="step-1-request-privatelink-setup">
-    BYOC 배포에 대한 PrivateLink 설정을 요청하려면 [ClickHouse 지원팀](https://clickhouse.com/cloud/bring-your-own-cloud)에 문의하십시오. 이 단계에서는 별도의 정보가 필요하지 않으며, PrivateLink 연결을 설정하려고 한다는 점만 전달하면 됩니다.
-
-    ClickHouse 지원팀은 **프라이빗 로드 밸런서**와 **PrivateLink service 엔드포인트**를 포함한 필수 인프라 구성 요소를 활성화합니다.
-  </Step>
-
-  <Step title="VPC에 엔드포인트 생성" id="step-2-create-endpoint">
-    ClickHouse 지원팀에서 PrivateLink를 활성화한 후에는 ClickHouse PrivateLink 서비스에 연결할 수 있도록 클라이언트 애플리케이션 VPC에 VPC 엔드포인트를 생성해야 합니다.
-
-    1. **Endpoint Service Name 확인**:
-       * ClickHouse 지원팀이 Endpoint Service name을 제공합니다
-       * AWS VPC Console의 &quot;Endpoint Services&quot;에서도 확인할 수 있습니다(서비스 이름으로 필터링하거나 ClickHouse 서비스를 찾으십시오)
-
-    <Image img="/images/cloud/reference/byoc-privatelink-1.webp" size="lg" alt="BYOC PrivateLink 서비스 엔드포인트" border />
-
-    2. **VPC Endpoint 생성**:
-       * AWS VPC Console → Endpoints → Create Endpoint로 이동합니다
-       * &quot;Find service by name&quot;을 선택하고 ClickHouse 지원팀이 제공한 Endpoint Service name을 입력합니다
-       * 사용할 VPC를 선택하고 subnet을 선택합니다(가용 영역당 1개 권장)
-       * **중요**: 엔드포인트에서 &quot;Private DNS names&quot;를 활성화하십시오. DNS 해석이 올바르게 작동하려면 필요합니다
-       * 엔드포인트에 사용할 보안 그룹을 선택하거나 새로 생성합니다
-       * &quot;Create Endpoint&quot;를 클릭합니다
-
-    <Warning>
-      **DNS 요구 사항**:
-
-      * VPC 엔드포인트를 생성할 때 &quot;Private DNS names&quot;를 활성화하십시오
-      * VPC에서 &quot;DNS Hostnames&quot;가 활성화되어 있는지 확인하십시오(VPC Settings → DNS resolution and DNS hostnames)
-
-      이 설정은 PrivateLink DNS가 올바르게 작동하는 데 필요합니다.
-    </Warning>
-
-    3. **엔드포인트 연결 승인**:
-       * 엔드포인트를 생성한 후에는 연결 요청을 승인해야 합니다
-       * VPC Console에서 &quot;Endpoint Connections&quot;로 이동합니다
-       * ClickHouse의 연결 요청을 찾아 &quot;Accept&quot;를 클릭하여 승인합니다
-
-    <Image img="/images/cloud/reference/byoc-privatelink-2.webp" size="lg" alt="BYOC PrivateLink 승인" border />
-  </Step>
-
-  <Step title="서비스 허용 목록에 Endpoint ID 추가" id="step-3-add-endpoint-id-allowlist">
-    VPC 엔드포인트가 생성되고 연결이 승인되면, PrivateLink를 통해 액세스하려는 각 ClickHouse 서비스의 허용 목록에 Endpoint ID를 추가해야 합니다.
-
-    1. **Endpoint ID 확인**:
-       * AWS VPC Console에서 Endpoints로 이동합니다
-       * 새로 생성한 엔드포인트를 선택합니다
-       * Endpoint ID를 복사합니다(`vpce-xxxxxxxxxxxxxxxxx` 형식)
-
-    2. **ClickHouse 지원팀에 문의**:
-       * Endpoint ID를 ClickHouse 지원팀에 전달합니다
-       * 이 엔드포인트에서 액세스를 허용할 ClickHouse 서비스를 지정합니다
-       * ClickHouse 지원팀이 서비스 허용 목록에 Endpoint ID를 추가합니다
-  </Step>
-
-  <Step title="PrivateLink를 통해 ClickHouse에 연결" id="step-4-connect-via-privatelink">
-    Endpoint ID가 허용 목록에 추가되면 PrivateLink 엔드포인트를 사용해 ClickHouse 서비스에 연결할 수 있습니다.
-
-    PrivateLink 엔드포인트 형식은 퍼블릭 엔드포인트와 비슷하지만 `vpce` 하위 도메인이 포함됩니다. 예시는 다음과 같습니다.
-
-    * **퍼블릭 엔드포인트**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
-    * **PrivateLink 엔드포인트**: `h5ju65kv87.vpce.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
-
-    VPC 내 DNS 해석은 `vpce` 하위 도메인 형식을 사용할 때 트래픽을 자동으로 PrivateLink 엔드포인트를 통해 라우팅합니다.
-  </Step>
-</Steps>
-
-<div id="privatelink-access-control">
-  ### PrivateLink 액세스 제어
-</div>
-
-PrivateLink를 통한 ClickHouse 서비스에 대한 액세스는 두 가지 수준에서 제어됩니다.
-
-1. **Istio Authorization Policy**: ClickHouse Cloud의 서비스 수준 권한 부여 정책
-2. **VPC Endpoint Security Group**: VPC 엔드포인트에 연결된 보안 그룹이 VPC 내에서 어떤 리소스가 해당 endpoint를 사용할 수 있는지 제어합니다
+AWS PrivateLink를 사용하면 VPC 피어링이나 인터넷 게이트웨이 없이 ClickHouse BYOC 서비스에 안전하게 비공개로 연결할 수 있습니다. 모든 트래픽은 AWS 네트워크 내에서만 흐르므로 공용 인터넷을 거치지 않습니다.
 
 <Note>
-  프라이빗 로드 밸런서의 &quot;Enforce inbound rules on PrivateLink traffic&quot; 기능은 비활성화되어 있으므로, 액세스는 Istio 권한 부여 정책과 VPC 엔드포인트의 보안 그룹으로만 제어됩니다.
+  **리전 간 연결.** ClickHouse 콘솔의 **Enable private link** 토글은 엔드포인트 서비스를 프로비저닝하며 **동일 리전**의 consumer만 지원합니다. AWS는 기본적으로 엔드포인트 서비스의 리전 간 액세스를 비활성화하며, ClickHouse 콘솔에서는 이를 관리하지 않습니다. 클라이언트가 다른 리전에 있는 경우 직접 활성화해야 합니다. 엔드포인트 서비스는 BYOC 계정에 있으므로 자체 AWS 콘솔에서 consumer 리전을 **Supported regions** 목록에 추가하십시오(아래 3단계 참조). ClickHouse는 이 값을 변경하거나 재설정하지 않습니다. AWS 리전 간 데이터 전송 요금이 적용됩니다.
 </Note>
 
-<div id="privatelink-dns">
-  ### PrivateLink DNS
-</div>
+<Steps>
+  <Step title="ClickHouse 콘솔에서 Private Link 활성화" id="step-1-enable-private-link">
+    <Note>
+      사전 요구 사항으로 **private load balancer**를 활성화해야 합니다.
+    </Note>
 
-BYOC 엔드포인트용 PrivateLink DNS(`*.vpce.{subdomain}` 포맷 사용)는 AWS PrivateLink에 기본 제공되는 &quot;Private DNS names&quot; 기능을 활용합니다. Route53 레코드는 필요하지 않으며, 다음 조건이 충족되면 DNS 해석이 자동으로 이루어집니다.
+    <Image img="/images/cloud/reference/byoc-privatelink.webp" size="md" alt="BYOC PrivateLink 활성화" border />
+  </Step>
 
-* VPC 엔드포인트에서 &quot;Private DNS names&quot;가 활성화되어 있음
-* VPC에서 &quot;DNS Hostnames&quot;가 활성화되어 있음
+  <Step title={<>endpoint <code>Service name</code> 확인하기</>} id="step-2-obtain-endpoint-service-name">
+    1. ClickHouse Cloud 콘솔에서 PrivateLink를 통해 연결할 서비스의 설정 페이지로 이동합니다.
+    2. &quot;Set up private endpoint&quot;를 클릭합니다.
+    3. 열리는 플라이아웃에서 `Service name` 값을 복사합니다. 이 값은 다음 단계에서 사용합니다. (PrivateLink를 활성화한 후 값이 생성되기까지 다소 시간이 걸릴 수 있습니다.)
+       <Image img="/images/cloud/security/aws-privatelink-pe-create.webp" size="md" alt="Private Endpoints" border />
+  </Step>
 
-따라서 `vpce` 하위 도메인을 사용하는 연결은 추가 DNS 구성 없이도 자동으로 PrivateLink 엔드포인트를 통해 라우팅됩니다.
+  <Step title="네트워크에 endpoint를 생성합니다" id="step-3-create-endpoint">
+    1. **사용자 AWS 콘솔**(즉, 클라이언트 애플리케이션이 있는 AWS 계정)을 엽니다 → VPC → Endpoints → Create endpoints.
+
+    2. &quot;Endpoint services that use NLBs and GWLBs&quot;를 선택하고 이전 단계에서 확인한 `Service name`을 사용합니다.
+
+    3. &quot;Verify service&quot;를 클릭합니다.
+       <Image img="/images/cloud/security/aws-privatelink-endpoint-settings.webp" size="md" alt="AWS PrivateLink 엔드포인트 설정" border />
+
+    4. (선택 사항) PrivateLink를 통해 리전 간 연결을 설정하려면 &quot;Cross region endpoint&quot; 확인란을 선택하고 서비스 리전을 지정합니다. 서비스 리전은 BYOC 인프라가 생성된 리전입니다. 그런 다음,
+       1. **BYOC AWS 콘솔**(즉, BYOC 인프라가 생성된 AWS 계정)을 엽니다 → VPC → Endpoint services → `clickhouse-cloud-infra-xxx` → Supported regions.
+       2. 클라이언트 애플리케이션이 실행 중인 리전을 지원 리전 목록에 추가합니다. 기본적으로 이 BYOC 인프라가 있는 리전만 지원됩니다. 여러 리전에서 연결하려는 경우 여러 리전을 추가할 수 있으며, ClickHouse는 이러한 값을 변경하거나 재설정하지 않습니다.
+          <Image img="/images/cloud/reference/byoc-privatelink-aws-cross-region.webp" size="md" alt="AWS PrivateLink 리전 간 엔드포인트 설정" border />
+
+    5. VPC와 서브넷을 선택합니다(가용 영역당 하나씩 권장).
+       <Image img="/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp" size="md" alt="VPC 및 서브넷 선택" border />
+
+    6. **중요**: 엔드포인트에서 &quot;Private DNS names&quot;를 활성화합니다. Private DNS가 정상적으로 작동하려면 반드시 필요합니다.
+       BYOC 엔드포인트용 Private DNS(`*.vpce.{subdomain}` 포맷 사용)는 AWS PrivateLink에 기본 제공되는 &quot;Private DNS names&quot; 기능을 활용합니다. Route53 레코드는 필요하지 않으며, 다음 조건을 충족하면 DNS 해석이 자동으로 수행됩니다.
+       * &quot;Private DNS names&quot;가 활성화되어 있고
+       * &quot;DNS Hostnames&quot;가 활성화되어 있는 경우
+
+         VPC Settings → DNS resolution 및 DNS hostnames에서 설정합니다.
+
+         이렇게 하면 별도의 DNS 구성 없이 `vpce` 하위 도메인을 사용하는 연결이 자동으로 PrivateLink 엔드포인트를 통해 라우팅됩니다.
+
+    7. (선택 사항) Security groups/Tags를 할당합니다.
+       <Note>
+         보안 그룹에서 포트 `443`, `8443`, `9440`이 허용되어 있는지 확인하십시오.
+       </Note>
+
+    8. &quot;Create endpoint&quot;를 클릭한 후 엔드포인트가 생성될 때까지 잠시 기다립니다.
+
+    9. 엔드포인트를 생성한 후 `Endpoint ID` 값을 복사합니다. 다음 단계에서 사용합니다.
+       <Image img="/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp" size="md" alt="VPC 엔드포인트 ID" border />
+  </Step>
+
+  <Step title="엔드포인트 연결을 승인합니다" id="step-4-approve-endpoint-connection">
+    1. **BYOC VPC 콘솔**을 다시 열고 → Endpoint services → `clickhouse-cloud-infra-xxx` → Endpoint connections로 이동합니다.
+    2. 자체 VPC에서 생성된 연결 요청을 찾아 &quot;Accept endpoint connection request&quot;를 클릭하여 승인합니다.
+       <Image img="/images/cloud/reference/byoc-privatelink-2.webp" size="md" alt="BYOC PrivateLink 승인" border />
+  </Step>
+
+  <Step title={<>ClickHouse 서비스 허용 목록에 <code>Endpoint ID</code> 추가</>} id="step-5-add-endpoint-id-to-services-allow-list">
+    1. ClickHouse Cloud 콘솔에서 PrivateLink를 통해 연결하려는 서비스의 설정 페이지로 이동합니다.
+    2. &quot;Set up private endpoint&quot;를 클릭합니다.
+    3. 열린 플라이아웃에서 마지막 단계에서 확인한 `Endpoint ID`와 선택 사항인 설명을 입력합니다.
+    4. &quot;Create endpoint&quot;를 클릭합니다.
+
+    <Note>
+      기존 PrivateLink 연결의 액세스를 허용하려면 기존 endpoint 드롭다운 메뉴를 사용하십시오.
+      드롭다운에는 동일한 인프라 내 서비스에 연결된 기존 PrivateLink 연결이 표시됩니다.
+    </Note>
+
+    <Image img="/images/cloud/security/aws-privatelink-pe-filters.webp" size="md" alt="Private Endpoint 필터" border />
+  </Step>
+
+  <Step title="PrivateLink를 통해 인스턴스에 액세스하기" id="step-6-connect-via-privatelink">
+    1. ClickHouse Cloud 콘솔에서 서비스의 설정 페이지로 이동합니다.
+    2. &quot;Set up private endpoint&quot;를 클릭합니다.
+    3. 열린 플라이아웃에서 `DNS name`을 복사합니다.
+
+       <Image img="/images/cloud/security/aws-privatelink-pe-dns-name.webp" size="md" alt="Private Endpoint DNS 이름" border />
+
+       PrivateLink를 통한 ClickHouse 서비스 액세스는 다음 두 수준에서 제어됩니다.
+
+       1. **Istio Authorization Policy**: ClickHouse가 BYOC 인프라 내에서 관리하는 서비스 수준의 권한 부여 정책
+       2. **VPC Endpoint Security Group**: VPC 엔드포인트에 연결된 보안 그룹으로, VPC 내에서 엔드포인트를 사용할 수 있는 리소스를 제어합니다.
+
+       <Note>
+         private load balancer의 &quot;PrivateLink 트래픽에 인바운드 규칙 적용&quot; 기능은 비활성화되어 있습니다. 따라서 액세스는 Istio 권한 부여 정책과 VPC 엔드포인트의 보안 그룹으로만 제어됩니다.
+       </Note>
+  </Step>
+</Steps>

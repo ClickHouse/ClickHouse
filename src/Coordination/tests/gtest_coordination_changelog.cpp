@@ -12,8 +12,8 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/MapConfiguration.h>
 
+#include <algorithm>
 #include <atomic>
-#include <barrier>
 #include <future>
 #include <thread>
 
@@ -49,6 +49,7 @@ namespace ProfileEvents
     extern const Event KeeperLogsReadAheadPlanEpochMismatches;
     extern const Event KeeperLogsEntryReadFromCommitReadAhead;
     extern const Event KeeperLogsEntryReadFromLatestCache;
+    extern const Event KeeperChangelogStartupReadEntries;
 }
 
 
@@ -649,6 +650,16 @@ TEST_P(CoordinationTestWithCompression, ChangelogTestWriteAtPreviousFile)
 
     auto e1 = getLogEntry("helloworld", 5555);
     changelog.write_at(7, e1);
+
+    /// writeAt must unlink superseded segments before the rewrite can be appended/acked (#112101).
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + this->extension));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + this->extension));
+    EXPECT_FALSE(fs::exists("./logs/changelog_11_15.bin" + this->extension));
+    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin" + this->extension));
+    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin" + this->extension));
+    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin" + this->extension));
+    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin" + this->extension));
+
     changelog.end_of_append_batch(0, 0);
     EXPECT_EQ(changelog.size(), 7);
     EXPECT_EQ(changelog.start_index(), 1);
@@ -656,15 +667,6 @@ TEST_P(CoordinationTestWithCompression, ChangelogTestWriteAtPreviousFile)
     EXPECT_EQ(changelog.last_entry()->get_term(), 5555);
 
     waitDurableLogs(changelog);
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + this->extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + this->extension));
-
-    EXPECT_FALSE(fs::exists("./logs/changelog_11_15.bin" + this->extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin" + this->extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin" + this->extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin" + this->extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin" + this->extension));
 
     DB::KeeperLogStore changelog_read(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
@@ -3062,7 +3064,11 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadExhaustedLatestCacheHandoff
         waitDurableLogs(writer);
     }
 
+    // Forced serial startup read: this test depends on the old behavior of fully populating
+    // latest_logs_cache, whereas the parallel path only seeds the last entry (see
+    // StartupReadCacheIndependence).
     DB::KeeperLogStore changelog(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
+    changelog.setForceSerialStartupReadForTesting(true);
     changelog.init(0, 0);
 
     const uint64_t latest_cache_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromLatestCache];
@@ -4056,7 +4062,11 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadIdleReaderEvictedAfterCacheHitCat
         waitDurableLogs(writer);
     }
 
+    // Forced serial startup read: this test depends on the old behavior of fully populating
+    // latest_logs_cache, whereas the parallel path only seeds the last entry (see
+    // StartupReadCacheIndependence).
     DB::KeeperLogStore changelog(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
+    changelog.setForceSerialStartupReadForTesting(true);
     changelog.init(0, 0);
 
     constexpr int32_t peer_id = 4;
@@ -4145,5 +4155,116 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadIdleReaderEvictedViaRefresh
     EXPECT_EQ(entry2->get_term(), 2u);
     EXPECT_TRUE(changelog.hasCommitReaderForTests());
 }
+
+// Tests: parallel startup read (log_startup_read_max_streams / log_startup_read_buffer_size).
+
+// A file that disappears between directory discovery and the actual read must abort startup with
+// an exception on every dispatch path, not be silently treated as empty/missing.
+TYPED_TEST(CoordinationChangelogTest, StartupReadOpenFailureAbortsStartup)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "compressed changelogs always dispatch to serial";
+
+    for (bool delete_last_file : {true, false})
+    {
+        SCOPED_TRACE(std::string("delete_last_file=") + (delete_last_file ? "true" : "false"));
+
+        ChangelogDirTest test("./logs");
+        this->setLogDirectory("./logs");
+
+        const DB::LogFileSettings settings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 10,
+        };
+
+        {
+            DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+            writer.readChangelogAndInitWriter(0, 0);
+            for (uint64_t i = 1; i <= 30; ++i)
+                writer.appendEntry(i, getLogEntry("entry_" + std::to_string(i), i));
+            writer.flush();
+        }
+
+        const std::vector<std::string> all_files{"./logs/changelog_1_10.bin", "./logs/changelog_11_20.bin", "./logs/changelog_21_30.bin"};
+        for (const auto & path : all_files)
+            ASSERT_TRUE(fs::exists(path)) << path;
+
+        const std::string & file_to_delete = delete_last_file ? all_files[2] : all_files[1];
+
+        /// Construct readers (directory discovery) before the file disappears.
+        DB::LogFileSettings serial_via_streams_settings = settings;
+        serial_via_streams_settings.startup_read_max_streams = 1;
+
+        DB::Changelog default_dispatch_reader(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        DB::Changelog force_serial_reader(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        force_serial_reader.setForceSerialStartupReadForTesting(true);
+        DB::Changelog streams_one_reader(
+            this->log, serial_via_streams_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+
+        fs::remove(file_to_delete);
+
+        EXPECT_THROW(default_dispatch_reader.readChangelogAndInitWriter(0, 0), DB::Exception);
+        EXPECT_THROW(force_serial_reader.readChangelogAndInitWriter(0, 0), DB::Exception);
+        EXPECT_THROW(streams_one_reader.readChangelogAndInitWriter(0, 0), DB::Exception);
+
+        for (const auto & path : all_files)
+            if (path != file_to_delete)
+                EXPECT_TRUE(fs::exists(path)) << path << " must survive a failed startup read";
+    }
+}
+
+
+// A stale out-of-scope compressed file must not force the serial fallback.
+TYPED_TEST(CoordinationChangelogTest, StartupReadOutOfScopeCompressionDoesNotForceSerial)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "test doesn't depend on the fixture's compression parameter; avoid running it twice";
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    /// Write compressed files, then continue uncompressed past them.
+    {
+        const DB::LogFileSettings compressed_settings{.force_sync = false, .compress_logs = true, .rotate_interval = 10};
+        DB::Changelog writer(this->log, compressed_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(0, 0);
+        for (uint64_t i = 1; i <= 20; ++i)
+            writer.appendEntry(i, getLogEntry("entry_" + std::to_string(i), i));
+        writer.flush();
+    }
+    ASSERT_TRUE(fs::exists("./logs/changelog_1_10.bin.zstd"));
+    ASSERT_TRUE(fs::exists("./logs/changelog_11_20.bin.zstd"));
+
+    const DB::LogFileSettings uncompressed_settings{.force_sync = false, .compress_logs = false, .rotate_interval = 10};
+    {
+        DB::Changelog writer(this->log, uncompressed_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(0, 0);
+        for (uint64_t i = 21; i <= 50; ++i)
+            writer.appendEntry(i, getLogEntry("entry_" + std::to_string(i), i));
+        writer.flush();
+    }
+    ASSERT_TRUE(fs::exists("./logs/changelog_21_30.bin"));
+    ASSERT_TRUE(fs::exists("./logs/changelog_31_40.bin"));
+    ASSERT_TRUE(fs::exists("./logs/changelog_41_50.bin"));
+
+    /// start_to_read_from = 26, so both compressed files are out of scope.
+    const uint64_t before = ProfileEvents::global_counters[ProfileEvents::KeeperChangelogStartupReadEntries];
+    DB::Changelog parallel_reader(this->log, uncompressed_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    parallel_reader.readChangelogAndInitWriter(25, 0);
+    EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::KeeperChangelogStartupReadEntries], before)
+        << "an out-of-scope compressed file must not force the serial fallback";
+
+    DB::Changelog reference(this->log, uncompressed_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    reference.setForceSerialStartupReadForTesting(true);
+    reference.readChangelogAndInitWriter(25, 0);
+
+    ASSERT_EQ(reference.size(), parallel_reader.size());
+    ASSERT_EQ(reference.getStartIndex(), parallel_reader.getStartIndex());
+    ASSERT_EQ(reference.getNextEntryIndex(), parallel_reader.getNextEntryIndex());
+    for (uint64_t i = reference.getStartIndex(); i < reference.getNextEntryIndex(); ++i)
+        EXPECT_EQ(reference.termAt(i), parallel_reader.termAt(i)) << "index " << i;
+}
+
 
 #endif

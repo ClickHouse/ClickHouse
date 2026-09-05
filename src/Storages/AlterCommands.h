@@ -15,6 +15,16 @@ class ASTAlterCommand;
 class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 
+/// Describes whether an ALTER requires rewriting existing parts.
+/// Non-empty `lazy_settings` means that the on-disk representation changes without an immediate
+/// mutation: old parts are converted on read and rewritten by later merges. Such conversions
+/// require additional safety checks for metadata persisted in existing parts.
+struct MutationStageDecision
+{
+    bool requires_mutation = false;
+    std::set<std::string_view> lazy_settings;
+};
+
 /// Operation from the ALTER query (except for manipulation with PART/PARTITION).
 /// Adding Nested columns is not expanded to add individual columns.
 struct AlterCommand
@@ -38,6 +48,7 @@ struct AlterCommand
         MODIFY_CONSTRAINT,
         ADD_PROJECTION,
         DROP_PROJECTION,
+        MODIFY_PROJECTION,
         ADD_STATISTICS,
         DROP_STATISTICS,
         MODIFY_STATISTICS,
@@ -174,13 +185,18 @@ struct AlterCommand
 
     /// share_nested_offsets mirrors prepare()/validate(): when true, `n` and `n.*` are treated as
     /// the same logical column for IF NOT EXISTS existence checks; when false they are independent.
-    void apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
+    /// `columns_before_alter` are the columns of the table before the whole ALTER (of which this command
+    /// is a part) is applied; they let `MODIFY ORDER BY` suggest only the columns added by the ALTER for
+    /// a typo, because an expression added to the sorting key may use nothing else.
+    void apply(
+        StorageInMemoryMetadata & metadata,
+        ContextPtr context,
+        bool share_nested_offsets = true,
+        const ColumnsDescription * columns_before_alter = nullptr) const;
 
-    /// Check that alter command require data modification (mutation) to be
-    /// executed. For example, cast from Date to UInt16 type can be executed
-    /// without any data modifications. But column drop or modify from UInt16 to
-    /// UInt32 require data modification.
-    bool isRequireMutationStage(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
+    /// Determines whether this command requires a mutation and identifies every setting
+    /// that enables a matching lazy metadata conversion.
+    MutationStageDecision getMutationStageDecision(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
 
     /// Checks that only settings changed by alter
     bool isSettingsAlter() const;
@@ -206,12 +222,6 @@ struct AlterCommand
 };
 
 class Context;
-
-/// True if the ALTER MODIFY COLUMN from `from` to `to` is a "lazy" metadata-only conversion: the
-/// on-disk serialization changes but is applied lazily (old parts read with the old type and CAST,
-/// merges rewrite over time) rather than by a mutation. Unlike a byte-identical conversion it is
-/// unsafe for positionally-persisted values (keys, indexes), so `checkAlterIsPossible` re-checks those.
-bool isLazyMetadataConversion(const IDataType * from, const IDataType * to, const ContextPtr & context);
 
 /// Vector of AlterCommand with several additional functions
 class AlterCommands : public std::vector<AlterCommand>

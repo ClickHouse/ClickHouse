@@ -1,0 +1,51 @@
+---
+description: 'Documentação do driver ADBC para ClickHouse'
+sidebarTitle: 'driver ADBC'
+slug: /interfaces/adbc
+title: 'driver ADBC'
+doc_type: 'reference'
+---
+
+O driver ADBC para ClickHouse fornece uma interface compatível com padrões do [Arrow Database Connectivity (ADBC)](https://arrow.apache.org/adbc/)
+para conectar aplicativos compatíveis com ADBC ao ClickHouse.
+
+O driver se comunica com o servidor ClickHouse usando o [protocolo HTTP](/pt-BR/concepts/features/interfaces/http), o principal
+protocolo compatível com todas as implantações do ClickHouse. Isso permite que o driver opere de maneira consistente em diversos
+ambientes, incluindo instalações locais, serviços gerenciados na nuvem e ambientes em que apenas o acesso baseado em HTTP está
+disponível.
+
+O código-fonte do driver está disponível no
+[repositório do GitHub adbc&#95;clickhouse](https://github.com/clickhouse/adbc_clickhouse).
+
+<Note>
+  Este driver está em desenvolvimento ativo. Alguns recursos do ADBC შესაძლოა ainda não estejam totalmente implementados. A versão atual
+  concentra-se em fornecer conectividade essencial e as funcionalidades básicas do ADBC, com recursos adicionais planejados para
+  lançamentos futuros.
+
+  Seu feedback é muito valioso e ajuda a orientar a priorização de novos recursos e melhorias. Se você encontrar
+  limitações, funcionalidades ausentes ou comportamentos inesperados, compartilhe suas observações ou solicitações de recursos por meio
+  do rastreador de issues em
+  [github.com/ClickHouse/adbc&#95;clickhouse/issues](https://github.com/ClickHouse/adbc_clickhouse/issues)
+</Note>
+
+<div id="installation">
+  ## Instalação
+</div>
+
+Você pode instalar a versão mais recente do driver usando o [dbc](https://docs.columnar.tech/dbc/):
+
+```bash
+dbc install clickhouse
+```
+
+Como alternativa, você pode fazer o download manualmente em [github.com/adbc-drivers/clickhouse/releases](https://github.com/adbc-drivers/clickhouse/releases).
+
+<div id="database-options">
+  ## Opções de banco de dados
+</div>
+
+As opções de banco de dados abaixo são usadas para estabelecer uma conexão com o driver ADBC do ClickHouse.
+
+* `uri`: Especifica o endpoint HTTP(S) completo do servidor ClickHouse, incluindo o protocolo, o host e a porta.
+* `username`: O nome de usuário usado para autenticação no servidor ClickHouse.
+* `password`: A senha associada ao nome de usuário especificado.

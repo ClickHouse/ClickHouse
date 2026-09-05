@@ -1,16 +1,60 @@
 {
   "icon": "/images/icons/icon-get-started.svg",
-  "item": "开始使用",
+  "item": "Get started",
   "pages": [
     {
-      "group": "开始使用",
+      "group": "Get started",
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
-        "zh/get-started/quickstarts/home",
+        "zh/get-started/index",
+        {
+          "expandable": true,
+          "expanded": false,
+          "group": "快速入门",
+          "pages": [
+            "zh/get-started/quickstarts/home",
+            {
+              "expanded": false,
+              "group": "所有用例",
+              "pages": [
+                "zh/get-started/setup/cloud",
+                "zh/get-started/quickstarts/obtain-your-cloud-connection-details",
+                "zh/get-started/quickstarts/insert-data-using-clickhouse-client",
+                "zh/get-started/quickstarts/creating-tables",
+                "zh/get-started/quickstarts/writing-queries",
+                "zh/get-started/quickstarts/create-your-first-mergetree-table"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "实时分析",
+              "pages": [
+                "zh/get-started/quickstarts/create-your-first-materialized-view",
+                "zh/get-started/quickstarts/create-your-first-projection",
+                "zh/get-started/quickstarts/tutorial"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "数据仓库",
+              "pages": [
+                "zh/get-started/quickstarts/connect-your-iceberg-catalog",
+                "zh/get-started/quickstarts/mutations"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "可观测性",
+              "pages": [
+                "zh/get-started/quickstarts/working-with-the-map-type"
+              ]
+            }
+          ]
+        },
         {
           "expandable": true,
           "expanded": true,
-          "group": "简介",
+          "group": "Introduction",
           "pages": [
             "zh/get-started/about/intro",
             "zh/get-started/about/why-clickhouse-is-so-fast",
@@ -19,31 +63,32 @@
         },
         {
           "expanded": true,
-          "group": "用例",
+          "group": "Use cases",
           "pages": [
+            "zh/get-started/use-cases/overview",
             "zh/get-started/use-cases/real-time-analytics",
             "zh/get-started/use-cases/observability",
             "zh/get-started/use-cases/data-warehousing",
             "zh/get-started/use-cases/agentic-analytics"
-          ],
-          "root": "zh/get-started/use-cases/overview"
+          ]
         },
         "zh/get-started/about/deployment-modes"
-      ],
-      "root": "zh/get-started/index"
+      ]
     },
     {
       "expanded": true,
-      "group": "设置",
+      "group": "Setup",
       "icon": "/images/menu-icon-gear.svg",
       "pages": [
+        "zh/get-started/setup/install",
         "zh/get-started/setup/cloud",
         {
           "expanded": true,
-          "group": "自管理",
+          "group": "Self-managed",
           "pages": [
+            "zh/get-started/setup/self-managed/overview",
             {
-              "group": "本地开发",
+              "group": "Local development",
               "pages": [
                 "zh/get-started/setup/self-managed/quick-install",
                 "zh/get-started/setup/self-managed/clickhousectl",
@@ -52,7 +97,7 @@
               ]
             },
             {
-              "group": "生产服务器",
+              "group": "Production server",
               "pages": [
                 "zh/get-started/setup/self-managed/debian-ubuntu",
                 "zh/get-started/setup/self-managed/redhat",
@@ -60,20 +105,19 @@
                 "zh/get-started/setup/self-managed/other-linux"
               ]
             }
-          ],
-          "root": "zh/get-started/setup/self-managed/overview"
+          ]
         }
-      ],
-      "root": "zh/get-started/setup/install"
+      ]
     },
     {
       "expanded": true,
-      "group": "示例数据集",
+      "group": "Sample datasets",
       "icon": "/images/menu-icon-database.svg",
       "pages": [
+        "zh/get-started/sample-datasets/index",
         "zh/get-started/sample-datasets/playground",
         {
-          "group": "基准测试",
+          "group": "Benchmarks",
           "pages": [
             "zh/get-started/sample-datasets/amplab-benchmark",
             "zh/get-started/sample-datasets/brown-benchmark",
@@ -85,7 +129,7 @@
           ]
         },
         {
-          "group": "向量搜索与嵌入向量",
+          "group": "Vector search & embeddings",
           "pages": [
             "zh/get-started/sample-datasets/dbpedia",
             "zh/get-started/sample-datasets/hacker-news-vector-search",
@@ -94,7 +138,7 @@
           ]
         },
         {
-          "group": "Web 与社交分析",
+          "group": "Web & social analytics",
           "pages": [
             "zh/get-started/sample-datasets/amazon-reviews",
             "zh/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -106,7 +150,7 @@
           ]
         },
         {
-          "group": "地理空间与位置",
+          "group": "Geo & location",
           "pages": [
             "zh/get-started/sample-datasets/cell-towers",
             "zh/get-started/sample-datasets/foursquare-os-places",
@@ -114,7 +158,7 @@
           ]
         },
         {
-          "group": "时间序列与传感器",
+          "group": "Time series & sensors",
           "pages": [
             "zh/get-started/sample-datasets/environmental-sensors",
             "zh/get-started/sample-datasets/noaa",
@@ -123,7 +167,7 @@
           ]
         },
         {
-          "group": "公共记录与开放数据",
+          "group": "Public records & open data",
           "pages": [
             "zh/get-started/sample-datasets/covid19",
             "zh/get-started/sample-datasets/menus",
@@ -132,20 +176,20 @@
             "zh/get-started/sample-datasets/uk-price-paid"
           ]
         }
-      ],
-      "root": "zh/get-started/sample-datasets/index"
+      ]
     },
     {
       "expanded": true,
-      "group": "迁移",
+      "group": "Migrate",
       "icon": "/images/caret-double-right.svg",
       "pages": [
+        "zh/get-started/migrate/overview",
         {
           "group": "PostgreSQL",
           "pages": [
             "zh/get-started/migrate/postgres/overview",
             {
-              "group": "迁移指南",
+              "group": "Migration guide",
               "pages": [
                 "zh/get-started/migrate/postgres/migration-guide/migration-guide-part1",
                 "zh/get-started/migrate/postgres/migration-guide/migration-guide-part2",
@@ -153,8 +197,7 @@
               ]
             },
             "zh/get-started/migrate/postgres/appendix"
-          ],
-          "root": "zh/get-started/migrate/postgres/index"
+          ]
         },
         {
           "group": "BigQuery",
@@ -162,8 +205,7 @@
             "zh/get-started/migrate/bigquery/overview",
             "zh/get-started/migrate/bigquery/migrating-to-clickhouse-cloud",
             "zh/get-started/migrate/bigquery/loading-data"
-          ],
-          "root": "zh/get-started/migrate/bigquery/index"
+          ]
         },
         {
           "group": "Snowflake",
@@ -188,21 +230,21 @@
           ]
         },
         {
-          "group": "从 OSS 到 Cloud",
+          "group": "OSS to Cloud",
           "pages": [
-            "zh/get-started/migrate/oss-to-cloud/clickhouse-to-cloud"
+            "zh/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
+            "zh/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
           ]
         },
         {
-          "group": "其他方法",
+          "group": "Other methods",
           "pages": [
             "zh/get-started/migrate/other-methods/clickhouse-local-etl",
             "zh/get-started/migrate/other-methods/etl-tool-to-clickhouse",
             "zh/get-started/migrate/other-methods/object-storage-to-clickhouse"
           ]
         }
-      ],
-      "root": "zh/get-started/migrate/overview"
+      ]
     }
   ]
 }

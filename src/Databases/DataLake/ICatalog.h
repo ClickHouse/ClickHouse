@@ -24,6 +24,7 @@ namespace DataLake
 using StorageType = DB::DatabaseDataLakeStorageType;
 StorageType parseStorageTypeFromLocation(const std::string & location);
 StorageType parseStorageTypeFromString(const std::string &type);
+std::optional<StorageType> tryParseStorageTypeFromString(const std::string & type);
 
 /// Registry of `ALTER DATABASE ... MODIFY SETTING` validators. Each catalog that
 /// supports altering settings registers its own validator; catalog types without
@@ -245,8 +246,15 @@ public:
     /// E.g. one of S3, Azure, Local, HDFS.
     virtual std::optional<StorageType> getStorageType() const = 0;
 
-    /// Creates new table in catalog.
+    /// Creates new table in catalog. Callers must ensure the namespace exists before
+    /// writing any table files to storage: a catalog that shares its storage view with
+    /// the data refuses to create a namespace over a plain directory those files create.
     virtual void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const;
+
+    /// Creates the namespace unless it already exists.
+    virtual void createNamespaceIfNotExists(const String & namespace_name, const String & location) const;
+
+    virtual bool managesTableLocation() const { return false; }
 
     /// Updates metadata in catalog.
     virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;

@@ -340,6 +340,13 @@ void Client::initialize(Poco::Util::Application & self)
     for (const auto & setting : client_context->getSettingsRef().getUnchangedNames())
     {
         String name{setting};
+        /// The `format` config key is owned by the client-side `--format` option, which in
+        /// `clickhouse-client` is output-only: it is mirrored into the `output_format` setting by
+        /// `setDefaultFormatsAndCompressionFromConfiguration` (see `mappedFormatOptionSetting`).
+        /// Feeding it into the bidirectional `format` setting here would make `--format` override
+        /// the `FORMAT` clause of `INSERT` queries on the input side.
+        if (name == "format")
+            continue;
         if (config().has(name))
             client_context->setSetting(name, config().getString(name));
     }
@@ -427,6 +434,7 @@ try
             {
                 asked_password = true;
                 config().setBool("ask-password", true);
+                preserve_announced_endpoint_for_retry = true;
                 continue;
             }
 
@@ -440,6 +448,7 @@ try
                     config().setString("password", connection_parameters.password);
                 config().setBool("ask-password", false);
                 config().setBool("ask-password-2fa", true);
+                preserve_announced_endpoint_for_retry = true;
                 continue;
             }
 
@@ -540,6 +549,12 @@ void Client::login()
 
 void Client::connect()
 {
+    /// Only the immediate password or 2FA retry may reuse the previous announcement. Any later
+    /// reconnect is a separate attempt and must announce its endpoint, even if an earlier reconnect failed.
+    if (!preserve_announced_endpoint_for_retry)
+        announced_endpoint.clear();
+    preserve_announced_endpoint_for_retry = false;
+
     String server_name;
     UInt64 server_version_major = 0;
     UInt64 server_version_minor = 0;
@@ -740,13 +755,28 @@ void Client::connect()
                 const bool secure_auto_detected = secure_unspecified && candidate.security == Protocol::Secure::Enable;
 
                 if (is_interactive)
-                    output_stream << "Connecting to "
-                              << (!connection_parameters.default_database.empty()
-                                      ? "database " + connection_parameters.default_database + " at "
-                                      : "")
-                              << connection_parameters.host << ":" << connection_parameters.port
-                              << (secure_auto_detected ? " (secure)" : "")
-                              << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
+                {
+                    const auto announcement = fmt::format(
+                        "Connecting to {}{}:{}{}{}.",
+                        connection_parameters.default_database.empty()
+                            ? ""
+                            : "database " + connection_parameters.default_database + " at ",
+                        connection_parameters.host,
+                        connection_parameters.port,
+                        secure_auto_detected ? " (secure)" : "",
+                        connection_parameters.user.empty() ? "" : " as user " + connection_parameters.user);
+
+                    /// The same endpoint can be attempted more than once before the connection is
+                    /// established: a server that requires a password rejects the first attempt, and the
+                    /// client prompts for the password and attempts the very same endpoint again. Repeating
+                    /// the announcement tells the user nothing and reads as if the client had connected
+                    /// twice, so announce an endpoint only when it differs from the one announced last.
+                    if (announcement != announced_endpoint)
+                    {
+                        announced_endpoint = announcement;
+                        output_stream << announcement << std::endl;
+                    }
+                }
 
                 try
                 {
@@ -1114,7 +1144,10 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         ("password", po::value<std::string>(), "password")
         ("ask-password", "ask-password")
-        ("ssh-key-file", po::value<std::string>(), "File containing the SSH private key for authenticate with the server.")
+        ("ssh-key-file", po::value<std::string>(), "File containing the SSH private key to authenticate with the server. "
+            "If the file name is omitted, the key is looked up using SSH configuration: "
+            "the identity files configured for this host in `~/.ssh/config`, the default identity files, such as `~/.ssh/id_ed25519`, "
+            "and the keys held by the ssh-agent.")
         ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
         ("jwt", po::value<std::string>(), "Use JWT for authentication")
@@ -1425,6 +1458,22 @@ void Client::processConfig()
     rainbow_parentheses = config().getBool("rainbow_parentheses", true);
     print_stack_trace = config().getBool("stacktrace", false);
     default_database = config().getString("database", "");
+    /// `default_database` may have come from a config file (or a named connection in that file)
+    /// rather than the `--database` CLI option. The `database` setting needs to know either
+    /// way, so it ships with every query the client runs.
+    if (!default_database.empty() && !cmd_settings->isChanged("database"))
+    {
+        cmd_settings->set("database", default_database);
+        /// `processConfig` runs after `processOptions` already copied `cmd_settings` into `global_context`
+        /// and `client_context`, and the later TCP sends read `client_context->getSettingsRef()[database]`,
+        /// not `cmd_settings`. Apply the mirrored value to the live contexts too (mirroring what
+        /// `setDefaultFormatsAndCompressionFromConfiguration` now does for the format settings), so a
+        /// config / named-connection `database` is not overridden by a stale profile value in `executeQuery`.
+        if (global_context)
+            global_context->setSetting("database", default_database);
+        if (client_context)
+            client_context->setSetting("database", default_database);
+    }
     inline_insert_data = config().getBool("inline-insert-data", false);
 
     if (inline_insert_data)
@@ -1677,6 +1726,12 @@ void Client::readArguments(
                 /// if the value of --password is omitted, the password will be asked before
                 /// connection start
                 common_arguments.emplace_back(ConnectionParameters::ASK_PASSWORD);
+            }
+            else if (arg == "--ssh-key-file" && ((arg_num + 1) >= argc || std::string_view(argv[arg_num + 1]).starts_with('-')))
+            {
+                common_arguments.emplace_back(arg);
+                /// If the file name is omitted, the key is looked up in `~/.ssh` and in the ssh-agent.
+                common_arguments.emplace_back();
             }
             else
                 common_arguments.emplace_back(arg); /// anything else, eg --hilite

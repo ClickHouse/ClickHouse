@@ -65,7 +65,7 @@ from ci.praktika.git import Git
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
-from ci.praktika.utils import Shell
+from ci.praktika.utils import Shell, Utils
 
 # How far back the failures are taken from, and on how many distinct `master`
 # commits a failure has to appear in that window to be investigated ("failed
@@ -92,6 +92,7 @@ SYNTHETIC_TEST_NAMES = frozenset(
         "Check failed",
         "Check errors",
         "Server died",
+        "Server liveness check failed",
         "Unknown error",
         "Unknown job error",
         "Parse failure error",
@@ -1319,9 +1320,7 @@ def culprit_guard(
     merged_at = pull_request.get("mergedAt") or ""
     if not merged_at:
         return f"pull request #{number} has no merge time recorded"
-    merged = datetime.strptime(merged_at, "%Y-%m-%dT%H:%M:%SZ").replace(
-        tzinfo=timezone.utc
-    )
+    merged = Utils.gh_str_to_datetime(merged_at)
     if now - merged > timedelta(days=MAX_CULPRIT_AGE_DAYS):
         return (
             f"pull request #{number} was merged {(now - merged).days} days ago, longer "
@@ -2510,13 +2509,9 @@ def prepare(info: Info) -> bool:
 
 def connect() -> CIDB:
     info = Info()
-    url, user, password = (
-        info.get_secret(Settings.SECRET_CI_DB_URL)
-        .join_with(info.get_secret(Settings.SECRET_CI_DB_USER))
-        .join_with(info.get_secret(Settings.SECRET_CI_DB_PASSWORD))
-        .get_value()
+    return CIDB.from_connection_secret(
+        info.get_secret(Settings.SECRET_CI_DB_CONNECTION).get_value()
     )
-    return CIDB(url=url, user=user, passwd=password)
 
 
 def table_exists(cidb: CIDB, table: str) -> bool:

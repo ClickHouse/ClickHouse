@@ -46,7 +46,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 </div>
 
 <Note>
-  ClickPipes는 Azure Private Link 연결을 지원하지 않습니다. Azure Flexible Server for MySQL 인스턴스에 퍼블릭 액세스를 허용하지 않는 경우, 보안 연결을 위해 [SSH 터널을 사용할 수 있습니다](/ko/integrations/clickpipes/mysql/source/azure-flexible-server-mysql#configure-network-access). Azure Private Link는 향후 지원될 예정입니다.
+  ClickPipes는 아직 Azure Private Link를 지원하지 않습니다. 퍼블릭 액세스를 허용하지 않는 인스턴스에 연결하려면 SSH 터널을 사용하십시오. 자세한 내용은 [ClickPipes 네트워킹](/ko/integrations/clickpipes/networking)을 참조하십시오.
 </Note>
 
 다음으로, ClickPipes에서 Azure Flexible Server for MySQL 인스턴스로의 연결을 허용해야 합니다.
@@ -57,7 +57,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     2. **Settings**에서 **Networking**을 선택합니다. **Public access**가 활성화되어 있는지 확인합니다.
 
-    3. **Firewall rules** 섹션에서 서비스가 배포된 Region에 해당하는 [ClickPipes 고정 IP 주소 목록](/ko/integrations/clickpipes/home#list-of-static-ips)을 입력합니다.
+    3. **Firewall rules** 섹션에서 서비스가 배포된 Region에 해당하는 [ClickPipes 고정 IP 주소 목록](/ko/integrations/clickpipes/networking/static-ips)을 입력합니다.
 
        <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/azure-flexible-server-mysql/1_configure_network_security.webp" alt="IP 허용 목록을 사용해 퍼블릭 액세스용 네트워킹을 구성합니다" size="lg" border />
 
@@ -71,7 +71,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
        * VM이 Azure Flexible Server for MySQL 인스턴스와 동일한 가상 네트워크(VNet)에 있거나, 연결 가능한 피어링 VNet에 있는지 확인합니다.
        * VM에 [고정 퍼블릭 IP 주소](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/virtual-network-public-ip-address)가 할당되어 있는지 확인합니다. ClickPipes를 SSH 배스천 호스트에 연결할 때 이 IP 주소를 사용합니다.
 
-    2. 서비스가 배포된 Region에 해당하는 [ClickPipes 고정 IP 주소 목록](/ko/integrations/clickpipes/home#list-of-static-ips)에서 들어오는 트래픽을 허용하도록 SSH 배스천 호스트의 Network Security Group(NSG) 규칙을 업데이트합니다.
+    2. 서비스가 배포된 Region에 해당하는 [ClickPipes 고정 IP 주소 목록](/ko/integrations/clickpipes/networking/static-ips)에서 들어오는 트래픽을 허용하도록 SSH 배스천 호스트의 Network Security Group(NSG) 규칙을 업데이트합니다.
 
     3. SSH 배스천 호스트의 [프라이빗 IP 주소](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/private-ip-addresses)에서 들어오는 트래픽을 허용하도록 Azure Flexible Server for MySQL 인스턴스의 firewall 규칙을 업데이트합니다.
   </Tab>

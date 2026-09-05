@@ -91,6 +91,26 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
     return result;
 }
 
+/// `rows_to_read` is an untrusted per-mark granularity and may be arbitrarily large, so read in
+/// bounded batches rather than letting deserializeBinaryBulk resize the column to it up front.
+ColumnPtr readColumnForValidation(const ISerialization & serialization, const IDataType & type, ReadBuffer & istr, size_t rows_to_read)
+{
+    static constexpr size_t max_rows_per_batch = 1ULL << 20;
+
+    auto column = type.createColumn();
+    size_t rows_left = rows_to_read;
+    while (rows_left > 0 && !istr.eof())
+    {
+        size_t batch = std::min(rows_left, max_rows_per_batch);
+        size_t size_before = column->size();
+        serialization.deserializeBinaryBulk(*column, istr, batch, 0.0);
+        rows_left -= batch;
+        if (column->size() - size_before < batch) /// reached EOF mid-batch
+            break;
+    }
+    return column;
+}
+
 }
 
 MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
@@ -137,6 +157,36 @@ ISerialization::EnumerateStreamsSettings MergeTreeDataPartWriterWide::getEnumera
     return enumerate_settings;
 }
 
+void MergeTreeDataPartWriterWide::initStreamsAndSubstreamsIfNeeded()
+{
+    initColumnsSubstreamsIfNeeded();
+    initStreamsToOpenCount();
+    initStreamsIfNeeded();
+
+    chassert(column_streams.size() == *streams_to_open_in_part);
+}
+
+void MergeTreeDataPartWriterWide::initStreamsToOpenCount()
+{
+    if (streams_to_open_in_part)
+        return;
+
+    NameSet stream_names;
+    for (size_t column_position = 0; column_position != columns_list.size(); ++column_position)
+    {
+        for (const auto & full_stream_name : columns_substreams.getColumnSubstreams(column_position))
+        {
+            String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, *storage_settings, data_part_storage.get());
+            /// Skip offset streams that has been written before (not using this object)
+            if (written_offset_substreams && written_offset_substreams->contains(stream_name))
+                continue;
+            stream_names.insert(std::move(stream_name));
+        }
+    }
+
+    streams_to_open_in_part = stream_names.size();
+}
+
 void MergeTreeDataPartWriterWide::addStreams(
     const NameAndTypePair & name_and_type,
     const ASTPtr & effective_codec_desc)
@@ -173,23 +223,7 @@ void MergeTreeDataPartWriterWide::addStreams(
                 " It is a collision between a filename for one column and a hash of filename for another column or a bug",
                 stream_name, it->second, full_stream_name);
 
-        const auto & subtype = substream_path.back().data.type;
-        CompressionCodecPtr compression_codec;
-
-        /// If we can use special codec then just get it
-        if (ISerialization::isSpecialCompressionAllowed(substream_path))
-        {
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, subtype.get(), default_codec);
-            compression_codec = maybeAdaptiveDefaultCodec(column_uses_default_codec, subtype, compression_codec);
-        }
-        else /// otherwise return only generic codecs and don't use info about the` data_type
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
-
-        /// No lossy codec is ever assigned to a structural substream (`Array` offsets, null map, ...): the
-        /// only lossy codec, `SZ3`, is non-generic, and structural substreams take the generic-only branch
-        /// above (`isSpecialCompressionAllowed` == false), which drops it. So every stream that carries a
-        /// lossy codec is a genuine float data stream that must keep it - in particular each element of a
-        /// pure-float `Tuple`.
+        auto compression_codec = getSubstreamCodec(effective_codec_desc, substream_path, column_uses_default_codec);
 
         ParserCodec codec_parser;
         auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
@@ -206,9 +240,13 @@ void MergeTreeDataPartWriterWide::addStreams(
         /// Clamp to prevent absurd memory allocations from fuzzed or misconfigured column settings.
         max_compress_block_size = std::min<UInt64>(max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
 
+        /// A write buffer is allocated per stream below, and a single column can own thousands of
+        /// streams (a Map with many buckets, a deeply nested Array or Tuple), so the threshold is
+        /// compared against streams rather than columns.
+        chassert(streams_to_open_in_part.has_value());
         WriteSettings query_write_settings = settings.query_write_settings;
         query_write_settings.use_adaptive_write_buffer =
-            (settings.min_columns_to_activate_adaptive_write_buffer && columns_list.size() >= settings.min_columns_to_activate_adaptive_write_buffer)
+            (settings.min_columns_to_activate_adaptive_write_buffer && *streams_to_open_in_part >= settings.min_columns_to_activate_adaptive_write_buffer)
             || (settings.use_adaptive_write_buffer_for_dynamic_subcolumns && ISerialization::isDynamicSubcolumn(substream_path, substream_path.size()));
         query_write_settings.adaptive_write_buffer_initial_size = settings.adaptive_write_buffer_initial_size;
 
@@ -328,8 +366,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
     /// preparations to achieve it.
     prepareBlockForWriting(block_to_write);
 
-    initStreamsIfNeeded();
-    initColumnsSubstreamsIfNeeded();
+    initStreamsAndSubstreamsIfNeeded();
 
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
@@ -723,9 +760,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
 
         if (index_granularity_rows == 0)
         {
-            auto column = type->createColumn();
-
-            serialization->deserializeBinaryBulk(*column, bin_in, 0, 1000000000, 0.0);
+            auto column = readColumnForValidation(*serialization, *type, bin_in, 1000000000);
 
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Still have {} rows in bin stream, last mark #{}"
@@ -745,9 +780,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
                             index_granularity->getMarksCount());
         }
 
-        auto column = type->createColumn();
-
-        serialization->deserializeBinaryBulk(*column, bin_in, 0, index_granularity_rows, 0.0);
+        auto column = readColumnForValidation(*serialization, *type, bin_in, index_granularity_rows);
 
         if (bin_in.eof())
         {
@@ -788,9 +821,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
                         mark_num, index_granularity->getMarksCount(), index_granularity_rows);
     if (!bin_in.eof())
     {
-        auto column = type->createColumn();
-
-        serialization->deserializeBinaryBulk(*column, bin_in, 0, 1000000000, 0.0);
+        auto column = readColumnForValidation(*serialization, *type, bin_in, 1000000000);
 
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Still have {} rows in bin stream, last mark #{}"
@@ -802,8 +833,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
 void MergeTreeDataPartWriterWide::finalizeIndexGranularity()
 {
     /// If no data was written, streams and columns substreams will be uninitialized, but we need them.
-    initStreamsIfNeeded();
-    initColumnsSubstreamsIfNeeded();
+    initStreamsAndSubstreamsIfNeeded();
 
     auto serialize_settings = getSerializationSettings();
     if (rows_written_in_last_mark > 0)

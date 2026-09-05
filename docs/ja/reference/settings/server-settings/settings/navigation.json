@@ -1,7 +1,8 @@
 {
   "directory": "none",
-  "group": "サーバー設定",
+  "group": "Server Settings",
   "pages": [
+    "ja/reference/settings/server-settings/settings",
     "ja/reference/settings/server-settings/settings/access-control",
     "ja/reference/settings/server-settings/settings/aggregate-function",
     "ja/reference/settings/server-settings/settings/allow",
@@ -132,6 +133,5 @@
     "ja/reference/settings/server-settings/settings/workload",
     "ja/reference/settings/server-settings/settings/zookeeper",
     "ja/reference/settings/server-settings/settings/other"
-  ],
-  "root": "ja/reference/settings/server-settings/settings"
+  ]
 }

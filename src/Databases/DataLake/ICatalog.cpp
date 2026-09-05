@@ -50,7 +50,7 @@ StorageType parseStorageTypeFromLocation(const std::string & location)
     return parseStorageTypeFromString(location.substr(0, pos));
 }
 
-StorageType parseStorageTypeFromString(const std::string & type)
+std::optional<StorageType> tryParseStorageTypeFromString(const std::string & type)
 {
     auto capitalize_first_letter = [] (const std::string & s)
     {
@@ -80,13 +80,18 @@ StorageType parseStorageTypeFromString(const std::string & type)
     else if (storage_type_str == "abfss") /// Azure Blob File System Secure
         storage_type_str = "Azure";
 
-    auto storage_type = magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));
+    return magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));
+}
+
+StorageType parseStorageTypeFromString(const std::string & type)
+{
+    auto storage_type = tryParseStorageTypeFromString(type);
 
     if (!storage_type)
     {
         throw DB::Exception(
             DB::ErrorCodes::NOT_IMPLEMENTED,
-            "Unsupported storage type: {}", storage_type_str);
+            "Unsupported storage type: {}", type);
     }
 
     return *storage_type;
@@ -398,6 +403,11 @@ CatalogTables ICatalog::getTables(const TableNameFilter & filter) const
 void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTable is not implemented");
+}
+
+void ICatalog::createNamespaceIfNotExists(const String & /*namespace_name*/, const String & /*location*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createNamespaceIfNotExists is not implemented");
 }
 
 bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*new_snapshot*/) const

@@ -251,6 +251,7 @@ void AzureStorageParsedArguments::fromNamedCollection(const NamedCollection & co
         }
 
         partition_strategy_type = partition_strategy_type_opt.value();
+        partition_strategy_was_set = true;
     }
 
     if (collection.has("partition_columns_in_data_file"))
@@ -467,6 +468,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
             {
                 partition_strategy_type
                     = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(sixth_arg, magic_enum::case_insensitive).value();
+                partition_strategy_was_set = true;
             }
             else
             {
@@ -513,6 +515,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
             }
 
             partition_strategy_type = partition_strategy_type_opt.value();
+            partition_strategy_was_set = true;
 
             /// If it's of type String, then it is not `partition_columns_in_data_file`
             if (const auto seventh_arg = tryGetLiteralArgument<String>(engine_args[6], "structure/partition_columns_in_data_file"))
@@ -571,6 +574,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
             }
 
             partition_strategy_type = partition_strategy_type_opt.value();
+            partition_strategy_was_set = true;
             partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[6], "partition_columns_in_data_file");
             partition_columns_in_data_file_was_set = true;
             structure = checkAndGetLiteralArgument<String>(engine_args[7], "structure");
@@ -590,6 +594,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
             {
                 partition_strategy_type
                     = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(eighth_arg, magic_enum::case_insensitive).value();
+                partition_strategy_was_set = true;
             }
             else
             {
@@ -621,6 +626,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", partition_strategy_name);
         }
         partition_strategy_type = partition_strategy_type_opt.value();
+        partition_strategy_was_set = true;
         /// If it's of type String, then it is not `partition_columns_in_data_file`
         if (const auto nineth_arg = tryGetLiteralArgument<String>(engine_args[8], "structure/partition_columns_in_data_file"))
         {
@@ -658,6 +664,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", partition_strategy_name);
         }
         partition_strategy_type = partition_strategy_type_opt.value();
+        partition_strategy_was_set = true;
         partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[8], "partition_columns_in_data_file");
         partition_columns_in_data_file_was_set = true;
         structure = checkAndGetLiteralArgument<String>(engine_args[9], "structure");

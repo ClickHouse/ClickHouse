@@ -183,6 +183,15 @@ ConstantJoin::OutputPlan ConstantJoin::makeOutputPlan(JoinKind kind, JoinStrictn
     return plan;
 }
 
+void ConstantJoin::updatePeakAllocatedSizeIfNeeded()
+{
+    if (!table_join->collectAnalyzeStats())
+        return;
+
+    size_t selected_right_row_size = selected_right_row ? selected_right_row->allocatedBytes() : 0;
+    peak_allocated_size = std::max(peak_allocated_size, allocated_size + selected_right_row_size);
+}
+
 bool ConstantJoin::addBlockToJoin(const Block & source_block, bool check_limits)
 {
     return addBlockToJoin(source_block, source_block.rows(), check_limits);
@@ -223,6 +232,9 @@ bool ConstantJoin::addBlockToJoin(const Block & source_block, size_t num_rows, b
             selected_block = selected_block.shrinkToFit();
 
         selected_right_row.emplace(materializeSelectedRowColumns(selected_block.getColumns()), ScatteredBlock::Selector(1));
+
+        updatePeakAllocatedSizeIfNeeded();
+
         return true;
     }
 
@@ -240,6 +252,8 @@ bool ConstantJoin::addBlockToJoin(const Block & source_block, size_t num_rows, b
             materializeSelectedRowColumns(
                 block_to_save.cloneWithCutColumns(plan.select_last_right_row ? rows - 1 : 0, 1).getColumns()),
             ScatteredBlock::Selector(1));
+
+        updatePeakAllocatedSizeIfNeeded();
     }
 
     /// A spilled block does not count against the in-memory size limits, so it also skips the check below.
@@ -294,6 +308,9 @@ void ConstantJoin::storeRightBlock(Block block_to_save, size_t rows)
     doDebugAsserts();
     right_blocks.emplace_back(block_to_save.getColumns(), ScatteredBlock::Selector(rows));
     allocated_size += right_blocks.back().allocatedBytes();
+
+    updatePeakAllocatedSizeIfNeeded();
+
     in_memory_rows += rows;
     doDebugAsserts();
 
@@ -321,6 +338,26 @@ size_t ConstantJoin::getTotalByteCount() const
 {
     doDebugAsserts();
     return allocated_size;
+}
+
+StepAnalysisReport ConstantJoin::getAnalysisReport() const
+{
+    StepAnalysisReport report;
+
+    report.push_back({MetricGroupKey::Left, joinSideMetrics(total_rows_left.load(std::memory_order_relaxed), std::nullopt)});
+    report.push_back({MetricGroupKey::Right, joinSideMetrics(total_rows_to_join, std::nullopt)});
+
+    MetricList buffer_metrics;
+    buffer_metrics.emplace_back(MetricKey::Memory, peak_allocated_size);
+    buffer_metrics.emplace_back(MetricKey::Compressed, std::string(have_compressed ? "yes" : "no"));
+    report.push_back({MetricGroupKey::Buffer, std::move(buffer_metrics)});
+
+    const size_t right_spilled_compressed_bytes = tmp_stream ? tmp_stream->getHolder()->getStat().compressed_size : 0;
+    MetricList spill_metrics;
+    spill_metrics.emplace_back(MetricKey::RightSpilled, right_spilled_compressed_bytes);
+    report.push_back({MetricGroupKey::Spill, std::move(spill_metrics)});
+
+    return report;
 }
 
 void ConstantJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join)
@@ -386,6 +423,8 @@ void ConstantJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join)
         }
         else
             allocated_size += new_size - old_size;
+
+        updatePeakAllocatedSizeIfNeeded();
 
         doDebugAsserts();
     }
@@ -865,6 +904,8 @@ private:
 
 JoinResultPtr ConstantJoin::joinBlock(Block block)
 {
+    total_rows_left.fetch_add(block.rows(), std::memory_order_relaxed);
+
     /// A constant predicate cannot match rows of an empty right side; `alwaysReturnsEmptySet` applies the same rule.
     const bool has_match = constant_predicate_value && total_rows_to_join != 0;
 

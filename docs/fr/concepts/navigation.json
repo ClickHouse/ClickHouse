@@ -5,8 +5,9 @@
     "fr/concepts/index",
     {
       "expanded": true,
-      "group": "Fondamentaux",
+      "group": "Fundamentals",
       "pages": [
+        "fr/concepts/core-concepts/index",
         "fr/concepts/core-concepts/glossary",
         "fr/concepts/core-concepts/parts",
         "fr/concepts/core-concepts/partitions",
@@ -14,28 +15,28 @@
         "fr/concepts/core-concepts/primary-indexes",
         "fr/concepts/core-concepts/query-parallelism",
         "fr/concepts/core-concepts/academic-overview"
-      ],
-      "root": "fr/concepts/core-concepts/index"
+      ]
     },
     {
       "expanded": true,
-      "group": "Concepts ClickHouse",
+      "group": "ClickHouse concepts",
       "pages": [
+        "fr/concepts/features/index",
         {
-          "group": "Vues matérialisées",
+          "group": "Materialized views",
           "pages": [
+            "fr/concepts/features/materialized-views/index",
             "fr/concepts/features/materialized-views/incremental-materialized-view",
             "fr/concepts/features/materialized-views/refreshable-materialized-view",
             "fr/concepts/features/materialized-views/cascading-materialized-views"
-          ],
-          "root": "fr/concepts/features/materialized-views/index"
+          ]
         },
         {
-          "group": "Dictionnaires",
+          "group": "Dictionaries",
           "pages": [
+            "fr/concepts/features/dictionaries/index",
             "fr/concepts/features/dictionaries/best-practices"
-          ],
-          "root": "fr/concepts/features/dictionaries/index"
+          ]
         },
         {
           "group": "Projections",
@@ -45,8 +46,9 @@
           ]
         },
         {
-          "group": "Performances",
+          "group": "Performance",
           "pages": [
+            "fr/concepts/features/performance/index",
             "fr/concepts/features/performance/prewhere",
             "fr/concepts/features/performance/allocation-profiling",
             "fr/concepts/features/performance/allocation-profiling-old",
@@ -60,7 +62,7 @@
               ]
             },
             {
-              "group": "Index de saut",
+              "group": "Skipping-indexes",
               "pages": [
                 "fr/concepts/features/performance/skip-indexes/skipping-indexes",
                 "fr/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -68,7 +70,7 @@
             },
             "fr/concepts/features/performance/lazy-materialization",
             {
-              "group": "Dépannage",
+              "group": "Troubleshooting",
               "pages": [
                 "fr/concepts/features/performance/troubleshoot/debugging-memory-issues",
                 "fr/concepts/features/performance/troubleshoot/oom-canary",
@@ -76,14 +78,13 @@
                 "fr/concepts/features/performance/troubleshoot/sampling-query-profiler"
               ]
             }
-          ],
-          "root": "fr/concepts/features/performance/index"
+          ]
         },
         {
-          "group": "Opérations",
+          "group": "Operations",
           "pages": [
             {
-              "group": "Insertion",
+              "group": "Insert",
               "pages": [
                 "fr/concepts/features/operations/insert/inserting-data",
                 "fr/concepts/features/operations/insert/asyncinserts",
@@ -94,31 +95,29 @@
               ]
             },
             {
-              "group": "Sélection",
+              "group": "Select",
               "pages": [
                 "fr/concepts/features/operations/select/joining-tables"
               ]
             },
             {
-              "group": "Mise à jour",
+              "group": "Update",
               "pages": [
+                "fr/concepts/features/operations/update/index",
                 "fr/concepts/features/operations/update/overview",
-                "fr/concepts/features/operations/update/on-fly-mutations",
                 "fr/concepts/features/operations/update/replacing-merge-tree"
-              ],
-              "root": "fr/concepts/features/operations/update/index"
+              ]
             },
             {
-              "group": "Suppression",
+              "group": "Delete",
               "pages": [
+                "fr/concepts/features/operations/delete/index",
                 "fr/concepts/features/operations/delete/overview",
-                "fr/concepts/features/operations/delete/delete-mutations",
                 "fr/concepts/features/operations/delete/drop-partition",
                 "fr/concepts/features/operations/delete/lightweight-delete",
                 "fr/concepts/features/operations/delete/truncate",
                 "fr/concepts/features/operations/delete/ttl"
-              ],
-              "root": "fr/concepts/features/operations/delete/index"
+              ]
             }
           ]
         },
@@ -126,7 +125,7 @@
           "group": "Configuration",
           "pages": [
             {
-              "group": "Paramètres",
+              "group": "Settings",
               "pages": [
                 "fr/concepts/features/configuration/settings/overview",
                 "fr/concepts/features/configuration/settings/settings-query-level",
@@ -142,7 +141,7 @@
               ]
             },
             {
-              "group": "Configuration du serveur",
+              "group": "Server config",
               "pages": [
                 "fr/concepts/features/configuration/server-config/configuration-files",
                 "fr/concepts/features/configuration/server-config/storing-data",
@@ -150,27 +149,30 @@
                 "fr/concepts/features/configuration/server-config/workload-scheduling",
                 "fr/concepts/features/configuration/server-config/quotas",
                 "fr/concepts/features/configuration/server-config/composable-protocols",
-                "fr/concepts/features/configuration/server-config/startup-scripts"
+                "fr/concepts/features/configuration/server-config/startup-scripts",
+                "fr/concepts/features/configuration/server-config/introspection-port"
               ]
             }
           ]
         },
         {
-          "group": "Sécurité et authentification",
+          "group": "Security and auth",
           "pages": [
+            "fr/concepts/features/security/index",
             "fr/concepts/features/security/access-rights",
             "fr/concepts/features/security/network-ports",
             {
               "group": "TLS",
               "pages": [
+                "fr/concepts/features/security/tls/index",
                 "fr/concepts/features/security/tls/configuring-tls",
                 "fr/concepts/features/security/tls/configuring-tls-acme-client"
-              ],
-              "root": "fr/concepts/features/security/tls/index"
+              ]
             },
             {
-              "group": "Authentificateurs externes",
+              "group": "External authenticators",
               "pages": [
+                "fr/concepts/features/security/external-authenticators/index",
                 {
                   "group": "SSL",
                   "pages": [
@@ -188,16 +190,15 @@
                 "fr/concepts/features/security/external-authenticators/http",
                 "fr/concepts/features/security/external-authenticators/kerberos",
                 "fr/concepts/features/security/external-authenticators/jwt"
-              ],
-              "root": "fr/concepts/features/security/external-authenticators/index"
+              ]
             }
-          ],
-          "root": "fr/concepts/features/security/index"
+          ]
         },
         {
-          "group": "Sauvegarde et restauration",
+          "group": "Backup and restore",
           "pages": [
             "fr/concepts/features/backup-restore/overview",
+            "fr/concepts/features/backup-restore/restore-settings",
             "fr/concepts/features/backup-restore/local-disk",
             "fr/concepts/features/backup-restore/s3-endpoint",
             "fr/concepts/features/backup-restore/azure-blob-storage",
@@ -208,23 +209,29 @@
         {
           "group": "Interfaces",
           "pages": [
+            "fr/concepts/features/interfaces/native-clients-interfaces-index",
             "fr/concepts/features/interfaces/cli",
             "fr/concepts/features/interfaces/client",
+            "fr/concepts/features/interfaces/mcp",
             {
-              "group": "Drivers et interfaces",
+              "group": "Drivers and interfaces",
               "pages": [
+                "fr/concepts/features/interfaces/overview",
                 "fr/concepts/features/interfaces/http",
+                "fr/concepts/features/interfaces/framing-formats",
                 "fr/concepts/features/interfaces/tcp",
+                "fr/concepts/features/interfaces/adbc",
                 "fr/concepts/features/interfaces/jdbc",
                 "fr/concepts/features/interfaces/mysql",
-                "fr/concepts/features/interfaces/odbc",
+                {
+                  "$ref": "features/interfaces/odbc/navigation.json"
+                },
                 "fr/concepts/features/interfaces/postgresql",
                 "fr/concepts/features/interfaces/prometheus",
                 "fr/concepts/features/interfaces/ssh",
                 "fr/concepts/features/interfaces/grpc",
                 "fr/concepts/features/interfaces/arrowflight"
-              ],
-              "root": "fr/concepts/features/interfaces/overview"
+              ]
             },
             "fr/concepts/features/interfaces/cpp",
             "fr/concepts/features/interfaces/schema-inference",
@@ -232,18 +239,20 @@
             "fr/concepts/features/interfaces/web-sql",
             "fr/concepts/features/interfaces/web-ui-color-coding",
             "fr/concepts/features/interfaces/web-ui-pinned-columns",
+            "fr/concepts/features/interfaces/web-ui-result-shaping",
             "fr/concepts/features/interfaces/web-terminal",
             {
-              "group": "Clients tiers",
-              "pages": [],
-              "root": "fr/concepts/features/interfaces/third-party/index"
+              "group": "Third-party clients",
+              "pages": [
+                "fr/concepts/features/interfaces/third-party/index"
+              ]
             }
-          ],
-          "root": "fr/concepts/features/interfaces/native-clients-interfaces-index"
+          ]
         },
         {
-          "group": "Outils et utilitaires",
+          "group": "Tools and utilities",
           "pages": [
+            "fr/concepts/features/tools-and-utilities/index",
             "fr/concepts/features/tools-and-utilities/backupview",
             "fr/concepts/features/tools-and-utilities/clickhouse-benchmark",
             "fr/concepts/features/tools-and-utilities/clickhouse-compressor",
@@ -255,16 +264,15 @@
             "fr/concepts/features/tools-and-utilities/clickhouse-obfuscator",
             "fr/concepts/features/tools-and-utilities/odbc-bridge",
             "fr/concepts/features/tools-and-utilities/static-files-disk-uploader"
-          ],
-          "root": "fr/concepts/features/tools-and-utilities/index"
+          ]
         }
-      ],
-      "root": "fr/concepts/features/index"
+      ]
     },
     {
       "expanded": true,
-      "group": "Bonnes pratiques",
+      "group": "Best practices",
       "pages": [
+        "fr/concepts/best-practices/index",
         "fr/concepts/best-practices/choosing-a-primary-key",
         "fr/concepts/best-practices/select-data-type",
         "fr/concepts/best-practices/use-materialized-views",
@@ -276,9 +284,7 @@
         "fr/concepts/best-practices/avoid-optimize-final",
         "fr/concepts/best-practices/avoidnullablecolumns",
         "fr/concepts/best-practices/json-type"
-      ],
-      "root": "fr/concepts/best-practices/index"
+      ]
     }
-  ],
-  "root": "fr/concepts/index"
+  ]
 }

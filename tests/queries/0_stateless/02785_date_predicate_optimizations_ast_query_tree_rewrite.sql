@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 SET optimize_time_filter_with_preimage = 1;
 
 DROP TABLE IF EXISTS date_t;

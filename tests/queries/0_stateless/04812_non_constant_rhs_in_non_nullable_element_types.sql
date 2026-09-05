@@ -38,22 +38,3 @@ SELECT number, nullIn([number], ([number], [number + 1])), notNullIn([number], (
 
 -- Nested `NULL` values are ordinary values of the array element type.
 SELECT number, [CAST(NULL, 'Nullable(UInt64)')] IN ([CAST(NULL, 'Nullable(UInt64)')], [number]) FROM numbers(2) ORDER BY number;
-
-SET enable_analyzer = 0;
-
-SELECT [1] IN ([1], [2]), [1] IN ([2], [3]), [1] IN (tuple([1], [2])), map('a', 1) IN (map('a', 1), map('b', 1)), map('a', 1) IN (map('b', 1)), [CAST(NULL, 'Nullable(UInt64)')] IN ([CAST(NULL, 'Nullable(UInt64)')], [1]);
-SELECT number, [number] IN (if(number >= 0, tuple([number], [number + 1]), tuple([0], [0]))), [number] NOT IN (if(number >= 0, tuple([number], [number + 1]), tuple([0], [0]))) FROM numbers(2) ORDER BY number;
-SELECT number, [number + 5] IN (if(number >= 0, tuple([number], [number + 1]), tuple([0], [0]))) FROM numbers(2) ORDER BY number;
-SELECT number, [number] IN ([number], [number + 1]), [number] NOT IN ([number], [number + 1]) FROM numbers(2) ORDER BY number;
-SELECT number, [number] IN ([number + 1], [number + 2]) FROM numbers(2) ORDER BY number;
-SELECT number, arr, [number] IN (arr, [7]), [number] NOT IN (arr, [7]) FROM (SELECT number, [number] AS arr FROM numbers(2)) ORDER BY number;
-SELECT number, tuple([number], [number + 1]) AS t, [number] IN (t), [number + 5] IN (t) FROM numbers(2) ORDER BY number;
--- The old analyzer resolves `x IN ident` as `x IN (SELECT * FROM ident)` unless `ident` is an alias of
--- the same `SELECT`, see the same shape in `04234_non_constant_rhs_in`.
-SELECT number, [number] IN (t), [number + 5] IN (t) FROM (SELECT number, tuple([number], [number + 1]) AS t FROM numbers(2)) ORDER BY number; -- { serverError UNKNOWN_TABLE }
-SELECT number, map('a', number) IN (map('a', number), map('b', number)), map('a', number) NOT IN (map('a', number), map('b', number)) FROM numbers(2) ORDER BY number;
-SELECT number, map('a', number) IN (if(number >= 0, tuple(map('a', number), map('b', number)), tuple(map('c', number), map('d', number)))) FROM numbers(2) ORDER BY number;
-SELECT number, [number] IN ([number], [number + 1]) FROM numbers(2) ORDER BY number SETTINGS transform_null_in = 1;
-SELECT number, [number] IN (if(number >= 0, tuple([number], [number + 1]), tuple([0], [0]))) FROM numbers(2) ORDER BY number SETTINGS transform_null_in = 1;
-SELECT number, nullIn([number], ([number], [number + 1])), notNullIn([number], ([number], [number + 1])) FROM numbers(2) ORDER BY number;
-SELECT number, [CAST(NULL, 'Nullable(UInt64)')] IN ([CAST(NULL, 'Nullable(UInt64)')], [number]) FROM numbers(2) ORDER BY number;
