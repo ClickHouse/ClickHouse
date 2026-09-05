@@ -532,6 +532,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         /// Already in needed type.
         return src;
     }
+    else if (which_type.isMacAddress() && src.getType() == Field::Types::MacAddress)
+    {
+        /// Already in needed type.
+        return src;
+    }
     else if (which_type.isIPv6())
     {
         /// Already in needed type.

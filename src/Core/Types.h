@@ -11,6 +11,7 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <base/UUID.h>
 #include <base/IPv4andIPv6.h>
+#include <base/MacAddress.h>
 
 
 namespace DB

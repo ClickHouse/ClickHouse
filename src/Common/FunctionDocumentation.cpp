@@ -70,6 +70,8 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/reference/data-types/ipv4)";
         else if (type == "IPv6")
             result += "`](/reference/data-types/ipv6)";
+        else if (type == "MacAddress")
+            result += "`](/reference/data-types/macaddress)";
         else if (type.starts_with("Array")) /// "Array(T)", "Array(UInt8)", "Array(String)", ...
             result += "`](/reference/data-types/array)";
         else if (type == "Bool")

@@ -226,6 +226,7 @@ struct IntConverter : public FixedSizeConverter
     /// No effect on convertColumn - it just copies bytes and doesn't care what they mean.
     std::optional<UInt32> field_decimal_scale; // Decimal{32,64}(scale)
     bool field_ipv4 = false; // IPv4
+    bool field_mac_address = false; // MacAddress
     bool field_timestamp_from_millis = false; // convert DateTime64(3) to DateTime
     bool field_signed = true; // Int64, otherwise UInt64
     /// If not Ignore, it's a date column and we should range-check it.

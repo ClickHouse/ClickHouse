@@ -418,6 +418,7 @@ Each value occupies a constant number of bytes. A column of `M` rows occupies ex
 | `UUID`              | 16              | 128-bit identifier                                | Two byte-swapped LE UInt64 halves (see [UUID](#uuid)) |
 | `IPv4`              | 4               | IPv4 address                                      | Little-endian UInt32 |
 | `IPv6`              | 16              | IPv6 address                                      | Network byte order, no swap |
+| `MacAddress`        | 8               | 48-bit MAC address in the low 6 bytes; the upper 2 bytes are always zero | Little-endian UInt64 (see [MacAddress](#macaddress)) |
 | `Enum8`             | 1               | Signed 8-bit (variant index)                      | Raw byte      |
 | `Enum16`            | 2               | Signed 16-bit (variant index)                     | Little-endian |
 | `Decimal(P, S)`     | 4 / 8 / 16 / 32 | `value × 10^S` as a signed integer; width depends on P (≤9 → 4 B, ≤18 → 8 B, ≤38 → 16 B, ≤76 → 32 B) | Little-endian signed integer |
@@ -608,6 +609,18 @@ Two related but differently-encoded address types.
 ```
 
 The asymmetry is deliberate: IPv4 is stored as a `u32` for arithmetic and compact range queries, while IPv6 keeps the network-order layout common to most networking APIs.
+
+#### MacAddress {#macaddress}
+
+`MacAddress` is 8 bytes on the wire: a little-endian UInt64 whose low 48 bits hold the six octets in network order (the first octet is the most significant of the 48), and whose upper 16 bits are always zero.
+
+`00:1A:2B:3C:4D:5E` (48-bit value `0x001A2B3C4D5E`):
+
+```text
+5E 4D 3C 2B 1A 00 00 00  Little-endian UInt64
+```
+
+A decoder must mask off the upper 16 bits when reading: writers always zero them, but the mask is what keeps the value canonical, and comparison and hashing are defined on the 48-bit value only. Note that the type occupies 8 bytes even though a MAC address is 6 bytes wide.
 
 #### Enum8 and Enum16 {#enum8-and-enum16}
 

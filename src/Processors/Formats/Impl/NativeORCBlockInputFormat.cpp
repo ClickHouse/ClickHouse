@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMacAddress.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -1948,6 +1949,27 @@ readIPv4ColumnWithInt32Data(const orc::ColumnVectorBatch * orc_column, const Str
     return {std::move(internal_column), internal_type, column_name};
 }
 
+static ColumnWithTypeAndName
+readMacAddressColumnWithInt64Data(const orc::ColumnVectorBatch * orc_column, const String & column_name)
+{
+    const auto * orc_int_column = dynamic_cast<const orc::LongVectorBatch *>(orc_column);
+
+    auto internal_type = std::make_shared<DataTypeMacAddress>();
+    auto internal_column = internal_type->createColumn();
+    auto & column_data = assert_cast<ColumnVector<MacAddress> &>(*internal_column).getData();
+    column_data.reserve(orc_int_column->numElements);
+
+    for (size_t i = 0; i < orc_int_column->numElements; ++i)
+    {
+        if (!orc_int_column->hasNulls || orc_int_column->notNull[i])
+            column_data.push_back(MacAddress(static_cast<UInt64>(orc_int_column->data[i])));
+        else
+            column_data.push_back(MacAddress(0));
+    }
+
+    return {std::move(internal_column), internal_type, column_name};
+}
+
 template <typename ColumnType>
 static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(
     const orc::ColumnVectorBatch * orc_column, const String & column_name, const DataTypePtr & column_type)
@@ -2802,7 +2824,13 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             return readColumnWithNumericData<Int32, orc::LongVectorBatch>(orc_column, column_name);
         }
         case orc::LONG:
+        {
+            /// ORC format has no dedicated address types and we output MacAddress as Int64.
+            /// We should allow to read it back from Int64.
+            if (type_hint && isMacAddress(type_hint))
+                return readMacAddressColumnWithInt64Data(orc_column, column_name);
             return readColumnWithNumericData<Int64, orc::LongVectorBatch>(orc_column, column_name);
+        }
         case orc::FLOAT:
             return readColumnWithNumericData<Float32, orc::DoubleVectorBatch>(orc_column, column_name);
         case orc::DOUBLE:

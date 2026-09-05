@@ -71,6 +71,7 @@ template class ColumnUnique<ColumnTime64>;
 template class ColumnUnique<ColumnIPv4>;
 template class ColumnUnique<ColumnIPv6>;
 template class ColumnUnique<ColumnUUID>;
+template class ColumnUnique<ColumnVector<MacAddress>>;
 template class ColumnUnique<ColumnDecimal<Decimal32>>;
 template class ColumnUnique<ColumnDecimal<Decimal64>>;
 template class ColumnUnique<ColumnDecimal<Decimal128>>;

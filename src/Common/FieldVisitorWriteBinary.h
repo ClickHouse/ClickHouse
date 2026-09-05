@@ -18,6 +18,7 @@ public:
     void operator() (const UUID & x, WriteBuffer & buf) const;
     void operator() (const IPv4 & x, WriteBuffer & buf) const;
     void operator() (const IPv6 & x, WriteBuffer & buf) const;
+    void operator() (const MacAddress & x, WriteBuffer & buf) const;
     void operator() (const Float64 & x, WriteBuffer & buf) const;
     void operator() (const String & x, WriteBuffer & buf) const;
     void operator() (const Array & x, WriteBuffer & buf) const;

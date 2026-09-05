@@ -839,6 +839,7 @@ const std::unordered_map<TypeIndex, size_t> & getTypesTextDeserializePriorityMap
             TypeIndex::UUID,
             TypeIndex::IPv4,
             TypeIndex::IPv6,
+            TypeIndex::MacAddress,
 
             /// Types that can be parsed from numbers.
             /// The order:

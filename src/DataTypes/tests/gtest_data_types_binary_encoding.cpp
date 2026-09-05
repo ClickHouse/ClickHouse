@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
+#include <DataTypes/DataTypeMacAddress.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -111,6 +112,7 @@ GTEST_TEST(DataTypesBinaryEncoding, EncodeAndDecode)
     check(DataTypeFactory::instance().get("Map(String, Map(String, Map(String, UInt32)))"));
     check(std::make_shared<DataTypeIPv4>());
     check(std::make_shared<DataTypeIPv6>());
+    check(std::make_shared<DataTypeMacAddress>());
     check(DataTypeFactory::instance().get("Variant(String, UInt32, Date32)"));
     check(std::make_shared<DataTypeDynamic>());
     check(std::make_shared<DataTypeDynamic>(10));
