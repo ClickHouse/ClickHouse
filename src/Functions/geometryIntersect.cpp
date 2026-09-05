@@ -92,6 +92,7 @@ public:
     {
         checkGeometryIntersectArgument(arguments[0], getName());
         checkGeometryIntersectArgument(arguments[1], getName());
+        checkGeometryArgumentTypes(arguments[0], arguments[1], getName(), 0);
         return std::make_shared<DataTypeUInt8>();
     }
 

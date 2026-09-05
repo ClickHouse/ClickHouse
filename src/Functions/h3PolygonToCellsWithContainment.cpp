@@ -77,6 +77,7 @@ public:
                 "Illegal type {} of argument 3 of function {}. Must be integer (values are converted to UInt32 for the H3 API)",
                 arguments[2]->getName(), getName());
 
+        checkGeometryArgumentType(arguments[0], getName(), GeoKindNonAreal, "The first argument of function {} must not be {}", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 

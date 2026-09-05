@@ -39,7 +39,13 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeUInt8>(); }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        checkGeometryArgumentTypes(
+            arguments[0], arguments[1], getName(), GeoKindNonAreal,
+            "Any argument of function {} must not be {}", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        return std::make_shared<DataTypeUInt8>();
+    }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
 
