@@ -95,6 +95,8 @@ namespace ProfileEvents
 {
 extern const Event IcebergIteratorInitializationMicroseconds;
 extern const Event IcebergMetadataUpdateMicroseconds;
+extern const Event IcebergStorageMetadataCacheHits;
+extern const Event IcebergStorageMetadataCacheMisses;
 extern const Event IcebergTrivialCountOptimizationApplied;
 }
 
@@ -234,6 +236,49 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
         persistent_components.table_uuid,
         persistent_components.metadata_compression_method,
         force_fetch_latest_metadata);
+
+    /// Parsed-state reuse: while the metadata version and the snapshot
+    /// selection are unchanged, serve the previously parsed {snapshot, table
+    /// state} instead of re-parsing the metadata JSON + re-registering
+    /// schemas into the SchemaProcessor on every query (the latter takes the
+    /// processor's write lock and is the per-storage serialization point).
+    /// Cached in IcebergMetadataFilesCache under a key derived from the
+    /// metadata path, version, and snapshot selector, so its lifecycle
+    /// (eviction, SYSTEM CLEAR ICEBERG METADATA CACHE) matches the metadata
+    /// files cache, and time-travel queries get their own entry instead of
+    /// poisoning the ordinary one.
+    const auto & query_settings = context->getSettingsRef();
+    if (query_settings[Setting::iceberg_snapshot_id].changed && query_settings[Setting::iceberg_timestamp_ms].changed)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Time travel with timestamp and snapshot id for iceberg table by path {} cannot be changed simultaneously",
+            persistent_components.table_path);
+    String snapshot_selector = "latest";
+    if (query_settings[Setting::iceberg_snapshot_id].changed)
+        snapshot_selector = "sid:" + toString(query_settings[Setting::iceberg_snapshot_id].value);
+    else if (query_settings[Setting::iceberg_timestamp_ms].changed)
+        snapshot_selector = "ts:" + toString(query_settings[Setting::iceberg_timestamp_ms].value);
+
+    if (!force_fetch_latest_metadata && persistent_components.metadata_cache)
+    {
+        const String parsed_key = metadata_file_path + "#v" + toString(metadata_version) + "#" + snapshot_selector;
+        auto parsed = persistent_components.metadata_cache->getOrSetParsedTableMetadata(
+            parsed_key,
+            [&]
+            {
+                auto result = getState(context, metadata_file_path, metadata_version);
+                auto entry = std::make_shared<ParsedTableMetadata>();
+                entry->data_snapshot = result.first;
+                entry->table_state = result.second;
+                return entry;
+            });
+        /// The cached state is shared between storages; schema registration is not.
+        /// A new storage must initialize its own schema processor before using it.
+        if (!persistent_components.schema_processor->hasClickHouseTableSchemaById(parsed->table_state.schema_id))
+            return getState(context, metadata_file_path, metadata_version);
+        return {parsed->data_snapshot, parsed->table_state};
+    }
+
     return getState(context, metadata_file_path, metadata_version);
 }
 
@@ -1358,12 +1403,41 @@ std::unique_ptr<StorageInMemoryMetadata> IcebergMetadata::buildStorageMetadataFr
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataUpdateMicroseconds);
     chassert(std::holds_alternative<Iceberg::TableStateSnapshot>(state));
     const auto & iceberg_state = std::get<Iceberg::TableStateSnapshot>(state);
-    auto result = std::make_unique<StorageInMemoryMetadata>();
-    result->setColumns(
-        ColumnsDescription{*persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_state.schema_id)});
-    result->setDataLakeTableState(state);
-    result->sorting_key = getSortingKey(local_context, iceberg_state);
-    return result;
+    const auto & query_settings = local_context->getSettingsRef();
+    const bool time_travel = query_settings[Setting::iceberg_timestamp_ms].changed
+        || query_settings[Setting::iceberg_snapshot_id].changed;
+
+    auto build = [&]() -> std::shared_ptr<const StorageInMemoryMetadata>
+    {
+        auto result = std::make_unique<StorageInMemoryMetadata>();
+        result->setColumns(
+            ColumnsDescription{*persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_state.schema_id)});
+        result->setDataLakeTableState(state);
+        result->sorting_key = getSortingKey(local_context, iceberg_state);
+        return result;
+    };
+
+    /// Time-travel queries bypass the cache so they can never replace the current-state
+    /// entry. Without a files cache (e.g. `use_iceberg_metadata_files_cache=0`) there is
+    /// nothing to cache into, so build directly.
+    if (time_travel || !persistent_components.metadata_cache)
+        return std::make_unique<StorageInMemoryMetadata>(*build());
+
+    /// The key covers exactly the fields of `TableStateSnapshot::operator==`, so a cache hit
+    /// always describes the requested state.
+    const String derived_key = iceberg_state.metadata_file_path + "#v" + toString(iceberg_state.metadata_version)
+        + "#schema=" + toString(iceberg_state.schema_id) + "#snap="
+        + (iceberg_state.snapshot_id ? toString(*iceberg_state.snapshot_id) : "none");
+    auto cached = persistent_components.metadata_cache->getOrSetDerivedStorageMetadata(
+        derived_key,
+        [&]()
+        {
+            auto entry = std::make_shared<DerivedStorageMetadata>();
+            entry->state = iceberg_state;
+            entry->metadata = build();
+            return DerivedStorageMetadataPtr(std::move(entry));
+        });
+    return std::make_unique<StorageInMemoryMetadata>(*cached->metadata);
 }
 
 bool IcebergMetadata::shouldReloadSchemaForConsistency(ContextPtr) const
