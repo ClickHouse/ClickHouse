@@ -23,7 +23,10 @@ import time
 import xml.etree.ElementTree as ET
 
 from ci.defs.defs import ToolSet
-from ci.jobs.scripts.dataset_download import download_and_extract_datasets
+from ci.jobs.scripts.dataset_download import (
+    download_and_extract_datasets,
+    iceberg_database_ddl_commands,
+)
 from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
@@ -216,6 +219,7 @@ def download_datasets():
         "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
         "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
         "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch.tar",
+        "tpch_ice10": "https://clickhouse-datasets.s3.amazonaws.com/h-ice/10/tpch_ice_sf10.tar",
     }
     errors = download_and_extract_datasets(dataset_paths.values(), PERF_DB_PATH)
     for error in errors:
@@ -517,6 +521,10 @@ def configure_datasets(server_dir, port=9000):
         f'for f in {repo_path}/tests/performance/user_files/*; do [ -e "$f" ] || continue; '
         f'ln -sf "$(readlink -f "$f")" {server_dir}/db/user_files/; done'
     )
+    # Attach the Iceberg datasets as databases, so the Iceberg performance tests exercise their read paths here instead of failing on a missing database.
+    for command in iceberg_database_ddl_commands(server_dir):
+        if not Shell.check(command, verbose=True):
+            return False
     return True
 
 

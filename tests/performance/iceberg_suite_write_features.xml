@@ -1,0 +1,96 @@
+<test profile_all_queries="1" run_all_queries="1">
+    <settings>
+        <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
+        <mutations_sync>2</mutations_sync>
+        <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
+        <iceberg_delete_data_on_drop>1</iceberg_delete_data_on_drop>
+    </settings>
+
+    <!-- WRITE-FEATURES suite: per-feature IcebergLocal tables built once in <create_query>, each measuring a stable read or idempotent mutation not covered by iceberg_suite_write.xml. -->
+
+    <substitutions>
+        <substitution>
+            <name>database</name>
+            <values>
+                <value>iceberg_suite_write_features</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE DATABASE IF NOT EXISTS {database}</create_query>
+
+    <!-- ===== add_column: mixed-schema read after ADD COLUMN ===== -->
+    <create_query>DROP TABLE IF EXISTS {database}.evo_add</create_query>
+    <create_query>CREATE TABLE {database}.evo_add (l_orderkey Int32, l_quantity Float64) ENGINE = IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/evo_add_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</create_query>
+    <create_query>INSERT INTO {database}.evo_add SELECT l_orderkey, l_quantity FROM tpch10.lineitem LIMIT 100000 SETTINGS max_threads = 1, max_insert_threads = 1</create_query>
+    <create_query>ALTER TABLE {database}.evo_add ADD COLUMN l_note Nullable(String)</create_query>
+    <create_query>INSERT INTO {database}.evo_add SELECT l_orderkey, l_quantity, l_comment FROM tpch10.lineitem LIMIT 100000, 100000 SETTINGS max_threads = 1, max_insert_threads = 1</create_query>
+    <query>SELECT count(), countIf(l_note IS NULL) FROM {database}.evo_add</query>
+
+    <!-- ===== drop_column: read after a metadata-only DROP COLUMN ===== -->
+    <create_query>DROP TABLE IF EXISTS {database}.evo_drop</create_query>
+    <create_query>CREATE TABLE {database}.evo_drop (l_orderkey Int32, l_quantity Float64, l_comment String) ENGINE = IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/evo_drop_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</create_query>
+    <create_query>INSERT INTO {database}.evo_drop SELECT l_orderkey, l_quantity, l_comment FROM tpch10.lineitem LIMIT 100000 SETTINGS max_threads = 1, max_insert_threads = 1</create_query>
+    <create_query>ALTER TABLE {database}.evo_drop DROP COLUMN l_comment</create_query>
+    <query>SELECT count(), sum(l_quantity) FROM {database}.evo_drop</query>
+
+    <!-- ===== rename_column: read by the new name (field-id-stable resolution) ===== -->
+    <create_query>DROP TABLE IF EXISTS {database}.evo_rename</create_query>
+    <create_query>CREATE TABLE {database}.evo_rename (l_orderkey Int32, l_quantity Float64) ENGINE = IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/evo_rename_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</create_query>
+    <create_query>INSERT INTO {database}.evo_rename SELECT l_orderkey, l_quantity FROM tpch10.lineitem LIMIT 100000 SETTINGS max_threads = 1, max_insert_threads = 1</create_query>
+    <create_query>ALTER TABLE {database}.evo_rename RENAME COLUMN l_quantity TO qty</create_query>
+    <query>SELECT count(), sum(qty) FROM {database}.evo_rename</query>
+
+    <!-- ===== partition_identity_prune ===== -->
+    <create_query>DROP TABLE IF EXISTS {database}.part_identity</create_query>
+    <create_query>CREATE TABLE {database}.part_identity (l_orderkey Int32, l_returnflag String, l_extendedprice Float64) ENGINE = IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/part_identity_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet') PARTITION BY (l_returnflag)</create_query>
+    <create_query>INSERT INTO {database}.part_identity SELECT l_orderkey, l_returnflag, l_extendedprice FROM tpch10.lineitem LIMIT 200000 SETTINGS max_threads = 1, max_insert_threads = 1</create_query>
+    <query>SELECT count(), sum(l_extendedprice) FROM {database}.part_identity WHERE l_returnflag = 'R'</query>
+
+    <!-- ===== partition_bucket_prune (icebergBucket transform) ===== -->
+    <create_query>DROP TABLE IF EXISTS {database}.part_bucket</create_query>
+    <create_query>CREATE TABLE {database}.part_bucket (l_orderkey Int32, l_quantity Float64) ENGINE = IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/part_bucket_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet') PARTITION BY (icebergBucket(16, l_orderkey))</create_query>
+    <create_query>INSERT INTO {database}.part_bucket SELECT l_orderkey, l_quantity FROM tpch10.lineitem LIMIT 200000 SETTINGS max_threads = 1, max_insert_threads = 1</create_query>
+    <query>SELECT count(), sum(l_quantity) FROM {database}.part_bucket WHERE l_orderkey = 12345678</query>
+
+    <!-- ===== partition_month_prune (toMonthNumSinceEpoch transform) ===== -->
+    <create_query>DROP TABLE IF EXISTS {database}.part_month</create_query>
+    <create_query>CREATE TABLE {database}.part_month (l_orderkey Int32, l_shipdate Date, l_quantity Float64) ENGINE = IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/part_month_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet') PARTITION BY (toMonthNumSinceEpoch(l_shipdate))</create_query>
+    <create_query>INSERT INTO {database}.part_month SELECT l_orderkey, l_shipdate, l_quantity FROM tpch10.lineitem WHERE l_shipdate &gt;= toDate('1994-01-01') AND l_shipdate &lt; toDate('1995-01-01') LIMIT 200000 SETTINGS max_threads = 1, max_insert_threads = 1</create_query>
+    <query>SELECT count(), sum(l_quantity) FROM {database}.part_month WHERE l_shipdate &gt;= toDate('1994-06-01') AND l_shipdate &lt; toDate('1994-07-01')</query>
+
+    <!-- ===== update_partition_key_move: UPDATE on the partition column ===== -->
+    <create_query>DROP TABLE IF EXISTS {database}.upd_part</create_query>
+    <create_query>CREATE TABLE {database}.upd_part (l_orderkey Int32, l_returnflag String, l_quantity Float64) ENGINE = IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/upd_part_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet') PARTITION BY (l_returnflag)</create_query>
+    <create_query>INSERT INTO {database}.upd_part SELECT l_orderkey, l_returnflag, l_quantity FROM tpch10.lineitem LIMIT 200000 SETTINGS max_threads = 1, max_insert_threads = 1</create_query>
+    <query>ALTER TABLE {database}.upd_part UPDATE l_returnflag = 'X' WHERE l_orderkey % 5 = 0</query>
+
+    <!-- ===== sort_order_minmax_read: ORDER BY write + min/max-pruned range read (merges sort-order and min/max-writing) ===== -->
+    <create_query>DROP TABLE IF EXISTS {database}.sorted_li</create_query>
+    <create_query>CREATE TABLE {database}.sorted_li (l_orderkey Int32, l_shipdate Date, l_extendedprice Float64) ENGINE = IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/sorted_li_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet') ORDER BY (l_shipdate, l_orderkey)</create_query>
+    <create_query>INSERT INTO {database}.sorted_li SELECT l_orderkey, l_shipdate, l_extendedprice FROM tpch10.lineitem LIMIT 500000 SETTINGS max_threads = 1, max_insert_threads = 1, iceberg_insert_max_rows_in_data_file = 50000</create_query>
+    <query>SELECT count(), sum(l_extendedprice) FROM {database}.sorted_li WHERE l_shipdate BETWEEN toDate('1994-06-01') AND toDate('1994-06-30')</query>
+
+    <!-- ===== nested_types_write_read (Array/Map/Tuple) ===== -->
+    <create_query>DROP TABLE IF EXISTS {database}.nested_t</create_query>
+    <create_query>CREATE TABLE {database}.nested_t (id Int64, tags Array(String), props Map(String, Int64), rec Tuple(a Int64, b String)) ENGINE = IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/nested_t_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</create_query>
+    <create_query>INSERT INTO {database}.nested_t SELECT number, [toString(number), 'x'], map('k', number), (number, toString(number)) FROM numbers(200000) SETTINGS max_threads = 1, max_insert_threads = 1</create_query>
+    <query>SELECT count(), sum(length(tags)), sum(props['k']), sum(rec.1) FROM {database}.nested_t</query>
+
+    <!-- ===== many_small_data_files ===== -->
+    <create_query>DROP TABLE IF EXISTS {database}.small_files</create_query>
+    <create_query>CREATE TABLE {database}.small_files (l_orderkey Int32, l_quantity Float64) ENGINE = IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/small_files_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</create_query>
+    <create_query>INSERT INTO {database}.small_files SELECT l_orderkey, l_quantity FROM tpch10.lineitem LIMIT 200000 SETTINGS max_threads = 1, max_insert_threads = 1, iceberg_insert_max_rows_in_data_file = 1000</create_query>
+    <query>SELECT count(), sum(l_quantity) FROM {database}.small_files</query>
+
+    <drop_query>DROP TABLE IF EXISTS {database}.evo_add</drop_query>
+    <drop_query>DROP TABLE IF EXISTS {database}.evo_drop</drop_query>
+    <drop_query>DROP TABLE IF EXISTS {database}.evo_rename</drop_query>
+    <drop_query>DROP TABLE IF EXISTS {database}.part_identity</drop_query>
+    <drop_query>DROP TABLE IF EXISTS {database}.part_bucket</drop_query>
+    <drop_query>DROP TABLE IF EXISTS {database}.part_month</drop_query>
+    <drop_query>DROP TABLE IF EXISTS {database}.upd_part</drop_query>
+    <drop_query>DROP TABLE IF EXISTS {database}.sorted_li</drop_query>
+    <drop_query>DROP TABLE IF EXISTS {database}.nested_t</drop_query>
+    <drop_query>DROP TABLE IF EXISTS {database}.small_files</drop_query>
+</test>

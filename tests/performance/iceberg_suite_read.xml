@@ -1,0 +1,83 @@
+<test profile_all_queries="1" run_all_queries="1">
+    <settings>
+        <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
+    </settings>
+
+    <!-- READ suite over the shared tpch_ice10 dataset (60M-row lineitem, 84 monthly partitions): the read-path aspects the TPC-H scans can't isolate - metadata cost, pruning, PREWHERE, push-down, parallelism, table resolution. -->
+
+    <substitutions>
+        <substitution>
+            <name>database</name>
+            <values>
+                <value>tpch_ice10</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- point_lookup_warm: single-day predicate prunes to one data file via partition + per-file min/max, metadata from cache. -->
+    <query>SELECT count(), sum(l_extendedprice) FROM {database}.lineitem WHERE l_shipdate = toDate('1994-06-15')</query>
+
+    <!-- point_lookup_cold: same lookup with the metadata cache off, so the diff vs warm is the metadata.json parse + manifest Avro decode. -->
+    <query>SELECT count(), sum(l_extendedprice) FROM {database}.lineitem WHERE l_shipdate = toDate('1994-06-15') SETTINGS use_iceberg_metadata_files_cache = 0</query>
+
+    <!-- manifest_metadata_decode: metadata-only manifest walk via system.iceberg_files with the cache off, isolating manifest Avro decode without touching a data file. -->
+    <query>SELECT count(), sum(record_count), sum(file_size_in_bytes) FROM system.iceberg_files WHERE database = '{database}' AND table = 'lineitem' AND content = 0 SETTINGS use_iceberg_metadata_files_cache = 0</query>
+
+    <!-- partition_prune_month: filter aligned with the month partition transform; signal IcebergPartitionPrunedFiles ~ 83. -->
+    <query>SELECT count(), sum(l_quantity) FROM {database}.lineitem WHERE l_shipdate &gt;= toDate('1995-01-01') AND l_shipdate &lt; toDate('1995-02-01') SETTINGS use_iceberg_partition_pruning = 1</query>
+
+    <!-- minmax_prune_edge: last shipping day lives in the last file only, the rest skipped via per-file min/max; signal IcebergMinMaxIndexPrunedFiles ~ 83. -->
+    <query>SELECT count() FROM {database}.lineitem WHERE l_shipdate = toDate('1998-12-01')</query>
+
+    <!-- minmax_secondary_column: filter the non-partition l_receiptdate with partition pruning off, so only per-file min/max stats can skip files. -->
+    <query>SELECT count(), sum(l_quantity) FROM {database}.lineitem WHERE l_receiptdate = toDate('1994-06-15') SETTINGS use_iceberg_partition_pruning = 0</query>
+
+    <!-- prune_negative_control: predicate spans every file's range, nothing prunes, so the walk over all manifest entries is paid every run. -->
+    <query>SELECT count(), min(l_shipdate) FROM {database}.lineitem WHERE l_shipdate &gt;= toDate('1990-01-01')</query>
+
+    <!-- trivial_count: no predicate, answerable from snapshot-level row counts without touching a data file. -->
+    <query>SELECT count() FROM {database}.lineitem</query>
+
+    <!-- time_travel baseline + iceberg_timestamp_ms as-of a far-future timestamp; the diff isolates timestamp-to-snapshot resolution from the scan. -->
+    <query>SELECT count(), sum(l_extendedprice) FROM {database}.lineitem</query>
+    <query>SELECT count(), sum(l_extendedprice) FROM {database}.lineitem SETTINGS iceberg_timestamp_ms = 32503680000000</query>
+
+    <!-- join_fact_dim_mergetree: Iceberg fact joined with the MergeTree dimension holding the same data (right side ~6 months of orders); the cross-engine join path. -->
+    <query>SELECT count() FROM {database}.lineitem AS l INNER JOIN tpch10.orders AS o ON l.l_orderkey = o.o_orderkey WHERE o.o_orderdate &lt; toDate('1992-06-01')</query>
+
+    <!-- join_fact_dim_iceberg: same join with both sides on Iceberg, so the diff vs the MergeTree variant isolates the data-lake read path. -->
+    <query>SELECT count() FROM {database}.lineitem AS l INNER JOIN {database}.orders AS o ON l.l_orderkey = o.o_orderkey WHERE o.o_orderdate &lt; toDate('1992-06-01')</query>
+
+    <!-- columns_narrow: full scan decoding 2 of 16 columns; Parquet column pruning on the revenue expression. -->
+    <query>SELECT sum(l_extendedprice * (1 - l_discount)) FROM {database}.lineitem</query>
+
+    <!-- columns_wide: same full scan forced to decode every column; the diff vs narrow is the column-count scaling of the Parquet decode. -->
+    <query>SELECT count() FROM {database}.lineitem WHERE NOT ignore(*)</query>
+
+    <!-- pushdown_off: selective l_orderkey range with every in-file filter layer off, so the whole table is decoded and filtered in the engine (matches cluster in a few row groups). -->
+    <query>SELECT count(), sum(l_quantity) FROM {database}.lineitem WHERE l_orderkey BETWEEN 10000000 AND 10100000 SETTINGS input_format_parquet_filter_push_down = 0, input_format_parquet_page_filter_push_down = 0</query>
+
+    <!-- pushdown_rowgroup: row-group min/max statistics only. -->
+    <query>SELECT count(), sum(l_quantity) FROM {database}.lineitem WHERE l_orderkey BETWEEN 10000000 AND 10100000 SETTINGS input_format_parquet_filter_push_down = 1, input_format_parquet_page_filter_push_down = 0</query>
+
+    <!-- pushdown_page: row-group plus page-level pruning, the finest granularity. -->
+    <query>SELECT count(), sum(l_quantity) FROM {database}.lineitem WHERE l_orderkey BETWEEN 10000000 AND 10100000 SETTINGS input_format_parquet_filter_push_down = 1, input_format_parquet_page_filter_push_down = 1</query>
+
+    <!-- prewhere_off: a ~4%-selective filter with PREWHERE off, so both columns are fully decoded before filtering. -->
+    <query>SELECT sum(l_extendedprice), count() FROM {database}.lineitem WHERE l_quantity &lt; 2 SETTINGS optimize_move_to_prewhere = 0</query>
+
+    <!-- prewhere_on: same query with the filter in PREWHERE on the object-storage read path, so l_extendedprice is decoded only for surviving rows. -->
+    <query>SELECT sum(l_extendedprice), count() FROM {database}.lineitem WHERE l_quantity &lt; 2 SETTINGS optimize_move_to_prewhere = 1</query>
+
+    <!-- threads_1: one year (12 files) of the revenue scan on a single thread; baseline of the parallelism pair. -->
+    <query>SELECT sum(l_extendedprice * (1 - l_discount)) FROM {database}.lineitem WHERE l_shipdate &gt;= toDate('1994-01-01') AND l_shipdate &lt; toDate('1995-01-01') SETTINGS max_threads = 1</query>
+
+    <!-- threads_16: same scan on 16 threads; the ratio vs threads_1 is the file-level parallelization efficiency of the Iceberg source. -->
+    <query>SELECT sum(l_extendedprice * (1 - l_discount)) FROM {database}.lineitem WHERE l_shipdate &gt;= toDate('1994-01-01') AND l_shipdate &lt; toDate('1995-01-01') SETTINGS max_threads = 16</query>
+
+    <!-- table_function_resolution: the point lookup via the icebergLocal table function, paying table resolution + schema inference each run; the absolute path comes from system.server_settings since the function doesn't resolve relative paths against user_files. -->
+    <query>SELECT count(), sum(l_extendedprice) FROM icebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/tpch_ice_sf10/lineitem/') WHERE l_shipdate = toDate('1994-06-15')</query>
+
+    <!-- limit_early_exit: reader startup and cancellation - open only the first data file and stop after the first thousand wide rows. -->
+    <query>SELECT * FROM {database}.lineitem LIMIT 1000</query>
+</test>

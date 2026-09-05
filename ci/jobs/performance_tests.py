@@ -18,7 +18,11 @@ import yaml
 from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT
 from ci.jobs.scripts import log_export
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
-from ci.jobs.scripts.dataset_download import download_and_extract_datasets
+from ci.jobs.scripts.dataset_download import (
+    ICEBERG_DATASETS,
+    download_and_extract_datasets,
+    iceberg_database_ddl_commands,
+)
 from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -1723,6 +1727,9 @@ def rebuild_table(port, source, destination):
 
 POPULATE_DONE_MARKER = "test._populate_done"
 
+# Derived, not hand-maintained: adding a dataset to ICEBERG_DATASETS is enough to protect it from the between-tests user_files wipe.
+PERSISTENT_USER_FILES = {directory for directory, _ in ICEBERG_DATASETS.values()}
+
 
 def populate_data(port):
     # Rebuild the hits datasets on one server, sequentially. The three inserts
@@ -1987,6 +1994,7 @@ def main():
                 "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
                 "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
                 "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch_sf10.tar",
+                "tpch_ice10": "https://clickhouse-datasets.s3.amazonaws.com/h-ice/10/tpch_ice_sf10.tar",
                 "tpcds1": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
             }
             stop_watch = Utils.Stopwatch()
@@ -2046,6 +2054,9 @@ def main():
             # Same: the CI Logs cluster must be in the config of both servers.
             create_log_export_configs,
         ]
+        # Attach the Iceberg datasets as databases, so tests read tpch_ice10.<table> with no create_query of their own.
+        commands += iceberg_database_ddl_commands(perf_left)
+        commands += iceberg_database_ddl_commands(perf_right)
         results.append(Result.from_commands_run(name="Configure", command=commands))
         res = results[-1].is_ok()
 
@@ -2140,6 +2151,9 @@ def main():
                 if not user_files.is_dir():
                     continue
                 for entry in user_files.iterdir():
+                    # Dataset directories must outlive the tests; they are real directories, so the is_symlink() check below does not cover them.
+                    if entry.name in PERSISTENT_USER_FILES:
+                        continue
                     if entry.is_symlink():
                         continue
                     if entry.is_dir():
@@ -2148,13 +2162,10 @@ def main():
                         entry.unlink()
 
         def run_tests():
-            # Run 10 random queries per test by default, but all queries for benchmarks
-            benchmarks = {"clickbench.xml", "tpch.xml", "tpcds.xml"}
             for test in test_files:
-                max_queries = 0 if test in benchmarks else 10
                 CHServer.run_test(
                     "./tests/performance/" + test,
-                    max_queries=max_queries,
+                    max_queries=10,
                     pr_number=info.pr_number,
                     results_path=perf_wd,
                 )
