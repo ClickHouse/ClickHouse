@@ -43,7 +43,8 @@ struct TestWire
     bool operator==(const TestWire &) const = default;
 };
 
-struct TestStep;
+/// A tag type: the framework tests exercise a manifest without ever building the step.
+struct TestStep {};
 
 constexpr UInt64 base_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
 constexpr UInt64 append_version = base_version + 1;

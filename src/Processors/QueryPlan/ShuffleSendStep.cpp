@@ -100,6 +100,7 @@ namespace
 
 constexpr auto SHUFFLE_SEND_MANIFEST = StepManifest<ShuffleSendStep, ShuffleSendWire>("ShuffleSend")
     .nameIntroducedIn(1)
+    .inputs(1)
     .baseFormat(
         field("exchange_id", WireFieldClass::Logical, &ShuffleSendWire::exchange_id),
         field("key_names", WireFieldClass::Logical, &ShuffleSendWire::key_names),

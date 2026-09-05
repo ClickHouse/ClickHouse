@@ -15,6 +15,8 @@
 #include <Interpreters/SetSerialization.h>
 #include <Analyzer/TableExpressionModifiers.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/ISourceStep.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -152,8 +154,8 @@ constexpr WireField<Wire, T> field(const char * name, WireFieldClass field_class
 }
 
 /// One value that travels through the settings channel under a plan setting name. The plan version
-/// that added the setting and the receiver's default live in `QueryPlanSerializationSettings`; the
-/// entry is written only when the value differs from that default.
+/// that added the setting and the receiver's default live in `QueryPlanSerializationSettings`; every
+/// declared entry is written whatever its value, so a reader takes it off the wire.
 template <typename Wire_, typename T, typename SettingField>
 struct WireSetting
 {
@@ -211,6 +213,11 @@ struct StepManifest
     Eligibility full_digest_eligible = &Eligible::always<Wire>;
     Eligibility logical_digest_eligible = &Eligible::always<Wire>;
     bool custom = false;
+    /// The number of input streams the step reads: -1 derive from the step's base class (a source
+    /// has none, a transforming step has one), -2 a variable number, or a fixed count.
+    int input_arity = -1;
+
+    static constexpr size_t variable_input_count = std::numeric_limits<size_t>::max();
 
     constexpr explicit StepManifest(const char * name_) : name(name_) { }
 
@@ -221,7 +228,8 @@ struct StepManifest
         Settings setting_entries_,
         Eligibility full_digest_eligible_,
         Eligibility logical_digest_eligible_,
-        bool custom_)
+        bool custom_,
+        int input_arity_)
         : name(name_)
         , name_introduced_in(name_introduced_in_)
         , formats(formats_)
@@ -229,6 +237,7 @@ struct StepManifest
         , full_digest_eligible(full_digest_eligible_)
         , logical_digest_eligible(logical_digest_eligible_)
         , custom(custom_)
+        , input_arity(input_arity_)
     {
     }
 
@@ -250,7 +259,7 @@ struct StepManifest
         using NewFormats = std::tuple<WireFormat<F...>>;
         return StepManifest<Step, Wire, NewFormats, Settings>(
             name, name_introduced_in, NewFormats{WireFormat<F...>{0, std::tuple<F...>{fields...}}},
-            setting_entries, full_digest_eligible, logical_digest_eligible, custom);
+            setting_entries, full_digest_eligible, logical_digest_eligible, custom, input_arity);
     }
 
     /// The next payload format, appended after the previous one. Older readers skip its bytes;
@@ -263,7 +272,7 @@ struct StepManifest
         static_assert((std::is_same_v<typename F::Wire, Wire> && ...), "every field must belong to the manifest's wire struct");
         auto new_formats = std::tuple_cat(formats, std::tuple<WireFormat<F...>>{WireFormat<F...>{introduced.version, std::tuple<F...>{fields...}}});
         return StepManifest<Step, Wire, decltype(new_formats), Settings>(
-            name, name_introduced_in, new_formats, setting_entries, full_digest_eligible, logical_digest_eligible, custom);
+            name, name_introduced_in, new_formats, setting_entries, full_digest_eligible, logical_digest_eligible, custom, input_arity);
     }
 
     /// The values the step sends through the settings channel.
@@ -274,7 +283,7 @@ struct StepManifest
         static_assert((std::is_same_v<typename S::Wire, Wire> && ...), "every setting must belong to the manifest's wire struct");
         using NewSettings = std::tuple<S...>;
         return StepManifest<Step, Wire, Formats, NewSettings>(
-            name, name_introduced_in, formats, NewSettings{entries...}, full_digest_eligible, logical_digest_eligible, custom);
+            name, name_introduced_in, formats, NewSettings{entries...}, full_digest_eligible, logical_digest_eligible, custom, input_arity);
     }
 
     constexpr StepManifest fullDigest(Eligibility eligible) const
@@ -298,6 +307,45 @@ struct StepManifest
         StepManifest copy = *this;
         copy.custom = true;
         return copy;
+    }
+
+    /// The step reads exactly `count` input streams. Needed only for a step that derives from
+    /// neither a source nor a transforming step; the others derive it from their base class.
+    constexpr StepManifest inputs(size_t count) const
+    {
+        StepManifest copy = *this;
+        copy.input_arity = static_cast<int>(count);
+        return copy;
+    }
+
+    /// The step reads a variable number of input streams, e.g. a union.
+    constexpr StepManifest variableInputs() const
+    {
+        StepManifest copy = *this;
+        copy.input_arity = -2;
+        return copy;
+    }
+
+    /// The number of input streams the step reads, or `variable_input_count` when it varies.
+    constexpr size_t inputCount() const
+    {
+        if (input_arity == -2)
+            return variable_input_count;
+        if (input_arity >= 0)
+            return static_cast<size_t>(input_arity);
+        if constexpr (std::is_base_of_v<ISourceStep, Step>)
+            return 0;
+        else if constexpr (std::is_base_of_v<ITransformingStep, Step>)
+            return 1;
+        else
+            return variable_input_count;
+    }
+
+    /// Whether the arity is known: it is declared, or the base class fixes it. A step that is
+    /// neither a source nor a transforming step must declare it.
+    constexpr bool arityIsResolved() const
+    {
+        return input_arity != -1 || std::is_base_of_v<ISourceStep, Step> || std::is_base_of_v<ITransformingStep, Step>;
     }
 
     static constexpr size_t formatCount() { return std::tuple_size_v<Formats>; }
@@ -704,6 +752,7 @@ QueryPlanStepRegistry::StepSerializationInfo manifestRegistryInfo(const Manifest
     info.introduced_in_plan_version = manifest.name_introduced_in;
     info.has_wire_struct = !manifest.custom;
     info.max_format_version = std::max<UInt64>(1, Manifest::formatCount());
+    info.input_count = manifest.inputCount();
     return info;
 }
 
@@ -802,6 +851,8 @@ template <const auto & manifest>
 void registerManifest(QueryPlanStepRegistry & registry, QueryPlanStepRegistry::StepCreateFunction create)
 {
     static_assert(manifestCoversWire(manifest), "the manifest must bind every member of its wire struct exactly once");
+    static_assert(manifest.arityIsResolved(),
+        "declare the step's input count with .inputs(n) or .variableInputs(): it derives from neither a source nor a transforming step");
     checkSettingInitializers(manifest);
     registry.registerStep(manifest.name, std::move(create), manifestRegistryInfo(manifest), describeManifest(manifest));
 }

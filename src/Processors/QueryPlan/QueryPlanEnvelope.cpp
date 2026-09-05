@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/QueryPlanEnvelope.h>
+#include <limits>
 
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -293,6 +294,14 @@ QueryPlanOutlineValidationResult validateQueryPlanOutline(
 
         if (info)
         {
+            /// A step is built from its children's headers, so a node whose child count does not
+            /// match the input count the step reads would make the factory read a header that is
+            /// not there. Caught here, before the step is built.
+            if (info->input_count != std::numeric_limits<size_t>::max() && node.child_count != info->input_count)
+                result.issues.push_back(fmt::format(
+                    "step '{}' (node #{}) has {} inputs but reads {}",
+                    node.step_name, i, node.child_count, info->input_count));
+
             /// The version a node claims to need must cover the version that introduced the step's
             /// name. A writer that asked for too little would otherwise have old readers run the
             /// plan wrongly without noticing.

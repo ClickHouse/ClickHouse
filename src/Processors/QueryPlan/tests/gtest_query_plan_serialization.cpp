@@ -626,6 +626,50 @@ TEST(QueryPlanOutline, BodyIsAHardReadBoundary)
     EXPECT_EQ(rest, "SENTINEL");
 }
 
+TEST(QueryPlanOutline, StepInputCountIsValidated)
+{
+    registerStepsOnce();
+
+    auto make_node = [](const char * name, UInt64 child_count)
+    {
+        PlanOutline::Node outline_node;
+        outline_node.child_count = child_count;
+        outline_node.step_name = name;
+        outline_node.step_format_version = 1;
+        outline_node.min_reader_plan_version = outline_version;
+        outline_node.header = makeTestHeader();
+        return outline_node;
+    };
+
+    /// A single transforming step with no child. The tree shape is valid, but the step reads one
+    /// input, so building it would dereference a header that is not there.
+    {
+        PlanOutline outline;
+        outline.nodes.push_back(make_node("Expression", 0));
+        auto result = validateQueryPlanOutline(outline, outline_version);
+        ASSERT_FALSE(result.ok());
+        EXPECT_NE(result.describe().find("has 0 inputs but reads 1"), std::string::npos) << result.describe();
+    }
+
+    /// A source step given a child is rejected the same way.
+    {
+        PlanOutline outline;
+        outline.nodes.push_back(make_node("TestSource", 0));
+        outline.nodes.push_back(make_node("ReadNothing", 1));
+        auto result = validateQueryPlanOutline(outline, outline_version);
+        ASSERT_FALSE(result.ok());
+        EXPECT_NE(result.describe().find("has 1 inputs but reads 0"), std::string::npos) << result.describe();
+    }
+
+    /// The matching shape passes the arity check.
+    {
+        PlanOutline outline;
+        outline.nodes.push_back(make_node("TestSource", 0));
+        outline.nodes.push_back(make_node("Expression", 1));
+        EXPECT_TRUE(validateQueryPlanOutline(outline, outline_version).ok());
+    }
+}
+
 TEST(QueryPlanOutline, WriteReadRoundTrip)
 {
     registerStepsOnce();

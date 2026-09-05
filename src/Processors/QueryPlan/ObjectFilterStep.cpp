@@ -41,6 +41,7 @@ namespace
 
 constexpr auto OBJECT_FILTER_MANIFEST = StepManifest<ObjectFilterStep, ObjectFilterWire>("ObjectFilter")
     .nameIntroducedIn(1)
+    .inputs(1)
     .baseFormat(
         field("actions_dag", WireFieldClass::Logical, &ObjectFilterWire::actions_dag),
         field("filter_column_name", WireFieldClass::Logical, &ObjectFilterWire::filter_column_name));

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/ProtocolDefines.h>
+#include <limits>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 
 
@@ -28,6 +29,11 @@ public:
         /// is then available as a plain wire struct, which a converter to another plan format can
         /// read without knowing the step class.
         bool has_wire_struct = false;
+
+        /// The number of input streams the step reads, checked against a node's child count before the
+        /// step is built. `SIZE_MAX` means the count is not fixed (a variable-input step, or a step
+        /// registered without a manifest), so no check is applied.
+        size_t input_count = std::numeric_limits<size_t>::max();
     };
 
     QueryPlanStepRegistry() = default;

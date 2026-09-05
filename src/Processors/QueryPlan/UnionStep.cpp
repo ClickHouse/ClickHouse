@@ -224,6 +224,7 @@ namespace
 
 constexpr auto UNION_MANIFEST = StepManifest<UnionStep, UnionWire>("Union")
     .nameIntroducedIn(1)
+    .variableInputs()
     .baseFormat(
         field("allow_narrowing", WireFieldClass::Logical, &UnionWire::allow_narrowing));
 

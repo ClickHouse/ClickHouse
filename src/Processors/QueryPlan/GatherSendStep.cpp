@@ -92,6 +92,7 @@ namespace
 
 constexpr auto GATHER_SEND_MANIFEST = StepManifest<GatherSendStep, GatherSendWire>("GatherSend")
     .nameIntroducedIn(1)
+    .inputs(1)
     .baseFormat(
         field("exchange_id", WireFieldClass::Logical, &GatherSendWire::exchange_id),
         field("maintain_sort_description", WireFieldClass::Logical, &GatherSendWire::maintain_sort_description));

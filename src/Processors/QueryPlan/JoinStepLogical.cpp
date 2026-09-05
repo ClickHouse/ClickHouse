@@ -2331,6 +2331,7 @@ namespace
 
 constexpr auto JOIN_MANIFEST = StepManifest<JoinStepLogical, JoinWire>("Join")
     .nameIntroducedIn(1)
+    .inputs(2)
     .baseFormat(field("join", WireFieldClass::Logical, &JoinWire::join))
     .settings(
         setting(QueryPlanSerializationSetting::join_algorithm, WireFieldClass::Physical, &JoinWire::join_algorithm),

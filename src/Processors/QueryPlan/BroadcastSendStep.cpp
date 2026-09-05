@@ -59,6 +59,7 @@ namespace
 
 constexpr auto BROADCAST_SEND_MANIFEST = StepManifest<BroadcastSendStep, BroadcastSendWire>("BroadcastSend")
     .nameIntroducedIn(1)
+    .inputs(1)
     .baseFormat(
         field("exchange_id", WireFieldClass::Logical, &BroadcastSendWire::exchange_id),
         field("num_buckets", WireFieldClass::Physical, &BroadcastSendWire::num_buckets));
