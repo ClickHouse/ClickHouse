@@ -1102,6 +1102,12 @@ public:
         AlterLockHolder & table_lock_holder,
         bool run_sanity_checks = true);
 
+    /// Copy the index filename policy from the committed `escape_index_filenames` setting into
+    /// @metadata. `changeSettings` is the sole writer of these metadata fields, so an `ALTER` that
+    /// changes the setting and then republishes a metadata copy taken earlier (`commands.apply`
+    /// never touches them) has to re-apply them, or the policy silently reverts until a restart.
+    void applyEscapeIndexFilenamesFromSettings(StorageInMemoryMetadata & metadata) const;
+
     std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
     static void verifySortingKey(const KeyDescription & sorting_key);
 

@@ -175,6 +175,20 @@ public:
     /// Returns true if there is materialized index with specified name in part.
     bool hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const;
 
+    /// Like `hasSecondaryIndex`, but answers what the read path can actually use, which is what
+    /// `system.parts.secondary_indices_materialized` reports:
+    /// - only index data that the part owns counts. An index file present in the part's directory
+    ///   yet absent from `checksums.txt` is an orphan left behind by the released bug #109595 (see
+    ///   `04427_mutate_some_columns_drop_index_corrupted_idx`) and the index still has to be
+    ///   rebuilt by `ALTER TABLE ... MATERIALIZE INDEX`, while `hasSecondaryIndex` falls back to
+    ///   raw storage existence - right for the repair paths that must see the dead files, wrong
+    ///   for reporting to the user;
+    /// - every substream of the layout the reader would choose must be present, so a multistream
+    ///   index (`text`) with a lost `.dct.idx` / `.pst.idx` is not reported as materialized;
+    /// - each substream needs its marks file too (`MergeTreeIndexReader` loads marks for every
+    ///   stream it opens), under the same plain/hashed/packed ownership rules as the data file.
+    bool hasMaterializedSecondaryIndex(const IMergeTreeIndex & skip_index) const;
+
     /// True iff any of @index's substreams (base plus side streams like .dct/.pst for text indices)
     /// is stored inside this part's skp_idx.packed archive. Probing every substream, not just
     /// .idx/.idx2, keeps a mixed-layout index from looking absent and losing its packed side

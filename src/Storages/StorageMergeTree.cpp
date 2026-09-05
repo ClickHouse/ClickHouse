@@ -504,6 +504,10 @@ void StorageMergeTree::alter(
 
         if (statistics_changed)
         {
+            /// `changeSettings` has already committed the index filename policy; re-apply it so the
+            /// implicit statistics commit below does not revert it. Mirrors `StorageReplicatedMergeTree::alter`.
+            applyEscapeIndexFilenamesFromSettings(new_metadata);
+
             /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             setInMemoryMetadata(new_metadata);
@@ -592,6 +596,11 @@ void StorageMergeTree::alter(
             try
             {
                 changeSettings(new_metadata.settings_changes, table_lock_holder);
+
+                /// `changeSettings` has already committed the index filename policy; re-apply it so
+                /// `setProperties` below does not revert it.
+                applyEscapeIndexFilenamesFromSettings(new_metadata);
+
                 checkTTLExpressions(new_metadata, old_metadata);
 
                 /// Validate setting-dependent metadata against the just-applied settings
