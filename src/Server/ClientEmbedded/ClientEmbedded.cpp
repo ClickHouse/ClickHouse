@@ -198,8 +198,8 @@ try
 
     load_suggestions = true;
     wait_for_suggestions_to_load = true;
-    server_display_name = getFQDNOrHostName();
-    prompt = format("{} :) ", global_context->getConfigRef().getString("display_name", server_display_name));
+    server_display_name = global_context->getConfigRef().getString("display_name", getFQDNOrHostName());
+    prompt = "{display_name}";
     query_processing_stage = QueryProcessingStage::Enum::Complete;
     pager = getClientConfiguration().getString("pager", "");
     enable_highlight = ConfigHelper::getBool(getClientConfiguration(), "highlight", true);

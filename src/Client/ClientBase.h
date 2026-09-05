@@ -160,8 +160,9 @@ protected:
     /// In `clickhouse_json` dialect the client parses JSON locally and then sends a query string that the
     /// server re-parses using the session `dialect`. Pin the outbound `dialect` (and the experimental
     /// gate) to match the form of `outbound_query` actually being sent — JSON body vs. SQL produced by a
-    /// client-side AST rewrite — so the server parses it the same way the client did. No-op outside
-    /// `clickhouse_json`. The change is temporary (the caller restores the saved settings after the query).
+    /// client-side AST rewrite — so the server parses it the same way the client did. A plain SQL `SET`
+    /// escape from another dialect is handled separately. The change is temporary (the caller restores
+    /// the saved settings after the query).
     void pinOutboundDialectForJSONDialect(const String & outbound_query);
 
     /// Settings to transmit to the server: a copy of the client settings with `compatibility`-derived values
@@ -373,7 +374,7 @@ protected:
     void initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option);
     void initKeystrokeInterceptor();
 
-    String appendSmileyIfNeeded(const String & prompt);
+    static String appendSmileyIfNeeded(const String & prompt);
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
@@ -481,6 +482,9 @@ protected:
 
     UInt64 server_revision = 0;
     String server_version;
+    /// A template for the prompt rendered by getPrompt: the `{display_name}` placeholder
+    /// is substituted there on every call (the current dialect is appended to it when
+    /// it is not the default one), and the `:) ` smiley is appended if missing.
     String prompt;
     String server_display_name;
 
@@ -597,6 +601,10 @@ protected:
     /// before any in-query `SET` is applied, so `pinOutboundDialectForJSONDialect` can keep the outbound
     /// transport dialect consistent with the outbound text even if a JSON `SET dialect=...` changed it.
     bool current_query_parsed_as_json_dialect = false;
+
+    /// True when the current query is a SQL `SET` escape parsed with `ParserQuery` while a
+    /// non-ClickHouse dialect was active. Its outbound transport dialect must be `clickhouse`.
+    bool current_query_is_set_escape = false;
 
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_printed = false;

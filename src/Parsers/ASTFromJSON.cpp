@@ -77,6 +77,7 @@
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/Lexer.h>
+#include <Parsers/ParserSetQuery.h>
 
 #include <Common/Exception.h>
 
@@ -448,28 +449,17 @@ size_t getJSONDeserializationRemainingElements()
     return json_deser_max_elements - json_deser_current_elements;
 }
 
-bool isClickHouseJSONSetEscape(const char * begin, const char * end, size_t max_query_size)
+bool isClickHouseJSONSetEscape(const char * begin, const char * end, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
 {
-    /// In the `clickhouse_json` dialect, a leading `SET` query is an escape hatch back to a
-    /// SQL dialect. Detect it via the lexer so that leading SQL comments and whitespace are
-    /// skipped exactly as normal parsing would (e.g. `-- switch back\nSET dialect = 'clickhouse'`
-    /// or `/* */ SET ...`), rather than only stripping ASCII whitespace.
-    /// `max_query_size` bounds the lexer so that an oversized leading comment cannot make it scan
-    /// far past the per-query limit before the caller's own `max_query_size` guard runs.
-    Lexer lexer(begin, end, max_query_size);
-    Token token = lexer.nextToken();
-    while (!token.isEnd() && !token.isError() && !token.isSignificant())
-        token = lexer.nextToken();
-
-    if (token.type != TokenType::BareWord)
-        return false;
-
-    std::string_view text(token.begin, token.size());
-    if (text.size() != 3)
-        return false;
-    return (text[0] == 'S' || text[0] == 's')
-        && (text[1] == 'E' || text[1] == 'e')
-        && (text[2] == 'T' || text[2] == 't');
+    /// A valid SQL `SET` query is an escape hatch from non-ClickHouse dialects. Merely checking
+    /// the leading token would hijack valid queries in those dialects, such as a PromQL metric
+    /// named `set`.
+    Tokens tokens(begin, end, max_query_size, true);
+    IParser::Pos pos(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
+    ParserSetQuery parser;
+    ASTPtr ast;
+    Expected expected;
+    return parser.parse(pos, ast, expected) && ast->as<ASTSetQuery>();
 }
 
 }

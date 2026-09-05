@@ -147,7 +147,7 @@ void LocalConnection::sendQuery(
     const NameToNameMap & query_parameters,
     const String & query_id,
     UInt64 stage,
-    const Settings *,
+    const Settings * query_settings,
     const ClientInfo * client_info,
     bool,
     const std::vector<String> & /*external_roles*/,
@@ -162,6 +162,26 @@ void LocalConnection::sendQuery(
         query_context = session->makeQueryContext(*client_info);
     else
         query_context = session->makeQueryContext();
+
+    /// Capture the parse-time parser limits and parser flags before overlaying the client-sent
+    /// settings: `ClientBase::processParsedSingleQuery` has already folded the query's own
+    /// `SETTINGS` clause into `query_settings`, while the query text was parsed under the session
+    /// values. The `input()` initializer below reparses `state->query` and must apply the settings
+    /// the text was originally accepted with, not stricter (or looser) query-local ones.
+    const auto & parse_time_settings = query_context->getSettingsRef();
+    const UInt64 parse_time_max_query_size = parse_time_settings[Setting::max_query_size];
+    const UInt64 parse_time_max_parser_depth = parse_time_settings[Setting::max_parser_depth];
+    const UInt64 parse_time_max_parser_backtracks = parse_time_settings[Setting::max_parser_backtracks];
+    const bool parse_time_allow_settings_after_format_in_insert = parse_time_settings[Setting::allow_settings_after_format_in_insert];
+    const bool parse_time_implicit_select = parse_time_settings[Setting::implicit_select];
+    const String parse_time_promql_database = parse_time_settings[Setting::promql_database];
+    const String parse_time_promql_table = parse_time_settings[Setting::promql_table];
+    const Field parse_time_promql_evaluation_time = Field{parse_time_settings[Setting::promql_evaluation_time]};
+    const UInt64 parse_time_max_ast_depth = parse_time_settings[Setting::max_ast_depth];
+    const UInt64 parse_time_max_ast_elements = parse_time_settings[Setting::max_ast_elements];
+
+    if (query_settings)
+        query_context->setSettings(*query_settings);
 
     query_context->setCurrentQueryId(query_id);
     query_context->setClientInterface(ClientInfo::Interface::LOCAL);
@@ -228,21 +248,24 @@ void LocalConnection::sendQuery(
 
     state->query_id = query_id;
     state->query = query;
-    /// Capture the parser-affecting settings now, before the query's own `SETTINGS` clause is applied
-    /// during execution. The `input()` initializer below reparses `state->query`, and must use the
-    /// dialect/gate the query was originally accepted with rather than the (possibly mutated) live ones.
+    /// The dialect/gate are taken from the overlaid settings: `pinOutboundDialectForJSONDialect`
+    /// has pinned them in `query_settings` to match the form of the outbound text (JSON body vs
+    /// an AST->SQL rewrite), which is exactly what the `input()` initializer must reparse with,
+    /// rather than the (possibly mutated) live session ones. The parser limits and parser flags
+    /// come from the parse-time snapshot above: the overlaid values may already contain the
+    /// query's own `SETTINGS` clause, which must not affect the reparse of the query text itself.
     state->parsed_dialect = query_context->getSettingsRef()[Setting::dialect];
     state->enable_json_ast_dialect = query_context->getSettingsRef()[Setting::enable_json_ast_dialect];
-    state->max_query_size = query_context->getSettingsRef()[Setting::max_query_size];
-    state->max_parser_depth = query_context->getSettingsRef()[Setting::max_parser_depth];
-    state->max_parser_backtracks = query_context->getSettingsRef()[Setting::max_parser_backtracks];
-    state->allow_settings_after_format_in_insert = query_context->getSettingsRef()[Setting::allow_settings_after_format_in_insert];
-    state->implicit_select = query_context->getSettingsRef()[Setting::implicit_select];
-    state->promql_database = query_context->getSettingsRef()[Setting::promql_database];
-    state->promql_table = query_context->getSettingsRef()[Setting::promql_table];
-    state->promql_evaluation_time = Field{query_context->getSettingsRef()[Setting::promql_evaluation_time]};
-    state->json_ast_max_depth = query_context->getSettingsRef()[Setting::max_ast_depth];
-    state->json_ast_max_elements = query_context->getSettingsRef()[Setting::max_ast_elements];
+    state->max_query_size = parse_time_max_query_size;
+    state->max_parser_depth = parse_time_max_parser_depth;
+    state->max_parser_backtracks = parse_time_max_parser_backtracks;
+    state->allow_settings_after_format_in_insert = parse_time_allow_settings_after_format_in_insert;
+    state->implicit_select = parse_time_implicit_select;
+    state->promql_database = parse_time_promql_database;
+    state->promql_table = parse_time_promql_table;
+    state->promql_evaluation_time = parse_time_promql_evaluation_time;
+    state->json_ast_max_depth = parse_time_max_ast_depth;
+    state->json_ast_max_elements = parse_time_max_ast_elements;
     state->query_scope_holder = QueryScope::create(query_context);
     state->stage = QueryProcessingStage::Enum(stage);
     state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
@@ -286,7 +309,8 @@ void LocalConnection::sendQuery(
         /// except for plain `SET` queries which are still parsed with `ParserQuery` so
         /// users can switch back to another dialect (e.g. `SET dialect = 'clickhouse'`)
         /// without being locked into JSON-only input.
-        if (dialect == Dialect::clickhouse_json && !isClickHouseJSONSetEscape(begin, end, state->max_query_size))
+        if (dialect == Dialect::clickhouse_json
+            && !isClickHouseJSONSetEscape(begin, end, state->max_query_size, state->max_parser_depth, state->max_parser_backtracks))
         {
             if (!state->enable_json_ast_dialect)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
