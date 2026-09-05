@@ -78,12 +78,17 @@ public:
 
     bool isSpatialPredicate() const override { return function_overload_resolver->isSpatialPredicate(); }
 
+    /// True when no alternative of the Variant argument was compatible with the function, so the result
+    /// is NULL for every row. Such an adaptor carries no type information about the function's result.
+    bool resolvedToNullForEveryRow() const { return resolved_to_null_for_every_row; }
+
 private:
     /// We remember the original IFunctionOverloadResolver to be able to build function for types inside Variant column.
     std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver;
     DataTypes arguments;
     DataTypePtr return_type;
     size_t variant_argument_index;
+    bool resolved_to_null_for_every_row = false;
 };
 
 
