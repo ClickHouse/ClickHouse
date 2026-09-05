@@ -351,8 +351,10 @@ std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeFreshBufferPinnedToETag(
 
 /// A buffer over an endpoint that serves a blob of `blob_size` bytes, `max_response_size` bytes
 /// at a time, without any read having been performed on it yet. With `ignore_range`, the endpoint
-/// answers every request with `200 OK` and the object from byte 0.
-std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeFreshBuffer(size_t max_response_size, size_t blob_size, bool ignore_range = false)
+/// answers every request with `200 OK` and the object from byte 0. `known_object_size` is the size
+/// of the object as it is known locally, from a listing or a `HEAD`, before any read.
+std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeFreshBuffer(
+    size_t max_response_size, size_t blob_size, bool ignore_range = false, std::optional<size_t> known_object_size = {})
 {
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry.MaxRetries = 0;
@@ -367,7 +369,13 @@ std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeFreshBuffer(size_t max_r
         "blob",
         DB::ReadSettings{},
         /* max_single_read_retries */ 1,
-        /* max_single_download_retries */ 1);
+        /* max_single_download_retries */ 1,
+        /* use_external_buffer */ false,
+        /* restricted_seek */ false,
+        /* read_until_position */ 0,
+        /* blob_storage_log */ DB::BlobStorageLogWriterPtr{},
+        /* container_for_logging */ std::string{},
+        known_object_size);
 }
 
 }
@@ -503,6 +511,55 @@ TEST(AzureReadBigAt, OnFreshBuffer)
 {
     auto buffer = makeFreshBuffer(/* max_response_size */ 100, /* blob_size */ 100);
     ASSERT_TRUE(buffer->supportsReadAt());
+
+    std::string destination(16, '\0');
+    size_t bytes_read = 0;
+    ASSERT_NO_THROW(bytes_read = buffer->readBigAt(destination.data(), destination.size(), /* range_begin */ 0, {}));
+
+    ASSERT_EQ(bytes_read, destination.size());
+    assertCountsUpFromZero(destination);
+}
+
+/// The object is known locally to be 100 bytes long, but the endpoint holds 128 bytes and answers a
+/// positioned read of bytes 96..111 with all 16 of them (`206 bytes 96-111/128`). Only the 4 bytes
+/// before the locally known end of the object exist, so only those may reach the caller: the local
+/// size is as authoritative for a positioned read as it is for a sequential one.
+TEST(AzureReadBigAt, OverlongResponseCrossingKnownEndOfObject)
+{
+    auto buffer = makeFreshBuffer(/* max_response_size */ 128, /* blob_size */ 128, /* ignore_range */ false, /* known_object_size */ 100);
+
+    std::string destination(16, '\xAB');
+    size_t bytes_read = 0;
+    ASSERT_NO_THROW(bytes_read = buffer->readBigAt(destination.data(), destination.size(), /* range_begin */ 96, {}));
+
+    ASSERT_EQ(bytes_read, 4u);
+    for (size_t i = 0; i < bytes_read; ++i)
+        ASSERT_EQ(static_cast<uint8_t>(destination[i]), static_cast<uint8_t>(96 + i)) << "at position " << i;
+    /// The tail of the destination is not initialized by the read, and the caller must be told so.
+    for (size_t i = bytes_read; i < destination.size(); ++i)
+        ASSERT_EQ(static_cast<uint8_t>(destination[i]), 0xAB) << "at position " << i;
+}
+
+/// A positioned read that starts at or past the locally known end of the object is the end of the
+/// file, whatever the endpoint would be willing to serve there.
+TEST(AzureReadBigAt, StartsPastKnownEndOfObject)
+{
+    auto buffer = makeFreshBuffer(/* max_response_size */ 128, /* blob_size */ 128, /* ignore_range */ false, /* known_object_size */ 100);
+
+    std::string destination(16, '\xAB');
+    size_t bytes_read = 16;
+    ASSERT_NO_THROW(bytes_read = buffer->readBigAt(destination.data(), destination.size(), /* range_begin */ 100, {}));
+    ASSERT_EQ(bytes_read, 0u);
+
+    bytes_read = 16;
+    ASSERT_NO_THROW(bytes_read = buffer->readBigAt(destination.data(), destination.size(), /* range_begin */ 120, {}));
+    ASSERT_EQ(bytes_read, 0u);
+}
+
+/// A positioned read that stays within the locally known object is not affected by the bound.
+TEST(AzureReadBigAt, WithinKnownObject)
+{
+    auto buffer = makeFreshBuffer(/* max_response_size */ 128, /* blob_size */ 128, /* ignore_range */ false, /* known_object_size */ 100);
 
     std::string destination(16, '\0');
     size_t bytes_read = 0;

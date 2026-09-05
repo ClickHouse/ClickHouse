@@ -538,6 +538,18 @@ size_t copyFromAzureBodyStream(Azure::Core::IO::BodyStream & body_stream, char *
 
 size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & /*progress_callback*/) const
 {
+    /// The size the object had when it was listed or headed is authoritative for a positioned read
+    /// as much as for a sequential one (see `getEndOfData`). It is applied before the request is
+    /// made, so that an endpoint answering a range that crosses the end of the object with more
+    /// data than the object holds cannot have that data handed to the caller under offsets past the
+    /// end of the object. A read that starts at or past the end is the documented end of file.
+    if (known_object_size)
+    {
+        if (range_begin >= *known_object_size)
+            return 0;
+        n = std::min(n, *known_object_size - range_begin);
+    }
+
     size_t initial_n = n;
     size_t sleep_time_with_backoff_milliseconds = 100;
 
