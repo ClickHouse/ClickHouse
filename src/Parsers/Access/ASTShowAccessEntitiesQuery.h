@@ -7,12 +7,12 @@
 namespace DB
 {
 
-/// SHOW USERS
-/// SHOW [CURRENT|ENABLED] ROLES
-/// SHOW [SETTINGS] PROFILES
-/// SHOW [ROW] POLICIES [name | ON [database.]table]
-/// SHOW MASKING POLICIES [name | ON [database.]table]
-/// SHOW QUOTAS
+/// SHOW USERS [[NOT] [I]LIKE 'pattern']
+/// SHOW [CURRENT|ENABLED] ROLES [[NOT] [I]LIKE 'pattern']
+/// SHOW [SETTINGS] PROFILES [[NOT] [I]LIKE 'pattern']
+/// SHOW [ROW] POLICIES [name | ON [database.]table] [[NOT] [I]LIKE 'pattern']
+/// SHOW MASKING POLICIES [name | ON [database.]table] [[NOT] [I]LIKE 'pattern']
+/// SHOW QUOTAS [[NOT] [I]LIKE 'pattern']
 /// SHOW [CURRENT] QUOTA
 class ASTShowAccessEntitiesQuery : public ASTQueryWithOutput
 {
@@ -26,6 +26,10 @@ public:
 
     String short_name;
     std::optional<std::pair<String, String>> database_and_table_name;
+
+    String like;
+    bool not_like = false;
+    bool case_insensitive_like = false;
 
     String getID(char) const override;
     ASTPtr clone() const override { return make_intrusive<ASTShowAccessEntitiesQuery>(*this); }
