@@ -458,18 +458,6 @@ void ColumnTuple::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::
         column->deserializeAndInsertFromArena(in, settings);
 }
 
-void ColumnTuple::skipSerializedInArena(ReadBuffer & in) const
-{
-    if (columns.empty())
-    {
-        in.ignore(1);
-        return;
-    }
-
-    for (const auto & column : columns)
-        column->skipSerializedInArena(in);
-}
-
 void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
 {
     for (const auto & column : columns)

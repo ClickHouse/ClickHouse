@@ -31,6 +31,9 @@ def _elide(text, limit=_GH_DIAGNOSTIC_FIELD_LIMIT):
 
 
 class GH:
+    # This run's object, cached for the lifetime of the process (see
+    # get_workflow_run), so reading a second field costs no second request.
+    _workflow_run: Optional[dict] = None
 
     @dataclasses.dataclass
     class GHIssue:
@@ -1591,6 +1594,42 @@ class GH:
         cls.print_log_in_group(
             "GITHUB_EVENT", Shell.get_output("cat $GITHUB_EVENT_PATH")
         )
+
+    @classmethod
+    def get_workflow_run(cls, refresh=False) -> dict:
+        """This workflow run's object, fetched once per process.
+
+        Holds what the runner environment and the event payload do not: the
+        run's own timestamps, its attempt number and its check suite. Pass
+        `refresh=True` for the fields that move while the run goes on
+        (`status`, `conclusion`, `updated_at`, `run_started_at`); the cached
+        copy is a snapshot taken at the first call.
+        """
+        run = cls._workflow_run
+        if run is None or refresh:
+            env = _Environment.get()
+            run = json.loads(
+                cls.get_output_with_retries(
+                    f"gh api repos/{env.REPOSITORY}/actions/runs/{env.RUN_ID}",
+                    verbose=True,
+                    strict=True,
+                )
+            )
+            cls._workflow_run = run
+        return run
+
+    @classmethod
+    def get_workflow_run_created_at(cls):
+        """`created_at` of this workflow run: when its event created the run.
+
+        A rerun starts a new attempt and moves `run_started_at`, leaving
+        `created_at` at the first start, so this is the run's own timestamp
+        rather than the latest attempt's. It comes from the API because
+        nothing else has it: the runner environment carries only `RUN_ID`,
+        `RUN_NUMBER` and `RUN_ATTEMPT`, and the `schedule` and
+        `workflow_dispatch` payloads hold no timestamp at all.
+        """
+        return cls.get_workflow_run()["created_at"]
 
     @dataclasses.dataclass
     class ResultSummaryForGH:

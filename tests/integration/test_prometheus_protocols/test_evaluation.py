@@ -1026,6 +1026,19 @@ def test_function_over_time():
         ],
     )
 
+    # sum_over_time
+    do_query_test(
+        "sum_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "2"], [135, "5"], [150, "9"], [165, "7"], [180, "4"], [195, "5"], [210, "18"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',2),('1970-01-01 00:02:15.000',5),('1970-01-01 00:02:30.000',9),('1970-01-01 00:02:45.000',7),('1970-01-01 00:03:00.000',4),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',18)]",
+            ]
+        ],
+    )
+
     # changes: `resets` also counts decreases as changes, unlike `resets()` below.
     do_query_test(
         "changes(resets[45s])[120s:15s]",
@@ -1035,6 +1048,33 @@ def test_function_over_time():
             [
                 "[('job','test')]",
                 "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',2),('1970-01-01 00:02:30.000',4),('1970-01-01 00:02:45.000',2),('1970-01-01 00:03:00.000',1),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',2)]",
+            ]
+        ],
+    )
+
+    # avg_over_time
+    do_query_test(
+        "avg_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "1.6666666666666667"], [150, "2.25"], [165, "3.5"], [180, "4"], [195, "5"], [210, "6"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1.6666666666666667),('1970-01-01 00:02:30.000',2.25),('1970-01-01 00:02:45.000',3.5),('1970-01-01 00:03:00.000',4),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',6)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+    # count_over_time
+    do_query_test(
+        "count_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "2"], [135, "3"], [150, "4"], [165, "2"], [180, "1"], [195, "1"], [210, "3"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',2),('1970-01-01 00:02:15.000',3),('1970-01-01 00:02:30.000',4),('1970-01-01 00:02:45.000',2),('1970-01-01 00:03:00.000',1),('1970-01-01 00:03:15.000',1),('1970-01-01 00:03:30.000',3)]",
             ]
         ],
     )
@@ -1052,6 +1092,19 @@ def test_function_over_time():
         ],
     )
 
+    # Narrow windows leave grid points 150, 165, and 180 absent (NULL), not zero.
+    do_query_test(
+        "count_over_time(test[10s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "1"], [195, "1"], [210, "1"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:03:15.000',1),('1970-01-01 00:03:30.000',1)]",
+            ]
+        ],
+    )
+
     # resets: only counts the decreases (8 -> 2 at 140, 10 -> 3 at 200) within each window.
     do_query_test(
         "resets(resets[45s])[120s:15s]",
@@ -1064,6 +1117,118 @@ def test_function_over_time():
             ]
         ],
     )
+
+
+def test_function_absent():
+    # A non-empty input produces an empty vector.
+    do_query_test(
+        "absent(test)",
+        140,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Only exact-match labels are inferred from a direct selector; the metric name
+    # and non-equality matchers are not copied to the synthetic series.
+    do_query_test(
+        'absent(nonexistent_metric_name{job="api", instance=~".+", zone!="test"})',
+        140,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [140, "1"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:20.000", 1]],
+    )
+
+    # Prometheus treats an exact matcher with an empty value as label absence,
+    # so the synthetic series does not contain job="".
+    do_query_test(
+        'absent(nonexistent_metric_name{job=""})',
+        140,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [140, "1"]}]}',
+        [["[]", "1970-01-01 00:02:20.000", 1]],
+    )
+
+    # Offset modifiers still leave a selector simple enough for label inference.
+    do_query_test(
+        'absent(nonexistent_metric_name{job="api"} offset 5m)',
+        140,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [140, "1"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:20.000", 1]],
+    )
+
+    # A second matcher for the same label makes that label ambiguous. Prometheus
+    # removes it from the inferred set, while keeping unrelated equality matchers.
+    do_query_test(
+        'absent(nonexistent_metric_name{job="a", job="b", foo="bar"})',
+        140,
+        '{"resultType": "vector", "result": [{"metric": {"foo": "bar"}, "value": [140, "1"]}]}',
+        [["[('foo','bar')]", "1970-01-01 00:02:20.000", 1]],
+    )
+
+    # For compatibility with Prometheus' historic order-sensitive behavior, a
+    # non-equality matcher before the first equality matcher does not suppress it.
+    do_query_test(
+        'absent(nonexistent_metric_name{job=~"a", job="b", foo="bar"})',
+        140,
+        '{"resultType": "vector", "result": [{"metric": {"foo": "bar", "job": "b"}, "value": [140, "1"]}]}',
+        [
+            [
+                "[('foo','bar'),('job','b')]",
+                "1970-01-01 00:02:20.000",
+                1,
+            ]
+        ],
+    )
+
+    # Once an equality matcher has been accepted for a label, a later matcher
+    # can delete that inferred label but cannot unlock it for another equality
+    # matcher. This is Prometheus' historic, intentionally order-sensitive rule.
+    do_query_test(
+        'absent(nonexistent_metric_name{job="a", job=~"c", job="d"})',
+        140,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [140, "1"]}]}',
+        [["[]", "1970-01-01 00:02:20.000", 1]],
+    )
+
+    # Labels cannot be inferred through a more complex expression.
+    do_query_test(
+        'absent(sum(nonexistent_metric_name{job="api"}))',
+        140,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [140, "1"]}]}',
+        [["[]", "1970-01-01 00:02:20.000", 1]],
+    )
+
+    # Evaluate emptiness independently at each grid point. `foo` has no sample in
+    # the interval (130, 140], while every other step has at least one sample.
+    do_query_test(
+        "absent(last_over_time(foo[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[140, "1"]]}]}',
+        [["[]", "[('1970-01-01 00:02:20.000',1)]"]],
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            'absent(nonexistent_metric_name{job="api"})',
+            '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [130, "1"]}]}',
+        ),
+        (
+            "scalar(nonexistent_metric_name)",
+            '{"resultType": "scalar", "result": [130, "NaN"]}',
+        ),
+    ],
+)
+def test_empty_aggregation_setting_does_not_change_promql(query, expected):
+    actual = execute_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        query,
+        timestamp=130,
+        params={"empty_result_for_aggregation_by_empty_set": 1},
+    )
+    assert http_api_response_close_to(actual, expected)
 
 
 def test_literals():
@@ -3825,6 +3990,260 @@ def test_binary_operators_on_vectors_without_tags():
                 "[('1970-01-01 00:02:30.000',150),('1970-01-01 00:02:40.000',160),('1970-01-01 00:02:50.000',170),('1970-01-01 00:03:00.000',180)]",
             ]
         ],
+    )
+
+
+def test_aggregation_operator_count_values():
+    # The sample value is part of the grouping key and therefore changes from one
+    # grid point to another. This exercises unroll, regroup, and sparse repacking.
+    do_query_test(
+        'count_values("value", floor((last_over_time(bar[10]) + 50) / 100) * 100)[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"value": "0"}, "values": [[110, "4"], [120, "2"], [150, "1"]]}, {"metric": {"value": "100"}, "values": [[130, "2"]]}, {"metric": {"value": "1000"}, "values": [[150, "1"]]}, {"metric": {"value": "700"}, "values": [[140, "1"]]}]}',
+        [
+            [
+                "[('value','0')]",
+                "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:00.000',2),('1970-01-01 00:02:30.000',1)]",
+            ],
+            ["[('value','100')]", "[('1970-01-01 00:02:10.000',2)]"],
+            ["[('value','1000')]", "[('1970-01-01 00:02:30.000',1)]"],
+            ["[('value','700')]", "[('1970-01-01 00:02:20.000',1)]"],
+        ],
+    )
+
+    # The destination label is set before `by`, so it overwrites an input label
+    # with the same name and is then used as the value bucket.
+    do_query_test(
+        '(count_values("shape", floor((last_over_time(bar[10]) + 50) / 100) * 100) by (shape))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"shape": "0"}, "values": [[110, "4"], [120, "2"], [150, "1"]]}, {"metric": {"shape": "100"}, "values": [[130, "2"]]}, {"metric": {"shape": "1000"}, "values": [[150, "1"]]}, {"metric": {"shape": "700"}, "values": [[140, "1"]]}]}',
+        [
+            [
+                "[('shape','0')]",
+                "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:00.000',2),('1970-01-01 00:02:30.000',1)]",
+            ],
+            ["[('shape','100')]", "[('1970-01-01 00:02:10.000',2)]"],
+            ["[('shape','1000')]", "[('1970-01-01 00:02:30.000',1)]"],
+            ["[('shape','700')]", "[('1970-01-01 00:02:20.000',1)]"],
+        ],
+    )
+
+    # Independent `by` labels are retained alongside the changing value label.
+    do_query_test(
+        '(count_values("value", floor((last_over_time(bar[10]) + 50) / 100) * 100) by (size))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"size": "l", "value": "0"}, "values": [[110, "2"], [120, "1"]]}, {"metric": {"size": "l", "value": "100"}, "values": [[130, "2"]]}, {"metric": {"size": "l", "value": "1000"}, "values": [[150, "1"]]}, {"metric": {"size": "s", "value": "0"}, "values": [[110, "1"], [120, "1"]]}, {"metric": {"size": "s", "value": "700"}, "values": [[140, "1"]]}, {"metric": {"size": "xl", "value": "0"}, "values": [[110, "1"], [150, "1"]]}]}',
+        [
+            [
+                "[('size','l'),('value','0')]",
+                "[('1970-01-01 00:01:50.000',2),('1970-01-01 00:02:00.000',1)]",
+            ],
+            [
+                "[('size','l'),('value','100')]",
+                "[('1970-01-01 00:02:10.000',2)]",
+            ],
+            [
+                "[('size','l'),('value','1000')]",
+                "[('1970-01-01 00:02:30.000',1)]",
+            ],
+            [
+                "[('size','s'),('value','0')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1)]",
+            ],
+            [
+                "[('size','s'),('value','700')]",
+                "[('1970-01-01 00:02:20.000',1)]",
+            ],
+            [
+                "[('size','xl'),('value','0')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:30.000',1)]",
+            ],
+        ],
+    )
+
+    # `without` can remove the newly added value label. Buckets that retain the
+    # same labels then collapse into a single count at each grid point.
+    do_query_test(
+        '(count_values("value", last_over_time(bar[10])) without (shape, value))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"size": "l"}, "values": [[110, "2"], [120, "1"], [130, "2"], [150, "1"]]}, {"metric": {"size": "s"}, "values": [[110, "1"], [120, "1"], [140, "1"]]}, {"metric": {"size": "xl"}, "values": [[110, "1"], [150, "1"]]}]}',
+        [
+            [
+                "[('size','l')]",
+                "[('1970-01-01 00:01:50.000',2),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',2),('1970-01-01 00:02:30.000',1)]",
+            ],
+            [
+                "[('size','s')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:20.000',1)]",
+            ],
+            [
+                "[('size','xl')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:30.000',1)]",
+            ],
+        ],
+    )
+
+    # `without` removes only the listed labels and `__name__`, so a destination label
+    # which is neither is kept and the result matches the `by (size)` form above.
+    do_query_test(
+        '(count_values("value", floor((last_over_time(bar[10]) + 50) / 100) * 100) without (shape))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"size": "l", "value": "0"}, "values": [[110, "2"], [120, "1"]]}, {"metric": {"size": "l", "value": "100"}, "values": [[130, "2"]]}, {"metric": {"size": "l", "value": "1000"}, "values": [[150, "1"]]}, {"metric": {"size": "s", "value": "0"}, "values": [[110, "1"], [120, "1"]]}, {"metric": {"size": "s", "value": "700"}, "values": [[140, "1"]]}, {"metric": {"size": "xl", "value": "0"}, "values": [[110, "1"], [150, "1"]]}]}',
+        [
+            [
+                "[('size','l'),('value','0')]",
+                "[('1970-01-01 00:01:50.000',2),('1970-01-01 00:02:00.000',1)]",
+            ],
+            [
+                "[('size','l'),('value','100')]",
+                "[('1970-01-01 00:02:10.000',2)]",
+            ],
+            [
+                "[('size','l'),('value','1000')]",
+                "[('1970-01-01 00:02:30.000',1)]",
+            ],
+            [
+                "[('size','s'),('value','0')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1)]",
+            ],
+            [
+                "[('size','s'),('value','700')]",
+                "[('1970-01-01 00:02:20.000',1)]",
+            ],
+            [
+                "[('size','xl'),('value','0')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:30.000',1)]",
+            ],
+        ],
+    )
+
+    do_query_test(
+        'count_values("value", nonexistent_metric_name)[50:10]',
+        150,
+        '{"resultType": "matrix", "result": []}',
+        [],
+    )
+
+    # Prometheus uses fixed, shortest-roundtrip formatting for value-label strings.
+    do_query_test(
+        'count_values("value", vector(0.00000001))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "0.00000001"}, "value": [120, "1"]}]}',
+        [["[('value','0.00000001')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_query_test(
+        'count_values("value", vector(1000000000000000100))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "1000000000000000100"}, "value": [120, "1"]}]}',
+        [
+            [
+                "[('value','1000000000000000100')]",
+                "1970-01-01 00:02:00.000",
+                1,
+            ]
+        ],
+    )
+
+    do_query_test(
+        'count_values("value", vector(-0))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "-0"}, "value": [120, "1"]}]}',
+        [["[('value','-0')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_query_test(
+        'count_values("value", vector(NaN))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "NaN"}, "value": [120, "1"]}]}',
+        [["[('value','NaN')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_query_test(
+        'count_values("value", vector(+Inf))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "+Inf"}, "value": [120, "1"]}]}',
+        [["[('value','+Inf')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    # The metric name is a valid destination label and must survive finalization.
+    do_query_test(
+        'count_values("__name__", vector(5))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "5"}, "value": [120, "1"]}]}',
+        [["[('__name__','5')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    # `by` implicitly keeps the destination label, so `__name__` stays in the result
+    # and every distinct value remains its own bucket.
+    do_query_test(
+        '(count_values("__name__", floor((last_over_time(bar[10]) + 50) / 100) * 100) by (size))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "0", "size": "l"}, "values": [[110, "2"], [120, "1"]]}, {"metric": {"__name__": "0", "size": "s"}, "values": [[110, "1"], [120, "1"]]}, {"metric": {"__name__": "0", "size": "xl"}, "values": [[110, "1"], [150, "1"]]}, {"metric": {"__name__": "100", "size": "l"}, "values": [[130, "2"]]}, {"metric": {"__name__": "1000", "size": "l"}, "values": [[150, "1"]]}, {"metric": {"__name__": "700", "size": "s"}, "values": [[140, "1"]]}]}',
+        [
+            [
+                "[('__name__','0'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',2),('1970-01-01 00:02:00.000',1)]",
+            ],
+            [
+                "[('__name__','0'),('size','s')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1)]",
+            ],
+            [
+                "[('__name__','0'),('size','xl')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:30.000',1)]",
+            ],
+            [
+                "[('__name__','100'),('size','l')]",
+                "[('1970-01-01 00:02:10.000',2)]",
+            ],
+            [
+                "[('__name__','1000'),('size','l')]",
+                "[('1970-01-01 00:02:30.000',1)]",
+            ],
+            [
+                "[('__name__','700'),('size','s')]",
+                "[('1970-01-01 00:02:20.000',1)]",
+            ],
+        ],
+    )
+
+    # `without` always removes `__name__`, including when it is the destination label,
+    # so the value buckets collapse into one count per remaining label set.
+    do_query_test(
+        '(count_values("__name__", floor((last_over_time(bar[10]) + 50) / 100) * 100) without (shape))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"size": "l"}, "values": [[110, "2"], [120, "1"], [130, "2"], [150, "1"]]}, {"metric": {"size": "s"}, "values": [[110, "1"], [120, "1"], [140, "1"]]}, {"metric": {"size": "xl"}, "values": [[110, "1"], [150, "1"]]}]}',
+        [
+            [
+                "[('size','l')]",
+                "[('1970-01-01 00:01:50.000',2),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',2),('1970-01-01 00:02:30.000',1)]",
+            ],
+            [
+                "[('size','s')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:20.000',1)]",
+            ],
+            [
+                "[('size','xl')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:30.000',1)]",
+            ],
+        ],
+    )
+
+    # Prometheus 3.x accepts any non-empty UTF-8 label name rather than only
+    # the legacy [A-Za-z_][A-Za-z0-9_]* form.
+    do_query_test(
+        'count_values("value label", vector(5))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value label": "5"}, "value": [120, "1"]}]}',
+        [["[('value label','5')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_query_test_expect_error(
+        'count_values("", bar)',
+        120,
+        "invalid label name",
+        "invalid label name",
     )
 
 
