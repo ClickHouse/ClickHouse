@@ -1,0 +1,127 @@
+-- Tests for mixed (cross-side non-equi) JOIN ON conditions in the partial merge join.
+-- The `hash` algorithm output is the reference: for every query the two algorithms must
+-- produce identical results.
+-- Note: `max_rows_in_join` is applied only to `partial_merge` queries. The hash join treats it
+-- as a hard limit (`join_overflow_mode`), while the partial merge join spills to disk.
+
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
+
+CREATE TABLE t1 (
+    key UInt32,
+    a UInt32,
+    attr String
+) ENGINE = MergeTree ORDER BY key;
+
+CREATE TABLE t2 (
+    key UInt32,
+    a UInt32,
+    attr String
+) ENGINE = MergeTree ORDER BY key;
+
+-- Duplicate keys on both sides to get cross products, plus keys with no pair on the other side.
+INSERT INTO t1 (key, a, attr) VALUES (1, 10, 'alpha'), (2, 15, 'beta'), (2, 2, 'beta2'), (3, 20, 'gamma'), (5, 5, 'epsilon');
+INSERT INTO t2 (key, a, attr) VALUES (1, 5, 'ALPHA'), (2, 10, 'BETA'), (2, 14, 'BETA2'), (2, 16, 'BETA3'), (4, 25, 'DELTA');
+
+SET enable_analyzer = 1;
+SET join_use_nulls = 0;
+-- Swapping the join sides changes which side ANY/SEMI deduplicates, and the CI harness
+-- randomizes the setting: pin it so that both algorithms run the same plan.
+SET query_plan_join_swap_table = 'false';
+
+-- { echoOn }
+{% for extra_settings in ['', ', partial_merge_join_rows_in_right_blocks = 2', ', max_joined_block_size_rows = 3', ', max_rows_in_join = 2', ', partial_merge_join_rows_in_right_blocks = 2, max_joined_block_size_rows = 3, max_rows_in_join = 2'] -%}
+{% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL'] -%}
+{% for algorithm in ['hash', 'partial_merge'] -%}
+{% set settings = "SETTINGS join_algorithm = '" ~ algorithm ~ "'" ~ (extra_settings if algorithm == 'partial_merge' else '') -%}
+SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND t1.a < t2.a ORDER BY ALL {{ settings }};
+SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND t1.a < t2.a AND t1.key + t2.a > 12 ORDER BY ALL {{ settings }};
+SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND (t1.a < t2.a OR t1.attr > t2.attr) ORDER BY ALL {{ settings }};
+-- All candidate pairs fail the condition: every left/right row is non-matched.
+SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND t1.a + t2.a > 1000 ORDER BY ALL {{ settings }};
+-- Mixed condition combined with single-side filter conditions.
+SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND t1.a > 3 AND t2.a > 6 AND t1.a < t2.a ORDER BY ALL {{ settings }};
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
+
+-- ANY and SEMI: the matched right row is chosen by the algorithm, so select only columns that
+-- do not depend on the choice.
+{% for extra_settings in ['', ', partial_merge_join_rows_in_right_blocks = 2, max_rows_in_join = 2'] -%}
+{% for join_type in ['ANY LEFT', 'ANY INNER', 'SEMI LEFT'] -%}
+{% for algorithm in ['hash', 'partial_merge'] -%}
+{% set settings = "SETTINGS join_algorithm = '" ~ algorithm ~ "'" ~ (extra_settings if algorithm == 'partial_merge' else '') -%}
+SELECT t1.*, t2.key FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND t1.a < t2.a ORDER BY ALL {{ settings }};
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
+
+-- ANY with a unique passing candidate per key: right values are deterministic.
+{% for algorithm in ['hash', 'partial_merge'] -%}
+SELECT t1.*, t2.* FROM t1 ANY LEFT JOIN t2 ON t1.key = t2.key AND t1.a + 1 = t2.a ORDER BY ALL SETTINGS join_algorithm = '{{ algorithm }}';
+{% endfor -%}
+-- { echoOff }
+
+DROP TABLE t1;
+DROP TABLE t2;
+
+-- Nullable and LowCardinality columns in the mixed condition.
+DROP TABLE IF EXISTS t3;
+DROP TABLE IF EXISTS t4;
+
+CREATE TABLE t3 (key UInt32, val Nullable(UInt32), s LowCardinality(String)) ENGINE = MergeTree ORDER BY key;
+CREATE TABLE t4 (key UInt32, val Nullable(UInt32), s LowCardinality(String)) ENGINE = MergeTree ORDER BY key;
+
+INSERT INTO t3 VALUES (1, 1, 'x'), (1, NULL, 'y'), (2, 5, 'z'), (3, 3, 'w');
+INSERT INTO t4 VALUES (1, 2, 'x'), (1, 0, 'y'), (2, NULL, 'z'), (4, 4, 'v');
+
+-- { echoOn }
+{% for join_use_nulls in [0, 1] -%}
+SET join_use_nulls = {{ join_use_nulls }};
+{% for join_type in ['LEFT', 'RIGHT', 'FULL'] -%}
+{% for algorithm in ['hash', 'partial_merge'] -%}
+SELECT t3.*, t4.* FROM t3 {{ join_type }} JOIN t4 ON t3.key = t4.key AND t3.val < t4.val ORDER BY ALL SETTINGS join_algorithm = '{{ algorithm }}';
+SELECT t3.*, t4.* FROM t3 {{ join_type }} JOIN t4 ON t3.key = t4.key AND t3.s = t4.s AND t3.val < t4.val ORDER BY ALL SETTINGS join_algorithm = '{{ algorithm }}';
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
+-- { echoOff }
+
+DROP TABLE t3;
+DROP TABLE t4;
+
+SET join_use_nulls = 0;
+
+-- Larger randomized differential check: compare order-independent digests of the join result
+-- between `hash` and `partial_merge`, with settings that force right-side spilling, small sorted
+-- right blocks (equal-key runs span blocks) and result cuts (continuations).
+DROP TABLE IF EXISTS big1;
+DROP TABLE IF EXISTS big2;
+
+CREATE TABLE big1 (key UInt32, x UInt32, payload String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE big2 (key UInt32, y UInt32, payload String) ENGINE = MergeTree ORDER BY tuple();
+
+-- Skewed keys: key = number % 100, so ~100 duplicates per key on each side.
+INSERT INTO big1 SELECT number % 100, number % 37, 'l' || toString(number) FROM numbers(10000);
+INSERT INTO big2 SELECT number % 100, number % 41, 'r' || toString(number) FROM numbers(10000);
+
+DROP TABLE IF EXISTS digests;
+CREATE TABLE digests (algorithm String, join_type String, cnt UInt64, digest UInt64) ENGINE = Memory;
+
+{% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL'] -%}
+{% for algorithm in ['hash', 'partial_merge'] -%}
+INSERT INTO digests
+SELECT '{{ algorithm }}', '{{ join_type }}', count(), sum(cityHash64(big1.key, big1.x, big1.payload, big2.key, big2.y, big2.payload))
+FROM big1 {{ join_type }} JOIN big2 ON big1.key = big2.key AND big1.x < big2.y
+SETTINGS join_algorithm = '{{ algorithm }}'{% if algorithm == 'partial_merge' %}, partial_merge_join_rows_in_right_blocks = 100, max_rows_in_join = 1000, max_joined_block_size_rows = 1000{% endif %};
+{% endfor -%}
+{% endfor -%}
+
+-- { echoOn }
+SELECT join_type, countDistinct((cnt, digest)) = 1 AS identical, anyIf(cnt, algorithm = 'hash') > 0 AS non_empty
+FROM digests GROUP BY join_type ORDER BY join_type;
+-- { echoOff }
+
+DROP TABLE digests;
+DROP TABLE big1;
+DROP TABLE big2;

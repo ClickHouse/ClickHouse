@@ -83,10 +83,9 @@ SELECT count() FROM t1 LEFT JOIN sj_all_left ON (t1.key = sj_all_left.key) AND (
 -- The guard is upstream of algorithm selection, so it covers every hash flavour.
 SELECT count() FROM t1 LEFT JOIN sj_all_left ON (t1.key = sj_all_left.key) AND (t1.a < sj_all_left.a) SETTINGS join_algorithm = 'parallel_hash'; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 SELECT count() FROM t1 LEFT JOIN sj_all_left ON (t1.key = sj_all_left.key) AND (t1.a < sj_all_left.a) SETTINGS join_algorithm = 'grace_hash'; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
--- Any non-hash algorithm never reaches the Join-engine branch: chooseJoinAlgorithm rejects a
--- mixed condition upstream and keeps its own error. This row is not an assertion about the guard,
--- it anchors the session-level join_algorithm pin above so it cannot be dropped silently.
-SELECT count() FROM t1 LEFT JOIN sj_all_left ON (t1.key = sj_all_left.key) AND (t1.a < sj_all_left.a) SETTINGS join_algorithm = 'partial_merge'; -- { serverError NOT_IMPLEMENTED }
+-- `partial_merge` passes the upstream mixed-condition gate of chooseJoinAlgorithm (MergeJoin
+-- evaluates mixed conditions), so the Join-engine branch is reached and reports its own error.
+SELECT count() FROM t1 LEFT JOIN sj_all_left ON (t1.key = sj_all_left.key) AND (t1.a < sj_all_left.a) SETTINGS join_algorithm = 'partial_merge'; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 SELECT count() FROM t1 LEFT JOIN sj_all_left AS r ON (t1.key = r.key) AND (t1.a < r.a); -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 -- Type wrappers: LowCardinality key, Nullable non-key.
 SELECT count() FROM t1_lc LEFT JOIN sj_all_left_lc ON (t1_lc.key = sj_all_left_lc.key) AND (t1_lc.a < sj_all_left_lc.a); -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
