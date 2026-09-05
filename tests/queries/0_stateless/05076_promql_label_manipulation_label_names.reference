@@ -3,4 +3,5 @@
 1
 -- label_replace keeps the empty source-label behavior
 1
+1
 -- invalid label names are rejected

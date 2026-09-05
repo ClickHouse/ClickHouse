@@ -17,6 +17,7 @@ SELECT count() FROM prometheusQuery('prometheus', 'label_replace(m, "é", "$1", 
 
 SELECT '-- label_replace keeps the empty source-label behavior';
 SELECT count() FROM prometheusQuery('prometheus', 'label_replace(m, "dst", "constant", "", ".*")', 110);
+SELECT count() FROM prometheusQuery('prometheus', 'label_replace(m, "dst", "constant", "\\xff", ".*")', 110);
 
 SELECT '-- invalid label names are rejected';
 SELECT * FROM prometheusQuery('prometheus', 'label_join(m, "dst", "-", "\\xff")', 110); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
