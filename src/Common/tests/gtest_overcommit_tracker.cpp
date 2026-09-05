@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 #include <chrono>
+#include <future>
+#include <limits>
 #include <thread>
 #include <vector>
 
@@ -449,4 +451,64 @@ TEST(OvercommitTracker, GlobalQueryStopNotContinue)
     ProcessList process_list;
     GlobalOvercommitTrackerForTest global_overcommit_tracker(&process_list);
     query_stop_not_continue_test(global_overcommit_tracker);
+}
+
+TEST(OvercommitTracker, WaitingTimeKeepsItsSignAndMagnitude)
+{
+    MemoryTracker tracker;
+
+    /// Zero is reserved for "overcommit waiting is off", and an in-range wait must survive untouched.
+    tracker.setOvercommitWaitingTime(0);
+    EXPECT_EQ(tracker.getOvercommitWaitingTime(), 0us);
+    tracker.setOvercommitWaitingTime(500);
+    EXPECT_EQ(tracker.getOvercommitWaitingTime(), 500us);
+    tracker.setOvercommitWaitingTime(WAIT_TIME);
+    EXPECT_EQ(tracker.getOvercommitWaitingTime(), std::chrono::microseconds(WAIT_TIME));
+
+    /// Two years is representable, so it must not be shortened.
+    static constexpr UInt64 two_years = 2ULL * 365 * 24 * 60 * 60 * 1'000'000;
+    tracker.setOvercommitWaitingTime(two_years);
+    EXPECT_EQ(tracker.getOvercommitWaitingTime(), std::chrono::microseconds(two_years));
+
+    /// Above the signed range an unsigned argument would arrive negative, i.e. already expired.
+    tracker.setOvercommitWaitingTime(std::numeric_limits<UInt64>::max());
+    EXPECT_EQ(tracker.getOvercommitWaitingTime(), std::chrono::microseconds::max());
+    tracker.setOvercommitWaitingTime(1ULL << 63);
+    EXPECT_EQ(tracker.getOvercommitWaitingTime(), std::chrono::microseconds::max());
+}
+
+/// A wait this long cannot elapse during the test, so a query that stops waiting has lost the
+/// requested duration rather than served it.
+static void out_of_range_waiting_time_test(UInt64 waiting_time)
+{
+    ProcessList process_list;
+    ProcessListForUser user_process_list(&process_list);
+    UserOvercommitTrackerForTest overcommit_tracker(&process_list, &user_process_list);
+
+    MemoryTracker picked;
+    picked.setOvercommitWaitingTime(waiting_time);
+    overcommit_tracker.setCandidate(&picked);
+
+    MemoryTracker waiting;
+    waiting.setOvercommitWaitingTime(waiting_time);
+    auto wait_result = std::async(std::launch::async, [&]
+    {
+        return overcommit_tracker.needToStopQuery(&waiting, 100);
+    });
+
+    EXPECT_EQ(wait_result.wait_for(1000ms), std::future_status::timeout);
+
+    overcommit_tracker.onQueryStop(&picked);
+    EXPECT_EQ(wait_result.get(), OvercommitResult::NOT_ENOUGH_FREED);
+}
+
+TEST(OvercommitTracker, WaitHonoursDurationAboveNanosecondRange)
+{
+    /// The smallest count whose conversion to nanoseconds does not fit into a signed 64-bit count.
+    out_of_range_waiting_time_test(9'223'372'036'854'776);
+}
+
+TEST(OvercommitTracker, WaitHonoursDurationAboveSignedRange)
+{
+    out_of_range_waiting_time_test(std::numeric_limits<UInt64>::max());
 }
