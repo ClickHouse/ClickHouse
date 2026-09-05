@@ -94,6 +94,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int ABORTED;
@@ -941,6 +942,18 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
 
     auto reservation = storage.getStoragePolicy()->reserveAndCheck(block.bytes());
     const auto disk = reservation->getDisk();
+
+    /// Pending blocks are written with raw `std::filesystem` calls on `disk->getPath()`, which is
+    /// only valid for a disk whose directory namespace is the host filesystem's (see
+    /// `IDisk::hasLocalFilesystemDirectoryNamespace`). A table on such a disk can only
+    /// be attached (a `CREATE` is rejected), and it has no directory queue to send the block anyway.
+    if (!disk->hasLocalFilesystemDirectoryNamespace())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Disk '{}' does not keep its directory structure on the host filesystem and cannot store pending blocks of an async INSERT "
+            "into a `Distributed` table. Use distributed_foreground_insert = 1",
+            disk->getName());
+
     auto disk_path = disk->getPath();
     auto data_path = storage.getRelativeDataPath();
 

@@ -21,6 +21,7 @@
 #include <Core/BaseSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/JoinUtils.h>
+#include <IO/ReadHelpers.h>
 #include <Formats/NativeWriter.h>
 
 #include <Compression/CompressedWriteBuffer.h>
@@ -94,9 +95,18 @@ StorageJoin::StorageJoin(
     optimizeUnlocked();
 }
 
+String StorageJoin::getLockQueryId(const Context & context)
+{
+    String query_id = context.getInitialQueryId();
+    if (query_id.empty())
+        query_id = context.getCurrentQueryId();
+    return query_id;
+}
+
 RWLockImpl::LockHolder StorageJoin::tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const
 {
-    const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    const String query_id = context ? getLockQueryId(*context) : RWLockImpl::NO_QUERY;
+
     const std::chrono::milliseconds acquire_timeout
         = context ? std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()) : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
     return tryLockTimed(lock, type, query_id, Poco::Timespan(acquire_timeout.count() * 1000));
@@ -104,7 +114,8 @@ RWLockImpl::LockHolder StorageJoin::tryLockTimedWithContext(const RWLock & lock,
 
 RWLockImpl::LockHolder StorageJoin::tryLockForCurrentQueryTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context)
 {
-    const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    const String query_id = context ? getLockQueryId(*context) : RWLockImpl::NO_QUERY;
+
     const std::chrono::milliseconds acquire_timeout
         = context ? std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()) : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
     return lock->getLock(type, query_id, acquire_timeout, false);
@@ -214,33 +225,65 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         }
     }
 
-    /// Now acquire exclusive lock and modify storage.
-    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
-
-    join = std::move(new_data);
-    increment = 1;
-
+    /// Make the new backup durable before anything is published: a failure while writing it must
+    /// leave both the live state and the table directory exactly as they were.
     if (persistent)
     {
         backup_stream.flush();
         compressed_backup_buf.finalize();
         backup_buf->finalize();
-
-        std::vector<std::string> files;
-        disk->listFiles(path, files);
-        for (const auto & file_name: files)
-        {
-            if (file_name.ends_with(".bin"))
-                disk->removeFileIfExists(path + file_name);
-        }
-
-        disk->replaceFile(path + tmp_backup_file_name, path + std::to_string(increment) + ".bin");
     }
     else
     {
         compressed_backup_buf.cancel();
         backup_buf->cancel();
     }
+
+    /// Now acquire exclusive lock and modify storage.
+    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
+
+    if (persistent)
+    {
+        /// Rewrite the table directory before publishing the mutated data in memory, so that a
+        /// failure cannot leave queries seeing a state that a restart would not reproduce. If the
+        /// rewrite does fail halfway, resynchronize the live state with whatever survived on disk.
+        try
+        {
+            /// Backup names must stay unique for the lifetime of the table: an insert that reserved
+            /// its backup number before this mutation started may still be streaming its staged
+            /// file, and will promote it under that name after the mutation finishes. Reuse the
+            /// smallest committed number for the consolidated backup -- `increment` is never
+            /// rewound, so that number can no longer be handed out to a new insert -- and leave
+            /// `increment` itself untouched.
+            static const auto file_suffix_size = strlen(".bin");
+            std::optional<UInt64> consolidated_num;
+            std::vector<std::string> files;
+            disk->listFiles(path, files);
+            for (const auto & file_name: files)
+            {
+                if (file_name.ends_with(".bin"))
+                {
+                    UInt64 file_num = parse<UInt64>(file_name.substr(0, file_name.size() - file_suffix_size));
+                    if (!consolidated_num || file_num < *consolidated_num)
+                        consolidated_num = file_num;
+                    disk->removeFileIfExists(path + file_name);
+                }
+            }
+
+            if (consolidated_num)
+                disk->replaceFile(path + tmp_backup_file_name, path + toString(*consolidated_num) + ".bin");
+            else
+                disk->removeFileIfExists(path + tmp_backup_file_name);
+        }
+        catch (...)
+        {
+            /// The write lock is already held here, so rebuild in place instead of taking it again.
+            join = buildFromBackups();
+            throw;
+        }
+    }
+
+    join = std::move(new_data);
 }
 
 HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, String query_id, std::chrono::milliseconds acquire_timeout, const Names & required_columns_names) const
@@ -324,7 +367,7 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
 
 HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context, const Names & required_columns_names) const
 {
-    const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    const String query_id = context ? getLockQueryId(*context) : RWLockImpl::NO_QUERY;
     const std::chrono::milliseconds acquire_timeout
         = context ? std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()) : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
 
@@ -342,6 +385,69 @@ void StorageJoin::insertBlock(const Block & block, ContextPtr context)
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
 
     join->addBlockToJoin(block_to_insert, true);
+}
+
+void StorageJoin::checkInsertIsPossible(ContextPtr context) const
+{
+    /// Protection from `INSERT INTO test_table_join SELECT * FROM test_table_join`: the write lock
+    /// cannot be taken while the same query holds a read lock on this table.
+    if (!tryLockForCurrentQueryTimedWithContext(rwlock, RWLockImpl::Write, context))
+        throw Exception(
+            ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
+}
+
+HashJoinPtr StorageJoin::buildFromBackups(const String & exclude_file_name) const
+{
+    auto rebuilt_join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    forEachBackupBlock([&](const Block & block)
+    {
+        Block block_to_insert = block;
+        convertRightBlock(block_to_insert);
+        rebuilt_join->addBlockToJoin(block_to_insert, true);
+    }, exclude_file_name);
+    return rebuilt_join;
+}
+
+void StorageJoin::publishBackup(const String & backup_file_path, ContextPtr context)
+{
+    /// Hold the write lock across the whole replay: a reader must never observe a partially
+    /// replayed backup, and the rollback of a failed replay must not have to reacquire the lock
+    /// after the partial state was already exposed -- a long-running reader could block that
+    /// reacquisition until `lock_acquire_timeout`, leaving the rows of the failed insert visible
+    /// until restart.
+    TableLockHolder holder = tryLockForCurrentQueryTimedWithContext(rwlock, RWLockImpl::Write, context);
+    if (!holder)
+        throw Exception(
+            ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
+
+    try
+    {
+        forEachBlockInBackupFile(backup_file_path, [this](const Block & block)
+        {
+            Block block_to_insert = block;
+            convertRightBlock(block_to_insert);
+            join->addBlockToJoin(block_to_insert, true);
+        });
+    }
+    catch (...)
+    {
+        /// The write lock is still held, so the partially updated state is replaced before any
+        /// reader can see it. The backup of the failed insert is excluded from the rebuild and
+        /// removed within the same publish critical section, so no concurrent rollback can
+        /// replay it either.
+        try
+        {
+            join = buildFromBackups(/*exclude_file_name=*/ fs::path(backup_file_path).filename());
+            disk->removeFileIfExists(backup_file_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                getLogger("StorageJoin"),
+                fmt::format("Cannot restore the in-memory state of table {} after a failed INSERT", getStorageID().getNameForLogs()));
+        }
+        throw;
+    }
 }
 
 size_t StorageJoin::getSize(ContextPtr context) const

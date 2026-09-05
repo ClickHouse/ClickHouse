@@ -3,6 +3,9 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
+#include <functional>
+#include <mutex>
+
 
 namespace DB
 {
@@ -29,6 +32,11 @@ public:
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {path}; }
+    Disks getDataDisks() const override { return {disk}; }
+
+    /// Throw if the query behind `context` cannot update the live state, for example because it is
+    /// reading from this table. Checked before the staged backup of an `INSERT` is published.
+    virtual void checkInsertIsPossible(ContextPtr /*context*/) const {}
 
 protected:
     StorageSetOrJoinBase(
@@ -46,12 +54,33 @@ protected:
 
     std::atomic<UInt64> increment = 0;    /// For the backup file names.
 
+    /// Serializes the operations that publish or roll back committed backups: an `INSERT`
+    /// publishing its staged backup, the rollback of a failed `INSERT`, and (for `Join`)
+    /// mutations and truncation. Without it, the rollback of one failed insert could swap
+    /// the live state while another insert is still replaying its own committed backup,
+    /// so that insert would apply the same rows twice.
+    mutable std::mutex mutate_mutex;
+
     /// Restore from backup.
     void restore();
 
-private:
-    void restoreFromFile(const String & file_path);
+    /// Read every committed backup in insertion order, optionally skipping one file by name. The
+    /// caller owns the destination state, so it can keep an update private until it has been
+    /// built successfully.
+    void forEachBackupBlock(const std::function<void(const Block &)> & callback, const String & exclude_file_name = {}) const;
 
+    /// Read the blocks of a single backup file in insertion order.
+    void forEachBlockInBackupFile(const String & file_path, const std::function<void(const Block &)> & callback) const;
+
+    /// Apply the just-promoted backup file of an `INSERT` to the live state, with the strong
+    /// exception guarantee: on failure the live state has been restored to what it was before and
+    /// the backup file has been removed, so a failed `INSERT` never publishes any rows. Called
+    /// under `mutate_mutex`.
+    virtual void publishBackup(const String & backup_file_path, ContextPtr context) = 0;
+
+    void restoreFromFile(const String & file_path, ContextPtr context = nullptr);
+
+private:
     /// Insert the block into the state.
     virtual void insertBlock(const Block & block, ContextPtr context) = 0;
     /// Call after all blocks were inserted.
@@ -95,6 +124,10 @@ private:
     void insertBlock(const Block & block, ContextPtr) override;
     void finishInsert() override;
     size_t getSize(ContextPtr) const override;
+    void publishBackup(const String & backup_file_path, ContextPtr context) override;
+
+    /// Build a fresh state from the committed backups and swap it in.
+    void rebuildFromBackups();
 };
 
 }

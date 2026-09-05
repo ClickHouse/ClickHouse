@@ -479,6 +479,30 @@ public:
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
 
+    /// Whether `getPath()` refers to a real, host-accessible filesystem directory that
+    /// callers may use directly with `std::filesystem`/`fs::` outside of the `IDisk` API
+    /// (e.g. `StorageDistributed`'s local insert queue directories). Purely virtual disks
+    /// backed by in-memory metadata have no such directory and return `false` here.
+    virtual bool isPathOnLocalFilesystem() const { return true; }
+
+    /// Whether the disk's whole directory tree lives in the host filesystem namespace rooted at
+    /// `getPath()`, so that raw `std::filesystem` calls on `getPath() + relative_path` and the
+    /// corresponding `IDisk` directory operations (`createDirectories`, `moveDirectory`,
+    /// `removeRecursive`, ...) refer to the same objects.
+    ///
+    /// This is strictly stronger than `isPathOnLocalFilesystem`: an object storage disk with
+    /// `plain`/`plain_rewritable` metadata over a local object storage does have a real
+    /// `getPath()`, but its directory structure is described by object keys rather than by the
+    /// host filesystem, so a directory created with raw `std::filesystem` is invisible to
+    /// `moveDirectory`/`removeRecursive` and vice versa. Callers that mix both APIs on the same
+    /// directory (e.g. `StorageDistributed`'s local insert queue) must check this one.
+    virtual bool hasLocalFilesystemDirectoryNamespace() const { return true; }
+
+    /// True if everything this disk stores - including the directory tree - is still there after a
+    /// server restart. A disk with a non-persistent metadata type (`memory`) comes up empty, so a
+    /// table directory that is missing on attach is expected there rather than a sign of data loss.
+    virtual bool keepsMetadataAcrossRestarts() const { return true; }
+
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() {}
 

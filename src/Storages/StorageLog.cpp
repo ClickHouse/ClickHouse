@@ -44,6 +44,7 @@
 #include <Backups/RestorerFromBackup.h>
 
 #include <Disks/TemporaryFileOnDisk.h>
+#include <Disks/IDisk.h>
 #include <Disks/IDiskTransaction.h>
 
 #include <chrono>
@@ -790,6 +791,22 @@ StorageLog::StorageLog(
     }
     else
     {
+        /// Not every disk keeps its metadata across restarts: with a non-persistent metadata type
+        /// (such as `memory`, used by the `borrow_from_cache` object storage) the table directory is
+        /// gone when the table is reattached, and the first write would fail with
+        /// `DIRECTORY_DOESNT_EXIST`. Recreate it, the same way the `MergeTree` family does on attach.
+        ///
+        /// Only for such a disk: on a durable disk a missing table directory means the data is
+        /// gone, and recreating it would silently turn that into a working empty table. Leave it
+        /// missing there, so the table fails as before instead of hiding the loss.
+        if (!disk->keepsMetadataAcrossRestarts() && !disk->existsDirectory(table_path))
+        {
+            if (disk->isReadOnly())
+                table_directory_is_missing = true;
+            else
+                disk->createDirectories(table_path);
+        }
+
         try
         {
             file_checker.repair();
@@ -950,6 +967,20 @@ void StorageLog::saveFileSizes(const WriteLock & /* already locked for writing *
 }
 
 
+void StorageLog::createTableDirectoryIfNeeded(const WriteLock & /* already locked for writing */)
+{
+    /// The table was attached while the disk was read-only, so its directory could not be recreated
+    /// then. A disk can stop being read-only later: a `borrow_from_cache` disk is read-only exactly
+    /// while the cache it borrows from is not registered yet. Recreate the directory before the
+    /// first write, otherwise it would fail with `DIRECTORY_DOESNT_EXIST` forever.
+    if (!table_directory_is_missing)
+        return;
+
+    disk->createDirectories(table_path);
+    table_directory_is_missing = false;
+}
+
+
 void StorageLog::saveMarksAndFileSizes(const WriteLock & lock)
 {
     /// The marks file is itself one of the files whose size is recorded, so the count of saved marks
@@ -972,8 +1003,18 @@ void StorageLog::rename(const String & new_path_to_table_data, const StorageID &
 {
     chassert(table_path != new_path_to_table_data);
     {
-        disk->createDirectories(new_path_to_table_data);
-        disk->moveDirectory(table_path, new_path_to_table_data);
+        /// If the table was attached while the disk was read-only, its directory does not exist
+        /// (see `createTableDirectoryIfNeeded`), so there is nothing to move; just adopt the new
+        /// path, and the directory will be created there before the first write.
+        if (!table_directory_is_missing)
+        {
+            /// Create only the parent of the destination and let `moveDirectory` create the
+            /// destination itself: metadata storages of `DiskObjectStorage` reject a move onto an
+            /// already-existing directory (`rename` semantics), so pre-creating the destination
+            /// would make the move fail there.
+            disk->createDirectories(parentPath(new_path_to_table_data));
+            disk->moveDirectory(table_path, new_path_to_table_data);
+        }
 
         table_path = new_path_to_table_data;
         file_checker.setPath(table_path + "sizes.json");
@@ -1150,6 +1191,8 @@ SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetada
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
+    createTableDirectoryIfNeeded(lock);
+
     return std::make_shared<LogSink>(*this, metadata_snapshot, std::move(lock));
 }
 
@@ -1319,6 +1362,8 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
     WriteLock lock{rwlock, lock_timeout};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+
+    createTableDirectoryIfNeeded(lock);
 
     /// Load the marks if not loaded yet. We have to do that now because we're going to update these marks.
     loadMarks(lock);

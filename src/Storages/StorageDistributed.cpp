@@ -498,6 +498,24 @@ StorageDistributed::StorageDistributed(
     /// Sanity check. Skip check if the table is already created to allow the server to start.
     if (mode <= LoadingStrictnessLevel::CREATE)
     {
+        /// `Distributed` manages the local queue of pending async INSERTs with raw `std::filesystem`
+        /// calls on `disk->getPath() + relative_data_path`, while the rest of the queue lifecycle
+        /// (rename, drop, truncate) goes through the `IDisk` API, so only a disk whose directory
+        /// namespace is the host filesystem's can back it (see
+        /// `IDisk::hasLocalFilesystemDirectoryNamespace`); `web`, `plain`/`plain_rewritable` and
+        /// `borrow_from_cache` disks cannot. Reject such a storage policy on `CREATE`; a table
+        /// already recorded in metadata is still attached (without the queue) so that an upgrade
+        /// does not invalidate pre-existing tables.
+        if (storage_policy)
+        {
+            for (const DiskPtr & disk : data_volume->getDisks())
+                if (!disk->hasLocalFilesystemDirectoryNamespace())
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Disk '{}' does not keep its directory structure on the host filesystem and cannot back a `Distributed` table's local insert queue",
+                        disk->getName());
+        }
+
         if (remote_database.empty() && !remote_table_function_ptr && !getCluster()->maybeCrossReplication())
             LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
 
@@ -1604,7 +1622,15 @@ void StorageDistributed::initializeFromDisk()
 
     const auto & disks = data_volume->getDisks();
 
-    const auto & paths = getDataPaths();
+    /// Skip disks that do not keep their directory structure on the host filesystem: the queue
+    /// directories and the increment scan below use raw `std::filesystem` calls on
+    /// `disk->getPath()`. Such tables are attached without a local insert
+    /// queue (`initializeDirectoryQueuesForDisk` logs a warning); async INSERTs into them are
+    /// rejected by `DistributedSink` when they try to enqueue.
+    Strings paths;
+    for (const DiskPtr & disk : disks)
+        if (disk->hasLocalFilesystemDirectoryNamespace())
+            paths.push_back(disk->getPath() + relative_data_path);
     std::vector<UInt64> last_increment(paths.size());
 
     /// Make initialization for large number of disks parallel.
@@ -1724,8 +1750,68 @@ StoragePolicyPtr StorageDistributed::getStoragePolicy() const
     return storage_policy;
 }
 
+/// Returns the path of a pending async INSERT block under `path`, or an empty string if there is
+/// none. The queue keeps one directory per replica with the blocks (`N.bin`) inside, next to the
+/// `tmp` and `broken` subdirectories, so any `.bin` file below a subdirectory is queued data.
+/// Everything here is best-effort: a path a version without the queue never wrote to is expected
+/// not to resolve to a directory at all.
+static std::string findPendingQueueBlock(const std::string & path)
+{
+    std::error_code ec;
+    if (!fs::is_directory(path, ec))
+        return {};
+
+    for (fs::directory_iterator replica(path, ec), replicas_end; !ec && replica != replicas_end; replica.increment(ec))
+    {
+        if (!replica->is_directory(ec))
+            continue;
+
+        for (fs::recursive_directory_iterator block(replica->path(), ec), blocks_end; !ec && block != blocks_end;
+             block.increment(ec))
+        {
+            if (block->is_regular_file(ec) && block->path().extension() == ".bin")
+                return block->path().string();
+        }
+    }
+
+    return {};
+}
+
 void StorageDistributed::initializeDirectoryQueuesForDisk(const DiskPtr & disk)
 {
+    /// A `CREATE` of such a table is rejected in the constructor; an existing table is attached
+    /// without the local insert queue so that an upgrade does not invalidate its metadata.
+    /// SELECTs and foreground INSERTs do not need the queue; async INSERTs are rejected by
+    /// `DistributedSink` when they try to enqueue.
+    if (!disk->hasLocalFilesystemDirectoryNamespace())
+    {
+        /// Except when a version that still created the queue on such a disk (its `getPath()` can
+        /// be a real host directory, as for a `plain`/`plain_rewritable` disk over local object
+        /// storage) already spooled blocks there. Attaching without the queue would abandon them:
+        /// nothing sends them, `TRUNCATE` only drains the queues this function creates, and
+        /// `DROP`/`RENAME` go through `IDisk`, which resolves that raw path in another namespace.
+        /// Fail closed and let the operator decide what to do with the data.
+        const std::string legacy_path(disk->getPath() + relative_data_path);
+        if (const auto pending_block = findPendingQueueBlock(legacy_path); !pending_block.empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Disk '{}' does not keep its directory structure on the host filesystem, so table {} cannot have a local "
+                "insert queue, but '{}' still holds a pending async INSERT block written by an earlier version. Attaching "
+                "the table would abandon that data: it would neither be sent nor removed by TRUNCATE, DROP or RENAME. "
+                "Flush the queue with the previous version, or move '{}' away, and attach the table again",
+                disk->getName(),
+                getStorageID().getNameForLogs(),
+                pending_block,
+                legacy_path);
+
+        LOG_WARNING(
+            log,
+            "Disk '{}' does not keep its directory structure on the host filesystem and cannot back a `Distributed` table's local insert queue. "
+            "The table works without it, but INSERTs with distributed_foreground_insert = 0 will be rejected",
+            disk->getName());
+        return;
+    }
+
     const std::string path(disk->getPath() + relative_data_path);
     fs::create_directories(path);
 
@@ -2147,6 +2233,14 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 {
     for (const DiskPtr & disk : data_volume->getDisks())
     {
+        /// A table on a disk that does not keep its directory structure on the host filesystem is
+        /// attached without the local insert queue (see `initializeDirectoryQueuesForDisk`), so
+        /// there is no queue directory to move.  Moving it here would also mix the raw
+        /// `std::filesystem` queue directory with `IDisk::moveDirectory`, which such a disk
+        /// resolves in a different namespace.
+        if (!disk->hasLocalFilesystemDirectoryNamespace())
+            continue;
+
         disk->createDirectories(new_path_to_table_data);
         disk->moveDirectory(relative_data_path, new_path_to_table_data);
 
@@ -2833,6 +2927,19 @@ bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & n
     if (new_storage_policy->getVolumes().size() > 1)
         LOG_WARNING(log, "Storage policy for Distributed table has multiple volumes. "
                             "Only {} volume will be used to store data. Other will be ignored.", data_volume->getName());
+
+    /// A reloaded configuration may have added a disk that does not keep its directory structure on
+    /// the host filesystem (e.g. `web`, a `plain`/`plain_rewritable` disk, or `borrow_from_cache`) to
+    /// this policy. Such a disk cannot back the local
+    /// insert queue (see the same check in the constructor), so reject the new policy before publishing
+    /// it; the caller logs the error and the table keeps the previous policy.
+    for (const DiskPtr & disk : new_data_volume->getDisks())
+        if (!disk->hasLocalFilesystemDirectoryNamespace())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Disk '{}' does not keep its directory structure on the host filesystem and cannot back a `Distributed` table's local insert queue; "
+                "keeping the previous storage policy for table {}",
+                disk->getName(), getStorageID().getNameForLogs());
 
     std::atomic_store(&storage_policy, new_storage_policy);
     std::atomic_store(&data_volume, new_data_volume);

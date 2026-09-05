@@ -1377,7 +1377,9 @@ JoinAlgorithmParams::JoinAlgorithmParams(const Context & context)
         settings[Setting::max_bytes_before_external_join],
         settings[Setting::max_bytes_ratio_before_external_join]);
 
-    initial_query_id = context.getInitialQueryId();
+    /// The `Join` engine reuses its in-memory state under this id, so it must match the id an
+    /// `INSERT` into the same table locks under - see `StorageJoin::getLockQueryId`.
+    initial_query_id = StorageJoin::getLockQueryId(context);
     lock_acquire_timeout = std::chrono::milliseconds(settings[Setting::lock_acquire_timeout].totalMilliseconds());
 }
 
