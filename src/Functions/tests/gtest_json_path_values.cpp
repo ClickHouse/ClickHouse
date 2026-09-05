@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Columns/ColumnObject.h>
+#include <Common/tests/gtest_global_context.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeMap.h>
@@ -61,10 +62,12 @@ struct RejectingJSONValueConsumer
     void consumeNull(std::string_view, bool) {}
     void setRow(size_t) {}
     void finishRows(size_t) {}
+    JSONValueEnumerationState & getEnumerationState() { return enumeration_state; }
 
     size_t value_checks = 0;
     size_t consumed_values = 0;
     PreparedPath prepared_path;
+    JSONValueEnumerationState enumeration_state;
 };
 
 struct CountingTokenConsumer
@@ -225,6 +228,61 @@ GTEST_TEST(JSONPathValues, PreparedPathTypesRemainValidAcrossAlternatingValues)
             EXPECT_EQ(consumer.tokens[1], encodeValue(
                 encodePathTypePrefix(path, type), "42", 64, true, Kind::ArrayElementComplete, Kind::ArrayElementTruncated)->token);
             consumer.tokens.clear();
+        }
+    }
+}
+
+GTEST_TEST(JSONPathValues, NestedPreparationPreservesRowsAndEscapedPaths)
+{
+    using namespace JSONPathValues;
+    getContext();
+    struct Consumer
+    {
+        void setRow(size_t row_) { row = first_row + row_; }
+        void finishRows(size_t) {}
+        void addToken(std::string_view token) { tokens.emplace_back(row, token); }
+        size_t first_row = 0;
+        size_t row = 0;
+        std::vector<std::pair<size_t, String>> tokens;
+    };
+
+    for (const String type_name : {
+             "JSON(max_dynamic_paths = 0, items Array(Nullable(JSON(max_dynamic_paths = 0))))",
+             "JSON(max_dynamic_paths = 0)"})
+    {
+        const auto type = DataTypeFactory::instance().get(type_name);
+        auto column = type->createColumn();
+        for (size_t row = 0; row != 8; ++row)
+        {
+            const Object leaf{
+                {"value", row % 2 ? Field{"text"} : Field{Int64(row)}},
+                {"a[]", Field{"brackets"}},
+                {"a\\b", Field{"backslash"}},
+                {"a.b", Field{"dot"}},
+                {row % 2 ? "left" : "right", Object{{"inner", Object{{"inner", Field{Int64(row)}}}}}},
+            };
+            column->insert(Object{{"items", Array{Field{}, Field{leaf}, Field{leaf}}}, {"items[].value", Field{"literal"}}});
+        }
+
+        for (const String filter : {"", "items[].value", "items\\[\\].value", "items[].a\\[\\]", "items[].a\\\\b", "items[].a.b"})
+        {
+            const PathMatcher matcher(filter.empty() ? VectorWithMemoryTracking<String>{} : VectorWithMemoryTracking<String>{filter}, {}, {}, {});
+            Consumer together;
+            Extractor<Consumer> extractor(128, matcher, together);
+            enumerateJSONValues(assert_cast<const ColumnObject &>(*column), assert_cast<const DataTypeObject &>(*type), extractor);
+
+            Consumer separately;
+            for (size_t row = 0; row != column->size(); ++row)
+            {
+                separately.first_row = row;
+                Extractor<Consumer> row_extractor(128, matcher, separately);
+                enumerateJSONValues(assert_cast<const ColumnObject &>(*column), assert_cast<const DataTypeObject &>(*type), row_extractor, row, 1);
+            }
+            std::sort(together.tokens.begin(), together.tokens.end());
+            std::sort(separately.tokens.begin(), separately.tokens.end());
+            EXPECT_EQ(together.tokens, separately.tokens) << type_name << " filter=" << filter;
+            if (!filter.empty())
+                EXPECT_EQ(together.tokens.size(), filter == "items\\[\\].value" ? 8 : 16) << type_name << " filter=" << filter;
         }
     }
 }
