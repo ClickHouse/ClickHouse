@@ -470,10 +470,24 @@ The wait time in the request queue, if the number of concurrent requests exceeds
     DECLARE(Milliseconds, connection_pool_max_wait_ms, 0, R"(
 The wait time in milliseconds for a connection when the connection pool is full.
 
+The wait applies per replica, because there is one connection pool per replica. When it expires the
+attempt fails with `NO_FREE_CONNECTION`. On the failover path used by distributed `SELECT`s that is
+treated like any other unusable replica: the query tries the remaining replicas, and only fails with
+`ALL_CONNECTION_TRIES_FAILED` once every one of them has been tried. So this setting does not bound the
+whole query; with `N` replicas and `T` tries each, the total wait can reach
+`connection_pool_max_wait_ms` times `N` times `T`, where `T` is
+[connections_with_failover_max_tries](#connections_with_failover_max_tries) but never less than one,
+because a replica is always tried once before it is written off. Use
+[max_execution_time](/reference/settings/session-settings/max-execution#max_execution_time) to bound
+the query itself.
+
 Possible values:
 
 - Positive integer.
-- 0 — Infinite timeout.
+- 0 — Infinite timeout. The wait is still interrupted by `KILL QUERY`, and by `max_execution_time` at
+  the default [timeout_overflow_mode](/reference/settings/session-settings/timeout-overflow-mode#timeout_overflow_mode) `throw`.
+  Under `break` the time limit does not cancel the query, so the wait continues until a connection is
+  released; `KILL QUERY` still interrupts it.
 )", 0) \
     DECLARE(Milliseconds, replace_running_query_max_wait_ms, 5000, R"(
 The wait time for running the query with the same `query_id` to finish, when the [replace_running_query](#replace_running_query) setting is active.
@@ -1954,6 +1968,18 @@ Possible values:
 Use statistics to filter out parts during query execution.
 
 When enabled, pruning in SELECT queries will use column statistics (e.g. MinMax statistics) to eliminate parts that cannot contain matching data before reading any data.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
+    DECLARE(Bool, use_statistics_for_min_max_aggregation, true, R"(
+Answer `min`, `max` and `count` aggregations from per-part column statistics instead of reading data.
+
+When enabled, a query of the form `SELECT min(column), max(column), count() FROM table` without `GROUP BY` and filters
+is answered from column statistics (e.g. MinMax statistics, see the `auto_statistics_types` MergeTree setting)
+for the data parts that have them materialized, and only the remaining parts are read.
 
 Possible values:
 
@@ -4368,6 +4394,14 @@ Possible values:
 
 - [ORDER BY Clause](/reference/statements/select/order-by#optimization-of-data-reading)
 )", 0) \
+    DECLARE(Bool, optimize_read_in_reverse_order_final, true, R"(
+Enables reading data in reverse order of the sorting key in `SELECT` queries with the `FINAL` modifier from [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables. Takes effect only when [optimize_read_in_order](#optimize_read_in_order) is also enabled.
+
+Possible values:
+
+- 0 — Reading in reverse order with `FINAL` is disabled.
+- 1 — Reading in reverse order with `FINAL` is enabled.
+)", 0) \
     DECLARE(Bool, read_in_order_use_virtual_row, true, R"(
 Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only the parts that can actually contribute to the result are read, plus a bounded read-ahead window of at most `max_threads` parts that keeps reads parallel.
 )", 0) \
@@ -6716,6 +6750,19 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_propagate_predicate_across_join, true, R"(
+Toggles a query-plan-level optimization which copies filter conjuncts from one side of an
+equi-join onto the other side via equi-key substitution, so that primary-key/index pruning
+on the other side can use them.
+
+Applies when the filter and the `MergeTree` read are separated from the join only by expression
+and filter steps, and when the copied conjunct compares a primary key column with a constant
+(including `IN` with a constant set). A predicate below a nested join or below `DISTINCT`, or a
+comparison between two key columns, is left alone: it could not drive primary key pruning on the
+other side, so copying it would only add work.
+
+Only takes effect if `query_plan_enable_optimizations` is 1.
+)", 0) \
     DECLARE(Bool, query_plan_push_down_volume_reducing_functions, true, R"(
 Toggles a query-plan-level optimization which moves volume-reducing functions (`length`, `lengthUTF8`, `empty`, `notEmpty`)
 down in the execution plan, below `Sorting` and `Filter` steps. The fixed-size result replaces the
@@ -8888,9 +8935,12 @@ Maximal selectivity of the filter to use the hint built from the inverted text i
 )", 0) \
     DECLARE(Bool, use_text_index_like_evaluation_by_dictionary_scan, true, R"(
 Enable evaluation of LIKE/ILIKE queries by scanning the inverted text index dictionary.
+
+The accelerated patterns are `%value%`, `value%` and `%value`, as well as the `startsWith` and `endsWith` calls that `optimize_rewrite_like_perfect_affix` rewrites into `value%` and `%value`.
 )", 0) \
     DECLARE(UInt64, text_index_like_min_pattern_length, 4, R"(
-Minimum length of the alphanumeric needle in a LIKE/ILIKE pattern required to use the text index LIKE evaluation by the dictionary scan.
+Minimum length of the alphanumeric needle in a LIKE/ILIKE pattern, or of a `startsWith`/`endsWith` needle,
+required to use the text index LIKE evaluation by the dictionary scan.
 Patterns shorter than this threshold match too many dictionary tokens and are skipped to avoid expensive scans.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
@@ -9056,6 +9106,14 @@ Possible values:
     DECLARE(UInt64, distributed_plan_max_rows_to_broadcast, 20000, R"(
 Maximum rows to use broadcast join instead of shuffle join in distributed query plan.
 A heuristic for the rule-based distributed planner. When the cost-based optimizer is enabled, the broadcast-vs-shuffle choice is made by estimated cost and this setting has no effect.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, distributed_plan_read_in_order, false, R"(
+Allow the read-in-order optimization for `ORDER BY` in a distributed query plan, so a sorted read of the
+table's sorting key can skip the sort and stop early instead of scanning and sorting.
+
+Off by default: the rewrite that distributes a sort assumes the sort it wraps does not depend on its input
+already being ordered, and a sort that does can be fed rows through an exchange that does not preserve
+order. Only shapes where no exchange survives between the read and the sort are safe today.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_prefer_replicas_over_workers, false, R"(
 Serialize the distributed query plan for execution at replicas.
