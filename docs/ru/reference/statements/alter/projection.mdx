@@ -390,9 +390,9 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [I
 
 До ClickHouse v24.8 части проекций либо незаметно рассинхронизировались с основными данными, либо некоторые операции, такие как обновления и удаления, вообще нельзя было выполнять, поскольку база данных автоматически генерировала исключение, если у таблицы были проекции.
 
-Начиная с v24.8, новый параметр уровня таблицы [`deduplicate_merge_projection_mode`](/ru/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode) управляет поведением в случае, если вышеупомянутые нетривиальные фоновые операции слияния происходят в частях исходной таблицы.
+Начиная с v24.8, новый параметр уровня таблицы [`deduplicate_merge_projection_mode`](/ru/reference/settings/merge-tree-settings/other#deduplicate_merge_projection_mode) управляет поведением в случае, если вышеупомянутые нетривиальные фоновые операции слияния происходят в частях исходной таблицы.
 
-Мутации удаления — ещё один пример операций слияния частей, при которых удаляются строки в частях исходной таблицы. Начиная с v24.7, также есть параметр для управления поведением в отношении мутаций удаления, запускаемых легковесными удалениями: [`lightweight_mutation_projection_mode`](/ru/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode).
+Мутации удаления — ещё один пример операций слияния частей, при которых удаляются строки в частях исходной таблицы. Начиная с v24.7, также есть параметр для управления поведением в отношении мутаций удаления, запускаемых легковесными удалениями: [`lightweight_mutation_projection_mode`](/ru/reference/settings/merge-tree-settings/other#lightweight_mutation_projection_mode).
 
 Ниже приведены возможные значения для `deduplicate_merge_projection_mode` и `lightweight_mutation_projection_mode`:
 

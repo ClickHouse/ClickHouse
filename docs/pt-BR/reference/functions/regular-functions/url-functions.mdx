@@ -585,7 +585,8 @@ SELECT
 
 Introduzido em: v1.1.0
 
-Remove o parâmetro `name` de uma URL, se ele estiver presente.
+Remove a primeira ocorrência de `name=value` de cada parâmetro solicitado de uma URL.
+Somente são correspondidos parâmetros escritos como `name=`, portanto, um parâmetro de flag sem valor permanece intacto; por exemplo, `cutURLParameter('http://bigmir.net/?a&c=d', 'a')` retorna a URL inalterada.
 Esta função não codifica nem decodifica caracteres nos nomes dos parâmetros; por exemplo, `Client ID` e `Client%20ID` são tratados como nomes de parâmetros diferentes.
 
 **Sintaxe**
@@ -601,7 +602,7 @@ cutURLParameter(url, name)
 
 **Valor retornado**
 
-URL com o parâmetro `name` removido. [`String`](/pt-BR/reference/data-types/string)
+URL com a primeira ocorrência de `name=value` de cada parâmetro solicitado removida. [`String`](/pt-BR/reference/data-types/string)
 
 **Exemplos**
 
@@ -1196,7 +1197,7 @@ firstSignificantSubdomainRFC(url)
 
 Introduzido em: v1.1.0
 
-Retorna o identificador do fragmento sem o símbolo hash inicial.
+Retorna o identificador de fragmento sem o símbolo hash inicial.
 
 **Sintaxe**
 
@@ -1210,14 +1211,14 @@ fragment(url)
 
 **Valor retornado**
 
-Retorna o identificador do fragmento sem o símbolo `hash` inicial. [`String`](/pt-BR/reference/data-types/string)
+Retorna o identificador de fragmento sem o símbolo `hash` inicial. [`String`](/pt-BR/reference/data-types/string)
 
 **Exemplos**
 
 **Exemplo de uso**
 
 ```sql title=Query
-SELECT fragment('https://clickhouse.com/docs/getting-started/quick-start/cloud#1-create-a-clickhouse-service');
+SELECT fragment('https://clickhouse.com/docs/get-started/setup/cloud#1-create-a-clickhouse-service');
 ```
 
 ```response title=Response
@@ -1268,7 +1269,7 @@ SELECT netloc('http://paul@www.example.com:80/');
 
 Introduzido em: v1.1.0
 
-Retorna o caminho de uma URL sem a query string.
+Retorna o caminho de uma URL sem a string de consulta.
 
 **Sintaxe**
 
@@ -1282,14 +1283,14 @@ path(url)
 
 **Valor retornado**
 
-Retorna o caminho da URL, sem a query string. [`String`](/pt-BR/reference/data-types/string)
+Retorna o caminho da URL, sem a string de consulta. [`String`](/pt-BR/reference/data-types/string)
 
 **Exemplos**
 
 **Exemplo de uso**
 
 ```sql title=Query
-SELECT path('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value');
+SELECT path('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value');
 ```
 
 ```response title=Response
@@ -1318,14 +1319,14 @@ pathFull(url)
 
 **Valor retornado**
 
-Retorna o caminho da URL, incluindo a query string e o fragmento. [`String`](/pt-BR/reference/data-types/string)
+Retorna o caminho da URL, incluindo a string de consulta e o fragmento. [`String`](/pt-BR/reference/data-types/string)
 
 **Exemplos**
 
 **Exemplo de uso**
 
 ```sql title=Query
-SELECT pathFull('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value#section');
+SELECT pathFull('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value#section');
 ```
 
 ```response title=Response

@@ -50,7 +50,7 @@ SELECT sum(doc.shipping.cost::Float32) AS total_shipping_cost FROM t1;
   ### Можно ли подключать базы данных MongoDB без публичного IP-адреса или расположенные в частных сетях?
 </div>
 
-Мы поддерживаем AWS PrivateLink для подключения к базам данных MongoDB без публичного IP-адреса или расположенным в частных сетях. Azure Private Link и GCP Private Service Connect в настоящее время не поддерживаются.
+Да. О способах, которыми ClickPipes может подключаться к источнику данных, недоступному из публичного интернета, см. в разделе [сетевое взаимодействие ClickPipes](/ru/integrations/clickpipes/networking).
 
 <div id="what-happens-if-i-delete-a-database-table-from-my-mongodb-database">
   ### Что произойдет, если я удалю базу данных/таблицу из MongoDB?
@@ -108,4 +108,4 @@ SELECT sum(doc.shipping.cost::Float32) AS total_shipping_cost FROM t1;
 
 Для подключения к Replica Set вы можете настроить PrivateLink для MongoDB либо с помощью ресурса VPC, либо с помощью VPC endpoint service. Если вы выбираете ресурс VPC, потребуется создать конфигурацию ресурса `GROUP`, а также конфигурацию ресурса `CHILD` для каждого узла в кластере. Если вы выбираете VPC endpoint service, потребуется создать отдельный Endpoint Service (и отдельный NLB) для каждого узла в кластере.
 
-Подробности см. в документации [AWS PrivateLink for ClickPipes](/ru/integrations/clickpipes/aws-privatelink). Если вам нужна помощь, обратитесь в ClickHouse Support.
+Подробности см. в документации [AWS PrivateLink for ClickPipes](/ru/integrations/clickpipes/networking/aws-privatelink). Если вам нужна помощь, обратитесь в ClickHouse Support.

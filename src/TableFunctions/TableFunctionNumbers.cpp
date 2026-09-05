@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertColumnToType.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/System/StorageSystemNumbers.h>
@@ -104,7 +105,9 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(
 template <bool multithreaded>
 UInt64 TableFunctionNumbers<multithreaded>::evaluateArgument(ContextPtr context, ASTPtr & argument) const
 {
-    const auto [column, type] = evaluateConstantExpressionAsColumn(argument, context);
+    const auto constant = evaluateConstantExpressionAsColumn(argument, context);
+    const auto & column = constant.getColumn();
+    const auto & type = constant.getType();
 
     if (!isNativeNumber(type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} expression, must be numeric type", type->getName());

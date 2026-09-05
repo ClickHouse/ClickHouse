@@ -202,7 +202,10 @@ public:
     {
         assertInitialized();
         if (auto schema = current_metadata->getTableSchema(local_context); !schema.empty())
+        {
+            validateLakeSchemaColumnNames(schema, DataLakeMetadata::name);
             return ColumnsDescription(std::move(schema));
+        }
         return std::nullopt;
     }
 
@@ -258,8 +261,11 @@ public:
         assertInitialized();
         auto metadata = current_metadata->buildStorageMetadataFromState(state, context);
         if (metadata)
+        {
+            validateLakeSchemaColumnNames(metadata->getColumns().getAll(), DataLakeMetadata::name);
             LOG_TEST(log, "Built storage metadata from state with columns: {}",
                 metadata->getColumns().toString(/* include_comments */false));
+        }
         return metadata;
     }
 
@@ -407,6 +413,19 @@ public:
 #else
         return false;
 #endif
+    }
+
+    bool supportsLazyMaterialization(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
+    {
+        assertInitialized();
+        return current_metadata->supportsLazyMaterialization(storage_metadata_snapshot, context);
+    }
+
+    /// Data lakes never overwrite an existing data file in place: a new snapshot references new
+    /// files. This makes the lazy-materialization reread race-free regardless of the backend.
+    bool dataFilesAreImmutable() const override
+    {
+        return true;
     }
 
 private:

@@ -1,5 +1,5 @@
 ---
-description: '이 엔진은 ClickHouse를 통해 HDFS의 데이터를 관리할 수 있게 하여 Apache Hadoop 생태계와 통합됩니다. 이 엔진은 File 및 URL 엔진과 유사하지만, Hadoop에 특화된 기능을 제공합니다.'
+description: '이 엔진은 ClickHouse를 통해 HDFS의 데이터를 관리할 수 있게 하여 Apache Hadoop 생태계와 통합됩니다. 이 엔진은 File 및 URL 엔진과 유사하지만, Hadoop 전용 기능을 제공합니다.'
 sidebarTitle: 'HDFS'
 slug: /engines/table-engines/integrations/hdfs
 title: 'HDFS 테이블 엔진'
@@ -263,13 +263,15 @@ libhdfs3는 HDFS 네임노드 HA를 지원합니다.
 * `_size` — 파일 크기(바이트)입니다. 유형: `Nullable(UInt64)`. 크기를 알 수 없으면 값은 `NULL`입니다.
 * `_time` — 파일의 마지막 수정 시각입니다. 유형: `Nullable(DateTime)`. 시각을 알 수 없으면 값은 `NULL`입니다.
 
+- `_etag` — 파일의 ETag입니다. 유형: `LowCardinality(String)`. HDFS에는 네이티브 ETag가 없으므로 파일의 수정 시각과 크기를 기반으로 `<mtime_seconds>_<size>` 형식의 값이 생성됩니다. `libhdfs3`는 수정 시각을 초 단위 정밀도로만 제공하므로, 같은 초 내에 동일한 크기로 재작성하면 동일한 값이 생성됩니다. 따라서 이 방식으로 생성된 ETag는 콘텐츠 캐시 키로 사용되지 않습니다.
+
 <div id="storage-settings">
   ## 저장소 설정
 </div>
 
-* [hdfs&#95;truncate&#95;on&#95;insert](/ko/reference/settings/session-settings#hdfs_truncate_on_insert) - 파일에 삽입하기 전에 해당 파일을 truncate할 수 있습니다. 기본적으로 비활성화되어 있습니다.
-* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/ko/reference/settings/session-settings#hdfs_create_new_file_on_insert) - 포맷에 suffix가 있는 경우, 삽입할 때마다 새 파일을 생성할 수 있습니다. 기본적으로 비활성화되어 있습니다.
-* [hdfs&#95;skip&#95;empty&#95;files](/ko/reference/settings/session-settings#hdfs_skip_empty_files) - 읽는 중 빈 파일을 건너뛸 수 있습니다. 기본적으로 비활성화되어 있습니다.
+* [hdfs&#95;truncate&#95;on&#95;insert](/ko/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - 파일에 삽입하기 전에 해당 파일을 truncate할 수 있습니다. 기본적으로 비활성화되어 있습니다.
+* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/ko/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - 포맷에 suffix가 있는 경우, 삽입할 때마다 새 파일을 생성할 수 있습니다. 기본적으로 비활성화되어 있습니다.
+* [hdfs&#95;skip&#95;empty&#95;files](/ko/reference/settings/session-settings/hdfs#hdfs_skip_empty_files) - 읽는 중 빈 파일을 건너뛸 수 있습니다. 기본적으로 비활성화되어 있습니다.
 
 **관련 항목**
 

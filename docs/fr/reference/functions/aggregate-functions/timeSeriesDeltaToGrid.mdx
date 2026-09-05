@@ -17,7 +17,7 @@ Fonction d’agrégation qui utilise des données de séries temporelles sous fo
 Pour chaque point de la grille, les échantillons utilisés pour calculer `delta` sont pris en compte dans la fenêtre temporelle spécifiée.
 
 <Warning>
-  Cette fonction est expérimentale, activez-la en définissant `allow_experimental_ts_to_grid_aggregate_function=true`.
+  Cette fonction est expérimentale, activez-la en définissant `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>
 
 **Syntaxe**
@@ -28,10 +28,10 @@ timeSeriesDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(time
 
 **Paramètres**
 
-* `start_timestamp` — Indique le début de la grille. [`UInt32`](/fr/reference/data-types/int-uint) ou [`DateTime`](/fr/reference/data-types/datetime)
-* `end_timestamp` — Indique la fin de la grille. [`UInt32`](/fr/reference/data-types/int-uint) ou [`DateTime`](/fr/reference/data-types/datetime)
-* `grid_step` — Indique le pas de la grille en secondes. [`UInt32`](/fr/reference/data-types/int-uint)
-* `staleness` — Indique l&#39;ancienneté maximale, en secondes, des échantillons pris en compte. La fenêtre d&#39;ancienneté est un intervalle ouvert à gauche et fermé à droite. [`UInt32`](/fr/reference/data-types/int-uint)
+* `start_timestamp` — Indique le début de la grille. Avec un argument d’horodatage `DateTime64`, il peut également s’agir d’un nombre fractionnaire ou d’une chaîne contenant un nombre ou un texte de date et heure. [`UInt32`](/fr/reference/data-types/int-uint) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal*`](/fr/reference/data-types/decimal) ou [`String`](/fr/reference/data-types/string)
+* `end_timestamp` — Indique la fin de la grille. Avec un argument d’horodatage `DateTime64`, il peut également s’agir d’un nombre fractionnaire ou d’une chaîne contenant un nombre ou un texte de date et heure. [`UInt32`](/fr/reference/data-types/int-uint) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal*`](/fr/reference/data-types/decimal) ou [`String`](/fr/reference/data-types/string)
+* `grid_step` — Indique le pas de la grille en secondes. Avec un argument d’horodatage `DateTime64`, il peut également s’agir d’un nombre fractionnaire ou d’une chaîne contenant un nombre ou une durée telle que &#39;15s&#39; ou &#39;1m&#39;. [`UInt32`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal*`](/fr/reference/data-types/decimal) ou [`String`](/fr/reference/data-types/string)
+* `staleness` — Indique l&#39;ancienneté maximale, en secondes, des échantillons pris en compte. La fenêtre d&#39;ancienneté est un intervalle ouvert à gauche et fermé à droite. Avec un argument d’horodatage `DateTime64`, il peut également s’agir d’un nombre fractionnaire ou d’une chaîne contenant un nombre ou une durée telle que &#39;15s&#39; ou &#39;1m&#39;. [`UInt32`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal*`](/fr/reference/data-types/decimal) ou [`String`](/fr/reference/data-types/string)
 
 **Arguments**
 

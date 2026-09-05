@@ -17,8 +17,6 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -26,8 +24,6 @@
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/InDepthNodeVisitor.h>
-
-#include <algorithm>
 
 #include <fmt/ranges.h>
 
@@ -37,13 +33,10 @@ namespace DB
 namespace Setting
 {
     extern const SettingsOverflowMode distinct_overflow_mode;
-    extern const SettingsBool exact_rows_before_limit;
-    extern const SettingsUInt64 limit;
     extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
-    extern const SettingsUInt64 offset;
     extern const SettingsBool optimize_distinct_in_order;
 }
 
@@ -79,10 +72,6 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             }
         }
     }
-
-    const Settings & settings = context->getSettingsRef();
-    if (options.subquery_depth == 0 && (settings[Setting::limit] > 0 || settings[Setting::offset] > 0))
-        settings_limit_offset_needed = true;
 
     size_t num_children = ast->list_of_selects->children.size();
     if (!num_children)
@@ -123,56 +112,11 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         }
     }
 
-    if (num_children == 1 && settings_limit_offset_needed && !options.settings_limit_offset_done)
-    {
-        const ASTPtr first_select_ast = ast->list_of_selects->children.at(0);
-        ASTSelectQuery * select_query = dynamic_cast<ASTSelectQuery *>(first_select_ast.get());
-        if (!select_query)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid type in list_of_selects: {}", first_select_ast->getID());
-
-        if (!select_query->withFill() && !select_query->limit_with_ties)
-        {
-            UInt64 limit_length = 0;
-            UInt64 limit_offset = 0;
-
-            const ASTPtr limit_offset_ast = select_query->limitOffset();
-            if (limit_offset_ast)
-            {
-                limit_offset = evaluateConstantExpressionAsLiteral(limit_offset_ast, context)->as<ASTLiteral &>().value.safeGet<UInt64>();
-                UInt64 new_limit_offset = settings[Setting::offset] + limit_offset;
-                ASTPtr new_limit_offset_ast = make_intrusive<ASTLiteral>(new_limit_offset);
-                select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
-            }
-            else if (settings[Setting::offset])
-            {
-                ASTPtr new_limit_offset_ast = make_intrusive<ASTLiteral>(settings[Setting::offset].value);
-                select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
-            }
-
-            const ASTPtr limit_length_ast = select_query->limitLength();
-            if (limit_length_ast)
-            {
-                limit_length = evaluateConstantExpressionAsLiteral(limit_length_ast, context)->as<ASTLiteral &>().value.safeGet<UInt64>();
-
-                UInt64 new_limit_length = 0;
-                if (settings[Setting::offset] == 0)
-                    new_limit_length = std::min(limit_length, settings[Setting::limit].value);
-                else if (settings[Setting::offset] < limit_length)
-                    new_limit_length = settings[Setting::limit] ? std::min(settings[Setting::limit].value, limit_length - settings[Setting::offset].value)
-                                                       : (limit_length - settings[Setting::offset].value);
-
-                ASTPtr new_limit_length_ast = make_intrusive<ASTLiteral>(new_limit_length);
-                select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
-            }
-            else if (settings[Setting::limit])
-            {
-                ASTPtr new_limit_length_ast = make_intrusive<ASTLiteral>(settings[Setting::limit].value);
-                select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
-            }
-
-            options.settings_limit_offset_done = true;
-        }
-    }
+    /// The `limit` / `offset` settings are applied earlier, in `applyQueryConstructionSettings`
+    /// (`executeQuery`), by wrapping the top-level query as a derived table with an outer
+    /// `LIMIT`/`OFFSET` and clearing the settings on the context. So there is nothing to apply here.
+    /// Subquery-level `SETTINGS limit/offset` (e.g. `view(SELECT … SETTINGS limit = 5)`) is handled
+    /// by the analyzer in `QueryTreeBuilder`.
 
     for (size_t query_num = 0; query_num < num_children; ++query_num)
     {
@@ -389,23 +333,6 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
                 false);
 
             query_plan.addStep(std::move(distinct_step));
-        }
-    }
-
-    if (settings_limit_offset_needed && !options.settings_limit_offset_done)
-    {
-        if (settings[Setting::limit] > 0)
-        {
-            auto limit = std::make_unique<LimitStep>(
-                query_plan.getCurrentHeader(), settings[Setting::limit], settings[Setting::offset], settings[Setting::exact_rows_before_limit]);
-            limit->setStepDescription("LIMIT OFFSET for SETTINGS");
-            query_plan.addStep(std::move(limit));
-        }
-        else
-        {
-            auto offset = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), settings[Setting::offset]);
-            offset->setStepDescription("OFFSET for SETTINGS");
-            query_plan.addStep(std::move(offset));
         }
     }
 

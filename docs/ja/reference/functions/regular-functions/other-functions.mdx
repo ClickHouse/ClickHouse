@@ -565,7 +565,7 @@ HTTPインターフェイスを使用して通信します。デフォルトで�
 
 トレーニングデータセットから CatBoost モデルを学習する方法については、[モデルの学習と適用](https://catboost.ai/docs/features/training.html#training) を参照してください。
 
-モデルファイルは、[`file`](/ja/reference/functions/regular-functions/files#file) 関数と同様に、[`user_files`](/ja/reference/settings/server-settings/settings#user_files_path) ディレクトリ内に配置する必要があります。
+モデルファイルは、[`file`](/ja/reference/functions/regular-functions/files#file) 関数と同様に、[`user_files`](/ja/reference/settings/server-settings/settings/user#user_files_path) ディレクトリ内に配置する必要があります。
 
 <Note>
   この関数は非決定論的であり、同じ引数に対しても異なる結果を返すことがあります。
@@ -998,6 +998,43 @@ SELECT CURRENT_DATABASE
 └──────────────────┘
 ```
 
+<div id="currentHandler">
+  ## currentHandler
+</div>
+
+導入バージョン: v26.6.0
+
+クエリを呼び出した、SQL で定義された HTTP ハンドラー (`CREATE HANDLER` で作成) の名前を返します。
+このようなハンドラー経由でクエリが呼び出されなかった場合は、空文字列を返します。
+
+呼び出されたハンドラーに応じてクエリの動作をカスタマイズする場合に役立ちます。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対しても異なる結果を返すことがあります。
+</Note>
+
+**構文**
+
+```sql
+currentHandler()
+```
+
+**引数**
+
+* なし。
+
+**戻り値**
+
+現在のハンドラー名を返します。[`String`](/ja/reference/data-types/string)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT currentHandler()
+```
+
 <div id="currentProfiles">
   ## currentProfiles
 </div>
@@ -1076,6 +1113,44 @@ SELECT currentQueryID();
 ┌─currentQueryID()─────────────────────┐
 │ 1280d0e8-1a08-4524-be6e-77975bb68e7d │
 └──────────────────────────────────────┘
+```
+
+<div id="currentRequestURL">
+  ## currentRequestURL
+</div>
+
+導入バージョン: v26.6.0
+
+クエリを実行した HTTP リクエストの URL (パスおよびクエリ文字列) を返します。
+クエリが HTTP 経由で実行されなかった場合は、空文字列を返します。
+
+SQL で定義された HTTP ハンドラー (`CREATE HANDLER`) と組み合わせることで、リクエストパスに
+埋め込まれたパラメータを抽出できます。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返す場合があります。
+</Note>
+
+**構文**
+
+```sql
+currentRequestURL()
+```
+
+**引数**
+
+* なし。
+
+**戻り値**
+
+現在のHTTPリクエストのURLを返します。[`String`](/ja/reference/data-types/string)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT currentRequestURL()
 ```
 
 <div id="currentRoles">
@@ -1771,7 +1846,7 @@ SELECT formatReadableSize(filesystemAvailable()) AS "Available space";
 導入バージョン: v20.1.0
 
 ファイルシステムの容量をバイト単位で返します。
-データディレクトリへの [path](/ja/reference/settings/server-settings/settings#path) を設定しておく必要があります。
+データディレクトリへの [path](/ja/reference/settings/server-settings/settings/other#path) を設定しておく必要があります。
 
 <Note>
   この関数は非決定論的です。同じ引数でも異なる結果を返す場合があります。
@@ -1912,9 +1987,9 @@ FROM numbers(5);
 
 ジオメトリオブジェクトの x 座標と y 座標を入れ替えます。この操作では緯度と経度が入れ替わるため、異なる座標系間の変換や座標順序の修正に役立ちます。
 
-Point では x 座標と y 座標を入れ替えます。複雑なジオメトリ (LineString、Polygon、MultiPolygon、Ring、MultiLineString) では、各座標ペアにこの変換が再帰的に適用されます。
+Point では x 座標と y 座標を入れ替えます。複雑なジオメトリ (MultiPoint、LineString、Polygon、MultiPolygon、Ring、MultiLineString) では、各座標ペアにこの変換が再帰的に適用されます。
 
-この関数は、個別のジオメトリ型 (Point、Ring、Polygon、MultiPolygon、LineString、MultiLineString) と Geometry Variant 型の両方をサポートします。
+この関数は、個別のジオメトリ型 (Point、MultiPoint、Ring、Polygon、MultiPolygon、LineString、MultiLineString) と Geometry Variant 型の両方をサポートします。
 
 **構文**
 
@@ -1924,11 +1999,11 @@ flipCoordinates(geometry)
 
 **引数**
 
-* `geometry` — 変換対象のジオメトリ。対応する型: Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)), または Geometry (これらのいずれかの型を含むバリアント) 。
+* `geometry` — 変換対象のジオメトリ。対応する型: Point (Tuple(Float64, Float64)), MultiPoint (Array(Point)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)), または Geometry (これらのいずれかの型を含むバリアント) 。
 
 **戻り値**
 
-座標が反転されたジオメトリ。戻り値の型は入力型と一致します。[`Point`](/ja/reference/data-types/geo#point) または [`Ring`](/ja/reference/data-types/geo#ring) または [`Polygon`](/ja/reference/data-types/geo#polygon) または [`MultiPolygon`](/ja/reference/data-types/geo#multipolygon) または [`LineString`](/ja/reference/data-types/geo#linestring) または [`MultiLineString`](/ja/reference/data-types/geo#multilinestring) または [`Geometry`](/ja/reference/data-types/geo)
+座標が反転されたジオメトリ。戻り値の型は入力型と一致します。[`Point`](/ja/reference/data-types/geo#point) または [`MultiPoint`](/ja/reference/data-types/geo#multipoint) または [`Ring`](/ja/reference/data-types/geo#ring) または [`Polygon`](/ja/reference/data-types/geo#polygon) または [`MultiPolygon`](/ja/reference/data-types/geo#multipolygon) または [`LineString`](/ja/reference/data-types/geo#linestring) または [`MultiLineString`](/ja/reference/data-types/geo#multilinestring) または [`Geometry`](/ja/reference/data-types/geo)
 
 **例**
 
@@ -2019,6 +2094,62 @@ SELECT
     b
 FROM tab
 WHERE (a > 3) AND (b < 3)
+```
+
+<div id="formatQueryFromJSON">
+  ## formatQueryFromJSON
+</div>
+
+導入バージョン: v26.8.0
+
+SQL AST (`parseQueryToJSON` によって生成される) のJSON表現を受け取り、SQLクエリ文字列として再フォーマットします。
+
+引数が1つの場合は、正規化された形式のSQLを生成します。
+引数が2つの場合 `(json, original_query)` は、元のクエリのコメント、空白、インデントを可能な限り保持します。
+
+デシリアライズされたASTは、現在のセッションの `max_ast_depth` および `max_ast_elements` 設定による制限を受けます。
+この関数を `parseQueryToJSON` と組み合わせることで、JSON AST形式を介してクエリを
+プログラムから検査および変換できます。
+
+**構文**
+
+```sql
+formatQueryFromJSON(json[, original_query])
+```
+
+**引数**
+
+* `json` — SQL AST を表す JSON 文字列。[`String`](/ja/reference/data-types/string)
+* `original_query` — 任意。フォーマットを保持するための元の SQL クエリ。[`String`](/ja/reference/data-types/string)
+
+**戻り値**
+
+SQL クエリ文字列。[`String`](/ja/reference/data-types/string)
+
+**例**
+
+**往復変換**
+
+```sql title=Query
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a, b FROM t WHERE x > 1'));
+```
+
+```response title=Response
+┌─formatQueryFromJSON(parseQueryToJSON('SELECT a, b FROM t WHERE x > 1'))─┐
+│ SELECT a, b FROM t WHERE x > 1                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**フォーマットを保持**
+
+```sql title=Query
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t'), 'SELECT /* comment */ a FROM t');
+```
+
+```response title=Response
+┌─formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t'), 'SELECT /* comment */ a FROM t')─┐
+│ SELECT /* comment */ a FROM t                                                             │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="formatQueryOrNull">
@@ -2480,7 +2611,7 @@ c1 DateTime, c2 Enum8('c2V0' = 0, 'c2V1' = 1, 'c2V2' = 2, 'c2V3' = 3), c3 LowCar
 前回のカウンター値に続く連番を生成して返します。
 この関数は、文字列の引数 (シリーズ識別子) と、省略可能な開始値を受け取ります。
 サーバーは Keeper を使用するように設定する必要があります。
-シリーズはパス配下の Keeper ノードに保存され、このパスはサーバー設定の [`series_keeper_path`](/ja/reference/settings/server-settings/settings#series_keeper_path) で設定できます。
+シリーズはパス配下の Keeper ノードに保存され、このパスはサーバー設定の [`series_keeper_path`](/ja/reference/settings/server-settings/settings/other#series_keeper_path) で設定できます。
 
 <Note>
   この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
@@ -2629,7 +2760,7 @@ SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header
 導入バージョン: v20.1.0
 
 サーバー設定ファイルからマクロの値を返します。
-マクロは設定ファイルの[`<macros>`](/ja/reference/settings/server-settings/settings#macros)セクションで定義され、ホスト名が複雑な場合でも、わかりやすい名前でサーバーを識別するために使用できます。
+マクロは設定ファイルの[`<macros>`](/ja/reference/settings/server-settings/settings/other#macros)セクションで定義され、ホスト名が複雑な場合でも、わかりやすい名前でサーバーを識別するために使用できます。
 この関数を分散テーブルのコンテキストで実行すると、各分片に対応する値を持つ通常のカラムが生成されます。
 
 <Note>
@@ -4505,6 +4636,53 @@ SELECT obfuscateQueryWithSeed('SELECT 1', 100) = obfuscateQueryWithSeed('SELECT 
 true
 ```
 
+<div id="parseQueryToJSON">
+  ## parseQueryToJSON
+</div>
+
+導入バージョン: v26.8.0
+
+SQLクエリ文字列をAST (Abstract Syntax Tree) にパースし、そのツリーのJSON表現を返します。
+生成されたJSONは、`formatQueryFromJSON`に渡してSQLクエリを再構築したり、`dialect`設定に`clickhouse_json`を指定して直接サーバーに送信したりできます
+(`enable_json_ast_dialect`によって制御されます) 。
+
+これは、SQL文法を介さずにプログラムからクエリを検査または変換したいツールで役立ちます。
+
+すべてのSQLクエリが忠実なJSON表現を持つわけではありません。JSON形式では再現できないデータを含むクエリ
+(たとえばインラインの`INSERT ... VALUES` / `INSERT ... FORMAT`データ) や、JSONシリアライゼーションがまだ実装されていない
+ASTノード型は、`formatQueryFromJSON`で読み戻せないJSONを生成するのではなく、`BAD_ARGUMENTS`で拒否されます。
+
+パース制限 (`max_query_size`、`max_parser_depth`、`max_parser_backtracks`) は、現在の
+セッション設定から取得されます。
+
+**構文**
+
+```sql
+parseQueryToJSON(sql)
+```
+
+**引数**
+
+* `sql` — 解析するSQLクエリ文字列。[`String`](/ja/reference/data-types/string)
+
+**戻り値**
+
+ASTを表すJSON文字列。[`String`](/ja/reference/data-types/string)
+
+**例**
+
+**単純なSELECT**
+
+```sql title=Query
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1'));
+```
+
+```response title=Response
+┌─formatQueryFromJSON(parseQueryToJSON('SELECT 1'))─┐
+│ SELECT 1                                          │
+└───────────────────────────────────────────────────┘
+```
+
 <div id="parseReadableSize">
   ## parseReadableSize
 </div>
@@ -4987,7 +5165,7 @@ FROM
 
   状態は新しいデータブロックごとにリセットされます。
   この挙動は誤りを招きやすいため、この関数は非推奨となっており、代わりに[ウィンドウ関数](/ja/reference/functions/window-functions/index)を使用することを推奨します。
-  この関数の使用を許可するには、設定[`allow_deprecated_error_prone_window_functions`](/ja/reference/settings/session-settings#allow_deprecated_error_prone_window_functions)を使用できます。
+  この関数の使用を許可するには、設定[`allow_deprecated_error_prone_window_functions`](/ja/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions)を使用できます。
 </Warning>
 
 **構文**
@@ -5104,7 +5282,7 @@ SELECT start, runningConcurrency(start, end) FROM example_table;
   この挙動は誤りを招きやすいため、この関数は非推奨です。
   代わりに [ウィンドウ関数](/ja/reference/functions/window-functions/index) を使用することを推奨します。
 
-  この関数の使用を許可するには、設定 [`allow_deprecated_error_prone_window_functions`](/ja/reference/settings/session-settings#allow_deprecated_error_prone_window_functions) を使用できます。
+  この関数の使用を許可するには、設定 [`allow_deprecated_error_prone_window_functions`](/ja/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions) を使用できます。
 </Warning>
 
 この関数の結果は、対象となるデータブロックと、そのブロック内でのデータの順序に依存します。

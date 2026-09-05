@@ -13,10 +13,10 @@ doc_type: 'reference'
 
 도입 버전: v25.6.0
 
-시계열 데이터를 타임스탬프와 값의 쌍으로 입력받아, 시작 타임스탬프, 종료 타임스탬프, 간격으로 정의된 정규 시간 그리드 상에서 지정된 예측 타임스탬프 오프셋을 기반으로 [PromQL 유사 선형 예측](https://prometheus.io/docs/prometheus/latest/querying/functions/#predict_linear)을 계산하는 집계 함수입니다. 그리드의 각 지점에서 `predict_linear` 계산에 사용되는 샘플은 지정된 시간 윈도우 내에서 선택됩니다.
+타임스탬프와 값의 쌍으로 이루어진 시계열 데이터를 입력받아, 시작 타임스탬프, 종료 타임스탬프, 간격으로 정의된 정규 시간 그리드에서 지정된 예측 타임스탬프 오프셋에 대한 [PromQL 유사 선형 예측](https://prometheus.io/docs/prometheus/latest/querying/functions/#predict_linear)을 계산하는 집계 함수입니다. 그리드의 각 지점에서는 지정된 시간 윈도우 내의 샘플을 사용해 `predict_linear`을 계산합니다.
 
 <Note>
-  이 함수는 실험적 기능입니다. `allow_experimental_ts_to_grid_aggregate_function=true`를 설정하여 활성화하십시오.
+  이 함수는 실험적 기능입니다. `allow_experimental_time_series_aggregate_functions=true`를 설정하여 활성화하십시오.
 </Note>
 
 **구문**
@@ -27,19 +27,23 @@ timeSeriesPredictLinearToGrid(start_timestamp, end_timestamp, grid_step, stalene
 
 **매개변수**
 
-* `start_timestamp` — 그리드의 시작을 지정합니다. - `end_timestamp` — 그리드의 끝을 지정합니다. - `grid_step` — 그리드의 간격을 초 단위로 지정합니다. - `staleness` — 고려할 샘플의 최대 &quot;staleness&quot;를 초 단위로 지정합니다. staleness 윈도우는 왼쪽이 열린 구간이고 오른쪽이 닫힌 구간입니다. - `predict_offset` — 예측 시간에 더할 offset의 초 수를 지정합니다.
+* `start_timestamp` — 그리드의 시작점을 지정합니다. `DateTime64` 타임스탬프 인수의 경우 소수, 숫자 또는 날짜-시간 텍스트를 포함하는 문자열도 사용할 수 있습니다. [`UInt32`](/ko/reference/data-types/int-uint) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`String`](/ko/reference/data-types/string)
+* `end_timestamp` — 그리드의 끝점을 지정합니다. `DateTime64` 타임스탬프 인수의 경우 소수, 숫자 또는 날짜-시간 텍스트를 포함하는 문자열도 사용할 수 있습니다. [`UInt32`](/ko/reference/data-types/int-uint) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`String`](/ko/reference/data-types/string)
+* `grid_step` — 그리드 간격을 초 단위로 지정합니다. `DateTime64` 타임스탬프 인수의 경우 소수, 숫자 또는 &#39;15s&#39;나 &#39;1m&#39; 같은 기간을 포함하는 문자열도 사용할 수 있습니다. [`UInt32`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`String`](/ko/reference/data-types/string)
+* `staleness` — 고려 대상 샘플의 최대 &quot;staleness&quot;를 초 단위로 지정합니다. staleness 윈도우는 왼쪽이 열린 구간이고 오른쪽이 닫힌 인터벌입니다. `DateTime64` 타임스탬프 인수의 경우 소수, 숫자 또는 &#39;15s&#39;나 &#39;1m&#39; 같은 기간을 포함하는 문자열도 사용할 수 있습니다. [`UInt32`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`String`](/ko/reference/data-types/string)
+* `predict_offset` — 예측 시간에 추가할 오프셋을 초 단위로 지정합니다. [`UInt32`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`String`](/ko/reference/data-types/string)
 
 **인수**
 
-* `timestamp` — 샘플의 타임스탬프입니다. 개별 값이거나 배열일 수 있습니다. - `value` — 해당 타임스탬프에 대응하는 시계열 값입니다. 개별 값이거나 배열일 수 있습니다.
+* `timestamp` — 샘플의 타임스탬프입니다. 개별 값 또는 배열일 수 있습니다. - `value` — 타임스탬프에 해당하는 시계열 값입니다. 개별 값 또는 배열일 수 있습니다.
 
 **반환 값**
 
-지정된 그리드에서의 `predict_linear` 값을 `Array(Nullable(Float64))` 형태로 반환합니다. 반환된 배열에는 각 시간 그리드 포인트마다 값이 하나씩 포함됩니다. 특정 그리드 포인트의 비율 값을 계산하기에 윈도우 내 샘플 수가 충분하지 않은 경우, 해당 값은 NULL입니다.
+지정된 그리드의 `predict_linear` 값을 `Array(Nullable(Float64))`로 반환합니다. 반환된 배열에는 각 시간 그리드 지점에 대한 값이 하나씩 포함됩니다. 특정 그리드 지점에서 rate 값을 계산하기에 윈도우 내 샘플이 충분하지 않으면 값은 NULL입니다.
 
 **예시**
 
-**60초 OFFSET을 적용하여 그리드 [90, 105, 120, 135, 150, 165, 180, 195, 210]에서 predict&#95;linear 값 계산**
+**60초 오프셋으로 그리드 [90, 105, 120, 135, 150, 165, 180, 195, 210]에서 predict&#95;linear 값 계산**
 
 ```sql title=Query
 SET allow_experimental_time_series_aggregate_functions = 1;

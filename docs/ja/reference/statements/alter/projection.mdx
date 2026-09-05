@@ -382,7 +382,7 @@ ClickHouse は一般に、できるだけ少ないデータを読み取ること
 
 いずれかのプロジェクションには事前計算済みの集約値がすでに含まれているため、ClickHouse はクエリ実行時に再度集約を行うことを避けるために、対応するプロジェクションパーツから読み取ろうとします。特定のパーツに対応するプロジェクションパーツがない場合、クエリ実行は元のパーツにフォールバックします。
 
-しかし、元のテーブル内の行が、単純ではない data part のバックグラウンドマージによって大きく変化した場合はどうなるでしょうか。
+しかし、元のテーブル内の行が、単純ではない data パーツ のバックグラウンドマージによって大きく変化した場合はどうなるでしょうか。
 たとえば、そのテーブルが `ReplacingMergeTree` テーブルエンジンを使用して保存されているとします。
 マージ中に同じ行が複数の入力パーツで検出された場合、もっとも新しい行バージョン (もっとも最近に挿入されたパーツのもの) だけが保持され、それ以前のすべてのバージョンは破棄されます。
 
@@ -390,9 +390,9 @@ ClickHouse は一般に、できるだけ少ないデータを読み取ること
 
 ClickHouse v24.8 より前では、プロジェクションパーツはメインデータと気づかれないまま同期がずれるか、あるいは更新や削除などの特定の操作をまったく実行できませんでした。これは、テーブルにプロジェクションがある場合、データベースが自動的に例外を送出していたためです。
 
-v24.8 以降では、新しいテーブルレベル設定 [`deduplicate_merge_projection_mode`](/ja/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode) により、前述の単純ではないバックグラウンドマージ操作が元のテーブルのパーツで発生した場合の動作を制御できます。
+v24.8 以降では、新しいテーブルレベル設定 [`deduplicate_merge_projection_mode`](/ja/reference/settings/merge-tree-settings/other#deduplicate_merge_projection_mode) により、前述の単純ではないバックグラウンドマージ操作が元のテーブルのパーツで発生した場合の動作を制御できます。
 
-Delete mutations も、元のテーブルのパーツ内の行を削除する part merge 操作の別の例です。v24.7 以降では、論理削除によってトリガーされる delete mutations に関する動作を制御する設定もあります: [`lightweight_mutation_projection_mode`](/ja/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode)。
+Delete mutations も、元のテーブルのパーツ内の行を削除する パーツ merge 操作の別の例です。v24.7 以降では、論理削除によってトリガーされる delete mutations に関する動作を制御する設定もあります: [`lightweight_mutation_projection_mode`](/ja/reference/settings/merge-tree-settings/other#lightweight_mutation_projection_mode)。
 
 以下は、`deduplicate_merge_projection_mode` と `lightweight_mutation_projection_mode` の両方で設定可能な値です。
 

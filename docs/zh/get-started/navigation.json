@@ -6,6 +6,7 @@
       "group": "开始使用",
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
+        "zh/get-started/index",
         "zh/get-started/quickstarts/home",
         {
           "expandable": true,
@@ -21,27 +22,28 @@
           "expanded": true,
           "group": "用例",
           "pages": [
+            "zh/get-started/use-cases/overview",
             "zh/get-started/use-cases/real-time-analytics",
             "zh/get-started/use-cases/observability",
             "zh/get-started/use-cases/data-warehousing",
             "zh/get-started/use-cases/agentic-analytics"
-          ],
-          "root": "zh/get-started/use-cases/overview"
+          ]
         },
         "zh/get-started/about/deployment-modes"
-      ],
-      "root": "zh/get-started/index"
+      ]
     },
     {
       "expanded": true,
       "group": "设置",
       "icon": "/images/menu-icon-gear.svg",
       "pages": [
+        "zh/get-started/setup/install",
         "zh/get-started/setup/cloud",
         {
           "expanded": true,
           "group": "自管理",
           "pages": [
+            "zh/get-started/setup/self-managed/overview",
             {
               "group": "本地开发",
               "pages": [
@@ -60,17 +62,16 @@
                 "zh/get-started/setup/self-managed/other-linux"
               ]
             }
-          ],
-          "root": "zh/get-started/setup/self-managed/overview"
+          ]
         }
-      ],
-      "root": "zh/get-started/setup/install"
+      ]
     },
     {
       "expanded": true,
       "group": "示例数据集",
       "icon": "/images/menu-icon-database.svg",
       "pages": [
+        "zh/get-started/sample-datasets/index",
         "zh/get-started/sample-datasets/playground",
         {
           "group": "基准测试",
@@ -94,7 +95,7 @@
           ]
         },
         {
-          "group": "Web 与社交分析",
+          "group": "Web 与社交媒体分析",
           "pages": [
             "zh/get-started/sample-datasets/amazon-reviews",
             "zh/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -114,7 +115,7 @@
           ]
         },
         {
-          "group": "时间序列与传感器",
+          "group": "时序数据与传感器",
           "pages": [
             "zh/get-started/sample-datasets/environmental-sensors",
             "zh/get-started/sample-datasets/noaa",
@@ -132,14 +133,14 @@
             "zh/get-started/sample-datasets/uk-price-paid"
           ]
         }
-      ],
-      "root": "zh/get-started/sample-datasets/index"
+      ]
     },
     {
       "expanded": true,
       "group": "迁移",
       "icon": "/images/caret-double-right.svg",
       "pages": [
+        "zh/get-started/migrate/overview",
         {
           "group": "PostgreSQL",
           "pages": [
@@ -153,8 +154,7 @@
               ]
             },
             "zh/get-started/migrate/postgres/appendix"
-          ],
-          "root": "zh/get-started/migrate/postgres/index"
+          ]
         },
         {
           "group": "BigQuery",
@@ -162,8 +162,7 @@
             "zh/get-started/migrate/bigquery/overview",
             "zh/get-started/migrate/bigquery/migrating-to-clickhouse-cloud",
             "zh/get-started/migrate/bigquery/loading-data"
-          ],
-          "root": "zh/get-started/migrate/bigquery/index"
+          ]
         },
         {
           "group": "Snowflake",
@@ -188,9 +187,10 @@
           ]
         },
         {
-          "group": "从 OSS 到 Cloud",
+          "group": "OSS 到 Cloud",
           "pages": [
-            "zh/get-started/migrate/oss-to-cloud/clickhouse-to-cloud"
+            "zh/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
+            "zh/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
           ]
         },
         {
@@ -201,8 +201,7 @@
             "zh/get-started/migrate/other-methods/object-storage-to-clickhouse"
           ]
         }
-      ],
-      "root": "zh/get-started/migrate/overview"
+      ]
     }
   ]
 }

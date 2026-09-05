@@ -8,11 +8,15 @@ namespace DB
 {
 
 /// Streaming query settings attached to a table expression:
-///   FROM t STREAM [CURSOR '{...}']
+///   FROM t STREAM [BOUNDED]
+///                 [UNORDERED]
+///                 [CURSOR '{...}']
 ///                 [WATERMARK FOR <col> AS <expr> [IDLE TIMEOUT INTERVAL N SECOND]]
 ///
 struct ASTStreamSettings : public IAST
 {
+    bool subscribe_for_updates = true;
+    bool unordered = false;
     CursorTreeNodePtr cursor;
     WatermarkSettingsPtr watermark;
 
@@ -21,6 +25,8 @@ public:
     ASTPtr clone() const override;
     bool hasTweaks() const;
 
+    void setSubscribeForUpdates(bool subscribe_for_updates_);
+    void setUnordered(bool unordered_);
     void setCursor(CursorTreeNodePtr cursor_);
     void setWatermark(WatermarkSettingsPtr watermark_);
 

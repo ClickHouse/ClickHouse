@@ -20,7 +20,7 @@ WatermarkTransform::WatermarkTransform(
 {
 }
 
-WatermarkTransform::~WatermarkTransform()
+void WatermarkTransform::onFinish()
 {
     if (max_watermark)
         storage.updateMaxWatermark(max_watermark);

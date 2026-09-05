@@ -166,7 +166,7 @@ CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
 CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100
 ```
 
-عندما ينفّذ خادم ClickHouse العديد من الاستعلامات المتزامنة باستخدام [عدّة خيوط](/ar/reference/settings/session-settings#max_threads)، وتكون جميع فتحات CPU قيد الاستخدام، يتم الوصول إلى حالة التحميل الزائد. في حالة التحميل الزائد، يُعاد جدولة كل فتحة CPU يتم تحريرها إلى عبء العمل المناسب وفقًا لسياسات الجدولة. وبالنسبة إلى الاستعلامات التي تشترك في عبء العمل نفسه، تُخصَّص الفتحات باستخدام أسلوب التناوب الدوري. أمّا الاستعلامات الموجودة في أعباء عمل منفصلة، فتُخصَّص لها الفتحات وفقًا للأوزان والأولويات والحدود المحددة لأعباء العمل.
+عندما ينفّذ خادم ClickHouse العديد من الاستعلامات المتزامنة باستخدام [عدّة خيوط](/ar/reference/settings/session-settings/max-threads#max_threads)، وتكون جميع فتحات CPU قيد الاستخدام، يتم الوصول إلى حالة التحميل الزائد. في حالة التحميل الزائد، يُعاد جدولة كل فتحة CPU يتم تحريرها إلى عبء العمل المناسب وفقًا لسياسات الجدولة. وبالنسبة إلى الاستعلامات التي تشترك في عبء العمل نفسه، تُخصَّص الفتحات باستخدام أسلوب التناوب الدوري. أمّا الاستعلامات الموجودة في أعباء عمل منفصلة، فتُخصَّص لها الفتحات وفقًا للأوزان والأولويات والحدود المحددة لأعباء العمل.
 
 يُستهلك وقت CPU بواسطة الخيوط عندما لا تكون متوقفة وتعمل على مهام كثيفة الاستهلاك للمعالج. ولأغراض الجدولة، يُميَّز بين نوعين من الخيوط:
 
@@ -198,18 +198,18 @@ CREATE WORKLOAD ingestion IN production
 
 يوفّر مثال على التهيئة هذا تجمعات مستقلة لفتحات CPU لكلٍّ من المسؤول وبيئة الإنتاج. ويكون تجمع بيئة الإنتاج مشتركًا بين التحليلات والإدخال. علاوة على ذلك، إذا كان تجمع بيئة الإنتاج مثقلاً، فستُعاد جدولة 9 من كل 10 فتحات يتم تحريرها إلى الاستعلامات التحليلية عند الحاجة. ولن تحصل استعلامات الإدخال إلا على فتحة واحدة من كل 10 فتحات خلال فترات الحمل الزائد. وقد يساعد ذلك في تحسين زمن الاستجابة للاستعلامات الموجّهة للمستخدم. وللتحليلات حدّ خاص بها يبلغ 60 خيط تنفيذ متزامنًا، ما يترك دائمًا 40 خيطًا على الأقل لدعم الإدخال. وعندما لا يكون هناك حمل زائد، يمكن للإدخال استخدام الخيوط المئة كلها.
 
-لاستبعاد استعلام من جدولة CPU، اضبط إعداد الاستعلام [use&#95;concurrency&#95;control](/ar/reference/settings/session-settings#use_concurrency_control) على 0.
+لاستبعاد استعلام من جدولة CPU، اضبط إعداد الاستعلام [use&#95;concurrency&#95;control](/ar/reference/settings/session-settings/use#use_concurrency_control) على 0.
 
 لا تدعم جدولة CPU عمليات الدمج والطفرات بعد.
 
 ولتوفير تخصيصات عادلة لعبء العمل، من الضروري تنفيذ الاستباق والتقليص أثناء تنفيذ الاستعلام. يُفعَّل الاستباق باستخدام إعداد الخادم `cpu_slot_preemption`. وإذا كان مفعّلًا، يجدّد كل خيط تنفيذ فتحة CPU الخاصة به دوريًا (وفقًا لإعداد الخادم `cpu_slot_quantum_ns`). وقد يؤدي هذا التجديد إلى حظر التنفيذ إذا كان CPU مثقلاً. وعندما يُحظر التنفيذ لفترة طويلة (راجع إعداد الخادم `cpu_slot_preemption_timeout_ms`)، يُقلَّص الاستعلام وينخفض عدد خيوط التنفيذ المتزامنة العاملة ديناميكيًا. لاحظ أن عدالة وقت CPU مضمونة بين أعباء العمل، لكنها قد لا تتحقق بين الاستعلامات داخل عبء العمل نفسه في بعض الحالات الطرفية.
 
 <Warning>
-  توفّر جدولة الفتحات وسيلة للتحكم في [تزامن الاستعلامات](/ar/reference/settings/session-settings#max_threads)، لكنها لا تضمن تخصيصًا عادلًا لوقت CPU ما لم يكن إعداد الخادم `cpu_slot_preemption` مضبوطًا على `true`؛ وإلا فستُوفَّر العدالة استنادًا إلى عدد تخصيصات فتحات CPU بين أعباء العمل المتنافسة. وهذا لا يعني تساوي مقدار ثواني CPU، لأنه من دون الاستباق قد تبقى فتحة CPU محجوزة إلى أجل غير مسمى. يحصل خيط التنفيذ على فتحة في البداية ويحررها عند اكتمال العمل.
+  توفّر جدولة الفتحات وسيلة للتحكم في [تزامن الاستعلامات](/ar/reference/settings/session-settings/max-threads#max_threads)، لكنها لا تضمن تخصيصًا عادلًا لوقت CPU ما لم يكن إعداد الخادم `cpu_slot_preemption` مضبوطًا على `true`؛ وإلا فستُوفَّر العدالة استنادًا إلى عدد تخصيصات فتحات CPU بين أعباء العمل المتنافسة. وهذا لا يعني تساوي مقدار ثواني CPU، لأنه من دون الاستباق قد تبقى فتحة CPU محجوزة إلى أجل غير مسمى. يحصل خيط التنفيذ على فتحة في البداية ويحررها عند اكتمال العمل.
 </Warning>
 
 <Note>
-  يؤدي تعريف مورد CPU إلى إبطال مفعول الإعدادين [`concurrent_threads_soft_limit_num`](/ar/reference/settings/server-settings/settings#concurrent_threads_soft_limit_num) و[`concurrent_threads_soft_limit_ratio_to_cores`](/ar/reference/settings/server-settings/settings#concurrent_threads_soft_limit_ratio_to_cores). وبدلاً من ذلك، يُستخدم إعداد عبء العمل `max_concurrent_threads` لتقييد عدد وحدات CPU المخصّصة لعبء عمل معيّن. وللحصول على السلوك السابق، أنشئ فقط مورد WORKER THREAD، واضبط `max_concurrent_threads` لعبء العمل `all` على القيمة نفسها لـ `concurrent_threads_soft_limit_num`، واستخدم إعداد الاستعلام `workload = "all"`. ويتوافق هذا الضبط مع تعيين الإعداد [`concurrent_threads_scheduler`](/ar/reference/settings/server-settings/settings#concurrent_threads_scheduler) إلى القيمة &quot;fair&#95;round&#95;robin&quot;.
+  يؤدي تعريف مورد CPU إلى إبطال مفعول الإعدادين [`concurrent_threads_soft_limit_num`](/ar/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_num) و[`concurrent_threads_soft_limit_ratio_to_cores`](/ar/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores). وبدلاً من ذلك، يُستخدم إعداد عبء العمل `max_concurrent_threads` لتقييد عدد وحدات CPU المخصّصة لعبء عمل معيّن. وللحصول على السلوك السابق، أنشئ فقط مورد WORKER THREAD، واضبط `max_concurrent_threads` لعبء العمل `all` على القيمة نفسها لـ `concurrent_threads_soft_limit_num`، واستخدم إعداد الاستعلام `workload = "all"`. ويتوافق هذا الضبط مع تعيين الإعداد [`concurrent_threads_scheduler`](/ar/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler) إلى القيمة &quot;fair&#95;round&#95;robin&quot;.
 </Note>
 
 <div id="threads_vs_cpus">
@@ -254,14 +254,14 @@ CREATE WORKLOAD development IN all SETTINGS max_cpu_share = 0.3
 </Note>
 
 <div id="memory-reservations">
-  ## حجوزات الذاكرة
+  ## حجز الذاكرة
 </div>
 
 <Note>
-  جدولة حجوزات الذاكرة تجريبية. ولا تسري إلا عند وجود مورد `MEMORY RESERVATION`، وقد تتغير صيغتها في SQL وسلوكها في الإصدارات المستقبلية. وهي غير مدعومة بعد لعمليات الدمج والطفرات، كما أن إخلاء استعلام قيد التشغيل يتم على أساس أفضل جهد: إذ يسري عند نقطة مزامنة الذاكرة التالية للاستعلام بدلًا من أن يحدث فورًا.
+  جدولة حجز الذاكرة تجريبية. ولا تسري إلا عند وجود مورد `MEMORY RESERVATION`، وقد تتغير صيغتها في SQL وسلوكها في الإصدارات المستقبلية. وهي غير مدعومة بعد لعمليات الدمج والطفرات، كما أن إخلاء استعلام قيد التشغيل يتم على أساس أفضل جهد: إذ يسري عند نقطة مزامنة الذاكرة التالية للاستعلام بدلًا من أن يحدث فورًا.
 </Note>
 
-لتمكين حجوزات الذاكرة لأعباء العمل، أنشئ مورد `MEMORY RESERVATION` واضبط حدًا واحدًا على الأقل لإجمالي الذاكرة المحجوزة باستخدام إعدادات أعباء العمل:
+لتمكين حجز الذاكرة لأعباء العمل، أنشئ مورد `MEMORY RESERVATION` واضبط حدًا واحدًا على الأقل لإجمالي الذاكرة المحجوزة باستخدام إعدادات أعباء العمل:
 
 ```sql
 CREATE RESOURCE memory (MEMORY RESERVATION)
@@ -305,7 +305,7 @@ stateDiagram-v2
   وإذا مُنع الإخلاء أو لم يحرر قدرًا كافيًا من الذاكرة، فسيُحظر التخصيص الجديد حتى تتحرر ذاكرة كافية. وتسمح هذه القواعد بوضع الاستعلامات الزائدة في قائمة الانتظار استنادًا إلى ضغط الذاكرة، وتوفّر طريقة ملائمة لتجنّب أخطاء MEMORY&#95;LIMIT&#95;EXCEEDED.
 
 <Note>
-  حدود عبء العمل مستقلة عن الطرق الأخرى لتقييد استهلاك الذاكرة، مثل إعداد الاستعلام [max&#95;memory&#95;usage](/ar/reference/settings/session-settings#max_memory_usage). ويمكن استخدامها معًا لتحقيق تحكم أفضل في استهلاك الذاكرة. ومن الممكن تعيين حدود مستقلة للذاكرة استنادًا إلى المستخدمين (وليس أعباء العمل). وهذا أقل مرونة ولا يوفّر ميزات مثل حجز الذاكرة ووضع الاستعلامات المعلّقة في قائمة الانتظار. راجع [Memory overcommit](/ar/concepts/features/configuration/settings/memory-overcommit)
+  حدود عبء العمل مستقلة عن الطرق الأخرى لتقييد استهلاك الذاكرة، مثل إعداد الاستعلام [max&#95;memory&#95;usage](/ar/reference/settings/session-settings/max-memory-usage#max_memory_usage). ويمكن استخدامها معًا لتحقيق تحكم أفضل في استهلاك الذاكرة. ومن الممكن تعيين حدود مستقلة للذاكرة استنادًا إلى المستخدمين (وليس أعباء العمل). وهذا أقل مرونة ولا يوفّر ميزات مثل حجز الذاكرة ووضع الاستعلامات المعلّقة في قائمة الانتظار. راجع [Memory overcommit](/ar/concepts/features/configuration/settings/memory-overcommit)
 </Note>
 
 يحد إعداد عبء العمل `max_waiting_queries` من عدد التخصيصات المعلّقة لعبء العمل. وعند بلوغ الحد، يُرجع الخادم الخطأ `SERVER_OVERLOADED`. لاحظ أن `max_waiting_queries` لا يُورَّث إلى أعباء العمل الفرعية، ولا يكون ذا معنى إلا لأعباء العمل الطرفية.
@@ -335,17 +335,17 @@ CREATE WORKLOAD testing IN user SETTINGS precedence = 2
 لاحظ أن عبء عمل النظام له أسبقية 0 (default)، وهي أعلى من أعباء العمل production وstaging وtesting، لكنها ليست أعباء عمل شقيقة له. وأقرب سلف مشترك هو عبء العمل all، إذ إن كلا الفرعين التابعين له لهما الأسبقية نفسها. لذلك، لا يمكن لعبء عمل النظام المعلّق إزالة أيٍّ منها، والعكس صحيح. وهذا يضمن عدم سهولة إزالة أنشطة النظام.
 
 <div id="query_scheduling">
-  ## جدولة حصص الاستعلام
+  ## جدولة خانات الاستعلام
 </div>
 
-لتمكين جدولة حصص الاستعلام لأعباء العمل، أنشئ مورد QUERY وحدّد حدًا لعدد الاستعلامات المتزامنة أو عدد الاستعلامات في الثانية:
+لتمكين جدولة خانات الاستعلام لأعباء العمل، أنشئ مورد QUERY وحدّد حدًا لعدد الاستعلامات المتزامنة أو عدد الاستعلامات في الثانية:
 
 ```sql
 CREATE RESOURCE query (QUERY)
 CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_second = 10, max_burst_queries = 20
 ```
 
-يحدّ إعداد عبء العمل `max_concurrent_queries` من عدد الاستعلامات المتزامنة التي يمكن تشغيلها في الوقت نفسه لعبء عمل معيّن. وهو مماثل لإعداد الاستعلام [`max_concurrent_queries_for_all_users`](/ar/reference/settings/session-settings#max_concurrent_queries_for_all_users) وإعداد الخادم [max&#95;concurrent&#95;queries](/ar/reference/settings/server-settings/settings#max_concurrent_queries). ولا تُحتسب استعلامات async insert وبعض الاستعلامات المحددة، مثل KILL، ضمن هذا الحد.
+يحدّ إعداد عبء العمل `max_concurrent_queries` من عدد الاستعلامات المتزامنة التي يمكن تشغيلها في الوقت نفسه لعبء عمل معيّن. وهو مماثل لإعداد الاستعلام [`max_concurrent_queries_for_all_users`](/ar/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users) وإعداد الخادم [max&#95;concurrent&#95;queries](/ar/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries). ولا تُحتسب استعلامات async insert وبعض الاستعلامات المحددة، مثل KILL، ضمن هذا الحد.
 
 يحدّ إعدادا عبء العمل `max_queries_per_second` و`max_burst_queries` عدد الاستعلامات لعبء العمل باستخدام مُقيِّد من نوع token bucket. ويضمن ذلك أنه خلال أي فترة زمنية `T` لن يبدأ تنفيذ أكثر من `max_queries_per_second * T + max_burst_queries` من الاستعلامات الجديدة.
 
@@ -508,12 +508,12 @@ graph TD
 * [system.scheduler](/ar/reference/system-tables/scheduler)
 * [system.workloads](/ar/reference/system-tables/workloads)
 * [system.resources](/ar/reference/system-tables/resources)
-* [merge&#95;workload](/ar/reference/settings/merge-tree-settings#merge_workload) إعداد MergeTree
-* [merge&#95;workload](/ar/reference/settings/server-settings/settings#merge_workload) إعداد عام على مستوى الخادم
-* [mutation&#95;workload](/ar/reference/settings/merge-tree-settings#mutation_workload) إعداد MergeTree
-* [mutation&#95;workload](/ar/reference/settings/server-settings/settings#mutation_workload) إعداد عام على مستوى الخادم
-* [workload&#95;path](/ar/reference/settings/server-settings/settings#workload_path) إعداد عام على مستوى الخادم
-* [workload&#95;zookeeper&#95;path](/ar/reference/settings/server-settings/settings#workload_zookeeper_path) إعداد عام على مستوى الخادم
-* [cpu&#95;slot&#95;preemption](/ar/reference/settings/server-settings/settings#cpu_slot_preemption) إعداد عام على مستوى الخادم
-* [cpu&#95;slot&#95;quantum&#95;ns](/ar/reference/settings/server-settings/settings#cpu_slot_quantum_ns) إعداد عام على مستوى الخادم
-* [cpu&#95;slot&#95;preemption&#95;timeout&#95;ms](/ar/reference/settings/server-settings/settings#cpu_slot_preemption_timeout_ms) إعداد عام على مستوى الخادم
+* [merge&#95;workload](/ar/reference/settings/merge-tree-settings/merge#merge_workload) إعداد MergeTree
+* [merge&#95;workload](/ar/reference/settings/server-settings/settings/merge#merge_workload) إعداد عام على مستوى الخادم
+* [mutation&#95;workload](/ar/reference/settings/merge-tree-settings/other#mutation_workload) إعداد MergeTree
+* [mutation&#95;workload](/ar/reference/settings/server-settings/settings/other#mutation_workload) إعداد عام على مستوى الخادم
+* [workload&#95;path](/ar/reference/settings/server-settings/settings/workload#workload_path) إعداد عام على مستوى الخادم
+* [workload&#95;zookeeper&#95;path](/ar/reference/settings/server-settings/settings/workload#workload_zookeeper_path) إعداد عام على مستوى الخادم
+* [cpu&#95;slot&#95;preemption](/ar/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption) إعداد عام على مستوى الخادم
+* [cpu&#95;slot&#95;quantum&#95;ns](/ar/reference/settings/server-settings/settings/cpu-slot#cpu_slot_quantum_ns) إعداد عام على مستوى الخادم
+* [cpu&#95;slot&#95;preemption&#95;timeout&#95;ms](/ar/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption_timeout_ms) إعداد عام على مستوى الخادم

@@ -459,7 +459,7 @@ timeSeriesIdToGroup(id)
 
 **Аргументы**
 
-* `id` — Идентификатор временного ряда. [`UInt64`](/ru/reference/data-types/int-uint) или [`UInt128`](/ru/reference/data-types/int-uint) или [`UUID`](/ru/reference/data-types/uuid) или [`FixedString(16)`](/ru/reference/data-types/fixedstring)
+* `id` — Идентификатор временного ряда. Должен иметь тот же тип, который использовался при вызове [timeSeriesStoreTags()](/ru/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags). [`Any`](/ru/reference/data-types/index)
 
 **Возвращаемое значение**
 
@@ -504,7 +504,7 @@ timeSeriesIdToTags(id)
 
 **Аргументы**
 
-* `id` — идентификатор временного ряда. [`UInt64`](/ru/reference/data-types/int-uint) или [`UInt128`](/ru/reference/data-types/int-uint) или [`UUID`](/ru/reference/data-types/uuid) или [`FixedString(16)`](/ru/reference/data-types/fixedstring)
+* `id` — идентификатор временного ряда. Должен иметь тот же тип, который использовался при вызове [timeSeriesStoreTags()](/ru/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags). [`Any`](/ru/reference/data-types/index)
 
 **Возвращаемое значение**
 
@@ -832,7 +832,7 @@ timeSeriesStoreTags(id, tags_array, separate_tag_name_1, separate_tag_value_1, .
 
 **Аргументы**
 
-* `id` — Идентификатор временного ряда. [`UInt64`](/ru/reference/data-types/int-uint) или [`UInt128`](/ru/reference/data-types/int-uint) или [`UUID`](/ru/reference/data-types/uuid) или [`FixedString(16)`](/ru/reference/data-types/fixedstring)
+* `id` — Идентификатор временного ряда. Может быть любого сопоставимого типа. Строки с идентификаторами NULL пропускаются. [`Any`](/ru/reference/data-types/index)
 * `tags_array` — Массив пар (tag&#95;name, tag&#95;value). [`Array(Tuple(String, String))`](/ru/reference/data-types/array) или [`NULL`](/ru/reference/syntax#null)
 * `separate_tag_name_i` — Имя тега. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring)
 * `separate_tag_value_i` — Значение тега. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring) или [`Nullable(String)`](/ru/reference/data-types/nullable)

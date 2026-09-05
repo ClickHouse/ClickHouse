@@ -248,3 +248,128 @@ TEST(ParserStreamSettings, FormatRoundTripPreservesWatermark)
     ASSERT_TRUE(stream_ast->watermark);
     ASSERT_EQ(stream_ast->watermark->column, "event_time");
 }
+
+TEST(ParserStreamSettings, StreamBoundedParses)
+{
+    auto ast = parse("SELECT * FROM t STREAM BOUNDED");
+
+    const auto * table_expr = extractTableExpression(ast);
+    ASSERT_NE(table_expr, nullptr);
+    ASSERT_NE(table_expr->stream_settings, nullptr);
+
+    const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
+    ASSERT_NE(stream_ast, nullptr);
+    ASSERT_FALSE(stream_ast->subscribe_for_updates);
+    ASSERT_FALSE(stream_ast->cursor);
+}
+
+TEST(ParserStreamSettings, StreamBoundedCursorParses)
+{
+    auto ast = parse("SELECT * FROM t STREAM BOUNDED CURSOR {'all': {'block_number': 10, 'block_offset': 5}}");
+
+    const auto * table_expr = extractTableExpression(ast);
+    ASSERT_NE(table_expr, nullptr);
+    ASSERT_NE(table_expr->stream_settings, nullptr);
+
+    const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
+    ASSERT_NE(stream_ast, nullptr);
+    ASSERT_FALSE(stream_ast->subscribe_for_updates);
+    ASSERT_TRUE(stream_ast->cursor);
+}
+
+TEST(ParserStreamSettings, PlainStreamIsNotBounded)
+{
+    auto ast = parse("SELECT * FROM t STREAM CURSOR {'all': {'block_number': 10}}");
+
+    const auto * table_expr = extractTableExpression(ast);
+    ASSERT_NE(table_expr, nullptr);
+
+    const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
+    ASSERT_NE(stream_ast, nullptr);
+    ASSERT_TRUE(stream_ast->subscribe_for_updates);
+}
+
+TEST(ParserStreamSettings, FormatRoundTripPreservesBounded)
+{
+    auto ast = parse("SELECT * FROM t STREAM BOUNDED");
+    auto formatted = format(ast);
+
+    auto ast2 = parse(formatted);
+    const auto * table_expr = extractTableExpression(ast2);
+    ASSERT_NE(table_expr, nullptr);
+    ASSERT_NE(table_expr->stream_settings, nullptr);
+
+    const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
+    ASSERT_NE(stream_ast, nullptr);
+    ASSERT_FALSE(stream_ast->subscribe_for_updates);
+    ASSERT_FALSE(stream_ast->cursor);
+}
+
+TEST(ParserStreamSettings, FormatRoundTripPreservesBoundedCursor)
+{
+    auto ast = parse("SELECT * FROM t STREAM BOUNDED CURSOR {'all': {'block_number': 10, 'block_offset': 5}}");
+    auto formatted = format(ast);
+
+    auto ast2 = parse(formatted);
+    const auto * table_expr = extractTableExpression(ast2);
+    ASSERT_NE(table_expr, nullptr);
+
+    const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
+    ASSERT_NE(stream_ast, nullptr);
+    ASSERT_FALSE(stream_ast->subscribe_for_updates);
+    ASSERT_TRUE(stream_ast->cursor);
+}
+
+TEST(ParserStreamSettings, StreamUnorderedParses)
+{
+    auto ast = parse("SELECT * FROM t STREAM UNORDERED");
+
+    const auto * table_expr = extractTableExpression(ast);
+    ASSERT_NE(table_expr, nullptr);
+
+    const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
+    ASSERT_NE(stream_ast, nullptr);
+    ASSERT_TRUE(stream_ast->unordered);
+    ASSERT_TRUE(stream_ast->subscribe_for_updates);
+}
+
+TEST(ParserStreamSettings, StreamBoundedUnorderedCursorParses)
+{
+    auto ast = parse("SELECT * FROM t STREAM BOUNDED UNORDERED CURSOR {'all': {'block_number': 10, 'block_offset': 5}}");
+
+    const auto * table_expr = extractTableExpression(ast);
+    ASSERT_NE(table_expr, nullptr);
+
+    const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
+    ASSERT_NE(stream_ast, nullptr);
+    ASSERT_FALSE(stream_ast->subscribe_for_updates);
+    ASSERT_TRUE(stream_ast->unordered);
+    ASSERT_TRUE(stream_ast->cursor);
+}
+
+TEST(ParserStreamSettings, PlainStreamIsNotUnordered)
+{
+    auto ast = parse("SELECT * FROM t STREAM BOUNDED");
+
+    const auto * table_expr = extractTableExpression(ast);
+    ASSERT_NE(table_expr, nullptr);
+
+    const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
+    ASSERT_NE(stream_ast, nullptr);
+    ASSERT_FALSE(stream_ast->unordered);
+}
+
+TEST(ParserStreamSettings, FormatRoundTripPreservesBoundedUnorderedCursor)
+{
+    auto ast = parse("SELECT * FROM t STREAM BOUNDED UNORDERED CURSOR {'all': {'block_number': 10, 'block_offset': 5}}");
+    auto formatted = format(ast);
+
+    auto ast2 = parse(formatted);
+    const auto * table_expr = extractTableExpression(ast2);
+    ASSERT_NE(table_expr, nullptr);
+
+    const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
+    ASSERT_FALSE(stream_ast->subscribe_for_updates);
+    ASSERT_TRUE(stream_ast->unordered);
+    ASSERT_TRUE(stream_ast->cursor);
+}

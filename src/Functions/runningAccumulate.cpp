@@ -185,7 +185,7 @@ Accumulates the states of an aggregate function for each row of a data block.
 
 :::warning Deprecated
 The state is reset for each new block of data.
-Due to this error-prone behavior the function has been deprecated, and you are advised to use [window functions](/sql-reference/window-functions) instead.
+Due to this error-prone behavior the function has been deprecated, and you are advised to use [window functions](/reference/functions/window-functions) instead.
 You can use setting [`allow_deprecated_error_prone_window_functions`](/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions) to allow usage of this function.
 :::
 )";

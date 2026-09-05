@@ -256,7 +256,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     if (which_type.isDateTime() && which_from_type.isDate32())
     {
-        return static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(DayNum(static_cast<UInt16>(src.safeGet<Int32>())));
+        /// Use `ExtendedDayNum`: narrowing the day number to `UInt16` wraps around, so `0000-01-01`
+        /// (day `-719528`) would become day `1368` and the resulting bound would spuriously match rows in
+        /// 1973. The exact timestamp is kept even when it falls outside the range of `DateTime` - it is then
+        /// simply outside the range of every stored value, which is what the exact-bound users
+        /// (`SetUtils`, `KeyCondition`) need. This mirrors the `Date` -> `DateTime` branch above.
+        return static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.safeGet<Int32>())));
     }
     if (which_type.isDateTime64() && which_from_type.isDate())
     {
@@ -270,9 +275,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         const auto & date_time64_type = static_cast<const DataTypeDateTime64 &>(type);
         const auto value = date_time64_type.getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.safeGet<Int32>())));
-        return DecimalField<DateTime64>(
-            DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, date_time64_type.getScaleMultiplier()),
-            date_time64_type.getScale());
+        /// The whole-seconds value of an extended-range date (e.g. `9999-12-31` = 253402214400) times a large
+        /// scale multiplier can exceed the underlying `Int64`. Such a value is not representable in this
+        /// `DateTime64` and therefore cannot equal any stored value - return Null ("cannot convert") instead
+        /// of throwing `DECIMAL_OVERFLOW` from the multiplication.
+        DateTime64 result;
+        if (!DecimalUtils::tryGetDecimalFromComponentsWithMultiplier<DateTime64>(value, 0, date_time64_type.getScaleMultiplier(), result))
+            return {};
+        return DecimalField<DateTime64>(result, date_time64_type.getScale());
     }
     if (which_type.isDate() && which_from_type.isTime())
     {
@@ -289,7 +299,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     if (which_type.isTime() && which_from_type.isDate32())
     {
-        return static_cast<const DataTypeTime &>(type).getTimeZone().fromDayNum(DayNum(static_cast<DayNum::UnderlyingType>(src.safeGet<Int32>())));
+        /// Same as above: use `ExtendedDayNum` instead of narrowing the day number to `UInt16`.
+        return static_cast<const DataTypeTime &>(type).getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.safeGet<Int32>())));
     }
     if (which_type.isTime64() && which_from_type.isDate())
     {
@@ -303,9 +314,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         const auto & time64_type = static_cast<const DataTypeTime64 &>(type);
         const auto value = time64_type.getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.safeGet<Int32>())));
-        return DecimalField<Time64>(
-            DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, time64_type.getScaleMultiplier()),
-            time64_type.getScale());
+        /// Same as the `Date32` -> `DateTime64` branch above: an unrepresentable value cannot match anything.
+        Time64 result;
+        if (!DecimalUtils::tryGetDecimalFromComponentsWithMultiplier<Time64>(value, 0, time64_type.getScaleMultiplier(), result))
+            return {};
+        return DecimalField<Time64>(result, time64_type.getScale());
     }
     if (type.isValueRepresentedByNumber() && src.getType() != Field::Types::String)
     {
@@ -396,10 +409,20 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return convertNumericType<Int32>(src, type, strict, convert_inexact_floats);
         }
 
-        if (which_type.isDate32() && src.getType() == Field::Types::Int64)
+        if (which_type.isDate32() && (src.getType() == Field::Types::Int64 || src.getType() == Field::Types::UInt64))
         {
-            /// We don't need any conversion Int64 is under type of Date32
-            return src;
+            /// `Date32` stores an `Int32` day number under the hood (the canonical `Field` type is `Int64`),
+            /// but only `[DATE_LUT_MIN_EXTEND_DAY_NUM, DATE_LUT_MAX_EXTEND_DAY_NUM]` = `[0000-01-01, 9999-12-31]`
+            /// is representable. Reject day numbers outside that window so exact `IN` constants and the
+            /// `VALUES` expression fallback cannot materialize impossible `Date32` values.
+            Field converted = convertNumericType<Int64>(src, type, strict, convert_inexact_floats);
+            if (!converted.isNull())
+            {
+                const Int64 day_num = converted.safeGet<Int64>();
+                if (day_num < DATE_LUT_MIN_EXTEND_DAY_NUM || day_num > DATE_LUT_MAX_EXTEND_DAY_NUM)
+                    return {};
+            }
+            return converted;
         }
 
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
@@ -448,8 +471,21 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 return src;
 
             /// in case if we need to make Time64(a) from Time64(b), a != b, we need to convert time value to the right scale
-            const UInt64 value = scale_from > scale_to ? from_type.getValue().value / scale_multiplier_diff
-                                                       : from_type.getValue().value * scale_multiplier_diff;
+            Int64 value = from_type.getValue().value;
+
+            if (scale_from > scale_to)
+            {
+                value /= scale_multiplier_diff;
+            }
+            else if (scale_from < scale_to)
+            {
+                Int64 result = 0;
+                if (common::mulOverflow(value, scale_multiplier_diff.value, result))
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Cannot convert {} to {} as it overflows: {} * {} does not fit in Int64",
+                        src.getTypeName(), type.getName(), value, scale_multiplier_diff.value);
+                value = result;
+            }
+
             return DecimalField<Time64>(DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, 1), scale_to);
         }
 
@@ -459,13 +495,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (which_type.isDate() && src.getType() == Field::Types::Int64)
         {
             return convertNumericType<UInt16>(src, type, strict, convert_inexact_floats);
-        }
-
-        /// For toDate32('xxx') in 1, we CAST `src` to Int64. Also, it may
-        /// produce wrong result in some special cases.
-        if (which_type.isDate32() && src.getType() == Field::Types::UInt64)
-        {
-            return convertNumericType<Int64>(src, type, strict, convert_inexact_floats);
         }
 
         if (which_type.isDateTime64()

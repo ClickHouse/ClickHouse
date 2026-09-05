@@ -686,7 +686,10 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
             for (const auto & col : actions_dag->getResultColumns())
             {
                 if (col.name == with_alias->getColumnName())
+                {
                     DB::validateGroupByKeyType(col.type, context_.getSettingsRef()[Setting::allow_suspicious_types_in_group_by]);
+                    DB::validateWindowKeyType(col.type, "PARTITION BY");
+                }
             }
 
             desc.partition_by_actions.push_back(std::move(actions_dag));
@@ -710,6 +713,14 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
 
             auto actions_dag = std::make_unique<ActionsDAG>(aggregated_columns);
             getRootActions(column_ast, false, *actions_dag);
+
+            const auto & sort_key_name = order_by_element.children.front()->getColumnName();
+            for (const auto & col : actions_dag->getResultColumns())
+            {
+                if (col.name == sort_key_name)
+                    DB::validateWindowKeyType(col.type, "ORDER BY");
+            }
+
             desc.order_by_actions.push_back(std::move(actions_dag));
         }
     }
@@ -717,15 +728,6 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
     desc.full_sort_description = desc.partition_by;
     desc.full_sort_description.insert(desc.full_sort_description.end(),
         desc.order_by.begin(), desc.order_by.end());
-
-    if (definition.frame_type != WindowFrame::FrameType::ROWS
-        && definition.frame_type != WindowFrame::FrameType::RANGE)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Window frame '{}' is not implemented (while processing '{}')",
-            definition.frame_type,
-            ast->formatForErrorMessage());
-    }
 
     const auto * window_function = aggregate_function ? dynamic_cast<const IWindowFunction *>(aggregate_function.get()) : nullptr;
     desc.frame.is_default = definition.frame_is_default;
@@ -761,6 +763,8 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
             context_.shared_from_this());
         desc.frame.begin_offset = value;
     }
+
+    desc.checkValid();
 }
 
 void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
@@ -1151,8 +1155,20 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
             return join;
     }
 
+    /// Print the names the way they are spelled in the `join_algorithm` setting, so that they can be
+    /// pasted straight back into it. `toString(JoinAlgorithm)` returns the uppercase enum spelling,
+    /// which the setting parser rejects.
+    std::vector<String> enabled_algorithm_names;
+    enabled_algorithm_names.reserve(join_algorithms.size());
+    for (auto algorithm : join_algorithms)
+        enabled_algorithm_names.emplace_back(SettingFieldJoinAlgorithmTraits::toString(algorithm));
+
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-        "Can't execute any of specified join algorithms for this strictness/kind and right storage type");
+        "None of the algorithms enabled by the 'join_algorithm' setting [{}] can execute this {} {} JOIN "
+        "with the given right table storage type",
+        fmt::join(enabled_algorithm_names, ", "),
+        toString(analyzed_join->strictness()),
+        toString(analyzed_join->kind()));
 }
 
 static std::unique_ptr<QueryPlan> buildJoinedPlan(

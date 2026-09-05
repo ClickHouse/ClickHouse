@@ -459,7 +459,7 @@ timeSeriesIdToGroup(id)
 
 **Argumentos**
 
-* `id` — Identificador de uma série temporal. [`UInt64`](/pt-BR/reference/data-types/int-uint) ou [`UInt128`](/pt-BR/reference/data-types/int-uint) ou [`UUID`](/pt-BR/reference/data-types/uuid) ou [`FixedString(16)`](/pt-BR/reference/data-types/fixedstring)
+* `id` — Identificador de uma série temporal. Deve ser do mesmo tipo usado ao chamar [timeSeriesStoreTags()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags). [`Any`](/pt-BR/reference/data-types/index)
 
 **Valor retornado**
 
@@ -504,7 +504,7 @@ timeSeriesIdToTags(id)
 
 **Argumentos**
 
-* `id` — Identificador de uma série temporal. [`UInt64`](/pt-BR/reference/data-types/int-uint) ou [`UInt128`](/pt-BR/reference/data-types/int-uint) ou [`UUID`](/pt-BR/reference/data-types/uuid) ou [`FixedString(16)`](/pt-BR/reference/data-types/fixedstring)
+* `id` — Identificador de uma série temporal. Deve ser do mesmo tipo usado ao chamar [timeSeriesStoreTags()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags). [`Any`](/pt-BR/reference/data-types/index)
 
 **Valor retornado**
 
@@ -832,7 +832,7 @@ timeSeriesStoreTags(id, tags_array, separate_tag_name_1, separate_tag_value_1, .
 
 **Argumentos**
 
-* `id` — Identificador de uma série temporal. [`UInt64`](/pt-BR/reference/data-types/int-uint) ou [`UInt128`](/pt-BR/reference/data-types/int-uint) ou [`UUID`](/pt-BR/reference/data-types/uuid) ou [`FixedString(16)`](/pt-BR/reference/data-types/fixedstring)
+* `id` — Identificador de uma série temporal. Pode ser de qualquer tipo comparável. Linhas com identificadores NULL são ignoradas. [`Any`](/pt-BR/reference/data-types/index)
 * `tags_array` — Array de pares (tag&#95;name, tag&#95;value). [`Array(Tuple(String, String))`](/pt-BR/reference/data-types/array) ou [`NULL`](/pt-BR/reference/syntax#null)
 * `separate_tag_name_i` — O nome de uma tag. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring)
 * `separate_tag_value_i` — O valor de uma tag. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring) ou [`Nullable(String)`](/pt-BR/reference/data-types/nullable)

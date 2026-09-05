@@ -268,6 +268,7 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
   * `SHOW FILESYSTEM CACHES`
   * [`SOURCES`](#sources)
     * `AZURE`
+    * `BIGQUERY`
     * `FILE`
     * `HDFS`
     * `HIVE`
@@ -285,6 +286,9 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
     * `SQLITE`
     * `URL`
   * [`SYSTEM`](#system)
+    * `SYSTEM BACKGROUND`
+      * `SYSTEM STREAMING ENGINES`
+      * `SYSTEM VIEWS`
     * `SYSTEM CLEANUP`
     * `SYSTEM DROP CACHE`
       * `SYSTEM DROP COMPILED EXPRESSION CACHE`
@@ -301,7 +305,6 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
       * `SYSTEM DROP S3 CLIENT CACHE`
       * `SYSTEM DROP SCHEMA CACHE`
       * `SYSTEM DROP UNCOMPRESSED CACHE`
-    * `SYSTEM DROP PRIMARY INDEX CACHE`
     * `SYSTEM DROP REPLICA`
     * `SYSTEM FAILPOINT`
     * `SYSTEM FETCHES`
@@ -309,8 +312,6 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
       * `SYSTEM FLUSH ASYNC INSERT QUEUE`
       * `SYSTEM FLUSH LOGS`
     * `SYSTEM JEMALLOC`
-    * `SYSTEM KILL QUERY`
-    * `SYSTEM KILL TRANSACTION`
     * `SYSTEM LISTEN`
     * `SYSTEM LOAD PRIMARY KEY`
     * `SYSTEM MERGES`
@@ -344,7 +345,6 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
     * `SYSTEM TTL MERGES`
     * `SYSTEM UNFREEZE`
     * `SYSTEM UNLOAD PRIMARY KEY`
-    * `SYSTEM VIEWS`
     * `SYSTEM VIRTUAL PARTS UPDATE`
     * `SYSTEM WAIT LOADING PARTS`
   * [`테이블 엔진`](#table-engine)
@@ -644,6 +644,9 @@ GRANT CLUSTER ON *.* TO <username>
   * `SYSTEM REPLICATION QUEUES`. 수준: `TABLE`. 별칭: `SYSTEM STOP REPLICATION QUEUES`, `SYSTEM START REPLICATION QUEUES`, `STOP REPLICATION QUEUES`, `START REPLICATION QUEUES`
   * `SYSTEM SYNC REPLICA`. 수준: `TABLE`. 별칭: `SYNC REPLICA`
   * `SYSTEM RESTART REPLICA`. 수준: `TABLE`. 별칭: `RESTART REPLICA`
+  * `SYSTEM BACKGROUND`. 수준: `GROUP`
+    * `SYSTEM STREAMING ENGINES`. 수준: `TABLE`
+    * `SYSTEM VIEWS`. 수준: `VIEW`. 별칭: `SYSTEM REFRESH VIEW`, `SYSTEM START VIEWS`, `SYSTEM STOP VIEWS`, `SYSTEM START VIEW`, `SYSTEM STOP VIEW`, `SYSTEM PAUSE VIEWS`, `SYSTEM PAUSE VIEW`, `SYSTEM CANCEL VIEW`, `REFRESH VIEW`, `START VIEWS`, `STOP VIEWS`, `START VIEW`, `STOP VIEW`, `PAUSE VIEWS`, `PAUSE VIEW`, `CANCEL VIEW`
   * `SYSTEM FLUSH`. 수준: `GROUP`
     * `SYSTEM FLUSH DISTRIBUTED`. 수준: `TABLE`. 별칭: `FLUSH DISTRIBUTED`
     * `SYSTEM FLUSH LOGS`. 수준: `GLOBAL`. 별칭: `FLUSH LOGS`
@@ -676,6 +679,7 @@ GRANT CLUSTER ON *.* TO <username>
 가능한 매개변수:
 
 * `AZURE`
+* `BIGQUERY`
 * `FILE`
 * `HDFS`
 * `HIVE`
@@ -797,9 +801,9 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
   ### displaySecretsInShowAndSelect
 </div>
 
-[`display_secrets_in_show_and_select` 서버 설정](/ko/reference/settings/server-settings/settings#display_secrets_in_show_and_select)
+[`display_secrets_in_show_and_select` 서버 설정](/ko/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select)
 및
-[`format_display_secrets_in_show_and_select` 포맷 설정](/ko/reference/settings/formats#format_display_secrets_in_show_and_select)
+[`format_display_secrets_in_show_and_select` 포맷 설정](/ko/reference/settings/formats/format#format_display_secrets_in_show_and_select)
 이 모두 활성화되어 있으면, `SHOW` 및 `SELECT` 쿼리에서 시크릿을 볼 수 있습니다.
 
 <div id="named-collection-admin">
@@ -827,6 +831,8 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 <div id="table-engine">
   ### 테이블 엔진
 </div>
+
+<CloudNotSupportedBadge />
 
 테이블을 생성할 때 지정된 테이블 엔진을 사용할 수 있도록 허용합니다. [테이블 엔진](/ko/reference/engines/table-engines/index)에 적용됩니다.
 

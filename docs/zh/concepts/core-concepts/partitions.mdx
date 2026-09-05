@@ -44,13 +44,13 @@ PARTITION BY toStartOfMonth(date);
   ### 磁盘上的结构
 </div>
 
-每当一组行被插入到表中时，ClickHouse 不会创建一个包含所有已插入行的数据分区片段 (至少会创建 [least](/zh/reference/settings/session-settings#max_insert_block_size) 个，如[此处](/zh/concepts/core-concepts/parts)所述) ，而是会为已插入行中每个唯一的分区键值各创建一个新的数据分区片段：
+每当一组行被插入到表中时，ClickHouse 不会创建一个包含所有已插入行的单个数据分区片段 (至少会创建 [一个](/zh/reference/settings/session-settings/max-insert#max_insert_block_size)，如[此处](/zh/concepts/core-concepts/parts)所述) ，而是会为已插入行中每个唯一的分区键值各创建一个新的数据分区片段：
 
 <Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="INSERT PROCESSING" />
 
 <br />
 
-ClickHouse server 首先按照分区键值 `toStartOfMonth(date)`，将上图中示意的示例插入里的 4 行拆分开来。
+ClickHouse server 首先按照分区键值 `toStartOfMonth(date)`，将上图中示意的示例插入中的 4 行拆分开来。
 然后，对于识别出的每个分区，这些行会像[通常那样](/zh/concepts/core-concepts/parts)经过若干连续步骤进行处理 (① 排序，② 拆分为列，③ 压缩，④ 写入磁盘) 。
 
 请注意，启用分区后，ClickHouse 会自动为每个数据分区片段创建 [MinMax 索引](https://github.com/ClickHouse/ClickHouse/blob/dacc8ebb0dac5bbfce5a7541e7fc70f26f7d5065/src/Storages/MergeTree/IMergeTreeDataPart.h#L341)。它们本质上就是针对分区键表达式中用到的每个表列生成的文件，其中包含该列在该数据分区片段中的最小值和最大值。
@@ -217,7 +217,7 @@ WHERE date >= '2020-12-01'
 Peak memory usage: 2.73 MiB.
 ```
 
-这意味着，ClickHouse 在 6 毫秒内扫描并处理了 1 个粒度 (一个由 [8192](/zh/reference/settings/merge-tree-settings#index_granularity) 行组成的块) ，以计算查询结果。
+这意味着，ClickHouse 在 6 毫秒内扫描并处理了 1 个粒度 (一个由 [8192](/zh/reference/settings/merge-tree-settings/index-granularity#index_granularity) 行组成的块) ，以计算查询结果。
 
 <div id="partitioning-is-primarily-a-data-management-feature">
   ### 分区主要是一项数据管理功能

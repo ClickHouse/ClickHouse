@@ -38,6 +38,7 @@ public:
     /// Returns true if the mark file has at most `max_transitions` distinct
     /// consecutive (offset_in_compressed_file, offset_in_decompressed_block)
     /// positions. Loads marks from cache if available.
+    /// Costs at most `max_transitions` binary searches over the marks.
     bool hasAtMostNDistinctMarks(size_t max_transitions) const;
 
     /// Seeks to start of @row_index mark. Column position is implementation defined.

@@ -23,14 +23,14 @@ doc_type: 'reference'
 **التفاصيل**
 
 يدعم ClickHouse الصيغة `COUNT(DISTINCT ...)`.
-ويعتمد سلوك هذا التركيب على الإعداد [`count_distinct_implementation`](/ar/reference/settings/session-settings#count_distinct_implementation).
+ويعتمد سلوك هذا التركيب على الإعداد [`count_distinct_implementation`](/ar/reference/settings/session-settings/count-distinct#count_distinct_implementation).
 فهو يحدد أي دالة من دوال [uniq*](/ar/reference/functions/aggregate-functions/uniq) تُستخدم لتنفيذ العملية.
 والدالة الافتراضية هي [uniqExact](/ar/reference/functions/aggregate-functions/uniqExact).
 
 يُحسَّن الاستعلام `SELECT count() FROM table` افتراضيًا باستخدام البيانات الوصفية من MergeTree.
-إذا كنت بحاجة إلى استخدام أمان على مستوى الصفوف، فعطّل هذا التحسين باستخدام الإعداد [`optimize_trivial_count_query`](/ar/reference/settings/session-settings#optimize_trivial_count_query).
+إذا كنت بحاجة إلى استخدام أمان على مستوى الصفوف، فعطّل هذا التحسين باستخدام الإعداد [`optimize_trivial_count_query`](/ar/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query).
 
-ومع ذلك، يمكن تحسين الاستعلام `SELECT count(nullable_column) FROM table` عبر تمكين الإعداد [`optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings#optimize_functions_to_subcolumns).
+ومع ذلك، يمكن تحسين الاستعلام `SELECT count(nullable_column) FROM table` عبر تمكين الإعداد [`optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 وعند ضبط `optimize_functions_to_subcolumns = 1`، تقرأ الدالة العمود الفرعي [`null`](/ar/reference/data-types/nullable#finding-null) فقط بدلًا من قراءة بيانات العمود كاملةً ومعالجتها.
 ويتحول الاستعلام `SELECT count(n) FROM table` إلى `SELECT sum(NOT n.null) FROM table`.
 

@@ -105,6 +105,16 @@ ZooKeeper/Keeper를 사용하려면 설정 파일의
 
 선택 사항인 구성 매개변수 `update_timeout_ms`의 기본값은 `5000`입니다.
 
+`system.server_settings` 및 `getServerSetting`을 통해 활성 저장소 유형을 확인할 수 있습니다:
+
+```sql
+SELECT value, getServerSetting('named_collections_storage_type')
+FROM system.server_settings
+WHERE name = 'named_collections_storage.type';
+```
+
+저장소 유형을 변경하려면 서버를 다시 시작해야 하며, `SYSTEM RELOAD CONFIG`로는 활성 backend가 변경되지 않습니다.
+
 <div id="storing-named-collections-in-configuration-files">
   ## 설정 파일에 이름이 지정된 컬렉션 저장
 </div>

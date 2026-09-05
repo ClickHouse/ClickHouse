@@ -24,14 +24,14 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 
 La requête `OPTIMIZE` est prise en charge pour la famille [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree) (y compris les [vues matérialisées](/fr/reference/statements/create/view#materialized-view)) ainsi que pour les moteurs [Buffer](/fr/reference/engines/table-engines/special/buffer). Les autres moteurs de table ne sont pas pris en charge.
 
-Lorsque `OPTIMIZE` est utilisé avec la famille de moteurs de table [ReplicatedMergeTree](/fr/reference/engines/table-engines/mergetree-family/replication), ClickHouse crée une tâche de fusion et attend son exécution sur toutes les répliques (si le paramètre [alter&#95;sync](/fr/reference/settings/session-settings#alter_sync) est défini sur `2`) ou sur la réplique actuelle (si le paramètre [alter&#95;sync](/fr/reference/settings/session-settings#alter_sync) est défini sur `1`).
+Lorsque `OPTIMIZE` est utilisé avec la famille de moteurs de table [ReplicatedMergeTree](/fr/reference/engines/table-engines/mergetree-family/replication), ClickHouse crée une tâche de fusion et attend son exécution sur toutes les répliques (si le paramètre [alter&#95;sync](/fr/reference/settings/session-settings/alter#alter_sync) est défini sur `2`) ou sur la réplique actuelle (si le paramètre [alter&#95;sync](/fr/reference/settings/session-settings/alter#alter_sync) est défini sur `1`).
 
-* Si `OPTIMIZE` n’effectue pas de fusion pour quelque raison que ce soit, il n’en informe pas le client. Pour activer les notifications, utilisez le paramètre [optimize&#95;throw&#95;if&#95;noop](/fr/reference/settings/session-settings#optimize_throw_if_noop).
+* Si `OPTIMIZE` n’effectue pas de fusion pour quelque raison que ce soit, il n’en informe pas le client. Pour activer les notifications, utilisez le paramètre [optimize&#95;throw&#95;if&#95;noop](/fr/reference/settings/session-settings/optimize#optimize_throw_if_noop).
 * Si vous spécifiez un `PARTITION`, seule la partition indiquée est optimisée. [Comment définir l’expression de partition](/fr/reference/statements/alter/partition#how-to-set-partition-expression).
-* Si vous spécifiez `FINAL` ou `FORCE`, l’optimisation est effectuée même lorsque toutes les données se trouvent déjà dans une seule part. Vous pouvez contrôler ce comportement avec [optimize&#95;skip&#95;merged&#95;partitions](/fr/reference/settings/session-settings#optimize_skip_merged_partitions). De plus, la fusion est forcée même si des fusions concurrentes sont en cours.
+* Si vous spécifiez `FINAL` ou `FORCE`, l’optimisation est effectuée même lorsque toutes les données se trouvent déjà dans une seule part. Vous pouvez contrôler ce comportement avec [optimize&#95;skip&#95;merged&#95;partitions](/fr/reference/settings/session-settings/optimize-skip#optimize_skip_merged_partitions). De plus, la fusion est forcée même si des fusions concurrentes sont en cours.
 * Si vous spécifiez `DEDUPLICATE`, les lignes complètement identiques (sauf si une clause BY est spécifiée) seront dédupliquées (toutes les colonnes sont comparées) ; cela n’a de sens que pour le moteur MergeTree.
 
-Vous pouvez définir combien de temps (en secondes) attendre que les répliques inactives exécutent les requêtes `OPTIMIZE` à l’aide du paramètre [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/fr/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout).
+Vous pouvez définir combien de temps (en secondes) attendre que les répliques inactives exécutent les requêtes `OPTIMIZE` à l’aide du paramètre [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/fr/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
 
 <Note>
   Si `alter_sync` est défini sur `2` et que certaines répliques restent inactives au-delà du délai spécifié par le paramètre `replication_wait_for_inactive_replica_timeout`, une exception `UNFINISHED` est levée.
@@ -59,7 +59,7 @@ Cela est utile pour :
 OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUPLICATE [BY expression]] [CLEANUP]
 ```
 
-Par défaut, la part fusionnée obtenue est validée d&#39;une manière similaire à la requête [`CHECK TABLE`](/fr/reference/statements/check-table). Ce comportement est contrôlé par le paramètre [optimize&#95;dry&#95;run&#95;check&#95;part](/fr/reference/settings/session-settings#optimize_dry_run_check_part) (activé par défaut). Le désactiver permet d&#39;ignorer cette validation, ce qui peut être utile pour évaluer les performances de la fusion elle-même.
+Par défaut, la part fusionnée obtenue est validée d&#39;une manière similaire à la requête [`CHECK TABLE`](/fr/reference/statements/check-table). Ce comportement est contrôlé par le paramètre [optimize&#95;dry&#95;run&#95;check&#95;part](/fr/reference/settings/session-settings/optimize#optimize_dry_run_check_part) (activé par défaut). Le désactiver permet d&#39;ignorer cette validation, ce qui peut être utile pour évaluer les performances de la fusion elle-même.
 
 **Exemple**
 

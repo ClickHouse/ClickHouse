@@ -23,14 +23,14 @@ ClickHouse admite las siguientes sintaxis para `count`:
 **Detalles**
 
 ClickHouse admite la sintaxis `COUNT(DISTINCT ...)`.
-El comportamiento de esta construcción depende de la configuración [`count_distinct_implementation`](/es/reference/settings/session-settings#count_distinct_implementation).
+El comportamiento de esta construcción depende de la configuración [`count_distinct_implementation`](/es/reference/settings/session-settings/count-distinct#count_distinct_implementation).
 Esta define cuál de las funciones [uniq*](/es/reference/functions/aggregate-functions/uniq) se utiliza para realizar la operación.
 El valor predeterminado es la función [uniqExact](/es/reference/functions/aggregate-functions/uniqExact).
 
 La consulta `SELECT count() FROM table` se optimiza de forma predeterminada usando metadatos de MergeTree.
-Si necesita usar seguridad a nivel de fila, desactive esta optimización mediante la configuración [`optimize_trivial_count_query`](/es/reference/settings/session-settings#optimize_trivial_count_query).
+Si necesita usar seguridad a nivel de fila, desactive esta optimización mediante la configuración [`optimize_trivial_count_query`](/es/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query).
 
-Sin embargo, la consulta `SELECT count(nullable_column) FROM table` puede optimizarse habilitando la configuración [`optimize_functions_to_subcolumns`](/es/reference/settings/session-settings#optimize_functions_to_subcolumns).
+Sin embargo, la consulta `SELECT count(nullable_column) FROM table` puede optimizarse habilitando la configuración [`optimize_functions_to_subcolumns`](/es/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 Con `optimize_functions_to_subcolumns = 1`, la función lee solo la subcolumna [`null`](/es/reference/data-types/nullable#finding-null) en lugar de leer y procesar los datos completos de la columna.
 La consulta `SELECT count(n) FROM table` se transforma en `SELECT sum(NOT n.null) FROM table`.
 

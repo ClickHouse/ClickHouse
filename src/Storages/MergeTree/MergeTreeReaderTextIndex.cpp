@@ -86,9 +86,10 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     {
         .version = index_format.version,
         .condition = condition_text.get(),
-        .part = *data_part,
+        .part_info = *data_part_info_for_read,
         .index = *index.index,
         .readable_ranges = nullptr,
+        .skip_postings_deserialization = false,
     };
 
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));
@@ -117,13 +118,11 @@ void MergeTreeReaderTextIndex::setIndexGranule(MergeTreeIndexGranulePtr index_gr
     phrase_search_doc_ids.clear();
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType());
 
-    /// Lazy mode requires the per-segment block-index section (from `WithCodec` onward) and
+    /// Lazy mode requires the per-segment block-index section (from `V1_WithCodec` onward) and
     /// pure-token queries — pattern predicates take the eager materialize path.
-    auto required_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec);
-
     use_lazy_mode = lazy_mode_requested
         && postings_codec->getType() != IPostingListCodec::Type::None
-        && granule->getSerializationVersion() >= required_version
+        && granule->getSerializationVersion() >= MergeTreeTextIndexSerializationVersion::V1_WithCodec
         && !condition_text->hasSearchPatterns();
 
     postings_serialization = PostingsSerialization(std::move(postings_codec), granule->getSerializationVersion());

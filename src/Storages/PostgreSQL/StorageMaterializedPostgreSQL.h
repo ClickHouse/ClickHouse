@@ -107,7 +107,7 @@ public:
     bool supportsOptimizationToSubcolumns() const override;
 
     ColumnSizeByName getColumnSizes() const override;
-    ColumnSizeByName getColumnSizes(const Names & columns) const override;
+    ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;

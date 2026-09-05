@@ -6,6 +6,7 @@
       "group": "Prise en main",
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
+        "fr/get-started/index",
         "fr/get-started/quickstarts/home",
         {
           "expandable": true,
@@ -19,29 +20,30 @@
         },
         {
           "expanded": true,
-          "group": "Cas d’usage",
+          "group": "Cas d’utilisation",
           "pages": [
+            "fr/get-started/use-cases/overview",
             "fr/get-started/use-cases/real-time-analytics",
             "fr/get-started/use-cases/observability",
             "fr/get-started/use-cases/data-warehousing",
             "fr/get-started/use-cases/agentic-analytics"
-          ],
-          "root": "fr/get-started/use-cases/overview"
+          ]
         },
         "fr/get-started/about/deployment-modes"
-      ],
-      "root": "fr/get-started/index"
+      ]
     },
     {
       "expanded": true,
       "group": "Configuration",
       "icon": "/images/menu-icon-gear.svg",
       "pages": [
+        "fr/get-started/setup/install",
         "fr/get-started/setup/cloud",
         {
           "expanded": true,
-          "group": "Auto-hébergé",
+          "group": "Auto-géré",
           "pages": [
+            "fr/get-started/setup/self-managed/overview",
             {
               "group": "Développement local",
               "pages": [
@@ -60,17 +62,16 @@
                 "fr/get-started/setup/self-managed/other-linux"
               ]
             }
-          ],
-          "root": "fr/get-started/setup/self-managed/overview"
+          ]
         }
-      ],
-      "root": "fr/get-started/setup/install"
+      ]
     },
     {
       "expanded": true,
       "group": "Jeux de données d’exemple",
       "icon": "/images/menu-icon-database.svg",
       "pages": [
+        "fr/get-started/sample-datasets/index",
         "fr/get-started/sample-datasets/playground",
         {
           "group": "Tests de performance",
@@ -106,7 +107,7 @@
           ]
         },
         {
-          "group": "Géo et localisation",
+          "group": "Géo et lieux",
           "pages": [
             "fr/get-started/sample-datasets/cell-towers",
             "fr/get-started/sample-datasets/foursquare-os-places",
@@ -132,14 +133,14 @@
             "fr/get-started/sample-datasets/uk-price-paid"
           ]
         }
-      ],
-      "root": "fr/get-started/sample-datasets/index"
+      ]
     },
     {
       "expanded": true,
       "group": "Migration",
       "icon": "/images/caret-double-right.svg",
       "pages": [
+        "fr/get-started/migrate/overview",
         {
           "group": "PostgreSQL",
           "pages": [
@@ -153,8 +154,7 @@
               ]
             },
             "fr/get-started/migrate/postgres/appendix"
-          ],
-          "root": "fr/get-started/migrate/postgres/index"
+          ]
         },
         {
           "group": "BigQuery",
@@ -162,8 +162,7 @@
             "fr/get-started/migrate/bigquery/overview",
             "fr/get-started/migrate/bigquery/migrating-to-clickhouse-cloud",
             "fr/get-started/migrate/bigquery/loading-data"
-          ],
-          "root": "fr/get-started/migrate/bigquery/index"
+          ]
         },
         {
           "group": "Snowflake",
@@ -190,7 +189,8 @@
         {
           "group": "OSS vers Cloud",
           "pages": [
-            "fr/get-started/migrate/oss-to-cloud/clickhouse-to-cloud"
+            "fr/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
+            "fr/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
           ]
         },
         {
@@ -201,8 +201,7 @@
             "fr/get-started/migrate/other-methods/object-storage-to-clickhouse"
           ]
         }
-      ],
-      "root": "fr/get-started/migrate/overview"
+      ]
     }
   ]
 }

@@ -404,7 +404,7 @@ Realiza una bifurcación condicional.
 * Si la condición `cond` se evalúa como un valor distinto de cero, la función devuelve el resultado de la expresión `then`.
 * Si `cond` se evalúa como cero o NULL, se devuelve el resultado de la expresión `else`.
 
-La configuración [`short_circuit_function_evaluation`](/es/reference/settings/session-settings#short_circuit_function_evaluation) controla si se utiliza la evaluación de cortocircuito.
+La configuración [`short_circuit_function_evaluation`](/es/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controla si se utiliza la evaluación de cortocircuito.
 
 Si está habilitada, la expresión `then` se evalúa solo en las filas en las que `cond` es verdadero, y la expresión `else`, en las que `cond` es falso.
 
@@ -528,7 +528,7 @@ Permite escribir el operador [`CASE`](/es/reference/operators/index#conditional-
 Evalúa cada condición en orden. Para la primera condición que sea verdadera (distinta de cero y no `NULL`), devuelve el valor de la rama correspondiente.
 Si ninguna de las condiciones es verdadera, devuelve el valor de `else`.
 
-El ajuste [`short_circuit_function_evaluation`](/es/reference/settings/session-settings#short_circuit_function_evaluation) controla
+El ajuste [`short_circuit_function_evaluation`](/es/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controla
 si se utiliza la evaluación de cortocircuito. Si está habilitada, la expresión `then_i` se evalúa solo en las filas donde
 `((NOT cond_1) AND ... AND (NOT cond_{i-1}) AND cond_i)` es verdadera.
 

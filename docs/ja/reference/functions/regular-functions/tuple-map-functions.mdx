@@ -29,7 +29,7 @@ doc_type: 'reference'
 **構文**
 
 ```sql
-extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character])
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **引数**
@@ -38,7 +38,7 @@ extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_cha
 * `key_value_delimiter` - キーと値の間の区切り文字として使用する文字。デフォルトは `:` です。[String](/ja/reference/data-types/string) または [FixedString](/ja/reference/data-types/fixedstring)。
 * `pair_delimiters` - ペア間の区切り文字として使用する文字の集合。デフォルトは `\space`、`,`、`;` です。[String](/ja/reference/data-types/string) または [FixedString](/ja/reference/data-types/fixedstring)。
 * `quoting_character` - クォート文字として使用する文字。デフォルトは `"` です。[String](/ja/reference/data-types/string) または [FixedString](/ja/reference/data-types/fixedstring)。
-* `unexpected_quoting_character_strategy` - `read_key` フェーズおよび `read_value` フェーズ中に、想定外の位置に現れたクォート文字を処理するための戦略。設定可能な値: `invalid`、`accept`、`promote`。`invalid` はキー/値を破棄し、`WAITING_KEY` 状態に戻ります。`accept` はそれを通常の文字として扱います。`promote` は `READ_QUOTED_{KEY/VALUE}` 状態に遷移し、次の文字から開始します。デフォルト値は `INVALID` です
+* `unexpected_quoting_character_strategy` - `read_key` フェーズおよび `read_value` フェーズ中に、想定外の位置に現れたクォート文字を処理するための戦略。設定可能な値: `invalid`、`accept`、`promote`。`invalid` はキー/値を破棄し、`WAITING_KEY` 状態に戻ります。`accept` はそれを通常の文字として扱います。`promote` は `READ_QUOTED_{KEY/VALUE}` 状態に遷移し、次の文字から開始します。デフォルト値は `PROMOTE` です
 
 **戻り値**
 
@@ -161,7 +161,7 @@ Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
 **構文**
 
 ```sql
-extractKeyValuePairs(input)
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **別名**: `str_to_map`, `mapFromString`
@@ -211,7 +211,7 @@ Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
 **構文**
 
 ```sql
-extractKeyValuePairsWithEscaping(input)
+extractKeyValuePairsWithEscaping(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **引数**
@@ -785,7 +785,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 導入バージョン: v21.2.0
 
 指定された map のキーを返します。
-この関数は、設定 [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings#optimize_functions_to_subcolumns) を有効にすることで最適化できます。
+この関数は、設定 [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) を有効にすることで最適化できます。
 この設定を有効にすると、関数は map 全体ではなく `keys` サブカラムのみを読み取ります。
 クエリ `SELECT mapKeys(m) FROM table` は `SELECT m.keys FROM table` に変換されます。
 
@@ -1098,7 +1098,7 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 導入バージョン: v21.2.0
 
 指定したマップの値を返します。
-この関数は、設定 [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings#optimize_functions_to_subcolumns) を有効にすることで最適化できます。
+この関数は、設定 [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) を有効にすることで最適化できます。
 この設定を有効にすると、関数はマップ全体ではなく、`values` サブカラムのみを読み取ります。
 クエリ `SELECT mapValues(m) FROM table` は `SELECT m.values FROM table` に変換されます。
 

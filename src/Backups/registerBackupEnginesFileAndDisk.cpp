@@ -3,6 +3,7 @@
 #include <Backups/BackupIO_Disk.h>
 #include <Backups/BackupIO_File.h>
 #include <Backups/BackupImpl.h>
+#include <Backups/BackupSourceAccess.h>
 #include <Core/Settings.h>
 #include <Disks/IDisk.h>
 #include <IO/Archives/ArchiveUtils.h>
@@ -235,8 +236,21 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         return std::make_unique<BackupImpl>(params, archive_params, writer);
     };
 
-    factory.registerBackupEngine("File", creator_fn, getLocalDestinationIdentity);
-    factory.registerBackupEngine("Disk", creator_fn, getLocalDestinationIdentity);
+    /// `FILE` has no path-filter semantics, so the empty URI demands the whole-source grant. Path
+    /// containment is the operator's `backups.allowed_path`, not a grant.
+    auto file_source_access_fn = [](const BackupInfo &, ContextPtr, IBackup::OpenMode open_mode)
+        -> std::optional<BackupFactory::SourceAccessTarget>
+    {
+        return BackupFactory::SourceAccessTarget{
+            AccessTypeObjects::Source::FILE, "", backupSourceAccessFlagsForWriterUnlock(open_mode)};
+    };
+
+    /// An allowlisted disk may be local, S3- or Azure-backed, so no single `Source` describes it.
+    auto disk_source_access_fn = [](const BackupInfo &, ContextPtr, IBackup::OpenMode)
+        -> std::optional<BackupFactory::SourceAccessTarget> { return std::nullopt; };
+
+    factory.registerBackupEngine("File", creator_fn, getLocalDestinationIdentity, file_source_access_fn);
+    factory.registerBackupEngine("Disk", creator_fn, getLocalDestinationIdentity, disk_source_access_fn);
 }
 
 }

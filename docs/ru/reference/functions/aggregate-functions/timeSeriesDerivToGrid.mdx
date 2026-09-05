@@ -16,7 +16,7 @@ doc_type: 'reference'
 Агрегатная функция, которая принимает данные временных рядов в виде пар временных меток и значений и вычисляет [производную в стиле PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#deriv) по этим данным на регулярной временной сетке, заданной начальной временной меткой, конечной временной меткой и шагом. Для каждой точки сетки при вычислении `deriv` учитываются выборки в пределах указанного временного окна.
 
 <Note>
-  Эта функция экспериментальная; чтобы включить её, задайте `allow_experimental_ts_to_grid_aggregate_function=true`.
+  Эта функция экспериментальная; чтобы включить её, задайте `allow_experimental_time_series_aggregate_functions=true`.
 </Note>
 
 **Синтаксис**
@@ -27,7 +27,10 @@ timeSeriesDerivToGrid(start_timestamp, end_timestamp, grid_step, staleness)(time
 
 **Параметры**
 
-* `start_timestamp` — Указывает начало сетки. - `end_timestamp` — Указывает конец сетки. - `grid_step` — Указывает шаг сетки в секундах. - `staleness` — Указывает максимально допустимую «устарелость» рассматриваемых отсчётов в секундах. Окно устарелости представляет собой интервал, открытый слева и закрытый справа.
+* `start_timestamp` — Указывает начало сетки. При аргументе временной метки `DateTime64` также может быть дробным числом или строкой, содержащей число либо текст даты и времени. [`UInt32`](/ru/reference/data-types/int-uint) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`String`](/ru/reference/data-types/string)
+* `end_timestamp` — Указывает конец сетки. При аргументе временной метки `DateTime64` также может быть дробным числом или строкой, содержащей число либо текст даты и времени. [`UInt32`](/ru/reference/data-types/int-uint) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`String`](/ru/reference/data-types/string)
+* `grid_step` — Указывает шаг сетки в секундах. При аргументе временной метки `DateTime64` также может быть дробным числом или строкой, содержащей число либо длительность, например &#39;15s&#39; или &#39;1m&#39;. [`UInt32`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`String`](/ru/reference/data-types/string)
+* `staleness` — Указывает максимально допустимую «устарелость» рассматриваемых отсчётов в секундах. Окно устарелости представляет собой интервал, открытый слева и закрытый справа. При аргументе временной метки `DateTime64` также может быть дробным числом или строкой, содержащей число либо длительность, например &#39;15s&#39; или &#39;1m&#39;. [`UInt32`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`String`](/ru/reference/data-types/string)
 
 **Аргументы**
 
@@ -35,11 +38,11 @@ timeSeriesDerivToGrid(start_timestamp, end_timestamp, grid_step, staleness)(time
 
 **Возвращаемое значение**
 
-Значения `deriv` на указанной сетке в виде `Array(Nullable(Float64))`. Возвращаемый массив содержит по одному значению для каждой точки временной сетки. Значение равно NULL, если в пределах окна недостаточно отсчётов для вычисления значения производной для конкретной точки сетки.
+Значения `deriv` на указанной сетке в виде `Array(Nullable(Float64))`. Возвращаемый массив содержит по одному значению для каждой точки временной сетки. Значение равно NULL, если в пределах окна недостаточно образцов для вычисления значения производной в конкретной точке сетки.
 
 **Примеры**
 
-**Вычисление значений производной на сетке [90, 105, 120, 135, 150, 165, 180, 195, 210]**
+**Вычислить значения производной на сетке [90, 105, 120, 135, 150, 165, 180, 195, 210]**
 
 ```sql title=Query
 SET allow_experimental_time_series_aggregate_functions = 1;

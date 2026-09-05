@@ -2,7 +2,6 @@
 #include <Core/SchemaInferenceMode.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
-#include <Processors/Formats/IInputFormat.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
@@ -101,6 +100,9 @@ public:
     /// subcolumns as standalone inputs, so `isNotNull(x)` -> `not(x.null)` pushed into `PREWHERE`
     /// throws `NOT_FOUND_COLUMN_IN_BLOCK`. Disable the optimization, like `StorageFile`/`StorageURL`.
     bool supportsOptimizationToSubcolumns() const override { return false; }
+    /// Unlike `.null`/`.size0`, a tuple element is a real leaf in the file, so the format can serve
+    /// `t.x` on its own and prune on it.
+    bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
@@ -125,6 +127,8 @@ public:
     bool prefersLargeBlocks() const override;
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
+
+    size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override;
 
     static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name);
 

@@ -460,7 +460,7 @@ Similar a [`hasAnyTokens`](#hasAnyTokens), pero devuelve 1 si todos los tokens d
 
 <Note>
   La columna `input` debe tener definido un [índice de texto](/es/reference/engines/table-engines/mergetree-family/textindexes) para un rendimiento óptimo.
-  Si no se define ningún índice de texto, la función realiza un barrido exhaustivo de la columna, que es varios órdenes de magnitud más lento que una búsqueda mediante índice.
+  Si no se define ningún índice de texto, la función realiza una exploración por fuerza bruta de la columna, que es varios órdenes de magnitud más lento que una búsqueda mediante índice.
 </Note>
 
 Antes de realizar la búsqueda, la función tokeniza
@@ -494,7 +494,7 @@ hasAllTokens(input, needles)
 
 * `input` — La columna de entrada. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring) o [`Array(String)`](/es/reference/data-types/array) o [`Array(FixedString)`](/es/reference/data-types/array)
 * `needles` — tokens que se van a buscar. [`String`](/es/reference/data-types/string) o [`Array(String)`](/es/reference/data-types/array)
-* `tokenizer` — Tokenizador que se usará. Los argumentos válidos son `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams` y `array`. Es opcional; si no se establece explícitamente, el valor predeterminado es `splitByNonAlpha`. [`const String`](/es/reference/data-types/string)
+* `tokenizer` — Tokenizador que se usará. Los argumentos válidos son `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` y `array`. Es opcional; si no se establece explícitamente, el valor predeterminado es `splitByNonAlpha`. [`const String`](/es/reference/data-types/string)
 
 **Valor devuelto**
 
@@ -690,7 +690,7 @@ Devuelve 1 si al menos un token de la cadena o array `needle` coincide con la ca
 
 <Note>
   La columna `input` debe tener definido un [índice de texto](/es/reference/engines/table-engines/mergetree-family/textindexes) para un rendimiento óptimo.
-  Si no se define ningún índice de texto, la función realiza un escaneo completo de la columna, que es varios órdenes de magnitud más lento que una búsqueda en un índice.
+  Si no se define ningún índice de texto, la función realiza una exploración por fuerza bruta de la columna, que es varios órdenes de magnitud más lento que una búsqueda mediante índice.
 </Note>
 
 Antes de realizar la búsqueda, la función tokeniza
@@ -724,7 +724,7 @@ hasAnyTokens(input, needles)
 
 * `input` — La columna de entrada. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring) o [`Nullable(String)`](/es/reference/data-types/nullable) o [`Nullable(FixedString)`](/es/reference/data-types/nullable) o [`Array(String)`](/es/reference/data-types/array) o [`Array(FixedString)`](/es/reference/data-types/array) o [`Array(Nullable(String))`](/es/reference/data-types/array) o [`Array(Nullable(FixedString))`](/es/reference/data-types/array)
 * `needles` — tokens que se buscan. [`String`](/es/reference/data-types/string) o [`Array(String)`](/es/reference/data-types/array)
-* `tokenizer` — El tokenizador que se debe usar. Los argumentos válidos son `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams` y `array`. Es opcional; si no se especifica explícitamente, el valor predeterminado es `splitByNonAlpha`. [`const String`](/es/reference/data-types/string)
+* `tokenizer` — El tokenizador que se debe usar. Los argumentos válidos son `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` y `array`. Es opcional; si no se especifica explícitamente, el valor predeterminado es `splitByNonAlpha`. [`const String`](/es/reference/data-types/string)
 
 **Valor devuelto**
 
@@ -908,12 +908,12 @@ Comprueba si `input` contiene todos los tokens de `phrase` en orden consecutivo.
 
 <Note>
   La columna `input` debe tener definido un [índice de texto](/es/reference/engines/table-engines/mergetree-family/textindexes) para un rendimiento óptimo.
-  Si no se define ningún índice de texto, la función realiza una exploración por fuerza bruta de la columna, que es varios órdenes de magnitud más lenta que una búsqueda en el índice.
+  Si no se define ningún índice de texto, la función realiza una exploración por fuerza bruta de la columna, que es varios órdenes de magnitud más lenta que una búsqueda mediante índice.
 </Note>
 
 Antes de realizar la búsqueda, la función tokeniza tanto los argumentos `input` como `phrase` mediante el tokenizador especificado para el índice de texto.
 Si la columna no tiene definido ningún índice de texto, se usará en su lugar el tokenizador `splitByNonAlpha`, a menos que se proporcione un tokenizador como tercer argumento opcional.
-El argumento `tokenizer` debe ser uno de `splitByNonAlpha`, `splitByString`, `ngrams` o `asciiCJK`.
+El argumento `tokenizer` debe ser uno de `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` o `icu`.
 
 <Note>
   Cuando un índice de texto define un [preprocesador](/es/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (por ejemplo, `lowerUTF8`), `hasPhrase` lo aplica tanto a `input` como a `phrase` antes de la tokenización.

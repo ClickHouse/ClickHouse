@@ -1,6 +1,6 @@
 ---
 description: 'SELECT 查询文档'
-sidebarTitle: 'SELECT'
+sidebarTitle: '概览'
 slug: /sql-reference/statements/select/
 title: 'SELECT 查询'
 doc_type: 'reference'
@@ -34,9 +34,9 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FORMAT format]
 ```
 
-除紧跟在 `SELECT` 后面的必需表达式列表外，所有子句都是可选的；关于这部分的更详细说明，请参见[下文](#select-clause)。
+紧跟在 `SELECT` 后面的表达式列表是必需的；其他所有子句均为可选。
 
-各可选子句的具体说明分别见单独章节，下面按其执行顺序列出 (但为了方便起见，`SELECT` 和 `DISTINCT` 先列出：如[下文](#select-clause)所述，它们的表达式只有在前面的子句执行完成后才会被计算) ：
+`SELECT` 及其可选子句分别在单独的章节中说明：
 
 * [WITH 子句](/zh/reference/statements/select/with)
 * [SELECT 子句](#select-clause)
@@ -61,6 +61,15 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 * [EXCEPT 子句](/zh/reference/statements/select/except)
 * [INTO OUTFILE 子句](/zh/reference/statements/select/into-outfile)
 * [FORMAT 子句](/zh/reference/statements/select/format)
+
+查询也可以写成使用[管道运算符](/zh/reference/statements/select/pipe-operators)构成的线性转换链：
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+|> ORDER BY c DESC
+```
 
 <div id="select-clause">
   ## SELECT 子句
@@ -199,7 +208,7 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 
 你可以在查询的任何部分使用别名 (`AS` 别名) 。
 
-`GROUP BY`、`ORDER BY` 和 `LIMIT BY` 子句支持位置参数。要启用此功能，请打开 [enable&#95;positional&#95;arguments](/zh/reference/settings/session-settings#enable_positional_arguments) 设置。例如，`ORDER BY 1,2` 会先按表中的第 1 列、再按第 2 列对行进行排序。
+`GROUP BY`、`ORDER BY` 和 `LIMIT BY` 子句支持位置参数。要启用此功能，请打开 [enable&#95;positional&#95;arguments](/zh/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments) 设置。例如，`ORDER BY 1,2` 会先按表中的第 1 列、再按第 2 列对行进行排序。
 
 <div id="implementation-details">
   ## 实现细节

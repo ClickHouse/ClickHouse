@@ -20,16 +20,25 @@ BufferedShardByHashTransform::BufferedShardByHashTransform(SharedHeader header, 
 IProcessor::Status BufferedShardByHashTransform::prepare()
 {
     auto & input = getInputs().front();
+    const bool input_finished = input.isFinished();
 
-    /// Free queues for outputs closed by downstream
+    /// Establishes: no active output has an empty queue once the input is exhausted and no
+    /// chunk is pending. Queues of finished outputs are released here too.
     bool all_finished = true;
     auto output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
     {
         if (output_it->isFinished())
+        {
             output_queues[shard].clear();
-        else
-            all_finished = false;
+            continue;
+        }
+        if (input_finished && !has_pending_input_chunk && output_queues[shard].empty())
+        {
+            output_it->finish();
+            continue;
+        }
+        all_finished = false;
     }
 
     if (all_finished)
@@ -42,41 +51,53 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     if (has_pending_input_chunk)
         return Status::Ready;
 
-    /// Scan queues to decide what to do next.
-    bool has_queued_chunks = false; /// any shard has chunks waiting in its queue
-    bool has_pushable_queued_chunks = false; /// at least one queued chunk can be pushed right now (port is ready)
+    /// Scan queues to decide what to do next. Skip outputs we have already finished.
+    bool has_queued_chunks = false; /// any active shard has chunks waiting in its queue
+    bool has_pushable_queued_chunks = false; /// at least one queued chunk can be pushed right now
+    bool has_pushable_empty_port = false; /// an active shard whose queue is empty AND downstream is asking
     bool any_queue_at_capacity = false; /// at least one shard's queue hit the back-pressure cap
 
     auto queued_output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++queued_output_it)
     {
+        if (queued_output_it->isFinished())
+            continue;
+
         const auto & queue = output_queues[shard];
         if (queue.size() >= MAX_QUEUE_LENGTH)
             any_queue_at_capacity = true;
-        if (!queue.empty())
+        if (queue.empty())
         {
-            has_queued_chunks = true;
-            if (!queued_output_it->isFinished() && queued_output_it->canPush())
-                has_pushable_queued_chunks = true;
+            if (queued_output_it->canPush())
+                has_pushable_empty_port = true;
+            continue;
         }
+        has_queued_chunks = true;
+        if (queued_output_it->canPush())
+            has_pushable_queued_chunks = true;
     }
 
-    /// Input exhausted - drain remaining queues, then finish.
-    if (input.isFinished())
+    /// Every active output with an empty queue was finished by the loop above, so normally some
+    /// queue is non-empty here. This is not an invariant we can assert on: `prepare` only holds
+    /// this node's lock, so a downstream processor running on another thread can close one of our
+    /// output ports in between the two loops (for example `LimitTransform` reaching its limit).
+    /// The port state change is guaranteed to schedule another `prepare` call for this processor,
+    /// which then observes every output as finished and returns `Finished`.
+    if (input_finished)
+        return has_pushable_queued_chunks ? Status::Ready : Status::PortFull;
+
+    /// There is no forward progress only when no queued chunk is pushable and no empty port
+    /// is asking; anything else means input must keep flowing.
+    if (!has_pushable_queued_chunks && !has_pushable_empty_port)
     {
         if (has_queued_chunks)
-            return has_pushable_queued_chunks ? Status::Ready : Status::PortFull;
-
-        for (auto & output : outputs)
-            output.finish();
-        return Status::Finished;
+            return Status::PortFull;
     }
 
-    /// Cannot push any output port
-    if (has_queued_chunks && !has_pushable_queued_chunks)
-        return Status::PortFull;
-
-    if (any_queue_at_capacity)
+    /// The cap holds back input unless the sole demand is an empty port with nothing
+    /// drainable: that port can only be fed from input, so the cap yields to it.
+    /// See `MAX_QUEUE_LENGTH` for why yielding is the only non-deadlocking option here.
+    if (any_queue_at_capacity && !(has_pushable_empty_port && !has_pushable_queued_chunks))
         return has_pushable_queued_chunks ? Status::Ready : Status::PortFull;
 
     /// Try to pull a new input chunk.

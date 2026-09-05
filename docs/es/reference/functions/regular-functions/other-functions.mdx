@@ -565,7 +565,7 @@ se comunican mediante una interfaz HTTP. De forma predeterminada, se utiliza el 
 
 Consulte [Training and applying models](https://catboost.ai/docs/features/training.html#training) para saber cómo entrenar modelos catboost a partir de un conjunto de datos de entrenamiento.
 
-El archivo del modelo debe estar ubicado dentro del directorio [`user_files`](/es/reference/settings/server-settings/settings#user_files_path), como ocurre con la función [`file`](/es/reference/functions/regular-functions/files#file).
+El archivo del modelo debe estar ubicado dentro del directorio [`user_files`](/es/reference/settings/server-settings/settings/user#user_files_path), como ocurre con la función [`file`](/es/reference/functions/regular-functions/files#file).
 
 <Note>
   Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
@@ -998,6 +998,43 @@ SELECT CURRENT_DATABASE
 └──────────────────┘
 ```
 
+<div id="currentHandler">
+  ## currentHandler
+</div>
+
+Introducida en: v26.6.0
+
+Devuelve el nombre del handler HTTP definido en SQL (creado con `CREATE HANDLER`) que invocó la consulta.
+Devuelve una cadena vacía si la consulta no se invocó mediante dicho handler.
+
+Resulta útil para personalizar el comportamiento de la consulta según el handler invocado.
+
+<Note>
+  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
+</Note>
+
+**Sintaxis**
+
+```sql
+currentHandler()
+```
+
+**Argumentos**
+
+* Ninguno.
+
+**Valor devuelto**
+
+Devuelve el nombre del handler actual. [`String`](/es/reference/data-types/string)
+
+**Ejemplos**
+
+**Ejemplo de uso**
+
+```sql title=Query
+SELECT currentHandler()
+```
+
 <div id="currentProfiles">
   ## currentProfiles
 </div>
@@ -1076,6 +1113,44 @@ SELECT currentQueryID();
 ┌─currentQueryID()─────────────────────┐
 │ 1280d0e8-1a08-4524-be6e-77975bb68e7d │
 └──────────────────────────────────────┘
+```
+
+<div id="currentRequestURL">
+  ## currentRequestURL
+</div>
+
+Introducido en: v26.6.0
+
+Devuelve la URL de la solicitud HTTP (la ruta y la cadena de consulta) que invocó la consulta.
+Devuelve una cadena vacía si la consulta no se invocó mediante HTTP.
+
+Resulta útil, en combinación con handlers HTTP definidos en SQL (`CREATE HANDLER`), para extraer parámetros
+incluidos en la ruta de la solicitud.
+
+<Note>
+  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
+</Note>
+
+**Sintaxis**
+
+```sql
+currentRequestURL()
+```
+
+**Argumentos**
+
+* Ninguno.
+
+**Valor devuelto**
+
+Devuelve la URL de la solicitud HTTP actual. [`String`](/es/reference/data-types/string)
+
+**Ejemplos**
+
+**Ejemplo de uso**
+
+```sql title=Query
+SELECT currentRequestURL()
 ```
 
 <div id="currentRoles">
@@ -1771,7 +1846,7 @@ SELECT formatReadableSize(filesystemAvailable()) AS "Available space";
 Introducido en: v20.1.0
 
 Devuelve la capacidad del sistema de archivos en bytes.
-Requiere que se configure la [path](/es/reference/settings/server-settings/settings#path) del directorio de datos.
+Requiere que se configure la [path](/es/reference/settings/server-settings/settings/other#path) del directorio de datos.
 
 <Note>
   Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
@@ -1912,9 +1987,9 @@ Introducido en: v25.11.0
 
 Invierte las coordenadas x e y de los objetos geométricos. Esta operación intercambia la latitud y la longitud, lo que resulta útil para convertir entre distintos sistemas de coordenadas o corregir el orden de las coordenadas.
 
-En un Point, intercambia las coordenadas x e y. En las geometrías complejas (LineString, Polygon, MultiPolygon, Ring, MultiLineString), aplica la transformación de forma recursiva a cada par de coordenadas.
+En un Point, intercambia las coordenadas x e y. En las geometrías complejas (MultiPoint, LineString, Polygon, MultiPolygon, Ring, MultiLineString), aplica la transformación de forma recursiva a cada par de coordenadas.
 
-La función admite tanto tipos de geometría individuales (Point, Ring, Polygon, MultiPolygon, LineString, MultiLineString) como el tipo variante Geometry.
+La función admite tanto tipos de geometría individuales (Point, MultiPoint, Ring, Polygon, MultiPolygon, LineString, MultiLineString) como el tipo variante Geometry.
 
 **Sintaxis**
 
@@ -1924,11 +1999,11 @@ flipCoordinates(geometry)
 
 **Argumentos**
 
-* `geometry` — La geometría que se va a transformar. Tipos admitidos: Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)) o Geometry (una variante que contiene cualquiera de estos tipos).
+* `geometry` — La geometría que se va a transformar. Tipos admitidos: Point (Tuple(Float64, Float64)), MultiPoint (Array(Point)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)) o Geometry (una variante que contiene cualquiera de estos tipos).
 
 **Valor devuelto**
 
-La geometría con las coordenadas invertidas. El tipo devuelto coincide con el tipo de entrada. [`Point`](/es/reference/data-types/geo#point) o [`Ring`](/es/reference/data-types/geo#ring) o [`Polygon`](/es/reference/data-types/geo#polygon) o [`MultiPolygon`](/es/reference/data-types/geo#multipolygon) o [`LineString`](/es/reference/data-types/geo#linestring) o [`MultiLineString`](/es/reference/data-types/geo#multilinestring) o [`Geometry`](/es/reference/data-types/geo)
+La geometría con las coordenadas invertidas. El tipo devuelto coincide con el tipo de entrada. [`Point`](/es/reference/data-types/geo#point) o [`MultiPoint`](/es/reference/data-types/geo#multipoint) o [`Ring`](/es/reference/data-types/geo#ring) o [`Polygon`](/es/reference/data-types/geo#polygon) o [`MultiPolygon`](/es/reference/data-types/geo#multipolygon) o [`LineString`](/es/reference/data-types/geo#linestring) o [`MultiLineString`](/es/reference/data-types/geo#multilinestring) o [`Geometry`](/es/reference/data-types/geo)
 
 **Ejemplos**
 
@@ -1942,7 +2017,7 @@ SELECT flipCoordinates((1.0, 2.0));
 (2.0, 1.0)
 ```
 
-**anillo**
+**Ring**
 
 ```sql title=Query
 SELECT flipCoordinates([(1.0, 2.0), (3.0, 4.0)]);
@@ -1952,7 +2027,7 @@ SELECT flipCoordinates([(1.0, 2.0), (3.0, 4.0)]);
 [(2.0, 1.0), (4.0, 3.0)]
 ```
 
-**polígono**
+**Polygon**
 
 ```sql title=Query
 SELECT flipCoordinates([[(1.0, 2.0), (3.0, 4.0)], [(5.0, 6.0), (7.0, 8.0)]]);
@@ -2019,6 +2094,62 @@ SELECT
     b
 FROM tab
 WHERE (a > 3) AND (b < 3)
+```
+
+<div id="formatQueryFromJSON">
+  ## formatQueryFromJSON
+</div>
+
+Introducido en: v26.8.0
+
+Toma una representación JSON de un AST de SQL (generada por `parseQueryToJSON`) y la convierte de nuevo en una cadena de consulta SQL.
+
+Con un argumento, genera SQL con formato canónico.
+Con dos argumentos `(json, original_query)`, conserva, en la medida de lo posible, los comentarios, los espacios en blanco y la sangría de la consulta original.
+
+El AST deserializado está limitado por la configuración `max_ast_depth` y `max_ast_elements` de la sesión actual.
+Junto con `parseQueryToJSON`, esta función permite inspeccionar y transformar consultas mediante programación
+a través de su representación de AST en JSON.
+
+**Sintaxis**
+
+```sql
+formatQueryFromJSON(json[, original_query])
+```
+
+**Argumentos**
+
+* `json` — Una cadena JSON que representa un AST de SQL. [`String`](/es/reference/data-types/string)
+* `original_query` — Opcional. La consulta SQL original cuyo formato se conservará. [`String`](/es/reference/data-types/string)
+
+**Valor devuelto**
+
+Una cadena de consulta SQL. [`String`](/es/reference/data-types/string)
+
+**Ejemplos**
+
+**Ida y vuelta**
+
+```sql title=Query
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a, b FROM t WHERE x > 1'));
+```
+
+```response title=Response
+┌─formatQueryFromJSON(parseQueryToJSON('SELECT a, b FROM t WHERE x > 1'))─┐
+│ SELECT a, b FROM t WHERE x > 1                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Conservar el formato**
+
+```sql title=Query
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t'), 'SELECT /* comment */ a FROM t');
+```
+
+```response title=Response
+┌─formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t'), 'SELECT /* comment */ a FROM t')─┐
+│ SELECT /* comment */ a FROM t                                                             │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="formatQueryOrNull">
@@ -2480,7 +2611,7 @@ Introducido en: v25.1.0
 Genera y devuelve números secuenciales a partir del valor anterior del contador.
 Esta función acepta un argumento de cadena: un identificador de serie, y un valor inicial opcional.
 El servidor debe estar configurado con Keeper.
-Las series se almacenan en nodos de Keeper en la ruta, que puede configurarse en [`series_keeper_path`](/es/reference/settings/server-settings/settings#series_keeper_path) en la configuración del servidor.
+Las series se almacenan en nodos de Keeper en la ruta, que puede configurarse en [`series_keeper_path`](/es/reference/settings/server-settings/settings/other#series_keeper_path) en la configuración del servidor.
 
 <Note>
   Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
@@ -2629,7 +2760,7 @@ SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header
 Introducido en: v20.1.0
 
 Devuelve el valor de una macro del archivo de configuración del servidor.
-Las macros se definen en la sección [`<macros>`](/es/reference/settings/server-settings/settings#macros) del archivo de configuración y pueden utilizarse para distinguir servidores mediante nombres fáciles de identificar, incluso si tienen nombres de host complejos.
+Las macros se definen en la sección [`<macros>`](/es/reference/settings/server-settings/settings/other#macros) del archivo de configuración y pueden utilizarse para distinguir servidores mediante nombres fáciles de identificar, incluso si tienen nombres de host complejos.
 Si la función se ejecuta en el contexto de una tabla distribuida, genera una columna normal con valores correspondientes a cada segmento.
 
 <Note>
@@ -4505,6 +4636,55 @@ SELECT obfuscateQueryWithSeed('SELECT 1', 100) = obfuscateQueryWithSeed('SELECT 
 true
 ```
 
+<div id="parseQueryToJSON">
+  ## parseQueryToJSON
+</div>
+
+Introducido en: v26.8.0
+
+Analiza una cadena de consulta SQL y la convierte en su AST (árbol de sintaxis abstracta); devuelve una representación JSON de dicho árbol.
+El JSON resultante se puede pasar a `formatQueryFromJSON` para reconstruir la consulta SQL o enviar directamente
+al servidor mediante el valor `clickhouse_json` de la configuración `dialect` (controlado por `enable_json_ast_dialect`).
+
+Resulta útil para herramientas que quieran inspeccionar o transformar consultas mediante programación sin tener que pasar por
+la gramática SQL.
+
+No todas las consultas SQL tienen una representación JSON fiel. Las consultas que contienen datos que el formato JSON no puede
+reproducir (por ejemplo, datos insertados en línea mediante `INSERT ... VALUES` / `INSERT ... FORMAT`) y los tipos de nodos AST que aún no
+implementan la serialización JSON se rechazan con `BAD_ARGUMENTS`, en lugar de generar JSON que
+`formatQueryFromJSON` no podría volver a leer.
+
+Los límites de análisis (`max_query_size`, `max_parser_depth`, `max_parser_backtracks`) se toman de la configuración de la
+sesión actual.
+
+**Sintaxis**
+
+```sql
+parseQueryToJSON(sql)
+```
+
+**Argumentos**
+
+* `sql` — Cadena de consulta SQL que se va a analizar. [`String`](/es/reference/data-types/string)
+
+**Valor devuelto**
+
+Cadena JSON que representa el AST. [`String`](/es/reference/data-types/string)
+
+**Ejemplos**
+
+**SELECT simple**
+
+```sql title=Query
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1'));
+```
+
+```response title=Response
+┌─formatQueryFromJSON(parseQueryToJSON('SELECT 1'))─┐
+│ SELECT 1                                          │
+└───────────────────────────────────────────────────┘
+```
+
 <div id="parseReadableSize">
   ## parseReadableSize
 </div>
@@ -4987,7 +5167,7 @@ Acumula los estados de una función de agregación para cada fila de un bloque d
 
   El estado se restablece con cada nuevo bloque de datos.
   Debido a este comportamiento propenso a errores, la función ha quedado obsoleta, y se recomienda usar [funciones de ventana](/es/reference/functions/window-functions/index) en su lugar.
-  Puede usar la configuración [`allow_deprecated_error_prone_window_functions`](/es/reference/settings/session-settings#allow_deprecated_error_prone_window_functions) para permitir el uso de esta función.
+  Puede usar la configuración [`allow_deprecated_error_prone_window_functions`](/es/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions) para permitir el uso de esta función.
 </Warning>
 
 **Sintaxis**
@@ -5104,7 +5284,7 @@ Devuelve `0` para la primera fila y, para las siguientes, la diferencia con resp
   Debido a este comportamiento propenso a errores, la función está obsoleta.
   Se recomienda usar [funciones de ventana](/es/reference/functions/window-functions/index) en su lugar.
 
-  Puede usar la configuración [`allow_deprecated_error_prone_window_functions`](/es/reference/settings/session-settings#allow_deprecated_error_prone_window_functions) para permitir el uso de esta función.
+  Puede usar la configuración [`allow_deprecated_error_prone_window_functions`](/es/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions) para permitir el uso de esta función.
 </Warning>
 
 El resultado de la función depende de los bloques de datos afectados y del orden de los datos en el bloque.

@@ -114,7 +114,18 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
         if (limit_hint == 0 && !virtual_row)
             input.setNeeded();
 
-        if (!virtual_row && ((limit_hint && chunk.getNumRows() < limit_hint) || always_read_till_end))
+        if (!virtual_row && limit_hint && chunk.getNumRows() < limit_hint)
+            input.setNeeded();
+
+        /// With `always_read_till_end` every source is read in full regardless of where the
+        /// merge stops, so deferring a source behind its virtual row cannot save any reads.
+        /// It would only serialize them: a source left NotNeeded here does not start reading,
+        /// and once the merge finishes, the drain in `prepare` wakes the leftover sources one
+        /// at a time. Keep them producing concurrently from the start instead. (Currently the
+        /// planner sets this flag only on merges over remote streams, which carry no virtual
+        /// rows — see `addMergeSortingStep` — so this is enforcing the invariant locally
+        /// rather than fixing a reachable case.)
+        if (always_read_till_end)
             input.setNeeded();
 
         if (!virtual_row && !chunk.hasRows())
@@ -174,6 +185,28 @@ IProcessor::Status IMergingTransformBase::prepare()
 
     if (!is_initialized)
         return prepareInitializeInputs();
+
+    if (!state.inputs_to_prefetch.empty())
+    {
+        if (state.is_finished)
+        {
+            /// The merge finished before the read-ahead could start: the data would
+            /// never be consumed.
+            state.inputs_to_prefetch.clear();
+        }
+        else
+        {
+            /// Ask the inputs deferred behind virtual rows to start producing data without
+            /// waiting for it, so that they read in parallel with the merge.
+            for (size_t input_num : state.inputs_to_prefetch)
+            {
+                auto & input = input_states[input_num].port;
+                if (!input.isFinished())
+                    input.setNeeded();
+            }
+            state.inputs_to_prefetch.clear();
+        }
+    }
 
     if (state.is_finished)
     {

@@ -358,121 +358,24 @@ cursor.executemany(
 ```
 
 <div id="user-defined-functions">
-  ### ユーザー定義関数 (UDF)
+  ### Python ユーザー定義関数 (UDF)
 </div>
 
-カスタム Python 関数で SQL を拡張できます。
-
-<div id="basic-udf-usage">
-  #### UDFの基本的な使い方
-</div>
+chDB は、型付き引数、自動型推論、NULL 値および例外の処理を設定できるネイティブのインプロセス Python UDF をサポートしています。
 
 ```python
-from chdb.udf import chdb_udf
-from chdb import query
+from chdb import query, func
+from chdb.sqltypes import INT64
 
-# シンプルな数学関数
-@chdb_udf()
-def add_numbers(a, b):
-    return int(a) + int(b)
+@func([INT64, INT64], INT64)
+def add(a, b):
+    return a + b
 
-# 文字列処理関数
-@chdb_udf()
-def reverse_string(text):
-    return text[::-1]
-
-# JSON処理関数  
-@chdb_udf()
-def extract_json_field(json_str, field):
-    import json
-    try:
-        data = json.loads(json_str)
-        return str(data.get(field, ''))
-    except:
-        return ''
-
-# クエリでUDFを使用する
-result = query("""
-    SELECT 
-        add_numbers('10', '20') as sum_result,
-        reverse_string('hello') as reversed,
-        extract_json_field('{"name": "John", "age": 30}', 'name') as name
-""")
-print(result)
+result = query("SELECT add(2, 3)")
+print(result)  # 5
 ```
 
-<div id="advanced-udf-custom-return-types">
-  #### カスタムの戻り値型を使用する高度なUDF
-</div>
-
-```python
-# 特定の戻り値型を持つUDF
-@chdb_udf(return_type="Float64")
-def calculate_bmi(height_str, weight_str):
-    height = float(height_str) / 100  # cmをメートルに変換
-    weight = float(weight_str)
-    return weight / (height * height)
-
-# データ検証用のUDF
-@chdb_udf(return_type="UInt8") 
-def is_valid_email(email):
-    import re
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return 1 if re.match(pattern, email) else 0
-
-# 複雑なクエリで使用
-result = query("""
-    SELECT 
-        name,
-        calculate_bmi(height, weight) as bmi,
-        is_valid_email(email) as has_valid_email
-    FROM (
-        SELECT 
-            'John' as name, '180' as height, '75' as weight, 'john@example.com' as email
-        UNION ALL
-        SELECT 
-            'Jane' as name, '165' as height, '60' as weight, 'invalid-email' as email
-    )
-""", "Pretty")
-print(result)
-```
-
-<div id="udf-best-practices">
-  #### UDFのベストプラクティス
-</div>
-
-1. **ステートレスな関数**: UDFは、副作用のない純粋関数にする必要があります
-2. **関数内でのインポート**: 必要なモジュールは、すべてUDF内でインポートする必要があります
-3. **Stringの入出力**: すべてのUDFパラメータはStringです (TabSeparatedフォーマット) 
-4. **エラー処理**: 堅牢なUDFにするため、try-catchブロックを含めてください
-5. **パフォーマンス**: UDFは各行に対して呼び出されるため、パフォーマンスを最適化してください
-
-```python
-# エラーハンドリングを含む適切に構造化されたUDF
-@chdb_udf(return_type="String")
-def safe_json_extract(json_str, path):
-    import json
-    try:
-        data = json.loads(json_str)
-        keys = path.split('.')
-        result = data
-        for key in keys:
-            if isinstance(result, dict) and key in result:
-                result = result[key]
-            else:
-                return 'null'
-        return str(result)
-    except Exception as e:
-        return f'error: {str(e)}'
-
-# 複雑なネストされたJSONで使用する
-query("""
-    SELECT safe_json_extract(
-        '{"user": {"profile": {"name": "Alice", "age": 25}}}',
-        'user.profile.name'
-    ) as extracted_name
-""")
-```
+登録方法、型システム、NULL の処理、例外処理、DateTime のサポートを網羅した完全なガイドについては、[Python UDF ガイド](/ja/chdb/guides/python-udf)を参照してください。API の完全なリファレンスについては、[Python UDF API リファレンス](/ja/chdb/api/python#user-defined-functions)を参照してください。旧式の `@chdb_udf` デコレータも引き続き利用できますが、この API に置き換えられました。詳細は、[Legacy API](/ja/chdb/api/python#legacy-udf)を参照してください。
 
 <div id="streaming-queries">
   ### ストリーミングクエリ処理

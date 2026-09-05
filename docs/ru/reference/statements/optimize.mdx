@@ -24,14 +24,14 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 
 Запрос `OPTIMIZE` поддерживается для семейства [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree) (включая [materialized views](/ru/reference/statements/create/view#materialized-view)) и движка [Buffer](/ru/reference/engines/table-engines/special/buffer). Другие движки таблиц не поддерживаются.
 
-При использовании `OPTIMIZE` с семейством Движков таблиц [ReplicatedMergeTree](/ru/reference/engines/table-engines/mergetree-family/replication) ClickHouse создаёт задачу на слияние и ждёт её выполнения на всех репликах (если настройка [alter&#95;sync](/ru/reference/settings/session-settings#alter_sync) установлена в `2`) или на текущей реплике (если настройка [alter&#95;sync](/ru/reference/settings/session-settings#alter_sync) установлена в `1`).
+При использовании `OPTIMIZE` с семейством Движков таблиц [ReplicatedMergeTree](/ru/reference/engines/table-engines/mergetree-family/replication) ClickHouse создаёт задачу на слияние и ждёт её выполнения на всех репликах (если настройка [alter&#95;sync](/ru/reference/settings/session-settings/alter#alter_sync) установлена в `2`) или на текущей реплике (если настройка [alter&#95;sync](/ru/reference/settings/session-settings/alter#alter_sync) установлена в `1`).
 
-* Если `OPTIMIZE` по какой-либо причине не выполняет слияние, клиент не получает уведомление. Чтобы включить уведомления, используйте настройку [optimize&#95;throw&#95;if&#95;noop](/ru/reference/settings/session-settings#optimize_throw_if_noop).
+* Если `OPTIMIZE` по какой-либо причине не выполняет слияние, клиент не получает уведомление. Чтобы включить уведомления, используйте настройку [optimize&#95;throw&#95;if&#95;noop](/ru/reference/settings/session-settings/optimize#optimize_throw_if_noop).
 * Если указать `PARTITION`, будет оптимизирована только указанная партиция. [Как задать выражение партиционирования](/ru/reference/statements/alter/partition#how-to-set-partition-expression).
-* Если указать `FINAL` или `FORCE`, оптимизация выполняется, даже если все данные уже находятся в одной части. Управлять этим поведением можно с помощью [optimize&#95;skip&#95;merged&#95;partitions](/ru/reference/settings/session-settings#optimize_skip_merged_partitions). Кроме того, слияние будет принудительно выполнено, даже если уже идут параллельные слияния.
+* Если указать `FINAL` или `FORCE`, оптимизация выполняется, даже если все данные уже находятся в одной части. Управлять этим поведением можно с помощью [optimize&#95;skip&#95;merged&#95;partitions](/ru/reference/settings/session-settings/optimize-skip#optimize_skip_merged_partitions). Кроме того, слияние будет принудительно выполнено, даже если уже идут параллельные слияния.
 * Если указать `DEDUPLICATE`, будут дедуплицированы полностью идентичные строки (если не указано предложение BY) — сравниваются все столбцы. Это имеет смысл только для движка MergeTree.
 
-С помощью настройки [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ru/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout) можно указать, как долго (в секундах) ждать выполнения запросов `OPTIMIZE` на неактивных репликах.
+С помощью настройки [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ru/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) можно указать, как долго (в секундах) ждать выполнения запросов `OPTIMIZE` на неактивных репликах.
 
 <Note>
   Если `alter_sync` установлена в `2` и некоторые реплики остаются неактивными дольше времени, заданного настройкой `replication_wait_for_inactive_replica_timeout`, будет сгенерировано исключение `UNFINISHED`.
@@ -59,7 +59,7 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUPLICATE [BY expression]] [CLEANUP]
 ```
 
-По умолчанию результирующая слитая часть проверяется аналогично запросу [`CHECK TABLE`](/ru/reference/statements/check-table). Это поведение управляется настройкой [optimize&#95;dry&#95;run&#95;check&#95;part](/ru/reference/settings/session-settings#optimize_dry_run_check_part) (по умолчанию включена). Если отключить её, проверка будет пропущена, что может быть полезно для бенчмарка самого слияния.
+По умолчанию результирующая слитая часть проверяется аналогично запросу [`CHECK TABLE`](/ru/reference/statements/check-table). Это поведение управляется настройкой [optimize&#95;dry&#95;run&#95;check&#95;part](/ru/reference/settings/session-settings/optimize#optimize_dry_run_check_part) (по умолчанию включена). Если отключить её, проверка будет пропущена, что может быть полезно для бенчмарка самого слияния.
 
 **Пример**
 
@@ -69,13 +69,13 @@ CREATE TABLE dry_run_example (key UInt64, value String) ENGINE = MergeTree ORDER
 INSERT INTO dry_run_example VALUES (1, 'a'), (2, 'b');
 INSERT INTO dry_run_example VALUES (1, 'c'), (4, 'd');
 
--- Симуляция слияния двух частей
+-- Simulate merging using two parts
 OPTIMIZE TABLE dry_run_example DRY RUN PARTS 'all_1_1_0', 'all_2_2_0';
 
--- Симуляция слияния с дедупликацией
+-- Simulate merging with deduplication
 OPTIMIZE TABLE dry_run_example DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' DEDUPLICATE;
 
--- Части и данные остаются неизменными после DRY RUN
+-- Parts and data remain unchanged after DRY RUN
 SELECT name, rows FROM system.parts
 WHERE database = currentDatabase() AND table = 'dry_run_example' AND active
 ORDER BY name;

@@ -44,7 +44,7 @@ PARTITION BY toStartOfMonth(date);
   ### Структура на диске
 </div>
 
-Каждый раз, когда в таблицу вставляется набор строк, ClickHouse вместо создания одной-единственной части данных, содержащей все вставленные строки (как описано [здесь](/ru/concepts/core-concepts/parts)), создает как минимум одну новую часть данных для каждого уникального значения ключа партиционирования среди вставленных строк (не менее [одной](/ru/reference/settings/session-settings#max_insert_block_size)):
+Каждый раз, когда в таблицу вставляется набор строк, ClickHouse вместо создания (как минимум [одной](/ru/reference/settings/session-settings/max-insert#max_insert_block_size)) одной-единственной части данных, содержащей все вставленные строки (как описано [здесь](/ru/concepts/core-concepts/parts)), создает по одной новой части данных для каждого уникального значения ключа партиционирования среди вставленных строк:
 
 <Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="ОБРАБОТКА INSERT" />
 
@@ -217,7 +217,7 @@ WHERE date >= '2020-12-01'
 Peak memory usage: 2.73 MiB.
 ```
 
-Это означает, что ClickHouse просканировал и обработал 1 гранулу (блок из [8192](/ru/reference/settings/merge-tree-settings#index_granularity) строк) за 6 миллисекунд, чтобы вычислить результат запроса.
+Это означает, что ClickHouse просканировал и обработал 1 гранулу (блок из [8192](/ru/reference/settings/merge-tree-settings/index-granularity#index_granularity) строк) за 6 миллисекунд, чтобы вычислить результат запроса.
 
 <div id="partitioning-is-primarily-a-data-management-feature">
   ### Партиционирование — это прежде всего средство управления данными

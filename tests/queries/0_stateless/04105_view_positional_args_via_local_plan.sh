@@ -9,16 +9,15 @@
 # because the view is expanded on the local node (not on the initiator).
 #
 # When enable_positional_arguments=0 is set explicitly by the user the view's
-# GROUP BY 1 stays as a literal constant.  In the analyzer this produces
-# NOT_AN_AGGREGATE (215); in the old analyzer the constant GROUP BY is silently
-# dropped and a global aggregate is returned instead.
-# The two .reference files handle this behavioral difference.
+# GROUP BY 1 stays as a literal constant, which produces NOT_AN_AGGREGATE (215).
 #
 # Refs: https://github.com/ClickHouse/ClickHouse/issues/89940
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_analyzer=1"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_table SYNC"
 ${CLICKHOUSE_CLIENT} -q "DROP VIEW IF EXISTS test_view SYNC"
@@ -35,9 +34,8 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM remote('127.0.0.1', currentDatabase
 SETTINGS prefer_localhost_replica = 1"
 
 # Sanity check: disabling positional arguments must also be respected on the
-# local-plan path.  Analyzer: GROUP BY 1 stays literal -> NOT_AN_AGGREGATE
-# (215) -> no output here.  Old analyzer: constant GROUP BY is dropped,
-# global aggregate returns one row -> prints 1.  See .oldanalyzer.reference.
+# local-plan path: GROUP BY 1 stays literal -> NOT_AN_AGGREGATE (215) -> no
+# output here.
 echo '--- prefer_localhost_replica=1, positional args disabled: error ---'
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM remote('127.0.0.1', currentDatabase(), test_view)
 SETTINGS prefer_localhost_replica = 1, enable_positional_arguments = 0" 2>/dev/null || true

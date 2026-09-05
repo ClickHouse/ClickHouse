@@ -526,12 +526,12 @@ Peak memory usage: 639.47 MiB.
   ##### パフォーマンスとリソースのチューニング
 </div>
 
-上記のシナリオにおけるパフォーマンスとリソース使用量は、いくつかの要因によって決まります。チューニングを行う前に、[S3のインサートおよび読み取りパフォーマンス最適化ガイド](/ja/integrations/connectors/data-ingestion/AWS/performance)の[読み取りへのスレッドの使用](/ja/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads)セクションに詳しく記載されているインサートの仕組みを理解しておくことを推奨します。概要は以下のとおりです。
+上記のシナリオにおけるパフォーマンスとリソース使用量は、いくつかの要因によって決まります。チューニングを行う前に、[Optimizing for S3 Insert and Read Performance guide](/ja/integrations/connectors/data-ingestion/AWS/performance)の[Using Threads for Reads](/ja/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads)セクションに詳しく記載されている挿入のメカニズムを理解しておくことを推奨します。概要は以下のとおりです。
 
-* **読み取り並列度** - 読み取りに使用するスレッド数。[`max_threads`](/ja/reference/settings/session-settings#max_threads) で制御されます。ClickHouse Cloud では、これはインスタンスサイズによって決まり、デフォルトでは vCPU 数が使用されます。この値を増やすと、メモリ使用量は増えますが、読み取り性能が向上する場合があります。
-* **挿入の並列度** - 挿入処理に使用される挿入スレッド数です。[`max_insert_threads`](/ja/reference/settings/session-settings#max_insert_threads) で制御します。**注**: この値の上限は `max_threads` であるため、実効的な挿入の並列度は `min(max_insert_threads, max_threads)` になります。ClickHouse Cloud では、これはインスタンスのサイズによって決まり (2〜4の範囲) 、OSS では 1 に設定されています。この値を増やすと、メモリ使用量は増えますが、パフォーマンスが向上する場合があります。
-* **挿入ブロックサイズ** - データはループ内で取得・解析され、[パーティションキー](/ja/reference/engines/table-engines/mergetree-family/custom-partitioning-key)に基づいてメモリ内の挿入ブロックにまとめられます。これらのブロックはソート、最適化、圧縮された後、新しい[データパーツ](/ja/concepts/core-concepts/parts)としてストレージに書き込まれます。挿入ブロックのサイズは、設定 [`min_insert_block_size_rows`](/ja/reference/settings/session-settings#min_insert_block_size_rows) と [`min_insert_block_size_bytes`](/ja/reference/settings/session-settings#min_insert_block_size_bytes) (非圧縮) で制御され、メモリ使用量とディスク I/O に影響します。ブロックが大きいほど使用メモリは増えますが、作成されるパーツは少なくなり、I/O とバックグラウンドマージが減少します。これらの設定は最小しきい値を表しており、いずれか一方に先に達するとフラッシュが実行されます。
-* **materialized view のブロックサイズ** - メインの insert に関する前述の仕組みに加え、materialized view に insert する前にも、より効率よく処理できるようブロックがまとめられます。これらのブロックのサイズは、設定 [`min_insert_block_size_bytes_for_materialized_views`](/ja/reference/settings/session-settings#min_insert_block_size_bytes_for_materialized_views) および [`min_insert_block_size_rows_for_materialized_views`](/ja/reference/settings/session-settings#min_insert_block_size_rows_for_materialized_views) によって決まります。ブロックを大きくすると、メモリ使用量は増える一方で、処理効率は向上します。デフォルトでは、これらの設定はそれぞれ、ソーステーブルのテーブル設定 [`min_insert_block_size_rows`](/ja/reference/settings/session-settings#min_insert_block_size_rows) および [`min_insert_block_size_bytes`](/ja/reference/settings/session-settings#min_insert_block_size_bytes) の値に戻ります。
+* **読み取り並列度** - 読み取りに使用するスレッド数。[`max_threads`](/ja/reference/settings/session-settings/max-threads#max_threads) で制御されます。ClickHouse Cloud では、これはインスタンスサイズによって決まり、デフォルトでは vCPU 数が使用されます。この値を増やすと、メモリ使用量は増えますが、読み取り性能が向上する場合があります。
+* **挿入の並列度** - 挿入処理に使用される挿入スレッド数です。[`max_insert_threads`](/ja/reference/settings/session-settings/max-insert#max_insert_threads) で制御します。**注**: この値の上限は `max_threads` であるため、実効的な挿入の並列度は `min(max_insert_threads, max_threads)` になります。ClickHouse Cloud では、これはインスタンスサイズによって決まり (2〜4の範囲) 、OSS では 1 に設定されています。この値を増やすと、メモリ使用量は増えますが、パフォーマンスが向上する場合があります。
+* **挿入ブロックサイズ** - データはループ内で取得・解析され、[パーティションキー](/ja/reference/engines/table-engines/mergetree-family/custom-partitioning-key)に基づいてメモリ内の挿入ブロックにまとめられます。これらのブロックはソート、最適化、圧縮された後、新しい[データパーツ](/ja/concepts/core-concepts/parts)としてストレージに書き込まれます。挿入ブロックのサイズは、設定 [`min_insert_block_size_rows`](/ja/reference/settings/session-settings/min-insert#min_insert_block_size_rows) と [`min_insert_block_size_bytes`](/ja/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) (非圧縮) で制御され、メモリ使用量とディスク I/O に影響します。ブロックが大きいほど使用メモリは増えますが、作成されるパーツは少なくなり、I/O とバックグラウンドマージが減少します。これらの設定は最小しきい値を表しており、いずれか一方に先に達するとフラッシュが実行されます。
+* **materialized view のブロックサイズ** - メインの insert に関する前述の仕組みに加え、materialized view に insert する前にも、より効率的に処理できるようブロックがまとめられます。これらのブロックのサイズは、設定 [`min_insert_block_size_bytes_for_materialized_views`](/ja/reference/settings/session-settings/min-insert#min_insert_block_size_bytes_for_materialized_views) および [`min_insert_block_size_rows_for_materialized_views`](/ja/reference/settings/session-settings/min-insert#min_insert_block_size_rows_for_materialized_views) によって決まります。ブロックを大きくすると、メモリ使用量は増える一方で、処理効率は向上します。デフォルトでは、これらの設定はそれぞれ、ソーステーブルのテーブル設定 [`min_insert_block_size_rows`](/ja/reference/settings/session-settings/min-insert#min_insert_block_size_rows) および [`min_insert_block_size_bytes`](/ja/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) の値に戻ります。
 
 <Note>
   **単純な INSERT SELECT クエリ向けのヒント**: 複雑な変換を伴わないシンプルな `INSERT INTO t1 SELECT * FROM t2` クエリでは、`optimize_trivial_insert_select=1` を有効にすることを検討してください。この設定 (バージョン 24.7 以降はデフォルトで無効) は、SELECT の並列度を `max_insert_threads` に自動的に合わせることで、リソース使用量と生成されるパーツ数を削減します。これは、テーブル間で大量のデータを移行する場合に特に有効です。
@@ -539,9 +539,9 @@ Peak memory usage: 639.47 MiB.
 
 パフォーマンスを向上させるには、[Optimizing for S3 Insert and Read Performance guide](/ja/integrations/connectors/data-ingestion/AWS/performance) の [Tuning Threads and Block Size for Inserts](/ja/integrations/connectors/data-ingestion/AWS/performance#tuning-threads-and-block-size-for-inserts) セクションに記載されているガイドラインに従ってください。ほとんどの場合、パフォーマンス向上のために `min_insert_block_size_bytes_for_materialized_views` および `min_insert_block_size_rows_for_materialized_views` を変更する必要はありません。これらを変更する場合は、`min_insert_block_size_rows` および `min_insert_block_size_bytes` に関して説明したベストプラクティスと同様の方法を使用してください。
 
-メモリ使用量を最小化したい場合は、これらの設定を調整してみてください。ただし、パフォーマンスは必ず低下します。先ほどのクエリを使用した例を以下に示します。
+メモリ使用量を最小限に抑えたい場合は、これらの設定を試してみるとよいでしょう。ただし、パフォーマンスは必ず低下します。先ほどのクエリを使った例を以下に示します。
 
-`max_insert_threads` を1に下げることで、メモリのオーバーヘッドを削減できます。
+`max_insert_threads` を 1 に下げることで、メモリのオーバーヘッドを削減できます。
 
 ```sql
 INSERT INTO pypi_v2
@@ -558,7 +558,7 @@ SETTINGS max_insert_threads = 1
 Peak memory usage: 506.78 MiB.
 ```
 
-`max_threads` の設定を1に減らすことで、メモリ使用量をさらに抑えることができます。
+`max_threads` を 1 に下げることで、メモリ使用量をさらに抑えられます。
 
 ```sql
 INSERT INTO pypi_v2
@@ -575,7 +575,7 @@ Ok.
 Peak memory usage: 272.53 MiB.
 ```
 
-最後に、`min_insert_block_size_rows` を 0 に設定し (block サイズを決める要因から外し) 、`min_insert_block_size_bytes` を 10485760 (10MiB) に設定することで、メモリ使用量をさらに削減できます。
+最後に、`min_insert_block_size_rows` を 0 に設定し (ブロックサイズを決める要因から外し) 、`min_insert_block_size_bytes` を 10485760 (10MiB) に設定することで、メモリ使用量をさらに削減できます。
 
 ```sql
 INSERT INTO pypi_v2

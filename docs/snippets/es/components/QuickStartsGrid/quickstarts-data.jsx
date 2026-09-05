@@ -112,6 +112,20 @@ export const quickStartsData = [
     ]
   },
   {
+    "id": "tutorial",
+    "title": "Tutorial avanzado",
+    "description": "Aprenda a ingestar y consultar datos en ClickHouse con un conjunto de datos de ejemplo de taxis de la ciudad de Nueva York.",
+    "href": "/es/get-started/quickstarts/tutorial",
+    "useCases": [
+      "real-time-analytics",
+      "data-warehousing"
+    ],
+    "products": [
+      "cloud",
+      "self-managed"
+    ]
+  },
+  {
     "id": "working-with-the-map-type",
     "title": "Uso del tipo Map en ClickHouse",
     "description": "Aprenda a usar el tipo Map en ClickHouse para almacenar, consultar y agregar datos dinámicos de clave-valor, usando atributos de recurso de OTel como ejemplo práctico.",

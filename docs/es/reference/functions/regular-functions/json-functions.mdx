@@ -46,11 +46,64 @@ Cuando varias claves coinciden con distintas combinaciones de mayúsculas y min�
   Estas funciones pueden tener un rendimiento inferior al de sus equivalentes sensibles a mayúsculas y minúsculas, así que use las funciones JSONExtract habituales siempre que sea posible.
 </Note>
 
+<div id="jsonpath-syntax">
+  ## Sintaxis de JSONPath
+</div>
+
+Las funciones `JSON_EXISTS`, `JSON_VALUE` y `JSON_QUERY` aceptan una expresión
+JSONPath como segundo argumento. ClickHouse implementa un subconjunto limitado de
+JSONPath basado de forma general en el estándar SQL/JSON (ISO/IEC TR 19075-6),
+y deliberadamente más limitado que [RFC 9535](https://www.rfc-editor.org/rfc/rfc9535)
+y otras implementaciones populares. A continuación se enumeran los operadores compatibles.
+
+La implementación de referencia se encuentra en
+[`src/Functions/JSONPath/Parsers`](https://github.com/ClickHouse/ClickHouse/tree/master/src/Functions/JSONPath/Parsers).
+
+<div id="supported-operators">
+  ### Operadores compatibles
+</div>
+
+| Sintaxis      | Descripción                                                                                                                                                               | Ejemplo                           |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `$`           | Elemento raíz. Toda ruta debe comenzar con él.                                                                                                                            | `$`                               |
+| `.key`        | Acceso a miembros mediante notación de punto sin comillas. La clave puede comenzar por números o estar compuesta únicamente por números.                                  | `$.store.book`, `$.1key`, `$.123` |
+| `."key"`      | Acceso a miembros mediante notación de punto con comillas. Úsela para claves que contengan espacios o caracteres especiales. Se aceptan comillas dobles o acentos graves. | `$."foo bar"`                     |
+| `[key]`       | Acceso a miembros mediante notación de corchetes sin comillas.                                                                                                            | `$[hello]`                        |
+| `['key']`     | Acceso a miembros mediante notación de corchetes con comillas. Se aceptan comillas simples, dobles o acentos graves.                                                      | `$['foo bar']`                    |
+| `[n]`         | Acceso a elementos de un Array por índice (basado en 0).                                                                                                                  | `$.items[0]`                      |
+| `[n, m, ...]` | Acceso a varios elementos de un Array.                                                                                                                                    | `$.items[0, 2, 4]`                |
+| `[n to m]`    | Rango de elementos de un Array. El índice final `m` es exclusivo.                                                                                                         | `$.items[0 to 3]`                 |
+| `[*]`         | Comodín que coincide con todos los elementos de un Array.                                                                                                                 | `$.items[*]`                      |
+
+Notas:
+
+* Los índices y rangos se pueden combinar dentro del mismo par de corchetes (por ejemplo, `[0 to 2, 4]`).
+* Los rangos de índices y el comodín no se pueden combinar dentro del mismo par de corchetes (por ejemplo, `[* , 0]` no es válido).
+* En un rango `[n to m]`, el inicio `n` debe ser estrictamente menor que el final `m`; de lo contrario, se genera una excepción.
+* Un índice sin especificar un rango `[n]` es equivalente al rango `[n to n+1]`.
+
+<div id="unsupported-operators">
+  ### Operadores no compatibles
+</div>
+
+Los siguientes operadores JSONPath, disponibles en RFC 9535 u otras
+implementaciones, **no** son compatibles con ClickHouse:
+
+| Sintaxis                | Descripción                                                                                    |
+| ----------------------- | ---------------------------------------------------------------------------------------------- |
+| `..`                    | Descenso recursivo.                                                                            |
+| `?(@.expr)`             | Expresiones de filtro.                                                                         |
+| `[start:end:step]`      | Notación de segmentos. Use `[n to m]` en su lugar.                                             |
+| `@`                     | Referencia al nodo actual.                                                                     |
+| `[-n]`                  | Índices negativos de Array (desde el final).                                                   |
+| Expresiones de script   | Expresiones aritméticas o de función dentro de una ruta.                                       |
+| `ON ERROR` / `ON EMPTY` | Cláusulas estándar de SQL/JSON para controlar el comportamiento ante errores y valores vacíos. |
+
 {/* 
-  El contenido interno de las etiquetas siguientes se reemplaza durante la compilación del framework de documentación con 
-  documentación generada a partir de system.functions. Por favor, no modifique ni elimine las etiquetas.
-  Consulte: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
-  */}
+    El contenido interno de las etiquetas siguientes se reemplaza durante la compilación del framework de documentación con 
+    documentación generada a partir de system.functions. Por favor, no modifique ni elimine las etiquetas.
+    Consulte: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+    */}
 
 {/*AUTOGENERATED_START*/}
 
@@ -2165,14 +2218,14 @@ SELECT simpleJSONHas(json, 'bar') FROM jsons;
 Introducido en: v21.7.0
 
 Serializa un valor en su representación JSON. Se admiten varios tipos de datos y estructuras anidadas.
-Los [enteros](/es/reference/data-types/int-uint) de 64 bits o superiores (como `UInt64` o `Int128`) se encierran entre comillas de forma predeterminada. [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/es/reference/settings/formats#output_format_json_quote_64bit_integers) controla este comportamiento.
-Los valores especiales `NaN` e `inf` se sustituyen por `null`. Active la configuración [output&#95;format&#95;json&#95;quote&#95;denormals](/es/reference/settings/formats#output_format_json_quote_denormals) para mostrarlos.
+Los [enteros](/es/reference/data-types/int-uint) de 64 bits o superiores (como `UInt64` o `Int128`) se encierran entre comillas de forma predeterminada. [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/es/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) controla este comportamiento.
+Los valores especiales `NaN` e `inf` se sustituyen por `null`. Active la configuración [output&#95;format&#95;json&#95;quote&#95;denormals](/es/reference/settings/formats/output-format#output_format_json_quote_denormals) para mostrarlos.
 Al serializar un valor [Enum](/es/reference/data-types/enum), la función genera su nombre.
 
 Véase también:
 
-* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/es/reference/settings/formats#output_format_json_quote_64bit_integers)
-* [output&#95;format&#95;json&#95;quote&#95;denormals](/es/reference/settings/formats#output_format_json_quote_denormals)
+* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/es/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
+* [output&#95;format&#95;json&#95;quote&#95;denormals](/es/reference/settings/formats/output-format#output_format_json_quote_denormals)
 
 **Sintaxis**
 

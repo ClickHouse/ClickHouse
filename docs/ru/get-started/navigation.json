@@ -6,6 +6,7 @@
       "group": "Начало работы",
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
+        "ru/get-started/index",
         "ru/get-started/quickstarts/home",
         {
           "expandable": true,
@@ -19,29 +20,30 @@
         },
         {
           "expanded": true,
-          "group": "Сценарии использования",
+          "group": "Варианты использования",
           "pages": [
+            "ru/get-started/use-cases/overview",
             "ru/get-started/use-cases/real-time-analytics",
             "ru/get-started/use-cases/observability",
             "ru/get-started/use-cases/data-warehousing",
             "ru/get-started/use-cases/agentic-analytics"
-          ],
-          "root": "ru/get-started/use-cases/overview"
+          ]
         },
         "ru/get-started/about/deployment-modes"
-      ],
-      "root": "ru/get-started/index"
+      ]
     },
     {
       "expanded": true,
       "group": "Настройка",
       "icon": "/images/menu-icon-gear.svg",
       "pages": [
+        "ru/get-started/setup/install",
         "ru/get-started/setup/cloud",
         {
           "expanded": true,
-          "group": "Самоуправляемая версия",
+          "group": "Самоуправляемое развертывание",
           "pages": [
+            "ru/get-started/setup/self-managed/overview",
             {
               "group": "Локальная разработка",
               "pages": [
@@ -60,17 +62,16 @@
                 "ru/get-started/setup/self-managed/other-linux"
               ]
             }
-          ],
-          "root": "ru/get-started/setup/self-managed/overview"
+          ]
         }
-      ],
-      "root": "ru/get-started/setup/install"
+      ]
     },
     {
       "expanded": true,
       "group": "Примеры датасетов",
       "icon": "/images/menu-icon-database.svg",
       "pages": [
+        "ru/get-started/sample-datasets/index",
         "ru/get-started/sample-datasets/playground",
         {
           "group": "Бенчмарки",
@@ -106,7 +107,7 @@
           ]
         },
         {
-          "group": "Геоданные и местоположение",
+          "group": "Geo и местоположение",
           "pages": [
             "ru/get-started/sample-datasets/cell-towers",
             "ru/get-started/sample-datasets/foursquare-os-places",
@@ -123,7 +124,7 @@
           ]
         },
         {
-          "group": "Госреестры и открытые данные",
+          "group": "Государственные реестры и открытые данные",
           "pages": [
             "ru/get-started/sample-datasets/covid19",
             "ru/get-started/sample-datasets/menus",
@@ -132,14 +133,14 @@
             "ru/get-started/sample-datasets/uk-price-paid"
           ]
         }
-      ],
-      "root": "ru/get-started/sample-datasets/index"
+      ]
     },
     {
       "expanded": true,
       "group": "Миграция",
       "icon": "/images/caret-double-right.svg",
       "pages": [
+        "ru/get-started/migrate/overview",
         {
           "group": "PostgreSQL",
           "pages": [
@@ -153,8 +154,7 @@
               ]
             },
             "ru/get-started/migrate/postgres/appendix"
-          ],
-          "root": "ru/get-started/migrate/postgres/index"
+          ]
         },
         {
           "group": "BigQuery",
@@ -162,8 +162,7 @@
             "ru/get-started/migrate/bigquery/overview",
             "ru/get-started/migrate/bigquery/migrating-to-clickhouse-cloud",
             "ru/get-started/migrate/bigquery/loading-data"
-          ],
-          "root": "ru/get-started/migrate/bigquery/index"
+          ]
         },
         {
           "group": "Snowflake",
@@ -188,9 +187,10 @@
           ]
         },
         {
-          "group": "OSS в Cloud",
+          "group": "Из OSS в Cloud",
           "pages": [
-            "ru/get-started/migrate/oss-to-cloud/clickhouse-to-cloud"
+            "ru/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
+            "ru/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
           ]
         },
         {
@@ -201,8 +201,7 @@
             "ru/get-started/migrate/other-methods/object-storage-to-clickhouse"
           ]
         }
-      ],
-      "root": "ru/get-started/migrate/overview"
+      ]
     }
   ]
 }

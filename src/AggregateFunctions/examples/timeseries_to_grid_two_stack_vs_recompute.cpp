@@ -1,7 +1,7 @@
 /// Measures the two constants a non-invertible `timeSeries*ToGrid` function uses to choose between recomputing
 /// each window and the sliding two-stack queue:
 ///   - `AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS`: the crossover - the smallest number of populated buckets in a
-///     window at which two-stacks beats recompute. `createAggregator` compares the AVERAGE populated buckets per
+///     window at which two-stacks beats recompute. `getStackSizeForTwoStacks` compares the AVERAGE populated buckets per
 ///     window (`buckets_per_window * density`) against it, so it is the right value for roughly uniform data.
 ///   - `BPW_TO_FORCE_TWO_STACKS`: a cap on `buckets_per_window` above which two-stacks is used regardless of
 ///     average density. The average can hide a locally dense window (density is not uniform), and a fully dense

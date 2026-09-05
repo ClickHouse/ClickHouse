@@ -1,22 +1,24 @@
 ---
-description: 'Documentation sur la prise en charge des protocoles Prometheus dans ClickHouse'
-sidebarTitle: 'Protocoles Prometheus'
+description: 'Prise en charge de l’API HTTP de Prometheus dans ClickHouse : écriture et lecture distantes, requêtes PromQL et métriques du serveur.'
+sidebarTitle: 'Prometheus et PromQL'
 slug: /interfaces/prometheus
-title: 'Protocoles Prometheus'
+title: 'Protocoles Prometheus et PromQL'
 doc_type: 'reference'
 ---
 
+import { CloudNotSupportedBadge } from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
 <div id="expose">
-  ## Exposition des métriques
+  ## Exposer les métriques du serveur ClickHouse
 </div>
 
 <Note>
   Si vous utilisez ClickHouse Cloud, vous pouvez exposer des métriques à Prometheus à l’aide de l’[intégration Prometheus](/fr/products/cloud/features/monitoring/prometheus).
 </Note>
 
-ClickHouse peut exposer ses propres métriques afin que Prometheus puisse les collecter :
+Configurez un port dédié lorsqu’un serveur Prometheus doit collecter les propres métriques de ClickHouse :
 
-````xml
+```xml
 <prometheus>
     <port>9363</port>
     <endpoint>/metrics</endpoint>
@@ -27,9 +29,10 @@ ClickHouse peut exposer ses propres métriques afin que Prometheus puisse les co
     <histograms>true</histograms>
     <dimensional_metrics>true</dimensional_metrics>
 </prometheus>
+```
 
-Section `<prometheus.handlers>` can be used to make more extended handlers.
-This section is similar to [<http_handlers>](/concepts/features/interfaces/http) but works for prometheus protocols:
+La section `<prometheus.handlers>` peut être utilisée pour créer des gestionnaires plus étendus sur le même port.
+Cette section est similaire à [`<http_handlers>`](/fr/concepts/features/interfaces/http), mais fonctionne pour les protocoles Prometheus :
 
 ```xml
 <prometheus>
@@ -45,127 +48,226 @@ This section is similar to [<http_handlers>](/concepts/features/interfaces/http)
                 <errors>true</errors>
                 <histograms>true</histograms>
                 <dimensional_metrics>true</dimensional_metrics>
+                <labels>
+                    <environment>production</environment>
+                    <shard from_env="SHARD_NAME"></shard>
+                </labels>
             </handler>
         </my_rule_1>
     </handlers>
 </prometheus>
-````
+```
 
 Paramètres :
 
-| Nom                          | Par défaut | Description                                                                                                                                                                                                       |
-| ---------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `port`                       | none       | Port utilisé pour exposer le protocole de métriques.                                                                                                                                                              |
-| `endpoint`                   | `/metrics` | Endpoint HTTP pour le scraping des métriques par le serveur Prometheus. Commence par `/`. Ne doit pas être utilisé avec la section `<handlers>`.                                                                  |
-| `url` / `headers` / `method` | none       | Filtres utilisés pour trouver un gestionnaire correspondant à une requête. Similaires aux champs portant les mêmes noms dans la section [`<http_handlers>`](/fr/concepts/features/interfaces/http).                       |
-| `metrics`                    | true       | Expose les métriques de la table [system.metrics](/fr/reference/system-tables/metrics).                                                                                                                              |
-| `asynchronous_metrics`       | true       | Expose les valeurs actuelles des métriques de la table [system.asynchronous&#95;metrics](/fr/reference/system-tables/asynchronous_metrics).                                                                          |
-| `events`                     | true       | Expose les métriques de la table [system.events](/fr/reference/system-tables/events).                                                                                                                                |
-| `errors`                     | true       | Expose le nombre d’erreurs, par code d’erreur, survenues depuis le dernier redémarrage du serveur. Ces informations peuvent également être obtenues à partir de [system.errors](/fr/reference/system-tables/errors). |
-| `histograms`                 | true       | Expose les métriques d’histogramme de [system.histogram&#95;metrics](/fr/reference/system-tables/histogram_metrics)                                                                                                  |
-| `dimensional_metrics`        | true       | Expose les métriques dimensionnelles de [system.dimensional&#95;metrics](/fr/reference/system-tables/dimensional_metrics)                                                                                            |
+| Nom                          | Par défaut | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port`                       | none       | Port qui expose les métriques ClickHouse.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `endpoint`                   | `/metrics` | Endpoint HTTP pour le scraping des métriques. Commence par `/`. Ne doit pas être utilisé avec la section `<handlers>`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `url` / `headers` / `method` | none       | Filtres utilisés pour trouver un gestionnaire correspondant à une requête. Similaires aux champs portant les mêmes noms dans la section [`<http_handlers>`](/fr/concepts/features/interfaces/http).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `info`                       | true       | Expose la jauge `ClickHouse_Info` avec les libellés d’identité du serveur (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `metrics`                    | true       | Expose les métriques de [`system.metrics`](/fr/reference/system-tables/metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `asynchronous_metrics`       | true       | Expose les métriques de [`system.asynchronous_metrics`](/fr/reference/system-tables/asynchronous_metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `events`                     | true       | Expose les métriques de [`system.events`](/fr/reference/system-tables/events).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `errors`                     | true       | Expose le nombre d’erreurs de [`system.errors`](/fr/reference/system-tables/errors).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `histograms`                 | true       | Expose les métriques de [`system.histogram_metrics`](/fr/reference/system-tables/histogram_metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `dimensional_metrics`        | true       | Expose les métriques de [`system.dimensional_metrics`](/fr/reference/system-tables/dimensional_metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `labels`                     | none       | Libellés constants ajoutés à chaque métrique exposée. Chaque élément enfant définit un libellé : le nom de l’élément est le nom du libellé (qui doit correspondre à `[a-zA-Z_][a-zA-Z0-9_]*`) et la valeur de l’élément est la valeur du libellé. Les valeurs de libellé prennent en charge les substitutions de config standard telles que l’attribut `from_env`. Un nom de libellé est rejeté lorsqu’il commence par `__` (réservé par Prometheus), ou lorsqu’il entrerait en conflit avec un libellé que cet endpoint exporte déjà pour l’une de ses sections activées. L’ensemble réservé dépend donc des données activement exportées par l’endpoint : `le` lorsque `histograms` est activé ; les libellés `ClickHouse_Info` (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`) lorsque `info` est activé ; et tout libellé utilisé par une famille de métriques d’histogramme ou dimensionnelles exposée (par exemple, `group`, `direction` ou `operation_type`) lorsque `histograms` ou `dimensional_metrics` est activé. Comme cela dépend de ce que l’endpoint expose réellement, un nom peut être valide sur un endpoint mais rejeté sur un autre. |
 
-Vérifiez (remplacez `127.0.0.1` par l’adresse IP ou le hostname de votre serveur ClickHouse) :
+Vérifiez l’endpoint :
 
 ```bash
-curl 127.0.0.1:9363/metrics
+curl http://127.0.0.1:9363/metrics
 ```
 
-## Protocole remote-write
+<CloudNotSupportedBadge />
 
-ClickHouse prend en charge le protocole [remote-write](https://prometheus.io/docs/specs/remote_write_spec/).
-Les données sont reçues via ce protocole et écrites dans une table [TimeSeries](/fr/reference/engines/table-engines/integrations/time-series)
-(qui doit être créée au préalable).
+<div id="prometheus-http-api-and-promql">
+  ## API HTTP Prometheus et PromQL
+</div>
 
-```xml
-<prometheus>
-    <port>9363</port>
-    <handlers>
-        <my_rule_1>
-            <url>/write</url>
-            <handler>
-                <type>remote_write</type>
-                <database>db_name</database>
-                <table>time_series_table</table>
-            </handler>
-        </my_rule_1>
-    </handlers>
-</prometheus>
+ClickHouse implémente l’API HTTP Prometheus sur une table [`TimeSeries`](/fr/reference/engines/table-engines/integrations/time-series). Un gestionnaire prend en charge l’écriture distante, la lecture distante, les requêtes PromQL instantanées et les requêtes PromQL sur une plage.
+
+<div id="prerequisites">
+  ### Prérequis
+</div>
+
+Activez le paramètre [`allow_experimental_time_series_table`](/fr/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table) pour l’utilisateur qui crée la table et y accède :
+
+```sql
+SET allow_experimental_time_series_table = 1;
 ```
 
-Paramètres :
+Créez une base de données et une table `TimeSeries` :
 
-| Name                         | Default | Description                                                                                                                                                                                                              |
-| ---------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `port`                       | aucun   | Port d’écoute du protocole `remote-write`.                                                                                                                                                                               |
-| `url` / `headers` / `method` | aucun   | Filtres utilisés pour trouver un gestionnaire correspondant à une requête. Semblables aux champs du même nom dans la section [`<http_handlers>`](/fr/concepts/features/interfaces/http).                                    |
-| `table`                      | aucun   | Nom d’une table [TimeSeries](/fr/reference/engines/table-engines/integrations/time-series) dans laquelle écrire les données reçues via le protocole `remote-write`. Ce nom peut aussi contenir celui d’une base de données. |
-| `database`                   | aucun   | Nom de la base de données où se trouve la table spécifiée dans le paramètre `table`, si elle n’est pas indiquée dans le paramètre `table`.                                                                               |
-
-## Protocole remote-read
-
-ClickHouse prend en charge le protocole [remote-read](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/).
-Les données sont lues à partir d’une table [TimeSeries](/fr/reference/engines/table-engines/integrations/time-series) et envoyées via ce protocole.
-
-```xml
-<prometheus>
-    <port>9363</port>
-    <handlers>
-        <my_rule_1>
-            <url>/read</url>
-            <handler>
-                <type>remote_read</type>
-                <database>db_name</database>
-                <table>time_series_table</table>
-            </handler>
-        </my_rule_1>
-    </handlers>
-</prometheus>
+```sql
+CREATE DATABASE prometheus;
+CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 ```
 
-Paramètres :
+Pour les requêtes d’API HTTP, activez `allow_experimental_time_series_table` dans le profil de l’utilisateur de l’API.
 
-| Nom                          | Par défaut | Description                                                                                                                                                                                                                    |
-| ---------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `port`                       | aucun      | Port utilisé pour exposer le protocole `remote-read`.                                                                                                                                                                          |
-| `url` / `headers` / `method` | aucun      | Filtres utilisés pour trouver un gestionnaire correspondant à une requête. Similaires aux champs portant les mêmes noms dans la section [`<http_handlers>`](/fr/concepts/features/interfaces/http).                               |
-| `table`                      | aucun      | Nom d’une table [TimeSeries](/fr/reference/engines/table-engines/integrations/time-series) à partir de laquelle lire les données à envoyer via le protocole `remote-read`. Ce nom peut aussi inclure celui d’une base de données. |
-| `database`                   | aucun      | Nom de la base de données où se trouve la table spécifiée dans le paramètre `table` si elle n’est pas indiquée dans le paramètre `table`.                                                                                      |
+<div id="configure-prometheus-api">
+  ### Configurer l’API Prometheus
+</div>
 
-## Configuration pour plusieurs protocoles
-
-Plusieurs protocoles peuvent être spécifiés au même endroit :
+Configurez un gestionnaire routé par préfixe sur le port HTTP principal de ClickHouse :
 
 ```xml
-<prometheus>
-    <port>9363</port>
-    <handlers>
-        <my_rule_1>
-            <url>/metrics</url>
-            <handler>
-                <type>expose_metrics</type>
-                <metrics>true</metrics>
-                <asynchronous_metrics>true</asynchronous_metrics>
-                <events>true</events>
-                <errors>true</errors>
-                <histograms>true</histograms>
-                <dimensional_metrics>true</dimensional_metrics>
-            </handler>
-        </my_rule_1>
-        <my_rule_2>
-            <url>/write</url>
-            <handler>
-                <type>remote_write</type>
-                <table>db_name.time_series_table</table>
-            </handler>
-        </my_rule_2>
-        <my_rule_3>
-            <url>/read</url>
-            <handler>
-                <type>remote_read</type>
-                <table>db_name.time_series_table</table>
-            </handler>
-        </my_rule_3>
-    </handlers>
-</prometheus>
+<http_handlers>
+    <defaults/>
+    <rule>
+        <url_prefix>/prometheus/api/v1</url_prefix>
+        <handler>
+            <type>prometheus_api_v1</type>
+        </handler>
+    </rule>
+</http_handlers>
+```
+
+`<defaults/>` conserve les gestionnaires intégrés pour les endpoints tels que `/ping` et les requêtes SQL. Le préfixe ci-dessus expose ces endpoints via un seul gestionnaire :
+
+| Endpoint                         | Rôle                          |
+| -------------------------------- | ----------------------------- |
+| `/prometheus/api/v1/write`       | Écriture distante Prometheus  |
+| `/prometheus/api/v1/read`        | Lecture distante Prometheus   |
+| `/prometheus/api/v1/query`       | Requêtes PromQL instantanées  |
+| `/prometheus/api/v1/query_range` | Requêtes PromQL sur une plage |
+
+L&#39;exemple ne spécifie pas `database` ni `table` dans le gestionnaire. Chaque requête doit fournir le paramètre de requête `table`. Elle peut également fournir `database`, utiliser un nom de table qualifié tel que `prometheus.metrics` ou omettre la base de données afin d&#39;utiliser `default`. Un même gestionnaire peut ainsi desservir plusieurs tables `TimeSeries`.
+
+Pour utiliser une table fixe pour toutes les requêtes, configurez-la dans le gestionnaire :
+
+```xml
+<handler>
+    <type>prometheus_api_v1</type>
+    <database>prometheus</database>
+    <table>metrics</table>
+</handler>
+```
+
+Une table configurée dans le gestionnaire ne peut pas être remplacée par des paramètres de requête.
+
+Paramètres de routage et du gestionnaire :
+
+| Nom          | Par défaut | Description                                                                                                                                                                                                                           |
+| ------------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url_prefix` | aucun      | Filtre qui correspond à tous les chemins de requête commençant par le préfixe configuré.                                                                                                                                              |
+| `table`      | aucun      | Nom d&#39;une table `TimeSeries`. Si ce paramètre est omis, la requête doit fournir le paramètre de requête `table`. Le nom configuré peut inclure une base de données.                                                               |
+| `database`   | aucun      | Base de données contenant la table. Une requête peut la fournir sous forme de paramètre de requête. Si ce paramètre est omis, ClickHouse utilise la base de données spécifiée dans une valeur `table` qualifiée ou utilise `default`. |
+
+<div id="remote-write">
+  ### Ingérer des métriques via écriture distante
+</div>
+
+ClickHouse prend en charge le [protocole écriture distante de Prometheus](https://prometheus.io/docs/specs/remote_write_spec/). Configurez Prometheus pour écrire vers le gestionnaire :
+
+```yaml
+remote_write:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics
+    basic_auth:
+      username: default
+      password: <password>
+```
+
+Prometheus envoie des échantillons dans la table `prometheus.metrics`.
+
+<div id="promql-query-support">
+  ### Interroger avec PromQL
+</div>
+
+Utilisez l’endpoint de requête instantanée pour évaluer une expression PromQL à un instant donné :
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+Utilisez l’endpoint de requête par plage pour évaluer une expression sur un intervalle de temps :
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query_range" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "start=2026-08-15T12:00:00Z" \
+  --data-urlencode "end=2026-08-15T13:00:00Z" \
+  --data-urlencode "step=60s" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+Consultez les [fonctionnalités PromQL prises en charge](/fr/reference/functions/table-functions/prometheusQueryRange#supported-promql-features) pour obtenir la liste des fonctions et des opérateurs d’agrégation utilisés par l’API HTTP, le dialecte `promql` et les fonctions de table.
+
+<div id="grafana">
+  #### Grafana
+</div>
+
+Configurez une source de données Prometheus avec une URL de base ne contenant pas `/api/v1` :
+
+```yaml
+apiVersion: 1
+datasources:
+  - name: ClickHouse Prometheus
+    type: prometheus
+    access: proxy
+    url: https://clickhouse.example.com:8443/prometheus
+    basicAuth: true
+    basicAuthUser: default
+    jsonData:
+      httpMethod: GET
+      customQueryParameters: database=prometheus&table=metrics
+    secureJsonData:
+      basicAuthPassword: <password>
+```
+
+Grafana ajoute `/api/v1/query` ou `/api/v1/query_range` à cette URL de base et ajoute `customQueryParameters` à chaque requête.
+
+<Note>
+  Seuls les endpoints de requête `/api/v1/query` et `/api/v1/query_range` sont implémentés. Les endpoints de métadonnées utilisés par une source de données Prometheus dans Grafana pour parcourir les libellés, les variables de modèle et l’autocomplétion du générateur de requêtes (`/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`) ne sont pas implémentés et renvoient une erreur. Écrivez les expressions PromQL en mode code plutôt que d’utiliser le générateur de requêtes.
+</Note>
+
+<div id="sql-entry-points">
+  #### Points d’entrée SQL
+</div>
+
+ClickHouse utilise le même convertisseur PromQL pour l’API HTTP, le dialecte `promql` ainsi que les fonctions de table [`prometheusQuery`](/fr/reference/functions/table-functions/prometheusQuery) et [`prometheusQueryRange`](/fr/reference/functions/table-functions/prometheusQueryRange).
+
+Exécutez directement des requêtes PromQL avec `clickhouse-client` :
+
+```bash
+clickhouse-client \
+  --dialect promql \
+  --promql_database prometheus \
+  --promql_table metrics \
+  --query 'rate(http_requests_total[5m])'
+```
+
+Utilisez les fonctions de table pour intégrer du PromQL dans une requête SQL :
+
+```sql
+SELECT *
+FROM prometheusQuery(
+    prometheus.metrics,
+    'rate(http_requests_total[5m])',
+    now()
+);
+```
+
+<div id="remote-read">
+  ### Lire les métriques via lecture distante
+</div>
+
+ClickHouse prend en charge le [protocole lecture distante de Prometheus](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/) sur `/prometheus/api/v1/read`.
+
+Configurez un serveur Prometheus pour lire les données de la même table `TimeSeries` :
+
+```yaml
+remote_read:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/read?database=prometheus&table=metrics
+    basic_auth:
+      username: default
+      password: <password>
 ```

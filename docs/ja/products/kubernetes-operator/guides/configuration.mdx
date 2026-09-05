@@ -596,7 +596,7 @@ Secret が無効な間、オペレーター はリコンサイルを再キュー
   ## 追加ポート
 </div>
 
-オペレーターは、すべての ClickHouse ポッドとそのヘッドレス Service で、固定のポート群を公開します。具体的には、`8123` HTTP、`9000` ネイティブ、`9009` interserver、`9001` management、`9363` Prometheus メトリクス、さらに TLS が有効な場合は TLS 用の `8443`/`9440` です。ClickHouse で MySQL、PostgreSQL、gRPC、または任意のカスタムポートなどの追加プロトコルを待ち受けるようにするには、`spec.additionalPorts` で宣言します。
+オペレーターは、すべての ClickHouse ポッドとそのパブリックヘッドレス Service で、固定のポート群を公開します。具体的には、`8123` HTTP、`9000` ネイティブ、`9009` interserver、`9001`/`9002` management、`9363` Prometheus メトリクス、さらに TLS が有効な場合は TLS 用の `8443`/`9440` です。`interserver` および management ポートは、レプリカが Ready になる前にレプリカとオペレーターが通信できるよう、レプリカごとの内部 Service を通じても公開されます。ClickHouse で MySQL、PostgreSQL、gRPC、または任意のカスタムポートなどの追加プロトコルを待ち受けるようにするには、`spec.additionalPorts` で宣言します。
 
 ```yaml
 spec:
@@ -609,7 +609,8 @@ spec:
       port: 9100
 ```
 
-operator は、それらのポートをポッドの `containerPorts` と headless Service に追加します。完全な例は、[`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml) にあります。
+オペレーター は、それらのポートをポッドの `containerPorts` とパブリック ヘッドレス Service に追加します。
+完全な例は、[`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml) にあります。
 
 <Warning>
   `additionalPorts` は、Kubernetes 側でのみポートを開きます。これだけでは、ClickHouse server がそれらのポートで待ち受けるようには設定され**ません**。対応するプロトコルを `spec.settings.extraConfig.protocols` で有効にする必要もあります。これを行わないと、Service 上ではポートが開いていても、ポッド内では何も応答しません。
@@ -635,7 +636,7 @@ spec:
       requests:
         storage: 2Gi
 
-  # 1) Open the port on the Pod and the headless Service.
+  # 1) Open the port on the Pod and the public headless Service.
   additionalPorts:
     - name: mysql
       port: 9004
@@ -972,10 +973,16 @@ spec:
 ```yaml
 spec:
   settings:
-    enableDatabaseSync: true  # デフォルト: true
+    enableDatabaseSync: true  # Default: true
 ```
 
 有効にすると、オペレーターは Replicated テーブルとインテグレーション テーブルを新しいレプリカに同期します。
+
+各レプリカ ポッドには `clickhouse.com/ReplicaInitialized` readiness gate が設定されているため、新しいレプリカは、オペレーターによる初期化が完了した後にのみ パブリック ヘッドレス Service を介して公開されます。初期化時に、`default` データベースは Replicated engine に変換され、スキーマが同期されます。それまでは、オペレーターと他のレプリカは内部 Service を介してそのレプリカにアクセスします。`enableDatabaseSync: false` の場合、オペレーターはレプリカを直ちに初期化済みとしてマークするため、readiness はコンテナー probe のみに従います。
+
+オペレーターがデータを含む非 Replicated の `default` データベースを drop することはありません。このようなレプリカもスキーマの準備後にクライアントトラフィックの処理を開始しますが、そのデータベースを自分で解決するまで、クラスターは reason `DefaultDatabaseNotReplicated` を伴う `SchemaInSync=False` を報告します。
+
+scale-down でレプリカが削除される前に、オペレーターはまずそのレプリカへのクライアントトラフィックの振り分けを停止し、公開が停止するまで待機してから、残りのデータを存続するレプリカに複製し、その後で削除します。
 
 <div id="server-logging">
   ### サーバーロギング

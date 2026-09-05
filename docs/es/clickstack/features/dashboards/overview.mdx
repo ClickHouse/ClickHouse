@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards
 title: 'Visualizaciones y dashboards con ClickStack'
-sidebarTitle: 'Dashboards'
+sidebarTitle: 'Descripción general'
 description: 'Visualizaciones y dashboards con ClickStack'
 doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'visualización', 'monitorización', 'observabilidad']
@@ -58,10 +58,6 @@ Para los ejemplos siguientes, usamos el conjunto de datos remoto disponible en [
     Por ejemplo, filtra por el servicio `frontend` añadiendo el filtro `ServiceName:"frontend"`. Agrega una segunda serie para el recuento de eventos a lo largo del tiempo con el alias `Count` haciendo clic en `Add Series`.
 
     <Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="Visualización simple 2" size="lg" />
-
-    Para crear una serie similar a una existente, puedes duplicarla en lugar de empezar desde cero. Haz clic en el icono de copia (`Duplicate series`) en una fila de serie para insertar una copia directamente debajo. La copia conserva la configuración de la serie de origen, como la métrica, la columna y el filtro. Después, solo tienes que cambiar los campos que sean distintos (por ejemplo, la agregación) y asignarle a la copia su propio alias. La duplicación está disponible siempre que se admitan varias series. Está oculta en los tipos de visualización que solo permiten una serie, como `Number`, `Pie` y `Heatmap`.
-
-    <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="El icono de copia Duplicate series y su descripción emergente en una fila de serie de un gráfico" size="lg" />
 
     Para crear una serie similar a una existente, puedes duplicarla en lugar de empezar desde cero. Haz clic en el icono de copia (`Duplicate series`) en una fila de serie para insertar una copia directamente debajo. La copia conserva la configuración de la serie de origen, como la métrica, la columna y el filtro. Después, solo tienes que cambiar los campos que sean distintos (por ejemplo, la agregación) y asignarle a la copia su propio alias. La duplicación está disponible siempre que se admitan varias series. Está oculta en los tipos de visualización que solo permiten una serie, como `Number`, `Pie` y `Heatmap`.
 
@@ -199,18 +195,26 @@ Para eliminar, editar o duplicar una visualización, pase el cursor sobre ella y
 <Image img="/images/use-cases/observability/hyperdx-dashboard-edit.webp" alt="Edición de dashboards" size="lg" />
 
 <div id="tile-display-settings">
-  ### Configuración de visualización del mosaico
+  ### Configuración de visualización del tile
 </div>
 
-Cada mosaico tiene un panel **Configuración de visualización** con opciones que controlan cómo se muestra su valor. Ábrelo desde el editor del mosaico haciendo clic en **Configuración de visualización**. Las opciones disponibles dependen del tipo de visualización.
+Cada tile tiene un panel **Configuración de visualización** con opciones que controlan cómo se muestra su valor. Ábrelo desde el editor del tile haciendo clic en **Configuración de visualización**. Las opciones disponibles dependen del tipo de visualización.
 
-Los mosaicos de **Number** pueden mostrar un **gráfico de fondo**: una minigráfica de tendencia dibujada detrás del valor, para que su evolución en el intervalo de tiempo seleccionado pueda verse de un vistazo. Esto resulta útil en los mosaicos de SLO y de presupuesto de errores, donde la tendencia de un valor importa tanto como su lectura actual.
+Los tiles de **Number** pueden mostrar un **gráfico de fondo**: una minigráfica de tendencia dibujada detrás del valor, para que su evolución en el intervalo de tiempo seleccionado pueda verse de un vistazo. Esto resulta útil en los tiles de SLO y de presupuesto de errores, donde la tendencia de un valor importa tanto como su lectura actual.
 
-Con un mosaico de **Number** seleccionado, abre **Configuración de visualización** y establece **Gráfico de fondo** en **Línea** o **Área** (o **Ninguno** para desactivarlo). La minigráfica se deriva de una versión de la consulta del mosaico agrupada en intervalos de tiempo, por lo que no se necesita ninguna configuración adicional. Hereda el color del mosaico de forma predeterminada; establece un **Color de fondo** para sustituirlo por un color concreto de la paleta.
+Con un tile de **Number** seleccionado, abre **Configuración de visualización** y establece **Gráfico de fondo** en **Línea** o **Área** (o **Ninguno** para desactivarlo). La minigráfica se deriva de una versión de la consulta del tile agrupada en intervalos de tiempo, por lo que no se necesita ninguna configuración adicional. Hereda el color del tile de forma predeterminada; establece un **Color de fondo** para sustituirlo por un color concreto de la paleta.
 
-<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Panel Configuración de visualización de un mosaico Number, con Gráfico de fondo establecido en Área" size="lg" />
+<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Panel Configuración de visualización de un tile Number, con Gráfico de fondo establecido en Área" size="lg" />
 
-Los gráficos de fondo se aplican a los mosaicos de **Number** del constructor de consultas. Los mosaicos de **Number** de Raw SQL devuelven un único valor sin dimensión temporal que pueda agruparse en intervalos, por lo que la opción aparece, pero está deshabilitada para ellos.
+Los gráficos de fondo se aplican a los tiles de **Number** del constructor de consultas. Los tiles de **Number** de Raw SQL devuelven un único valor sin dimensión temporal que pueda agruparse en intervalos, por lo que la opción aparece, pero está deshabilitada para ellos.
+
+Los tiles de tabla pueden alternar el fondo de sus filas con **Fondo alterno de fila**, que colorea una de cada dos filas para que las tablas anchas sean más fáciles de examinar. Está desactivado de forma predeterminada.
+
+Con un tile de tabla seleccionado, abre **Configuración de visualización** y activa **Fondo alterno de fila**. El bandeado es puramente visual, por lo que funciona tanto en los tiles de tabla del constructor de consultas como en los de tabla de Raw SQL.
+
+<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Panel Configuración de visualización de un tile de tabla, con Fondo alterno de fila activado" size="lg" />
+
+Los tiles de tabla también mantienen un separador entre la fila de encabezado y los datos mientras te desplazas, para que los encabezados de columna sigan distinguiéndose con claridad.
 
 <div id="dashboard-listing-search">
   ## Dashboards: listado y búsqueda
@@ -306,7 +310,7 @@ Este dashboard usa pestañas para separar la monitorización de **Selects**, **I
 <Info>
   **Acceso requerido a las tablas del sistema**
 
-  Este dashboard consulta las [tablas del sistema](/es/reference/system-tables/index) de ClickHouse para mostrar métricas clave. Se requieren los siguientes permisos:
+  Este dashboard consulta las [tablas del sistema](/es/reference/system-tables/overview) de ClickHouse para mostrar métricas clave. Se requieren los siguientes permisos:
 
   `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
 

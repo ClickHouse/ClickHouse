@@ -33,7 +33,7 @@ Além disso, eles são replicados, sincronizando os metadados das estatísticas 
 Adicionando dois tipos de estatísticas a duas colunas:
 
 ```sql
-ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
+ALTER TABLE t1 MODIFY STATISTICS c, d TYPE tdigest, uniq_v2;
 ```
 
 <Note>

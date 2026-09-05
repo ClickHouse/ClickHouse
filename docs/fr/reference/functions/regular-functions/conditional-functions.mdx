@@ -400,7 +400,7 @@ Effectue un branchement conditionnel.
 * Si la condition `cond` s&#39;évalue à une valeur non nulle, la fonction renvoie le résultat de l&#39;expression `then`.
 * Si `cond` s&#39;évalue à zéro ou à NULL, le résultat de l&#39;expression `else` est renvoyé.
 
-Le paramètre [`short_circuit_function_evaluation`](/fr/reference/settings/session-settings#short_circuit_function_evaluation) détermine si l&#39;évaluation en court-circuit est utilisée.
+Le paramètre [`short_circuit_function_evaluation`](/fr/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) détermine si l&#39;évaluation en court-circuit est utilisée.
 
 S&#39;il est activé, l&#39;expression `then` n&#39;est évaluée que sur les lignes où `cond` est true, et l&#39;expression `else` sur celles où `cond` est false.
 
@@ -524,7 +524,7 @@ Permet d&#39;écrire l&#39;opérateur [`CASE`](/fr/reference/operators/index#con
 Évalue chaque condition dans l&#39;ordre. Pour la première condition qui est vraie (non égale à zéro et différente de `NULL`), renvoie la valeur correspondante.
 Si aucune des conditions n&#39;est vraie, renvoie la valeur `else`.
 
-Le paramètre [`short_circuit_function_evaluation`](/fr/reference/settings/session-settings#short_circuit_function_evaluation) contrôle
+Le paramètre [`short_circuit_function_evaluation`](/fr/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) contrôle
 si l&#39;évaluation en court-circuit est utilisée. S&#39;il est activé, l&#39;expression `then_i` est évaluée uniquement sur les lignes où
 `((NOT cond_1) AND ... AND (NOT cond_{i-1}) AND cond_i)` est vraie.
 

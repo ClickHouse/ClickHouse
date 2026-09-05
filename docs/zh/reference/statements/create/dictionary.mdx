@@ -7,7 +7,7 @@ doc_type: 'reference'
 ---
 
 import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import CloudSupportedBadge from "/snippets/zh/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
+import { CloudSupportedBadge } from "/snippets/zh/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
 
 字典是一种映射 (`key -> attributes`) ，适合用于各种类型的参考列表。
 ClickHouse 支持用于操作字典的专用函数，这些函数可在查询中使用。与将参考表执行 `JOIN` 相比，使用函数配合字典更简单、更高效。
@@ -76,14 +76,14 @@ COMMENT 'Comment'
 
 ```xml
 <clickhouse>
-    <comment>可选元素，可包含任意内容。ClickHouse server 会忽略此元素。</comment>
+    <comment>An optional element with any content. Ignored by the ClickHouse server.</comment>
 
-    <!--可选元素。包含替换内容的文件名-->
-    <include_from>/etc/metrika.xml</include_from>
+    <!--Optional element. File name with substitutions-->
+    <include_from>/etc/clickhouse-server/substitutions.xml</include_from>
 
     <dictionary>
-        <!-- 字典配置。-->
-        <!-- 一个配置文件中可以包含任意数量的字典部分。-->
+        <!-- Dictionary configuration. -->
+        <!-- There can be any number of dictionary sections in a configuration file. -->
     </dictionary>
 
 </clickhouse>

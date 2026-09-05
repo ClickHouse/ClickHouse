@@ -17,7 +17,7 @@ Función de agregación que toma datos de series temporales como pares de marcas
 Para cada punto de la cuadrícula, las muestras para calcular `idelta` se toman dentro de la ventana de tiempo especificada.
 
 <Warning>
-  Esta función es experimental; habilítela configurando `allow_experimental_ts_to_grid_aggregate_function=true`.
+  Esta función es experimental; habilítela configurando `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>
 
 **Sintaxis**
@@ -28,10 +28,10 @@ timeSeriesInstantDeltaToGrid(start_timestamp, end_timestamp, grid_step, stalenes
 
 **Parámetros**
 
-* `start_timestamp` — Especifica el inicio de la cuadrícula. [`UInt32`](/es/reference/data-types/int-uint) o [`DateTime`](/es/reference/data-types/datetime)
-* `end_timestamp` — Especifica el final de la cuadrícula. [`UInt32`](/es/reference/data-types/int-uint) o [`DateTime`](/es/reference/data-types/datetime)
-* `grid_step` — Especifica el paso de la cuadrícula en segundos. [`UInt32`](/es/reference/data-types/int-uint)
-* `staleness` — Especifica la antigüedad máxima, en segundos, de las muestras consideradas. La ventana de antigüedad es un intervalo abierto por la izquierda y cerrado por la derecha. [`UInt32`](/es/reference/data-types/int-uint)
+* `start_timestamp` — Especifica el inicio de la cuadrícula. Con un argumento de marca temporal `DateTime64`, también puede ser un número fraccionario o una cadena que contenga un número o texto de fecha y hora. [`UInt32`](/es/reference/data-types/int-uint) o [`DateTime`](/es/reference/data-types/datetime) o [`DateTime64`](/es/reference/data-types/datetime64) o [`Float*`](/es/reference/data-types/float) o [`Decimal*`](/es/reference/data-types/decimal) o [`String`](/es/reference/data-types/string)
+* `end_timestamp` — Especifica el final de la cuadrícula. Con un argumento de marca temporal `DateTime64`, también puede ser un número fraccionario o una cadena que contenga un número o texto de fecha y hora. [`UInt32`](/es/reference/data-types/int-uint) o [`DateTime`](/es/reference/data-types/datetime) o [`DateTime64`](/es/reference/data-types/datetime64) o [`Float*`](/es/reference/data-types/float) o [`Decimal*`](/es/reference/data-types/decimal) o [`String`](/es/reference/data-types/string)
+* `grid_step` — Especifica el paso de la cuadrícula en segundos. Con un argumento de marca temporal `DateTime64`, también puede ser un número fraccionario o una cadena que contenga un número o una duración como &#39;15s&#39; o &#39;1m&#39;. [`UInt32`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Decimal*`](/es/reference/data-types/decimal) o [`String`](/es/reference/data-types/string)
+* `staleness` — Especifica la antigüedad máxima, en segundos, de las muestras consideradas. La ventana de antigüedad es un intervalo abierto por la izquierda y cerrado por la derecha. Con un argumento de marca temporal `DateTime64`, también puede ser un número fraccionario o una cadena que contenga un número o una duración como &#39;15s&#39; o &#39;1m&#39;. [`UInt32`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Decimal*`](/es/reference/data-types/decimal) o [`String`](/es/reference/data-types/string)
 
 **Argumentos**
 

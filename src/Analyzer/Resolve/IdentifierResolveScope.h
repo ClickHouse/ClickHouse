@@ -198,11 +198,21 @@ struct IdentifierResolveScope
     bool join_use_nulls = false;
     bool allow_resolve_from_using = true;
 
+    /** True while the `PREWHERE` expression of this query is being resolved.
+      * `PREWHERE` is evaluated by the reading step and cannot contain a correlated subquery,
+      * so the `rewrite_in_to_join` rewrite of `x IN (subquery)` into `exists(...)` must not be
+      * applied there - the plain `IN` is kept instead.
+      */
+    bool in_prewhere = false;
+
     /// JOINs count
     size_t joins_count = 0;
 
     /// JOIN USING count (joins whose keys can retype a matched column)
     size_t using_joins_count = 0;
+
+    /// True while resolving a JOIN ON expression.
+    bool resolving_join_on_expression = false;
 
     /// Subquery depth
     size_t subquery_depth = 0;

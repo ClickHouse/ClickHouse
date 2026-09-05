@@ -180,3 +180,40 @@ def test_get_changed_tests_skips_unmappable_fixture():
     # would exit 1 on a zero-match run).
     diff = "+++ b/tests/queries/0_stateless/data_parquet/99999_no_such_test.parquet\n"
     assert _targeting_from_diff(diff).get_changed_tests() == []
+
+
+def _targeting_with_job_type(job_type):
+    targeter = Targeting.__new__(Targeting)
+    targeter.job_type = job_type
+    return targeter
+
+
+def test_existing_stateless_test_still_exists():
+    targeter = _targeting_with_job_type(Targeting.STATELESS_JOB_TYPE)
+    assert targeter._test_exists("00001_select_1")
+
+
+def test_rendered_stateless_template_test_still_exists():
+    targeter = _targeting_with_job_type(Targeting.STATELESS_JOB_TYPE)
+    assert targeter._test_exists("00172_hits_joins.gen")
+    assert targeter._test_exists("00172_hits_joins.gen.sql")
+
+
+def test_deleted_stateless_test_no_longer_exists():
+    # PR #110958 reproducer: `04648_geohashes_in_box_cancellation` failed on
+    # the PR, was then deleted from master as flaky, and the targeted job kept
+    # replaying its name from CIDB — clickhouse-test matched zero tests and
+    # exited 1 with "No tests were run.".
+    targeter = _targeting_with_job_type(Targeting.STATELESS_JOB_TYPE)
+    assert not targeter._test_exists("04648_geohashes_in_box_cancellation")
+
+
+def test_existing_integration_test_still_exists():
+    targeter = _targeting_with_job_type(Targeting.INTEGRATION_JOB_TYPE)
+    assert targeter._test_exists("test_storage_s3/test.py::test_case[param]")
+    assert targeter._test_exists("test_storage_s3")
+
+
+def test_deleted_integration_test_no_longer_exists():
+    targeter = _targeting_with_job_type(Targeting.INTEGRATION_JOB_TYPE)
+    assert not targeter._test_exists("test_no_such_directory/test.py::test_case")

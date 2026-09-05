@@ -1,7 +1,7 @@
 #pragma once
 #include <mutex>
 #include <boost/noncopyable.hpp>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ProfiledLocks.h>
 #include <Common/SharedMutex.h>
 #include <Common/SharedLockGuard.h>
 #include <absl/synchronization/mutex.h>
@@ -11,6 +11,9 @@ namespace ProfileEvents
     extern const Event FilesystemCacheStateLockMicroseconds;
     extern const Event FilesystemCachePriorityWriteLockMicroseconds;
     extern const Event FilesystemCachePriorityReadLockMicroseconds;
+    extern const Event FileSegmentLockMicroseconds;
+    extern const Event FilesystemCacheLockKeyMicroseconds;
+    extern const Event FilesystemCacheLockMetadataMicroseconds;
 }
 
 namespace DB
@@ -79,21 +82,26 @@ struct CachePriorityGuard : private boost::noncopyable
     /// non-interchangable with other guards locks,
     /// so we wouldn't be able to pass CachePriorityGuard::Lock to a function
     /// which accepts KeyGuard::Lock.
-    using WriteLock = std::unique_lock<SharedMutex>;
-    using ReadLock = std::shared_lock<SharedMutex>;
+    using WriteLock = ProfiledExclusiveLock<SharedMutex>;
+    using ReadLock = ProfiledSharedLock<SharedMutex>;
 
-    ReadLock tryReadLock() { return ReadLock(mutex, std::try_to_lock); }
-    WriteLock tryWriteLock() { return WriteLock(mutex, std::try_to_lock); }
-
-    ReadLock readLock()
+    ReadLock tryReadLock() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCachePriorityReadLockMicroseconds);
-        return ReadLock(mutex);
+        return ReadLock(mutex, ProfileEvents::FilesystemCachePriorityReadLockMicroseconds, std::try_to_lock);
     }
-    WriteLock writeLock()
+    WriteLock tryWriteLock() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCachePriorityWriteLockMicroseconds);
-        return WriteLock(mutex);
+        return WriteLock(mutex, ProfileEvents::FilesystemCachePriorityWriteLockMicroseconds, std::try_to_lock);
+    }
+
+    ReadLock readLock() TSA_NO_THREAD_SAFETY_ANALYSIS
+    {
+        return ReadLock(mutex, ProfileEvents::FilesystemCachePriorityReadLockMicroseconds);
+    }
+
+    WriteLock writeLock() TSA_NO_THREAD_SAFETY_ANALYSIS
+    {
+        return WriteLock(mutex, ProfileEvents::FilesystemCachePriorityWriteLockMicroseconds);
     }
 
 private:
@@ -103,32 +111,26 @@ private:
 /// State lock protects cache total size/elements counters.
 struct CacheStateGuard : private boost::noncopyable
 {
-    using Mutex = std::timed_mutex;
-
-    struct Lock : public std::unique_lock<Mutex>
+    struct Lock : public ProfiledExclusiveLock<std::timed_mutex>
     {
-        using Base = std::unique_lock<Mutex>;
+        using Base = ProfiledExclusiveLock<std::timed_mutex>;
         using Base::Base;
-
-        explicit Lock(Mutex & mutex_) : std::unique_lock<Mutex>(mutex_) {}
     };
 
-    Lock tryLock() { return Lock(mutex, std::try_to_lock); }
-
-    Lock lock()
+    Lock tryLock() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheStateLockMicroseconds);
-        return Lock(mutex);
+        return Lock(mutex, ProfileEvents::FilesystemCacheStateLockMicroseconds, std::try_to_lock);
     }
 
-    Lock tryLockFor(const std::chrono::milliseconds & acquire_timeout)
+    Lock lock() TSA_NO_THREAD_SAFETY_ANALYSIS { return Lock(mutex, ProfileEvents::FilesystemCacheStateLockMicroseconds); }
+
+    Lock tryLockFor(const std::chrono::milliseconds & acquire_timeout) TSA_NO_THREAD_SAFETY_ANALYSIS
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheStateLockMicroseconds);
-        return Lock(mutex, std::chrono::duration<double, std::milli>(acquire_timeout));
+        return Lock(mutex, ProfileEvents::FilesystemCacheStateLockMicroseconds, std::chrono::duration<double, std::milli>(acquire_timeout));
     }
 
 private:
-    Mutex mutex;
+    std::timed_mutex mutex;
 };
 
 /**
@@ -136,9 +138,10 @@ private:
  */
 struct CacheMetadataGuard : private boost::noncopyable
 {
-    struct Lock : public std::unique_lock<std::mutex>
+    struct Lock : public ProfiledExclusiveLock<std::mutex>
     {
-        explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {}
+        explicit Lock(std::mutex & mutex_)
+            : ProfiledExclusiveLock<std::mutex>(mutex_, ProfileEvents::FilesystemCacheLockMetadataMicroseconds) {}
     };
 
     Lock lock() { return Lock(mutex); }
@@ -150,9 +153,10 @@ struct CacheMetadataGuard : private boost::noncopyable
  */
 struct KeyGuard : private boost::noncopyable
 {
-    struct Lock : public std::unique_lock<std::mutex>
+    struct Lock : public ProfiledExclusiveLock<std::mutex>
     {
-        explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {}
+        explicit Lock(std::mutex & mutex_)
+            : ProfiledExclusiveLock<std::mutex>(mutex_, ProfileEvents::FilesystemCacheLockKeyMicroseconds) {}
     };
 
     Lock lock() { return Lock(mutex); }
@@ -164,9 +168,10 @@ struct KeyGuard : private boost::noncopyable
  */
 struct FileSegmentGuard : private boost::noncopyable
 {
-    struct Lock : public std::unique_lock<std::mutex>
+    struct Lock : public ProfiledExclusiveLock<std::mutex>
     {
-        explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {}
+        explicit Lock(std::mutex & mutex_)
+            : ProfiledExclusiveLock<std::mutex>(mutex_, ProfileEvents::FileSegmentLockMicroseconds) {}
     };
 
     Lock lock() { return Lock(mutex); }

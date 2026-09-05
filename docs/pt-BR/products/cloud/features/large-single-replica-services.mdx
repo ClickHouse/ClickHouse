@@ -1,0 +1,47 @@
+---
+sidebarTitle: 'Serviços grandes de réplica única'
+sidebar_label: 'Serviços grandes de réplica única'
+sidebar_position: 8
+slug: /cloud/features/large-single-replica-services
+title: 'Serviços grandes de réplica única'
+description: 'Entenda a disponibilidade e o escalonamento de serviços grandes de réplica única no ClickHouse Cloud'
+keywords: ['réplica única', 'escalonamento vertical', 'autoscaling', 'tier Scale', 'tier Enterprise']
+doc_type: 'guide'
+---
+
+Os serviços grandes de réplica única permitem executar um serviço do ClickHouse Cloud com uma única réplica de computação, usando os recursos de computação configuráveis disponíveis nos tiers Scale e Enterprise. Diferentemente dos serviços de tamanho fixo do tier Basic, o comportamento de escalonamento desses serviços depende do tier e do perfil de hardware.
+
+<div id="availability">
+  ## Disponibilidade
+</div>
+
+Serviços de réplica única estão disponíveis nos tiers Scale e Enterprise. Os serviços do tier Basic também usam uma única réplica, mas têm a memória total limitada a `8 GiB` ou `12 GiB` e não oferecem suporte a escalonamento vertical nem horizontal.
+
+Nos tiers Scale e Enterprise, você pode criar um serviço primário ou secundário com uma réplica sem entrar em contato com o suporte. Os serviços em um [warehouse](/pt-BR/products/cloud/features/infrastructure/warehouses) são escalonados de forma independente.
+
+<div id="when-to-use-a-single-replica-service">
+  ## Quando usar um serviço de réplica única
+</div>
+
+Um serviço grande de réplica única pode reduzir os custos de computação de workloads que exigem mais CPU ou memória do que um serviço no tier Basic, mas não precisam de redundância de computação. Ele também pode ser útil para desenvolvimento, testes, processamento em lote e outros workloads não críticos.
+
+<Warning>
+  Serviços de réplica única têm menor disponibilidade e não são recomendados para workloads de produção que exigem alta disponibilidade. Use pelo menos duas réplicas para garantir alta disponibilidade.
+</Warning>
+
+<div id="scaling">
+  ## Escalabilidade
+</div>
+
+O comportamento do escalonamento vertical depende do tier e do perfil de hardware:
+
+* Os serviços dos tiers Scale e Enterprise com perfis padrão `1:4` oferecem suporte ao [escalonamento vertical automático](/pt-BR/products/cloud/features/autoscaling/vertical). Você pode configurar os recursos mínimos e máximos de CPU e memória no Cloud Console.
+* Os serviços do tier Enterprise com perfis personalizados não oferecem suporte ao escalonamento vertical automático nem ao escalonamento vertical manual no Cloud Console. Entre em contato com o suporte para redimensionamento vertical.
+
+Os serviços dos tiers Scale e Enterprise oferecem suporte ao [escalonamento horizontal](/pt-BR/products/cloud/features/autoscaling/horizontal), permitindo aumentar para várias réplicas e reduzir novamente para uma única réplica.
+
+<div id="service-limits">
+  ## Limites de serviço
+</div>
+
+Os limites do tier Basic de `100` bancos de dados e `500` tabelas aplicam-se apenas a serviços de réplica única nesse tier. Os serviços de réplica única nos tiers Scale e Enterprise usam as proteções padrão do serviço. Para mais detalhes, consulte [Limites de uso](/pt-BR/products/cloud/guides/best-practices/usagelimits).

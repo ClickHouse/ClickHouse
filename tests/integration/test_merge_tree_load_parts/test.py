@@ -205,11 +205,6 @@ def test_merge_tree_load_parts_corrupted(started_cluster):
 
 def test_merge_tree_load_parts_filesystem_error(started_cluster):
     table = f"mt_load_parts_fs_error_{random_string(6)}"
-    if node3.is_built_with_sanitizer() or node3.is_debug_build():
-        pytest.skip(
-            "Skip with debug build and sanitizers. \
-            This test intentionally triggers LOGICAL_ERROR which leads to crash with those builds"
-        )
 
     node3.query(
         f"""
@@ -223,14 +218,13 @@ def test_merge_tree_load_parts_filesystem_error(started_cluster):
     for i in range(2):
         node3.query(f"INSERT INTO {table} VALUES ({i})")
 
-    # We want to somehow check that exception thrown on part creation is handled during part loading.
-    # It can be a filesystem exception triggered at initialization of part storage but it hard
-    # to trigger it because it should be an exception on stat/listDirectory.
-    # The most easy way to trigger such exception is to use chmod but clickhouse server
-    # is run with root user in integration test and this won't work. So let's do
-    # some stupid things: create a table without adaptive granularity and change mark
-    # extensions of data files in part to make clickhouse think that it's a compact part which
-    # cannot be created in such table. This will trigger a LOGICAL_ERROR on part creation.
+    # We want to check that an exception thrown while loading a part is handled: the part is
+    # detached as broken instead of taking down the server. To provoke a load-time exception we
+    # rename the part's mark file extension so the (non-adaptive) Wide part looks like a Compact
+    # part. Loading such a part fails later, when its columns/marks are read, and it is detached.
+    # (Building the part no longer raises a LOGICAL_ERROR - a Compact part is always adaptive, so
+    # a non-adaptive table can still load an existing Compact part - hence this runs on debug and
+    # sanitizer builds too.)
 
     def corrupt_part(table, part_name):
         part_path = node3.query(

@@ -400,7 +400,7 @@ SELECT greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12
 * 条件 `cond` が非ゼロの値として評価された場合、この関数は式 `then` の結果を返します。
 * `cond` が 0 または NULL として評価された場合は、式 `else` の結果が返されます。
 
-設定 [`short_circuit_function_evaluation`](/ja/reference/settings/session-settings#short_circuit_function_evaluation) では、短絡評価を使用するかどうかを制御します。
+設定 [`short_circuit_function_evaluation`](/ja/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) では、短絡評価を使用するかどうかを制御します。
 
 有効な場合、式 `then` は `cond` が true の行でのみ評価され、式 `else` は `cond` が false の行でのみ評価されます。
 
@@ -524,7 +524,7 @@ SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00
 各条件は順番に評価されます。最初に true (非ゼロかつ `NULL` ではない) となった条件に対応する分岐値を返します。
 いずれの条件も true でない場合は、`else` の値を返します。
 
-設定 [`short_circuit_function_evaluation`](/ja/reference/settings/session-settings#short_circuit_function_evaluation) は、
+設定 [`short_circuit_function_evaluation`](/ja/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) は、
 短絡評価を使用するかどうかを制御します。有効な場合、`then_i` 式は
 `((NOT cond_1) AND ... AND (NOT cond_{i-1}) AND cond_i)` が true になる行でのみ評価されます。
 

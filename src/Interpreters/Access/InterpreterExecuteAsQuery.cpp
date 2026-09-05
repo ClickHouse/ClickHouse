@@ -29,6 +29,12 @@ namespace
         new_context->makeQueryContext();
         new_context->setCurrentQueryId({});
 
+        /// The wrapped statement is part of the same query the caller sent, so its query parameters
+        /// (`{name:Type}`) travel with it. Without this, any parameterized statement under `EXECUTE AS` -
+        /// including one stored in a SQL-defined HTTP handler, where the parameters were validated at
+        /// CREATE HANDLER time and bound from the request - fails with UNKNOWN_QUERY_PARAMETER.
+        new_context->setQueryParameters(context->getQueryParameters());
+
         const auto & database = context->getCurrentDatabase();
         if (!database.empty() && database != new_context->getCurrentDatabase())
             new_context->setCurrentDatabase(database);

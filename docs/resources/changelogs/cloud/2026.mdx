@@ -13,18 +13,45 @@ import { Image } from "/snippets/components/Image.jsx";
 In addition to this ClickHouse Cloud changelog, please see the [Cloud Compatibility](/products/cloud/guides/cloud-compatibility) page.
 
 
+<Update label="August 17, 2026">
+
+This week's updates bring broader platform reach and better operational visibility. Managed Postgres is now available on GCP for selected design partners, ClickStack resources can be managed through the official Terraform provider, and new billing notifications give customers early warning before credits expire or service is interrupted. We also shipped improved tracing for ClickHouse Agents and a smoother SAML sign-in experience.
+
+### Managed Postgres now available on GCP {#managed-postgres-now-available-on-gcp}
+
+[ClickHouse Cloud Managed Postgres](/products/managed-postgres/overview) is now available on GCP for selected design partners across all public GCP regions, with `us-west1` as the first private region. This extends Managed Postgres to customers building on GCP, with Private Preview planned for 2026-08.
+
+### Manage ClickStack resources with Terraform {#manage-clickstack-resources-with-terraform}
+
+ClickStack support is now available in beta through version 3.25.0 of the official [`ClickHouse/clickhouse` Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs#clickstack-alpha). Teams can create, update, import, and remove dashboards, alerts, sources, saved searches, connections, and webhooks using the standard `terraform plan` and `terraform apply` workflow. The integration supports both Managed ClickStack and self-hosted deployments.
+
+### New billing notifications for credits and payments {#new-billing-notifications-for-credits-and-payments}
+
+Billing notifications are now managed through the ClickHouse Cloud Notification Center, with delivery through the console, email, and Slack. Customers receive advance notice when prepaid or trial credits are about to expire or run out, as well as notifications when credits are added, payment methods change, or an account enters a non-payment grace period. This provides more time to renew, add credits, or resolve payment issues before service is interrupted.
+
+### Open Langfuse session traces from ClickHouse Agents {#open-langfuse-session-traces-from-clickhouse-agents}
+
+Organization administrators can now open the corresponding Langfuse session directly from a [ClickHouse Agents](/products/cloud/features/ai-ml/agents/index) chat and inspect traces for the entire conversation. This makes it easier to investigate agent behavior and debug multi-step runs. The improvement is available in Public Beta for newly created chats.
+
+### SAML redirects help prevent duplicate accounts {#saml-redirects-help-prevent-duplicate-accounts}
+
+When a user attempts to sign in with Google or Microsoft while SAML is configured for their organization, ClickHouse Cloud now redirects them to the correct SAML sign-in flow. This helps prevent users from accidentally creating a separate organization when they intended to access an existing account.
+
+</Update>
+
+
 <Update label="July 13, 2026">
 
 This week's updates include sticky replica routing over plain HTTPS, custom billing period start dates, and new initial-load controls for object storage ClickPipes.
 
 ### Sticky replica routing over HTTPS (private preview)
-You can now pin queries to a specific replica over standard HTTPS by adding a `?session_id=` parameter to your normal service URL, with no special hostnames or DNS changes required. This keeps session-scoped objects such as temporary tables available across queries, and helps repeated queries hit warm replica-local caches. It's rolling out in private preview to all Enterprise customers, and to Scale customers on request. The existing subdomain-based routing keeps working but will eventually migrate to this approach. See the [replica-aware routing](/manage/replica-aware-routing) docs.
+You can now pin queries to a specific replica over standard HTTPS by adding a `?session_id=` parameter to your normal service URL, with no special hostnames or DNS changes required. This keeps session-scoped objects such as temporary tables available across queries, and helps repeated queries hit warm replica-local caches. It's rolling out in private preview to all Enterprise customers, and to Scale customers on request. The existing subdomain-based routing keeps working but will eventually migrate to this approach. See the [replica-aware routing](/products/cloud/features/infrastructure/replica-aware-routing) docs.
 
 ### Custom billing period start dates
 You can now request a change to your organization's billing date, the day of the month each billing period starts, for example to align invoices with the calendar month. Open a support ticket with your requested date. Billing dates apply in UTC, and each invoice covers usage from the billing date up to (but not including) the same date the following month.
 
 ### Skip initial load for object storage ClickPipes
-Object storage [ClickPipes](/integrations/clickpipes) (S3, GCS, and Azure Blob Storage) now offer two ways to control the initial load when you create a pipe: **Start after**, which skips files up to and including a given object key, and **Skip initial load**, which skips pre-existing files entirely and processes only new object notifications. Previously a new pipe always backfilled every file in the path. The two options are mutually exclusive and permanent for a given pipe: a skipped backfill can't be triggered later. Available in the UI, the Cloud API, and Terraform v3.18.0 and later.
+Object storage [ClickPipes](/integrations/clickpipes/home) (S3, GCS, and Azure Blob Storage) now offer two ways to control the initial load when you create a pipe: **Start after**, which skips files up to and including a given object key, and **Skip initial load**, which skips pre-existing files entirely and processes only new object notifications. Previously a new pipe always backfilled every file in the path. The two options are mutually exclusive and permanent for a given pipe: a skipped backfill can't be triggered later. Available in the UI, the Cloud API, and Terraform v3.18.0 and later.
 
 </Update>
 

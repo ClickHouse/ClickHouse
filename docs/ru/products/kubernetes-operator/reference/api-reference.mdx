@@ -14,7 +14,7 @@ sidebarTitle: 'Справочник по API'
   ## AdditionalPort
 </div>
 
-AdditionalPort задаёт один дополнительный TCP-порт, который будет открыт на поде ClickHouse и в headless Service, управляемом оператором.
+AdditionalPort задаёт один дополнительный TCP-порт, который будет открыт на поде ClickHouse и в публичном headless Service.
 
 | Поле   | Тип     | Описание                                                                                                                                                 | Обязательно | По умолчанию |
 | ------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------ |
@@ -106,7 +106,7 @@ ClickHouseClusterSpec определяет желаемое состояние C
 | `upgradeChannel`                 | string                                                                                                                              | канал релизов указывает канал релизов для проверки обновлений мажорной версии.<br />Если не задано, будут предлагаться только минорные обновления. Допустимые значения: stable, lts или конкретная версия major.minor (например, 25.8).                                                                                         | false        |               |
 | `versionProbeTemplate`           | [VersionProbeTemplate](#versionprobetemplate)                                                                                       | VersionProbeTemplate — переопределения для задачи определения версии.                                                                                                                                                                                                                                                           | false        |               |
 | `externalSecret`                 | [ExternalSecret](#externalsecret)                                                                                                   | ExternalSecret — необязательная ссылка на управляемый извне Secret, содержащий секреты кластера.<br />Secret должен находиться в том же пространстве имён, что и кластер.                                                                                                                                                       | false        |               |
-| `additionalPorts`                | [AdditionalPort](#additionalport) array                                                                                             | AdditionalPorts объявляет дополнительные TCP-порты для открытия на поде ClickHouse и управляемом оператором headless Service.<br />Оператор только добавляет порты в ресурсы Kubernetes, но не настраивает сервер ClickHouse для прослушивания на них.                                                                          | false        |               |
+| `additionalPorts`                | [AdditionalPort](#additionalport) array                                                                                             | AdditionalPorts объявляет дополнительные TCP-порты для открытия на поде ClickHouse и публичном headless Service.<br />Оператор только добавляет порты в ресурсы Kubernetes, но не настраивает сервер ClickHouse для прослушивания на них.                                                                                       | false        |               |
 
 Встречается в:
 

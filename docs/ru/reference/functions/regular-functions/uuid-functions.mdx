@@ -235,7 +235,7 @@ UUIDv7ToDateTime(uuid[, timezone])
 **Аргументы**
 
 * `uuid` — UUID версии 7. [`String`](/ru/reference/data-types/string)
-* `timezone` — Необязательный параметр. [Имя часового пояса](/ru/reference/settings/server-settings/settings#timezone) для возвращаемого значения. [`String`](/ru/reference/data-types/string)
+* `timezone` — Необязательный параметр. [Имя часового пояса](/ru/reference/settings/server-settings/settings/other#timezone) для возвращаемого значения. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
@@ -343,13 +343,9 @@ SELECT dateTimeToSnowflakeID(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))
 
 Добавленный в: v25.8.0
 
-Преобразует значение [DateTime](/ru/reference/data-types/datetime) в [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7) для указанного момента времени.
+Преобразует значение [DateTime](/ru/reference/data-types/datetime) в [UUIDv7](https://www.rfc-editor.org/rfc/rfc9562) для указанного момента времени в соответствии с [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562).
 
 Подробные сведения о структуре UUID, управлении счётчиком и гарантиях параллелизма см. в разделе [&quot;Генерация UUIDv7&quot;](#uuidv7-generation).
-
-<Note>
-  По состоянию на сентябрь 2025 года UUID версии 7 имеют статус черновика, и их структура может измениться в будущем.
-</Note>
 
 <Note>
   Эта функция недетерминированная: она может возвращать разные результаты для одних и тех же аргументов.
@@ -533,13 +529,9 @@ SELECT generateUUIDv4(1), generateUUIDv4(1);
 
 Добавленный в: v24.5.0
 
-Генерирует [UUID версии 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04) типа [UUID](/ru/reference/data-types/uuid).
+Генерирует [UUID версии 7](https://www.rfc-editor.org/rfc/rfc9562) типа [UUID](/ru/reference/data-types/uuid), определённый в [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562).
 
 Подробные сведения о структуре UUID, управлении счётчиком и гарантиях параллелизма см. в разделе [&quot;Генерация UUIDv7&quot;](#uuidv7-generation).
-
-<Note>
-  По состоянию на сентябрь 2025 года UUID версии 7 имеют статус черновика, и их структура в будущем может измениться.
-</Note>
 
 <Note>
   Эта функция недетерминированная: она может возвращать разные результаты для одних и тех же аргументов.
@@ -605,7 +597,7 @@ snowflakeIDToDateTime(value[, epoch[, time_zone]])
 
 * `value` — Snowflake ID. [`UInt64`](/ru/reference/data-types/int-uint)
 * `epoch` — Необязательно. Эпоха Snowflake ID в миллисекундах, отсчитываемых с 1970-01-01. Значение по умолчанию — 0 (1970-01-01). Для эпохи Twitter/X (2015-01-01) укажите 1288834974657. [`UInt*`](/ru/reference/data-types/int-uint)
-* `time_zone` — Необязательно. [Часовой пояс](/ru/reference/settings/server-settings/settings#timezone). Функция разбирает `time_string` с учетом часового пояса. [`String`](/ru/reference/data-types/string)
+* `time_zone` — Необязательно. [Часовой пояс](/ru/reference/settings/server-settings/settings/other#timezone). Функция разбирает `time_string` с учетом часового пояса. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
@@ -643,7 +635,7 @@ snowflakeIDToDateTime64(value[, epoch[, time_zone]])
 
 * `value` — Snowflake ID. [`UInt64`](/ru/reference/data-types/int-uint)
 * `epoch` — Необязательно. Эпоха Snowflake ID в миллисекундах с 1970-01-01. По умолчанию — 0 (1970-01-01). Для эпохи Twitter/X (2015-01-01) укажите 1288834974657. [`UInt*`](/ru/reference/data-types/int-uint)
-* `time_zone` — Необязательно. [Часовой пояс](/ru/reference/settings/server-settings/settings#timezone). Функция интерпретирует `time_string` в соответствии с часовым поясом. [`String`](/ru/reference/data-types/string)
+* `time_zone` — Необязательно. [Часовой пояс](/ru/reference/settings/server-settings/settings/other#timezone). Функция интерпретирует `time_string` в соответствии с часовым поясом. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 

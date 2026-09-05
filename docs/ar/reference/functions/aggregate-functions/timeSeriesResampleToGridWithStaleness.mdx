@@ -18,7 +18,7 @@ doc_type: 'reference'
 الاسم المستعار: `timeSeriesLastToGrid`.
 
 <Warning>
-  هذه الدالة تجريبية. فعّلها بتعيين `allow_experimental_ts_to_grid_aggregate_function=true`.
+  هذه الدالة تجريبية. فعّلها بتعيين `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>
 
 **البنية**
@@ -31,10 +31,10 @@ timeSeriesResampleToGridWithStaleness(start_timestamp, end_timestamp, grid_step,
 
 **المعلمات**
 
-* `start_timestamp` — يحدّد بداية الشبكة. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime)
-* `end_timestamp` — يحدّد نهاية الشبكة. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime)
-* `grid_step` — يحدّد خطوة الشبكة بالثواني. [`UInt32`](/ar/reference/data-types/int-uint)
-* `staleness_window` — يحدّد الحد الأقصى لتقادُم أحدث عيّنة بالثواني. [`UInt32`](/ar/reference/data-types/int-uint)
+* `start_timestamp` — يحدّد بداية الشبكة. مع وسيطة طابع زمني من نوع `DateTime64`، يمكن أن يكون أيضاً رقماً كسرياً أو سلسلة تحتوي على رقم أو نص تاريخ ووقت. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
+* `end_timestamp` — يحدّد نهاية الشبكة. مع وسيطة طابع زمني من نوع `DateTime64`، يمكن أن يكون أيضاً رقماً كسرياً أو سلسلة تحتوي على رقم أو نص تاريخ ووقت. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
+* `grid_step` — يحدّد خطوة الشبكة بالثواني. مع وسيطة طابع زمني من نوع `DateTime64`، يمكن أن يكون أيضاً رقماً كسرياً أو سلسلة تحتوي على رقم أو مدة مثل &#39;15s&#39; أو &#39;1m&#39;. [`UInt32`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
+* `staleness_window` — يحدّد الحد الأقصى لتقادُم أحدث عيّنة بالثواني. مع وسيطة طابع زمني من نوع `DateTime64`، يمكن أن يكون أيضاً رقماً كسرياً أو سلسلة تحتوي على رقم أو مدة مثل &#39;15s&#39; أو &#39;1m&#39;. [`UInt32`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
 
 **الوسائط**
 

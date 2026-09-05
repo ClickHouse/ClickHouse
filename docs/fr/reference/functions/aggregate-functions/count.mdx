@@ -23,14 +23,14 @@ ClickHouse prend en charge les syntaxes suivantes pour `count` :
 **Détails**
 
 ClickHouse prend en charge la syntaxe `COUNT(DISTINCT ...)`.
-Le comportement de cette construction dépend du paramètre [`count_distinct_implementation`](/fr/reference/settings/session-settings#count_distinct_implementation).
+Le comportement de cette construction dépend du paramètre [`count_distinct_implementation`](/fr/reference/settings/session-settings/count-distinct#count_distinct_implementation).
 Il détermine quelle fonction de la famille [uniq*](/fr/reference/functions/aggregate-functions/uniq) est utilisée pour effectuer l&#39;opération.
 La valeur par défaut est la fonction [uniqExact](/fr/reference/functions/aggregate-functions/uniqExact).
 
 La requête `SELECT count() FROM table` est optimisée par défaut à l&#39;aide des métadonnées de MergeTree.
-Si vous devez utiliser la sécurité au niveau des lignes, désactivez cette optimisation à l&#39;aide du paramètre [`optimize_trivial_count_query`](/fr/reference/settings/session-settings#optimize_trivial_count_query).
+Si vous devez utiliser la sécurité au niveau des lignes, désactivez cette optimisation à l&#39;aide du paramètre [`optimize_trivial_count_query`](/fr/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query).
 
-Cependant, la requête `SELECT count(nullable_column) FROM table` peut être optimisée en activant le paramètre [`optimize_functions_to_subcolumns`](/fr/reference/settings/session-settings#optimize_functions_to_subcolumns).
+Cependant, la requête `SELECT count(nullable_column) FROM table` peut être optimisée en activant le paramètre [`optimize_functions_to_subcolumns`](/fr/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 Avec `optimize_functions_to_subcolumns = 1`, la fonction lit uniquement la sous-colonne [`null`](/fr/reference/data-types/nullable#finding-null) au lieu de lire et traiter l&#39;ensemble des données de la colonne.
 La requête `SELECT count(n) FROM table` est transformée en `SELECT sum(NOT n.null) FROM table`.
 

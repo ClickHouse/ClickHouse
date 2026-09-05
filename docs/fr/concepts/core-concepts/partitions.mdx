@@ -44,7 +44,7 @@ Vous pouvez [interroger cette table](https://sql.clickhouse.com/?query=U0VMRUNUI
   ### Structure sur disque
 </div>
 
-Chaque fois qu’un ensemble de lignes est inséré dans la table, au lieu de créer une seule partie de données contenant toutes les lignes insérées (au [minimum](/fr/reference/settings/session-settings#max_insert_block_size)), comme décrit [ici](/fr/concepts/core-concepts/parts), ClickHouse crée une nouvelle partie de données pour chaque valeur unique de clé de partition parmi les lignes insérées :
+Chaque fois qu’un ensemble de lignes est inséré dans la table, au lieu de créer une seule partie de données contenant toutes les lignes insérées (au [moins](/fr/reference/settings/session-settings/max-insert#max_insert_block_size)), comme décrit [ici](/fr/concepts/core-concepts/parts), ClickHouse crée une nouvelle partie de données pour chaque valeur unique de clé de partition parmi les lignes insérées :
 
 <Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="TRAITEMENT DE L’INSERTION" />
 
@@ -217,7 +217,7 @@ La sortie ci-dessus montre :
 Peak memory usage: 2.73 MiB.
 ```
 
-Cela signifie que ClickHouse a analysé et traité 1 granule (bloc de [8192](/fr/reference/settings/merge-tree-settings#index_granularity) lignes) en 6 millisecondes pour calculer le résultat de la requête.
+Cela signifie que ClickHouse a analysé et traité 1 granule (bloc de [8192](/fr/reference/settings/merge-tree-settings/index-granularity#index_granularity) lignes) en 6 millisecondes pour calculer le résultat de la requête.
 
 <div id="partitioning-is-primarily-a-data-management-feature">
   ### Le partitionnement est avant tout une fonctionnalité de gestion des données

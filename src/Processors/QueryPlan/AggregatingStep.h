@@ -20,6 +20,12 @@ Block generateOutputHeader(const Block & input_header, const Names & keys, bool 
 /// the choice has to be communicated to a remote peer errs on the side of communicating it.
 bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params);
 
+/// Whether `dag` forwards the column `name` unchanged (possibly through aliases). Guards the GROUP BY top-K
+/// optimization: the heap ranks the aggregation keys, so every expression between the aggregation and the sort
+/// must hand the sorted key through untouched. If such an expression computed a new value and published it under
+/// the key's name, the sort would order by something the heap never ranked and pruning could drop real winners.
+bool isSortKeyPassThrough(const ActionsDAG & dag, const String & name);
+
 class AggregatingProjectionStep;
 
 /// Aggregation. See AggregatingTransform.
@@ -68,6 +74,15 @@ public:
     void describePipeline(FormatSettings & settings) const override;
 
     const Aggregator::Params & getParams() const { return params; }
+    bool isFinal() const { return final; }
+
+    /// See `Aggregator::Params::bucket_top_k`; called by the plan optimization.
+    void enableBucketTopK(size_t n, bool ascending, size_t count_index)
+    {
+        params.bucket_top_k = n;
+        params.bucket_top_k_ascending = ascending;
+        params.bucket_top_k_count_index = count_index;
+    }
 
     const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
     bool isGroupByUseNulls() const { return group_by_use_nulls; }
@@ -76,6 +91,7 @@ public:
     bool explicitSortingRequired() const { return explicit_sorting_required_for_aggregation_in_order; }
     bool isGroupingSets() const { return !grouping_sets_params.empty(); }
     void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
+    void applyTopKOptimization(Aggregator::Params::TopKParams top_k);
     bool memoryBoundMergingWillBeUsed() const;
     void skipMerging() { skip_merging = true; }
     void setLimitHint(size_t limit) { limit_hint = limit; }
@@ -86,6 +102,9 @@ public:
 
     bool canUseProjection() const;
     bool canUseShardedAggregation(const QueryPipelineBuilder & pipeline) const;
+    /// Returns nullptr when the adaptive aggregator can engage, and otherwise a short reason
+    /// for the trace log.
+    const char * adaptiveAggregatorRejectionReason(const QueryPipelineBuilder & pipeline) const;
     /// When we apply aggregate projection (which is full), this step will only merge data.
     /// Argument input_stream replaces current single input.
     /// Probably we should replace this step to MergingAggregated later? (now, aggregation-in-order will not work)
@@ -124,11 +143,13 @@ public:
     void setStatsCacheKey(UInt64 stats_cache_key) { params.stats_collecting_params.setKey(stats_cache_key); }
     bool getFinal() const noexcept { return final; }
     void setFinal(bool new_value);
+    void setProduceResultsInBucketOrder(bool new_value) { should_produce_results_in_order_of_bucket_number = new_value; }
     size_t getMaxBlockSize() const noexcept { return max_block_size; }
     size_t getMaxBlockSizeForAggregationInOrder() const noexcept { return aggregation_in_order_max_block_bytes; }
     size_t getMergeThreads() const noexcept { return merge_threads; }
     size_t getTemporaryDataMergeThreads() const noexcept { return temporary_data_merge_threads; }
     bool shouldProduceResultsInBucketOrder() const noexcept { return should_produce_results_in_order_of_bucket_number; }
+    void setShouldProduceResultsInBucketOrder(bool new_value) { should_produce_results_in_order_of_bucket_number = new_value; }
     bool usingMemoryBoundMerging() const noexcept { return memory_bound_merging_of_aggregation_results_enabled; }
 
     bool supportsDataflowStatisticsCollection() const override
@@ -159,7 +180,7 @@ private:
     SortDescription group_by_sort_description;
 
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
-    const bool should_produce_results_in_order_of_bucket_number;
+    bool should_produce_results_in_order_of_bucket_number;
     bool memory_bound_merging_of_aggregation_results_enabled;
     bool explicit_sorting_required_for_aggregation_in_order;
     bool enable_sharding_aggregator;
@@ -192,6 +213,7 @@ public:
     String getStepGroupName(size_t group) const override;
 
     const Aggregator::Params & getParams() const { return params; }
+
 
 private:
     void updateOutputHeader() override;

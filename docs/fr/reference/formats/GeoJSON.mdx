@@ -26,23 +26,23 @@ Les données [GeoJSON](https://geojson.org/) sont échangées sous la forme d’
   ## Lecture des données
 </div>
 
-La lecture d’une `FeatureCollection` produit une ligne par feature avec le schéma fixe suivant :
+La lecture d&#39;une `FeatureCollection` produit une ligne par feature avec le schéma fixe suivant :
 
-| Colonne      | Type               | Description                                                                                                                                                                                               |
-| ------------ | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Colonne      | Type               | Description                                                                                                                                                                                                 |
+| ------------ | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`         | `Nullable(String)` | Le membre `id` de la feature (une chaîne JSON ou un nombre), stocké sous forme de texte ; `NULL` si `id` est absent ou `null`, tandis qu’un identifiant explicitement vide est conservé sous la forme `''`. |
 | `geometry`   | `Geometry`         | La géométrie de la feature, stockée dans un type `Geometry` variant.                                                                                                                                        |
 | `properties` | `Nullable(JSON)`   | L’objet `properties` de la feature, stocké dans une colonne `JSON` semi-structurée. Une valeur explicite `"properties": null` est conservée sous forme de `NULL`.                                           |
 
-Chaque géométrie est stockée dans le type `Geometry` de ClickHouse (un `Variant`). Les types de géométrie GeoJSON pris en charge sont `Point`, `LineString`, `MultiLineString`, `Polygon` et `MultiPolygon`. Les deux autres types de géométrie GeoJSON, `GeometryCollection` et `MultiPoint`, ne peuvent pas être représentés par le type `Geometry` ; la lecture de l’un d’eux dans la colonne `geometry` lève par défaut une exception, mais ce comportement peut être modifié pour insérer `NULL` à la place — voir [Gestion des types de géométrie non pris en charge](#unsupported-geometry) ci-dessous. Par défaut, la colonne `geometry` vaut `NULL` uniquement lorsque la géométrie d’une feature est un `null` JSON explicite ; avec `input_format_geojson_unsupported_geometry_handling = 'null'`, elle vaut également `NULL` pour un type de géométrie non pris en charge.
+Chaque géométrie est stockée dans le type `Geometry` de ClickHouse (un `Variant`). Les types de géométrie GeoJSON pris en charge sont `Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Polygon` et `MultiPolygon`. Le type de géométrie GeoJSON restant, `GeometryCollection`, ne peut pas être représenté par le type `Geometry` ; sa lecture dans la colonne `geometry` lève par défaut une exception, mais ce comportement peut être modifié pour insérer `NULL` à la place — voir [Gestion des types de géométrie non pris en charge](#unsupported-geometry) ci-dessous. Par défaut, la colonne `geometry` vaut `NULL` uniquement lorsque la géométrie d&#39;une feature est un `null` JSON explicite ; avec `input_format_geojson_unsupported_geometry_handling = 'null'`, elle vaut également `NULL` pour un type de géométrie non pris en charge.
 
-La structure du document est validée : le `type` de premier niveau doit être `FeatureCollection` et chaque élément de `features` doit avoir pour `type` `Feature`. Par défaut, les coordonnées doivent respecter les invariants de forme du GeoJSON — une `LineString` (et chaque ligne d’une `MultiLineString`) doit comporter au moins deux points, et un anneau de `Polygon` (ainsi que chaque anneau d’un `MultiPolygon`) doit être fermé et comporter au moins quatre points (voir [Validation de la géométrie](#geometry-validation)). Les documents malformés sont rejetés plutôt que chargés silencieusement.
+La structure du document est validée : le `type` de premier niveau doit être `FeatureCollection` et chaque élément de `features` doit avoir pour `type` `Feature`. Par défaut, les coordonnées doivent respecter les invariants de forme du GeoJSON — une `LineString` (et chaque ligne d&#39;une `MultiLineString`) doit comporter au moins deux points, et un anneau de `Polygon` (ainsi que chaque anneau d&#39;un `MultiPolygon`) doit être fermé et comporter au moins quatre points (voir [Validation de la géométrie](#geometry-validation)). Les documents malformés sont rejetés plutôt que chargés silencieusement.
 
-L’ordre des clés est souple : le `type` de premier niveau peut apparaître avant ou après le tableau `features`, et dans un objet géométrique, `coordinates` peut apparaître avant ou après `type`.
+L&#39;ordre des clés est souple : le `type` de premier niveau peut apparaître avant ou après le tableau `features`, et dans un objet géométrique, `coordinates` peut apparaître avant ou après `type`.
 
-L’inférence de schéma renvoie le schéma fixe ci-dessus, de sorte que `DESCRIBE` et `SELECT ... FROM format(...)` fonctionnent sans définition de table.
+L&#39;inférence de schéma renvoie le schéma fixe ci‑dessus, de sorte que `DESCRIBE` et `SELECT ... FROM format(...)` fonctionnent sans définition de table.
 
-Considérons le fichier GeoJSON `london.geojson` ci-dessous, qui contient un mélange de types de géométrie :
+Considérons le fichier GeoJSON `london.geojson` ci-dessous, qui contient un mélange de types de géométrie :
 
 ```json
 {
@@ -76,7 +76,7 @@ Considérons le fichier GeoJSON `london.geojson` ci-dessous, qui contient un mé
 }
 ```
 
-Nous pouvons interroger le fichier et examiner les types de géométrie :
+Nous pouvons interroger le fichier et examiner les types de géométrie :
 
 ```sql title="Query"
 SELECT id, properties.name AS name, variantType(geometry) AS geo_type
@@ -91,7 +91,7 @@ FROM file('london.geojson', GeoJSON);
 └────┴─────────────────┴────────────┘
 ```
 
-L’extension de fichier `.geojson` est détectée automatiquement ; l’argument de format peut donc être omis :
+L&#39;extension de fichier `.geojson` est détectée automatiquement, de sorte que l&#39;argument de format peut être omis :
 
 ```sql title="Query"
 SELECT id, properties.name AS name, variantType(geometry) AS geo_type
@@ -213,7 +213,7 @@ DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
   ### Gestion des types de géométrie non pris en charge
 </div>
 
-Certains types de géométrie GeoJSON valides — tels que `GeometryCollection` et `MultiPoint` — ne peuvent pas être représentés par le type `Geometry` de ClickHouse. Vous pouvez contrôler le comportement lorsqu&#39;une telle géométrie doit être stockée dans la colonne `geometry` à l&#39;aide du paramètre `input_format_geojson_unsupported_geometry_handling`. Les valeurs possibles sont :
+Certains types de géométrie GeoJSON valides — tels que `GeometryCollection` — ne peuvent pas être représentés par le type `Geometry` de ClickHouse. Vous pouvez contrôler le comportement lorsqu&#39;une telle géométrie doit être stockée dans la colonne `geometry` à l&#39;aide du paramètre `input_format_geojson_unsupported_geometry_handling`. Les valeurs possibles sont :
 
 * `'throw'` — générer une exception (par défaut)
 * `'null'` — insérer une valeur `NULL` dans la colonne `geometry` et continuer l&#39;analyse
@@ -230,7 +230,7 @@ La lecture ne restitue que ce qui correspond au schéma fixe ; certaines informa
 * La troisième coordonnée (altitude) d’une position, ainsi que toutes les suivantes, sont supprimées — les positions deviennent `[longitude, latitude]`.
 * `bbox` et les membres externes (comme un `name` ou un `crs` au niveau supérieur, ou des membres supplémentaires dans une `Feature`) sont ignorés.
 * Un `id` numérique est stocké sous forme de texte ; la distinction entre chaîne et nombre est donc perdue ; un `id` absent ou `null` devient `NULL`.
-* `GeometryCollection` et `MultiPoint` ne peuvent pas être représentés — voir [Gestion des types de géométrie non pris en charge](#unsupported-geometry).
+* `GeometryCollection` ne peut pas être représenté — voir [Gestion des types de géométrie non pris en charge](#unsupported-geometry).
 
 <div id="writing-data">
   ## Écriture des données
@@ -252,6 +252,7 @@ La colonne de type géométrique peut être la variante `Geometry` ou un type Ge
 | Type ClickHouse   | GeoJSON `"type"`                          |
 | ----------------- | ----------------------------------------- |
 | `Point`           | `Point`                                   |
+| `MultiPoint`      | `MultiPoint`                              |
 | `LineString`      | `LineString`                              |
 | `MultiLineString` | `MultiLineString`                         |
 | `Polygon`         | `Polygon`                                 |

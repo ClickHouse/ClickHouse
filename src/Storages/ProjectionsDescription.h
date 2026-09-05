@@ -200,6 +200,9 @@ struct ProjectionsDescription : public IHints<>
     add(ProjectionDescription && projection, const String & after_projection = String(), bool first = false, bool if_not_exists = false);
     void remove(const String & projection_name, bool if_exists);
 
+    /// Replace an existing projection in place, keeping its position (for `ALTER TABLE ... MODIFY PROJECTION`).
+    void replace(ProjectionDescription && projection);
+
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
 private:

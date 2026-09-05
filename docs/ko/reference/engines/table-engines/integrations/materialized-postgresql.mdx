@@ -50,6 +50,23 @@ PRIMARY KEY key;
 * `user` — PostgreSQL 사용자 이름.
 * `password` — 사용자 비밀번호.
 
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
+
+TLS/SSL 매개변수는 `libpq`로 전달되며, [명명된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 통해 제공하거나 엔진의 후행 키-값 인수로 지정할 수 있습니다. `sslmode`(`disable`, `allow`, `prefer`, `require`, `verify-ca` 또는 `verify-full`; 설정하지 않으면 `libpq`의 기본값인 `prefer`가 적용됨)와 인증서 및 키는 두 가지 형식 중 하나로 지정할 수 있습니다. `sslrootcert`(CA 인증서), `sslcert`(클라이언트 인증서), `sslkey`(클라이언트 private key)는 서버 로컬 파일의 경로이며, 서버 설정 파일에 정의된 명명된 컬렉션에서만 사용할 수 있습니다. 대신 `sslrootcert_pem`, `sslcert_pem`, `sslkey_pem`에는 해당 파일의 리터럴 내용을 지정할 수 있으며, SQL에서 지정할 수 있고 비밀번호와 마찬가지로 로그 및 `SHOW` 쿼리에서 마스킹됩니다.
+
+```sql
+CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_table', 'postgres_user', 'postgres_password',
+                                sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----')
+PRIMARY KEY key;
+```
+
+TLS/SSL 매개변수는 테이블 생성 시 고정되는 PostgreSQL 연결 매개변수에 포함됩니다.
+
 <div id="requirements">
   ## 요구 사항
 </div>

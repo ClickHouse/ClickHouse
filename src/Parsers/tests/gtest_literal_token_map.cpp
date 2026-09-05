@@ -103,7 +103,7 @@ TEST(LiteralTokenMap, GrowsBeyondInlineCapacity)
 
 TEST(LiteralTokenMap, AgreesWithUnorderedMap)
 {
-    std::mt19937_64 rng(12345); /// NOLINT(cert-msc32-c,cert-msc51-cpp) deterministic seed, so a failure is reproducible
+    std::mt19937_64 rng(12345); /// NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) deterministic seed, so a failure is reproducible
 
     for (int round = 0; round < 500; ++round)
     {

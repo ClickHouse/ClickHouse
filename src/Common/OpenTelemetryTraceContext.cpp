@@ -50,7 +50,7 @@ namespace OpenTelemetry
 {
 
 /// This code can be executed inside fibers, we should use fiber local tracing context.
-thread_local static FiberLocal<TracingContextOnThread> current_trace_context;
+static FiberLocal<TracingContextOnThread> & current_trace_context = FiberLocal<TracingContextOnThread>::instance();
 
 bool Span::addAttribute(std::string_view name, UInt64 value) noexcept
 {
@@ -280,7 +280,9 @@ bool TracingContext::parseTraceparentHeader(std::string_view traceparent, String
     }
 
     ++data;
-    this->trace_flags = unhex2(data);
+    /// Keep only the W3C-defined sampled bit: the header comes from an external client, which
+    /// must not be able to set internal feature flags
+    this->trace_flags = unhex2(data) & TRACE_FLAG_SAMPLED;
     UUIDHelpers::getHighBytes(this->trace_id) = trace_id_higher_64;
     UUIDHelpers::getLowBytes(this->trace_id) = trace_id_lower_64;
     this->span_id = span_id_64;
@@ -435,6 +437,7 @@ TracingContextHolder::TracingContextHolder(
     /// Set up trace context on current thread only when the root span is successfully initialized.
     *current_trace_context = _parent_trace_context;
     current_trace_context->span_id = this->root_span.span_id;
+    /// Reset the flags instead of inheriting them: the parent context may come from an untrusted client
     current_trace_context->trace_flags = TRACE_FLAG_SAMPLED;
     current_trace_context->span_log = _span_log;
 }

@@ -33,6 +33,7 @@ namespace
             case ViewTarget::Samples: return Keyword::SAMPLES; /// SAMPLES mydb.mysamples
             case ViewTarget::Tags:    return Keyword::TAGS;    /// TAGS mydb.mytags
             case ViewTarget::Metrics: return Keyword::METRICS; /// METRICS mydb.mymetrics
+            case ViewTarget::RecentSamples: return Keyword::RECENT_SAMPLES; /// RECENT SAMPLES mydb.myrecentsamples
         }
         UNREACHABLE();
     }

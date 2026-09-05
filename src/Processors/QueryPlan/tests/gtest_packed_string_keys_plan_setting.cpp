@@ -49,7 +49,7 @@ bool wireCarriesSetting(const QueryPlanSerializationSettings & settings)
 {
     WriteBufferFromOwnString out;
     settings.writeChangedBinary(out);
-    return out.str().find("enable_packed_string_keys_in_aggregation") != std::string::npos;
+    return out.str().contains("enable_packed_string_keys_in_aggregation");
 }
 
 bool aggregatingStepCarriesSetting(

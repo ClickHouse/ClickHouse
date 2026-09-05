@@ -22,7 +22,7 @@ ClickHouse [est rapide](/fr/get-started/about/why-clickhouse-is-so-fast) non seu
 
 Les écritures de données sont ainsi légères et [très efficaces](/fr/get-started/about/why-clickhouse-is-so-fast#storage-layer-concurrent-inserts-are-isolated-from-each-other).
 
-Pour contrôler le nombre de parts par table et mettre en œuvre le point ② ci-dessus, ClickHouse fusionne en continu ([par partition](/fr/concepts/core-concepts/partitions#per-partition-merges)) les petites parts en parts plus volumineuses en arrière-plan, jusqu&#39;à ce qu&#39;elles atteignent une taille compressée d&#39;environ [~150 GB](/fr/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool).
+Pour contrôler le nombre de parts par table et mettre en œuvre le point ② ci-dessus, ClickHouse fusionne en continu ([par partition](/fr/concepts/core-concepts/partitions#per-partition-merges)) les petites parts en parts plus volumineuses en arrière-plan, jusqu&#39;à ce qu&#39;elles atteignent une taille compressée d&#39;environ [~150 GB](/fr/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool).
 
 Le schéma suivant illustre ce processus de fusion en arrière-plan :
 
@@ -30,7 +30,7 @@ Le schéma suivant illustre ce processus de fusion en arrière-plan :
 
 <br />
 
-Le `merge level` d&#39;une part augmente de un à chaque fusion supplémentaire. Un niveau de `0` signifie que la part est nouvelle et n&#39;a pas encore été fusionnée. Les parts fusionnées dans des parts plus grandes sont marquées comme [inactives](/fr/reference/system-tables/parts), puis définitivement supprimées après un délai [configurable](/fr/reference/settings/merge-tree-settings#old_parts_lifetime) (8 minutes par défaut). Au fil du temps, cela crée un **arbre** de parts fusionnées. D&#39;où le nom de table [MergeTree](/fr/reference/engines/table-engines/mergetree-family/index).
+Le `merge level` d&#39;une part augmente de un à chaque fusion supplémentaire. Un niveau de `0` signifie que la part est nouvelle et n&#39;a pas encore été fusionnée. Les parts fusionnées dans des parts plus grandes sont marquées comme [inactives](/fr/reference/system-tables/parts), puis définitivement supprimées après un délai [configurable](/fr/reference/settings/merge-tree-settings/other#old_parts_lifetime) (8 minutes par défaut). Au fil du temps, cela crée un **arbre** de parts fusionnées. D&#39;où le nom de table [MergeTree](/fr/reference/engines/table-engines/mergetree-family/index).
 
 <div id="monitoring-merges">
   ## Suivi des fusions
@@ -85,7 +85,7 @@ L’enregistrement du tableau de bord ci-dessus montre l’ensemble du processus
   ## Fusions concurrentes
 </div>
 
-Un serveur ClickHouse utilise plusieurs [threads de fusion](/fr/reference/settings/server-settings/settings#background_pool_size) en arrière-plan pour exécuter des fusions de parts concurrentes :
+Un serveur ClickHouse utilise plusieurs [threads de fusion](/fr/reference/settings/server-settings/settings/background#background_pool_size) en arrière-plan pour exécuter des fusions de parts concurrentes :
 
 <Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="FUSIONS DE PARTIES" />
 
@@ -127,7 +127,7 @@ La fusion des parts s’effectue en plusieurs étapes :
 
 **③ Indexation** : un nouvel [index primaire clairsemé](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) est généré pour les fichiers de colonnes fusionnés.
 
-**④ Compression et stockage** : les nouveaux fichiers de colonnes et l’index sont [compressés](/fr/reference/statements/create/table#column_compression_codec) et enregistrés dans un nouveau [répertoire](/fr/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) représentant la part de données fusionnée.
+**④ Compression et stockage** : les nouveaux fichiers de colonnes et l’index sont [compressés](/fr/reference/statements/create/table/codec) et enregistrés dans un nouveau [répertoire](/fr/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) représentant la part de données fusionnée.
 
 D’autres [métadonnées des parts de données](/fr/concepts/core-concepts/parts), telles que des index secondaires d’élagage de données, des statistiques de colonnes, des sommes de contrôle et des index min-max, sont également recréées à partir des fichiers de colonnes fusionnés. Nous avons omis ces détails par souci de simplicité.
 

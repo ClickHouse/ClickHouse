@@ -523,15 +523,15 @@ Peak memory usage: 639.47 MiB.
 Обратите внимание, что здесь используется `639.47 MiB` памяти.
 
 <div id="tuning-performance--resources">
-  ##### Настройка производительности и ресурсов
+  ##### Настройка производительности &amp; ресурсов
 </div>
 
 Производительность и ресурсы, задействованные в описанном сценарии, определяются рядом факторов. Прежде чем приступать к настройке, рекомендуем ознакомиться с механикой вставки, подробно описанной в разделе [Using Threads for Reads](/ru/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads) руководства [Optimizing for S3 Insert and Read Performance guide](/ru/integrations/connectors/data-ingestion/AWS/performance). Вкратце:
 
-* **Параллелизм чтения** — количество потоков, используемых для чтения. Управляется через [`max_threads`](/ru/reference/settings/session-settings#max_threads). В ClickHouse Cloud это значение определяется размером инстанса и по умолчанию равно числу vCPU. Увеличение этого значения может повысить производительность чтения, но приведёт к большему использованию памяти.
-* **Параллелизм вставки** - Количество потоков вставки, используемых для выполнения вставки. Управляется через [`max_insert_threads`](/ru/reference/settings/session-settings#max_insert_threads). **Примечание**: Это значение ограничивается `max_threads`, поэтому фактический параллелизм вставки равен `min(max_insert_threads, max_threads)`. В ClickHouse Cloud он определяется размером инстанса (от 2 до 4), а в OSS установлен в 1. Увеличение этого значения может повысить производительность ценой более высокого использования памяти.
-* **Размер блока вставки** - данные обрабатываются в цикле: их считывают, разбирают и формируют в находящиеся в памяти блоки вставки на основе [ключа партиционирования](/ru/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Затем эти блоки сортируются, оптимизируются, сжимаются и записываются в хранилище как новые [части данных](/ru/concepts/core-concepts/parts). Размер блока вставки, задаваемый настройками [`min_insert_block_size_rows`](/ru/reference/settings/session-settings#min_insert_block_size_rows) и [`min_insert_block_size_bytes`](/ru/reference/settings/session-settings#min_insert_block_size_bytes) (в несжатом виде), влияет на использование памяти и дисковый ввод-вывод. Более крупные блоки требуют больше памяти, но создают меньше частей, снижая I/O и количество фоновых слияний. Эти настройки задают минимальные пороги (сброс происходит при достижении первого из них).
-* **Размер блока materialized view** — Помимо описанного выше механизма основной вставки, перед вставкой в materialized view блоки также укрупняются для более эффективной обработки. Размер этих блоков определяется настройками [`min_insert_block_size_bytes_for_materialized_views`](/ru/reference/settings/session-settings#min_insert_block_size_bytes_for_materialized_views) и [`min_insert_block_size_rows_for_materialized_views`](/ru/reference/settings/session-settings#min_insert_block_size_rows_for_materialized_views). Более крупные блоки обеспечивают более эффективную обработку, но ценой большего использования памяти. По умолчанию эти настройки принимают значения настроек исходной таблицы [`min_insert_block_size_rows`](/ru/reference/settings/session-settings#min_insert_block_size_rows) и [`min_insert_block_size_bytes`](/ru/reference/settings/session-settings#min_insert_block_size_bytes) соответственно.
+* **Параллелизм чтения** — количество потоков, используемых для чтения. Управляется через [`max_threads`](/ru/reference/settings/session-settings/max-threads#max_threads). В ClickHouse Cloud это значение определяется размером инстанса и по умолчанию равно числу vCPU. Увеличение этого значения может повысить производительность чтения, но приведёт к большему использованию памяти.
+* **Параллелизм вставки** - Количество потоков вставки, используемых для выполнения вставки. Управляется через [`max_insert_threads`](/ru/reference/settings/session-settings/max-insert#max_insert_threads). **Примечание**: Это значение ограничивается `max_threads`, поэтому фактический параллелизм вставки равен `min(max_insert_threads, max_threads)`. В ClickHouse Cloud он определяется размером инстанса (от 2 до 4), а в OSS установлен в 1. Увеличение этого значения может повысить производительность ценой более высокого использования памяти.
+* **Размер блока вставки** - данные обрабатываются в цикле: их считывают, разбирают и формируют в находящиеся в памяти блоки вставки на основе [ключа партиционирования](/ru/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Затем эти блоки сортируются, оптимизируются, сжимаются и записываются в хранилище как новые [части данных](/ru/concepts/core-concepts/parts). Размер блока вставки, задаваемый настройками [`min_insert_block_size_rows`](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_rows) и [`min_insert_block_size_bytes`](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) (в несжатом виде), влияет на использование памяти и дисковый ввод-вывод. Более крупные блоки требуют больше памяти, но создают меньше частей, снижая I/O и количество фоновых слияний. Эти настройки задают минимальные пороги (сброс происходит при достижении первого из них).
+* **Размер блока materialized view** — Помимо описанного выше механизма основной вставки, перед вставкой в materialized view блоки также укрупняются для более эффективной обработки. Размер этих блоков определяется настройками [`min_insert_block_size_bytes_for_materialized_views`](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_bytes_for_materialized_views) и [`min_insert_block_size_rows_for_materialized_views`](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_rows_for_materialized_views). Более крупные блоки обеспечивают более эффективную обработку, но ценой большего использования памяти. По умолчанию эти настройки принимают значения настроек исходной таблицы [`min_insert_block_size_rows`](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_rows) и [`min_insert_block_size_bytes`](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) соответственно.
 
 <Note>
   **Совет для простых запросов INSERT SELECT**: Для простых запросов `INSERT INTO t1 SELECT * FROM t2` без сложных преобразований можно включить `optimize_trivial_insert_select=1`. Этот параметр (по умолчанию отключён начиная с версии 24.7) автоматически подстраивает параллелизм SELECT под `max_insert_threads`, снижая потребление ресурсов и количество создаваемых частей. Это особенно полезно при массовой migration данных между таблицами.
@@ -554,11 +554,11 @@ SETTINGS max_insert_threads = 1
 ```
 
 ```response
-0 строк в наборе. Затрачено: 27.752 сек. Обработано 1,50 млрд строк, 33,48 ГБ (53,89 млн строк/с., 1,21 ГБ/с.)
-Пиковое потребление памяти: 506,78 МиБ.
+0 rows in set. Elapsed: 27.752 sec. Processed 1.50 billion rows, 33.48 GB (53.89 million rows/s., 1.21 GB/s.)
+Peak memory usage: 506.78 MiB.
 ```
 
-Можно ещё больше снизить потребление памяти, уменьшив параметр `max_threads` до 1.
+Можно ещё больше сократить потребление памяти, уменьшив значение `max_threads` до 1.
 
 ```sql
 INSERT INTO pypi_v2
@@ -592,7 +592,7 @@ SETTINGS max_insert_threads = 1, max_threads = 1, min_insert_block_size_rows = 0
 Peak memory usage: 218.64 MiB.
 ```
 
-Наконец, имейте в виду, что уменьшение размеров блоков увеличивает число частей и повышает нагрузку на слияния. Как указано [здесь](/ru/integrations/connectors/data-ingestion/AWS/performance#be-aware-of-merges), эти настройки следует изменять с осторожностью.
+Наконец, имейте в виду, что уменьшение размеров блоков увеличивает число частей и повышает нагрузку на слияния. Как указано [здесь](/ru/integrations/connectors/data-ingestion/AWS/performance#be-aware-of-merges), эти настройки следует изменять с осторожностью。
 
 <div id="no-timestamp-or-monotonically-increasing-column">
   ### Нет временной метки или монотонно возрастающего столбца

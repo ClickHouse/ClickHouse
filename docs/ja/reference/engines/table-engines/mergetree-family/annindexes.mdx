@@ -7,6 +7,8 @@ title: '厳密および近似ベクトル検索'
 doc_type: 'guide'
 ---
 
+import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
 多次元 (ベクトル) 空間において、ある点に対して最も近い N 個の点を見つける問題は、[最近傍探索](https://en.wikipedia.org/wiki/Nearest_neighbor_search) (nearest neighbor search) 、または単にベクトル検索と呼ばれます。
 ベクトル検索を実現する方法は、大きく 2 つあります。
 
@@ -19,12 +21,13 @@ doc_type: 'guide'
 WITH [...] AS reference_vector
 SELECT [...]
 FROM table
-WHERE [...] -- WHERE句は省略可能です
+WHERE [...] -- a WHERE clause is optional
 ORDER BY <DistanceFunction>(vectors, reference_vector)
 LIMIT <N>
 ```
 
-ベクトル空間内の点は、配列型のカラム `vectors` に格納されます。たとえば、[Array(Float64)](/ja/reference/data-types/array)、[Array(Float32)](/ja/reference/data-types/array)、または [Array(BFloat16)](/ja/reference/data-types/array) です。
+ベクトル空間内の点は、[Array(Float64)](/ja/reference/data-types/array)、[Array(Float32)](/ja/reference/data-types/array)、または [Array(BFloat16)](/ja/reference/data-types/array) 型のカラム `vectors` に格納されます。
+実用上は、一般的に [BFloat16](/ja/reference/data-types/float) 配列の使用を推奨します。
 参照ベクトルは定数配列で、共通テーブル式として指定します。
 `<DistanceFunction>` は、参照点と格納されているすべての点の間の距離を計算します。
 これには、利用可能な任意の[距離関数](/ja/reference/functions/regular-functions/distance-functions)を使用できます。
@@ -35,15 +38,21 @@ LIMIT <N>
 </div>
 
 厳密ベクトル検索は、上記の SELECT クエリをそのまま実行することで行えます。
-このようなクエリの実行時間は、一般に格納されているベクトルの数とその次元、つまり配列要素数に比例します。
-また、ClickHouse はすべてのベクトルを総当たりでスキャンするため、実行時間はクエリで使用されるスレッド数にも依存します ([max&#95;threads](/ja/reference/settings/session-settings#max_threads) 設定を参照) 。
+このようなクエリの実行時間は、一般に格納されているベクトルの数、ベクトル要素数 (= 次元) 、およびベクトル要素のビット幅に比例します。
+また、ClickHouse はすべてのベクトルを総当たりでスキャンするため、実行時間はクエリで使用されるスレッド数にも依存します ([max&#95;threads](/ja/reference/settings/session-settings/max-threads#max_threads) 設定を参照) 。
 
 <div id="exact-nearest-neighbor-search-example">
   ### 例
 </div>
 
 ```sql
-CREATE TABLE tab(id Int32, vec Array(Float32)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tab
+(
+    id Int32,
+    vec Array(BFloat16)
+)
+ENGINE = MergeTree
+ORDER BY id;
 
 INSERT INTO tab VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
 
@@ -88,9 +97,9 @@ ClickHouse には、近似ベクトル検索を実行するための特別な「
 ```sql
 CREATE TABLE table
 (
-  [...],
-  vectors Array(Float*),
-  INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>, <dimensions>) [GRANULARITY <N>]
+    [...],
+    vectors Array([Float64|Float32|BFloat16]),
+    INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>, <dimensions>) [GRANULARITY <N>]
 )
 ENGINE = MergeTree
 ORDER BY [...]
@@ -102,9 +111,9 @@ ORDER BY [...]
 ALTER TABLE table ADD INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>, <dimensions>) [GRANULARITY <N>];
 ```
 
-ベクトル類似度索引は、特殊なデータスキッピング索引の一種です ([こちら](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes)および[こちら](/ja/concepts/features/performance/skip-indexes/skipping-indexes)を参照) 。
+ベクトル類似度索引は、特殊なデータスキップ索引の一種です ([こちら](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes)および[こちら](/ja/concepts/features/performance/skip-indexes/skipping-indexes)を参照) 。
 したがって、上記の`ALTER TABLE`ステートメントでは、今後テーブルに挿入される新しいデータに対してのみ索引が構築されます。
-既存のデータに対しても索引を構築するには、これをマテリアライズする必要があります。
+既存のデータに対しても索引を構築するには、これをマテリアライズする必要があります：
 
 ```sql
 ALTER TABLE table MATERIALIZE INDEX <index_name> SETTINGS mutations_sync = 2;
@@ -139,9 +148,9 @@ ClickHouse が索引の作成中に異なるカーディナリティの配列を
 ```sql
 CREATE TABLE table
 (
-  [...],
-  vectors Array(Float*),
-  INDEX index_name vectors TYPE vector_similarity('hnsw', <distance_function>, <dimensions>[, <quantization>, <hnsw_max_connections_per_layer>, <hnsw_candidate_list_size_for_construction>]) [GRANULARITY N]
+    [...],
+    vectors Array([Float64|Float32|BFloat16]),
+    INDEX index_name vectors TYPE vector_similarity('hnsw', <distance_function>, <dimensions>[, <quantization>, <hnsw_max_connections_per_layer>, <hnsw_candidate_list_size_for_construction>]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY [...]
@@ -210,7 +219,7 @@ Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
 </div>
 
 <Note>
-  ベクトル類似度索引を使用するには、設定 [compatibility](/ja/reference/settings/session-settings) を `''` (デフォルト値) にするか、`'25.1'` 以降に設定する必要があります。
+  ベクトル類似度索引を使用するには、設定 [compatibility](/ja/reference/settings/session-settings/compatibility#compatibility) を `''` (デフォルト値) にするか、`'25.1'` 以降に設定する必要があります。
 </Note>
 
 ベクトル類似度索引は、次の形式のSELECTクエリをサポートしています：
@@ -219,7 +228,7 @@ Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
 WITH [...] AS reference_vector
 SELECT [...]
 FROM table
-WHERE [...] -- WHERE句は省略可能
+WHERE [...] -- a WHERE clause is optional
 ORDER BY <DistanceFunction>(vectors, reference_vector)
 LIMIT <N>
 ```
@@ -227,12 +236,12 @@ LIMIT <N>
 ClickHouseのクエリオプティマイザーは、上記のクエリテンプレートとの照合を試み、利用可能なベクトル類似度索引を活用します。
 クエリがベクトル類似度索引を使用できるのは、SELECTクエリの距離関数と索引定義の距離関数が一致する場合に限ります。
 
-上級ユーザーは、設定 [hnsw&#95;candidate&#95;list&#95;size&#95;for&#95;search](/ja/reference/settings/session-settings#hnsw_candidate_list_size_for_search) (HNSWハイパーパラメーター &quot;ef&#95;search&quot; とも呼ばれます) にカスタム値を指定することで、検索時の候補リストのサイズを調整できます (例：`SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`) 。
+上級ユーザーは、設定 [hnsw&#95;candidate&#95;list&#95;size&#95;for&#95;search](/ja/reference/settings/session-settings/other#hnsw_candidate_list_size_for_search) (HNSWハイパーパラメーター &quot;ef&#95;search&quot; とも呼ばれます) にカスタム値を指定することで、検索時の候補リストのサイズを調整できます (例：`SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`) 。
 この設定のデフォルト値は 256 であり、大多数のユースケースで適切に機能します。
 設定値を大きくするほど精度は向上しますが、その分パフォーマンスは低下します。
 
 クエリがベクトル類似度索引を使用できる場合、ClickHouse は SELECT クエリで指定された LIMIT `<N>` が妥当な範囲内にあるかを確認します。
-具体的には、`<N>` が設定 [max&#95;limit&#95;for&#95;vector&#95;search&#95;queries](/ja/reference/settings/session-settings#max_limit_for_vector_search_queries) の値 (デフォルト値は 100) を超えている場合、エラーが返されます。
+具体的には、`<N>` が設定 [max&#95;limit&#95;for&#95;vector&#95;search&#95;queries](/ja/reference/settings/session-settings/max#max_limit_for_vector_search_queries) の値 (デフォルト値は 100) を超えている場合、エラーが返されます。
 LIMIT の値が大きすぎると検索が遅くなる可能性があり、通常は使用方法の誤りを示しています。
 
 SELECT クエリがベクトル類似度索引を使用しているかどうかを確認するには、クエリの先頭に `EXPLAIN indexes = 1` を追加します。
@@ -251,7 +260,7 @@ LIMIT 10;
 返す可能性があります
 
 ```result
-┌─explain─────────────────────────────────────────────────────────────────────────────────────────┐
+    ┌─explain─────────────────────────────────────────────────────────────────────────────────────────┐
  1. │ Expression (Project names)                                                                      │
  2. │   Limit (preliminary LIMIT (without OFFSET))                                                    │
  3. │     Sorting (Sorting for ORDER BY)                                                              │
@@ -271,15 +280,15 @@ LIMIT 10;
 ```
 
 この例では、次元数1536の[dbpediaデータセット](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M)のベクトル100万件が575個のグラニュールに格納されており、1グラニュールあたり約1.7k行になります。
-クエリは10個の近傍を求めており、ベクトル類似度インデックスはそれら10個の近傍を10個の別々のグラニュールで見つけます。
+クエリは10個の近傍を求めており、ベクトル類似度索引はそれら10個の近傍を10個の別々のグラニュールで見つけます。
 これら10個のグラニュールはクエリ実行時に読み取られます。
 
 出力に `Skip` およびベクトル索引の名前とタイプ (この例では `idx` と `vector_similarity`) が含まれている場合、ベクトル類似度索引が使用されています。
-この場合、ベクトル類似度索引は4つのgranuleのうち2つ、つまりデータの50%をスキップしました。
-スキップできるgranuleが多いほど、索引の使用効率が向上します。
+この場合、ベクトル類似度索引は4つのグラニュールのうち2つ、つまりデータの50%をスキップしました。
+スキップできるグラニュールが多いほど、索引の使用効率が向上します。
 
 <Tip>
-  索引の使用を強制するには、設定 [force&#95;data&#95;skipping&#95;indexes](/ja/reference/settings/session-settings#force_data_skipping_indices) を指定して SELECT クエリを実行できます (設定値として索引名を指定します) 。
+  索引の使用を強制するには、設定 [force&#95;data&#95;skipping&#95;indices](/ja/reference/settings/session-settings/force#force_data_skipping_indices) を指定して SELECT クエリを実行できます (設定値として索引名を指定します) 。
 </Tip>
 
 **ポストフィルタリングとプレフィルタリング**
@@ -288,10 +297,10 @@ LIMIT 10;
 ClickHouse はこれらのフィルタ条件を、ポストフィルタリングまたはプリフィルタリングの戦略で評価します。
 どちらの戦略も、フィルタが評価される順序を決定するものです。
 
-* ポストフィルタリングでは、まずベクトル類似度索引が評価され、その後 ClickHouse が `WHERE` 句で指定された追加のフィルタを評価します。
-* 事前フィルタリングとは、フィルタの評価順序が通常とは逆になることを意味します。
+* ポストフィルタリングとは、まずベクトル類似度索引を評価し、その後で ClickHouse が `WHERE` 句で指定された追加のフィルタを評価することを意味します。
+* プリフィルタリングとは、フィルタの評価順序がその逆であることを意味します。
 
-これらの戦略にはそれぞれ異なるトレードオフがあります。
+これらの戦略には、それぞれ異なるトレードオフがあります。
 
 * ポストフィルタリングの一般的な問題は、`LIMIT <N>` 句で要求した行数より少ない結果しか返されない可能性があることです。これは、ベクトル類似度索引が返した結果行のうち1行以上が追加のフィルタを満たさない場合に発生します。
 * プリフィルタリングは、一般には未解決の問題です。一部の特化型ベクトルデータベースはプリフィルタリングのアルゴリズムを提供していますが、ほとんどのリレーショナルデータベース (ClickHouse を含む) では、正確な近傍探索、つまり索引を使わない総当たりスキャンにフォールバックします。
@@ -316,25 +325,25 @@ ClickHouse は、2025 年のものを除くすべてのパーティションを�
 
 *追加のフィルタは索引を使って評価できない*
 
-追加のフィルタ条件を索引 (主キー索引、スキッピング索引) で評価できない場合、ClickHouse はポストフィルタリングを適用します。
+追加のフィルタ条件を索引 (主キー索引、スキップ索引) で評価できない場合、ClickHouse はポストフィルタリングを適用します。
 
 *追加のフィルタは主キー索引を使って評価できる*
 
 追加のフィルタ条件を [主キー](/ja/reference/engines/table-engines/mergetree-family/mergetree#primary-key) で評価できる場合 (つまり、それらが主キーのプレフィックスを構成する場合) で、かつ
 
-* フィルタ条件によってパート内で少なくとも 1 行が除外される場合、ClickHouse はそのパート内の「残った」範囲に対してプリフィルタリングにフォールバックします。
-* フィルタ条件によってパート内で 1 行も除外されない場合、ClickHouse はそのパートに対してポストフィルタリングを行います。
+* フィルタ条件によってパーツ内で少なくとも 1 行が除外される場合、ClickHouse はそのパーツ内の &quot;残った&quot; 範囲に対してプリフィルタリングにフォールバックします。
+* フィルタ条件によってパーツ内で 1 行も除外されない場合、ClickHouse はそのパーツに対してポストフィルタリングを行います。
 
 実運用のユースケースでは、後者のケースが発生する可能性はかなり低いです。
 
-*追加のフィルタはスキッピング索引を使って評価できる*
+*追加のフィルタはスキップ索引を使って評価できる*
 
-追加のフィルタ条件を [スキッピング索引](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) (minmax 索引、set 索引など) で評価できる場合、ClickHouse はポストフィルタリングを行います。
-このような場合、ベクトル類似度索引は他のスキッピング索引と比べて最も多くの行を除外すると見込まれるため、最初に評価されます。
+追加のフィルタ条件を [スキップ索引](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) (minmax 索引、set 索引など) で評価できる場合、ClickHouse はポストフィルタリングを行います。
+このような場合、ベクトル類似度索引は他のスキップ索引と比べて最も多くの行を除外すると見込まれるため、最初に評価されます。
 
 ポストフィルタリングとプリフィルタリングをより細かく制御するには、2 つの設定を使用できます。
 
-設定 [vector&#95;search&#95;filter&#95;strategy](/ja/reference/settings/session-settings#vector_search_filter_strategy) (デフォルト: 上記のヒューリスティックを実装する `auto`) は `prefilter` に設定できます。
+設定 [vector&#95;search&#95;filter&#95;strategy](/ja/reference/settings/session-settings/vector-search#vector_search_filter_strategy) (デフォルト: 上記のヒューリスティックを実装する `auto`) は `prefilter` に設定できます。
 これは、追加のフィルタ条件の選択性が極めて高い場合に、プリフィルタリングを強制するのに役立ちます。
 たとえば、次のクエリはプリフィルタリングの恩恵を受ける可能性があります。
 
@@ -349,7 +358,7 @@ LIMIT 10
 2ドル未満の本がごくわずかしかないとすると、ポストフィルタリングでは 0 行しか返らない可能性があります。これは、ベクトル索引から返される上位 10 件の一致結果がすべて 2 ドルを超えている可能性があるためです。
 プリフィルタリングを強制すると (クエリに `SETTINGS vector_search_filter_strategy = 'prefilter'` を追加) 、ClickHouse はまず価格が 2 ドル未満の本をすべて見つけ、その後、見つかった本に対して総当たりのベクトル検索を実行します。
 
-上記の問題を解決する別の方法として、[vector&#95;search&#95;index&#95;fetch&#95;multiplier](/ja/reference/settings/session-settings#vector_search_index_fetch_multiplier) (デフォルト: `1.0`、最大: `1000.0`) を `1.0` より大きい値 (たとえば `2.0`) に設定することもできます。
+上記の問題を解決する別の方法として、[vector&#95;search&#95;index&#95;fetch&#95;multiplier](/ja/reference/settings/session-settings/vector-search#vector_search_index_fetch_multiplier) (デフォルト: `1.0`、最大: `1000.0`) を `1.0` より大きい値 (たとえば `2.0`) に設定することもできます。
 ベクトル索引から取得する最近傍の数はこの設定値に応じて増加し、その後、それらの行に追加のフィルタが適用されて LIMIT 件の行が返されます。
 たとえば、乗数を `3.0` にして再度クエリできます。
 
@@ -362,11 +371,11 @@ LIMIT 10
 SETTING vector_search_index_fetch_multiplier = 3.0;
 ```
 
-ClickHouse は各パートのベクトル索引から 3.0 x 10 = 30 件の最近傍を取得し、その後で追加のフィルタ条件を適用します。
+ClickHouse は各パーツのベクトル索引から 3.0 x 10 = 30 件の最近傍を取得し、その後で追加のフィルタ条件を適用します。
 返されるのは、そのうち最も近い 10 件の近傍のみです。
 `vector_search_index_fetch_multiplier` を設定することでこの問題を軽減できますが、極端な場合 (WHERE 条件の選択性が非常に高い場合) には、要求した N 行より少ない行しか返されない可能性が依然としてあります。
 
-**再スコアリング**
+**rescoring**
 
 ClickHouse のスキップ索引は通常、グラニュール単位でフィルタリングを行います。つまり、スキップ索引でのルックアップは (内部的には) 一致する可能性のあるグラニュールのリストを返し、後続のスキャンで読み込むデータ量を減らします。
 これはスキップ索引全般では有効に機能しますが、ベクトル類似度索引では &quot;granularity mismatch&quot; を引き起こします。
@@ -377,7 +386,7 @@ ClickHouse のスキップ索引は通常、グラニュール単位でフィル
 追加のフィルタによって候補が削られすぎる場合や、より高い再現率が必要な場合は、設定 `vector_search_index_fetch_multiplier` を増やして、ベクトル索引が rescoring 用により多くの候補行を返すようにしてください。
 
 そこで ClickHouse は、rescoring を無効にして、最も類似するベクトルとその距離を索引から直接返す最適化を提供しています。
-この最適化はデフォルトで有効になっています。設定 [vector&#95;search&#95;with&#95;rescoring](/ja/reference/settings/session-settings#vector_search_with_rescoring) を参照してください。
+この最適化はデフォルトで有効になっています。設定 [vector&#95;search&#95;with&#95;rescoring](/ja/reference/settings/session-settings/vector-search#vector_search_with_rescoring) を参照してください。
 大まかな仕組みとしては、ClickHouse は最も類似するベクトルとその距離を仮想カラム `_distance` として利用できるようにします。
 これを確認するには、`EXPLAIN header = 1` を付けてベクトル検索クエリを実行します。
 
@@ -394,22 +403,22 @@ SETTINGS vector_search_with_rescoring = 0
 ```result
 Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
 
-    ┌─explain─────────────────────────────────────────────────────────────────────────────────────────────────┐
- 1. │ Expression (Project names)                                                                              │
- 2. │ Header: id Int32                                                                                        │
- 3. │   Limit (preliminary LIMIT (without OFFSET))                                                            │
- 4. │   Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64     │
- 5. │           __table1.id Int32                                                                             │
- 6. │     Sorting (Sorting for ORDER BY)                                                                      │
- 7. │     Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64   │
- 8. │             __table1.id Int32                                                                           │
- 9. │       Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))         │
-10. │       Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64 │
-11. │               __table1.id Int32                                                                         │
-12. │         ReadFromMergeTree (default.tab)                                                                 │
-13. │         Header: id Int32                                                                                │
-14. │                 _distance Float32                                                                       │
-    └─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+    ┌─explain────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression (Project names)                                                                                 │
+ 2. │ Header: id Int32                                                                                           │
+ 3. │   Limit (preliminary LIMIT (without OFFSET))                                                               │
+ 4. │   Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(BFloat16), 'Array(BFloat16)'_String)) BFloat16     │
+ 5. │           __table1.id Int32                                                                                │
+ 6. │     Sorting (Sorting for ORDER BY)                                                                         │
+ 7. │     Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(BFloat16), 'Array(BFloat16)'_String)) BFloat16   │
+ 8. │             __table1.id Int32                                                                              │
+ 9. │       Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))            │
+10. │       Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(BFloat16), 'Array(BFloat16)'_String)) BFloat16 │
+11. │               __table1.id Int32                                                                            │
+12. │         ReadFromMergeTree (default.tab)                                                                    │
+13. │         Header: id Int32                                                                                   │
+14. │                 _distance BFloat16                                                                         │
+    └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <Note>
@@ -423,12 +432,18 @@ Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
 **圧縮の調整**
 
 ほぼすべてのユースケースで、基盤となるカラム内のベクトルは高密度であり、圧縮してもあまり効果がありません。
-その結果、[圧縮](/ja/reference/statements/create/table#column_compression_codec) を有効にすると、ベクトルカラムへの書き込みや読み取りが遅くなります。
+その結果、[圧縮](/ja/reference/statements/create/table/codec) を有効にすると、ベクトルカラムへの書き込みや読み取りが遅くなります。
 そのため、圧縮は無効にすることを推奨します。
 そのためには、次のようにベクトルカラムに `CODEC(NONE)` を指定します。
 
 ```sql
-CREATE TABLE tab(id Int32, vec Array(Float32) CODEC(NONE), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tab
+(
+    id Int32,
+    vec Array(BFloat16) CODEC(NONE),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)
+)
+ENGINE = MergeTree ORDER BY id;
 ```
 
 **索引作成のチューニング**
@@ -442,14 +457,14 @@ CREATE TABLE tab(id Int32, vec Array(Float32) CODEC(NONE), INDEX idx vec TYPE ve
 索引作成を高速化するには、次の手法を使用できます。
 
 まず、索引作成は並列化できます。
-索引作成スレッドの最大数は、サーバー設定[max&#95;build&#95;vector&#95;similarity&#95;index&#95;thread&#95;pool&#95;size](/ja/reference/settings/server-settings/settings#max_build_vector_similarity_index_thread_pool_size)で設定できます。
+索引作成スレッドの最大数は、サーバー設定[max&#95;build&#95;vector&#95;similarity&#95;index&#95;thread&#95;pool&#95;size](/ja/reference/settings/server-settings/settings/max#max_build_vector_similarity_index_thread_pool_size)で設定できます。
 最適な性能を得るには、この設定値を CPU コア数に合わせて設定してください。
 
-次に、INSERT ステートメントを高速化するために、ユーザーはセッション設定[materialize&#95;skip&#95;indexes&#95;on&#95;insert](/ja/reference/settings/session-settings#materialize_skip_indexes_on_insert)を使用して、新たに挿入されたパーツでのスキッピング索引の作成を無効にできます。
+次に、INSERT ステートメントを高速化するために、ユーザーはセッション設定[materialize&#95;skip&#95;indexes&#95;on&#95;insert](/ja/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert)を使用して、新たに挿入されたパーツでのスキップ索引の作成を無効にできます。
 そのようなパーツに対する SELECT クエリは、厳密検索にフォールバックします。
 挿入されたパーツはテーブル全体のサイズと比べて小さい傾向があるため、性能への影響はごくわずかであると見込まれます。
 
-3 つ目に、マージを高速化するために、ユーザーはセッション設定[materialize&#95;skip&#95;indexes&#95;on&#95;merge](/ja/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge)を使用して、マージ後のパーツでのスキッピング索引の作成を無効にできます。
+3 つ目に、マージを高速化するために、ユーザーはセッション設定[materialize&#95;skip&#95;indexes&#95;on&#95;merge](/ja/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge)を使用して、マージ後のパーツでのスキップ索引の作成を無効にできます。
 これにより、ステートメント[ALTER TABLE [...] MATERIALIZE INDEX [...]](/ja/reference/statements/alter/skipping-index#materialize-index)と組み合わせて、ベクトル類似度索引のライフサイクルを明示的に制御できます。
 たとえば、すべてのデータが取り込まれるまで、または週末のようにシステム負荷が低い時間帯まで、索引作成を遅らせることができます。
 
@@ -458,11 +473,11 @@ CREATE TABLE tab(id Int32, vec Array(Float32) CODEC(NONE), INDEX idx vec TYPE ve
 SELECT クエリでベクトル類似度索引を使用するには、それをメインメモリに読み込む必要があります。
 同じベクトル類似度索引がメインメモリに繰り返し読み込まれるのを防ぐため、ClickHouse はこの種の索引専用のインメモリ cache を提供しています。
 この cache が大きいほど、不要な読み込みは少なくなります。
-cache の最大サイズは、サーバー設定[vector&#95;similarity&#95;index&#95;cache&#95;size](/ja/reference/settings/server-settings/settings#vector_similarity_index_cache_size)で設定できます。
+キャッシュサイズの最大サイズは、サーバー設定[vector&#95;similarity&#95;index&#95;cache&#95;size](/ja/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size)で設定できます。
 デフォルトでは、cache は最大 5 GB まで拡張できます。
 
 次のログメッセージ (`system.text_log`) は、ベクトル類似度索引が読み込まれていることを示します。
-異なるベクトル検索クエリに対してこのようなメッセージが繰り返し表示される場合は、cache サイズが小さすぎることを示しています。
+異なるベクトル検索クエリに対してこのようなメッセージが繰り返し表示される場合は、キャッシュサイズが小さすぎることを示しています。
 
 ```text
 2026-02-03 07:39:10.351635 [1386] f0ac5c85-1b1c-4f35-8848-87a1d1aa00ba : VectorSimilarityIndex Start loading vector similarity index
@@ -518,7 +533,7 @@ ClickHouse のベクトル索引は、以下の量子化オプションをサポ
 ただし、ほとんどのデータセットでは、半精度の brain float 量子化 (`bf16`) による精度低下はごくわずかであるため、ベクトル類似度索引ではこの量子化手法がデフォルトで使用されます。
 4分の1精度 (`i8`) およびバイナリ (`b1`) の量子化では、ベクトル検索の精度が目に見えて低下します。
 これら 2 つの量子化は、ベクトル類似度索引のサイズが利用可能な DRAM 容量を大幅に上回る場合にのみ推奨します。
-この場合は、精度を向上させるために、rescoring ([vector&#95;search&#95;index&#95;fetch&#95;multiplier](/ja/reference/settings/session-settings#vector_search_index_fetch_multiplier)、[vector&#95;search&#95;with&#95;rescoring](/ja/reference/settings/session-settings#vector_search_with_rescoring)) も有効にすることを推奨します。
+この場合は、精度を向上させるために、rescoring ([vector&#95;search&#95;index&#95;fetch&#95;multiplier](/ja/reference/settings/session-settings/vector-search#vector_search_index_fetch_multiplier)、[vector&#95;search&#95;with&#95;rescoring](/ja/reference/settings/session-settings/vector-search#vector_search_with_rescoring)) も有効にすることを推奨します。
 バイナリ量子化を推奨するのは、1) 正規化された埋め込み (つまりベクトル長 = 1。OpenAI のモデルは通常正規化されています) であり、かつ 2) 距離関数としてコサイン距離を使用する場合に限られます。
 バイナリ量子化では、内部的にハミング距離を使用して近接グラフを構築し、検索を行います。
 rescoring のステップでは、テーブルに格納された元のフル精度ベクトルを使用して、コサイン距離により最近傍を特定します。
@@ -618,7 +633,14 @@ rescoring を行わない場合、ClickHouse は virtual column `_distance` を�
 クエリ:
 
 ```sql title="Query"
-CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tab
+(
+    id Int32,
+    vec Array(BFloat16),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)
+)
+ENGINE = MergeTree
+ORDER BY id;
 
 INSERT INTO tab VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
 
@@ -648,35 +670,43 @@ LIMIT 3;
   ### 量子化コーデックを使用したベクトル検索
 </div>
 
-<Note>
-  `Quantized` コーデックは実験的機能です。`SET allow_experimental_codecs = 1` を設定して有効にしてください。
-  問題が発生した場合は、[ClickHouseリポジトリ](https://github.com/clickhouse/clickhouse/issues)で issue を作成してください。
-</Note>
+<ExperimentalBadge />
+
+`Quantized` コーデックを有効にするには、まず `SET allow_experimental_codecs = 1` を設定してください。
+問題が発生した場合は、[ClickHouseリポジトリ](https://github.com/clickhouse/clickhouse/issues)で issue を作成してください。
 
 <div id="quantized-codecs-introduction">
   #### はじめに
 </div>
 
-[ベクトル類似度索引](#vector-similarity-index) は、グラフをたどって最近傍クエリに応答する方式で、グラフ全体をメモリ上に保持できる場合には非常に高い性能を発揮します。
-ただし、適用範囲を制限する条件が 2 つあります。
+[ベクトル類似度索引](#vector-similarity-index)は、グラフを走査して最近傍クエリに応答します。グラフ全体をメモリに保持できる場合、非常に高い性能を発揮します。
+ただし、次の2つの条件により適用範囲が制限されます。
 
-* **スケール。** ベクトル自体に加えて、グラフの構築にかかる時間と、それを格納するために必要なメモリが支配的なコストになります。
-* **フィルタリング。** 選択性の高い `WHERE` フィルタがあると、グラフ走査は効果的ではなくなります。述語を満たす少数の行に到達できないか、それらを見つけるために不釣り合いに多くの候補を調べる必要があるためです。
+* **構築コストが高い。** ベクトル類似度索引の構築には多大なコストがかかります。
+* **メモリ使用量が多い。** ベクトル類似度索引は大量のメモリを消費し、ベクトル自体のメモリ使用量に加えて、大きなコスト要因となります。
+* **フィルタリング。** 選択性の高い `WHERE` フィルターでは、グラフ走査は有効に機能しません。述語を満たす少数の行に到達できないか、それらを見つけるために不釣り合いに多くの候補を調べる必要があるためです。
 
-これに対して、総当たりスキャンにはこうした制約がありません。補助構造は不要で、パーツは連結によってマージされ、フィルタは単にスキャン対象の行数を減らすだけです。
-唯一の欠点は、読み取る必要があるデータ量です。フル `Float32` 精度で格納されたベクトルをスキャンする場合、ストレージ I/O が支配的になります。ベクトル列全体をディスク (またはオブジェクトストレージ) から読み取る必要があるためです。高密度な埋め込みカラムでは、これはテーブル内で最大のカラムであり、圧縮効率も高くありません。
+網羅スキャンには、これらの制限はいずれもありません。補助データ構造を必要とせず、パーツは連結するだけで自然にマージでき、フィルタリングではスキャン対象の行数が減るだけです。
+網羅スキャンの最大の欠点は、読み取る必要があるデータ量が多いことです。フル精度の `Float32` または `BFloat16` で保存されたベクトルをスキャンする場合、ベクトルカラム全体をディスクから読み込む必要があるため、ストレージ I/O が支配的になります。
 
-`Quantized` カラム コーデック は、この欠点に対処します。
-各ベクトルは 2 つの形で格納されます。元のフル精度の値はそのまま保持しつつ、付随するストリームに compact な *量子化コード* も保存します。
-ベクトル検索クエリでは、まず低コストで SIMD に適した距離関数を使ってコードをスキャンし、最も有望な候補の ショートリスト を作成します。その後、その ショートリスト をフル精度ベクトルに対して再ランキングします。
-コードは生のベクトルよりもはるかに小さいため、ショートリスト のスキャンでストレージから読み取るバイト数を大幅に減らせます。また、フル精度カラムにアクセスするのは ショートリスト に残った少数の候補だけで済む一方、最終的なランキング精度は維持されます。
+`Quantized` カラムコーデックは、この欠点を解消します。
+各ベクトルを、元のフル精度の値とコンパクトな量子化表現の2通りで保存します。
+ベクトル検索クエリでは、まず低コストで SIMD に適した距離関数を用いて量子化コードをスキャンし、最も有望な結果候補のショートリストを作成します。
+次に、これらの候補をフル精度ベクトルに対して再ランク付けします。
+量子化コードに対する初期スキャンでストレージから読み取るバイト数は、元のベクトルをスキャンする場合より大幅に少なくなります。
+
+このコーデックは、コストの高い処理であるスキャンが、まさに ClickHouse エンジンが得意とする処理であるため、ClickHouse に適しています。
+
+* **ベクトル化。** スキャンカーネルは SIMD 命令を活用し、CPU 使用量を削減します。
+* **コアとパーツをまたいだ並列処理。** スキャンは容易に並列化できます。利用可能なすべてのスレッドとテーブルのすべてのパーツにわたって、距離が同時に計算されます。
+* **分散。** 分片化されたクラスターでは、処理が複数のマシンに分散されます。各分片が自身のスライスを並列にスキャンし、コーディネーターがショートリストをマージします。
+* **追加の構築コストなし。** 量子化コードはベクトルの書き込み時に生成されます。構築、調整、再構築が必要な追加の索引はないため、テーブルはデータが書き込まれるとすぐに検索可能になります。
 
 <div id="quantized-codecs-declaring">
-  #### コーデックの宣言
+  #### コーデックの適用
 </div>
 
-`Array(Float32)` (または `Array(Float64)` / `Array(BFloat16)`) カラムに `Quantized(...)` コーデックを設定します。
-このコーデックは実験的機能のため、まず `allow_experimental_codecs` を有効にします:
+`Array(Float32)` (または `Array(Float64)` / `Array(BFloat16)`) カラムに `Quantized(...)` コーデックを指定します。
 
 ```sql
 SET allow_experimental_codecs = 1;
@@ -684,19 +714,19 @@ SET allow_experimental_codecs = 1;
 CREATE TABLE vectors
 (
     id UInt32,
-    vec Array(Float32) CODEC(Quantized('rabitq', 1536))
+    vec Array(BFloat16) CODEC(Quantized('rabitq', 1536))
 )
-ENGINE = MergeTree ORDER BY id;
+ENGINE = MergeTree
+ORDER BY ...;
 ```
 
-フル精度のデータは通常どおり保存され、コーデックは補助的なコードストリームを追加するだけです。
-コーデックはテーブル作成時に固定されるため、`ALTER TABLE` で追加したり変更したりすることはできません。
+コーデックは後から `ALTER TABLE` で追加または変更することはできません。
 
 <div id="quantized-codecs-methods">
   #### 量子化方式
 </div>
 
-各方式は、サイズ / 精度 / 距離指標のトレードオフにおいて、それぞれ異なる特性を持ちます。`dimensions` 引数はベクトル長です。
+各量子化方式には、サイズと精度の間で異なるトレードオフがあります。`dimensions` 引数はベクトル長です。
 
 * `Quantized('rabitq', dimensions)` — 各座標に 1 ビットの符号ビットと、バイアスのないコサイン補正係数 (`dimensions/8 + 4` バイト) を持ちます。小さく、`popcount` での計算負荷が低い、強力なデフォルトです。`cosineDistance` のみ対応。
 * `Quantized('turboquant', dimensions)` — 各座標に 2 ビット (1 ビットの MSE コードと 1 ビットの残差コード) を使い、より高忠実度な候補を実現します (`dimensions/4 + 4` バイト) 。`cosineDistance` のみ対応。
@@ -707,13 +737,13 @@ ENGINE = MergeTree ORDER BY id;
 `rabitq` と `turboquant` では、`dimensions` は 8 の倍数である必要があります。
 
 <div id="quantized-codecs-searching">
-  #### 通常どおりに検索する
+  #### コーデック の使用
 </div>
 
-特別なクエリ構文は不要で、[完全一致検索](#exact-nearest-neighbor-search)で使うのと同じ top-`k` クエリを記述します。
+通常の上位 `k` クエリ形式では、コーデック が自動的に使用されます ([完全検索](#exact-nearest-neighbor-search)を参照) 。
 
 ```sql
-WITH [/* reference vector of `dimensions` floats */] AS reference_vec
+WITH [...] AS reference_vec
 SELECT id
 FROM vectors
 ORDER BY cosineDistance(vec, reference_vec) ASC
@@ -721,31 +751,14 @@ LIMIT 10
 SETTINGS vector_search_use_quantized_codes = 1;
 ```
 
-`vector_search_use_quantized_codes = 1` を使用すると、オプティマイザはクエリを自動的に 2 段階のプランに書き換えます。まず量子化されたコードをスキャンしてショートリストを作成し、その後そのショートリストをフル精度の `vec` に対して再スコアリングします。
-この設定はデフォルトでオフになっているため、有効にしない限り、同じクエリは通常の厳密スキャンとして実行されます。コーデック が結果を変えることはなく、明示的に有効化した場合にのみ、より高速な経路を提供します。
-選択したメソッドがサポートする距離関数を使用してください。すべてのメソッドでは `cosineDistance`、`int8`、`prefix`、`product` では追加で `L2Distance` を使用できます。
+`vector_search_use_quantized_codes = 1` を設定すると、オプティマイザはクエリを2フェーズのスキャンに書き換えます。
+この設定はデフォルトで無効です。
+この設定を使用しない場合、同じクエリは元のベクトルに対する通常の完全スキャンとして実行されます。
+すべての手法で距離関数 `cosineDistance` がサポートされます。手法 `int8`、`prefix`、`product` では、距離関数として `L2Distance` もサポートされます。
 
-<div id="quantized-codecs-settings">
-  #### 設定
-</div>
-
-* `allow_experimental_codecs` — `Quantized` コーデックを宣言するには、有効になっている必要があります (デフォルト: `0`) 。
-* `vector_search_use_quantized_codes` — ショートリスト化と再スコアリングからなる 2 段階リライトを有効にします (デフォルト: `0`) 。オフの場合、該当するクエリはフル精度ベクトルを厳密にスキャンします。
-* `vector_search_index_fetch_multiplier` — クエリの `LIMIT` に対して、候補をどれだけショートリスト化するかを指定します。スキャンでは、再スコアリングの前に上位 `LIMIT × multiplier` 件の code を保持します。値を大きくすると、再スコアリングのコストは増えますが、再現率は向上します。デフォルトは `1` (オーバーサンプリングなし) なので、良好な再現率を得るには、通常はこれをたとえば `10` 以上に引き上げる必要があります。
-
-<div id="quantized-codecs-built-for-scale">
-  #### スケールを前提に設計
-</div>
-
-このコーデックが ClickHouse に適しているのは、コストの高い処理であるスキャンが、まさに ClickHouse engine の得意分野だからです。
-
-* **ベクトル化。** スキャンカーネルは SIMD 向けに実装されており、CPU がサポートする最も広い命令セットにランタイムディスパッチされます。具体的には、符号コード方式 (`rabitq`、`turboquant`) ではハードウェア `popcount` を使い、それ以外では広幅の fused-multiply-add を使います。
-* **コアとパーツ全体で並列処理。** フラットスキャンは本質的に並列化しやすく、ClickHouse もそのように扱います。距離計算は利用可能なすべての threads とテーブル内のすべての パーツにわたって同時に実行され、直列化されるのは最後の top-`k` マージだけです。
-* **分散。** 分片化されたクラスターでは、処理は各マシンに分散されます。各分片がそれぞれの slice を並列にスキャンし、マージコーディネーターがショートリストをマージします。
-* **列指向でフィルターとの相性がよい。** 量子化コードは専用のカラムに格納され、圧縮されたうえで他のすべてのカラムと同じ I/O パスで読み込まれるため、選択性の高い `WHERE` を使えば、スキャンするコード数がその分減るだけです。
-* **別途 build は不要。** コードはベクトルの書き込みと同時に生成され、連結によってマージされます。構築・調整・再構築が必要な索引はないため、テーブルはデータが書き込まれた時点ですぐに検索可能になります。
-
-コードはあくまで候補生成に使われるだけで、保持されているフル精度のカラムが最終的な正確な ランキング を担います。
+`vector_search_index_fetch_multiplier` の設定では、クエリの `LIMIT` に対してショートリストに含める候補数を指定します。
+乗数を大きくすると、再スコアリングが増える代わりに再現率が向上します。
+デフォルトは `1` (オーバーサンプリングなし) です。良好な再現率を得るには、通常これを (たとえば `10` に) 増やす必要があります。
 
 <div id="approximate-nearest-neighbor-search-qbit">
   ### 量子化ビット (QBit)

@@ -345,7 +345,7 @@ void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
 Creates an array from different argument values.
-The memory consumption of this function is the same as for the [`uniqExact`](/sql-reference/aggregate-functions/reference/uniqexact) function.
+The memory consumption of this function is the same as for the [`uniqExact`](/reference/functions/aggregate-functions/uniqExact) function.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 groupUniqArray(x)

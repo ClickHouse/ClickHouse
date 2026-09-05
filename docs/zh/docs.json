@@ -66,7 +66,8 @@
         {
           "item": "生态",
           "pages": [
-            "zh/integrations/home"
+            "zh/integrations/home",
+            "zh/integrations/data-catalogs"
           ]
         },
         {

@@ -60,7 +60,7 @@ struct DivideDecimalsImpl
 REGISTER_FUNCTION(DivideDecimals)
 {
     FunctionDocumentation::Description description = R"(
-Performs division on two decimals. Result value will be of type [Decimal256](/sql-reference/data-types/decimal).
+Performs division on two decimals. Result value will be of type [Decimal256](/reference/data-types/decimal).
 Result scale can be explicitly specified by `result_scale` argument (const Integer in range `[0, 76]`). If not specified, the result scale is the max scale of given arguments.
 
 :::note
@@ -69,9 +69,9 @@ In case you don't really need controlled precision and/or need fast computation,
 :::
     )";
     FunctionDocumentation::Syntax syntax = "divideDecimal(x, y[, result_scale])";
-    FunctionDocumentation::Argument argument1 = {"x", "First value: [Decimal](/sql-reference/data-types/decimal)."};
-    FunctionDocumentation::Argument argument2 =   {"y", "Second value: [Decimal](/sql-reference/data-types/decimal)."};
-    FunctionDocumentation::Argument argument3 = {"result_scale", "Scale of result. Type [Int/UInt](/sql-reference/data-types/int-uint)."};
+    FunctionDocumentation::Argument argument1 = {"x", "First value: [Decimal](/reference/data-types/decimal)."};
+    FunctionDocumentation::Argument argument2 =   {"y", "Second value: [Decimal](/reference/data-types/decimal)."};
+    FunctionDocumentation::Argument argument3 = {"result_scale", "Scale of result. Type [Int/UInt](/reference/data-types/int-uint)."};
     FunctionDocumentation::Arguments arguments = {argument1, argument2, argument3};
     FunctionDocumentation::ReturnedValue returned_value = {"The result of division with given scale.", {"Decimal256"}};
     FunctionDocumentation::Example example1 = {"Example 1", "divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)", R"(

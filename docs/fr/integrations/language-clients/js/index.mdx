@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'JavaScript'
+sidebarTitle: 'Vue d’ensemble'
 keywords: ['clickhouse', 'js', 'JavaScript', 'NodeJS', 'web', 'browser', 'Cloudflare', 'workers', 'client', 'connect', 'integrate']
 slug: /integrations/javascript
 description: 'Le client JS officiel pour se connecter à ClickHouse.'
@@ -33,7 +33,7 @@ Le code source du client est disponible dans le [repository GitHub ClickHouse-JS
   Le JS client est fourni avec des Skills pour AI Agent qui peuvent aider les agents de code à travailler avec le client. Installez-les avec :
 
   ```sh
-  npm skills add ClickHouse/clickhouse-js
+  npx skills add ClickHouse/clickhouse-js
   ```
 </Info>
 
@@ -1004,14 +1004,14 @@ await client.query({
 Voir [cet exemple](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/insert_decimals.ts) pour en savoir plus.
 
 <div id="integral-types-int64-int128-int256-uint64-uint128-uint256">
-  ### Types intégraux : Int64, Int128, Int256, UInt64, UInt128, UInt256
+  ### Types entiers : Int64, Int128, Int256, UInt64, UInt128, UInt256
 </div>
 
 Bien que le serveur puisse l&#39;accepter comme un nombre, il est renvoyé sous forme de chaîne dans les formats de sortie de la famille `JSON*` afin d&#39;éviter
 un dépassement de capacité d&#39;entier, car les valeurs maximales de ces types dépassent `Number.MAX_SAFE_INTEGER`.
 
 Ce comportement peut toutefois être modifié
-avec le [paramètre `output_format_json_quote_64bit_integers`](/fr/reference/settings/formats#output_format_json_quote_64bit_integers)
+avec le [paramètre `output_format_json_quote_64bit_integers`](/fr/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
 .
 
 **Exemple :** Ajustez le format de sortie JSON pour les nombres 64 bits.

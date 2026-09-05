@@ -122,7 +122,10 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
         settings[Setting::serialize_string_in_memory_with_zero_byte],
         /*enable_parallel_single_level_merge_=*/false,
-        settings[Setting::enable_packed_string_keys_in_aggregation]);
+        settings[Setting::enable_packed_string_keys_in_aggregation],
+        /* enable_adaptive_aggregator */ false,
+        /* adaptive_aggregator_freeze_threshold */ 0,
+        /* adaptive_aggregator_freeze_threshold_bytes */ 0);
 
     aggregator = std::make_unique<Aggregator>(header, params);
 
@@ -259,7 +262,8 @@ void TTLAggregationAlgorithm::calculateAggregates(const MutableColumns & aggrega
 
     aggregator->executeOnBlock(
         aggregate_chunk, /* row_begin= */ 0, length,
-        aggregation_result, key_columns, columns_for_aggregator, no_more_keys);
+        aggregation_result, key_columns, columns_for_aggregator, no_more_keys,
+        /* adaptive= */ nullptr);
 
 }
 

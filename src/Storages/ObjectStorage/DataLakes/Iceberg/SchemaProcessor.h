@@ -91,14 +91,14 @@ public:
     explicit IcebergSchemaProcessor(bool allow_geo_parser_ = false) : allow_geo_parser(allow_geo_parser_) {}
 
     void addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr);
-    std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id);
+    std::shared_ptr<NamesAndTypesList> getClickHouseTableSchemaById(Int32 id);
     std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
     NameAndTypePair getFieldCharacteristics(Int32 schema_version, Int32 source_id) const;
     std::optional<NameAndTypePair> tryGetFieldCharacteristics(Int32 schema_version, Int32 source_id) const;
     NamesAndTypesList tryGetFieldsCharacteristics(Int32 schema_id, const std::vector<Int32> & source_ids) const;
     std::optional<Int32> tryGetColumnIDByName(Int32 schema_id, const std::string & name) const;
     Poco::JSON::Object::Ptr getIcebergTableSchemaById(Int32 id) const;
-    bool hasClickhouseTableSchemaById(Int32 id) const;
+    bool hasClickHouseTableSchemaById(Int32 id) const;
 
     static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
 

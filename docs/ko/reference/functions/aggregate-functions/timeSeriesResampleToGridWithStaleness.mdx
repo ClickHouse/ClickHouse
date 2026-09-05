@@ -18,7 +18,7 @@ doc_type: '참고'
 별칭: `timeSeriesLastToGrid`.
 
 <Warning>
-  이 함수는 실험적 기능이므로, `allow_experimental_ts_to_grid_aggregate_function=true`를 설정하여 활성화하십시오.
+  이 함수는 실험적 기능이므로, `allow_experimental_time_series_aggregate_functions=true`를 설정하여 활성화하십시오.
 </Warning>
 
 **구문**
@@ -31,10 +31,10 @@ timeSeriesResampleToGridWithStaleness(start_timestamp, end_timestamp, grid_step,
 
 **매개변수**
 
-* `start_timestamp` — 그리드의 시작 시점을 지정합니다. [`UInt32`](/ko/reference/data-types/int-uint) 또는 [`DateTime`](/ko/reference/data-types/datetime)
-* `end_timestamp` — 그리드의 종료 시점을 지정합니다. [`UInt32`](/ko/reference/data-types/int-uint) 또는 [`DateTime`](/ko/reference/data-types/datetime)
-* `grid_step` — 초 단위 그리드 간격을 지정합니다. [`UInt32`](/ko/reference/data-types/int-uint)
-* `staleness_window` — 가장 최근 샘플에 대해 허용되는 최대 staleness를 초 단위로 지정합니다. [`UInt32`](/ko/reference/data-types/int-uint)
+* `start_timestamp` — 그리드의 시작 시점을 지정합니다. `DateTime64` 타임스탬프 인수를 사용하는 경우 소수점 수, 숫자 또는 날짜-시간 텍스트가 포함된 문자열도 사용할 수 있습니다. [`UInt32`](/ko/reference/data-types/int-uint) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`String`](/ko/reference/data-types/string)
+* `end_timestamp` — 그리드의 종료 시점을 지정합니다. `DateTime64` 타임스탬프 인수를 사용하는 경우 소수점 수, 숫자 또는 날짜-시간 텍스트가 포함된 문자열도 사용할 수 있습니다. [`UInt32`](/ko/reference/data-types/int-uint) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`String`](/ko/reference/data-types/string)
+* `grid_step` — 초 단위 그리드 간격을 지정합니다. `DateTime64` 타임스탬프 인수를 사용하는 경우 소수점 수, 숫자 또는 &#39;15s&#39;나 &#39;1m&#39; 같은 기간이 포함된 문자열도 사용할 수 있습니다. [`UInt32`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`String`](/ko/reference/data-types/string)
+* `staleness_window` — 가장 최근 샘플에 대해 허용되는 최대 staleness를 초 단위로 지정합니다. `DateTime64` 타임스탬프 인수를 사용하는 경우 소수점 수, 숫자 또는 &#39;15s&#39;나 &#39;1m&#39; 같은 기간이 포함된 문자열도 사용할 수 있습니다. [`UInt32`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`String`](/ko/reference/data-types/string)
 
 **인수**
 

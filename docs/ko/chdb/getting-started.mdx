@@ -201,7 +201,7 @@ count(): [[315746,20686]]
 ```
 
 <div id="creating-a-table-from-json-file">
-  ## JSON file에서 테이블 생성하기
+  ## JSON 파일에서 테이블 생성하기
 </div>
 
 다음으로 chDB에서 테이블을 생성하는 방법을 살펴보겠습니다.
@@ -226,7 +226,7 @@ sess.query("CREATE DATABASE IF NOT EXISTS youtube")
 ```
 
 이제 `CREATE...EMPTY AS` 기법을 사용해 JSON 파일의 스키마를 기반으로 `dislikes` 테이블을 생성할 수 있습니다.
-모든 컬럼 타입이 `Nullable`로 지정되지 않도록 [`schema_inference_make_columns_nullable`](/ko/reference/settings/formats#schema_inference_make_columns_nullable) 설정을 사용합니다.
+모든 컬럼 타입이 `Nullable`로 지정되지 않도록 [`schema_inference_make_columns_nullable`](/ko/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable) 설정을 사용합니다.
 
 ```python
 sess.query(f"""

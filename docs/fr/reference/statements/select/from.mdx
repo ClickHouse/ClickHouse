@@ -33,6 +33,21 @@ FROM table
 SELECT *
 ```
 
+Dans une requête qui commence par `FROM`, la clause `SELECT` est facultative : lorsqu’elle est omise, la requête fonctionne comme si `SELECT *` avait été écrit :
+
+```sql
+FROM table
+WHERE x > 1
+```
+
+Cette forme est principalement utilisée dans les requêtes utilisant des [opérateurs pipe](/fr/reference/statements/select/pipe-operators) :
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+```
+
 <div id="final-modifier">
   ## Modificateur FINAL
 </div>
@@ -47,7 +62,7 @@ Il s&#39;applique à la sélection de données à partir de tables utilisant les
 * `CollapsingMergeTree`
 * `VersionedCollapsingMergeTree`
 
-Les requêtes `SELECT` avec `FINAL` sont exécutées en parallèle. Le paramètre [max&#95;final&#95;threads](/fr/reference/settings/session-settings#max_final_threads) limite le nombre de threads utilisés.
+Les requêtes `SELECT` avec `FINAL` sont exécutées en parallèle. Le paramètre [max&#95;final&#95;threads](/fr/reference/settings/session-settings/max#max_final_threads) limite le nombre de threads utilisés.
 
 <div id="drawbacks">
   ### Inconvénients
@@ -62,7 +77,7 @@ Les requêtes qui utilisent `FINAL` s’exécutent légèrement plus lentement q
 
 Comme alternative à l’utilisation de `FINAL`, il est parfois possible d’employer d’autres requêtes qui partent du principe que les processus d’arrière-plan du moteur `MergeTree` n’ont pas encore eu lieu, et de gérer cela en appliquant une agrégation (par exemple pour éliminer les doublons). Si vous devez utiliser `FINAL` dans vos requêtes pour obtenir les résultats souhaités, c’est tout à fait acceptable, mais gardez à l’esprit le traitement supplémentaire que cela implique.
 
-`FINAL` peut être appliqué automatiquement à toutes les tables d’une requête à l’aide du paramètre [FINAL](/fr/reference/settings/session-settings#final), via une session ou un profil utilisateur.
+`FINAL` peut être appliqué automatiquement à toutes les tables d’une requête à l’aide du paramètre [FINAL](/fr/reference/settings/session-settings/other#final), via une session ou un profil utilisateur.
 
 <div id="example-usage">
   ### Exemple d’utilisation

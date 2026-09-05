@@ -76,7 +76,7 @@ Assurez-vous d’être connecté à votre compte ClickHouse Cloud. Si vous n’a
 4. Renseignez les informations de connexion de votre base de données source Postgres que vous avez configurée à l&#39;étape des prérequis.
 
 <Info>
-  Avant de commencer à ajouter vos informations de connexion, assurez-vous d&#39;avoir autorisé les adresses IP de ClickPipes dans les règles de votre pare-feu. Vous trouverez la liste des adresses IP de ClickPipes [ici](/fr/integrations/clickpipes/home#list-of-static-ips).
+  Avant de commencer à ajouter vos informations de connexion, assurez-vous d&#39;avoir autorisé les adresses IP de ClickPipes dans les règles de votre pare-feu. Vous trouverez la liste des adresses IP de ClickPipes [ici](/fr/integrations/clickpipes/networking/static-ips).
   Pour plus d&#39;informations, consultez les guides de configuration de la source Postgres dont les liens figurent [en haut de cette page](#prerequisites).
 </Info>
 
@@ -88,7 +88,7 @@ Assurez-vous d’être connecté à votre compte ClickHouse Cloud. Si vous n’a
 
 Vous pouvez utiliser AWS Private Link pour vous connecter à votre base de données source Postgres si elle est hébergée sur AWS. Cela est utile si vous
 souhaitez garder votre transfert de données privé.
-Vous pouvez suivre le [guide de configuration pour établir la connexion](/fr/integrations/clickpipes/aws-privatelink).
+Vous pouvez suivre le [guide de configuration pour établir la connexion](/fr/integrations/clickpipes/networking/aws-privatelink).
 
 <div id="optional-changing-tls-settings">
   #### (Facultatif) Modification de la configuration TLS
@@ -113,7 +113,7 @@ Vous pouvez spécifier les informations du tunnel SSH si votre base de données 
 4. Cliquez sur &quot;Vérifier la connexion&quot; pour la vérifier.
 
 <Note>
-  Assurez-vous d&#39;autoriser les [adresses IP de ClickPipes](/fr/integrations/clickpipes/home#list-of-static-ips) dans les règles de pare-feu de l&#39;hôte bastion SSH afin que ClickPipes puisse établir le tunnel SSH.
+  Assurez-vous d&#39;autoriser les [adresses IP de ClickPipes](/fr/integrations/clickpipes/networking/static-ips) dans les règles de pare-feu de l&#39;hôte bastion SSH afin que ClickPipes puisse établir le tunnel SSH.
 </Note>
 
 Une fois les informations de connexion renseignées, cliquez sur &quot;Suivant&quot;.
@@ -152,7 +152,7 @@ Vous pouvez configurer les paramètres avancés si nécessaire. Une brève descr
   Si vous définissez dans ClickHouse une clé d’ordonnancement différente de la clé primaire de Postgres, n’oubliez pas de consulter toutes les [considérations](/fr/integrations/clickpipes/postgres/ordering-keys) à ce sujet
 </Warning>
 
-8. En outre, vous pouvez fournir une expression `PARTITION BY <expr>` personnalisée pour contrôler le [partitionnement des tables ClickHouse](/partitions) dans la destination.
+8. En outre, vous pouvez fournir une expression `PARTITION BY <expr>` personnalisée pour contrôler le [partitionnement des tables ClickHouse](/fr/concepts/core-concepts/partitions) dans la destination.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/partition-by.png" alt="Partition by" size="lg" border />
 

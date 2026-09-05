@@ -123,7 +123,7 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 Algumas observações sobre exclusões leves:
 
 * Esse recurso está disponível apenas para a família de mecanismos de tabela `MergeTree`.
-* As exclusões leves são síncronas por padrão e aguardam que todas as réplicas processem a exclusão. Esse comportamento é controlado pela [configuração `lightweight_deletes_sync`](/pt-BR/reference/settings/session-settings#lightweight_deletes_sync).
+* As exclusões leves são síncronas por padrão e aguardam que todas as réplicas processem a exclusão. Esse comportamento é controlado pela [configuração `lightweight_deletes_sync`](/pt-BR/reference/settings/session-settings/lightweight#lightweight_deletes_sync).
 
 <div className="mt-8">
   <BackToQuickstarts />

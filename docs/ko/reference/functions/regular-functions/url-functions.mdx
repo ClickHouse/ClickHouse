@@ -583,9 +583,10 @@ SELECT
   ## cutURLParameter
 </div>
 
-지원 시작 버전: v1.1.0
+도입 버전: v1.1.0
 
-URL에 `name` 매개변수가 있으면 제거합니다.
+URL에서 요청된 각 매개변수의 첫 번째 `name=value` 항목을 제거합니다.
+`name=` 형식으로 표기된 매개변수만 일치하므로 값이 없는 플래그 매개변수는 그대로 유지됩니다. 예를 들어 `cutURLParameter('http://bigmir.net/?a&c=d', 'a')`는 URL을 변경하지 않고 반환합니다.
 이 함수는 매개변수 이름의 문자를 인코딩하거나 디코딩하지 않으므로, 예를 들어 `Client ID`와 `Client%20ID`는 서로 다른 매개변수 이름으로 간주됩니다.
 
 **구문**
@@ -601,7 +602,7 @@ cutURLParameter(url, name)
 
 **반환 값**
 
-`name` URL 매개변수가 제거된 URL입니다. [`String`](/ko/reference/data-types/string)
+요청된 각 매개변수에서 처음 나타나는 `name=value`가 제거된 URL입니다. [`String`](/ko/reference/data-types/string)
 
 **예시**
 
@@ -1217,7 +1218,7 @@ fragment(url)
 **사용 예시**
 
 ```sql title=Query
-SELECT fragment('https://clickhouse.com/docs/getting-started/quick-start/cloud#1-create-a-clickhouse-service');
+SELECT fragment('https://clickhouse.com/docs/get-started/setup/cloud#1-create-a-clickhouse-service');
 ```
 
 ```response title=Response
@@ -1289,7 +1290,7 @@ path(url)
 **사용 예시**
 
 ```sql title=Query
-SELECT path('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value');
+SELECT path('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value');
 ```
 
 ```response title=Response
@@ -1325,7 +1326,7 @@ pathFull(url)
 **사용 예시**
 
 ```sql title=Query
-SELECT pathFull('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value#section');
+SELECT pathFull('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value#section');
 ```
 
 ```response title=Response

@@ -60,6 +60,27 @@ def _head_sha(repo):
     ).stdout.strip()
 
 
+def _setup_bare_origin(tmp_path, repo, branch="26.6"):
+    """Bare origin the tool fetches from and (via git `insteadOf`) pushes to, so
+    `Git.push` — including its `--dry-run` push — runs offline: the tokenized
+    `github.com` URL is redirected to this local bare repo. Pair with
+    `GH_TOKEN=faketoken` in the subprocess env. Returns the origin path."""
+    origin = tmp_path / "origin.git"
+
+    def g(*args, cwd):
+        subprocess.run(
+            ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
+        )
+
+    g("init", "-q", "--bare", str(origin), cwd=tmp_path)
+    g("remote", "add", "origin", str(origin), cwd=repo)
+    g("push", "-q", "origin", branch, "--tags", cwd=repo)
+    g("fetch", "-q", "origin", cwd=repo)
+    push_url = "https://x-access-token:faketoken@github.com/test/clickhouse.git"
+    g("config", f"url.{origin}.insteadOf", push_url, cwd=repo)
+    return origin
+
+
 def _argparse_long_flags(path):
     """Every ``--long-option`` registered via ``add_argument`` in ``path``."""
     flags = set()
@@ -140,17 +161,15 @@ def test_release_job_points_at_moved_paths():
     assert "tests/ci/artifactory.py" not in text
 
 
-def test_enqueue_is_last_and_patch_bump_is_deferred():
-    """The PR enqueue must be the last release step, and the patch bump deferred.
+def test_new_bump_is_early_and_patch_bump_is_deferred():
+    """'new' bumps master before the changelog push; 'patch' bumps after it.
 
-    Enqueue runs last so the release PR's `CH Inc sync` check gets the maximum
-    time (the whole publish) to complete before we add the PR to the merge queue.
-    The patch version bump is still deferred to near the end (after the changelog
-    PR is created, not right after the tag push): that keeps the branch tip equal
-    to the released commit through publishing, so a rerun after any failure sees
-    an un-bumped branch and prepare recovers the existing release instead of
-    minting a below-tip one. The "new" release bump stays early (it opens the
-    master bump PR the enqueue later merges).
+    The patch version bump stays deferred to near the end (after the changelog is
+    pushed to master, not right after the tag push): that keeps the branch tip
+    equal to the released commit through publishing, so a rerun after any failure
+    sees an un-bumped branch and prepare recovers the existing release. Both
+    release types now land on master with a direct push, so there is no
+    enqueue/merge step.
     """
     text = _read(RELEASE_JOB)
     # Match the actual create_release.py invocations, not prose in comments.
@@ -158,26 +177,18 @@ def test_enqueue_is_last_and_patch_bump_is_deferred():
         m.start()
         for m in re.finditer(r"create_release\.py --create-bump-version-pr", text)
     ]
-    # The enqueue step is an in-process function call (merge_created_prs), anchored
-    # by its unique step name rather than a CLI string.
-    merge_pos = text.find('name="Update Release Info and Merge Created PRs"')
-    changelog_pr_pos = text.find('name="Create ChangeLog PR"')
+    changelog_pos = text.find('name="Push ChangeLog to master"')
     assert len(bump_positions) >= 2, (
         "expected a separate 'new' and deferred 'patch' --create-bump-version-pr"
     )
-    assert merge_pos != -1, "release_job.py should have the enqueue step"
-    assert changelog_pr_pos != -1, "release_job.py should have the Create ChangeLog PR step"
-    # Enqueue is the last release action: after both version bumps.
-    assert all(p < merge_pos for p in bump_positions), (
-        "the enqueue step must run after both version bumps (it is the last step)"
+    assert changelog_pos != -1, "release_job.py should have the Push ChangeLog step"
+    assert "Merge Created PRs" not in text, "the merge/enqueue step must be gone"
+    # 'new' bump is early (before the changelog push); 'patch' bump is after it.
+    assert min(bump_positions) < changelog_pos, (
+        "the 'new' version bump must run early (before the changelog push)"
     )
-    # The 'new' bump is early (before the changelog PR step); the 'patch' bump is
-    # deferred to after it.
-    assert min(bump_positions) < changelog_pr_pos, (
-        "the 'new' version bump must run early (before the changelog PR step)"
-    )
-    assert max(bump_positions) > changelog_pr_pos, (
-        "the 'patch' version bump must be deferred to after the changelog PR step"
+    assert max(bump_positions) > changelog_pos, (
+        "the 'patch' version bump must be deferred to after the changelog push"
     )
 
 
@@ -248,6 +259,28 @@ def test_version_bump():
     rollover = chv.CHVersion(26, 12, 1, 100)
     rollover.bump_release()
     assert (rollover.major, rollover.minor, rollover.patch) == (27, 1, 1)
+
+
+def test_bump_patch_persists_to_file(tmp_path, monkeypatch):
+    import ci.jobs.scripts.clickhouse_version as chv
+
+    version_file = tmp_path / "autogenerated_versions.txt"
+    monkeypatch.setattr(chv, "FILE_WITH_VERSION_PATH", str(version_file))
+
+    chv.CHVersion(26, 6, 2, 54520, 7, githash="0" * 40).with_description(
+        "stable"
+    ).write()
+    assert chv.CHVersion.get_release_version().patch == 2
+
+    bumped = chv.CHVersion.get_release_version()
+    bumped.bump_patch()
+    bumped.githash = "0" * 40
+    bumped.with_description("stable").write()
+
+    after = chv.CHVersion.get_release_version()
+    assert after.patch == 3
+    assert after.string == "26.6.3.1"
+    assert after.describe == "v26.6.3.1-stable"
 
 
 def test_new_is_a_valid_version_type():
@@ -337,9 +370,8 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
     (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
     git("add", "-A")
     git("commit", "-q", "-m", "Post-release commit")
-    # Populate origin/26.6 and tags (the tool reads origin/<branch>).
-    git("remote", "add", "origin", str(repo))
-    git("fetch", "-q", "origin")
+    # Bare origin so Git.push's real --dry-run push is redirected here offline.
+    _setup_bare_origin(tmp_path, repo)
 
     # create_release.py resolves `s3_helper`/`ssh` relative to its own location
     # and computes the contributors "executer" as its path relative to cwd, so
@@ -373,6 +405,7 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
         "PYTHONPATH": REPO_ROOT,
         "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
         "GITHUB_REPOSITORY": "test/clickhouse",
+        "GH_TOKEN": "faketoken",
     }
 
     def step(*flags):
@@ -405,10 +438,15 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
     assert info["release_tag"] == "v26.6.2.2-stable"
     assert info["version"] == "26.6.2.2"
     assert info["commit_sha"] == commit_sha
-    assert info["create_new_release"] is True
+    assert info["is_tag_pushed"] is False
+    assert info["is_bump_landed"] is False  # gates the deferred version bump
 
     step("--push-release-tag", "--dry-run")
-    step("--create-bump-version-pr", "--dry-run")
+    # The dry-run bump writes the file, prints its diff, then reverts it. The diff
+    # must show the patch advancing 26.6.2 -> 26.6.3 (post-release bump).
+    bump = step("--create-bump-version-pr", "--dry-run")
+    assert "SET(VERSION_PATCH 3)" in bump.stdout
+    assert "26.6.3.1" in bump.stdout
     final = step("--post-status", "--dry-run")
     assert "New release" in final.stdout
 
@@ -417,7 +455,7 @@ def test_prepare_recovers_from_tag(tmp_path):
     """Dispatching an existing release tag recovers (re-publishes) that release.
 
     Recovery is expressed by passing the version tag: ``prepare`` must set
-    ``create_new_release=false`` and not attempt to create it again.
+    ``is_tag_pushed=true`` and not attempt to create it again.
     """
     pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
 
@@ -496,7 +534,93 @@ def test_prepare_recovers_from_tag(tmp_path):
     with open("/tmp/release_info.json", encoding="utf-8") as f:
         info = json.load(f)
     assert info["release_tag"] == "v26.6.2.1-stable"
-    assert info["create_new_release"] is False
+    assert info["is_tag_pushed"] is True
+    # Branch tip still describes this release, so recovery must complete the bump.
+    assert info["is_bump_landed"] is False
+
+
+def test_recovery_of_unbumped_branch_bumps_version(tmp_path):
+    """Heal: recovering an un-bumped branch must still advance the version file.
+
+    The tag sits at the branch tip with no post-release bump commit, so this is a
+    recovery (``is_tag_pushed=true``) but ``is_bump_landed=false``. The
+    bump must run and move 26.6.2 -> 26.6.3, so the patch number stops being
+    pinned. The dry-run bump writes the file, prints its diff, then reverts it.
+    """
+    pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args):
+        subprocess.run(
+            ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+        )
+
+    git("init", "-q", "-b", "26.6")
+    git("config", "user.email", "robot@clickhouse.com")
+    git("config", "user.name", "robot-clickhouse")
+    git("config", "commit.gpgsign", "false")
+    git("config", "tag.gpgsign", "false")
+
+    (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "Anchor commit (previous release)")
+    anchor = _head_sha(repo)
+
+    (repo / "cmake").mkdir()
+    (repo / _VERSIONS_FILE).write_text(
+        _VERSIONS_CONTENT.replace("0" * 40, anchor), encoding="utf-8"
+    )
+    (repo / "src" / "Storages" / "System").mkdir(parents=True)
+    (repo / _CONTRIBUTORS_FILE).write_text(
+        "const char * auto_contributors[] {\n    nullptr};\n", encoding="utf-8"
+    )
+    git("add", "-A")
+    git("commit", "-q", "-m", "Base release commit (un-bumped tip)")
+    # Tag at the tip, no post-release bump commit — the stuck state.
+    git("tag", "-a", "v26.6.2.1-stable", "-m", "Release v26.6.2.1-stable")
+    # Bare origin so Git.push's real --dry-run push is redirected here offline.
+    _setup_bare_origin(tmp_path, repo)
+
+    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
+    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
+    script = str(repo / "ci" / "jobs" / "scripts" / "create_release.py")
+
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    gh_stub = bindir / "gh"
+    gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
+    gh_stub.chmod(0o755)
+    env = {
+        **os.environ,
+        "PYTHONPATH": REPO_ROOT,
+        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
+        "GITHUB_REPOSITORY": "test/clickhouse",
+        "GH_TOKEN": "faketoken",
+    }
+
+    def step(*flags):
+        result = subprocess.run(
+            [sys.executable, script, *flags], cwd=repo, env=env,
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, (
+            f"step {flags} failed (rc={result.returncode})\n"
+            f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+        )
+        return result
+
+    step("--prepare-release-info", "--ref", "v26.6.2.1-stable",
+         "--release-type", "patch", "--dry-run")
+    with open("/tmp/release_info.json", encoding="utf-8") as f:
+        info = json.load(f)
+    assert info["is_tag_pushed"] is True  # recovery
+    assert info["is_bump_landed"] is False  # branch not advanced -> gates the bump
+
+    bump = step("--create-bump-version-pr", "--dry-run")
+    assert "SET(VERSION_PATCH 3)" in bump.stdout  # 26.6.2 -> 26.6.3
+    assert "26.6.3.1" in bump.stdout
 
 
 def test_prepare_recovers_already_released_commit(tmp_path):
@@ -507,7 +631,7 @@ def test_prepare_recovers_already_released_commit(tmp_path):
     is not recomputed) even after the first attempt already pushed the release
     tag. With no *newer* release tag on the branch this is not out-of-order:
     the tag at this commit is this run's own tag, so ``prepare`` must recover
-    (``create_new_release=false``) rather than re-enter the creation/merge path.
+    (``is_tag_pushed=true``) rather than re-enter the creation/merge path.
     """
     pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
 
@@ -594,7 +718,9 @@ def test_prepare_recovers_already_released_commit(tmp_path):
     with open("/tmp/release_info.json", encoding="utf-8") as f:
         info = json.load(f)
     assert info["release_tag"] == "v26.6.2.1-stable"
-    assert info["create_new_release"] is False
+    assert info["is_tag_pushed"] is True
+    # Rerun on the un-bumped tip: the deferred version bump is still owed.
+    assert info["is_bump_landed"] is False
 
 
 def test_prepare_refuses_out_of_order_commit(tmp_path):
@@ -697,6 +823,111 @@ def test_prepare_refuses_out_of_order_commit(tmp_path):
     )
     assert result.returncode != 0, "out-of-order release should have failed"
     assert "out-of-order release" in (result.stdout + result.stderr)
+
+
+def test_prepare_recovers_superseded_release_without_rebumping(tmp_path):
+    """Recovering a superseded release via its tag must NOT re-bump the branch.
+
+    The branch tip is a newer release (``26.6.4``) than the recovered ``26.6.3``,
+    so ``prepare`` recovers (``is_tag_pushed=true``) with
+    ``is_bump_landed=true`` and the deferred bump must not rewrite it back.
+    """
+    pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args):
+        subprocess.run(
+            ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+        )
+
+    git("init", "-q", "-b", "26.6")
+    git("config", "user.email", "robot@clickhouse.com")
+    git("config", "user.name", "robot-clickhouse")
+    git("config", "commit.gpgsign", "false")
+    git("config", "tag.gpgsign", "false")
+
+    # Anchor commit the release version-file githash points at, so the strict
+    # tweak (commits since githash) is computable.
+    (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "Anchor commit (previous release)")
+    anchor = _head_sha(repo)
+
+    (repo / "cmake").mkdir()
+    (repo / _VERSIONS_FILE).write_text(
+        _VERSIONS_CONTENT.replace("VERSION_PATCH 2", "VERSION_PATCH 3")
+        .replace("26.6.2.1", "26.6.3.1")
+        .replace("0" * 40, anchor),
+        encoding="utf-8",
+    )
+    (repo / "src" / "Storages" / "System").mkdir(parents=True)
+    (repo / _CONTRIBUTORS_FILE).write_text(
+        "const char * auto_contributors[] {\n    nullptr};\n", encoding="utf-8"
+    )
+    git("add", "-A")
+    git("commit", "-q", "-m", "Release commit (26.6.3)")
+    # The superseded release we will recover via its tag.
+    git("tag", "-a", "v26.6.3.1-stable", "-m", "Release v26.6.3.1-stable")
+
+    # Advance the branch to a newer release (26.6.4), so the branch tip is ahead
+    # of the release we recover — its post-release bump has already landed.
+    (repo / _VERSIONS_FILE).write_text(
+        _VERSIONS_CONTENT.replace("VERSION_PATCH 2", "VERSION_PATCH 4")
+        .replace("26.6.2.1", "26.6.4.1")
+        .replace("0" * 40, anchor),
+        encoding="utf-8",
+    )
+    (repo / "README.md").write_text("clickhouse 26.6.4\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "Later commit (bump to 26.6.4)")
+    git("tag", "-a", "v26.6.4.1-stable", "-m", "Release v26.6.4.1-stable")
+    git("remote", "add", "origin", str(repo))
+    git("fetch", "-q", "origin")
+
+    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
+    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
+    script = str(repo / "ci" / "jobs" / "scripts" / "create_release.py")
+
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    gh_stub = bindir / "gh"
+    gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
+    gh_stub.chmod(0o755)
+    env = {
+        **os.environ,
+        "PYTHONPATH": REPO_ROOT,
+        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
+        "GITHUB_REPOSITORY": "test/clickhouse",
+    }
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            script,
+            "--prepare-release-info",
+            "--ref",
+            "v26.6.3.1-stable",  # recover the superseded release via its tag
+            "--release-type",
+            "patch",
+            "--dry-run",
+        ],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"superseded recovery prepare failed (rc={result.returncode})\n"
+        f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+    )
+    with open("/tmp/release_info.json", encoding="utf-8") as f:
+        info = json.load(f)
+    assert info["release_tag"] == "v26.6.3.1-stable"
+    assert info["is_tag_pushed"] is True
+    # Branch is already ahead — must not rewrite the newer version backwards.
+    assert info["is_bump_landed"] is True
 
 
 def test_prepare_refuses_stale_commit_even_when_it_is_a_tagged_release(tmp_path):
@@ -803,7 +1034,7 @@ def test_prepare_creates_from_branch_ref(tmp_path):
     release — it is never treated as out-of-order, even if a version file lags.
 
     The branch tip is a commit past ``v26.6.1.1-stable``; dispatching the branch
-    (not a tag/SHA) must set ``create_new_release=true``.
+    (not a tag/SHA) must set ``is_tag_pushed=false``.
     """
     pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
 
@@ -890,7 +1121,8 @@ def test_prepare_creates_from_branch_ref(tmp_path):
     with open("/tmp/release_info.json", encoding="utf-8") as f:
         info = json.load(f)
     assert info["release_tag"] == "v26.6.2.2-stable"
-    assert info["create_new_release"] is True
+    assert info["is_tag_pushed"] is False
+    assert info["is_bump_landed"] is False
 
 
 def test_prepare_fails_closed_on_stale_branch_version_file(tmp_path):
@@ -981,65 +1213,297 @@ def test_prepare_fails_closed_on_stale_branch_version_file(tmp_path):
     assert "is stale" in (result.stdout + result.stderr)
 
 
-# --- ReleaseInfo._enqueue_release_pr (merge_prs helper) ----------------------
+def test_prepare_refuses_rereleasing_an_already_released_line(tmp_path):
+    """A create run whose X.Y.P line was already released must fail closed.
 
+    If the post-release bump is ever lost, the branch stays on the released line,
+    so dispatching its tip recomputes the same ``26.6.2`` line with a higher
+    tweak. A ``v26.6.2.*`` tag already exists, so ``prepare`` must refuse rather
+    than silently re-release the line (the stuck-branch regression that produced
+    ``26.6.2.81`` / ``26.6.2.158`` / ``26.6.2.160``).
+    """
+    pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
 
-def _make_release_info(cr, **overrides):
-    kwargs = dict(
-        version="26.5.6.64",
-        release_type="patch",
-        release_tag="v26.5.6.64-stable",
-        release_branch="26.5",
-        commit_sha="deadbeef",
-        latest=False,
-        codename="stable",
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args):
+        subprocess.run(
+            ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+        )
+
+    git("init", "-q", "-b", "26.6")
+    git("config", "user.email", "robot@clickhouse.com")
+    git("config", "user.name", "robot-clickhouse")
+    git("config", "commit.gpgsign", "false")
+    git("config", "tag.gpgsign", "false")
+
+    (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "Anchor commit")
+    anchor = _head_sha(repo)
+
+    (repo / "cmake").mkdir()
+    (repo / _VERSIONS_FILE).write_text(
+        _VERSIONS_CONTENT.replace("0" * 40, anchor), encoding="utf-8"
     )
-    kwargs.update(overrides)
-    return cr.ReleaseInfo(**kwargs)
-
-
-def test_enqueue_release_pr_transient_gh_failure_is_best_effort(monkeypatch):
-    """A transient `gh pr view` failure must not raise (the release is already
-    published) — return False so merge_prs only warns, and never enqueue."""
-    cr = _create_release_module()
-    ri = _make_release_info(cr)
-    monkeypatch.setattr(cr.Shell, "get_output", staticmethod(lambda *a, **k: ""))
-    enqueued = []
-    monkeypatch.setattr(
-        cr.Git,
-        "enqueue_pull_request",
-        staticmethod(lambda *a, **k: enqueued.append(1) or True),
+    (repo / "src" / "Storages" / "System").mkdir(parents=True)
+    (repo / _CONTRIBUTORS_FILE).write_text(
+        "const char * auto_contributors[] {\n    nullptr};\n", encoding="utf-8"
     )
-    assert ri._enqueue_release_pr("https://x/pull/111", "ChangeLog", False) is False
-    assert not enqueued
+    git("add", "-A")
+    git("commit", "-q", "-m", "Base release commit (line 26.6.2)")
+    # The 26.6.2 line was already released, but the branch was never bumped, so
+    # the tip still describes 26.6.2 with a growing tweak.
+    git("commit", "-q", "--allow-empty", "-m", "commit after release")
+    git("tag", "-a", "v26.6.2.2-stable", "-m", "Release v26.6.2.2-stable")
+    git("commit", "-q", "--allow-empty", "-m", "more work")
+    git("commit", "-q", "--allow-empty", "-m", "more work")
+    git("remote", "add", "origin", str(repo))
+    git("fetch", "-q", "origin")
 
+    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
+    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
+    script = str(repo / "ci" / "jobs" / "scripts" / "create_release.py")
 
-def test_enqueue_release_pr_skips_already_merged(monkeypatch):
-    """A non-OPEN (e.g. already merged) PR is a no-op, not an enqueue."""
-    cr = _create_release_module()
-    ri = _make_release_info(cr)
-    monkeypatch.setattr(cr.Shell, "get_output", staticmethod(lambda *a, **k: "MERGED"))
-    enqueued = []
-    monkeypatch.setattr(
-        cr.Git,
-        "enqueue_pull_request",
-        staticmethod(lambda *a, **k: enqueued.append(1) or True),
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    gh_stub = bindir / "gh"
+    gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
+    gh_stub.chmod(0o755)
+    env = {
+        **os.environ,
+        "PYTHONPATH": REPO_ROOT,
+        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
+        "GITHUB_REPOSITORY": "test/clickhouse",
+    }
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            script,
+            "--prepare-release-info",
+            "--ref",
+            "26.6",
+            "--release-type",
+            "patch",
+            "--dry-run",
+        ],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
     )
-    assert ri._enqueue_release_pr("https://x/pull/111", "ChangeLog", False) is True
-    assert not enqueued
+    assert result.returncode != 0, "re-releasing an already-released line should fail"
+    out = result.stdout + result.stderr
+    assert "already has a release tag" in out
 
 
-def test_enqueue_release_pr_open_enqueues(monkeypatch):
-    """An OPEN PR is enqueued (no status is force-set — CH Inc sync runs on its
-    own; the PR is opened early enough to complete by enqueue time)."""
-    cr = _create_release_module()
-    ri = _make_release_info(cr)
-    monkeypatch.setattr(cr.Shell, "get_output", staticmethod(lambda *a, **k: "OPEN"))
-    enq = {}
-    monkeypatch.setattr(
-        cr.Git,
-        "enqueue_pull_request",
-        staticmethod(lambda pr, repo, **k: enq.update(pr=pr) or True),
+def test_bump_resyncs_onto_advanced_branch_tip(tmp_path):
+    """Real (non-dry-run) patch bump when a backport already advanced ``origin``.
+
+    create_release re-syncs to origin's tip (``fetch`` + ``reset --hard
+    FETCH_HEAD``) before staging the bump, so patch+1 is committed on top of the
+    backport and the push is a fast-forward — the backport is preserved, not
+    discarded. Pushes are redirected from the tokenized ``github.com`` URL to a
+    local bare origin via git ``insteadOf`` plus a fixed ``GH_TOKEN``. (The
+    non-fast-forward rebase-retry inside Git.push — for a backport landing after
+    this resync — is covered by test_push_rebases_onto_advanced_remote.)
+    """
+    pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    origin = tmp_path / "origin.git"
+
+    def git(*args, cwd=repo):
+        subprocess.run(
+            ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
+        )
+
+    git("init", "-q", "-b", "26.6")
+    git("config", "user.email", "robot@clickhouse.com")
+    git("config", "user.name", "robot-clickhouse")
+    git("config", "commit.gpgsign", "false")
+    git("config", "tag.gpgsign", "false")
+
+    (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "Anchor commit (previous release)")
+    anchor = _head_sha(repo)
+
+    (repo / "cmake").mkdir()
+    (repo / _VERSIONS_FILE).write_text(
+        _VERSIONS_CONTENT.replace("0" * 40, anchor), encoding="utf-8"
     )
-    assert ri._enqueue_release_pr("https://x/pull/111", "ChangeLog", False) is True
-    assert enq["pr"] == 111
+    (repo / "src" / "Storages" / "System").mkdir(parents=True)
+    (repo / _CONTRIBUTORS_FILE).write_text(
+        "const char * auto_contributors[] {\n    nullptr};\n", encoding="utf-8"
+    )
+    git("add", "-A")
+    git("commit", "-q", "-m", "Base release commit (un-bumped tip)")
+    git("tag", "-a", "v26.6.2.1-stable", "-m", "Release v26.6.2.1-stable")
+
+    # Bare origin the tool fetches from and (via insteadOf) pushes to.
+    git("init", "-q", "--bare", str(origin), cwd=tmp_path)
+    git("remote", "add", "origin", str(origin))
+    git("push", "-q", "origin", "26.6", "--tags")
+    git("fetch", "-q", "origin")
+
+    # A backport lands on origin/26.6 after the release job's checkout, so the
+    # tip the bump must land on is ahead of what this repo has. Push it from a
+    # throwaway clone so this repo's local 26.6 stays at the release tip.
+    clone = tmp_path / "backport_clone"
+    git("clone", "-q", "-b", "26.6", str(origin), str(clone), cwd=tmp_path)
+    git("config", "user.email", "dev@clickhouse.com", cwd=clone)
+    git("config", "user.name", "dev", cwd=clone)
+    git("config", "commit.gpgsign", "false", cwd=clone)
+    (clone / "backport.txt").write_text("backport landed mid-release\n", encoding="utf-8")
+    git("add", "-A", cwd=clone)
+    git("commit", "-q", "-m", "Backport during release", cwd=clone)
+    git("push", "-q", "origin", "HEAD:26.6", cwd=clone)
+    backport_sha = _head_sha(clone)
+
+    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
+    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
+    script = str(repo / "ci" / "jobs" / "scripts" / "create_release.py")
+
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    gh_stub = bindir / "gh"
+    gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
+    gh_stub.chmod(0o755)
+
+    # Redirect the tokenized github.com push URL to the local bare origin. The
+    # token is pinned via GH_TOKEN so the URL insteadOf must match is fixed.
+    push_url = "https://x-access-token:faketoken@github.com/test/clickhouse.git"
+    git("config", f"url.{origin}.insteadOf", push_url)
+
+    env = {
+        **os.environ,
+        "PYTHONPATH": REPO_ROOT,
+        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
+        "GITHUB_REPOSITORY": "test/clickhouse",
+        "GH_TOKEN": "faketoken",
+    }
+
+    def step(*flags):
+        result = subprocess.run(
+            [sys.executable, script, *flags], cwd=repo, env=env,
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, (
+            f"step {flags} failed (rc={result.returncode})\n"
+            f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+        )
+        return result
+
+    step("--prepare-release-info", "--ref", "v26.6.2.1-stable",
+         "--release-type", "patch", "--dry-run")
+    with open("/tmp/release_info.json", encoding="utf-8") as f:
+        info = json.load(f)
+    assert info["is_bump_landed"] is False
+
+    # Real (non-dry) bump: origin advanced to the backport, so the bump must
+    # re-sync to that tip (`reset --hard FETCH_HEAD`) and rebuild there before
+    # pushing, rather than pushing the stale start-of-run checkout.
+    bump = step("--create-bump-version-pr")
+    assert "reset --hard FETCH_HEAD" in bump.stdout
+
+    def origin_show(path):
+        return subprocess.run(
+            ["git", "show", f"26.6:{path}"], cwd=origin,
+            check=True, capture_output=True, text=True,
+        ).stdout
+
+    # Origin now carries the bump at patch+1 (26.6.2 -> 26.6.3).
+    versions = origin_show(_VERSIONS_FILE)
+    assert "SET(VERSION_PATCH 3)" in versions
+    assert "SET(VERSION_STRING 26.6.3.1)" in versions
+    # The backport is preserved: it is an ancestor of the pushed bump, and its
+    # file survived the rebuild rather than being clobbered.
+    subprocess.run(
+        ["git", "merge-base", "--is-ancestor", backport_sha, "26.6"],
+        cwd=origin, check=True, capture_output=True, text=True,
+    )
+    assert "backport landed mid-release" in origin_show("backport.txt")
+
+
+def test_push_rebases_onto_advanced_remote(tmp_path, monkeypatch, capsys):
+    """`Git.push(rebase_retries=...)` heals a non-fast-forward directly.
+
+    The remote advances (a concurrent push) after the local commit is made, so
+    the first push is rejected; the rebase loop must fetch origin, rebase the
+    local commit onto the new tip, and retry. Unlike the create_release path,
+    nothing resyncs before the push here, so the loop is actually exercised —
+    deleting it makes `Git.push(strict=True)` raise and this test fail.
+    """
+    from ci.praktika.git import Git
+
+    origin = tmp_path / "origin.git"
+    work = tmp_path / "work"
+    clone = tmp_path / "clone"
+
+    def g(*args, cwd):
+        subprocess.run(
+            ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
+        )
+
+    ident = ["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false"]
+
+    g("init", "-q", "--bare", str(origin), cwd=tmp_path)
+    g("init", "-q", "-b", "26.6", str(work), cwd=tmp_path)
+    (work / "f.txt").write_text("base\n", encoding="utf-8")
+    g("add", "-A", cwd=work)
+    g(*ident, "commit", "-q", "-m", "base", cwd=work)
+    g("remote", "add", "origin", str(origin), cwd=work)
+    g("push", "-q", "origin", "26.6", cwd=work)
+
+    # A concurrent push advances origin/26.6 past what `work` has.
+    g("clone", "-q", "-b", "26.6", str(origin), str(clone), cwd=tmp_path)
+    (clone / "backport.txt").write_text("backport\n", encoding="utf-8")
+    g("add", "-A", cwd=clone)
+    g(*ident, "commit", "-q", "-m", "backport", cwd=clone)
+    g("push", "-q", "origin", "HEAD:26.6", cwd=clone)
+    backport_sha = _head_sha(clone)
+
+    # Local commit made on the OLD tip (work never fetched the backport), so the
+    # first push is a non-fast-forward.
+    (work / "version.txt").write_text("bumped\n", encoding="utf-8")
+    g("add", "-A", cwd=work)
+    g(*ident, "commit", "-q", "-m", "bump", cwd=work)
+
+    # Redirect the tokenized github.com push URL to the local bare origin.
+    push_url = "https://x-access-token:faketoken@github.com/test/clickhouse.git"
+    g("config", f"url.{origin}.insteadOf", push_url, cwd=work)
+
+    monkeypatch.chdir(work)
+    monkeypatch.setenv("GH_TOKEN", "faketoken")
+    git_prefix = "git -c user.email=t@t -c user.name=t -c commit.gpgsign=false"
+
+    ok = Git.push(
+        "test/clickhouse",
+        "HEAD:refs/heads/26.6",
+        strict=True,
+        retries=1,
+        rebase_retries=5,
+        git_prefix=git_prefix,
+    )
+    assert ok is True
+    assert "re-syncing and retrying" in capsys.readouterr().out  # the loop ran
+
+    # origin now carries the bump rebased on top of the backport (both preserved).
+    subprocess.run(
+        ["git", "merge-base", "--is-ancestor", backport_sha, "26.6"],
+        cwd=origin,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    for path in ("version.txt", "backport.txt"):
+        assert (
+            subprocess.run(
+                ["git", "show", f"26.6:{path}"], cwd=origin, capture_output=True
+            ).returncode
+            == 0
+        ), f"{path} missing from pushed branch"

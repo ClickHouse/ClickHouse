@@ -17,6 +17,7 @@
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -26,6 +27,7 @@
 #include <Common/assert_cast.h>
 #include <Common/FloatUtils.h>
 #include <Common/DateLUTImpl.h>
+#include <Functions/DateTimeTransforms.h>
 #include <Core/UUID.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/predicate.hpp>
@@ -427,7 +429,35 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
                 /// (`readColumnWithDate32Data`): a day number outside ClickHouse's allowed Date32 range is
                 /// saturated or rejected according to `date_time_overflow_behavior` (its default `Ignore`,
                 /// like `Throw`, rejects — preserving the pre-`date_time_overflow_behavior` behavior)
-                /// instead of leaving an invalid Date32 in the result.
+                /// instead of leaving an invalid Date32 in the result. When the requested header type is
+                /// `Date`, enforce the narrower Date range [0, 65535] instead: `buildChunk` later casts the
+                /// intermediate Date32 column to `Date` without checks, narrowing the day number to UInt16,
+                /// so an unchecked extended Date32 value would wrap into an unrelated in-range `Date`.
+                /// Similarly, when the requested header type is `DateTime`, enforce the
+                /// [0, MAX_DATETIME_DAY_NUM] window that `ToDateTimeImpl` uses: the later context-less cast
+                /// ignores `date_time_overflow_behavior` and wraps day numbers whose midnight does not fit.
+                /// A `DateTime64` header type needs the same treatment, but its window is scale-dependent: the
+                /// context-less cast clamps whole seconds the target scale cannot represent, and a scale-9
+                /// `DateTime64` stops at `2262-04-11`, far below the Date32 upper bound.
+                const DataTypePtr stripped_hint = effective_hint ? stripHint(effective_hint) : nullptr;
+                const bool date32_as_date = stripped_hint && isDate(*stripped_hint);
+                const bool date32_as_datetime = stripped_hint && isDateTime(*stripped_hint);
+                const auto * dt64_hint = stripped_hint ? typeid_cast<const DataTypeDateTime64 *>(stripped_hint.get()) : nullptr;
+                const auto [dt64_min_day, dt64_max_day] = dt64_hint
+                    ? getDateTime64DayNumRange(
+                          DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_hint->getScale()), dt64_hint->getTimeZone())
+                    : std::pair<Int32, Int32>{DATE_LUT_MIN_EXTEND_DAY_NUM, DATE_LUT_MAX_EXTEND_DAY_NUM};
+                const Int32 min_day = (date32_as_date || date32_as_datetime) ? 0
+                    : dt64_hint ? dt64_min_day
+                    : DATE_LUT_MIN_EXTEND_DAY_NUM;
+                const Int32 max_day = date32_as_date ? DATE_LUT_MAX_DAY_NUM
+                    : date32_as_datetime ? static_cast<Int32>(MAX_DATETIME_DAY_NUM)
+                    : dt64_hint ? dt64_max_day
+                    : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                const String target_type_name = date32_as_date ? "Date"
+                    : date32_as_datetime ? "DateTime"
+                    : dt64_hint ? stripped_hint->getName()
+                    : "Date32";
                 checkBufferSize(values, requiredBytes(rows, sizeof(Int32)), "date32");
                 auto & data = assert_cast<ColumnInt32 &>(*column).getData();
                 data.resize(rows);
@@ -436,15 +466,15 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
                 for (size_t i = 0; i < rows; ++i)
                 {
                     Int32 days = src[i];
-                    if (days > DATE_LUT_MAX_EXTEND_DAY_NUM || days < -DAYNUM_OFFSET_EPOCH)
+                    if (days > max_day || days < min_day)
                     {
                         if (saturate)
-                            days = days < -DAYNUM_OFFSET_EPOCH ? -DAYNUM_OFFSET_EPOCH : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                            days = days < min_day ? min_day : max_day;
                         else
                             throw Exception(
                                 ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                                "Arrow IPC date32 value {} is out of the allowed Date32 range [{}, {}]",
-                                days, -DAYNUM_OFFSET_EPOCH, DATE_LUT_MAX_EXTEND_DAY_NUM);
+                                "Arrow IPC date32 value {} is out of the allowed {} range [{}, {}]",
+                                days, target_type_name, min_day, max_day);
                     }
                     data[i] = days;
                 }

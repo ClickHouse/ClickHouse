@@ -14,13 +14,13 @@ public:
         const Block & required_right_keys;
         const std::vector<String> & required_right_keys_sources;
 
-        size_t max_joined_block_rows;
-        size_t max_joined_block_bytes;
+        size_t max_joined_block_rows = 0;
+        size_t max_joined_block_bytes = 0;
 
-        size_t avg_joined_bytes_per_row;
+        size_t avg_joined_bytes_per_row = 0;
 
-        bool need_filter;
-        bool is_join_get;
+        bool need_filter = false;
+        bool is_join_get = false;
 
         bool joined_block_split_single_row = false;
 

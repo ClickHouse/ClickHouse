@@ -27,9 +27,14 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 허용되는 값은 다음과 같습니다.
 
 * `plaintext_password`
+
 * `sha256_password`
+
 * `double_sha1_password`
+
 * `bcrypt_password`
+
+* **기본값:** `sha256_password`
 
 ```xml
 <default_password_type>sha256_password</default_password_type>
@@ -40,6 +45,8 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 </div>
 
 기본 설정 프로필입니다. 설정 프로필은 `user_config` 설정에서 지정한 파일에 있습니다.
+
+* **기본값:** `default`
 
 **예시**
 
@@ -52,6 +59,8 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 </div>
 
 기본 세션 타임아웃입니다. 단위는 초입니다.
+
+* **기본값:** `60`
 
 ```xml
 <default_session_timeout>60</default_session_timeout>

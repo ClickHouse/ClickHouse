@@ -90,6 +90,10 @@
     M(IOBufferAllocBytes, "Number of bytes allocated for IO buffers (for ReadBuffer/WriteBuffer).", ValueType::Bytes) \
     M(ArenaAllocChunks, "Number of chunks allocated for memory Arena (used for GROUP BY and similar operations)", ValueType::Number) \
     M(ArenaAllocBytes, "Number of bytes allocated for memory Arena (used for GROUP BY and similar operations)", ValueType::Bytes) \
+    M(FiberStackAllocs, "Number of stacks allocated for fibers (fibers are used for asynchronous communication with remote replicas).", ValueType::Number) \
+    M(FiberStackAllocBytes, "Number of bytes allocated for fiber stacks, including guard pages (guard pages are only used in debug and sanitizer builds).", ValueType::Bytes) \
+    M(FiberStackAllocNanoseconds, "Amount of time spent allocating fiber stacks. Nanoseconds are used because a single allocation is normally faster than a microsecond, unless the allocator or the kernel is contended.", ValueType::Nanoseconds) \
+    M(FiberStackFreeNanoseconds, "Amount of time spent deallocating fiber stacks.", ValueType::Nanoseconds) \
     M(FunctionExecute, "Number of SQL ordinary function calls (SQL functions are called on per-block basis, so this number represents the number of blocks).", ValueType::Number) \
     M(TableFunctionExecute, "Number of table function calls.", ValueType::Number) \
     M(DefaultImplementationForNullsRows, "Number of rows processed by default implementation for nulls in function execution", ValueType::Number) \
@@ -261,14 +265,14 @@
     M(QueryRemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth' throttler.", ValueType::Bytes) \
     M(QueryRemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth' throttling.", ValueType::Microseconds) \
     M(ReaderExecutorSourceRequests, "Number of source-side requests opened by ReaderExecutor (excludes live-buffer reuses).", ValueType::Number) \
-    M(ReaderExecutorBytesFromSource, "Physical bytes ReaderExecutor issued to the source after missing all cache tiers (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorRequestedBytes.", ValueType::Bytes) \
-    M(ReaderExecutorRequestedBytes, "Useful bytes ReaderExecutor delivered to read requests (the requested window payload, excluding over-read and cache write-back). Denominator for the modeled cost-per-byte KPI (ReaderExecutorModeledCostMicroseconds / ReaderExecutorRequestedBytes).", ValueType::Bytes) \
+    M(ReaderExecutorBytesFromSource, "Physical bytes ReaderExecutor issued to the source after missing all cache tiers (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorDeliveredBytes.", ValueType::Bytes) \
+    M(ReaderExecutorDeliveredBytes, "Useful bytes ReaderExecutor delivered to read requests (the requested window payload, excluding over-read and cache write-back). Denominator for the modeled cost-per-byte KPI (ReaderExecutorModeledCostMicroseconds / ReaderExecutorDeliveredBytes).", ValueType::Bytes) \
     M(ReaderExecutorCacheGetRequests, "Number of ICacheHandle::get invocations in ReaderExecutor. Zero until the ReaderExecutor cache tiers are introduced.", ValueType::Number) \
     M(ReaderExecutorCachePopulateRequests, "Number of ICacheHandle::put invocations in ReaderExecutor. Zero until the ReaderExecutor cache tiers are introduced.", ValueType::Number) \
     M(ReaderExecutorIncompleteConnections, "Number of source connections ReaderExecutor dropped before draining them to their right bound; not pool-reusable, forcing a re-establishment. Zero until ReaderExecutor live source-buffer reuse is introduced.", ValueType::Number) \
     M(ReaderExecutorWorkMicroseconds, "Total wall-clock time spent inside ReaderExecutor::readNextWindow (opening, seeking and reading the served window). Direct contributor to query read latency.", ValueType::Microseconds) \
     M(ReaderExecutorDecryptMicroseconds, "Time ReaderExecutor spent decrypting served payload in place (CTR, position-addressable). Zero for unencrypted reads and in builds without SSL.", ValueType::Microseconds) \
-    M(ReaderExecutorModeledCostMicroseconds, "Modeled I/O cost of ReaderExecutor reads: a synthetic proxy KPI for read-path optimality, NOT measured latency. Weighted sum of the counters above with heuristic S3 weights: 30ms per source request + 5ms per incomplete connection + 20ms per MiB transferred from source (useful payload plus over-read) + 0.1ms per cache put + 0.05ms per cache get. Divide by ReaderExecutorRequestedBytes for a load-independent cost-per-byte. Experimental, tracks the experimental ReaderExecutor.", ValueType::Microseconds) \
+    M(ReaderExecutorModeledCostMicroseconds, "Modeled I/O cost of ReaderExecutor reads: a synthetic proxy KPI for read-path optimality, NOT measured latency. Weighted sum of the counters above with heuristic S3 weights: 30ms per source request + 5ms per incomplete connection + 20ms per MiB transferred from source (useful payload plus over-read) + 0.1ms per cache put + 0.05ms per cache get. Divide by ReaderExecutorDeliveredBytes for a load-independent cost-per-byte. Experimental, tracks the experimental ReaderExecutor.", ValueType::Microseconds) \
     M(ReaderExecutorLongConnectionOpened, "Number of long source connections opened by ReaderExecutor for sequential read optimization.", ValueType::Number) \
     M(ReaderExecutorLongConnectionHits, "Number of windows ReaderExecutor served by reading from an already-open long source connection.", ValueType::Number) \
     M(ReaderExecutorLongConnectionFallbacks, "Number of times ReaderExecutor wanted a long connection but fell back to a one-shot read because no slot was available.", ValueType::Number) \
@@ -290,6 +294,7 @@
     M(PatchesAppliedInAllReadTasks, "Total number of applied patch parts among all read tasks", ValueType::Number) \
     M(PatchesMergeAppliedInAllReadTasks, "Total number of applied patch parts with Merge mode among all read tasks", ValueType::Number) \
     M(PatchesJoinAppliedInAllReadTasks, "Total number of applied patch parts with Join mode among all read tasks", ValueType::Number) \
+    M(PatchesMergeOnKeyAppliedInAllReadTasks, "Total number of applied patch parts with MergeOnKey mode (v2) among all read tasks", ValueType::Number) \
     M(PatchesReadRows, "Total number of rows read from patch parts", ValueType::Number) \
     M(PatchesReadUncompressedBytes, "Total number of uncompressed bytes read from patch parts", ValueType::Number) \
     M(PatchesJoinRowsAddedToHashTable, "Total number of rows added to hash tables when applying patch parts with Join mode", ValueType::Number) \
@@ -297,6 +302,7 @@
     M(ReadPatchesMicroseconds, "Total time spent reading patch parts", ValueType::Number) \
     M(BuildPatchesMergeMicroseconds, "Total time spent building indexes for applying patch parts with Merge mode", ValueType::Number) \
     M(BuildPatchesJoinMicroseconds, "Total time spent building indexes and hash tables for applying patch parts with Join mode", ValueType::Number) \
+    M(ApplyPatchMergeOnKeyMicroseconds, "Total time spent inside applyPatchesMergeOnKey sort-key merge loops", ValueType::Number) \
     M(AnalyzePatchRangesMicroseconds, "Total time spent analyzing index of patch parts", ValueType::Number) \
     M(ReadTasksWithAppliedMutationsOnFly, "Total number of read tasks for which there was any mutation applied on fly", ValueType::Number) \
     M(MutationsAppliedOnFlyInAllReadTasks, "Total number of applied mutations on-fly among all read tasks", ValueType::Number) \
@@ -927,10 +933,10 @@ The server successfully detected this situation and will download merged part fr
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer", ValueType::Number) \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem", ValueType::Number) \
-    M(RemoteFSCancelledPrefetches, "Number of cancelled prefecthes (because of seek)", ValueType::Number) \
+    M(RemoteFSCancelledPrefetches, "Number of cancelled prefetches (because of seek)", ValueType::Number) \
     M(RemoteFSUnusedPrefetches, "Number of prefetches pending at buffer destruction", ValueType::Number) \
-    M(RemoteFSPrefetchedReads, "Number of reads from prefecthed buffer", ValueType::Number) \
-    M(RemoteFSPrefetchedBytes, "Number of bytes from prefecthed buffer", ValueType::Bytes) \
+    M(RemoteFSPrefetchedReads, "Number of reads from prefetched buffer", ValueType::Number) \
+    M(RemoteFSPrefetchedBytes, "Number of bytes from prefetched buffer", ValueType::Bytes) \
     M(RemoteFSUnprefetchedReads, "Number of reads from unprefetched buffer", ValueType::Number) \
     M(RemoteFSUnprefetchedBytes, "Number of bytes from unprefetched buffer", ValueType::Bytes) \
     M(RemoteFSLazySeeks, "Number of lazy seeks", ValueType::Number) \
@@ -972,9 +978,28 @@ The server successfully detected this situation and will download merged part fr
     M(MainConfigLoads, "Number of times the main configuration was reloaded.", ValueType::Number) \
     \
     M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.", ValueType::Number) \
+    M(AdaptiveAggregationLocalFreezes, "How many local hash tables the adaptive aggregation froze at the freeze threshold.", ValueType::Number) \
+    M(AdaptiveAggregationGiveUps, "How many threads gave up on freezing in the adaptive aggregation because their stream held few distinct keys.", ValueType::Number) \
+    M(AdaptiveAggregationPressureStandDowns, "How many threads in the adaptive aggregation left the learning phase for good because memory pressure crossed the external aggregation threshold, so their local tables spill through the ordinary external aggregation.", ValueType::Number) \
+    M(AdaptiveAggregationThaws, "How many times the adaptive aggregation thawed the local tables because the staged stream proved repeat-dominated.", ValueType::Number) \
+    M(AdaptiveAggregationProbeBypasses, "How many threads stopped probing their frozen local table in the adaptive aggregation because almost no row hit it.", ValueType::Number) \
+    M(AdaptiveAggregationStagedRecords, "How many delayed records the adaptive aggregation staged before deduplication.", ValueType::Number) \
+    M(AdaptiveAggregationStagedRecordsMerged, "How many staged records the adaptive aggregation merged away as duplicate keys at publish and at the seal.", ValueType::Number) \
+    M(AdaptiveAggregationStagedBytes, "How many key bytes the adaptive aggregation staged for the merge-time drain.", ValueType::Bytes) \
+    M(AdaptiveAggregationSealedChunks, "How many coalesced chunks the adaptive aggregation sealed from buffered staging batches.", ValueType::Number) \
+    M(AdaptiveAggregationSealNormalizations, "How many staged argument columns the adaptive aggregation seal normalized from a wrapped representation (Const, Replicated, Sparse, LowCardinality) to the dense form the drain consumes.", ValueType::Number) \
+    M(AdaptiveAggregationDrainedRecords, "How many delayed records the adaptive aggregation drained into the shared table at merge time.", ValueType::Number) \
+    M(AdaptiveAggregationPressureSweeps, "How many times the adaptive aggregation drained staged records early because of memory pressure.", ValueType::Number) \
+    M(AdaptiveAggregationPressureDrainedRecords, "How many staged records the adaptive aggregation drained early under memory pressure.", ValueType::Number) \
+    M(AdaptiveAggregationBucketsRetired, "Number of two-level buckets whose working memory (arena slot, staged-chunk references) was retired right after their merge-and-convert completed, ahead of the whole merge finishing.", ValueType::Number) \
+    M(AggregationBucketTopKConversions, "Number of two-level buckets converted through the bucket-local Top-K selection (the aggregationBucketTopK plan optimization).", ValueType::Number) \
     M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.", ValueType::Number) \
     M(AggregationConvertedToTwoLevel, "How many times a single-level aggregation hash table was converted to two-level at runtime.", ValueType::Number) \
     M(AggregationOptimizedEqualRangesOfKeys, "For how many blocks optimization of equal ranges of keys was applied", ValueType::Number) \
+    M(AggregationTopKRowsSkipped, "How many rows were skipped during aggregation because their grouping key could not enter the top-K result (see `enable_group_by_top_k_optimization`).", ValueType::Number) \
+    M(AggregationTopKKeysEvicted, "How many grouping keys were evicted from the bounded top-K heap during aggregation (see `enable_group_by_top_k_optimization`).", ValueType::Number) \
+    M(AggregationTopKKeysPruned, "How many evicted grouping keys were also erased from the intermediate hash table, with their aggregate states destroyed (see `enable_group_by_top_k_optimization`). Lower than `AggregationTopKKeysEvicted` when the aggregation method cannot erase keys, or when only a prefix of the key is ranked: the heap then still skips rows, but the hash table keeps every admitted group.", ValueType::Number) \
+    M(AggregationTopKHeapsFrozen, "How many top-K aggregation heaps were frozen, falling back to regular aggregation. Either the heap rejected almost nothing within its observation window (e.g. the number of distinct grouping keys does not exceed the LIMIT), or a tie-set at the heap's boundary - which can never be evicted - overgrew it (see `enable_group_by_top_k_optimization`).", ValueType::Number) \
     M(HashJoinPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for hash join.", ValueType::Number) \
     \
     M(MetadataFromKeeperCacheHit, "Number of times an object storage metadata request was answered from cache without making request to Keeper", ValueType::Number) \
@@ -1191,6 +1216,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ConnectionPoolIsFullMicroseconds, "Total time spent waiting for a slot in connection pool.", ValueType::Microseconds) \
     M(AsyncLoaderWaitMicroseconds, "Total time a query was waiting for async loader jobs.", ValueType::Microseconds) \
+    M(AsyncLoaderSpawnFailures, "Number of times the async loader could not spawn a worker because the global thread pool could not provide a thread. Queued jobs are then run by a worker the pool already has: one that is running, or one resuming from a wait on a job of another pool.", ValueType::Number) \
     \
     M(DistrCacheServerSwitches, "Distributed Cache read buffer event. Number of server switches between distributed cache servers in read/write-through cache", ValueType::Number) \
     M(DistrCacheReadMicroseconds, "Distributed Cache read buffer event. Time spent reading from distributed cache", ValueType::Microseconds) \
@@ -1381,13 +1407,64 @@ The server successfully detected this situation and will download merged part fr
     M(SharedMergeTreeReplicaSetUpdatesFromZooKeeperMicroseconds, "How much time we spend to update replica set", ValueType::Number) \
     \
     M(KeeperLogsEntryReadFromLatestCache, "Number of log entries in Keeper being read from latest logs cache", ValueType::Number) \
-    M(KeeperLogsEntryReadFromCommitCache, "Number of log entries in Keeper being read from commit logs cache", ValueType::Number) \
     M(KeeperLogsEntryReadFromFile, "Number of log entries in Keeper being read directly from the changelog file", ValueType::Number) \
-    M(KeeperLogsPrefetchedEntries, "Number of log entries in Keeper being prefetched from the changelog file", ValueType::Number) \
+    M(KeeperLogsReadAheadFillReopens, "Number of times the Keeper read-ahead fill reopened or seeked a changelog file", ValueType::Number) \
+    M(KeeperLogsReadAheadFillDecodedEntries, "Number of log entries decoded by the Keeper read-ahead fill task", ValueType::Number) \
+    M(KeeperLogsReadAheadCursorsInstalled, "Number of new fill cursors queued onto a Keeper changelog read-ahead reader (peer or commit) that the fill task was not already covering", ValueType::Number) \
+    M(KeeperLogsReadAheadPlanEpochMismatches, "Number of times a Keeper changelog read plan was discarded because a concurrent write_at truncation invalidated it before it could be served", ValueType::Number) \
+    M(KeeperLogsReadAheadScheduleRejected, "Number of times a Keeper changelog read-ahead reader could not be created because the read-ahead thread pool queue was full; the caller falls back to a direct read", ValueType::Number) \
+    M(KeeperLogsReadAheadReadersCreated, "Number of Keeper changelog read-ahead readers (and their fill tasks) created; staying flat across file boundaries indicates a reader is being reused rather than torn down and recreated", ValueType::Number) \
+    M(KeeperLogsReadAheadTimeoutFallbacks, "Number of times a Keeper changelog read-ahead serve request timed out waiting for the fill task and fell back to a direct read of the remaining tail", ValueType::Number) \
+    M(KeeperLogsEntryReadFromCommitReadAhead, "Number of log entries served to the commit thread from the commit read-ahead reader's decoded window (fast-path pop or first-of-window drain pop)", ValueType::Number) \
     M(KeeperChangelogWrittenBytes, "Number of bytes written to the changelog in Keeper", ValueType::Bytes) \
     M(KeeperChangelogFileSyncMicroseconds, "Time spent in fsync for Keeper changelog (uncompressed logs only)", ValueType::Microseconds) \
+    M(KeeperChangelogStartupReadMicroseconds, "Wall time spent in the parallel changelog read during Keeper startup", ValueType::Microseconds) \
+    M(KeeperChangelogStartupStitchMicroseconds, "Wall time spent stitching per-file parallel startup read results into LogEntryStorage state", ValueType::Microseconds) \
+    M(KeeperChangelogStartupReadEntries, "Number of changelog records validated by the parallel Keeper startup reader", ValueType::Number) \
+    M(KeeperChangelogStartupReadBytes, "Number of physical bytes (checksum + header + blob) read from changelog files by the parallel Keeper startup reader", ValueType::Bytes) \
     M(KeeperSnapshotWrittenBytes, "Number of bytes written to snapshot files in Keeper", ValueType::Bytes) \
     M(KeeperSnapshotFileSyncMicroseconds, "Time spent in fsync for Keeper snapshot files", ValueType::Microseconds) \
+    \
+    M(KeeperLSMTFlushes, "Number of Keeper LSMT memtable flushes finished successfully", ValueType::Number) \
+    M(KeeperLSMTMerges, "Number of Keeper LSMT merges finished successfully", ValueType::Number) \
+    M(KeeperLSMTFlushExceptions, "Number of exceptions in Keeper LSMT memtable flushes", ValueType::Number) \
+    M(KeeperLSMTMergeExceptions, "Number of exceptions in Keeper LSMT merges", ValueType::Number) \
+    M(KeeperLSMTFileDeletionExceptions, "Number of exceptions in Keeper LSMT file deletions", ValueType::Number) \
+    M(KeeperLSMTFlushWrittenCompressedBytes, "Compressed bytes written to files by Keeper LSMT memtable flushes", ValueType::Bytes) \
+    M(KeeperLSMTFlushWrittenUncompressedBytes, "Uncompressed bytes written to files by Keeper LSMT memtable flushes", ValueType::Bytes) \
+    M(KeeperLSMTMergeWrittenFiles, "Number of output files published by Keeper LSMT merges", ValueType::Number) \
+    M(KeeperLSMTMergeWrittenCompressedBytes, "Compressed bytes in output files published by Keeper LSMT merges", ValueType::Bytes) \
+    M(KeeperLSMTMergeWrittenUncompressedBytes, "Uncompressed bytes in output files published by Keeper LSMT merges", ValueType::Bytes) \
+    M(KeeperLSMTMergeConsumedFiles, "Number of input files fully consumed and dropped by Keeper LSMT merges", ValueType::Number) \
+    M(KeeperLSMTMergeConsumedUncompressedBytes, "Uncompressed bytes in input files fully consumed and dropped by Keeper LSMT merges", ValueType::Bytes) \
+    M(KeeperLSMTUncommittedCreates, "Number of Create entries appended to Keeper LSMT uncommitted memtables", ValueType::Number) \
+    M(KeeperLSMTUncommittedCreateBytes, "Serialized bytes of Create entries appended to Keeper LSMT uncommitted memtables", ValueType::Bytes) \
+    M(KeeperLSMTUncommittedUpdates, "Number of Update entries appended to Keeper LSMT uncommitted memtables", ValueType::Number) \
+    M(KeeperLSMTUncommittedUpdateBytes, "Serialized bytes of Update entries appended to Keeper LSMT uncommitted memtables", ValueType::Bytes) \
+    M(KeeperLSMTUncommittedRemoves, "Number of Remove entries appended to Keeper LSMT uncommitted memtables", ValueType::Number) \
+    M(KeeperLSMTUncommittedRemoveBytes, "Serialized bytes of Remove entries appended to Keeper LSMT uncommitted memtables", ValueType::Bytes) \
+    M(KeeperLSMTCommittedEntryBytes, "Serialized bytes of entries appended to the Keeper LSMT committed memtable", ValueType::Bytes) \
+    M(KeeperLSMTThrottledWrites, "Number of writes delayed because Keeper LSMT background flushes or merges fell behind", ValueType::Number) \
+    M(KeeperLSMTCommittedMemtablesCreated, "Number of committed memtables created by Keeper LSMT", ValueType::Number) \
+    M(KeeperLSMTUncommittedMemtablesCreated, "Number of uncommitted memtables created by Keeper LSMT", ValueType::Number) \
+    M(KeeperLSMTGetUncommittedNodeHits, "Number of Keeper LSMT node lookups that found the node in uncommitted memtables", ValueType::Number) \
+    M(KeeperLSMTGetUncommittedNodeMisses, "Number of Keeper LSMT node lookups that didn't find the node in uncommitted memtables and fell through to committed state", ValueType::Number) \
+    M(KeeperLSMTGetCommittedNodeFromMemory, "Number of Keeper LSMT committed node lookups that found the node's block already in memory", ValueType::Number) \
+    M(KeeperLSMTGetCommittedNodeNonexistent, "Number of Keeper LSMT committed node lookups for nodes that don't exist", ValueType::Number) \
+    M(KeeperLSMTGetCommittedNodeLoadedBlock, "Number of Keeper LSMT committed node lookups that had to load the node's block", ValueType::Number) \
+    M(KeeperLSMTNodeCacheEntriesUpdated, "Number of Keeper LSMT node cache entries re-pointed at a freshly loaded block", ValueType::Number) \
+    M(KeeperLSMTListNamesFromMemtables, "Child names (including tombstones) obtained from memtables by Keeper LSMT list operations", ValueType::Number) \
+    M(KeeperLSMTListNamesFromFiles, "Child names (including tombstones) obtained from files by Keeper LSMT list operations", ValueType::Number) \
+    M(KeeperLSMTListScannedBlocks, "Blocks scanned by Keeper LSMT list operations in files", ValueType::Number) \
+    M(KeeperLSMTListScannedEntries, "Entries scanned by Keeper LSMT list operations in files", ValueType::Number) \
+    M(KeeperLSMTListFilterSkipped, "Number of file scans skipped by Keeper LSMT list operations because the parent paths filter ruled out any children", ValueType::Number) \
+    M(KeeperLSMTListFilterFalsePositives, "Number of file scans not skipped by the Keeper LSMT parent paths filter that found no children", ValueType::Number) \
+    M(KeeperLSMTListFilterTruePositives, "Number of file scans not skipped by the Keeper LSMT parent paths filter that found children", ValueType::Number) \
+    M(KeeperLSMTGetBlockFromWeakPtr, "Number of Keeper LSMT block accesses served by the weak pointer in the file's block info", ValueType::Number) \
+    M(KeeperLSMTGetBlockFromCache, "Number of Keeper LSMT block accesses served by the block cache", ValueType::Number) \
+    M(KeeperLSMTGetBlockLoadedGroup, "Number of Keeper LSMT block accesses that had to load a block group from disk", ValueType::Number) \
+    M(KeeperLSMTLoadedBlocks, "Number of blocks loaded from disk by Keeper LSMT", ValueType::Number) \
+    M(KeeperLSMTLoadedUncompressedBytes, "Uncompressed bytes of blocks loaded from disk by Keeper LSMT", ValueType::Bytes) \
     \
     M(StorageConnectionsCreated, "Number of created connections for storages", ValueType::Number) \
     M(StorageConnectionsReused, "Number of reused connections for storages", ValueType::Number) \
@@ -1494,6 +1571,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
     M(ParquetPrunedRowGroups, "The total number of row groups pruned from parquet data", ValueType::Number) \
+    M(ParquetReadPages, "The total number of Parquet data pages read", ValueType::Number) \
     M(ParquetPrunedPages, "The total number of pages pruned from parquet data via column index", ValueType::Number) \
     M(ParquetDecodingTasks, "Tasks issued by parquet reader", ValueType::Number) \
     M(ParquetDecodingTaskBatches, "Task groups sent to a thread pool by parquet reader", ValueType::Number) \
@@ -1535,6 +1613,8 @@ The server successfully detected this situation and will download merged part fr
     M(JemallocFailedDeallocationSampleTracking, "Total number of times tracking of jemalloc deallocation sample failed", ValueType::Number) \
     \
     M(LoadedStatisticsMicroseconds, "Elapsed time of loading statistics from parts", ValueType::Microseconds) \
+    M(SelectivityEstimatorInSetNotBuilt, "Number of `IN` conditions the selectivity estimator could not analyse because the set was not built yet, and it must not run the subquery to fill it", ValueType::Number) \
+    M(SelectivityEstimatorInSetEstimatedFromSize, "Number of `IN` conditions whose selectivity was estimated from the size and bounds of the set instead of its exact ranges, because the set exceeds `statistics_max_set_size_for_exact_selectivity_estimation`", ValueType::Number) \
     \
     M(RuntimeDataflowStatisticsInputBytes, "Collected statistics on the number of bytes replicas would read if the query was executed with parallel replicas", ValueType::Number) \
     M(RuntimeDataflowStatisticsOutputBytes, "Collected statistics on the number of bytes replicas would send to the initiator if the query was executed with parallel replicas", ValueType::Number) \
@@ -1711,8 +1791,8 @@ Counters::Counters(Counters && src) noexcept
     : counters(std::exchange(src.counters, nullptr))
     , cpus(src.cpus.exchange(0, std::memory_order_relaxed))
     , counters_holder(std::move(src.counters_holder))
-    , parent(src.parent.exchange(nullptr))
-    , should_trace_array(src.should_trace_array.exchange(nullptr, std::memory_order_relaxed))
+    , parent(src.parent.exchange(nullptr, std::memory_order_acquire))
+    , should_trace_array(src.should_trace_array.exchange(nullptr, std::memory_order_acquire))
     , should_trace_holder(std::move(src.should_trace_holder))
     , trace_all_profile_events(src.trace_all_profile_events.load(std::memory_order_relaxed))
     , level(src.level)
@@ -1741,21 +1821,21 @@ Count Counters::load(Event event) const
 
 void Counters::setParent(Counters * parent_)
 {
-    parent.store(parent_, std::memory_order_relaxed);
+    parent.store(parent_, std::memory_order_release);
 }
 
 void Counters::setUserCounters(Counters * user)
 {
     auto * current_val = this;
-    auto * parent_val = this->parent.load(std::memory_order_relaxed);
+    auto * parent_val = this->parent.load(std::memory_order_acquire);
 
     while (parent_val != nullptr && parent_val->level != VariableContext::Global && parent_val->level != VariableContext::User)
     {
         current_val = parent_val;
-        parent_val = current_val->parent.load(std::memory_order_relaxed);
+        parent_val = current_val->parent.load(std::memory_order_acquire);
     }
 
-    current_val->parent.store(user, std::memory_order_relaxed);
+    current_val->parent.store(user, std::memory_order_release);
 }
 
 void Counters::setTraceAllProfileEvents()
@@ -1847,13 +1927,13 @@ Event getByName(std::string_view name)
 
 void Counters::setTraceProfileEvent(Event event)
 {
-    auto * trace_array = should_trace_array.load(std::memory_order_relaxed);
+    auto * trace_array = should_trace_array.load(std::memory_order_acquire);
     if (!trace_array)
     {
         /// It is very unlikely that it will be allocated twice, since we set it at the beginning of the query
         auto fresh = std::make_unique<std::atomic_bool[]>(num_counters);
         std::atomic_bool * expected = nullptr;
-        if (should_trace_array.compare_exchange_strong(expected, fresh.get(), std::memory_order_release, std::memory_order_relaxed))
+        if (should_trace_array.compare_exchange_strong(expected, fresh.get(), std::memory_order_release, std::memory_order_acquire))
         {
             should_trace_holder = std::move(fresh);
             trace_array = should_trace_holder.get();
@@ -1975,11 +2055,17 @@ void Counters::increment(Event event, Count amount)
     do
     {
         current->fetchAdd(event, amount, cpu);
-        if (auto * trace_arr = current->should_trace_array.load(std::memory_order_relaxed))
-            send_to_trace_log |= trace_arr[event].load(std::memory_order_relaxed);
+        /// Small optimization for quite a hot path.
+        /// Load with relaxed as it almost always returns null.
+        /// If non-null, add an acquire fence.
+        if (current->should_trace_array.load(std::memory_order_relaxed))
+        {
+            if (auto * trace_arr = current->should_trace_array.load(std::memory_order_acquire))
+                send_to_trace_log |= trace_arr[event].load(std::memory_order_relaxed);
+        }
         send_to_trace_log |= current->trace_all_profile_events.load(std::memory_order_relaxed);
 
-        current = current->parent;
+        current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 
     if (unlikely(send_to_trace_log))
@@ -1993,7 +2079,7 @@ void Counters::incrementNoTrace(Event event, Count amount)
     do
     {
         current->fetchAdd(event, amount, cpu);
-        current = current->parent;
+        current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 }
 
@@ -2007,7 +2093,7 @@ void Counters::incrementSignalSafe(Event event, Count amount)
     do
     {
         current->fetchAdd(event, amount, -1);
-        current = current->parent;
+        current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 }
 

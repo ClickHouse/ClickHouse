@@ -585,7 +585,8 @@ SELECT
 
 Introducido en: v1.1.0
 
-Elimina el parámetro `name` de una URL, si está presente.
+Elimina la primera aparición de `name=value` de cada parámetro solicitado de una URL.
+Solo se buscan parámetros escritos como `name=`, por lo que un parámetro de indicador sin valor se deja intacto; por ejemplo, `cutURLParameter('http://bigmir.net/?a&c=d', 'a')` devuelve la URL sin cambios.
 Esta función no codifica ni descodifica los caracteres de los nombres de los parámetros; por ejemplo, `Client ID` y `Client%20ID` se tratan como nombres de parámetro distintos.
 
 **Sintaxis**
@@ -601,7 +602,7 @@ cutURLParameter(url, name)
 
 **Valor devuelto**
 
-URL con el parámetro `name` eliminado. [`String`](/es/reference/data-types/string)
+URL con la primera aparición de `name=value` de cada parámetro solicitado eliminada. [`String`](/es/reference/data-types/string)
 
 **Ejemplos**
 
@@ -1217,7 +1218,7 @@ Devuelve el identificador del fragmento sin el símbolo hash inicial. [`String`]
 **Ejemplo de uso**
 
 ```sql title=Query
-SELECT fragment('https://clickhouse.com/docs/getting-started/quick-start/cloud#1-create-a-clickhouse-service');
+SELECT fragment('https://clickhouse.com/docs/get-started/setup/cloud#1-create-a-clickhouse-service');
 ```
 
 ```response title=Response
@@ -1289,7 +1290,7 @@ Devuelve la ruta de la URL sin la cadena de consulta. [`String`](/es/reference/d
 **Ejemplo de uso**
 
 ```sql title=Query
-SELECT path('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value');
+SELECT path('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value');
 ```
 
 ```response title=Response
@@ -1325,7 +1326,7 @@ Devuelve la ruta de la URL, incluida la cadena de consulta y el fragmento. [`Str
 **Ejemplo de uso**
 
 ```sql title=Query
-SELECT pathFull('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value#section');
+SELECT pathFull('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value#section');
 ```
 
 ```response title=Response

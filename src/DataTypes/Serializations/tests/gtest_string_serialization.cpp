@@ -138,7 +138,7 @@ TEST(StringSerialization, WithSizeStreamFaithfulRoundTripIsConsistent)
     {
         ISerialization::SerializeBinaryBulkSettings settings;
         ISerialization::SerializeBinaryBulkStatePtr state;
-        settings.position_independent_encoding = false;
+        settings.position_independent_encoding = true;
         settings.getter = makeSizeStreamGetter<WriteBuffer *>(sizes_out, data_out);
         serialization->serializeBinaryBulkWithMultipleStreams(*src, 0, src->size(), settings, state);
     }
@@ -151,7 +151,7 @@ TEST(StringSerialization, WithSizeStreamFaithfulRoundTripIsConsistent)
 
         ISerialization::DeserializeBinaryBulkSettings settings;
         ISerialization::DeserializeBinaryBulkStatePtr state;
-        settings.position_independent_encoding = false;
+        settings.position_independent_encoding = true;
         settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
         serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
 
@@ -188,7 +188,10 @@ TEST(StringSerialization, WithSizeStreamRowsOffsetSubstreamsCacheReuse)
     {
         ISerialization::SerializeBinaryBulkSettings settings;
         ISerialization::SerializeBinaryBulkStatePtr state;
-        settings.position_independent_encoding = false;
+        /// A seeked read (rows_offset > 0) through a substreams cache is the on-disk path
+        /// (position_independent_encoding = true, per-row sizes). The network path (false) sends
+        /// offsets as-is, always has rows_offset == 0 and never uses the substreams cache.
+        settings.position_independent_encoding = true;
         settings.getter = makeSizeStreamGetter<WriteBuffer *>(sizes_out, data_out);
         serialization->serializeBinaryBulkWithMultipleStreams(*src, 0, src->size(), settings, state);
     }
@@ -198,7 +201,7 @@ TEST(StringSerialization, WithSizeStreamRowsOffsetSubstreamsCacheReuse)
 
     ISerialization::DeserializeBinaryBulkSettings settings;
     ISerialization::DeserializeBinaryBulkStatePtr state;
-    settings.position_independent_encoding = false;
+    settings.position_independent_encoding = true;
     settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
     serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
 

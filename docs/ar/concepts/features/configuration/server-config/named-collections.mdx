@@ -88,7 +88,7 @@ url = 'https://connection.url/'
 فيمكنك استخدام `local_encrypted` أو `keeper_encrypted`/`zookeeper_encrypted`.
 
 لاستخدام ZooKeeper/Keeper، نحتاج أيضًا إلى إعداد `path` (المسار في ZooKeeper/Keeper الذي ستُخزَّن فيه المجموعات المُسمّاة) ضمن
-قسم `named_collections_storage` في ملف الإعدادات. يستخدم المثال التالي التشفير وZooKeeper/Keeper:
+قسم `named_collections_storage` في ملف التهيئة. يستخدم المثال التالي التشفير وZooKeeper/Keeper:
 
 ```xml
 <clickhouse>
@@ -103,6 +103,16 @@ url = 'https://connection.url/'
 ```
 
 القيمة الافتراضية لمَعلمة التهيئة الاختيارية `update_timeout_ms` هي `5000`.
+
+يمكنك فحص نوع التخزين النشط عبر `system.server_settings` و`getServerSetting`:
+
+```sql
+SELECT value, getServerSetting('named_collections_storage_type')
+FROM system.server_settings
+WHERE name = 'named_collections_storage.type';
+```
+
+يتطلب تغيير نوع التخزين إعادة تشغيل الخادم؛ ولا يغيّر `SYSTEM RELOAD CONFIG` الواجهة الخلفية النشطة.
 
 <div id="storing-named-collections-in-configuration-files">
   ## تخزين المجموعات المسماة في ملفات التهيئة

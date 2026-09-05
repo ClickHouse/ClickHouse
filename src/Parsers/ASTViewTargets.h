@@ -40,6 +40,9 @@ struct ViewTarget
 
         /// The "metrics" table for a TimeSeries table, contains general information (metadata) about metrics.
         Metrics,
+
+        /// The optional "recent samples" table of a TimeSeries table: a TTL'd copy of the newest samples, preferred for short range reads.
+        RecentSamples,
     };
 
     explicit ViewTarget(Kind kind_);

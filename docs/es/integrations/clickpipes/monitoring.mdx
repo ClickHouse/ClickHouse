@@ -102,10 +102,12 @@ No todas las métricas se emiten en todos los tipos de pipe. En particular, los 
   ### Latencia
 </div>
 
-| Métrica                                   | Tipo          | Disponible para                      | Descripción                                                                                       |
-| ----------------------------------------- | ------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| `ClickPipes_Latency`                      | Gauge (*avg*) | Streaming, almacenamiento de objetos | Tiempo, en milisegundos, entre que un registro se genera en el origen y se escribe en ClickHouse. |
-| `ClickPipes_SourceReplicationLatency_MiB` | Gauge (*avg*) | CDC (solo Postgres)                  | Retraso del slot de replicación en el origen, en MiB. Solo lo emiten los Postgres ClickPipes.     |
+| Métrica                                   | Tipo          | Disponible para     | Descripción                                                                                                              |
+| ----------------------------------------- | ------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `ClickPipes_Latency`                      | Gauge (*avg*) | Todo                | Tiempo, en milisegundos, entre que un registro se genera en el origen y se escribe en ClickHouse.                        |
+| `ClickPipes_SourceReplicationLatency_MiB` | Gauge (*avg*) | CDC (solo Postgres) | Retraso del slot de replicación en el origen, en MiB. Solo lo emiten los Postgres ClickPipes.                            |
+| `ClickPipes_CDC_SourceLatency`            | Gauge (*avg*) | CDC                 | Retraso, en milisegundos, desde la marca de tiempo de un evento de origen hasta su procesamiento por ClickPipes.         |
+| `ClickPipes_CDC_DestinationLatency`       | Gauge (*avg*) | CDC                 | Retraso, en milisegundos, desde la recepción de un evento en un ClickPipe hasta su escritura en una tabla de ClickHouse. |
 
 <div id="metrics-resources">
   ### Utilización de recursos

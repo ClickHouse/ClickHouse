@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnConst.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
@@ -25,15 +26,25 @@ namespace DB
 
 namespace Setting
 {
+extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
+extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
 extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
+extern const SettingsBool collect_hash_table_stats_during_aggregation;
+extern const SettingsBool enable_adaptive_aggregator;
 extern const SettingsBool enable_packed_string_keys_in_aggregation;
 extern const SettingsBool enable_parallel_single_level_merge;
 extern const SettingsBool enable_software_prefetch_in_aggregation;
 extern const SettingsUInt64 group_by_two_level_threshold;
 extern const SettingsUInt64 group_by_two_level_threshold_bytes;
 extern const SettingsNonZeroUInt64 max_block_size;
+extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
 extern const SettingsMaxThreads max_threads;
 extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
+}
+
+namespace ServerSetting
+{
+extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
 }
 
 LazyReadReplacingFinalSource::LazyReadReplacingFinalSource(
@@ -239,6 +250,17 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             aggregates.push_back(std::move(desc));
         }
 
+        /// The cache key is stamped later by `setAggregationHashTableCacheKeys` when this plan is
+        /// optimized in `work` (key == 0 keeps preallocation disabled until then), but the other
+        /// fields must be real, exactly like in `Planner`: with a default-constructed
+        /// `max_entries_for_hash_table_stats` of 0 this dedup aggregation would keep no statistics
+        /// at all, so repeated `FINAL` queries would never get a size hint for it.
+        const auto stats_collecting_params = StatsCollectingParams(
+            /*key_=*/0,
+            settings[Setting::collect_hash_table_stats_during_aggregation],
+            query_context->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
+            settings[Setting::max_size_to_preallocate_for_aggregation]);
+
         Aggregator::Params params(
             sorting_key.column_names,
             aggregates,
@@ -259,11 +281,14 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*only_merge_=*/false,
             /*optimize_group_by_constant_keys_=*/false,
             /*min_hit_rate_to_use_consecutive_keys_optimization_=*/settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
-            /*stats_collecting_params_=*/{},
+            stats_collecting_params,
             /*enable_producing_buckets_out_of_order_in_aggregation_=*/false,
             /*serialize_string_with_zero_byte_=*/false,
             /*enable_parallel_single_level_merge_=*/settings[Setting::enable_parallel_single_level_merge],
-            /*enable_packed_string_keys_=*/settings[Setting::enable_packed_string_keys_in_aggregation]);
+            /*enable_packed_string_keys_=*/settings[Setting::enable_packed_string_keys_in_aggregation],
+            /*enable_adaptive_aggregator_=*/settings[Setting::enable_adaptive_aggregator],
+            /*adaptive_aggregator_freeze_threshold_=*/settings[Setting::adaptive_aggregator_freeze_threshold],
+            /*adaptive_aggregator_freeze_threshold_bytes_=*/settings[Setting::adaptive_aggregator_freeze_threshold_bytes]);
 
         auto merge_threads = settings[Setting::max_threads];
         auto temporary_data_merge_threads = settings[Setting::aggregation_memory_efficient_merge_threads]
@@ -341,9 +366,6 @@ void LazyReadReplacingFinalSource::work()
 
     pipeline_output = pipe.getOutputPort(0);
     processors = Pipe::detachProcessors(std::move(pipe));
-
-    for (auto & proc : processors)
-        proc->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
 }
 
 IProcessor::PipelineUpdate LazyReadReplacingFinalSource::updatePipeline()
@@ -351,6 +373,10 @@ IProcessor::PipelineUpdate LazyReadReplacingFinalSource::updatePipeline()
     inputs.emplace_back(pipeline_output->getHeader(), this);
     connect(*pipeline_output, inputs.back());
     inputs.back().setNeeded();
+
+    /// We need to retag the processors in order to track their execution time correctly in EXPLAIN ANALYZE
+    for (auto & processor : processors)
+        processor->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
     return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 

@@ -14,6 +14,7 @@
 #    include <Databases/DatabaseFactory.h>
 #    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Databases/MySQL/FetchTablesColumnsList.h>
+#    include <mysqlxx/Exception.h>
 #    include <Disks/IDisk.h>
 #    include <IO/Operators.h>
 #    include <Interpreters/Context.h>
@@ -71,6 +72,38 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_DATABASE;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int ALL_CONNECTION_TRIES_FAILED;
+}
+
+/// Demote only a connection failure to the (unreachable) remote, so that anything else is not
+/// hidden. Must be called from within a catch block: it rethrows the active exception to classify it.
+/// A failed connect through `mysqlxx::PoolWithFailover::get` arrives rewrapped as
+/// `ALL_CONNECTION_TRIES_FAILED`, a direct `mysqlxx::Pool` probe throws `ConnectionFailed` as is,
+/// and a connection dropped mid-query throws `ConnectionLost`.
+LogsLevel mysqlToleratedConnectionFailureLogLevel()
+{
+    try
+    {
+        throw;
+    }
+    catch (const mysqlxx::ConnectionFailed &)
+    {
+        return LogsLevel::warning;
+    }
+    catch (const mysqlxx::ConnectionLost &)
+    {
+        return LogsLevel::warning;
+    }
+    catch (const Exception & e)
+    {
+        return e.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED ? LogsLevel::warning : LogsLevel::error;
+    }
+    /// Ok to not report anything here: the exception stays active and the caller logs it at the
+    /// level returned from here.
+    catch (...)
+    {
+        return LogsLevel::error;
+    }
 }
 
 constexpr static const auto suffix = ".remove_flag";
@@ -105,12 +138,12 @@ DatabaseMySQL::DatabaseMySQL(
     {
         if (attach)
         {
-            tryLogCurrentException("DatabaseMySQL");
+            tryLogCurrentException("DatabaseMySQL", "", mysqlToleratedConnectionFailureLogLevel());
         }
 #if CLICKHOUSE_CLOUD
         else if (SharedDatabaseCatalog::initialized() && !SharedDatabaseCatalog::isInitialQuery(context_))
         {
-            tryLogCurrentException("DatabaseMySQL");
+            tryLogCurrentException("DatabaseMySQL", "", mysqlToleratedConnectionFailureLogLevel());
         }
 #endif
         else
@@ -193,7 +226,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
                             backQuote(table_name), getCurrentExceptionMessage(true));
         }
 
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(__PRETTY_FUNCTION__, "", mysqlToleratedConnectionFailureLogLevel());
     }
 
     if (!local_tables_cache.contains(table_name))
@@ -724,7 +757,7 @@ SETTINGS enable_compression = 1;
 
 ## TLS/SSL {#tls-ssl}
 
-The credentials of an encrypted connection to MySQL are passed as [named collection](/operations/named-collections.md) keys (or as key-value arguments):
+The credentials of an encrypted connection to MySQL are passed as [named collection](/concepts/features/configuration/server-config/named-collections) keys (or as key-value arguments):
 
 | Parameter | Description |
 |-----------|-------------|
@@ -759,11 +792,12 @@ The same credentials can also be given as paths to files on the server, in `ssl_
 | POLYGON                          | [Polygon](/reference/data-types/geo#polygon)     |
 | MULTILINESTRING                  | [MultiLineString](/reference/data-types/geo#multilinestring) |
 | MULTIPOLYGON                     | [MultiPolygon](/reference/data-types/geo#multipolygon) |
+| MULTIPOINT                       | [MultiPoint](/reference/data-types/geo#multipoint) |
 | GEOMETRY                         | [Geometry](/reference/data-types/geo#geometry)   |
 
-The conversion of the spatial types (other than `POINT`, which is always converted) is controlled by the `geometry` flag of the [`mysql_datatypes_support_level`](/reference/settings/session-settings/mysql#mysql_datatypes_support_level) setting, enabled by default. The generic `GEOMETRY` column type is mapped to the umbrella [`Geometry`](/reference/data-types/geo#geometry) type (a `Variant` over the concrete geometric types). Because such a column can hold a value of any subtype, reading a value whose subtype has no ClickHouse counterpart (`GEOMETRYCOLLECTION`) throws an exception at read time; this incompatibility is accepted in exchange for a proper geometric type. Columns declared with the `GEOMETRYCOLLECTION` type are converted into [String](/reference/data-types/string) (the raw WKB) like all other MySQL data types.
+The conversion of the spatial types (other than `POINT`, which is always converted) is controlled by the `geometry` flag of the [`mysql_datatypes_support_level`](/reference/settings/session-settings/mysql#mysql_datatypes_support_level) setting, enabled by default. The generic `GEOMETRY` column type is mapped to the umbrella [`Geometry`](/reference/data-types/geo#geometry) type (a `Variant` over the concrete geometric types). Because such a column can hold a value of any subtype, reading a value whose subtype has no ClickHouse counterpart (`GEOMETRYCOLLECTION`) throws an exception at read time; this incompatibility is accepted in exchange for a proper geometric type. Columns declared with the `GEOMETRYCOLLECTION` type are converted into [String](/reference/data-types/string) like all other MySQL data types.
 
-[Nullable](/reference/data-types/nullable) is supported.
+[Nullable](/reference/data-types/nullable) is supported. A spatial column maps to `String` (`Nullable(String)` if it is nullable) instead of a geometric type in three cases: it is declared `GEOMETRYCOLLECTION`; the `geometry` flag is disabled and the type is not `POINT`; or the column is nullable and the type is not `POINT`, since `Point` is the only geometric type that can be nested inside `Nullable`. In all three the string holds the value exactly as MySQL returns it: a 4-byte SRID prefix followed by the WKB payload, so strip those 4 leading bytes before passing it to a WKB decoder.
 
 ## Global variables support {#global-variables-support}
 

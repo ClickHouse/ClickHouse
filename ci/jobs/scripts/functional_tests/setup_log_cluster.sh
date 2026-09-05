@@ -104,7 +104,10 @@ function setup_logs_replication()
 
     # For each system log table:
     echo 'Create %_log tables'
-    clickhouse-client --query "SHOW TABLES FROM system LIKE '%\\_log'" | while read -r table
+    # Filter by engine to exclude virtual system tables that merely match the
+    # name pattern (e.g. `user_query_log`) - their engines cannot be created
+    # on the remote cluster.
+    clickhouse-client --query "SELECT name FROM system.tables WHERE database = 'system' AND name LIKE '%\\_log' AND engine LIKE '%MergeTree'" | while read -r table
     do
         EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS}"
         EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"

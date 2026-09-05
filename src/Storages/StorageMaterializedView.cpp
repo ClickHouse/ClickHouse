@@ -770,7 +770,9 @@ void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePt
     Stopwatch stopwatch;
     try
     {
-        InterpreterDropQuery(drop_query, refresh_context).execute();
+        InterpreterDropQuery drop_interpreter(drop_query, refresh_context);
+        drop_interpreter.setInternal(true);
+        drop_interpreter.execute();
     }
     catch (...)
     {

@@ -1,0 +1,321 @@
+---
+description: 'CREATE TABLE 语句的列压缩编解码器'
+keywords: ['压缩', '编解码器']
+sidebarTitle: 'CODEC'
+slug: /sql-reference/statements/create/table/codec
+title: '列压缩编解码器'
+doc_type: 'reference'
+---
+
+import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+默认情况下，自管理版本的 ClickHouse 使用 `lz4` 压缩，ClickHouse Cloud 则使用 `zstd`。
+
+对于 `MergeTree` 引擎家族，您可以在服务器配置的 [compression](/zh/reference/settings/server-settings/settings/other#compression) 部分更改默认压缩方法。
+
+您还可以在 [`CREATE TABLE`](/zh/reference/statements/create/table) 查询中为每一列指定压缩方法。
+
+```sql
+CREATE TABLE codec_example
+(
+    dt Date CODEC(ZSTD),
+    ts DateTime CODEC(LZ4HC),
+    float_value Float32 CODEC(NONE),
+    double_value Float64 CODEC(LZ4HC(9)),
+    value Float32 CODEC(Delta, ZSTD)
+)
+ENGINE = <Engine>
+...
+```
+
+可以指定 `Default` 编解码器，以使用默认压缩方式；其具体行为可能取决于运行时的不同设置和数据属性。
+示例：`value UInt64 CODEC(Default)` —— 等同于未指定编解码器。
+另请参阅[自适应编解码器选择](#adaptive-codec-selection)。
+
+您还可以从列中移除当前的 CODEC，并使用 config.xml 中配置的默认压缩：
+
+```sql
+ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
+```
+
+编解码器可以组合成管道，例如 `CODEC(Delta, Default)`。
+
+<Tip>
+  无法使用 `lz4` 等外部工具解压 ClickHouse 数据库文件。请改用专用的 [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) 工具。
+</Tip>
+
+以下表引擎支持压缩：
+
+* [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 家族：支持列压缩编解码器，并可通过 [compression](/zh/reference/settings/server-settings/settings/other#compression) 设置选择默认压缩方法。
+* [Log](/zh/reference/engines/table-engines/log-family/index) 家族：默认使用 `lz4` 压缩方法，并支持列压缩编解码器。
+* [Set](/zh/reference/engines/table-engines/special/set)：仅支持默认压缩。
+* [Join](/zh/reference/engines/table-engines/special/join)：仅支持默认压缩。
+
+ClickHouse 支持通用编解码器和专用编解码器。
+
+<div id="general-purpose-codecs">
+  ## 通用编解码器
+</div>
+
+<div id="none">
+  ### NONE
+</div>
+
+`NONE` — 不进行压缩。
+
+<div id="lz4">
+  ### LZ4
+</div>
+
+`LZ4` — 默认使用的无损[数据压缩算法](https://github.com/lz4/lz4)，采用 LZ4 快速压缩。
+
+<div id="lz4hc">
+  ### LZ4HC
+</div>
+
+`LZ4HC[(level)]` — 支持配置级别的 LZ4 HC (高压缩) 算法。默认级别为 9。将 `level` 设置为 `<= 0` 时，将使用默认级别。可选级别：[1, 12]。推荐级别范围：[4, 9]。
+
+<div id="zstd">
+  ### ZSTD
+</div>
+
+`ZSTD[(level)]` — 使用可配置 `level` 的 [ZSTD 压缩算法](https://en.wikipedia.org/wiki/Zstandard)。可选级别：[1, 22]。默认级别：1。
+
+高压缩级别适用于非对称场景，例如一次压缩、多次解压。级别越高，压缩效果越好，CPU 使用率也越高。
+
+<div id="zxc">
+  ### ZXC
+</div>
+
+<ExperimentalBadge />
+
+`ZXC[(level)]` — 可配置 `level` 的非对称 [`zxc` 压缩算法](https://github.com/hellobertrand/zxc)。可选级别：[1, 7]。默认级别：3。
+
+`ZXC` 以较慢的压缩换取极快的解压缩，压缩率介于 `LZ4` 和 `ZSTD` 之间。它适合一次压缩、多次解压缩的模式，并且在现代 ARM 核心上的解压缩速度最快。级别越高，压缩效果越好，但压缩速度越慢；解压缩仍然很快。
+
+<Note>
+  此编解码器仍处于 Experimental 阶段，使用时需要设置 `SET allow_experimental_codecs = 1`。
+</Note>
+
+<div id="zstd_qat">
+  ### 已废弃：ZSTD_QAT
+</div>
+
+<CloudNotSupportedBadge />
+
+<div id="deflate_qpl">
+  ### 已废弃：DEFLATE_QPL
+</div>
+
+<CloudNotSupportedBadge />
+
+<div id="specialized-codecs">
+  ## 专用编解码器
+</div>
+
+这些编解码器通过利用数据的特定特征来提高压缩效果。其中一些编解码器本身并不压缩数据，而是先对数据进行预处理，以便在第二个压缩阶段使用通用编解码器时获得更高的数据压缩率。
+
+<div id="delta">
+  ### Delta
+</div>
+
+`Delta(delta_bytes)` — 一种压缩方法，将原始值替换为相邻两个值之差，但第一个值保持不变。`delta_bytes` 是原始值的最大字节数，默认值为 `sizeof(type)`。将 `delta_bytes` 指定为参数的做法已弃用，未来版本将不再支持。Delta 是一种数据准备编解码器，因此不能单独使用。
+
+<div id="doubledelta">
+  ### DoubleDelta
+</div>
+
+`DoubleDelta(bytes_size)` — 计算二阶差分，并以紧凑的二进制形式写入。`bytes_size` 的含义与 [Delta](#delta) 编解码器中的 `delta_bytes` 类似。将 `bytes_size` 指定为参数的方式已弃用，未来版本将不再支持。对于步长固定的单调序列 (例如时间序列数据) ，可实现最佳压缩率。可用于任何数值类型。实现了 Gorilla TSDB 使用的算法，并将其扩展为支持 64 位类型。对于 32 位差分值，会额外使用 1 比特：使用 5 比特前缀而非 4 比特前缀。有关更多信息，请参阅 [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf) 中的《Compressing Time Stamps》。DoubleDelta 是一种数据准备编解码器，即不能单独使用。
+
+<div id="gcd">
+  ### GCD
+</div>
+
+`GCD()` - - 计算列中各值的最大公约数 (GCD) ，然后将每个值除以该 GCD。可用于整数、小数和日期/时间列。该 codec 非常适合值按 GCD 的倍数变化 (增加或减少) 的列，例如 24、28、16、24、8、24 (GCD = 4) 。GCD 是一种数据准备编解码器，即不能单独使用。
+
+<div id="gorilla">
+  ### Gorilla
+</div>
+
+`Gorilla(bytes_size)` — 计算当前浮点值与前一个浮点值的异或，并以紧凑的二进制形式写入。相邻值之间的差异越小，即序列值变化越缓慢，压缩率越高。该编解码器实现了 Gorilla TSDB 使用的算法，并将其扩展为支持 64 位类型。`bytes_size` 的可选值为 1、2、4、8；如果 `sizeof(type)` 等于 1、2、4 或 8，默认值为 `sizeof(type)`；其他情况下默认值为 1。更多信息请参阅 [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078) 的第 4.1 节。
+
+<div id="alp">
+  ### ALP
+</div>
+
+<ExperimentalBadge />
+
+`ALP(variant)` — 用于浮点数据的自适应无损压缩。支持 `Float32` 和 `Float64`。详情请参阅 [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334)。
+
+该编解码器接受可选的变体参数：
+
+* `ALP()` 或 `ALP(AUTO)` (默认) — 使用 STD，并根据预估压缩大小回退到 RD。
+* `ALP(STD)` — 标准 ALP 变体。使用十进制幂将每个值表示为精确的标度整数，然后通过 Frame-of-Reference 和位打包压缩所得整数。无法表示的值将作为原始异常值存储。最适合源自 Decimal 的数值 (例如测量值和价格) 。
+* `ALP(RD)` — Real Doubles 变体。重新解释每个值的位模式，并将其拆分为高位部分 (符号位 + 指数 + 高位尾数位) 和低位部分。高位部分采用字典编码 (最多 8 个条目) ，低位部分采用位打包。当大量值具有相同的高位时效果最佳。
+
+<Note>
+  此编解码器处于 Experimental 状态，使用前需执行 `SET allow_experimental_codecs = 1`。
+</Note>
+
+<div id="fpc">
+  ### FPC
+</div>
+
+`FPC(level, float_size)` - 反复使用两个预测器中预测效果更好的一个来预测序列中的下一个浮点值，然后将实际值与预测值进行 XOR 运算，并对结果进行前导零压缩。与 Gorilla 类似，在存储缓慢变化的一系列浮点值时非常高效。对于 64 位值 (double) ，FPC 比 Gorilla 更快；对于 32 位值，实际效果可能有所不同。`level` 的可选值为 1-28，默认值为 12。`float_size` 的可选值为 4、8；如果类型为 Float，默认值为 `sizeof(type)`。在其他情况下，默认值为 4。有关该算法的详细说明，请参阅 [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf)。
+
+<div id="sz3">
+  ### SZ3
+</div>
+
+<ExperimentalBadge />
+
+`SZ3` 或 `SZ3(algorithm, error_bound_mode, error_bound)` - 一种有损且具有误差界限的编解码器 ([SZ3 有损压缩器](https://szcompressor.org/)) ，适用于 Float32、Float64、Array(Float32) 或 Array(Float64) 类型的列。对于数组列，当所有数组长度相同时，压缩效果最佳 (此时会将其压缩为固定宽度向量) ；也支持不同长度的数组，并将其压缩为扁平的值序列。该编解码器不适用于 Map 列，因为有损压缩会损坏其键。`algorithm` 支持的值为 `ALGO_LORENZO_REG`、`ALGO_INTERP_LORENZO` 和 `ALGO_INTERP`。`error_bound_mode` 支持的值为 `ABS`、`REL`、`PSNR` 和 `ABS_AND_REL`。参数 `error_bound` 表示最大误差，类型为 Float64。
+
+<Note>
+  此编解码器仍处于 Experimental 阶段，使用前需执行 `SET allow_experimental_codecs = 1`。
+</Note>
+
+<div id="t64">
+  ### T64
+</div>
+
+`T64` — 一种压缩方法，用于裁剪整数数据类型 (包括 `Enum`、`Date` 和 `DateTime`) 中未使用的高位。算法的每一步中，编解码器都会取一个包含 64 个值的块，将其置于 64x64 位矩阵中并转置，裁剪值中未使用的位，再将其余位作为序列返回。未使用的位是指在应用此压缩的数据分区片段中，最大值和最小值之间没有差异的位。
+
+`DoubleDelta` 和 `Gorilla` 编解码器是 Gorilla TSDB 压缩算法的组成部分。当存在一系列变化缓慢的值及其时间戳时，Gorilla 方法非常有效。时间戳可由 `DoubleDelta` 编解码器高效压缩，值则可由 `Gorilla` 编解码器高效压缩。例如，要创建一个存储效率高的表，可以使用以下配置：
+
+```sql
+CREATE TABLE codec_example
+(
+    timestamp DateTime CODEC(DoubleDelta),
+    slow_values Float32 CODEC(Gorilla)
+)
+ENGINE = MergeTree()
+```
+
+<div id="quantized">
+  ### Quantized
+</div>
+
+<ExperimentalBadge />
+
+`Quantized(method, dimensions[, ...])` — 一种专用编解码器，支持对 `Array(Float32)`、`Array(Float64)` 或 `Array(BFloat16)` 类型的列进行近似向量搜索。
+它会存储原始的全精度向量，并为每个向量额外存储一个紧凑的*量化编码*。
+在 `MergeTree` 家族表中，启用设置 [`vector_search_use_quantized_codes`](/zh/reference/settings/session-settings/vector-search#vector_search_use_quantized_codes) 的向量搜索查询会扫描量化编码以生成候选列表，然后根据全精度向量对结果重新评分。
+与常规的全精度扫描相比，这种两阶段搜索读取的字节数更少，但召回率会有所降低。
+`dimensions` 表示向量长度；支持的 `method` 值包括 `rabitq`、`turboquant`、`int8`、`prefix` 和 `product`，它们在大小、准确性和距离函数之间各有不同的权衡。
+
+该编解码器只能在 `CREATE TABLE` 中设置，不能通过 `ALTER TABLE` 添加、移除或更改，包括使用 `ADD COLUMN ... CODEC(Quantized(...))`。
+它不能与任何其他编解码器链式组合 (即使是 `AES_128_GCM_SIV` 等加密编解码器也不例外) 。
+有关更多信息，请参阅[使用量化编解码器进行向量搜索](/zh/reference/engines/table-engines/mergetree-family/annindexes#vector-search-with-quantized-codecs)。
+
+```sql
+SET allow_experimental_codecs = 1;
+
+CREATE TABLE vectors
+(
+    id UInt32,
+    vec Array(BFloat16) CODEC(Quantized('rabitq', 1536))
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+<div id="encryption-codecs">
+  ## 加密编解码器
+</div>
+
+这些编解码器并不实际压缩数据，而是加密磁盘上的数据。只有在 [encryption](/zh/reference/settings/server-settings/settings/other#encryption) 设置中指定加密密钥后，这些编解码器才可用。请注意，加密应位于编解码器管道的末尾，因为加密后的数据通常无法再以任何有意义的方式压缩。
+
+加密编解码器：
+
+<div id="aes_128_gcm_siv">
+  ### AES_128_GCM_SIV
+</div>
+
+`CODEC('AES-128-GCM-SIV')` — 使用 [RFC 8452](https://tools.ietf.org/html/rfc8452) 中的 AES-128 GCM-SIV 模式加密数据。
+
+<div id="aes-256-gcm-siv">
+  ### AES-256-GCM-SIV
+</div>
+
+`CODEC('AES-256-GCM-SIV')` — 使用 GCM-SIV 模式的 AES-256 加密数据。
+
+这些编解码器使用固定 nonce，因此加密是确定性的。这使其可与 [ReplicatedMergeTree](/zh/reference/engines/table-engines/mergetree-family/replication) 等去重引擎兼容，但也存在一个弱点：同一数据块加密两次后，生成的密文会完全相同。因此，能够读取磁盘的攻击者可以发现这种对应关系 (但只能得知对应关系，无法获知其内容) 。
+
+<Note>
+  包括 &quot;*MergeTree&quot; 家族在内的大多数引擎都会在磁盘上创建未应用编解码器的索引文件。这意味着，如果为加密列建立索引，明文会出现在磁盘上。
+</Note>
+
+<Note>
+  如果执行的 SELECT 查询中包含加密列的特定值 (例如在 WHERE 子句中) ，该值可能会出现在 [system.query&#95;log](/zh/reference/system-tables/query_log) 中。你可能需要禁用日志记录。
+</Note>
+
+**示例**
+
+```sql
+CREATE TABLE mytable
+(
+    x String CODEC(AES_128_GCM_SIV)
+)
+ENGINE = MergeTree ORDER BY x;
+```
+
+<Note>
+  如需压缩，必须显式指定。否则，数据只会被加密。
+</Note>
+
+**示例**
+
+```sql
+CREATE TABLE mytable
+(
+    x String CODEC(Delta, LZ4, AES_128_GCM_SIV)
+)
+ENGINE = MergeTree ORDER BY x;
+```
+
+<div id="adaptive-codec-selection">
+  ## 自适应编解码器选择
+</div>
+
+<ExperimentalBadge />
+
+上述专用编解码器可以大幅缩小合适的数据，但选择它们需要专业知识，而且没有一种编解码器适用于数据会随时间变化的列。启用 MergeTree 设置 [`allow_experimental_adaptive_codec_selection`](/zh/reference/settings/merge-tree-settings) 后，ClickHouse 会自动为你选择。对于使用默认编解码器 (`CODEC(Default)` 或未指定 `CODEC`) 的列，每个块都会使用压缩后体积最小的编解码器写入；该编解码器从表的默认编解码器、`NONE` 以及适合该列类型的专用编解码器中选出。
+
+块的大小绝不会超过使用默认编解码器时的大小，无法压缩的数据会以原始形式存储 (压缩会生成稍大且读取更慢的文件) 。这项工作会在后台合并和变更期间进行，因为此时数据本来就需要重新压缩。插入速度不受影响。查询通常会更快：从磁盘拉取的数据更少，查询读取的每个块都必须先解压，而专用编解码器的解压速度比默认的 `LZ4` 更快。每个块都会记录写入时使用的编解码器，因此读取时无需任何设置；该功能也可随时关闭，且所有数据仍可读取。
+
+```sql
+CREATE TABLE adaptive
+(
+    time DateTime,
+    user_id UInt64
+)
+ENGINE = MergeTree
+ORDER BY time
+SETTINGS allow_experimental_adaptive_codec_selection = 1;
+
+INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number) FROM numbers(1000000);
+OPTIMIZE TABLE adaptive FINAL;
+```
+
+你可以通过 [`mergeTreeCodecBlockCounts`](/zh/reference/functions/table-functions/mergeTreeCodecBlockCounts) 表函数查看其工作原理。这里的 `time` 持续递增，因此只存储块内变化比特的 `T64` 在每个块上的表现都优于默认 codec。`user_id` 包含任何 codec 都无法压缩的哈希值，因此其块以 raw 形式存储：
+
+```sql
+SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase(), 'adaptive');
+```
+
+```text
+   ┌─column──┬─codec_block_counts─┐
+1. │ time    │ {'T64':62}         │
+2. │ user_id │ {'NONE':123}       │
+   └─────────┴────────────────────┘
+```
+
+目前支持选择的类型包括整数类列：整数、枚举、日期和时间、`Decimal32`/`Decimal64` 以及 `IPv4`。
+
+<div id="related-content">
+  ## 相关内容
+</div>
+
+* 博客：[通过 schema 和编解码器优化 ClickHouse](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
+* 博客：[在 ClickHouse 中处理时间序列数据](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

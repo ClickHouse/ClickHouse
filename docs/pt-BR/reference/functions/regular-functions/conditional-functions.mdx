@@ -400,7 +400,7 @@ Executa uma ramificação condicional.
 * Se a condição `cond` for avaliada como um valor diferente de zero, a função retorna o resultado da expressão `then`.
 * Se `cond` for avaliada como zero ou NULL, o resultado da expressão `else` será retornado.
 
-A configuração [`short_circuit_function_evaluation`](/pt-BR/reference/settings/session-settings#short_circuit_function_evaluation) controla se a avaliação de curto-circuito é usada.
+A configuração [`short_circuit_function_evaluation`](/pt-BR/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controla se a avaliação de curto-circuito é usada.
 
 Se estiver habilitada, a expressão `then` será avaliada apenas nas linhas em que `cond` for true, e a expressão `else`, naquelas em que `cond` for false.
 
@@ -524,7 +524,7 @@ Permite escrever o operador [`CASE`](/pt-BR/reference/operators/index#conditiona
 Avalia cada condição em ordem. Para a primeira condição que for true (diferente de zero e não `NULL`), retorna o valor correspondente.
 Se nenhuma das condições for true, retorna o valor de `else`.
 
-A configuração [`short_circuit_function_evaluation`](/pt-BR/reference/settings/session-settings#short_circuit_function_evaluation) controla
+A configuração [`short_circuit_function_evaluation`](/pt-BR/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controla
 se a avaliação de curto-circuito é usada. Se estiver ativada, a expressão `then_i` será avaliada apenas nas linhas em que
 `((NOT cond_1) AND ... AND (NOT cond_{i-1}) AND cond_i)` for true.
 

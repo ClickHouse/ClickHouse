@@ -38,7 +38,7 @@ CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
   ## Оценка гипотетического индекса с помощью EXPLAIN WHATIF
 </div>
 
-Само по себе определение гипотетического индекса ничего не даёт — чтобы понять, как он повлияет на запрос, выполните [`EXPLAIN WHATIF`](/ru/reference/statements/explain#explain-whatif) для репрезентативного `SELECT`. Оценщик показывает применимость каждого рассматриваемого индекса, количество читаемых меток, итоговую долю пропускаемых данных и способ получения оценки (`empirical`, `statistical` или `applicability_only`).
+Само по себе определение гипотетического индекса ничего не даёт — чтобы понять, как он повлияет на запрос, выполните [`EXPLAIN WHATIF`](/ru/reference/statements/explain#explain-whatif) для репрезентативного `SELECT`. Оценщик показывает применимость каждого кандидатного индекса, количество читаемых меток, итоговую долю пропуска и способ получения оценки (`empirical`, `statistical` или `applicability_only`).
 
 ```sql
 CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
@@ -79,7 +79,7 @@ Estimation:
 Чтобы пропустить эмпирическое сканирование в памяти и вместо этого использовать оценку по [статистике столбцов](/ru/reference/engines/table-engines/mergetree-family/mergetree#column-statistics), сначала задайте её для нужных столбцов (по умолчанию она отключена), дождитесь завершения мутации materialize, а затем отключите эмпирический способ оценки:
 
 ```sql
-ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t ADD STATISTICS b TYPE tdigest;
 ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
 
 EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;

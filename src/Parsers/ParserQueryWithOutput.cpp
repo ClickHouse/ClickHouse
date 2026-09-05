@@ -31,6 +31,8 @@
 #include <Parsers/Access/ParserShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ParserShowGrantsQuery.h>
 #include <Parsers/Access/ParserShowPrivilegesQuery.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
@@ -258,6 +260,82 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     node = std::move(query);
     return true;
+}
+
+}
+
+namespace DB
+{
+
+void registerStatementQueryWithOutput(StatementFactory & factory)
+{
+    factory.registerStatement("FORMAT",
+    {
+        .description = R"DOCS_MD(
+ClickHouse supports a wide range of [serialization formats](/reference/formats/index) that can be used on query results among other things. There are multiple ways to choose a format for `SELECT` output, one of them is to specify `FORMAT format` at the end of query to get resulting data in any specific format.
+
+Specific format might be used either for convenience, integration with other systems or performance gain.
+
+## Default Format {#default-format}
+
+If the `FORMAT` clause is omitted, the default format is used, which depends on both the settings and the interface used for accessing the ClickHouse server. For the [HTTP interface](/concepts/features/interfaces/http) and the [command-line client](/concepts/features/interfaces/client) in batch mode, the default format is `TabSeparated`. For the command-line client in interactive mode, the default format is `PrettyCompact` (it produces compact human-readable tables).
+
+## Implementation Details {#implementation-details}
+
+When using the command-line client, data is always passed over the network in an internal efficient format (`Native`). The client independently interprets the `FORMAT` clause of the query and formats the data itself (thus relieving the network and the server from the extra load).
+)DOCS_MD",
+        .syntax = R"(
+SELECT ... FORMAT format
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "INTO OUTFILE", "INSERT INTO"},
+    });
+
+    factory.registerStatement("INTO OUTFILE",
+    {
+        .description = R"DOCS_MD(
+`INTO OUTFILE` clause redirects the result of a `SELECT` query to a file on the **client** side.
+
+Compressed files are supported. Compression type is detected by the extension of the file name (mode `'auto'` is used by default). Or it can be explicitly specified in a `COMPRESSION` clause. The compression level for a certain compression type can be specified in a `LEVEL` clause.
+
+**Syntax**
+
+```sql
+SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMPRESSION type [LEVEL level]]
+```
+
+`file_name` and `type` are string literals. Supported compression types are: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+
+`level` is a numeric literal. Positive integers in following ranges are supported: `1-12` for `gzip`, `deflate` and `lz4` types, `1-22` for `zstd` type and `1-9` for other compression types. For `gzip` and `deflate`, levels above `9` require the default build with `libdeflate`; a build without `libdeflate` supports levels `1-9`.
+
+## Implementation Details {#implementation-details}
+
+- This functionality is available in the [command-line client](/concepts/features/interfaces/client) and [clickhouse-local](/concepts/features/tools-and-utilities/clickhouse-local). Thus a query sent via [HTTP interface](/concepts/features/interfaces/http) will fail.
+- The query will fail if a file with the same file name already exists.
+- The default [output format](/reference/formats/index) is `TabSeparated` (like in the command-line client batch mode). Use [FORMAT](/reference/statements/select/format) clause to change it.
+- If `AND STDOUT` is mentioned in the query then the output that is written to the file is also displayed on standard output. If used with compression, the plaintext is displayed on standard output.
+- If `APPEND` is mentioned in the query then the output is appended to an existing file. If compression is used, append cannot be used.
+- When writing to a file that already exists, `APPEND` or `TRUNCATE` must be used.
+
+**Example**
+
+Execute the following query using [command-line client](/concepts/features/interfaces/client):
+
+```bash title="Query"
+clickhouse-client --query="SELECT 1,'ABC' INTO OUTFILE 'select.gz' FORMAT CSV;"
+zcat select.gz
+```
+
+```text title="Response"
+1,"ABC"
+```
+)DOCS_MD",
+        .syntax = R"(
+SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMPRESSION type [LEVEL level]]
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "FORMAT", "INSERT INTO"},
+    });
 }
 
 }

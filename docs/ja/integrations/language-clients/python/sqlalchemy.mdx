@@ -1,19 +1,25 @@
 ---
 sidebarTitle: 'SQLAlchemy'
-keywords: ['clickhouse', 'python', 'sqlalchemy', 'integrate']
-description: 'ClickHouse SQLAlchemy サポート'
+keywords: ['clickhouse', 'python', 'sqlalchemy', 'alembic', 'integrate']
+description: 'ClickHouse SQLAlchemy および Alembic サポート'
 slug: /integrations/language-clients/python/sqlalchemy
 title: 'SQLAlchemy サポート'
 doc_type: 'reference'
 ---
 
-ClickHouse Connect には、コアドライバー上に構築された SQLAlchemy ダイアレクト (`clickhousedb`) が含まれています。これは SQLAlchemy Core API を対象としており、SQLAlchemy 1.4.40+ および 2.0.x をサポートしています。
+ClickHouse Connect には、コアドライバー上に構築された `clickhousedb` SQLAlchemy ダイアレクトが含まれています。これは SQLAlchemy 1.4.40 以降 (SQLAlchemy 2.x を含む) をサポートしており、Core クエリ、ClickHouse DDL、リフレクション、およびシンプルな ORM insert に重点を置いています。
+
+パッケージ extra を使用して SQLAlchemy の依存関係をインストールします:
+
+```bash
+pip install "clickhouse-connect[sqlalchemy]"
+```
 
 <div id="sqlalchemy-connect">
-  ## SQLAlchemy に接続する
+  ## SQLAlchemy で接続する
 </div>
 
-`clickhousedb://` または `clickhousedb+connect://` の URL を使用してエンジンを作成します。クエリパラメータは、ClickHouse の設定、クライアントオプション、HTTP/TLS のトランスポートオプションに対応しています。
+`clickhousedb://` または `clickhousedb+connect://` のいずれかの URL 形式で engine を作成します。
 
 ```python
 from sqlalchemy import create_engine, text
@@ -22,24 +28,69 @@ engine = create_engine(
     "clickhousedb://user:password@host:8123/mydb?compression=zstd"
 )
 
-with engine.begin() as conn:
-    rows = conn.execute(text("SELECT version()"))
-    print(rows.scalar())
+with engine.connect() as conn:
+    version = conn.execute(text("SELECT version()")).scalar_one()
+    print(version)
 ```
 
-URL/クエリパラメータに関する注記:
+URLクエリパラメータには、ClickHouse設定、`compression`、`query_limit`、タイムアウトなどの ClickHouse Connect クライアントオプション、または `ca_cert` などの HTTP/TLS オプションを含めることができます。必要に応じて、ClickHouse設定をサーバー設定として扱わせるには、先頭に `ch_` を付けます。たとえば `ch_http_max_field_name_size=99999` です。
 
-* ClickHouse settings: クエリパラメータとして渡します (例: `use_skip_indexes=0`) 。
-* クライアントオプション: `compression` (`compress` のエイリアス) 、`query_limit`、タイムアウトなど。
-* HTTP/TLS オプション: HTTP プールおよび TLS のオプション (例: `ch_http_max_field_name_size=99999`、`ca_cert=certifi`) 。
+利用可能なクライアントオプションについては、[接続引数と設定](/ja/integrations/language-clients/python/driver-api#connection-arguments) を参照してください。
 
-サポートされているオプションの完全な一覧については、以下のセクションにある [Connection arguments and Settings](/ja/integrations/language-clients/python/driver-api#connection-arguments) を参照してください。これらは SQLAlchemy DSN 経由でも指定できます。
+<div id="sqlalchemy-per-query-settings">
+  ### クエリごとの設定
+</div>
+
+SQLAlchemy の実行オプションを通じて ClickHouse の設定を渡します。設定は engine、connection、またはステートメントに指定できます。同じキーが指定されている場合、ステートメントの値が connection または engine の値よりも優先されます。
+
+```python
+from sqlalchemy import text
+
+stmt = text("SELECT getSetting('max_threads')").execution_options(
+    settings={"max_threads": 2}
+)
+
+with engine.connect() as conn:
+    value = conn.execute(stmt).scalar_one()
+```
+
+<div id="sqlalchemy-per-query-read-formats">
+  ### クエリ単位の読み取りフォーマット
+</div>
+
+`query_formats` を指定した SQLAlchemy の実行オプションを使用して、ClickHouse の読み取りフォーマットを engine、connection、またはステートメントに設定できます。ステートメントのフォーマットが先に適用されるため、一致する connection または engine のオプションやワイルドカードよりも優先されます。
+
+```python
+from sqlalchemy import text
+
+stmt = text("SELECT user_uuid FROM users").execution_options(
+    query_formats={"UUID": "string"}
+)
+
+with engine.connect() as conn:
+    rows = conn.execute(stmt).all()
+```
+
+<div id="sqlalchemy-server-side-parameters">
+  ### サーバー側パラメータ
+</div>
+
+SQLAlchemy は通常、クライアント側でパラメータを展開します。engine の作成時に ClickHouse のサーバー側パラメータを有効にしてください。
+
+```python
+engine = create_engine(
+    "clickhousedb://user:password@host:8123/mydb",
+    server_side_params=True,
+)
+```
+
+このモードでは、バインドされるすべての値に ClickHouse と互換性のある SQLAlchemy の型が必要です。サポートされている `IN` リストは、型付きの ClickHouse `Array` パラメータになります。コンパイラは、互換性のある型を導出できない場合や、バインドを安全に処理できない場合に `CompileError` を発生させます。
 
 <div id="sqlalchemy-core-queries">
   ## Core クエリ
 </div>
 
-このダイアレクトは、JOIN、フィルター、並べ替え、LIMIT/OFFSET、`DISTINCT` を含む SQLAlchemy Core の `SELECT` クエリをサポートしています。
+このダイアレクトは、JOIN、フィルター、並べ替え、LIMIT と OFFSET、`DISTINCT` を含む SQLAlchemy Core の `SELECT` クエリをサポートしています。
 
 ```python
 from sqlalchemy import MetaData, Table, select
@@ -47,49 +98,204 @@ from sqlalchemy import MetaData, Table, select
 metadata = MetaData(schema="mydb")
 users = Table("users", metadata, autoload_with=engine)
 orders = Table("orders", metadata, autoload_with=engine)
+events = Table("events", metadata, autoload_with=engine)
 
-# 基本的なSELECT
-with engine.begin() as conn:
-    rows = conn.execute(select(users.c.id, users.c.name).order_by(users.c.id).limit(10)).fetchall()
+stmt = (
+    select(users.c.name, orders.c.product)
+    .select_from(users.join(orders, users.c.id == orders.c.user_id))
+    .order_by(users.c.name)
+    .limit(10)
+)
 
-# JOIN（INNER/LEFT OUTER/FULL OUTER/CROSS）
-with engine.begin() as conn:
-    stmt = (
-        select(users.c.name, orders.c.product)
-        .select_from(users.join(orders, users.c.id == orders.c.user_id))
-    )
-    rows = conn.execute(stmt).fetchall()
+with engine.connect() as conn:
+    rows = conn.execute(stmt).all()
 ```
 
-必須の`WHERE`句を指定した論理削除がサポートされています：
+論理削除がサポートされており、明示的な`WHERE`句が必要です：
 
 ```python
 from sqlalchemy import delete
 
-with engine.begin() as conn:
-    conn.execute(delete(users).where(users.c.name.like("%temp%")))
+stmt = delete(users).where(users.c.name.like("%temporary%"))
+with engine.connect() as conn:
+    conn.execute(stmt)
 ```
+
+<div id="sqlalchemy-json-subcolumns">
+  ### JSON サブカラム
+</div>
+
+ClickHouse `JSON` として宣言または反映されたカラムでは、角括弧を使用して、ストレージでサポートされるサブカラムパスのセグメントを一度に1つずつ選択します。
+
+```python
+from sqlalchemy import Column, MetaData, Table, select
+
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import JSON, UInt32
+
+events = Table(
+    "events",
+    MetaData(),
+    Column("payload", JSON),
+)
+
+request_id = events.c.payload["context"]["request"].subcolumn(
+    "id",
+    type_=UInt32,
+)
+
+stmt = select(
+    events.c.payload["severity"].label("severity"),
+    request_id.label("request_id"),
+)
+```
+
+`payload["severity"]` は、ClickHouse のドット付き識別子構文にコンパイルされます。各部分は個別に引用符で囲まれ、たとえば `` `events`.`payload`.`severity` `` となります。これは ClickHouse に格納されている JSON サブカラムを読み取り、`getSubcolumn` は呼び出しません。パスセグメントごとに `[]` または `.subcolumn()` を 1 回ずつ連結します。各セグメントは空でない文字列である必要があります。
+
+`.subcolumn()` に `type_` を渡すと、ドット付きパスが SQL の `CAST` でラップされ、その型が SQLAlchemy 式に割り当てられます。`type_` を指定しない場合、`.subcolumn("segment")` は `["segment"]` と同様に動作します。
+
+型なしパスの型は ClickHouse の `Dynamic` です。ClickHouse では、`Dynamic` 値を `ORDER BY` や `GROUP BY` で直接使用できません。そこでサブカラムを使用する場合は、`type_` を渡してください。
+
+静的型付けされたコードでは、`clickhouse_connect.cc_sqlalchemy` から `json_subcolumn` をインポートします。このヘルパーも一度に 1 つのセグメントを受け取り、`type_` で指定した Python の結果型を保持します。
+
+```python
+from clickhouse_connect.cc_sqlalchemy import json_subcolumn
+
+context = json_subcolumn(events.c.payload, "context")
+request = json_subcolumn(context, "request")
+request_id = json_subcolumn(request, "id", type_=UInt32)
+```
+
+この例では、型チェッカーは `request_id` を `ColumnElement[int]` として認識します。
+
+スペースやバッククォートを含む名前も含め、各セグメントは個別に引用符で囲まれます。バッククォートを使用しても、ClickHouse の JSON path 処理でドットがリテラルとして扱われるわけではありません。`json_type_escape_dots_in_keys` が有効な場合、キー内のリテラルなドットには ClickHouse&#39;s `%2E` エンコーディングを使用します。`a.b` という名前のキーには、`payload["a.b"]` ではなく `payload["a%2Eb"]` でアクセスします。
+
+<div id="sqlalchemy-query-extensions">
+  ### ClickHouseクエリ拡張機能
+</div>
+
+静的型チェッカーで型付きの ClickHouse メソッドを利用できるようにするには、`clickhouse_connect.cc_sqlalchemy` から `select` をインポートします。標準の `sqlalchemy.select` でも、実行時にはこれらのメソッドを利用できます。
+
+```python
+from clickhouse_connect.cc_sqlalchemy import select
+
+stmt = (
+    select(events.c.user_id, events.c.event_type)
+    .final()
+    .prewhere(events.c.event_date >= "2026-01-01")
+    .sample(0.1)
+    .limit_by([events.c.user_id], 3)
+)
+```
+
+ClickHouse の `Select` メソッドは次のとおりです。
+
+| Method                                   | SQL feature                                                          |
+| ---------------------------------------- | -------------------------------------------------------------------- |
+| `.final()`                               | テーブルに対する `FINAL`                                                     |
+| `.sample(value)`                         | `SAMPLE`。割合、行数、または式を使用                                               |
+| `.prewhere(expression)`                  | `PREWHERE`。複数回呼び出すと `AND` で結合されます                                    |
+| `.limit_by(columns, limit, offset=None)` | `LIMIT ... BY`                                                       |
+| `.array_join(...)`                       | `ARRAY JOIN`                                                         |
+| `.left_array_join(...)`                  | `LEFT ARRAY JOIN`                                                    |
+| `.ch_join(...)`                          | `strictness`、`distribution`、`using`、`cross` オプション付きの ClickHouse JOIN |
+| `.cte(name, materialized=True)`          | `WITH name AS MATERIALIZED (...)`                                    |
+
+たとえば、ClickHouse の `GLOBAL ANY LEFT JOIN` は、カスタム `FromClause` をネストせずに連結できます。
+
+```python
+stmt = (
+    select(events.c.id, users.c.name)
+    .select_from(events)
+    .ch_join(
+        users,
+        events.c.user_id == users.c.id,
+        isouter=True,
+        strictness="ANY",
+        distribution="GLOBAL",
+    )
+)
+```
+
+ClickHouseの高階関数では、明示的な`Lambda`構文を使用します。
+
+```python
+from sqlalchemy import column, func
+
+from clickhouse_connect.cc_sqlalchemy import Lambda, select
+
+stmt = select(
+    func.arrayMap(
+        Lambda("x", column("x") * 2),
+        events.c.metrics,
+    ).label("doubled")
+)
+```
+
+標準的な SQLAlchemy の `values()` 構文は、共通テーブル式で使用する場合を含め、ClickHouse の `VALUES` テーブル関数構文にコンパイルされます。CTE 形式には、`Values.cte()` が追加された SQLAlchemy 2.0.42 以降が必要です。
+
+<div id="sqlalchemy-materialized-ctes">
+  ### マテリアライズド CTE
+</div>
+
+デフォルトでは、ClickHouse は共通テーブル式をインライン化するため、複数回参照される CTE では、参照のたびにボディが実行されます。`.cte()` に `materialized=True` を渡すと、`WITH <name> AS MATERIALIZED (...)` が出力され、ボディは 1 回だけ計算されます。
+
+```python
+from sqlalchemy import func
+
+from clickhouse_connect.cc_sqlalchemy import select
+
+ranked = (
+    select(book.c.book_id, func.row_number().over(order_by=book.c.score.desc()).label("result_rank"))
+    .where(book.c.genre == "sci-fi")
+    .order_by(book.c.score.desc())
+    .limit(100)
+    .cte("ranked", materialized=True)
+)
+
+stmt = (
+    select(book.c.book_id, ranked.c.result_rank)
+    .select_from(book)
+    .ch_join(ranked, book.c.book_id == ranked.c.book_id, strictness="ANY")
+    .where(book.c.book_id.in_(select(ranked.c.book_id)))
+    .execution_options(settings={"enable_materialized_cte": 1, "enable_analyzer": 1})
+)
+```
+
+サーバーが CTE をマテリアライズするのは、キーワードが指定され、`enable_materialized_cte=1` が設定され、アナライザが有効な場合に限られます。[クエリごとの設定](#sqlalchemy-per-query-settings)に示すように、ステートメント、接続、またはエンジンで `enable_materialized_cte` を設定します。この機能をサポートするすべてのサーバーではアナライザがデフォルトで有効になっているため、`enable_analyzer=1` を明示的に設定するのは予防的な措置です。`enable_materialized_cte` は実験的な ClickHouse 設定です。`enable_materialized_cte=0` または `enable_analyzer=0` の場合でも、クエリは成功し、同じ行を返します。ClickHouse は `MATERIALIZED` を通知なく無視して CTE を再びインライン化するため、設定を忘れてもエラーは発生せず、パフォーマンスが低下します。マテリアライズド CTE には ClickHouse 26.3 以降が必要です。古いサーバーでは、このキーワードは構文エラーとして拒否されます。
+
+標準の `sqlalchemy.select` で構築したステートメントでは、代わりにモジュールレベルの `cte()` を使用します。これはステートメントを第 1 引数として受け取り、それ以外は `Select.cte()` と同様に動作します。
+
+```python
+from sqlalchemy import select as sa_select
+
+from clickhouse_connect.cc_sqlalchemy import cte
+
+ranked = cte(sa_select(book.c.book_id), "ranked", materialized=True)
+```
+
+このキーワードは ClickHouse ダイアレクト でのみレンダリングされるため、別の backend と共有されるステートメントは、そちらでは変更されずにコンパイルされます。
+
+ClickHouse は再帰的なマテリアライズド CTE をサポートしていません。SQLAlchemy helpers は、`recursive=True` と `materialized=True` の両方が設定されている場合、`ValueError` を送出します。
 
 <div id="sqlalchemy-ddl-reflection">
   ## DDL とリフレクション
 </div>
 
-用意されている DDL ヘルパーと型/エンジンの構成要素を使って、データベースとテーブルを作成できます。テーブルのリフレクション (カラム型やエンジンを含む) にも対応しています。
+ClickHouse Connect は、ClickHouse データ型、テーブルエンジン、Dictionary 機能、データベース DDL、テーブルリフレクションをサポートしています。
 
 ```python
 import sqlalchemy as db
 from sqlalchemy import MetaData
-from clickhouse_connect.cc_sqlalchemy.ddl.custom import CreateDatabase, DropDatabase
-from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import MergeTree
-from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import UInt32, String, DateTime64
 
-with engine.begin() as conn:
-    # データベース
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import DateTime64, String, UInt32
+from clickhouse_connect.cc_sqlalchemy.ddl.custom import CreateDatabase
+from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import MergeTree
+
+with engine.connect() as conn:
     conn.execute(CreateDatabase("example_db", exists_ok=True))
 
-    # テーブル
     metadata = MetaData(schema="example_db")
-    table = db.Table(
+    events = db.Table(
         "events",
         metadata,
         db.Column("id", UInt32, primary_key=True),
@@ -97,53 +303,90 @@ with engine.begin() as conn:
         db.Column("created_at", DateTime64(3)),
         MergeTree(order_by="id"),
     )
-    table.create(conn)
+    events.create(conn)
 
-    # リフレクション
-    reflected = db.Table("events", metadata, autoload_with=engine)
+    reflected = db.Table("events", MetaData(schema="example_db"), autoload_with=conn)
     assert reflected.engine is not None
 ```
 
-リフレクションで取得されたカラムには、サーバー上に存在する場合、`clickhousedb_default_type`、`clickhousedb_codec_expression`、`clickhousedb_ttl_expression` などのダイアレクト固有の属性も含まれます。
+リフレクションで取得されたカラムには、`DEFAULT` 式に対応する `server_default` に加え、存在する場合は `clickhouse_codec`、`clickhouse_ttl`、`clickhouse_materialized`、`clickhouse_alias` などの dialect 固有の属性も含まれます。
+
+`order_by`、`partition_by`、`primary_key`、`sample_by`、`ttl` などの MergeTree のキー引数では、SQLAlchemy のカラムや SQL 式に加えて、プレーンな文字列も指定できます。
 
 <div id="sqlalchemy-inserts">
-  ## 挿入 (Core と基本的な ORM)
+  ## 挿入と基本的な ORM の使用
 </div>
 
-挿入は SQLAlchemy Core 経由で行えるほか、利便性のためにシンプルな ORM モデルでも行えます。
+Core による挿入とシンプルな ORM モデルをサポートしています。大量データを扱う処理には、Core による挿入を推奨します。
 
 ```python
-# コアinsert
-with engine.begin() as conn:
-    conn.execute(table.insert().values(id=1, user="joe"))
+with engine.connect() as conn:
+    conn.execute(
+        events.insert(),
+        [
+            {"id": 13, "user": "user_1"},
+            {"id": 79, "user": "user_2"},
+        ],
+    )
+```
 
-# 基本的なORM insert
-from sqlalchemy.orm import declarative_base, Session
+```python
+import sqlalchemy as db
+from sqlalchemy import MetaData
+from sqlalchemy.orm import Session, declarative_base
+
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import String, UInt32
+from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import MergeTree
 
 Base = declarative_base(metadata=MetaData(schema="example_db"))
+
 
 class User(Base):
     __tablename__ = "users"
     __table_args__ = (MergeTree(order_by=["id"]),)
+
     id = db.Column(UInt32, primary_key=True)
     name = db.Column(String)
+
 
 Base.metadata.create_all(engine)
 
 with Session(engine) as session:
-    session.add(User(id=1, name="Alice"))
-    session.bulk_save_objects([User(id=2, name="Bob")])
+    session.add(User(id=13, name="user_1"))
+    session.bulk_save_objects([User(id=79, name="user_2")])
     session.commit()
 ```
+
+<div id="sqlalchemy-alembic">
+  ## Alembic 移行
+</div>
+
+ClickHouse Connect には、ClickHouse のスキーマ移行向けの Alembic インテグレーションが含まれています。インストールするには、次を実行します。
+
+```bash
+pip install "clickhouse-connect[alembic]"
+```
+
+ダイアレクトのインテグレーションを登録するには、Alembic の `env.py` で `clickhouse_connect.cc_sqlalchemy.alembic` をインポートします。自動生成では、テーブルの作成と削除、カラムの追加/変更/削除、デフォルト値、コメントなど、一般的なテーブル変更に対応しています。テーブル名やカラム名のリネームには手動操作を使用してください。生成された移行は、適用前に必ずすべて確認してください。
+
+ClickHouse 固有の `op.*` ヘルパーでは、次の操作をサポートしています。
+
+* データスキッピングインデックス (追加、マテリアライズ、削除) 。
+* プロジェクション (追加、マテリアライズ、削除) 。
+* MergeTree テーブル設定の変更とリセット。
+* materialized view の作成と削除。
+* Dictionary の作成、削除、再読み込み。
+
+ClickHouse のデータスキッピングインデックスは SQLAlchemy の索引ではありません。部分的または不正確な DDL を避けるため、`Index`、`Column(index=True)`、`op.create_index`、`op.drop_index` は使用できません。`op.add_clickhouse_index` と `op.drop_clickhouse_index` を使用してください。
+
+完全な [Alembic の実例](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/alembic/WORKED_EXAMPLE.md) を参照してください。`clickhouse-sqlalchemy` から移行するユーザーは、[移行ガイド](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/MIGRATING_FROM_CLICKHOUSE_SQLALCHEMY.md) も確認してください。
 
 <div id="scope-and-limitations">
   ## 対象範囲と制限事項
 </div>
 
-* 主な対象: `JOIN` (`INNER`、`LEFT OUTER`、`FULL OUTER`、`CROSS`) を含む `SELECT`、`WHERE`、`ORDER BY`、`LIMIT`/`OFFSET`、`DISTINCT` など、SQLAlchemy Core の機能を利用できます。
-* `WHERE` 付きの `DELETE` のみ: この ダイアレクト は論理削除の `DELETE` をサポートしますが、誤ってテーブル全体を削除しないよう、明示的な `WHERE` 句が必要です。テーブルを空にするには、`TRUNCATE TABLE` を使用してください。
-* `UPDATE` なし: ClickHouse は追記に最適化されています。この ダイアレクト では `UPDATE` は実装されていません。データを変更する必要がある場合は、上流で変換して再挿入するか、自己責任で明示的なテキスト SQL (たとえば `ALTER TABLE ... UPDATE`) を使用してください。
-* DDL とリフレクション: データベースとテーブルの作成をサポートしており、リフレクションではカラム型とテーブルエンジンのメタデータが返されます。ClickHouse はこれらの制約を強制しないため、従来の PK/FK/索引 のメタデータはありません。
-* ORM の対象範囲: 便宜上、宣言的モデルと `Session.add(...)`/`bulk_save_objects(...)` による insert は利用できます。高度な ORM 機能 (リレーションシップ管理、unit-of-work による更新、カスケード、eager/lazy loading のセマンティクス) はサポートされていません。
-* 主キーの意味合い: `Column(..., primary_key=True)` は、SQLAlchemy でオブジェクト識別のためにのみ使用されます。ClickHouse 側にサーバー側の制約が作成されるわけではありません。`ORDER BY` (および必要に応じて `PRIMARY KEY`) は、テーブルエンジン経由で定義してください (たとえば `MergeTree(order_by=...)`) 。
-* トランザクションとサーバー機能: 二相トランザクション、数列、`RETURNING`、高度な分離レベルはサポートされていません。`engine.begin()` はステートメントをまとめるための Python のコンテキストマネージャを提供しますが、実際のトランザクション制御は行いません (commit/rollback は no-op です) 。
+* ClickHouse は、この HTTP ダイアレクト では従来型のトランザクションを提供しません。`engine.begin()` と `Session.commit()` は Python 側の処理を整理しますが、commit と rollback はサーバー側では no-op です。
+* `UPDATE`、二相トランザクション、シーケンス、`RETURNING`、および高度な分離レベルは、この ダイアレクト では実装されていません。必要に応じて、サーバー側のミューテーションには明示的に ClickHouse SQL を使用してください。
+* `Column(..., primary_key=True)` は SQLAlchemy におけるオブジェクトの識別情報を提供します。これはサーバー側の一意制約を作成するものではありません。ソート順や必要に応じたプライマリキー式は、テーブルエンジン で定義してください。
+* 従来の外部キー、一意制約、標準的な索引のメタデータは、ClickHouse がそれらの制約を強制しないため利用できません。
+* ORM のリレーションシップ管理、unit-of-work による更新、カスケード、およびリレーションシップの即時または遅延ロードは、サポート対象の ORM の範囲外です。

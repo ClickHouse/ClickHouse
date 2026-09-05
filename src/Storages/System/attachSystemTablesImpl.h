@@ -18,14 +18,11 @@ void attachImpl(ContextPtr context, IDatabase & system_database, const String & 
     chassert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
 
     auto table_id = StorageID::createEmpty();
+    String path;
     if (system_database.getUUID() == UUIDHelpers::Nil)
     {
         /// Attach to Ordinary database.
         table_id = StorageID(DatabaseCatalog::SYSTEM_DATABASE, table_name);
-        if constexpr (with_description)
-            system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, StorageT::getColumnsDescription(), std::forward<StorageArgs>(args)...), {});
-        else
-            system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, std::forward<StorageArgs>(args)...), {});
     }
     else
     {
@@ -34,20 +31,20 @@ void attachImpl(ContextPtr context, IDatabase & system_database, const String & 
         /// and path is actually not used
         table_id = StorageID(DatabaseCatalog::SYSTEM_DATABASE, table_name, UUIDHelpers::generateV4());
         DatabaseCatalog::instance().addUUIDMapping(table_id.uuid);
-        String path = DatabaseCatalog::getStoreDirPath(table_id.uuid);
-        if constexpr (with_description)
-            system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, StorageT::getColumnsDescription(), std::forward<StorageArgs>(args)...), path);
-        else
-            system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, std::forward<StorageArgs>(args)...), path);
+        path = DatabaseCatalog::getStoreDirPath(table_id.uuid);
     }
 
-    /// Set the comment
-    auto table = DatabaseCatalog::instance().getTable(table_id, context);
-    chassert(table);
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
-    StorageInMemoryMetadata metadata = *metadata_snapshot;
-    metadata.comment = comment;
-    table->setInMemoryMetadata(metadata);
+    std::shared_ptr<StorageT> storage;
+    if constexpr (with_description)
+        storage = std::make_shared<StorageT>(table_id, StorageT::getColumnsDescription(), std::forward<StorageArgs>(args)...);
+    else
+        storage = std::make_shared<StorageT>(table_id, std::forward<StorageArgs>(args)...);
+
+    /// Set the comment on the storage before attaching it, so that we neither look the table back up in
+    /// `DatabaseCatalog` nor copy its whole metadata (including the full `ColumnsDescription`) an extra time.
+    storage->setInMemoryMetadataComment(comment);
+
+    system_database.attachTable(context, table_name, storage, path);
 }
 
 

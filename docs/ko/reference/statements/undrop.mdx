@@ -8,7 +8,11 @@ doc_type: 'reference'
 
 테이블 삭제를 취소합니다.
 
-ClickHouse 버전 23.3부터는 Atomic 데이터베이스에서 DROP TABLE SQL 문을 실행한 후 `database_atomic_delay_before_drop_table_sec`(기본값 8분) 이내라면 테이블을 UNDROP할 수 있습니다. 삭제된 테이블은 `system.dropped_tables`라는 시스템 테이블(system table)에 나열됩니다.
+ClickHouse 버전 23.3부터는 `Atomic` 데이터베이스에서 `DROP TABLE`을 실행한 후 [`database_atomic_delay_before_drop_table_sec`](/ko/reference/settings/server-settings/settings/other#database_atomic_delay_before_drop_table_sec)로 설정된 기간(기본값 8분) 동안 `UNDROP TABLE`을 사용하여 테이블을 복구할 수 있습니다.
+`Atomic` 데이터베이스에서 삭제된 테이블은 `system.dropped_tables`에 나열됩니다.
+
+ClickHouse Cloud의 `Shared` 데이터베이스에서는 이 기간이 [`database_shared_drop_table_delay_seconds`](/ko/reference/settings/session-settings/database#database_shared_drop_table_delay_seconds)로 제어되며, 기본값은 8시간입니다.
+`Shared` 데이터베이스에서 삭제된 테이블은 `system.dropped_tables`에 나열되지 않습니다.
 
 삭제된 테이블과 연결된 `TO` 절 없는 materialized view가 있는 경우, 해당 view의 내부 테이블도 UNDROP해야 합니다.
 

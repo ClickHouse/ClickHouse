@@ -7,7 +7,7 @@ doc_type: 'référence'
 ---
 
 import { CloudNotSupportedBadge } from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import CloudSupportedBadge from "/snippets/fr/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
+import { CloudSupportedBadge } from "/snippets/fr/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
 
 Un dictionnaire est une correspondance (`key -> attributes`) pratique pour différents types de listes de référence.
 ClickHouse prend en charge des fonctions spéciales pour utiliser les dictionnaires dans les requêtes. Il est plus simple et plus efficace d’utiliser des dictionnaires avec ces fonctions que d’effectuer un `JOIN` avec des tables de référence.
@@ -79,7 +79,7 @@ Le fichier de configuration du dictionnaire se présente au format suivant :
     <comment>An optional element with any content. Ignored by the ClickHouse server.</comment>
 
     <!--Optional element. File name with substitutions-->
-    <include_from>/etc/metrika.xml</include_from>
+    <include_from>/etc/clickhouse-server/substitutions.xml</include_from>
 
     <dictionary>
         <!-- Dictionary configuration. -->

@@ -133,8 +133,14 @@ Block materializeColumnsFromRightBlock(Block block, const Block & sample_block)
 
             /// We support replicated columns on the right side.
             const auto * replicated_column = typeid_cast<const ColumnReplicated *>(actual_column.get());
+            /// Keep an owning reference: `column.column` is reassigned below, which can drop the last
+            /// reference to this `ColumnReplicated` and free the indexes it owns.
+            ColumnPtr replicated_indexes;
             if (replicated_column)
+            {
+                replicated_indexes = replicated_column->getIndexesColumn();
                 actual_column = replicated_column->getNestedColumn();
+            }
 
             /// Sparse columns are not supported on the right side.
             actual_column = recursiveRemoveSparse(actual_column);
@@ -150,8 +156,8 @@ Block materializeColumnsFromRightBlock(Block block, const Block & sample_block)
             if (sample_column.column->isNullable())
                 JoinCommon::convertColumnToNullable(column);
 
-            if (replicated_column)
-                column.column = ColumnReplicated::create(column.column, replicated_column->getIndexesColumn());
+            if (replicated_indexes)
+                column.column = ColumnReplicated::create(column.column, replicated_indexes);
         }
     }
 
@@ -718,8 +724,7 @@ Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & 
 
 bool hasNonJoinedBlocks(const TableJoin & table_join)
 {
-    return table_join.strictness() != JoinStrictness::Asof && table_join.strictness() != JoinStrictness::Semi
-        && isRightOrFull(table_join.kind());
+    return hasNonJoinedBlocks(table_join.kind(), table_join.strictness());
 }
 
 ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter)

@@ -390,9 +390,9 @@ De forma similar, si la tabla se almacena usando el motor de tabla `AggregatingM
 
 Antes de ClickHouse v24.8, las partes de proyección o bien quedaban desincronizadas silenciosamente con los datos principales, o bien ciertas operaciones, como actualizaciones y eliminaciones, no podían ejecutarse en absoluto, ya que la base de datos lanzaba automáticamente una excepción si la tabla tenía proyecciones.
 
-Desde la versión v24.8, una nueva configuración a nivel de tabla [`deduplicate_merge_projection_mode`](/es/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode) controla el comportamiento cuando las operaciones en segundo plano de fusión no triviales mencionadas anteriormente se producen en partes de la tabla original.
+Desde la versión v24.8, una nueva configuración a nivel de tabla [`deduplicate_merge_projection_mode`](/es/reference/settings/merge-tree-settings/other#deduplicate_merge_projection_mode) controla el comportamiento cuando las operaciones en segundo plano de fusión no triviales mencionadas anteriormente se producen en partes de la tabla original.
 
-Las mutaciones de eliminación son otro ejemplo de operaciones de fusión de partes que eliminan filas en las partes de la tabla original. Desde la versión v24.7, también disponemos de una configuración para controlar el comportamiento con respecto a las mutaciones de eliminación activadas por eliminaciones ligeras: [`lightweight_mutation_projection_mode`](/es/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode).
+Las mutaciones de eliminación son otro ejemplo de operaciones de fusión de partes que eliminan filas en las partes de la tabla original. Desde la versión v24.7, también disponemos de una configuración para controlar el comportamiento con respecto a las mutaciones de eliminación activadas por eliminaciones ligeras: [`lightweight_mutation_projection_mode`](/es/reference/settings/merge-tree-settings/other#lightweight_mutation_projection_mode).
 
 A continuación se indican los posibles valores tanto de `deduplicate_merge_projection_mode` como de `lightweight_mutation_projection_mode`:
 

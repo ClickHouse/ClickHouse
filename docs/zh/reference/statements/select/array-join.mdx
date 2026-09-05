@@ -394,7 +394,7 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
   ### 与短路函数求值不兼容
 </div>
 
-[短路函数求值](/zh/reference/settings/session-settings#short_circuit_function_evaluation) 是一项功能，用于优化 `if`、`multiIf`、`and` 和 `or` 等特定函数中复杂表达式的执行。它可以防止这些函数在执行过程中出现潜在异常，例如除以零。
+[短路函数求值](/zh/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) 是一项功能，用于优化 `if`、`multiIf`、`and` 和 `or` 等特定函数中复杂表达式的执行。它可以防止这些函数在执行过程中出现潜在异常，例如除以零。
 
 `arrayJoin` 始终会被执行，因此不支持短路函数求值。这是因为它是一个特殊函数，在查询分析和执行期间会独立于其他所有函数单独处理，并且需要额外的逻辑，而这套逻辑无法与短路函数执行兼容。原因在于，结果中的行数取决于 `arrayJoin` 的结果，而为 `arrayJoin` 实现惰性执行过于复杂且代价过高。
 

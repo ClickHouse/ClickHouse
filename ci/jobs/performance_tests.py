@@ -646,6 +646,42 @@ ORDER BY test, check_start_time
     return f"{base}#{Utils.to_base64(query)}"
 
 
+def build_check_results_children(tests_result, check_name_pattern):
+    """Per-query rows for "Check Results": one row per slower/unstable query.
+
+    Rows carry compare.sh's verdict, which the report renderer classifies
+    natively. They cannot affect the job status: the caller passes "Check
+    Results" an explicit status, and `Result.create_from` aggregates children
+    only when no status is given.
+    """
+    # compare.sh emits a row per side, but a truncated ci-checks.tsv can leave a
+    # query with either side alone, so group by query name and represent each
+    # group by its candidate side when it survived.
+    side_priority = {"::new": 0, "": 1, "::old": 2}
+    chosen = {}
+    for tr in tests_result.results:
+        if tr.status not in ("slower", "unstable"):
+            continue
+        side = next((s for s in ("::new", "::old") if tr.name.endswith(s)), "")
+        base = tr.name[: len(tr.name) - len(side)]
+        previous = chosen.get(base)
+        if previous is None or side_priority[side] < side_priority[previous[0]]:
+            chosen[base] = (side, tr)
+
+    children = []
+    for base, (_, tr) in chosen.items():
+        sub = Result(name=base, status=tr.status, duration=tr.duration)
+        sub.set_label(
+            "query history",
+            # The represented row's own name: CIDB's test_name keeps the side
+            # suffix, and the link filters on an exact match.
+            link=build_perf_query_history_link(tr.name, check_name_pattern),
+            hint="Performance history for this query on master",
+        )
+        children.append(sub)
+    return children
+
+
 def get_insert_metadata(info, compare_against_release):
     return {
         "ARCH": escape_sql_string(get_perf_arch()),
@@ -985,7 +1021,7 @@ class CHServer:
 
     @classmethod
     def run_test(
-        cls, test_file, runs=None, max_queries=0, results_path=f"{temp_dir}/perf_wd/"
+        cls, test_file, runs=None, max_queries=0, pr_number=0, results_path=f"{temp_dir}/perf_wd/"
     ):
         test_name = test_file.split("/")[-1].removesuffix(".xml")
         sw = Utils.Stopwatch()
@@ -999,6 +1035,7 @@ class CHServer:
                 --http-port {cls.LEFT_SERVER_HTTP_PORT} {cls.RIGHT_SERVER_HTTP_PORT} \
                 {runs_arg} --max-queries {max_queries} \
                 --profile-seconds 10 \
+                --pr-number {pr_number} \
                 {test_file}",
             verbose=True,
             strip=False,
@@ -1388,6 +1425,11 @@ def main():
             f"cp -r ./tests/performance/scripts/config/users.d {perf_right_config}/users.d",
             f"cp -r ./tests/config/top_level_domains {perf_wd}",
             f"rm {perf_right_config}/config.d/storage_conf_local.xml",  # Avoid conflicts on the filesystem cache dirs
+            # The reference (left) binary is the master build, which predates settings this PR adds to
+            # keeper_port.xml and rejects them as UNKNOWN_SETTING, so it fails to start. Strip such
+            # settings; both sides must share an identical config anyway, and their values are
+            # irrelevant to query performance.
+            f"sed -i '/<log_readahead_commit_window_bytes>/d' {perf_right_config}/config.d/keeper_port.xml",
             f"chmod +x {ch_path}/clickhouse",
             # The reference build (left) is downloaded as a bare `clickhouse`
             # binary, but the patched build (right) was only symlinked under its
@@ -1635,6 +1677,7 @@ def main():
                 CHServer.run_test(
                     "./tests/performance/" + test,
                     max_queries=max_queries,
+                    pr_number=info.pr_number,
                     results_path=perf_wd,
                 )
                 cleanup_user_files()
@@ -1896,23 +1939,9 @@ def main():
             # the stable baseline.  The CIDB check_name looks like
             # "Performance Comparison (arm_release, master_head, 1/6)".
             arch = get_perf_arch()
-            check_name_pattern = f"%Performance%{arch}%master_head%"
-            for tr in tests_result.results:
-                if tr.status in ("slower", "unstable"):
-                    sub = Result(
-                        name=tr.name,
-                        status=Result.Status.FAIL,
-                        info=tr.status,
-                        duration=tr.duration,
-                    )
-                    sub.set_label(
-                        "query history",
-                        link=build_perf_query_history_link(
-                            tr.name, check_name_pattern
-                        ),
-                        hint="Performance history for this query on master",
-                    )
-                    check_sub_results.append(sub)
+            check_sub_results = build_check_results_children(
+                tests_result, f"%Performance%{arch}%master_head%"
+            )
 
         results.append(
             Result(

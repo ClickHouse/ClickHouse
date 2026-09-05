@@ -19,24 +19,19 @@
         "es/products/managed-postgres/high-availability",
         "es/products/managed-postgres/read-replicas",
         "es/products/managed-postgres/backup-and-restore",
+        "es/products/managed-postgres/branching",
         "es/products/managed-postgres/extensions",
         {
           "group": "pg_clickhouse",
           "pages": [
+            "es/products/managed-postgres/extensions/pg_clickhouse/introduction",
             "es/products/managed-postgres/extensions/pg_clickhouse/reference",
             "es/products/managed-postgres/extensions/pg_clickhouse/tutorial"
-          ],
-          "root": "es/products/managed-postgres/extensions/pg_clickhouse/introduction"
+          ]
         },
         "es/products/managed-postgres/upgrades",
         "es/products/managed-postgres/openapi",
         "es/products/managed-postgres/terraform"
-      ]
-    },
-    {
-      "group": "Benchmarks",
-      "pages": [
-        "es/products/managed-postgres/benchmarks"
       ]
     },
     {
@@ -60,18 +55,18 @@
         "es/products/managed-postgres/migrations/peerdb",
         "es/products/managed-postgres/migrations/clickpipes",
         "es/products/managed-postgres/migrations/data-validation",
-        "es/products/managed-postgres/migrations/clickhouse-cloud",
         "es/products/managed-postgres/migrations/faq"
       ]
     },
     {
-      "group": "Monitorización",
+      "group": "Monitoring",
       "pages": [
         "es/products/managed-postgres/monitoring/overview",
         "es/products/managed-postgres/monitoring/dashboard",
         "es/products/managed-postgres/monitoring/metrics",
         "es/products/managed-postgres/monitoring/prometheus",
-        "es/products/managed-postgres/monitoring/query-insights"
+        "es/products/managed-postgres/monitoring/query-insights",
+        "es/products/managed-postgres/monitoring/notifications"
       ]
     },
     {
@@ -82,5 +77,5 @@
     }
   ],
   "icon": "/images/icons/icon-postgres.svg",
-  "item": "Managed Postgres"
+  "item": "ClickHouse Managed Postgres"
 }

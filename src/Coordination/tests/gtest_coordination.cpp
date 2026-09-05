@@ -7,7 +7,13 @@
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/SummingStateMachine.h>
 #include <Coordination/KeeperContext.h>
+#include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperDispatcher.h>
+#include <Coordination/KeeperRequestDispatcher.h>
+#include <Coordination/KeeperRequestDispatcherOld.h>
+#include <Coordination/KeeperServer.h>
 #include <Coordination/KeeperConstants.h>
+#include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStorage.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/Types.h>
@@ -21,15 +27,27 @@
 
 #include <Coordination/LoggerWrapper.h>
 
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/Stopwatch.h>
 
 #include <Poco/Util/XMLConfiguration.h>
 
+#include <future>
 #include <limits>
 #include <sstream>
+#include <thread>
+#include <vector>
+
+namespace DB::CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 write_snapshot_version;
+}
 
 TEST(CoordinationSettingsValidation, RejectZeroBatchSizes)
 {
@@ -62,6 +80,133 @@ TEST(CoordinationSettingsValidation, RejectZeroBatchSizes)
              "<max_requests_batch_size>1</max_requests_batch_size>"
              "<max_requests_append_size>1</max_requests_append_size>"
              "</coordination_settings></keeper_server></clickhouse>"));
+}
+
+TEST(CoordinationSettingsValidation, WriteSnapshotVersionHotReload)
+{
+    auto ctx = std::make_shared<DB::KeeperContext>(true, std::make_shared<DB::CoordinationSettings>());
+    EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V8);
+
+    /// write_snapshot_version is hot-reloadable: a valid update takes effect.
+    auto updated = std::make_shared<DB::CoordinationSettings>();
+    (*updated)[DB::CoordinationSetting::write_snapshot_version] = 9;
+    ctx->updateSettings(updated);
+    EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V9);
+
+    /// An out-of-range update is rejected and the previous value stays in effect.
+    auto too_old = std::make_shared<DB::CoordinationSettings>();
+    (*too_old)[DB::CoordinationSetting::write_snapshot_version] = 3;
+    EXPECT_THROW(ctx->updateSettings(too_old), DB::Exception);
+    EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V9);
+
+    auto too_new = std::make_shared<DB::CoordinationSettings>();
+    (*too_new)[DB::CoordinationSetting::write_snapshot_version] = DB::MAX_SUPPORTED_SNAPSHOT_VERSION + 1;
+    EXPECT_THROW(ctx->updateSettings(too_new), DB::Exception);
+    EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V9);
+}
+
+TEST(CoordinationSettingsParse, NuraftSnapshotSyncCtxTimeout)
+{
+    auto load = [](const std::string & xml)
+    {
+        std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
+        DB::CoordinationSettings settings;
+        settings.loadFromConfig("keeper_server.coordination_settings", *config);
+        return settings[DB::CoordinationSetting::nuraft_snapshot_sync_ctx_timeout_ms].totalMilliseconds();
+    };
+
+    /// The default must stay 0, which is what `raft_server::get_snapshot_sync_ctx_timeout` treats as
+    /// "derive from raft_limits_response_limit * heart_beat_interval_ms". Anything else would change
+    /// the snapshot-install budget of every existing installation on upgrade.
+    EXPECT_EQ(load("<clickhouse><keeper_server><coordination_settings>"
+                   "</coordination_settings></keeper_server></clickhouse>"),
+              0);
+
+    /// A bare number in the config is milliseconds, which is the unit
+    /// `raft_params::snapshot_sync_ctx_timeout_` expects. Had the setting been declared with a
+    /// coarser unit, the same config would mean a budget 1000 times larger.
+    EXPECT_EQ(load("<clickhouse><keeper_server><coordination_settings>"
+                   "<nuraft_snapshot_sync_ctx_timeout_ms>60000</nuraft_snapshot_sync_ctx_timeout_ms>"
+                   "</coordination_settings></keeper_server></clickhouse>"),
+              60000);
+
+    /// The setting itself is unbounded, so an operator can configure more milliseconds than the
+    /// int32 `raft_params::snapshot_sync_ctx_timeout_` can hold. Such a value survives parsing and
+    /// must be narrowed by `buildRaftParams` rather than wrapping - covered by the tests below.
+    EXPECT_GT(load("<clickhouse><keeper_server><coordination_settings>"
+                   "<nuraft_snapshot_sync_ctx_timeout_ms>3000000000</nuraft_snapshot_sync_ctx_timeout_ms>"
+                   "</coordination_settings></keeper_server></clickhouse>"),
+              std::numeric_limits<int32_t>::max());
+}
+
+/// The composition that actually reaches NuRaft: config text -> setting -> `raft_params` field.
+/// Parsing and narrowing are pinned separately below, but only this test would notice the timeout
+/// being handed over in the wrong unit or bypassing the narrowing.
+TEST(CoordinationSettingsParse, BuildRaftParams)
+{
+    auto build = [](const std::string & xml)
+    {
+        std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
+        DB::CoordinationSettings settings;
+        settings.loadFromConfig("keeper_server.coordination_settings", *config);
+        return DB::buildRaftParams(settings, getLogger("CoordinationSettingsParse"));
+    };
+
+    /// 0 is what makes `raft_server::get_snapshot_sync_ctx_timeout` fall back to
+    /// `raft_limits_response_limit * heart_beat_interval_`, i.e. today's behaviour.
+    EXPECT_EQ(build("<clickhouse><keeper_server><coordination_settings>"
+                    "</coordination_settings></keeper_server></clickhouse>")
+                  .snapshot_sync_ctx_timeout_,
+              0);
+
+    /// Milliseconds all the way through: 60000 in the config must be 60000 in `raft_params`, not
+    /// 60 and not 60000000.
+    EXPECT_EQ(build("<clickhouse><keeper_server><coordination_settings>"
+                    "<nuraft_snapshot_sync_ctx_timeout_ms>60000</nuraft_snapshot_sync_ctx_timeout_ms>"
+                    "</coordination_settings></keeper_server></clickhouse>")
+                  .snapshot_sync_ctx_timeout_,
+              60000);
+
+    /// The field is an int32, so an operator value beyond its range must be narrowed here rather
+    /// than wrapping to a negative timeout.
+    EXPECT_EQ(build("<clickhouse><keeper_server><coordination_settings>"
+                    "<nuraft_snapshot_sync_ctx_timeout_ms>3000000000</nuraft_snapshot_sync_ctx_timeout_ms>"
+                    "</coordination_settings></keeper_server></clickhouse>")
+                  .snapshot_sync_ctx_timeout_,
+              std::numeric_limits<int32_t>::max());
+
+    /// Neighbouring millisecond settings go through the same conversion, so pin one of them too.
+    EXPECT_EQ(build("<clickhouse><keeper_server><coordination_settings>"
+                    "<heart_beat_interval_ms>250</heart_beat_interval_ms>"
+                    "</coordination_settings></keeper_server></clickhouse>")
+                  .heart_beat_interval_,
+              250);
+}
+
+/// Every `nuraft::raft_params` field Keeper configures from an unbounded setting is narrowed by this
+/// function, so a value that does not fit must be reported and capped instead of wrapping to a
+/// negative timeout or gap.
+TEST(CoordinationSettingsParse, ValueOrMaxInt32)
+{
+    auto log = getLogger("CoordinationSettingsParse");
+
+    EXPECT_EQ(DB::getValueOrMaxInt32AndLogWarning(0, "test", log), 0);
+    EXPECT_EQ(DB::getValueOrMaxInt32AndLogWarning(60000, "test", log), 60000);
+    EXPECT_EQ(
+        DB::getValueOrMaxInt32AndLogWarning(std::numeric_limits<int32_t>::max(), "test", log),
+        std::numeric_limits<int32_t>::max());
+
+    /// Above the range it caps rather than wrapping negative.
+    EXPECT_EQ(
+        DB::getValueOrMaxInt32AndLogWarning(
+            static_cast<uint64_t>(std::numeric_limits<int32_t>::max()) + 1, "test", log),
+        std::numeric_limits<int32_t>::max());
+    EXPECT_EQ(DB::getValueOrMaxInt32AndLogWarning(3000000000, "test", log), std::numeric_limits<int32_t>::max());
+    EXPECT_EQ(
+        DB::getValueOrMaxInt32AndLogWarning(std::numeric_limits<uint64_t>::max(), "test", log),
+        std::numeric_limits<int32_t>::max());
 }
 
 TEST_P(CoordinationTest, RaftServerConfigParse)
@@ -395,6 +540,7 @@ static void testLogAndStateMachine(
         DB::LogFileSettings{
             .force_sync = true, .compress_logs = param.enable_compression, .rotate_interval = (*settings)[DB::CoordinationSetting::rotate_log_storage_interval]},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         keeper_context);
     changelog.init(state_machine->last_commit_index(), (*settings)[DB::CoordinationSetting::reserved_log_items]);
 
@@ -443,6 +589,7 @@ static void testLogAndStateMachine(
         DB::LogFileSettings{
             .force_sync = true, .compress_logs = param.enable_compression, .rotate_interval = (*settings)[DB::CoordinationSetting::rotate_log_storage_interval]},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         keeper_context);
     restore_changelog.init(restore_machine->last_commit_index(), (*settings)[DB::CoordinationSetting::reserved_log_items]);
 
@@ -1147,6 +1294,592 @@ TEST(CoordinationRequestSize, WriteRejectsRequestOverInt32)
     HugeRequest request;
     DB::WriteBufferFromNuraftBuffer wbuf;
     EXPECT_THROW(request.write(wbuf, false, false), Coordination::Exception);
+}
+
+/// checkIfRequestIncreaseMem is the memory-soft-limit admission classifier. It is a pure function of
+/// the request, so it is tested here rather than through the integration test: reproducing sustained
+/// memory pressure is RSS-driven and decays as soon as the load stops, which makes any assertion that
+/// depends on Keeper still refusing inherently racy.
+namespace
+{
+
+Coordination::ZooKeeperRequestPtr makeSetRequest(const std::string & path, const std::string & data)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperSetRequest>();
+    request->path = path;
+    request->data = data;
+    request->version = -1;
+    return request;
+}
+
+Coordination::ZooKeeperRequestPtr makeCreateRequest(const std::string & path, const std::string & data)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+    request->path = path;
+    request->data = data;
+    return request;
+}
+
+Coordination::ZooKeeperRequestPtr makeRemoveRequest(const std::string & path)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperRemoveRequest>();
+    request->path = path;
+    request->version = -1;
+    return request;
+}
+
+Coordination::ZooKeeperRequestPtr makeMultiRequest(const Coordination::Requests & subrequests)
+{
+    return std::make_shared<Coordination::ZooKeeperMultiRequest>(subrequests, Coordination::ACLs{});
+}
+
+}
+
+TEST(KeeperMemorySoftLimitAdmission, EmptySetIsNotMemoryIncreasing)
+{
+    /// The session-registration write from ZooKeeper::initSession. Refusing it is what locked tables
+    /// into readonly for the duration of a Keeper memory event: a Set cannot allocate a znode, and with
+    /// empty data the amount of stored data can only shrink.
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(makeSetRequest("/clickhouse/sessions/zookeeper/uuid", "")));
+
+    /// A Set that actually carries data can grow the store, so it must still be refused - note this is
+    /// true even though the path is long, i.e. the decision is on the data and not on the request size.
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeSetRequest("/clickhouse/sessions/zookeeper/uuid", "x")));
+}
+
+TEST(KeeperMemorySoftLimitAdmission, CreateIsAlwaysMemoryIncreasing)
+{
+    /// Unchanged behaviour, asserted so that narrowing the Set branch cannot silently widen this one.
+    /// An empty Create still allocates a znode, so unlike Set it is classified increasing.
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeCreateRequest("/a", "")));
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeCreateRequest("/a", "data")));
+}
+
+TEST(KeeperMemorySoftLimitAdmission, MultiClassifiedBySumOfDataSizes)
+{
+    /// A Multi of only empty Sets has a zero delta and must be admitted. Before the fix this returned
+    /// true, because the branch summed bytesSize() - which includes the path, the version and the xid -
+    /// so an empty Set contributed growth proportional to its path length. `Set(<table>/replicas, "")`
+    /// in SharedMergeTree's activateReplica is exactly this shape.
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(makeMultiRequest({
+        makeSetRequest("/some/quite/long/path/that/would/have/dominated/bytesSize", ""),
+        makeSetRequest("/another/long/path/replicas", ""),
+    })));
+
+    /// Data in any subrequest still makes the Multi increasing.
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeMultiRequest({
+        makeSetRequest("/a", ""),
+        makeSetRequest("/b", "data"),
+    })));
+
+    /// So does a Create, which is the gate-2 shape from activateReplica: an ephemeral is_active node
+    /// plus Sets. This one genuinely allocates and is expected to stay refused.
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeMultiRequest({
+        makeCreateRequest("/table/replicas/r1/is_active", ""),
+        makeSetRequest("/table/replicas/r1/host", "hostname"),
+        makeSetRequest("/table/replicas", ""),
+    })));
+}
+
+TEST(KeeperMemorySoftLimitAdmission, ReadsAndRemovesAreNotMemoryIncreasing)
+{
+    /// Reads fall through to the final `return false`, which is why a saturated Keeper still serves
+    /// them - the property the end-to-end test relies on.
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(std::make_shared<Coordination::ZooKeeperGetRequest>()));
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(std::make_shared<Coordination::ZooKeeperListRequest>()));
+
+    /// A standalone Remove is not classified increasing. Deliberately unchanged by this fix.
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(makeRemoveRequest("/a")));
+}
+
+namespace DB
+{
+
+/// The in-flight batch queue and the SessionID error path are private, so the tests below reach them
+/// through these friend accessors.
+class KeeperRequestDispatcherTestAccessor
+{
+public:
+    /// Puts one request in a fresh in-flight batch, the way dispatchThread would, and returns its index.
+    static size_t seedInFlightBatch(KeeperRequestDispatcher & dispatcher, const KeeperRequestForSession & request)
+    {
+        size_t batch_idx = dispatcher.tail_idx.load();
+        auto & batch = dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()];
+        batch.requests = {request};
+        batch.activate({});
+        dispatcher.tail_idx.store(batch_idx + 1);
+        return batch_idx;
+    }
+
+    static size_t committedRequests(KeeperRequestDispatcher & dispatcher, size_t batch_idx)
+    {
+        return dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()].committed_requests;
+    }
+
+    static size_t headIdx(const KeeperRequestDispatcher & dispatcher) { return dispatcher.head_idx.load(); }
+
+    static void dropInFlightRequests(KeeperRequestDispatcher & dispatcher) { dispatcher.dropInFlightRequests(); }
+};
+
+class KeeperRequestDispatcherOldTestAccessor
+{
+public:
+    static void addErrorResponses(
+        KeeperRequestDispatcherOld & dispatcher,
+        const KeeperRequestsForSessions & requests_for_sessions,
+        Coordination::Error error,
+        bool may_have_dependent_reads)
+    {
+        dispatcher.addErrorResponses(requests_for_sessions, error, may_have_dependent_reads);
+    }
+};
+
+class KeeperDispatcherTestAccessor
+{
+public:
+    static void setKeeperContext(KeeperDispatcher & dispatcher, KeeperContextPtr keeper_context)
+    {
+        dispatcher.keeper_context = std::move(keeper_context);
+    }
+
+    static void setServer(KeeperDispatcher & dispatcher, std::unique_ptr<KeeperServer> server)
+    {
+        dispatcher.server = std::move(server);
+    }
+
+    static KeeperServer * server(KeeperDispatcher & dispatcher) { return dispatcher.server.get(); }
+
+    static KeeperSpecialResponseRouter router(KeeperDispatcher & dispatcher)
+    {
+        return [&dispatcher](const KeeperResponseForSession & response)
+        { return dispatcher.tryRouteSpecialResponse(response); };
+    }
+
+    /// Registers a waiter the way getSessionID does, and returns the future a client blocks on.
+    /// Empty if the internal id was already registered.
+    static std::optional<std::future<int64_t>> registerSessionIDWaiter(KeeperDispatcher & dispatcher, int64_t internal_id)
+    {
+        std::lock_guard lock(dispatcher.new_session_id_mutex);
+        auto [it, inserted] = dispatcher.new_session_id_requests.try_emplace(internal_id);
+        if (!inserted)
+            return {};
+        return it->second.get_future();
+    }
+
+    static size_t sessionIDWaiterCount(KeeperDispatcher & dispatcher, int64_t internal_id)
+    {
+        std::lock_guard lock(dispatcher.new_session_id_mutex);
+        return dispatcher.new_session_id_requests.count(internal_id);
+    }
+
+    static void interruptibleSleep(KeeperDispatcher & dispatcher, std::chrono::milliseconds period)
+    {
+        dispatcher.interruptibleSleep(period);
+    }
+};
+
+}
+
+namespace
+{
+
+/// A server without a started Raft instance. Enough for onCommit and the error paths, which only
+/// touch in_flight_batches and the response routing.
+struct DispatcherFixture
+{
+    ChangelogDirTest dir{"./session_id_routing_logs"};
+    DB::KeeperContextPtr keeper_context;
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config;
+    DB::SnapshotsQueue snapshots_queue{1};
+    DB::KeeperSnapshotManagerS3 snapshot_s3;
+    std::unique_ptr<DB::KeeperServer> server;
+    std::unique_ptr<DB::KeeperRequestDispatcher> dispatcher;
+
+    /// Responses the router took, i.e. that did not go to the per-session response queue.
+    std::vector<DB::KeeperResponseForSession> routed;
+
+    DB::KeeperSpecialResponseRouter router()
+    {
+        return [this](const DB::KeeperResponseForSession & response)
+        {
+            if (response.response->getOpNum() != Coordination::OpNum::SessionID)
+                return false;
+            routed.push_back(response);
+            return true;
+        };
+    }
+
+    DispatcherFixture()
+    {
+        std::string xml = R"(<clickhouse><keeper_server>
+            <server_id>1</server_id>
+            <tcp_port>0</tcp_port>
+            <raft_configuration><server>
+                <id>1</id><hostname>localhost</hostname><port>44444</port>
+            </server></raft_configuration>
+        </keeper_server></clickhouse>)";
+        std::stringstream stream(xml); // NOLINT(readability-isolate-declaration)
+        config = new Poco::Util::XMLConfiguration(stream);
+
+        keeper_context = ::makeKeeperContext(false, nullptr);
+        keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", dir.path));
+        keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", dir.path));
+        keeper_context->setStateFileDisk(std::make_shared<DB::DiskLocal>("StateFile", dir.path));
+        keeper_context->setLocalLogsPreprocessed();
+
+        server = std::make_unique<DB::KeeperServer>(
+            DB::KeeperConfiguration::loadFromConfig(*config, true),
+            *config,
+            [](DB::KeeperResponseForSession) {},
+            snapshots_queue,
+            keeper_context,
+            snapshot_s3,
+            [](uint64_t, const DB::KeeperRequestForSession &) {});
+
+        dispatcher = std::make_unique<DB::KeeperRequestDispatcher>(server.get(), router());
+    }
+};
+
+DB::KeeperRequestForSession makeSessionIDRequest(int32_t server_id, int64_t internal_id)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperSessionIDRequest>();
+    request->server_id = server_id;
+    request->internal_id = internal_id;
+    request->session_timeout_ms = 10000;
+    /// KeeperDispatcher::getSessionID leaves xid at its default and uses session id -1, so every
+    /// SessionID request in the cluster carries the same (session_id, xid).
+    DB::KeeperRequestForSession request_for_session;
+    request_for_session.request = request;
+    request_for_session.session_id = DB::keeper_internal_get_session_id;
+    return request_for_session;
+}
+
+using RequestDispatcherAccessor = DB::KeeperRequestDispatcherTestAccessor;
+using RequestDispatcherOldAccessor = DB::KeeperRequestDispatcherOldTestAccessor;
+using DispatcherAccessor = DB::KeeperDispatcherTestAccessor;
+
+}
+
+/// A SessionID commit from another server must not retire our in-flight SessionID request, and our
+/// own must still retire it.
+TEST(KeeperDispatcher, SessionIDCommitCorrelation)
+{
+    DispatcherFixture fixture;
+    auto & dispatcher = *fixture.dispatcher;
+
+    size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
+        dispatcher, makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 7));
+
+    ASSERT_EQ(RequestDispatcherAccessor::committedRequests(dispatcher, batch_idx), 0u);
+
+    /// Same degenerate (session_id, xid), different origin.
+    dispatcher.onCommit(makeSessionIDRequest(/*server_id=*/ 2, /*internal_id=*/ 7));
+    EXPECT_EQ(RequestDispatcherAccessor::committedRequests(dispatcher, batch_idx), 0u)
+        << "a foreign server's SessionID commit retired our request";
+
+    /// Same server, different client.
+    dispatcher.onCommit(makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 8));
+    EXPECT_EQ(RequestDispatcherAccessor::committedRequests(dispatcher, batch_idx), 0u)
+        << "another client's SessionID commit retired our request";
+
+    /// Ours: correlation must still work, otherwise every session request would stall.
+    dispatcher.onCommit(makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 7));
+    EXPECT_EQ(RequestDispatcherAccessor::committedRequests(dispatcher, batch_idx), 1u)
+        << "our own SessionID commit did not retire our request";
+    EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1) << "the fully committed batch was not popped";
+}
+
+/// A dropped SessionID request must reach its waiter instead of the per-session response queue,
+/// where session id -1 has no callback and the response is discarded.
+TEST(KeeperDispatcher, SessionIDErrorReachesWaiter)
+{
+    DispatcherFixture fixture;
+    auto & dispatcher = *fixture.dispatcher;
+
+    size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
+        dispatcher, makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 11));
+
+    RequestDispatcherAccessor::dropInFlightRequests(dispatcher);
+
+    ASSERT_EQ(fixture.routed.size(), 1u) << "the dropped SessionID error did not reach its waiter";
+    const auto & response = fixture.routed.front();
+    EXPECT_EQ(response.response->error, Coordination::Error::ZCONNECTIONLOSS);
+
+    /// The identifiers the waiter is keyed by must survive makeResponse().
+    const auto & session_id_response = dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response.response);
+    EXPECT_EQ(session_id_response.server_id, 1);
+    EXPECT_EQ(session_id_response.internal_id, 11);
+
+    EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1) << "the dropped batch was not popped";
+}
+
+/// use_new_dispatcher is a setting, so the old dispatcher is a live carrier of the same defect. It
+/// has no in-flight batch tracking, so it synthesizes the error straight from addErrorResponses.
+TEST(KeeperDispatcherOld, SessionIDErrorReachesWaiter)
+{
+    DispatcherFixture fixture;
+    DB::KeeperRequestDispatcherOld dispatcher_old(fixture.server.get(), fixture.router());
+    /// Its threads loop until the context says shutdown, the way KeeperDispatcher::shutdown does it.
+    SCOPE_EXIT({
+        fixture.keeper_context->setShutdownCalled();
+        dispatcher_old.shutdown();
+    });
+
+    RequestDispatcherOldAccessor::addErrorResponses(
+        dispatcher_old,
+        {makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 13)},
+        Coordination::Error::ZCONNECTIONLOSS,
+        /*may_have_dependent_reads=*/ false);
+
+    ASSERT_EQ(fixture.routed.size(), 1u) << "the dropped SessionID error did not reach its waiter";
+    const auto & response = fixture.routed.front();
+    EXPECT_EQ(response.response->error, Coordination::Error::ZCONNECTIONLOSS);
+    const auto & session_id_response = dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response.response);
+    EXPECT_EQ(session_id_response.server_id, 1);
+    EXPECT_EQ(session_id_response.internal_id, 13);
+}
+
+/// Unlike the arms above, which stop at the router seam, this one drives the production router and
+/// asserts on the getSessionID waiter a client actually blocks on.
+TEST(KeeperDispatcher, SessionIDErrorReachesRealWaiter)
+{
+    DispatcherFixture fixture;
+
+    /// onSessionIDResponse reads only server->getServerID(), set by the KeeperServer constructor, so
+    /// an un-started server suffices here.
+    DB::KeeperDispatcher keeper_dispatcher;
+    /// Holds a raw pointer to the server keeper_dispatcher takes over, and would outlive it.
+    fixture.dispatcher.reset();
+    DispatcherAccessor::setServer(keeper_dispatcher, std::move(fixture.server));
+
+    DB::KeeperRequestDispatcher dispatcher(
+        DispatcherAccessor::server(keeper_dispatcher), DispatcherAccessor::router(keeper_dispatcher));
+
+    constexpr int64_t internal_id = 17;
+    auto waiter = DispatcherAccessor::registerSessionIDWaiter(keeper_dispatcher, internal_id);
+    ASSERT_TRUE(waiter.has_value());
+    auto & future = *waiter;
+
+    /// A response for a different client must not wake our waiter.
+    RequestDispatcherAccessor::seedInFlightBatch(dispatcher, makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 18));
+    RequestDispatcherAccessor::dropInFlightRequests(dispatcher);
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::timeout)
+        << "another client's SessionID error woke our waiter";
+    EXPECT_EQ(DispatcherAccessor::sessionIDWaiterCount(keeper_dispatcher, internal_id), 1u);
+
+    RequestDispatcherAccessor::seedInFlightBatch(dispatcher, makeSessionIDRequest(/*server_id=*/ 1, internal_id));
+    RequestDispatcherAccessor::dropInFlightRequests(dispatcher);
+
+    /// Ready without waiting: the client does not sit out the session timeout.
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::ready)
+        << "the dropped SessionID error did not reach the getSessionID waiter";
+
+    try
+    {
+        FAIL() << "getSessionID returned session id " << future.get() << " instead of the error";
+    }
+    catch (const Coordination::Exception & e)
+    {
+        EXPECT_EQ(e.code, Coordination::Error::ZCONNECTIONLOSS);
+    }
+
+    EXPECT_EQ(DispatcherAccessor::sessionIDWaiterCount(keeper_dispatcher, internal_id), 0u) << "the waiter entry leaked";
+}
+
+/// A request accepted before the shutdown flag was set is discarded without a response: the drains
+/// do not synthesize one, and the old dispatcher's requestThread abandons what it already popped.
+/// Routing cannot cover that, so the waiter is completed once no dispatcher can produce a response.
+TEST(KeeperDispatcher, PendingSessionIDRequestsFailOnShutdown)
+{
+    DispatcherFixture fixture;
+    fixture.dispatcher.reset();
+
+    /// Drives the real KeeperDispatcher::shutdown, so removing its call reddens this arm. Neither
+    /// dispatcher is constructed and `server` is left null: shutdown skips both, and the waiter
+    /// must still be completed.
+    DB::KeeperDispatcher keeper_dispatcher;
+    DispatcherAccessor::setKeeperContext(keeper_dispatcher, fixture.keeper_context);
+
+    constexpr int64_t internal_id = 31;
+    auto waiter = DispatcherAccessor::registerSessionIDWaiter(keeper_dispatcher, internal_id);
+    ASSERT_TRUE(waiter.has_value());
+    auto & future = *waiter;
+
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::timeout)
+        << "the waiter completed before shutdown";
+
+    keeper_dispatcher.shutdown(/*closed_all_connections=*/ true);
+
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::ready)
+        << "the waiter was left to time out across shutdown";
+    try
+    {
+        FAIL() << "getSessionID returned session id " << future.get() << " instead of the error";
+    }
+    catch (const Coordination::Exception & e)
+    {
+        EXPECT_EQ(e.code, Coordination::Error::ZSESSIONEXPIRED);
+    }
+
+    EXPECT_EQ(DispatcherAccessor::sessionIDWaiterCount(keeper_dispatcher, internal_id), 0u) << "the waiter entry leaked";
+}
+
+/// setShutdownCalled is one-shot, so a shutdown step that throws before the normal cleanup point
+/// is the waiters' only chance to be completed.
+TEST(KeeperDispatcher, PendingSessionIDRequestsFailOnThrowingShutdown)
+{
+    DispatcherFixture fixture;
+    fixture.dispatcher.reset();
+
+    DB::KeeperDispatcher keeper_dispatcher;
+    DispatcherAccessor::setKeeperContext(keeper_dispatcher, fixture.keeper_context);
+
+    constexpr int64_t internal_id = 37;
+    auto waiter = DispatcherAccessor::registerSessionIDWaiter(keeper_dispatcher, internal_id);
+    ASSERT_TRUE(waiter.has_value());
+    auto & future = *waiter;
+
+    DB::FailPointInjection::enableFailPoint("keeper_shutdown_throw_after_flag");
+    SCOPE_EXIT({ DB::FailPointInjection::disableFailPoint("keeper_shutdown_throw_after_flag"); });
+
+    keeper_dispatcher.shutdown(/*closed_all_connections=*/ true);
+
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::ready)
+        << "a shutdown that threw left the waiter to time out";
+    try
+    {
+        FAIL() << "getSessionID returned session id " << future.get() << " instead of the error";
+    }
+    catch (const Coordination::Exception & e)
+    {
+        EXPECT_EQ(e.code, Coordination::Error::ZSESSIONEXPIRED);
+    }
+
+    EXPECT_EQ(DispatcherAccessor::sessionIDWaiterCount(keeper_dispatcher, internal_id), 0u) << "the waiter entry leaked";
+}
+
+namespace
+{
+
+/// Millisecond counts a coordination wait must survive. The first is representable as nanoseconds
+/// but leaves less than a millisecond below Int64::max, so `steady_clock::now() + duration` wraps;
+/// the rest overflow the milliseconds to nanoseconds product itself.
+const std::vector<Int64> huge_timeouts_ms = {
+    9'223'372'036'854LL,
+    9'223'372'036'855LL,
+    9'223'372'036'854'775LL,
+    std::numeric_limits<Int64>::max(),
+};
+
+/// The predicate becomes true after this long, so a wait that kept its duration returns because the
+/// predicate fired, while a wait whose duration was lost returns immediately instead.
+constexpr Int64 notify_after_ms = 300;
+
+}
+
+/// A very long timeout must remain a very long timeout: with the raw conversion the deadline wraps
+/// into the past, so the wait gives up at once and reports that the log was not committed.
+TEST(KeeperContext, WaitCommittedUptoKeepsHugeTimeout)
+{
+    /// The parameter is unsigned, so a negative count arrives here as a huge positive one.
+    std::vector<UInt64> timeouts;
+    for (Int64 ms : huge_timeouts_ms)
+        timeouts.push_back(static_cast<UInt64>(ms));
+    timeouts.push_back(std::numeric_limits<UInt64>::max());
+
+    for (UInt64 timeout_ms : timeouts)
+    {
+        SCOPED_TRACE(timeout_ms);
+
+        auto keeper_context = std::make_shared<DB::KeeperContext>(true, std::make_shared<DB::CoordinationSettings>());
+        keeper_context->setLastCommitIndex(1);
+
+        std::thread committer(
+            [&]
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(notify_after_ms));
+                keeper_context->setLastCommitIndex(10);
+            });
+
+        Stopwatch watch;
+        const bool committed = keeper_context->waitCommittedUpto(10, timeout_ms);
+        const auto elapsed_ms = watch.elapsedMilliseconds();
+        committer.join();
+
+        EXPECT_TRUE(committed);
+        EXPECT_GE(elapsed_ms, static_cast<UInt64>(notify_after_ms) / 2);
+    }
+}
+
+/// All three callers of interruptibleSleep build the period from a coordination setting, so this
+/// covers each of them. The period arrives typed as std::chrono::milliseconds, whose representation
+/// is signed, so the reachable extremes are the signed ones.
+TEST(KeeperDispatcher, InterruptibleSleepKeepsHugePeriod)
+{
+    for (Int64 period_ms : huge_timeouts_ms)
+    {
+        SCOPED_TRACE(period_ms);
+
+        DB::KeeperDispatcher dispatcher;
+
+        std::thread shutdown_signaller(
+            [&]
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(notify_after_ms));
+                dispatcher.signalShutdown();
+            });
+
+        Stopwatch watch;
+        DispatcherAccessor::interruptibleSleep(dispatcher, std::chrono::milliseconds(period_ms));
+        const auto elapsed_ms = watch.elapsedMilliseconds();
+        /// Sampled before the join: the signaller sets the flag unconditionally, so a reading taken
+        /// afterwards would be true whatever ended the wait and would assert nothing.
+        const bool signalled_when_the_wait_returned = dispatcher.isShuttingDown();
+        shutdown_signaller.join();
+
+        EXPECT_GE(elapsed_ms, static_cast<UInt64>(notify_after_ms) / 2);
+        /// The elapsed bound alone would also accept a period silently shortened to anything above
+        /// 150 ms, which times out rather than keeping the requested period. This pins why the wait
+        /// ended: the predicate became true.
+        EXPECT_TRUE(signalled_when_the_wait_returned);
+    }
+}
+
+/// The opposite direction: a non-positive period must still return immediately, otherwise a
+/// shutdown path passing a wrapped negative count would hang instead of expiring at once.
+TEST(KeeperDispatcher, InterruptibleSleepReturnsAtOnceForNonPositivePeriod)
+{
+    /// Below the shortest spurious wait worth catching, so the ordering oracle can observe one.
+    constexpr Int64 signal_after_ms = 100;
+
+    for (Int64 period_ms : {Int64{0}, Int64{-1}, Int64{-9'223'372'036'854'775}})
+    {
+        SCOPED_TRACE(period_ms);
+
+        /// A fresh dispatcher per period: the flag latches once signalled, so a shared one would
+        /// already be shutting down after the first iteration and the oracle would read true
+        /// without any wait having happened.
+        DB::KeeperDispatcher dispatcher;
+
+        std::thread shutdown_signaller(
+            [&]
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(signal_after_ms));
+                dispatcher.signalShutdown();
+            });
+
+        Stopwatch watch;
+        DispatcherAccessor::interruptibleSleep(dispatcher, std::chrono::milliseconds(period_ms));
+        const auto elapsed_ms = watch.elapsedMilliseconds();
+        const bool signalled_when_the_wait_returned = dispatcher.isShuttingDown();
+        shutdown_signaller.join();
+
+        /// An elapsed bound accepts any wait shorter than the signal delay, so it cannot say the
+        /// wait did not happen. This pins the ordering: the call returned while the predicate was
+        /// still false.
+        EXPECT_FALSE(signalled_when_the_wait_returned);
+        EXPECT_LT(elapsed_ms, static_cast<UInt64>(notify_after_ms));
+    }
 }
 
 #endif
