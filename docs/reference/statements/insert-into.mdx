@@ -224,6 +224,49 @@ INSERT INTO infile_globs FROM INFILE 'input_?.csv' FORMAT CSV;
 ```
 </Tip>
 
+## Inserting Compressed Data via stdin {#inserting-compressed-data-via-stdin}
+
+**Syntax**
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] COMPRESSION type FORMAT format_name
+```
+
+A `COMPRESSION` clause can also be used before a bare `FORMAT` clause, i.e. without `FROM INFILE`, to insert compressed data supplied via stdin. This is supported in the [command-line client](/interfaces/cli) and [clickhouse-local](/operations/utilities/clickhouse-local); the client decompresses the data locally before sending it to the server. `type` is a string literal; supported types are: `'none'`, `'auto'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`, `'snappy'`. `'auto'` keeps the same filename-based autodetection that is used by default when `COMPRESSION` is omitted and stdin is redirected from a file.
+
+<Note>
+`COMPRESSION` before a bare `FORMAT` is only supported for data piped via stdin, not for compressed data embedded inline in the query text. Compressed bytes have no unambiguous end marker that the client can use to separate this query's data from a following query's text in a `--multiquery` script, so inline compressed data is rejected with an error.
+</Note>
+
+<Note>
+`COMPRESSION` before a bare `FORMAT` is decompressed by the client, not the server, so it only takes effect for the [command-line client](/interfaces/cli) and `clickhouse-local`. The [HTTP interface](/interfaces/http) parses this syntax but does not decompress the body for it — use the `Content-Encoding` HTTP header instead for HTTP inserts.
+</Note>
+
+<Note>
+Each `INSERT ... COMPRESSION type FORMAT format_name` piped via stdin reads from stdin until it is exhausted. In a `--multiquery` script with more than one such statement, only the first one reads any data; subsequent ones see an already-exhausted stdin and insert zero rows without an error. This is the existing behavior of bare `FORMAT` with stdin in general, not specific to `COMPRESSION`. Run each stdin-fed `INSERT` as a separate client invocation instead.
+</Note>
+
+<Note>
+`'auto'` detects compression from the name of the file backing stdin (e.g. `< data.csv.gz`), not from the data itself. If stdin is a pipe with no backing file (e.g. `cat data.csv.gz | clickhouse-client ...`), there is no filename to detect from, so `'auto'` silently falls back to no decompression, the same as `'none'`. If the piped data is actually compressed, this results in a format-parsing error rather than a clear compression-related one. Use an explicit `COMPRESSION` type (e.g. `'gzip'`) instead of `'auto'` when stdin may be a pipe.
+</Note>
+
+**Example**
+
+```bash title="Query"
+echo 1,A > input.csv ; echo 2,B >> input.csv
+gzip -k input.csv
+clickhouse-client --query="CREATE TABLE table_from_stdin (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;"
+clickhouse-client --query="INSERT INTO table_from_stdin COMPRESSION 'gzip' FORMAT CSV" < input.csv.gz
+clickhouse-client --query="SELECT * FROM table_from_stdin FORMAT PrettyCompact;"
+```
+
+```text title="Response"
+┌─id─┬─text─┐
+│  1 │ A    │
+│  2 │ B    │
+└────┴──────┘
+```
+
 ## Inserting using a Table Function {#inserting-using-a-table-function}
 
 Data can be inserted into tables referenced by [table functions](/reference/functions/table-functions/index).

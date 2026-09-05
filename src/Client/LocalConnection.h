@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+#include <memory>
 #include <Client/Connection.h>
 #include <Core/Field.h>
 #include <Core/SettingsEnums.h>
@@ -19,6 +21,7 @@ class PushingAsyncPipelineExecutor;
 class PushingPipelineExecutor;
 class QueryPipeline;
 class ReadBuffer;
+enum class CompressionMethod : uint8_t;
 
 /// State of query processing.
 struct LocalQueryState
@@ -128,6 +131,12 @@ public:
 
     void setDefaultDatabase(const String & database) override;
 
+    /// Compression method the client application already detected for its own default stdin
+    /// decompression (see ClientBase::default_input_compression_method). Used to resolve an
+    /// explicit `COMPRESSION 'auto'` clause on `input()`-based inserts, which read `in` directly
+    /// and so cannot rely on ClientBase::sendDataFrom's own handling of that clause.
+    void setDefaultInputCompressionMethod(CompressionMethod method) { default_input_compression_method = method; }
+
     void setCancelCallback(std::function<bool()> callback) override { is_cancelled_callback = std::move(callback); }
 
     void getServerVersion(const ConnectionTimeouts & timeouts,
@@ -230,6 +239,13 @@ private:
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
 
     ReadBuffer * in;
+    /// Owns the buffer created when the INSERT query carries a `COMPRESSION` clause next to a bare
+    /// `FORMAT` and reads through the `input()` table function, mirroring what
+    /// ClientBase::sendDataFrom does for the networked-client insert path.
+    std::unique_ptr<ReadBuffer> compressed_in;
+    /// See setDefaultInputCompressionMethod. Defaulted in the constructor (CompressionMethod is
+    /// only forward-declared here).
+    CompressionMethod default_input_compression_method;
 };
 
 }

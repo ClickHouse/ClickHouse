@@ -17,6 +17,8 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <IO/CompressionMethod.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
 #include <Common/config_version.h>
@@ -63,6 +65,7 @@ namespace Setting
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsSnappyMode snappy_mode;
 }
 
 namespace ErrorCodes
@@ -82,6 +85,7 @@ LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool sen
     , send_profile_events(send_profile_events_)
     , server_display_name(server_display_name_)
     , in(in_)
+    , default_input_compression_method(CompressionMethod::None)
 {
     /// Authenticate and create a context to execute queries.
     session->authenticate("default", "", Poco::Net::SocketAddress{});
@@ -98,6 +102,7 @@ LocalConnection::LocalConnection(
     , send_profile_events(send_profile_events_)
     , server_display_name(server_display_name_)
     , in(in_)
+    , default_input_compression_method(CompressionMethod::None)
 {
 }
 
@@ -356,10 +361,29 @@ void LocalConnection::sendQuery(
                 state->max_parser_backtracks);
         }
 
+        /// A `COMPRESSION` clause next to a bare `FORMAT` (no `FROM INFILE`) means the data read
+        /// through `input()` is compressed, same as ClientBase::sendDataFrom handles for the
+        /// networked-client insert path.
+        ReadBuffer * in_to_read = in;
         if (const auto * insert = parsed_query->as<ASTInsertQuery>())
         {
             if (!insert->format.empty())
                 current_format = insert->format;
+
+            if (!insert->infile && insert->compression)
+            {
+                const auto & compression_method_node = insert->compression->as<ASTLiteral &>();
+                String compression_method_string = compression_method_node.value.safeGet<std::string>();
+                /// "auto" has no filename to sniff an extension from here; reuse the detection the
+                /// client application already did once against its real stdin descriptor.
+                CompressionMethod compression_method = compression_method_string == "auto"
+                    ? default_input_compression_method
+                    : chooseCompressionMethod("", compression_method_string);
+                compressed_in = wrapReadBufferWithCompressionMethod(
+                    wrapReadBufferReference(*in), compression_method,
+                    /*zstd_window_log_max=*/ 0, settings[Setting::snappy_mode]);
+                in_to_read = compressed_in.get();
+            }
         }
 
         /// `input_format` / `format` settings override the FORMAT for input (mirrors
@@ -374,7 +398,7 @@ void LocalConnection::sendQuery(
 
         auto source = context->getInputFormat(
             current_format,
-            *in,
+            *in_to_read,
             sample,
             settings[Setting::max_insert_block_size],
             std::nullopt,
