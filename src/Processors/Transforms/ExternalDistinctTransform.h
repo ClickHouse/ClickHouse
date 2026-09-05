@@ -79,6 +79,7 @@ private:
     struct PendingPipelineUpdate
     {
         PipelineUpdateKind kind;
+        RunKind run_kind;
         ProcessorPtr sink;
         ProcessorPtr source;
         Processors merged_stream;
@@ -101,7 +102,7 @@ private:
     void startSpillRun(Chunks run_chunks, size_t run_bytes, RunKind kind);
     void createMergedStream(PendingPipelineUpdate & update);
     void connectMergedStream(const Processors & merged_stream);
-    void attachSpilledRun(const ProcessorPtr & source, const ProcessorPtr & sink);
+    void attachSpilledRun(const ProcessorPtr & source, const ProcessorPtr & sink, RunKind kind);
     void attachInMemoryTail(const ProcessorPtr & source);
     /// Returns the minimum run size, also used by the sort that restores input order.
     size_t minBytesInRun() const;

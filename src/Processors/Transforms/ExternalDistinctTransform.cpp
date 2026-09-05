@@ -184,6 +184,7 @@ void ExternalDistinctTransform::startSpillRun(Chunks run_chunks, size_t run_byte
     auto source = std::make_shared<BufferingFromFileSource>(spill_header, sink->getHolder(), log);
     PendingPipelineUpdate update{
         .kind = external_merging_sorted ? PipelineUpdateKind::AddRun : PipelineUpdateKind::InitializeMergeAndAddRun,
+        .run_kind = kind,
         .sink = sink,
         .source = source,
         .merged_stream = {},
@@ -267,7 +268,7 @@ void ExternalDistinctTransform::connectMergedStream(const Processors & merged_st
     connect(*output, *merged_input);
 }
 
-void ExternalDistinctTransform::attachSpilledRun(const ProcessorPtr & source, const ProcessorPtr & sink)
+void ExternalDistinctTransform::attachSpilledRun(const ProcessorPtr & source, const ProcessorPtr & sink, RunKind kind)
 {
     external_merging_sorted->addInput();
     connect(source->getOutputs().back(), external_merging_sorted->getInputs().back());
@@ -276,8 +277,17 @@ void ExternalDistinctTransform::attachSpilledRun(const ProcessorPtr & source, co
     run_write_output = &outputs.back();
     connect(*run_write_output, sink->getInputs().back());
 
-    /// The sink finishes this dependency after finalizing the file. Waiting here releases its writing
-    /// buffers before extracting another run, and the source remains gated until the file is complete.
+    if (kind == RunKind::Input)
+    {
+        run_completion_input = nullptr;
+        run_readiness_output = nullptr;
+        /// Ordinary input can continue while its run finishes writing; the source waits for the sink.
+        connect(sink->getOutputs().front(), source->getInputs().front());
+        return;
+    }
+
+    /// Suppression extraction waits for the sink to finalize the file and release its writing buffers
+    /// before preparing another run. The source remains gated until the file is complete.
     inputs.emplace_back(Block(), this);
     run_completion_input = &inputs.back();
     connect(sink->getOutputs().front(), *run_completion_input);
@@ -306,7 +316,7 @@ IProcessor::PipelineUpdate ExternalDistinctTransform::updatePipeline()
             connectMergedStream(update.merged_stream);
             [[fallthrough]];
         case PipelineUpdateKind::AddRun:
-            attachSpilledRun(update.source, update.sink);
+            attachSpilledRun(update.source, update.sink, update.run_kind);
             break;
         case PipelineUpdateKind::AddInMemoryTail:
             attachInMemoryTail(update.source);
@@ -412,13 +422,17 @@ IProcessor::Status ExternalDistinctTransform::prepareSerialize()
         run_write_output->finish();
     }
 
-    if (!run_completion_input->isFinished())
+    if (run_completion_input)
     {
-        run_completion_input->setNeeded();
-        return Status::NeedData;
+        if (!run_completion_input->isFinished())
+        {
+            run_completion_input->setNeeded();
+            return Status::NeedData;
+        }
+
+        run_readiness_output->finish();
     }
 
-    run_readiness_output->finish();
     return Status::Finished;
 }
 
@@ -579,6 +593,7 @@ void ExternalDistinctTransform::generate()
             max_block_size_rows, /*limit=*/ 0);
         pending_pipeline_update.emplace(PendingPipelineUpdate{
             .kind = PipelineUpdateKind::AddInMemoryTail,
+            .run_kind = RunKind::Input,
             .sink = {},
             .source = source,
             .merged_stream = {},
