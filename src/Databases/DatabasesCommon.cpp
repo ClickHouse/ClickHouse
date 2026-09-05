@@ -366,11 +366,9 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
 
 String readMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path)
 {
-    /// Read synchronously: `.sql` metadata is rewritten in place by concurrent ALTER/RENAME, so any
-    /// buffer that snapshots the file size at construction can read past it and trip
-    /// `file_offset_of_buffer_end <= getFileSize()`. Disable every such stage the pipeline may pick:
-    /// the async prefetch buffer (method=read), the experimental reader executor, and the in-memory
-    /// page cache (`CachedInMemoryReadBufferFromFile`), all of which cache size up front.
+    /// `.sql` metadata is rewritten in place by concurrent ALTER/RENAME, so a buffer that snapshots
+    /// the file size at construction can read past it and trip
+    /// `file_offset_of_buffer_end <= getFileSize()`. Every stage disabled below snapshots that size.
     auto read_settings = getReadSettingsForMetadata();
     read_settings.remote_fs_settings.method = RemoteFSReadMethod::read;
     read_settings.reader_executor.enabled = false;

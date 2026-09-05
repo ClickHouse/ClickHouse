@@ -13,11 +13,12 @@
 #   1. remote_fs_settings.method = read   avoids the async prefetch threadpool buffer
 #   2. reader_executor.enabled = false    avoids ReadPipeline::tryBuildReaderExecutor()
 #   3. disableCaches()                    avoids CachedInMemoryReadBufferFromFile / page cache
-# The three phases below drive the metadata read down each of those pipeline branches so removing
-# any one of the three lines makes this test fail: default settings exercise the threadpool path,
-# use_reader_executor=1 the executor path, and use_page_cache_for_disks_without_file_cache=1 the
-# in-memory page-cache path. They are separate phases because enabling the executor and the page
-# cache together falls back to the page-cache path instead of exercising the executor.
+# The two phases below cover the first two: default settings exercise the threadpool path and
+# use_reader_executor=1 the executor path, so removing either of those two lines makes this test
+# fail. The page-cache branch is NOT reachable from a stateless test, so this test does not cover
+# the third line: the userspace page cache only exists when the server sets page_cache_max_size
+# (default 0), and even with one configured DiskObjectStorage::prepareRead enables that stage only
+# for metadata storages with random or read-only blob paths, which the "db disk" lane is not.
 #
 # Each concurrent worker sends its whole loop over a SINGLE client connection (one multiquery
 # batch) rather than spawning one client process per iteration: under sanitizers the per-process
@@ -91,8 +92,6 @@ run_phase() {
 run_phase ""
 # Phase 2: use_reader_executor=1, ReadPipeline reader-executor path.
 run_phase "--use_reader_executor 1"
-# Phase 3: use_page_cache_for_disks_without_file_cache=1, CachedInMemoryReadBufferFromFile.
-run_phase "--use_page_cache_for_disks_without_file_cache 1"
 
 # If the server survived every race phase, it still answers.
 $CLICKHOUSE_CLIENT -q "SELECT 1"
