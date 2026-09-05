@@ -1,0 +1,57 @@
+single value dictionary
+1	1
+1
+0	1
+1000	0	1000	1000	20000
+	x	\N	\N	20
+0	1000
+constant false filter
+0
+0
+constant true filter
+1000
+500
+500
+non bool filter
+0
+0
+0
+1000
+zero or one row
+1
+0
+1
+correlated subquery
+1
+0
+several keys with the same result
+1
+several keys with different results
+0
+0
+0
+1000	500	1000
+mostly empty
+500	x
+constant and non constant parts in one query
+0
+1
+500
+xy	500
+y	1500
+union all of a constant and a non constant branch
+0	1000
+1	1000
+sorting and window
+0
+0
+1000
+join on a constant key
+1000
+distributed
+0
+0
+writing a constant into a part
+1000	1	1	0	x
+1000	1	m
+1000	1	1

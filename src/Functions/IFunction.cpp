@@ -526,12 +526,21 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
             ColumnPtr res_indexes = res_mut_dictionary->uniqueInsertRangeFrom(*keys, 0, keys->size());
             ColumnUniquePtr res_dictionary = std::move(res_mut_dictionary);
 
-            if (indexes && !res_is_constant)
+            /// All keys mapped to the same value, so all rows do: return a constant instead of one
+            /// index per row. Only above one row: planning evaluates on zero or one row and would
+            /// take the constant for a real one (`FilterTransform` reads `ConstantFilterDescription`
+            /// off its header). Nested calls can reset `dry_run`, so the row count is the guard.
+            bool res_is_same_for_all_rows = res_is_constant
+                || (indexes && !dry_run && input_rows_count > 1 && indexesHaveSingleValue(*res_indexes));
+
+            if (res_is_same_for_all_rows)
+                result = ColumnLowCardinality::create(res_dictionary, res_indexes->cut(0, 1), /*is_shared=*/false);
+            else if (indexes)
                 result = ColumnLowCardinality::create(res_dictionary, res_indexes->index(*indexes, 0), /*is_shared=*/false);
             else
                 result = ColumnLowCardinality::create(res_dictionary, res_indexes, /*is_shared=*/false);
 
-            if (res_is_constant)
+            if (res_is_same_for_all_rows)
                 result = ColumnConst::create(std::move(result), input_rows_count);
         }
         else

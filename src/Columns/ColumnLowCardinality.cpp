@@ -12,6 +12,8 @@
 #include <base/sort.h>
 #include <base/scope_guard.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -723,6 +725,25 @@ PaddedPODArray<UInt64> ColumnLowCardinality::getDistinctIndexes(size_t offset, s
         distinct.push_back(cell.getKey());
 
     return distinct;
+}
+
+bool indexesHaveSingleValue(const IColumn & indexes)
+{
+    auto all_equal = [](const auto & positions)
+    {
+        return !positions.empty()
+            && std::all_of(positions.begin(), positions.end(), [first = positions.front()](auto position) { return position == first; });
+    };
+
+    size_t size_of_type = ColumnIndex::getSizeOfIndexType(indexes, 0);
+    switch (size_of_type)
+    {
+        case sizeof(UInt8): return all_equal(assert_cast<const ColumnUInt8 &>(indexes).getData());
+        case sizeof(UInt16): return all_equal(assert_cast<const ColumnUInt16 &>(indexes).getData());
+        case sizeof(UInt32): return all_equal(assert_cast<const ColumnUInt32 &>(indexes).getData());
+        case sizeof(UInt64): return all_equal(assert_cast<const ColumnUInt64 &>(indexes).getData());
+        default: throwUnexpectedLowCardinalityIndexType(size_of_type);
+    }
 }
 
 ColumnPtr ColumnLowCardinality::countKeys() const

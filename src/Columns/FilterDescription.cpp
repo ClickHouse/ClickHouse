@@ -105,6 +105,11 @@ static std::optional<IColumnFilter> unpackOrConvertFilter(ColumnPtr & column)
 
 ColumnPtr FilterDescription::preprocessFilterColumn(ColumnPtr column)
 {
+    /// Drop LowCardinality from inside a constant before expanding it, otherwise the expansion first
+    /// materializes one dictionary index per row and only then the filter itself.
+    if (isColumnConst(*column))
+        column = column->convertToFullColumnIfLowCardinality();
+
     column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
 
     ColumnPtr null_map_column;
