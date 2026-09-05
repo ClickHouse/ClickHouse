@@ -735,6 +735,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /// rename is pending), the physical data will belong to `new` only after the rename
         /// materializes, so fall back to expiring `new` and let the rename mutation re-derive it.
         NameSet renamed_column_targets;
+        /// A column that every source part records as missing carries the type frozen when that part was
+        /// written, and the merged part keeps a single marker per column. The parts can disagree - an
+        /// `ALTER ... MODIFY COLUMN` that did not rewrite them (via `DETACH`/`ATTACH PARTITION`, or a
+        /// killed conversion mutation) leaves each part with its own frozen type - and then the rows of
+        /// the part whose marker is dropped would read as the surviving marker's default. Such a column
+        /// must not expire: materializing it makes every row keep the default its own part froze.
+        std::unordered_map<String, String> frozen_type_of_missing_column;
+        NameSet columns_with_conflicting_frozen_types;
         for (const auto & part : global_ctx->future_part->parts)
         {
             auto conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context
@@ -749,6 +757,17 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                     && !storage_column_names.contains(rename.rename_from))
                     renamed_column_targets.emplace(rename.rename_to);
             }
+
+            for (const auto & missing_column : part->getSerializationInfos().getMissingColumns())
+            {
+                String current_name = missing_column.name;
+                if (conversions->columnHasNewName(missing_column.name))
+                    current_name = conversions->getColumnNewName(missing_column.name);
+
+                auto [it, inserted] = frozen_type_of_missing_column.emplace(current_name, missing_column.type_name);
+                if (!inserted && it->second != missing_column.type_name)
+                    columns_with_conflicting_frozen_types.emplace(current_name);
+            }
         }
 
         const auto & columns_desc = global_ctx->metadata_snapshot->getColumns();
@@ -759,6 +778,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             if (!columns_present_in_parts.contains(storage_column.name)
                 && !columns_present_in_patch_parts.contains(storage_column.name)
                 && !renamed_column_targets.contains(storage_column.name)
+                && !columns_with_conflicting_frozen_types.contains(storage_column.name)
                 && !columns_desc.getDefault(storage_column.name))
                 global_ctx->new_data_part->expired_columns.emplace(storage_column.name);
         }
