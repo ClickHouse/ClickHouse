@@ -2,20 +2,18 @@
 
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
-
 namespace DB
 {
 
-/// Statistics of jemalloc size classes (bins): aggregated over all arenas when
-/// `per_arena` is false, with one row per (arena, bin) otherwise.
-class StorageSystemJemallocBins final : public StorageWithCommonVirtualColumns
+/// System table that flushes a jemalloc heap profile and exposes one row per live sampled allocation
+class StorageSystemJemallocSampledAllocations final : public StorageWithCommonVirtualColumns
 {
 public:
-    StorageSystemJemallocBins(const StorageID & table_id_, bool per_arena_);
+    explicit StorageSystemJemallocSampledAllocations(const StorageID & table_id_);
 
-    std::string getName() const override { return per_arena ? "SystemJemallocArenaBins" : "SystemJemallocBins"; }
+    std::string getName() const override { return "SystemJemallocSampledAllocations"; }
 
-    static ColumnsDescription getColumnsDescription(bool per_arena);
+    static ColumnsDescription getColumnsDescription();
     static VirtualColumnsDescription createVirtuals();
 
     using StorageWithCommonVirtualColumns::read;
@@ -32,9 +30,6 @@ public:
     bool isSystemStorage() const override { return true; }
 
     bool supportsTransactions() const override { return true; }
-
-private:
-    const bool per_arena;
 };
 
 }

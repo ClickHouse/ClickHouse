@@ -11,6 +11,8 @@
 
 #include <fmt/format.h>
 #include <jemalloc/jemalloc.h>
+#include <atomic>
+#include <cstdint>
 #include <string>
 
 namespace ProfileEvents
@@ -30,6 +32,10 @@ struct ArenaState
     unsigned index;
     bool created;
 };
+
+/// Published after `arenas.create` succeeds; -1 while the arena does not exist.
+/// Lets read-only inspection paths see the index without materializing the arena.
+std::atomic<int64_t> created_index{-1};
 
 ArenaState createArena()
 {
@@ -52,6 +58,7 @@ ArenaState createArena()
             err);
         return {0, false};
     }
+    created_index.store(arena_index, std::memory_order_relaxed);
     return {arena_index, true};
 }
 
@@ -66,6 +73,14 @@ const ArenaState & state()
 unsigned getArenaIndex()
 {
     return state().index;
+}
+
+std::optional<unsigned> tryGetCreatedArenaIndex()
+{
+    int64_t index = created_index.load(std::memory_order_relaxed);
+    if (index < 0)
+        return std::nullopt;
+    return static_cast<unsigned>(index);
 }
 
 bool isEnabled()
@@ -101,6 +116,7 @@ namespace DB::JemallocJITArena
 {
 
 unsigned getArenaIndex() { return 0; }
+std::optional<unsigned> tryGetCreatedArenaIndex() { return std::nullopt; }
 bool isEnabled() { return false; }
 void purge() {}
 
