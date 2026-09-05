@@ -3791,17 +3791,22 @@ bool ReadFromMergeTree::isParallelReplicasLocalPlanForFollower() const
         && context->canUseParallelReplicasOnFollower();
 }
 
+bool ReadFromMergeTree::canReadInReverseOrder() const
+{
+    /// Reading in reverse order flips which row of a group with equal keys FINAL selects. Only the
+    /// Replacing algorithm compensates for that (see `ReplacingSortedAlgorithm`).
+    return !query_info.isFinal()
+        || (data.merging_params.mode == MergeTreeData::MergingParams::Replacing
+            && context->getSettingsRef()[Setting::optimize_read_in_reverse_order_final]);
+}
+
 bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit)
 {
     /// if direction is not set, use current one
     if (!direction)
         direction = getSortDirection();
 
-    /// Reading in reverse order flips which row of a group with equal keys FINAL selects. Only the
-    /// Replacing algorithm compensates for that (see `ReplacingSortedAlgorithm`).
-    if (direction != 1 && query_info.isFinal()
-        && (data.merging_params.mode != MergeTreeData::MergingParams::Replacing
-            || !context->getSettingsRef()[Setting::optimize_read_in_reverse_order_final]))
+    if (direction != 1 && !canReadInReverseOrder())
         return false;
 
     /// Only a later request that WIDENS an already-established prefix (distinct/aggregation-in-order
