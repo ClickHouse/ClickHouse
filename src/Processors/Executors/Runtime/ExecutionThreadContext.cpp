@@ -14,11 +14,13 @@
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/MemoryReservation.h>
+#include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
 namespace ProfileEvents
 {
     extern const Event MemoryReservationSpilledBytes;
+    extern const Event MemoryReservationSpillingMicroseconds;
 }
 
 namespace DB
@@ -80,10 +82,14 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
                 {
                     if (auto spill_request = reservation->takeSpillRequest())
                     {
+                        const auto & logger = getLogger("Scheduler");
+                        LOG_TRACE(logger, "Spilling {}, of {}", formatReadableSizeWithBinarySuffix(spill_request), formatReadableSizeWithBinarySuffix(memory.spillable_memory_bytes));
+                        Stopwatch watch;
                         size_t spilled = spillable->spill(spill_request);
                         auto remaining = spillable->getMemoryStats().spillable_memory_bytes;
-                        LOG_TEST(getLogger("Scheduler"), "Spill requested {} bytes, spilled {} bytes of {}, {} left", spill_request, spilled, memory.spillable_memory_bytes, remaining);
+                        LOG_TRACE(logger, "Spilled {}, remaining {} (took {} ms)", formatReadableSizeWithBinarySuffix(spilled), formatReadableSizeWithBinarySuffix(remaining), watch.elapsedMilliseconds());
                         ProfileEvents::increment(ProfileEvents::MemoryReservationSpilledBytes, spilled);
+                        ProfileEvents::increment(ProfileEvents::MemoryReservationSpillingMicroseconds, watch.elapsedMicroseconds());
                         reservation->finishSpill(spillable, remaining, process_list_element->getMemoryTracker());
                     }
                 }

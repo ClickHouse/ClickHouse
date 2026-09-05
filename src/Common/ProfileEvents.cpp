@@ -1562,6 +1562,7 @@ The server successfully detected this situation and will download merged part fr
     M(MemoryReservationFailed, "Total number of failed memory reservations", ValueType::Number) \
     M(MemoryReservationReclaimableBytes, "Memory that became reclaimable (spillable) by the query", ValueType::Bytes) \
     M(MemoryReservationSpilledBytes, "Total number of spilled to disk memory", ValueType::Bytes) \
+    M(MemoryReservationSpillingMicroseconds, "Amount of time spilling takes", ValueType::Microseconds) \
     \
     M(CoordinatedMergesMergeCoordinatorUpdateCount, "Total number of merge coordinator updates", ValueType::Number) \
     M(CoordinatedMergesMergeCoordinatorUpdateMicroseconds, "Total time spend on updating merge coordinator state", ValueType::Microseconds) \
