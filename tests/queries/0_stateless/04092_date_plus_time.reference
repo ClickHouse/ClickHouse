@@ -488,7 +488,7 @@ SELECT toDate32('2299-12-31') + t FROM test_saturate_intermediate ORDER BY t;
 2261-12-21 02:40:00.000000000
 2262-04-11 23:47:16.854775807
 DROP TABLE test_saturate_intermediate;
-SET date_time_overflow_behavior = 'throw';
+SET date_time_overflow_behavior = 'saturate';
 -- Numeric inputs to `Time` are capped to the range of the type ([-999:59:59, 999:59:59]),
 -- whatever the width of the source type is, so a value beyond the visible range is stored
 -- saturated instead of keeping its full numeric value. Date+Time uses the stored value,

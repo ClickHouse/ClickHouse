@@ -402,7 +402,7 @@ INSERT INTO test_saturate_intermediate SELECT arrayJoin([CAST(toDecimal128('-120
 SELECT toDate32('2299-12-31') + t FROM test_saturate_intermediate ORDER BY t;
 DROP TABLE test_saturate_intermediate;
 
-SET date_time_overflow_behavior = 'throw';
+SET date_time_overflow_behavior = 'saturate';
 
 -- Numeric inputs to `Time` are capped to the range of the type ([-999:59:59, 999:59:59]),
 -- whatever the width of the source type is, so a value beyond the visible range is stored

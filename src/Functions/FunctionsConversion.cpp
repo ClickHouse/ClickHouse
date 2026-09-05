@@ -706,26 +706,32 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                     return true;
                 }
             }
-            else if constexpr (std::is_same_v<LeftDataType, DataTypeDate32> && std::is_same_v<RightDataType, DataTypeDateTime64>)
+            else if constexpr ((IsDataTypeNumber<LeftDataType> || IsDataTypeDateOrDateTimeOrTime<LeftDataType>)
+                && (std::is_same_v<RightDataType, DataTypeDateTime64> || std::is_same_v<RightDataType, DataTypeTime64>))
             {
-                /// The only conversion handled by this wrapper that can overflow the target: the whole-seconds value
-                /// of a `Date32` day does not always fit the `Int64` ticks of a high-precision `DateTime64` (a scale-9
-                /// one ends at 2262-04-11), so `date_time_overflow_behavior` has to reach the transform - unlike the
-                /// other branches here, which cannot lose a value and therefore use the default mode.
+                /// These are the conversions handled by this wrapper that can overflow the target: the whole-seconds
+                /// value of the source does not always fit the `Int64` ticks of the target (a scale-9 `DateTime64`
+                /// ends at 2262-04-11, and `Time64` holds at most 999:59:59), so `date_time_overflow_behavior` has to
+                /// reach the transform - unlike the other branches here, which cannot lose a value and therefore use
+                /// the default mode. `accurateCastOrNull` reports an unrepresentable value as NULL, so it must not be
+                /// turned into an exception by the `throw` mode.
+                if (cast_type != CastType::accurateOrNull)
+                {
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE) \
     case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
         result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
             arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale); \
         break;
-                switch (settings.date_time_overflow_behavior)
-                {
-                    GENERATE_OVERFLOW_MODE_CASE(Throw)
-                    GENERATE_OVERFLOW_MODE_CASE(Ignore)
-                    GENERATE_OVERFLOW_MODE_CASE(Saturate)
-                }
+                    switch (settings.date_time_overflow_behavior)
+                    {
+                        GENERATE_OVERFLOW_MODE_CASE(Throw)
+                        GENERATE_OVERFLOW_MODE_CASE(Ignore)
+                        GENERATE_OVERFLOW_MODE_CASE(Saturate)
+                    }
 #undef GENERATE_OVERFLOW_MODE_CASE
 
-                return true;
+                    return true;
+                }
             }
             else if constexpr (std::is_same_v<LeftDataType, DataTypeString>)
             {

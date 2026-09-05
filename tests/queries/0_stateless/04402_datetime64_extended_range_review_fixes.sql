@@ -50,12 +50,13 @@ SELECT '-- scale 0 numeric conversion reaches the full [0000, 9999] range';
 SELECT toYear(toDateTime64(253402300799, 0, 'UTC')) = 9999,
        toYear(toDateTime64(-62167219200, 0, 'UTC')) = 0;
 
--- date_time_overflow_behavior governs conversions between date/time types, not conversions from a raw number,
--- so numeric toDateTime64 saturates per-scale in every mode (including 'throw') instead of raising an error.
-SELECT '-- numeric toDateTime64 saturates per-scale regardless of date_time_overflow_behavior';
+-- date_time_overflow_behavior also governs conversions from a raw number, so numeric toDateTime64
+-- saturates per-scale in the 'ignore' and 'saturate' modes and raises an error in the 'throw' mode.
+SELECT '-- numeric toDateTime64 saturates per-scale in the ignore mode';
 SELECT toDateTime64(300000000000, 9, 'UTC') = toDateTime64(9223372036, 9, 'UTC'),
        toDateTime64(-300000000000, 9, 'UTC') = toDateTime64(-9223372036, 9, 'UTC')
-SETTINGS date_time_overflow_behavior = 'throw';
+SETTINGS date_time_overflow_behavior = 'ignore';
+SELECT toDateTime64(300000000000, 9, 'UTC') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 
 SELECT '-- changeYear/changeMonth saturate at the partial boundary years instead of throwing DECIMAL_OVERFLOW';
 -- At scale 9 only [1677-09-21, 2262-04-11] is representable and at scale 8 only up to ~4892-10-07, so a year that
