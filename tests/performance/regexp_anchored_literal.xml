@@ -27,6 +27,16 @@
     <!-- A wildcard-free `LIKE` lowers to `^literal$` and is not rewritten, so it needs no settings. -->
     <query>SELECT count() FROM test.hits WHERE URL LIKE 'http://smeshariki.ru/'</query>
 
+    <!-- `RE2::QuoteMeta` escapes every non-alphanumeric byte, not only the metacharacters re2 needs escaped,
+         so a literal built with it arrives as `\:`, `\%` and so on. These mirror the queries above. -->
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '^https\\://'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '^http\\://smeshariki\\.ru/$'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '\\%3D$'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '^https\\://')) SETTINGS max_threads = 1</query>
+
+    <query>SELECT count() FROM test.hits WHERE match(URL, '^https\\://') SETTINGS compile_regular_expressions = 0</query>
+    <query>SELECT count() FROM test.hits WHERE match(URL, '^http\\://smeshariki\\.ru/$') SETTINGS compile_regular_expressions = 0</query>
+
     <!-- An unanchored literal keeps using the substring search; here to catch a regression on that path. -->
     <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, 'html'))</query>
     <query>SELECT count() FROM test.hits WHERE URL LIKE '%.html%'</query>

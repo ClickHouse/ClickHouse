@@ -25,6 +25,7 @@
 #include <Common/tryGetFileNameByFileDescriptor.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsQuirks.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -113,11 +114,19 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.avro.output_codec = settings[Setting::output_format_avro_codec];
     format_settings.avro.output_sync_interval = settings[Setting::output_format_avro_sync_interval];
     format_settings.avro.schema_registry_url = settings[Setting::format_avro_schema_registry_url].toString();
-    format_settings.avro.schema_registry_timeouts.connection_timeout = settings[Setting::format_avro_schema_registry_connection_timeout];
-    format_settings.avro.schema_registry_timeouts.send_timeout = settings[Setting::format_avro_schema_registry_send_timeout];
-    format_settings.avro.schema_registry_timeouts.receive_timeout = settings[Setting::format_avro_schema_registry_receive_timeout];
-    format_settings.avro.schema_registry_retry.max_retries = settings[Setting::format_avro_schema_registry_max_retries];
-    format_settings.avro.schema_registry_retry.initial_backoff_ms = settings[Setting::format_avro_schema_registry_retry_initial_backoff_ms];
+    /// `doSettingsSanityCheckClamp` bounds these at apply time, but it does not run for
+    /// `ApplicationType::CLIENT`, which builds format settings of its own for every statement and
+    /// reaches the registry when it parses `INSERT ... FROM INFILE`. Clamp here to cover it too.
+    format_settings.avro.schema_registry_timeouts.connection_timeout
+        = std::min<UInt64>(settings[Setting::format_avro_schema_registry_connection_timeout], MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS);
+    format_settings.avro.schema_registry_timeouts.send_timeout
+        = std::min<UInt64>(settings[Setting::format_avro_schema_registry_send_timeout], MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS);
+    format_settings.avro.schema_registry_timeouts.receive_timeout
+        = std::min<UInt64>(settings[Setting::format_avro_schema_registry_receive_timeout], MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS);
+    format_settings.avro.schema_registry_retry.max_retries
+        = std::min<UInt64>(settings[Setting::format_avro_schema_registry_max_retries], MAX_SCHEMA_REGISTRY_RETRIES);
+    format_settings.avro.schema_registry_retry.initial_backoff_ms
+        = std::min<UInt64>(settings[Setting::format_avro_schema_registry_retry_initial_backoff_ms], MAX_SCHEMA_REGISTRY_INITIAL_BACKOFF_MS);
     format_settings.avro.string_column_pattern = settings[Setting::output_format_avro_string_column_pattern].toString();
     format_settings.avro.output_rows_in_file = settings[Setting::output_format_avro_rows_in_file];
     format_settings.avro.output_confluent_subject = settings[Setting::output_format_avro_confluent_subject].toString();
@@ -204,6 +213,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.empty_as_default = settings[Setting::input_format_json_empty_as_default];
     format_settings.json.type_json_skip_invalid_typed_paths = settings[Setting::type_json_skip_invalid_typed_paths];
     format_settings.json.type_json_skip_duplicated_paths = settings[Setting::type_json_skip_duplicated_paths];
+    format_settings.json.type_json_skip_null_typed_paths = settings[Setting::type_json_skip_null_typed_paths];
     format_settings.json.max_dynamic_subcolumns_in_json_type_parsing = settings[Setting::max_dynamic_subcolumns_in_json_type_parsing].valueOrNullopt();
     format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object = settings[Setting::type_json_allow_duplicated_key_with_literal_and_nested_object];
     format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp = settings[Setting::type_json_use_partial_match_to_skip_paths_by_regexp];
@@ -431,40 +441,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
         const Poco::URI & avro_schema_registry_url = settings[Setting::format_avro_schema_registry_url];
         if (!avro_schema_registry_url.empty())
             context->getRemoteHostFilter().checkURL(avro_schema_registry_url);
-    }
-
-    /// Schema Registry timeouts must be greater than 0 and less than 10 minutes (600 seconds).
-    {
-        static constexpr UInt64 max_seconds = 600;
-        auto check_timeout = [](UInt64 value, const char * name)
-        {
-            if (value == 0 || value >= max_seconds)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Setting '{}' must be greater than 0 and less than {} seconds (10 minutes), got {}",
-                    name, max_seconds, value);
-        };
-        const auto & timeouts = format_settings.avro.schema_registry_timeouts;
-        check_timeout(timeouts.connection_timeout, "format_avro_schema_registry_connection_timeout");
-        check_timeout(timeouts.send_timeout, "format_avro_schema_registry_send_timeout");
-        check_timeout(timeouts.receive_timeout, "format_avro_schema_registry_receive_timeout");
-    }
-
-    /// Schema Registry retry policy: bound retries and backoff.
-    {
-        static constexpr UInt64 max_retries_limit = 20;
-        static constexpr UInt64 max_initial_backoff_ms = 60000;
-        const auto & retry = format_settings.avro.schema_registry_retry;
-        if (retry.max_retries > max_retries_limit)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Setting 'format_avro_schema_registry_max_retries' must be between 0 and {}, got {}",
-                max_retries_limit, retry.max_retries);
-        if (retry.initial_backoff_ms == 0 || retry.initial_backoff_ms > max_initial_backoff_ms)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Setting 'format_avro_schema_registry_retry_initial_backoff_ms' must be greater than 0 and less than or equal to {}, got {}",
-                max_initial_backoff_ms, retry.initial_backoff_ms);
     }
 
     if (context->getClientInfo().interface == ClientInfo::Interface::HTTP
