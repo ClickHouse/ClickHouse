@@ -1,0 +1,50 @@
+--- The default identity file in ~/.ssh
+Using the SSH key from $HOME/.ssh/id_ed25519.
+1
+--- An IdentityFile with the %r token, the name of the user of the connection
+Using the SSH key from $HOME/.ssh/id_$USER.
+1
+--- An IdentityFile with an environment variable; an entry with an unset variable is skipped
+Using the SSH key from $HOME/keys/work_id.
+1
+--- A configured identity whose key file cannot be imported is skipped in favor of the next one
+Cannot use the SSH key from $HOME/.ssh/broken_id: Can't import SSH private key from file $HOME/.ssh/broken_id
+Using the SSH key from $HOME/.ssh/id_ed25519.
+1
+--- If none of the identities can be imported, the error lists them
+No usable SSH key found: none of these files contains a key that could be used: $HOME/.ssh/broken_id
+--- A dead ssh-agent socket does not prevent an explicit key file from being used
+1
+--- A malformed ssh config does not prevent an explicit key file from being used
+1
+--- An unset IdentityAgent environment variable does not prevent an explicit key file from being used
+1
+--- A malformed public key file does not prevent the private key from being used
+Using the SSH key from $HOME/.ssh/id_ed25519.
+1
+--- A public key file with misplaced base64 padding does not prevent the private key from being used
+Using the SSH key from $HOME/.ssh/id_ed25519.
+1
+--- A stale public key file does not select a different key from the ssh-agent
+Using the SSH key from $HOME/.ssh/id_ed25519.
+1
+--- The first configured identity wins even when only a later one is in the ssh-agent
+Using the SSH key from $HOME/.ssh/id_rsa.
+1
+--- The agent-held copy of the first configured identity is preferred over its file
+Using the SSH key 'the ed25519 key' from the ssh-agent.
+1
+--- The ed25519 key in the ssh-agent
+Using the SSH key 'the ed25519 key' from the ssh-agent.
+1
+--- A global IdentityAgent expands an environment variable
+Using the SSH key 'the ed25519 key' from the ssh-agent.
+1
+--- A matching IdentityAgent none disables an available ssh-agent
+Using the SSH key from $HOME/.ssh/id_rsa.
+1
+--- The rsa key in the ssh-agent, with nothing in ~/.ssh
+Using the SSH key 'the rsa key' from the ssh-agent.
+1
+--- IdentitiesOnly yes forbids a key that only the ssh-agent has
+No SSH key found

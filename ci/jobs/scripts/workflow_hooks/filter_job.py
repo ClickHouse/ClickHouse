@@ -119,6 +119,7 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/scripts/merge_llvm_coverage.sh",
     "ci/jobs/scripts/generate_diff_coverage_report.sh",
     "ci/jobs/scripts/print_uncovered_code.py",
+    "ci/jobs/scripts/newly_covered_lines.py",
     "ci/jobs/scripts/dedup_lcov_instantiations.py",
     "ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
     "ci/jobs/scripts/workflow_hooks/filter_job.py",

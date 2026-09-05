@@ -46,6 +46,15 @@ class Info:
         return self.env.EVENT_TIME
 
     @property
+    def workflow_start_time(self):
+        """When the event created this workflow run, as GitHub's `created_at`.
+
+        The same value in every job of the run, and a rerun keeps it, unlike
+        the per-job start time.
+        """
+        return self.env.WORKFLOW_START_TIME
+
+    @property
     def event_action(self):
         return self.env.EVENT_ACTION
 

@@ -1,0 +1,25 @@
+all parts are covered by statistics
+1
+an all-NaN part next to a finite one
+1	1000	1	1000
+the same values without the optimization
+1	1000	1	1000
+an all-NaN part folded last
+1	1000	1	1000
+the same values without the optimization
+1	1000	1	1000
+every part is all-NaN
+nan	nan	nan	nan
+the same values without the optimization
+nan	nan	nan	nan
+a not covered finite part merged with covered all-NaN parts
+1	1000	1	1000
+the same values without the optimization
+1	1000	1	1000
+the merged part is a single part covered by statistics
+1
+1
+one part merged from an all-NaN prefix and a finite suffix
+1	100000	1	100000
+the same values without the optimization
+1	100000	1	100000
