@@ -16,7 +16,13 @@ class IntersectOrExceptTransform final : public IProcessor
 using Operator = ASTSelectIntersectExceptQuery::Operator;
 
 public:
-    IntersectOrExceptTransform(SharedHeader header_, Operator operator_);
+    /// `read_left_input_first_` waits for the left input to produce a row, or to end, before the
+    /// right input is touched, so an empty left input avoids reading a possibly unbounded right one.
+    /// Transforms that share a pair of scatters must not wait: one that stops reading its left port
+    /// while it drains the right one blocks the left scatter for every other partition, and those
+    /// partitions in turn never drain the right scatter, which deadlocks the pipeline. They sample
+    /// the left port from `ReadRightInput` instead, which short-circuits without ever waiting.
+    IntersectOrExceptTransform(SharedHeader header_, Operator operator_, bool read_left_input_first_ = true);
 
     String getName() const override { return "IntersectOrExcept"; }
 
@@ -45,7 +51,7 @@ private:
     Chunk current_output_chunk;
     Chunk left_input_chunk;
 
-    Stage stage = Stage::ReadLeftInput;
+    Stage stage;
     bool has_left_input_chunk = false;
     bool has_right_input_rows = false;
     bool has_input = false;

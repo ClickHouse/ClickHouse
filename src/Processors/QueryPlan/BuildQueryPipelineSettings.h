@@ -27,6 +27,7 @@ struct BuildQueryPipelineSettings
 
     bool enable_multiple_filters_transforms_for_and_chain;
     bool allow_preliminary_distinct_abandoning;
+    bool allow_parallel_final_distinct;
 
     ExpressionActionsSettings actions_settings;
     QueryStatusPtr process_list_element;

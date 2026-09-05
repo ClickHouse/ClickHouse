@@ -1,0 +1,30 @@
+results
+8000	4996000	8000
+2000	2000
+8000
+10
+1
+parallel
+  (Distinct)
+  DistinctTransform × 4
+    Resize × 4 4 → 1
+      ScatterByPartitionTransform × 4 1 → 4
+        (Distinct)
+        DistinctTransform × 4
+disabled
+  (Distinct)
+  DistinctTransform
+    Resize 4 → 1
+      (Distinct)
+      DistinctTransform × 4
+size limits keep the merge
+  (Distinct)
+  DistinctTransform
+    Resize 4 → 1
+      (Distinct)
+      DistinctTransform × 4
+sorted input keeps its streams
+  (Distinct)
+  DistinctSortedStreamTransform
+        (Distinct)
+        DistinctSortedStreamTransform

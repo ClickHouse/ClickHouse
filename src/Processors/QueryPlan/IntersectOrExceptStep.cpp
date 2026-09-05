@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/scatterByPartition.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/IntersectOrExceptTransform.h>
@@ -19,6 +20,7 @@
 #include <IO/WriteHelpers.h>
 #include <base/EnumReflection.h>
 
+#include <numeric>
 
 namespace DB
 {
@@ -138,6 +140,21 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
         return pipeline;
     }
 
+    /// Zero means the step was deserialized on a worker; use the executing server's own setting.
+    size_t new_max_threads = max_threads ? max_threads : settings.max_threads;
+    size_t num_partitions = new_max_threads > 1 ? new_max_threads : 1;
+    if (num_partitions > 1)
+    {
+        /// Every partition costs one connection per input stream of every branch (the scatters), plus one
+        /// `IntersectOrExceptTransform` taking one output of every branch's scatter and producing one output.
+        /// Cap the partition count by that step-wide fan-out instead of failing on a huge `max_threads`.
+        size_t connections_per_partition = pipelines.size() + 1;
+        for (const auto & cur_pipeline : pipelines)
+            connections_per_partition += cur_pipeline->getNumStreams();
+
+        num_partitions = std::max<size_t>(1, std::min(num_partitions, scatter_connection_count_limit / connections_per_partition));
+    }
+
     for (auto & cur_pipeline : pipelines)
     {
         /// The check must be strict about constness (blocksHaveEqualStructure, not
@@ -166,16 +183,49 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
             processors.insert(processors.end(), added_processors.begin(), added_processors.end());
         }
 
-        /// For the case of union.
-        cur_pipeline->addTransform(std::make_shared<ResizeProcessor>(getOutputHeader(), cur_pipeline->getNumStreams(), 1));
+        QueryPipelineProcessorsCollector collector(*cur_pipeline, this);
+        if (num_partitions == 1)
+        {
+            cur_pipeline->addTransform(std::make_shared<ResizeProcessor>(getOutputHeader(), cur_pipeline->getNumStreams(), 1));
+        }
+        else
+        {
+            /// Both inputs have the same header after the conversion above, so equal rows land in the same partition.
+            ColumnNumbers key_columns(getOutputHeader()->columns());
+            std::iota(key_columns.begin(), key_columns.end(), 0);
+            scatterByPartition(*cur_pipeline, num_partitions, key_columns);
+        }
+        auto added_processors = collector.detachProcessors();
+        processors.insert(processors.end(), added_processors.begin(), added_processors.end());
     }
 
-    /// Zero means the step was deserialized on a worker; use the executing server's own setting.
-    size_t new_max_threads = max_threads ? max_threads : settings.max_threads;
     *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), new_max_threads, &processors);
-    auto transform = std::make_shared<IntersectOrExceptTransform>(getOutputHeader(), current_operator);
-    processors.push_back(transform);
-    pipeline->addTransform(std::move(transform));
+
+    if (num_partitions == 1)
+    {
+        auto transform = std::make_shared<IntersectOrExceptTransform>(getOutputHeader(), current_operator);
+        processors.push_back(transform);
+        pipeline->addTransform(std::move(transform));
+        return pipeline;
+    }
+
+    /// United ports are [left_0 .. left_{N-1}, right_0 .. right_{N-1}].
+    QueryPipelineProcessorsCollector collector(*pipeline, this);
+    pipeline->transform([&](OutputPortRawPtrs ports)
+    {
+        chassert(ports.size() == 2 * num_partitions);
+        Processors result;
+        for (size_t i = 0; i < num_partitions; ++i)
+        {
+            auto transform = std::make_shared<IntersectOrExceptTransform>(getOutputHeader(), current_operator, /*read_left_input_first_=*/ false);
+            connect(*ports[i], transform->getInputs().front());
+            connect(*ports[num_partitions + i], transform->getInputs().back());
+            result.push_back(std::move(transform));
+        }
+        return result;
+    });
+    auto added_processors = collector.detachProcessors();
+    processors.insert(processors.end(), added_processors.begin(), added_processors.end());
 
     return pipeline;
 }

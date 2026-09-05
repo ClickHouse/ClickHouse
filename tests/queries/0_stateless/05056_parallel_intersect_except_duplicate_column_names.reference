@@ -1,0 +1,33 @@
+-- { echo }
+
+-- `SELECT id, *, b` repeats `id` and `b` in the output header. The partitioned pipeline has to stay
+-- correct for such a header. The set operations stay top-level: the old analyzer deduplicates the
+-- names once the query is wrapped in `SELECT * FROM (...)`. Every result is a single row.
+(SELECT id, *, b FROM t_intersect_except_dup) EXCEPT DISTINCT (SELECT id, *, b FROM t_intersect_except_dup WHERE id = 1);
+2	2	foo	bar	bar
+(SELECT id, *, b FROM t_intersect_except_dup) INTERSECT DISTINCT (SELECT id, *, b FROM t_intersect_except_dup WHERE id = 1);
+1	1	hello	world	world
+(SELECT id, *, b FROM t_intersect_except_dup) EXCEPT ALL (SELECT id, *, b FROM t_intersect_except_dup WHERE id = 1);
+2	2	foo	bar	bar
+(SELECT id, *, b FROM t_intersect_except_dup) INTERSECT ALL (SELECT id, *, b FROM t_intersect_except_dup WHERE id = 1);
+1	1	hello	world	world
+-- Both inputs are still scattered, so one transform runs per partition.
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN PIPELINE (SELECT id, *, b FROM t_intersect_except_dup) INTERSECT DISTINCT (SELECT id, *, b FROM t_intersect_except_dup)) WHERE explain LIKE '%IntersectOrExcept %';
+IntersectOrExcept × 4 2 → 1
+-- The scatter partitions by column position, while the disjointness property is matched by column
+-- name downstream. A duplicate-name header cannot express that partitioning, so the property is
+-- dropped and the final DISTINCT does not skip the stream merging: it repartitions the streams by
+-- itself instead of relying on the scatter of the set operation.
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 (SELECT id, *, b FROM t_intersect_except_dup) INTERSECT DISTINCT (SELECT id, *, b FROM t_intersect_except_dup)) WHERE explain LIKE '%Distinct%' OR explain LIKE '%Skip stream merging%';
+Distinct
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN PIPELINE (SELECT id, *, b FROM t_intersect_except_dup) INTERSECT DISTINCT (SELECT id, *, b FROM t_intersect_except_dup)) WHERE explain LIKE '%DistinctTransform%' OR explain LIKE '%ScatterByPartition%';
+DistinctTransform × 4
+ScatterByPartitionTransform × 4 1 → 4
+ScatterByPartitionTransform × 2 1 → 4
+-- The same query with a header whose names are unique does keep the property.
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 (SELECT id, a, b FROM t_intersect_except_dup) INTERSECT DISTINCT (SELECT id, a, b FROM t_intersect_except_dup)) WHERE explain LIKE '%Distinct%' OR explain LIKE '%Skip stream merging%';
+Distinct
+Skip stream merging: 1
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN PIPELINE (SELECT id, a, b FROM t_intersect_except_dup) INTERSECT DISTINCT (SELECT id, a, b FROM t_intersect_except_dup)) WHERE explain LIKE '%DistinctTransform%' OR explain LIKE '%ScatterByPartition%';
+DistinctTransform × 4
+ScatterByPartitionTransform × 2 1 → 4

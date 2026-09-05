@@ -1,5 +1,8 @@
 SET enable_analyzer = 1;
 
+-- The output order of INTERSECT/EXCEPT depends on the number of threads.
+SET max_threads = 1;
+
 -- { echo }
 
 set intersect_default_mode = 'DISTINCT';
