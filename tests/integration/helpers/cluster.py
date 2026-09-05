@@ -4083,6 +4083,12 @@ class ClickHouseCluster:
                 self.nats_ssl_context.load_verify_locations(
                     p.join(self.nats_cert_dir, "ca", "ca-cert.pem")
                 )
+                # A broker started with `--tlsverify` demands a client certificate, including from
+                # the availability probe in `wait_nats_is_available`. One started without ignores it.
+                self.nats_ssl_context.load_cert_chain(
+                    p.join(self.nats_cert_dir, "client", "client-cert.pem"),
+                    p.join(self.nats_cert_dir, "client", "client-key.pem"),
+                )
                 subprocess_check_call(self.base_nats_cmd + common_opts)
                 self.nats_docker_id = self.get_instance_docker_id("nats1")
                 self.up_called = True
