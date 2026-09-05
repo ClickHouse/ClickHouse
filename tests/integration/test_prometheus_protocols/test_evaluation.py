@@ -1892,6 +1892,20 @@ def test_math_functions():
     )
 
     do_query_test(
+        "sgn(vector(NaN))",
+        500,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "NaN"]}]}',
+        [["[]", "1970-01-01 00:08:20.000", "nan"]],
+    )
+
+    do_query_test(
+        "sgn(vector(-0))",
+        500,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "-0"]}]}',
+        [["[]", "1970-01-01 00:08:20.000", -0.0]],
+    )
+
+    do_query_test(
         "sgn(deltas)[700:100]",
         700,
         '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "-1"], [200, "-1"], [300, "-1"], [400, "0"], [500, "1"], [600, "1"], [700, "1"]]}]}',

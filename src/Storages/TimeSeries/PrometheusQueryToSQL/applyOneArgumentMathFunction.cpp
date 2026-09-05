@@ -1,8 +1,10 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentMathFunction.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
+#include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 #include <boost/math/special_functions/sign.hpp>
 #include <numbers>
 #include <unordered_map>
@@ -104,6 +106,19 @@ SQLQueryPiece applyOneArgumentMathFunction(
     {
         chassert(args.size() == 1);
         ASTPtr x = std::move(args[0]);
+
+        if (function_name == "sgn")
+        {
+            ASTPtr zero = timeSeriesScalarToAST(0, context.scalar_data_type);
+            return makeASTFunction(
+                "multiIf",
+                makeASTFunction("less", x->clone(), zero->clone()),
+                timeSeriesScalarToAST(-1, context.scalar_data_type),
+                makeASTFunction("greater", x->clone(), std::move(zero)),
+                timeSeriesScalarToAST(1, context.scalar_data_type),
+                std::move(x));
+        }
+
         return makeASTFunction(impl_info->ch_function_name, std::move(x));
     };
 
