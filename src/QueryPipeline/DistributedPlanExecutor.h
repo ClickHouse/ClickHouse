@@ -27,11 +27,9 @@ namespace DB
 {
 
 /// Node count Cascades should plan for, matching the executor's worker source: `requested_workers`
-/// for local/Cloud-discovery execution, else the static worker cluster size. Returns 0 when no
-/// source is available, so the caller can reject distributed planning.
-/// Both settings are parameters rather than reads of `context`, because a separately-planned subquery
-/// has its own values while the ambient query context holds the outer query's. `context` supplies
-/// only the server-level worker configuration, which is the same for every subquery.
+/// for local/Cloud-discovery execution, else the static worker cluster size. Returns 0 when no source
+/// is available, so the caller can reject distributed planning. Both settings are per-plan and so are
+/// parameters; `context` is read only for server-level worker configuration, shared by every subquery.
 size_t getCascadesPlanningNodeCount(ContextPtr context, bool execute_locally, size_t requested_workers);
 
 /// Network endpoint of a worker, resolved on the initiator from the cluster config (and
