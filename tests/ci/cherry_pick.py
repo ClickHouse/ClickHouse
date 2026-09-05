@@ -330,7 +330,7 @@ close it.
                 self.cherrypick_pr.update()
         self.ping_cherry_pick_assignees(dry_run)
 
-    def _prepare_backport_branch(self, base: str = "") -> None:
+    def _prepare_backport_branch(self, base: str = "") -> str:
         """
         Reset `backport_branch` to `base` (the release branch by default) plus an
         empty merge of the original PR's first parent.
@@ -339,14 +339,17 @@ close it.
         ancestor, so that merging the PR's merge commit into this branch reduces
         to a cherry-pick of the PR's own diff.
         """
-        # Checkout the base with discarding every change
-        git_runner(f"{GIT_PREFIX} checkout -f {base or self.name}")
+        # Pin the release used for both the resolved tree and its final parent.
+        # A retry can refresh the remote ref while the local release stays stale.
+        release_head = git_runner(f"git rev-parse {base or f'{self.REMOTE}/{self.name}'}")
+        git_runner(f"{GIT_PREFIX} checkout -f {release_head}")
         # Create or reset backport branch
         git_runner(f"{GIT_PREFIX} checkout -B {self.backport_branch}")
         # Merge all changes from PR's the first parent commit w/o applying anything
         # It will allow to create a merge commit like it would be a cherry-pick
         first_parent = git_runner(f"git rev-parse {self.pr.merge_commit_sha}^1")
         git_runner(f"{GIT_PREFIX} merge -s ours --no-edit {first_parent}")
+        return release_head
 
     def _try_merge_backport_into_cherrypick(self) -> bool:
         """
@@ -406,7 +409,7 @@ close it.
         )
 
     def create_cherrypick(self):
-        self._prepare_backport_branch()
+        release_head = self._prepare_backport_branch()
 
         if self._try_merge_backport_into_cherrypick():
             # Nothing to open a PR for
@@ -421,7 +424,7 @@ close it.
             # A clean cherry-pick needs no manual conflict resolution, so the
             # intermediate cherry-pick PR carries no value. Create the backport
             # PR directly from the already resolved tree and skip it entirely.
-            self.create_backport_from_resolved_tree()
+            self.create_backport_from_resolved_tree(release_head)
             return
 
         # There are conflicts: cherrypick_branch stays at pr.merge_commit_sha
@@ -668,7 +671,7 @@ close it.
         )
         self._finalize_backport_pr(title)
 
-    def create_backport_from_resolved_tree(self):
+    def create_backport_from_resolved_tree(self, release_head: str):
         # Fast path for a conflict-free cherry-pick: the merge done in
         # create_cherrypick already produced the fully resolved tree in
         # cherrypick_branch. Materialize it as a single commit on top of the
@@ -684,7 +687,7 @@ close it.
         title = f"Backport #{self.pr.number} to {self.name}: {self.pr.title}"
         commit = git_runner(
             f"{GIT_PREFIX} commit-tree {resolved_tree} "
-            f"-p {self.REMOTE}/{self.name} -F -",
+            f"-p {release_head} -F -",
             input=title,
         )
         git_runner(f"{GIT_PREFIX} branch -f {self.backport_branch} {commit}")
