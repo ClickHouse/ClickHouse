@@ -1214,3 +1214,34 @@ else
 fi
 
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${LIMIT_DB}"
+
+# `InterpreterInsertQuery::execute` validates the destination — resolving it, the insertion prohibitions,
+# the `PARTITION BY` support, the header derived from the statement's column list, `checkInsertIsAllowed` —
+# before it builds the pipeline that reads the tables the `SELECT` names. An insert that is still going to
+# be rejected on its destination alone therefore never reads its sources, and must not detach them. Its
+# destination, on the other hand, is resolved, locked and read even by the rejected statement, so that one
+# stays a reattach candidate — which also proves the hook ran at all for this query.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_ins_src"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_ins_dst"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_ins_src (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_ins_dst (a UInt64) ENGINE = MergeTree ORDER BY a"
+
+check_if_detached_impl "INSERT INTO t_reattach_ins_dst (no_such_column) SELECT * FROM t_reattach_ins_src" "t_reattach_ins_dst"
+if [ "$REATTACH_STATUS" -eq 0 ]; then
+    echo "FAIL (insert into a column the destination does not have unexpectedly succeeded)"
+elif ! echo "$REATTACH_OUTPUT" | grep -q "NO_SUCH_COLUMN_IN_TABLE"; then
+    echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_ins_src"; then
+    echo "FAIL (source detached for an insert that fails on its destination)"
+elif ! echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_ins_dst"; then
+    echo "FAIL (destination not detached although the insert reaches it)"
+else
+    echo "OK"
+fi
+
+# An insert whose column list the destination accepts does read its sources, so both are detached.
+check_if_detached "INSERT INTO t_reattach_ins_dst (a) SELECT a FROM t_reattach_ins_src" "t_reattach_ins_src"
+check_if_detached "INSERT INTO t_reattach_ins_dst (a) SELECT a FROM t_reattach_ins_src" "t_reattach_ins_dst"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_ins_src"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_ins_dst"

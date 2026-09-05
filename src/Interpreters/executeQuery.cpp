@@ -227,6 +227,7 @@ namespace Setting
     extern const SettingsString framing_output_format;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsBool implicit_transaction;
+    extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsOverflowMode join_overflow_mode;
@@ -2420,6 +2421,82 @@ bool mutationQueryStopsBeforeSources(const IAST & ast, const ContextPtr & contex
     return false;
 }
 
+/// Whether an `INSERT ... SELECT` stops on its own destination before its interpreter builds the pipeline
+/// that reads the tables the `SELECT` names. `InterpreterInsertQuery::execute` resolves and validates the
+/// destination first — `getTable`, the insertion prohibitions, the `PARTITION BY` support, the sample block
+/// derived from the statement's column list, the `INSERT` access on that block's columns and
+/// `checkInsertIsAllowed` — and only then looks at `query.select`. Without this guard,
+/// `INSERT INTO dst (no_such_column) SELECT * FROM src` would `DETACH`/`ATTACH` `src` and only then fail on
+/// `dst` with `NO_SUCH_COLUMN_IN_TABLE`, breaking the side-effect-free invariant this hook keeps for
+/// failing queries.
+///
+/// Unlike `createQueryStopsBeforeSources` and `mutationQueryStopsBeforeSources`, this suppresses the
+/// sources only: even a rejected insert resolves its destination, locks it and reads its metadata, so the
+/// destination stays a legitimate reattach candidate.
+///
+/// Like the other preflights, this is a best-effort, point-in-time check that errs toward suppressing the
+/// randomization: a destination whose fate cannot be predicted counts as stopping the statement.
+bool insertQueryStopsBeforeSources(const ASTInsertQuery & insert, const ContextPtr & context)
+{
+    /// A table-function destination is produced by running the function (`ITableFunction::execute` in
+    /// `getTable`), which validates its own arguments and can be rejected there; and a function that needs
+    /// a structure hint has the `SELECT`'s header analyzed even before that. Neither outcome can be
+    /// predicted here, and the header analysis is not the source read this guard accounts for.
+    if (insert.table_function)
+        return true;
+
+    /// `InterpreterInsertQuery::getTable` resolves the destination with the default `ResolveAll` (see the
+    /// collector), and resolving it here has to stay side-effect free, exactly as for a mutation target.
+    const auto table = tryResolveMutationTarget(insert.getDatabase(), insert.getTable(), Context::ResolveAll, context);
+    if (!table)
+        return true;
+
+    /// The server-wide insertion prohibition, with the exemption `InterpreterInsertQuery::execute` makes
+    /// for a destination that writes out to external storage. (Its `no_destination` companion — the
+    /// message-queue prohibition — concerns the background pushes into materialized views, which this hook
+    /// never sees: it runs for initial user queries only.)
+    if (context->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
+    {
+        const auto & database_name = table->getStorageID().getDatabaseName();
+        const bool writes_out_to_external_storage
+            = table->isObjectStorage() || table->isDataLake() || table->isMessageQueue() || table->isExternalDatabase();
+        if (database_name != DatabaseCatalog::SYSTEM_DATABASE && database_name != DatabaseCatalog::TEMPORARY_DATABASE
+            && !writes_out_to_external_storage)
+            return true;
+    }
+
+    if (insert.partition_by && !table->supportsPartitionBy())
+        return true;
+
+    /// `getSampleBlock` turns the statement's column list into the insert header, and rejects it when a
+    /// name is repeated (`DUPLICATE_COLUMN`), is absent from the destination (`NO_SUCH_COLUMN_IN_TABLE`),
+    /// or is materialized while `insert_allow_materialized_columns` is off (`ILLEGAL_COLUMN`). Its outcome
+    /// cannot be predicted without repeating the column-transformer expansion it performs, so probe it —
+    /// it only reads the destination's metadata. `checkInsertIsAllowed`, the storage's own write guard, is
+    /// probed the same way.
+    ///
+    /// The two checks the interpreter makes in between need no counterpart. The column-level `INSERT`
+    /// access is subsumed by this hook's own access preflight, which requires `INSERT` on the whole
+    /// destination table. And the materialized-column loop that follows cannot add a rejection of its own:
+    /// with `insert_allow_materialized_columns` off, `getSampleBlock` has already rejected every
+    /// materialized name, and with it on the loop does not run.
+    try
+    {
+        const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+        /// The header itself is not needed here — only whether building it is rejected.
+        InterpreterInsertQuery::getSampleBlock(
+            insert, table, metadata_snapshot, context, /* no_destination */ false,
+            context->getSettingsRef()[Setting::insert_allow_materialized_columns]);
+        table->checkInsertIsAllowed(context);
+    }
+    catch (const Exception &)
+    {
+        return true;
+    }
+
+    return false;
+}
+
 /// The object kind the query's main-table reference demands (see `ExpectedObjectKind`). Everything not
 /// enumerated here — including `SHOW CREATE TABLE`, `EXISTS TABLE` and plain `DROP`/`DETACH TABLE`, which
 /// accept any object kind — places no constraint on the resolved storage. The kind-specific `DROP`/`DETACH`
@@ -2647,6 +2724,19 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         /// `InterpreterInsertQuery::getTable` resolves the target with the default `ResolveAll`, so a
         /// session temporary table legitimately shadows a persistent one as the `INSERT` destination.
         data.addTableIfNotEmpty(insert->getDatabase(), insert->getTable(), active_ctes, Context::ResolveAll, AccessType::INSERT);
+
+        /// An insert that can still be rejected on its destination alone never reaches the tables its
+        /// `SELECT` names, so those must not be collected (see `insertQueryStopsBeforeSources`). Only the
+        /// `SELECT` is left out: the destination above is touched by a rejected insert too, and none of
+        /// the statement's other children (the column list, the `PARTITION BY`, the settings, the
+        /// `FROM INFILE` path) names a table.
+        if (insert->select && insertQueryStopsBeforeSources(*insert, data.context))
+        {
+            for (const auto & child : ast->children)
+                if (child != insert->select)
+                    collectTablesInQuery(child, data, active_ctes, active_aliases);
+            return;
+        }
     }
     else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
     {
