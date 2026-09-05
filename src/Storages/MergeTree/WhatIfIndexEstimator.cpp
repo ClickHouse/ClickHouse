@@ -17,11 +17,10 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Parsers/ASTAlterQuery.h>
-#include <Interpreters/InterpreterHypotheticalObjectQuery.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/MergeTree/WhatIfEmpiricalEstimator.h>
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
+#include <Storages/MergeTree/WhatIfProjectionEstimator.h>
 #include <Storages/MergeTree/WhatIfSettings.h>
 #include <Storages/MergeTree/WhatIfStatisticalEstimator.h>
 
@@ -78,37 +77,6 @@ StoragePtr tryResolveSingleTable(const ASTPtr & query, const ContextPtr & contex
     return joined_tables.getLeftTableStorage();
 }
 
-/// projections are stored but not estimated yet, so report them instead of dropping them.
-/// whoever adds the estimate must also require SELECT on the projection's columns, the way
-/// evaluateIndex does, since it will read them
-void appendProjectionCandidates(
-    WhatIfResult & result, const HypotheticalObjectStore & store, const MergeTreeData & data, const ContextPtr & context)
-{
-    auto metadata = data.getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
-    for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
-    {
-        WhatIfCandidateResult r;
-        r.name = projection.name;
-        r.type = projection.type == ProjectionDescription::Type::Aggregate ? "projection (aggregate)" : "projection (normal)";
-        r.status = WhatIfCandidateResult::NotApplicable;
-        r.not_applicable_reason = "EXPLAIN WHATIF does not estimate hypothetical projections yet";
-
-        /// re-run the same ADD PROJECTION validation as CREATE did, so both a dropped column and a
-        /// later MODIFY SETTING that disables the projection's features surface as drift
-        try
-        {
-            checkHypotheticalProjectionIsAddable(data, metadata, projection.definition_ast, /*if_not_exists=*/false, context);
-        }
-        catch (const Exception &)
-        {
-            r.not_applicable_reason = "Hypothetical projection can no longer be added to this table: "
-                + getCurrentExceptionMessage(false);
-        }
-
-        result.candidates.push_back(std::move(r));
-    }
-}
-
 /// only when the store held nothing for this table
 void appendNoCandidatesRow(WhatIfResult & result)
 {
@@ -136,7 +104,18 @@ WhatIfResult buildResultWithoutScan(
         r.not_applicable_reason = reason;
         result.candidates.push_back(std::move(r));
     }
-    appendProjectionCandidates(result, store, data, context);
+    auto metadata = data.getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
+    for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
+    {
+        WhatIfCandidateResult r;
+        r.name = projection.name;
+        r.type = projection.type == ProjectionDescription::Type::Aggregate ? "projection (aggregate)" : "projection (normal)";
+        r.status = WhatIfCandidateResult::NotApplicable;
+        /// a definition that no longer fits beats the blanket reason
+        r.not_applicable_reason = reason;
+        refreshHypotheticalProjection(projection, data, metadata, context, r.not_applicable_reason);
+        result.candidates.push_back(std::move(r));
+    }
     if (result.candidates.empty())
         appendNoCandidatesRow(result);
     return result;
@@ -400,8 +379,7 @@ WhatIfResult estimateHypotheticalIndexes(
             }
 
             return buildResultWithoutScan(
-                *mt, store, "The query is answered without reading the table's parts, so an index on them would not be read",
-                local_context);
+                *mt, store, "The query is answered without reading the table's parts, so an index on them would not be read", local_context);
         }
 
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -568,7 +546,8 @@ WhatIfResult estimateHypotheticalIndexes(
         result.candidates.push_back(std::move(combined));
     }
 
-    appendProjectionCandidates(result, store, data, context);
+    for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
+        result.candidates.push_back(evaluateProjection(projection, read_step, analysis, baseline_parts, settings, plan_context));
 
     if (result.candidates.empty())
         appendNoCandidatesRow(result);
