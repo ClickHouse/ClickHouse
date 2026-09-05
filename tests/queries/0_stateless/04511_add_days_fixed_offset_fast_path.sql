@@ -46,6 +46,11 @@ SELECT subtractWeeks(toDateTime64('1900-01-01 00:00:00', 0, 'UTC'), 1) AS x, rei
 SELECT subtractDays(toDateTime64('1900-01-01 00:00:00', 0, 'Etc/GMT-5'), 1) AS x, reinterpretAsInt64(x);
 SELECT addDays(toDateTime64('2299-12-31 23:59:59.999', 3, 'UTC'), 2) AS x, reinterpretAsInt64(x);
 SELECT addWeeks(toDateTime64('2299-12-31 00:00:00', 0, 'Etc/GMT+5'), 52) AS x, reinterpretAsInt64(x);
+-- The very top of the DateTime64 range sits above the lookup table, and shifting it back by more than
+-- one day is where the source-range escape is load-bearing: without it the index lands outside the
+-- table and the result is centuries away.
+SELECT addDays(toDateTime64(10413792000, 0, 'UTC'), -2) AS x, reinterpretAsInt64(x);
+SELECT subtractDays(toDateTime64(10413792000, 0, 'UTC'), 2) AS x, reinterpretAsInt64(x);
 -- Negative sub-second values shifted to the upper LUT edge: the calendar path truncates the division
 -- towards zero, so the fast path must decline near the edge to keep the results identical.
 SELECT addDays(toDateTime64('1969-12-31 23:59:59.999', 3, 'UTC'), 120530) AS x, reinterpretAsInt64(x);
@@ -61,10 +66,18 @@ SELECT subtractDays(toDateTime64('2020-01-01 00:00:00', 0, 'UTC'), CAST('-922337
 SELECT subtractWeeks(toDateTime64('2020-01-01 00:00:00', 0, 'UTC'), CAST('-9223372036854775808', 'Int64')) AS x, reinterpretAsInt64(x);
 SELECT subtractWeeks(materialize(toDateTime64('2020-01-01 00:00:00', 0, 'UTC')), CAST('-9223372036854775808', 'Int64')) AS x, reinterpretAsInt64(x);
 SELECT subtractWeeks(toDateTime('2020-01-01 00:00:00', 'UTC'), CAST('-9223372036854775808', 'Int64')) AS x, toUInt32(x);
+-- The same wrapped delta over a DateTime in both offset modes: a fixed-offset zone, and a zone whose
+-- lookup-table range contains offset changes.
+SELECT subtractDays(toDateTime('2020-01-01 00:00:00', 'UTC'), CAST('-9223372036854775808', 'Int64')) AS x, toUInt32(x);
+SELECT subtractDays(toDateTime('2021-03-29 12:00:00', 'Europe/Berlin'), CAST('-9223372036854775808', 'Int64')) AS x, toUInt32(x);
 -- DateTime whose result leaves the LUT range.
 SELECT addDays(toDateTime('2020-01-01 00:00:00', 'UTC'), 10000000) AS x, toUInt32(x);
 SELECT addWeeks(toDateTime('2020-01-01 00:00:00', 'UTC'), 10000000) AS x, toUInt32(x);
 SELECT addWeeks(toDateTime('2020-01-01 00:00:00', 'UTC'), 9223372036854775807) AS x, toUInt32(x);
+-- A DateTime is a UInt32 and its whole domain lies inside the lookup table, so the day shift never
+-- needs the source-range escape path for it. Pin both ends of that domain.
+SELECT addDays(toDateTime(0, 'UTC'), 1) AS x, toUInt32(x);
+SELECT addDays(toDateTime(4294967295, 'UTC'), -1) AS x, toUInt32(x);
 
 SELECT 'DST time zone keeps calendar semantics';
 -- Crossing the spring-forward transition (2021-03-28 in Europe/Berlin): the day is 23 hours long.
