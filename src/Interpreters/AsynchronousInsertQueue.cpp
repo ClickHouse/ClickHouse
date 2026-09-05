@@ -1180,10 +1180,10 @@ try
     UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
 
     /// Make the hash available to the parts of the insert that account `NORMALIZED_QUERY_HASH` quotas
-    /// but do not otherwise have it: the `WRITTEN_BYTES` pre-check in `InterpreterInsertQuery` and the
-    /// `CountingTransform` built from this context. The normal query path does this in `executeQuery`,
+    /// but do not otherwise have it: the `WRITTEN_ROWS`/`WRITTEN_BYTES` pre-check in `InterpreterInsertQuery`
+    /// and the `CountingTransform` built from this context. The normal query path does this in `executeQuery`,
     /// but async insert flushes build the interpreter directly, so without this every async insert
-    /// pattern would charge `WRITTEN_BYTES` to hash `0` and share a single bucket.
+    /// pattern would charge `WRITTEN_ROWS`/`WRITTEN_BYTES` to hash `0` and share a single bucket.
     insert_context->setNormalizedQueryHash(normalized_query_hash);
 
     /// We add it to the process list so

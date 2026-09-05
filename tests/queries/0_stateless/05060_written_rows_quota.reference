@@ -1,0 +1,18 @@
+-- both spellings of the resource are accepted
+CREATE QUOTA q FOR INTERVAL 100 year MAX written_rows = 5 TO r
+5
+-- 5 rows allowed: 2 (async) + 2 (sync) fit, the third insert of 2 rows exceeds and writes nothing
+QUOTA_EXCEEDED
+-- once exceeded, the next inserts are rejected before writing anything
+QUOTA_EXCEEDED
+QUOTA_EXCEEDED
+6	5
+4
+-- INSERT SELECT: 50 rows fit into 100, the next 100 do not
+QUOTA_EXCEEDED
+150	100
+50
+-- written_rows and written_bytes are independent counters
+QUOTA_EXCEEDED
+4	3	1
+1
