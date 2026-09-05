@@ -38,6 +38,9 @@ When set to 2, allows the above plus `SET`, `CREATE TEMPORARY TABLE` and `RESTOR
 create a table and load data into it, so `readonly = 2` does not by itself stop a session from
 writing; `readonly = 1` refuses it.
 
+`BACKUP` is not restricted by `readonly` at any value: a session that has the privileges to back a
+table up can write a backup even at `readonly = 1`. Do not rely on `readonly` to prevent backups.
+
 Most table functions need the `CREATE TEMPORARY TABLE` privilege, so a `SELECT` that reads from one is
 refused at `readonly = 1` but not at `readonly = 2`. Some, such as `numbers`, are allowed in read-only
 mode.
