@@ -14,6 +14,10 @@ SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_rep
 SET max_threads=4, max_block_size=8192;
 
 SET enable_analyzer=1;
+-- Pinned to the query-based implementation: for a plain read the plan-based fragment is the reading
+-- step itself, so automatic parallel replicas cannot estimate what the replicas would send and
+-- collects no statistics. See https://github.com/ClickHouse/ClickHouse/issues/118265.
+SET parallel_replicas_plan_based = 0;
 
 DROP TABLE IF EXISTS t_default_codec;
 DROP TABLE IF EXISTS t_column_codec;
