@@ -162,6 +162,24 @@ CREATE TABLE test (id UInt32, vec QBit(BFloat16, 4096, 1024)) ENGINE = MergeTree
 
 要执行 reduced-dimension 搜索，请将要读取的维度数作为转置距离函数的第四个参数传入 (见下文) 。参考向量必须至少包含这么多个元素 (任何额外的尾部元素都会被忽略) ，并且该值必须是 `stride` 的倍数。
 
+<div id="qbit-element-access">
+  ## 元素访问与切片
+</div>
+
+[`arrayElement`](/zh/reference/functions/regular-functions/array-functions#arrayElement) (以及 `vec[n]` 运算符) 返回第 `n` 个向量元素，并以元素类型的全精度重建。仅读取包含该元素的 stride 组中的位平面。[`arraySlice`](/zh/reference/functions/regular-functions/array-functions#arraySlice) 返回所选维度上的 `QBit` (即投影到部分维度) ；偏移量和长度必须为常量，因为 `QBit` 的维度是其类型的一部分。与 stride 组边界对齐的切片会保留步长，并复用已存储的位平面流，无需复制：
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8]);
+SELECT vec[3], arraySlice(vec, 2, 3) FROM test;
+```
+
+```text
+┌─arrayElement(vec, 3)─┬─arraySlice(vec, 2, 3)─┐
+│                    3 │ [2,3,4]               │
+└──────────────────────┴───────────────────────┘
+```
+
 <div id="vector-search-functions">
   ## 向量搜索函数
 </div>

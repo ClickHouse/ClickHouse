@@ -1,5 +1,6 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
@@ -199,7 +200,7 @@ void HashJoinImplementation::StrategyEnumerator::addAlternative(
 void HashJoinImplementation::StrategyEnumerator::addLocalJoin()
 {
     DistributionDescription single_node;     /// node_count=1, not replicated (default)
-    addAlternative(std::make_shared<LocalJoinStrategy>(), single_node, single_node, single_node);
+    addAlternative(strategySingleton<LocalJoinStrategy>(), single_node, single_node, single_node);
 }
 
 /// Broadcast join - left input partitioned any way across N nodes, right input replicated
@@ -217,7 +218,7 @@ void HashJoinImplementation::StrategyEnumerator::addBroadcastJoins(size_t node_c
 
     /// The output distribution carries no columns: the left input is allowed to be
     /// partitioned any way, so no specific partitioning can be promised.
-    addAlternative(std::make_shared<BroadcastJoinStrategy>(), left_dist, right_dist, left_dist);
+    addAlternative(strategySingleton<BroadcastJoinStrategy>(), left_dist, right_dist, left_dist);
 
     /// Keyed variant: when every parent-required distribution column maps to an
     /// equi-join key or to a left-side column that survives to the join output,
@@ -289,7 +290,7 @@ void HashJoinImplementation::StrategyEnumerator::addBroadcastJoins(size_t node_c
             return;
     }
 
-    addAlternative(std::make_shared<BroadcastJoinStrategy>(), keyed_left_dist, right_dist, keyed_output_dist);
+    addAlternative(strategySingleton<BroadcastJoinStrategy>(), keyed_left_dist, right_dist, keyed_output_dist);
 }
 
 /// Partitioned (shuffle) join - both inputs shuffled by join key columns.
@@ -386,7 +387,7 @@ void HashJoinImplementation::StrategyEnumerator::addShuffleJoin(size_t node_coun
             add_key(key);
     }
 
-    addAlternative(std::make_shared<ShuffleJoinStrategy>(), left_dist, right_dist, output_dist);
+    addAlternative(strategySingleton<ShuffleJoinStrategy>(), left_dist, right_dist, output_dist);
 }
 
 /// Single-key shuffle alternatives.
@@ -427,7 +428,7 @@ void HashJoinImplementation::StrategyEnumerator::addSingleKeyShuffleJoins(size_t
                 output_dist.hash_type_names.push_back(key.hash_type_name);
         }
 
-        addAlternative(std::make_shared<ShuffleJoinStrategy>(), left_dist, right_dist, output_dist,
+        addAlternative(strategySingleton<ShuffleJoinStrategy>(), left_dist, right_dist, output_dist,
             fmt::format("(by {})", key.left));
     }
 }
@@ -437,7 +438,7 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
     chassert(typeid_cast<const JoinStepLogical *>(expression->getQueryPlanStep()));
     chassert(expression->inputs.size() == 2);
 
-    const size_t cluster_node_count = memo.getEnvironment().cluster_node_count;
+    const size_t cluster_node_count = memo.getContext().cluster_node_count;
     const auto candidate_node_counts = getCandidateNodeCounts(cluster_node_count);
 
     std::vector<GroupExpressionPtr> result;

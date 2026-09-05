@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/StatisticsDerivation.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/OptimizerDefaults.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
@@ -324,7 +325,7 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
     const auto & table_name = read_step.getStorageID().getTableName();
 
     statistics.min_row_count = 0;
-    statistics.max_row_count = Float64(read_step.getStorageSnapshot()->storage.totalRows(nullptr).value_or(std::numeric_limits<UInt64>::max()));
+    statistics.max_row_count = Float64(read_step.getStorageSnapshot()->storage.totalRows(read_step.getContext()).value_or(std::numeric_limits<UInt64>::max()));
 
     ReadFromMergeTree::AnalysisResultPtr analyzed_result = read_step.getAnalyzedResult();
     analyzed_result = analyzed_result ? analyzed_result : read_step.selectRangesToRead();
@@ -455,13 +456,6 @@ static EquivalenceClasses<String> remapEquivalences(
 namespace
 {
 
-/// Selectivity constants for predicates without usable statistics; the same values that
-/// `ConditionSelectivityEstimator` uses for the reads.
-constexpr Float64 default_equality_selectivity = 0.01;
-constexpr Float64 default_range_selectivity = 0.33;
-constexpr Float64 default_unknown_selectivity = 0.33;
-constexpr Float64 default_like_selectivity = 0.1;
-
 const ActionsDAG::Node * skipAliases(const ActionsDAG::Node * node)
 {
     while (node->type == ActionsDAG::ActionType::ALIAS)
@@ -482,7 +476,7 @@ Float64 estimatePredicateSelectivity(const ActionsDAG::Node * node, const Expres
     if (node->type == ActionsDAG::ActionType::COLUMN)
         return 1.0;
     if (node->type != ActionsDAG::ActionType::FUNCTION)
-        return default_unknown_selectivity;
+        return CascadesDefaults::DEFAULT_UNKNOWN_SELECTIVITY;
 
     const String & name = node->function_base->getName();
 
@@ -507,13 +501,13 @@ Float64 estimatePredicateSelectivity(const ActionsDAG::Node * node, const Expres
     if (name == "__applyFilter")
         return 1.0;
     if (name == "like" || name == "ilike")
-        return default_like_selectivity;
+        return CascadesDefaults::DEFAULT_LIKE_SELECTIVITY;
     if (name == "notLike" || name == "notILike")
-        return 1.0 - default_like_selectivity;
+        return 1.0 - CascadesDefaults::DEFAULT_LIKE_SELECTIVITY;
     if (name == "isNull")
-        return default_equality_selectivity;
+        return CascadesDefaults::DEFAULT_EQUALITY_SELECTIVITY;
     if (name == "isNotNull")
-        return 1.0 - default_equality_selectivity;
+        return 1.0 - CascadesDefaults::DEFAULT_EQUALITY_SELECTIVITY;
 
     const bool is_equals = name == "equals";
     const bool is_not_equals = name == "notEquals";
@@ -521,7 +515,7 @@ Float64 estimatePredicateSelectivity(const ActionsDAG::Node * node, const Expres
     if ((is_equals || is_not_equals || is_range) && node->children.size() == 2)
     {
         if (is_range)
-            return default_range_selectivity;
+            return CascadesDefaults::DEFAULT_RANGE_SELECTIVITY;
 
         const auto * left = skipAliases(node->children[0]);
         const auto * right = skipAliases(node->children[1]);
@@ -534,7 +528,7 @@ Float64 estimatePredicateSelectivity(const ActionsDAG::Node * node, const Expres
             return it != input_statistics.column_statistics.end() ? it->second.num_distinct_values : 0;
         };
 
-        Float64 equal_selectivity = default_equality_selectivity;
+        Float64 equal_selectivity = CascadesDefaults::DEFAULT_EQUALITY_SELECTIVITY;
         if (!left_is_constant && !right_is_constant)
         {
             /// Two columns. An equality the plan below already enforces (e.g. the keys of an
@@ -555,7 +549,7 @@ Float64 estimatePredicateSelectivity(const ActionsDAG::Node * node, const Expres
         return is_equals ? equal_selectivity : 1.0 - equal_selectivity;
     }
 
-    return default_unknown_selectivity;
+    return CascadesDefaults::DEFAULT_UNKNOWN_SELECTIVITY;
 }
 
 

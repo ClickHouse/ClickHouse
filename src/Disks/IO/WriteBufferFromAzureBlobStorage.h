@@ -73,6 +73,7 @@ private:
 
     BufferAllocationPolicyPtr buffer_allocation_policy;
 
+    const std::shared_ptr<const AzureBlobStorage::RequestSettings> settings;
     const size_t max_single_part_upload_size;
     const size_t max_unexpected_write_error_retries;
     const std::string blob_path;

@@ -401,7 +401,7 @@ ClickHouse は<a href="/ja/get-started/about/distinctive-features#true-column-or
   SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
   ```
 
-  テストマシンでは `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` が返されます。
+  テストマシンでは `/Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` が返されます。
 
   **ステップ 2: user&#95;files&#95;path を取得する**
 
@@ -409,12 +409,12 @@ ClickHouse は<a href="/ja/get-started/about/distinctive-features#true-column-or
 
   また、Linux では次のようにして変更されているか確認できます: `$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-  テストマシンでは、このパスは `/Users/tomschreiber/Clickhouse/user_files/` です。
+  テストマシンでは、このパスは `/Users/tomschreiber/ClickHouse/user_files/` です。
 
   **ステップ 3: プライマリインデックスファイルを user&#95;files&#95;path にコピーする**
 
   ```bash
-  cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx
+  cp /Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/ClickHouse/user_files/primary-hits_UserID_URL.idx
   ```
 
   これで、SQL でプライマリインデックスの内容を確認できます。

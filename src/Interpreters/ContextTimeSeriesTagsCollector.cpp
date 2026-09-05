@@ -1,6 +1,9 @@
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 
+#include <Common/PODArray.h>
+
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -14,6 +17,7 @@
 #include <Common/re2.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <base/unaligned.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -119,6 +123,34 @@ namespace
         IDType get(size_t i) const { return {first.get(i), second.get(i)}; }
     };
 
+    /// Gets identifier components stored in a LowCardinality column: the per-row dictionary index
+    /// addresses the getter of the dictionary column, producing the same native representation
+    /// as a plain column of the dictionary type.
+    template <typename IndexType, typename DictionaryGetter>
+    struct LowCardinalityID
+    {
+        using IDType = typename DictionaryGetter::IDType;
+        const IndexType * indexes;
+        DictionaryGetter dictionary;
+        IDType get(size_t i) const { return dictionary.get(indexes[i]); }
+    };
+
+    /// Calls `func` with the raw data of a LowCardinality index column.
+    template <typename F>
+    void dispatchLowCardinalityIndexes(const IColumn & indexes, F && func)
+    {
+        if (const auto * indexes_uint8 = typeid_cast<const ColumnUInt8 *>(&indexes))
+            func(indexes_uint8->getData().data());
+        else if (const auto * indexes_uint16 = typeid_cast<const ColumnUInt16 *>(&indexes))
+            func(indexes_uint16->getData().data());
+        else if (const auto * indexes_uint32 = typeid_cast<const ColumnUInt32 *>(&indexes))
+            func(indexes_uint32->getData().data());
+        else if (const auto * indexes_uint64 = typeid_cast<const ColumnUInt64 *>(&indexes))
+            func(indexes_uint64->getData().data());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected index column {} of a LowCardinality column", indexes.getName());
+    }
+
     /// Calls `func` with the typed id getter matching the column's layout and returns true,
     /// or returns false if there is no typed map for this column's layout (the generic map must be used).
     template <typename F>
@@ -184,7 +216,59 @@ namespace
             return false;
         }
 
+        /// A dictionary-encoded (LowCardinality) second component is read through its dictionary:
+        /// the getter produces the same native representation as a plain column of the dictionary
+        /// type, so these identifiers share their typed map with the plain layout (the store side
+        /// receives materialized columns and picks that same map).
+        if (const auto * second_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&second_column))
+        {
+            if (second_low_cardinality->nestedIsNullable())
+                return false;
+
+            const IColumn & dictionary = *second_low_cardinality->getDictionary().getNestedColumn();
+            bool dispatched = false;
+            dispatchLowCardinalityIndexes(second_low_cardinality->getIndexes(), [&](const auto * index_data)
+            {
+                if (const auto * dictionary_uint64 = typeid_cast<const ColumnUInt64 *>(&dictionary))
+                {
+                    func(TwoComponentID{first_getter, LowCardinalityID{index_data, OneComponentID<UInt64>{dictionary_uint64->getData().data()}}});
+                    dispatched = true;
+                }
+                else if (const auto * dictionary_uint128 = typeid_cast<const ColumnUInt128 *>(&dictionary))
+                {
+                    func(TwoComponentID{first_getter, LowCardinalityID{index_data, OneComponentID<UInt128>{dictionary_uint128->getData().data()}}});
+                    dispatched = true;
+                }
+                else if (const auto * dictionary_uuid = typeid_cast<const ColumnUUID *>(&dictionary))
+                {
+                    func(TwoComponentID{first_getter, LowCardinalityID{index_data, OneComponentID<UUID>{dictionary_uuid->getData().data()}}});
+                    dispatched = true;
+                }
+                else if (const auto * dictionary_fixed_string = typeid_cast<const ColumnFixedString *>(&dictionary))
+                {
+                    if (dictionary_fixed_string->getN() == sizeof(UInt128))
+                    {
+                        func(TwoComponentID{first_getter, LowCardinalityID{index_data, FixedString16ID{dictionary_fixed_string->getChars().data()}}});
+                        dispatched = true;
+                    }
+                }
+            });
+            return dispatched;
+        }
+
         return false;
+    }
+
+    /// For an id layout the typed dispatch does not handle, returns the column with any remaining
+    /// dictionary encoding materialized (e.g. a LowCardinality first tuple component), to retry
+    /// the dispatch with: the choice between a typed map and the generic map must match the store
+    /// side, which receives materialized columns. Returns null if there is nothing to materialize.
+    ColumnPtr tryMaterializeUnhandledLowCardinalityID(const IColumn & id_data)
+    {
+        ColumnPtr materialized = recursiveRemoveLowCardinality(id_data.getPtr());
+        if (materialized.get() == &id_data)
+            return nullptr;
+        return materialized;
     }
 
     /// Serializes identifiers from a column to be used as keys in the mapping.
@@ -958,9 +1042,8 @@ UInt64 ContextTimeSeriesTagsCollector::getSamplingKeyByGroup(Group group) const
 }
 
 
-VectorWithMemoryTracking<UInt64> ContextTimeSeriesTagsCollector::getSamplingKeyByGroup(const VectorWithMemoryTracking<Group> & groups_) const
+void ContextTimeSeriesTagsCollector::getSamplingKeyByGroup(const VectorWithMemoryTracking<Group> & groups_, PaddedPODArray<UInt64> & res) const
 {
-    VectorWithMemoryTracking<UInt64> res;
     res.resize(groups_.size());
     SharedLockGuard lock{mutex};
     for (size_t i = 0; i != groups_.size(); ++i)
@@ -970,7 +1053,6 @@ VectorWithMemoryTracking<UInt64> ContextTimeSeriesTagsCollector::getSamplingKeyB
             throwGroupOutOfBound(group, sampling_keys.size());
         res[i] = sampling_keys[group];
     }
-    return res;
 }
 
 
@@ -1011,12 +1093,18 @@ VectorWithMemoryTracking<String> ContextTimeSeriesTagsCollector::extractTag(cons
     return res;
 }
 
-void ContextTimeSeriesTagsCollector::extractTag(const VectorWithMemoryTracking<Group> & groups_, const String & tag_to_extract, ColumnString & out_column) const
+void ContextTimeSeriesTagsCollector::extractTag(
+    const VectorWithMemoryTracking<Group> & groups_,
+    const String & tag_to_extract,
+    ColumnString & out_column,
+    PaddedPODArray<UInt8> & null_map) const
 {
     out_column.reserve(groups_.size());
+    null_map.resize(groups_.size());
     SharedLockGuard lock{mutex};
-    for (Group group : groups_)
+    for (size_t i = 0; i != groups_.size(); ++i)
     {
+        Group group = groups_[i];
         if (group >= groups.size())
             throwGroupOutOfBound(group, groups.size());
         const auto & tags = *groups[group];
@@ -1026,12 +1114,16 @@ void ContextTimeSeriesTagsCollector::extractTag(const VectorWithMemoryTracking<G
             if (tag_name == tag_to_extract)
             {
                 out_column.insertData(tag_value.data(), tag_value.size());
+                null_map[i] = tag_value.empty();
                 found = true;
                 break;
             }
         }
         if (!found)
+        {
             out_column.insertDefault();
+            null_map[i] = 1;
+        }
     }
 }
 
@@ -1091,6 +1183,17 @@ void ContextTimeSeriesTagsCollector::storeTags(const ColumnPtr & id_column, cons
     });
     if (dispatched)
         return;
+
+    if (ColumnPtr materialized = tryMaterializeUnhandledLowCardinalityID(*unwrapped.data))
+    {
+        dispatched = dispatchIDType(*materialized, [&](const auto & id_getter)
+        {
+            storeTagsTyped(id_getter, *materialized, null_map_data, num_rows_to_store, tags_vector);
+        });
+        if (!dispatched)
+            storeTagsGeneric(*materialized, null_map_data, num_rows_to_store, tags_vector);
+        return;
+    }
 
     storeTagsGeneric(*unwrapped.data, null_map_data, num_rows_to_store, tags_vector);
 }
@@ -1230,33 +1333,43 @@ void ContextTimeSeriesTagsCollector::storeTagsGeneric(
 }
 
 
-VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByID(const ColumnPtr & id_column) const
+void ContextTimeSeriesTagsCollector::getGroupByID(const ColumnPtr & id_column, PaddedPODArray<Group> & res) const
 {
     auto unwrapped = unwrapIDColumn(id_column);
     if (unwrapped.null_map)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected Nullable column {} of identifiers", id_column->getName());
     size_t num_rows = unwrapped.data->size();
 
-    VectorWithMemoryTracking<Group> res;
     bool dispatched = dispatchIDType(*unwrapped.data, [&](const auto & id_getter)
     {
-        res = getGroupByIDTyped(id_getter, *unwrapped.data, num_rows);
+        getGroupByIDTyped(id_getter, *unwrapped.data, num_rows, res);
     });
     if (dispatched)
-        return res;
+        return;
 
-    return getGroupByIDGeneric(*unwrapped.data, num_rows);
+    if (ColumnPtr materialized = tryMaterializeUnhandledLowCardinalityID(*unwrapped.data))
+    {
+        dispatched = dispatchIDType(*materialized, [&](const auto & id_getter)
+        {
+            getGroupByIDTyped(id_getter, *materialized, num_rows, res);
+        });
+        if (!dispatched)
+            getGroupByIDGeneric(*materialized, num_rows, res);
+        return;
+    }
+
+    getGroupByIDGeneric(*unwrapped.data, num_rows, res);
 }
 
 
 template <typename IDGetter>
-VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByIDTyped(
-    const IDGetter & id_getter, const IColumn & id_data, size_t num_rows) const
+void ContextTimeSeriesTagsCollector::getGroupByIDTyped(
+    const IDGetter & id_getter, const IColumn & id_data, size_t num_rows, PaddedPODArray<Group> & res) const
 {
     using IDType = typename IDGetter::IDType;
 
-    VectorWithMemoryTracking<Group> res;
-    res.reserve(num_rows);
+    res.resize(num_rows);
+    Group * __restrict out = res.data();
 
     SharedLockGuard lock{mutex};
     const auto & id_map = getTypedIDMap<IDType>().map;
@@ -1269,7 +1382,7 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByIDType
         IDType id = id_getter.get(i);
         if ((id == prev_id) && (prev_group != INVALID_GROUP))
         {
-            res.push_back(prev_group);
+            out[i] = prev_group;
             continue;
         }
         const auto * it = id_map.find(id);
@@ -1277,19 +1390,17 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByIDType
             throwUnknownID(id_data, i);
         prev_id = id;
         prev_group = it->getMapped();
-        res.push_back(prev_group);
+        out[i] = prev_group;
     }
-
-    return res;
 }
 
 
-VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByIDGeneric(const IColumn & id_data, size_t num_rows) const
+void ContextTimeSeriesTagsCollector::getGroupByIDGeneric(const IColumn & id_data, size_t num_rows, PaddedPODArray<Group> & res) const
 {
     Arena temp_arena;
 
-    VectorWithMemoryTracking<Group> res;
-    res.reserve(num_rows);
+    res.resize(num_rows);
+    Group * __restrict out = res.data();
 
     SharedLockGuard lock{mutex};
 
@@ -1300,7 +1411,7 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByIDGene
         if ((i > 0) && id_data.compareAt(i, i - 1, id_data, /* nan_direction_hint = */ 1) == 0)
         {
             chassert(prev_group != INVALID_GROUP);
-            res.push_back(prev_group);
+            out[i] = prev_group;
             continue;
         }
         const char * begin = nullptr;
@@ -1309,10 +1420,8 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByIDGene
         if (!it)
             throwUnknownID(id_data, i);
         prev_group = it->getMapped();
-        res.push_back(prev_group);
+        out[i] = prev_group;
     }
-
-    return res;
 }
 
 
@@ -1330,6 +1439,18 @@ VectorWithMemoryTracking<TagNamesAndValuesPtr> ContextTimeSeriesTagsCollector::g
     });
     if (dispatched)
         return res;
+
+    if (ColumnPtr materialized = tryMaterializeUnhandledLowCardinalityID(*unwrapped.data))
+    {
+        dispatched = dispatchIDType(*materialized, [&](const auto & id_getter)
+        {
+            res = getTagsByIDTyped(id_getter, *materialized, num_rows);
+        });
+        if (dispatched)
+            return res;
+
+        return getTagsByIDGeneric(*materialized, num_rows);
+    }
 
     return getTagsByIDGeneric(*unwrapped.data, num_rows);
 }

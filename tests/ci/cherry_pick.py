@@ -800,8 +800,8 @@ class BackportPRs:
     def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
 
-        # Decide the target release branches (pure logic, unit-tested in
-        # `ci/tests/test_cherry_pick_branches.py`). A version-specific label
+        # Decide the target release branches (pure logic in
+        # `cherry_pick_branches.py`). A version-specific label
         # (`vX.Y-must-backport`) marks the OLDEST release the PR must reach, so
         # the PR is backported to that release and every newer active release
         # branch; the lowest such label wins.

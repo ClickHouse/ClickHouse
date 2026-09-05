@@ -18,8 +18,8 @@ doc_type: 'reference'
 chDBエンジンを使用してSQLクエリを実行します。
 
 これは、埋め込み
-ClickHouse エンジンを使用してSQLステートメントを実行する主要なクエリ関数です。さまざまな出力フォーマットをサポートし、インメモリ
-またはファイルベースのデータベースで動作します。
+ClickHouse エンジンを使用してSQLステートメントを実行する主要なクエリ関数です。さまざまな出力フォーマットをサポートし、一時
+データベースまたはファイルベースのデータベースで動作します。
 
 **構文**
 
@@ -32,8 +32,8 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 | Parameter       | Type | Default    | Description                                                                                                                                                                                                                                                        |
 | --------------- | ---- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `sql`           | str  | *required* | 実行する SQL クエリ文字列                                                                                                                                                                                                                                                    |
-| `output_format` | str  | `"CSV"`    | 結果の出力フォーマット。対応フォーマット:<br />• `"CSV"` - カンマ区切り値<br />• `"JSON"` - JSON フォーマット<br />• `"Arrow"` - Apache Arrow フォーマット<br />• `"Parquet"` - Parquet フォーマット<br />• `"DataFrame"` - Pandas DataFrame<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - 詳細なログを有効化 |
-| `path`          | str  | `""`       | データベースファイルのパス。デフォルトではインメモリデータベースが使用されます。<br />ファイルパス、またはインメモリデータベースを表す `":memory:"` を指定できます                                                                                                                                                                        |
+| `output_format` | str  | `"CSV"`    | 結果の出力フォーマット。対応フォーマット:<br />• `"CSV"` - カンマ区切り値<br />• `"JSON"` - JSON フォーマット<br />• `"Arrow"` - Apache Arrow フォーマット<br />• `"Parquet"` - Parquet フォーマット<br />• `"DataFrame"` - Pandas DataFrame<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - 詳細なロギングを有効化 |
+| `path`          | str  | `""`       | データベースファイルのパス。デフォルトでは一時的な非永続データベース (`":memory:"` と同等) が使用されます。<br />ディスクに永続化するにはファイルパスを指定します                                                                                                                                                                       |
 | `udf_path`      | str  | `""`       | レガシーなサブプロセスベースの UDF ディレクトリへのパス。ネイティブ Python UDF ([`@func`](#func-decorator) / [`create_function`](#create-function)) には不要です                                                                                                                                        |
 
 **戻り値**
@@ -47,7 +47,7 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 | `pa.Table`         | `output_format` が `"ArrowTable"` または `"arrowtable"` の場合 |
 | chdb result object | その他のフォーマットの場合                                           |
 
-**例外**
+**送出される例外**
 
 | Exception     | Condition                               |
 | ------------- | --------------------------------------- |
@@ -84,7 +84,7 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 
 chDB エンジンを使用してSQLクエリを実行します。
 
-これは、埋め込みClickHouse エンジンを使用してSQLステートメントを実行する主要なクエリ関数です。さまざまな出力フォーマットをサポートし、インメモリまたはファイルベースのデータベースで使用できます。
+これは、埋め込みClickHouse エンジンを使用してSQLステートメントを実行する主要なクエリ関数です。さまざまな出力フォーマットをサポートし、一時データベースまたはファイルベースのデータベースで使用できます。
 
 **構文**
 
@@ -97,9 +97,9 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 | Parameter       | Type | Default    | Description                                                                                                                                                                                                                                                          |
 | --------------- | ---- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`           | str  | *required* | 実行する SQL クエリ文字列                                                                                                                                                                                                                                                      |
-| `output_format` | str  | `"CSV"`    | 結果の出力フォーマット。対応フォーマット:<br />• `"CSV"` - カンマ区切り値<br />• `"JSON"` - JSON フォーマット<br />• `"Arrow"` - Apache Arrow フォーマット<br />• `"Parquet"` - Parquet フォーマット<br />• `"DataFrame"` - Pandas DataFrame<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - 詳細なログを有効にする |
-| `path`          | str  | `""`       | データベースファイルのパス。デフォルトではインメモリデータベースを使用します。<br />ファイルパス、またはインメモリデータベース用の `":memory:"` を指定できます                                                                                                                                                                 |
-| `udf_path`      | str  | `""`       | レガシーなサブプロセスベースの UDF ディレクトリのパス。ネイティブ Python UDF ([`@func`](#func-decorator) / [`create_function`](#create-function)) では不要です                                                                                                                                    |
+| `output_format` | str  | `"CSV"`    | 結果の出力フォーマット。対応フォーマット:<br />• `"CSV"` - カンマ区切り値<br />• `"JSON"` - JSON フォーマット<br />• `"Arrow"` - Apache Arrow フォーマット<br />• `"Parquet"` - Parquet フォーマット<br />• `"DataFrame"` - Pandas DataFrame<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - 詳細なロギングを有効にする |
+| `path`          | str  | `""`       | データベースファイルのパス。デフォルトでは一時的で永続化されないデータベース (`":memory:"` と同等) を使用します。<br />ディスクに永続化するにはファイルパスを指定します                                                                                                                                                                      |
+| `udf_path`      | str  | `""`       | レガシーなサブプロセスベースの UDF ディレクトリのパス。ネイティブ Python UDF ([`@func`](#func-decorator) / [`create_function`](#create-function)) では不要です                                                                                                                                           |
 
 **戻り値**
 
@@ -243,8 +243,7 @@ chdb.to_df(r)
 chDB バックグラウンドサーバーへの接続を作成します。
 
 この関数は、chDB (ClickHouse) データベースエンジンへの [Connection](#chdb-state-sqlitelike-connection) を確立します。
-1 つのプロセスで開ける接続は 1 つだけです。
-同じ接続文字列で複数回呼び出した場合は、同じ接続オブジェクトが返されます。
+各呼び出しは独立した接続を返し、同じデータベースパスに対して複数の接続を同時に開くことができます。
 
 ```python
 chdb.connect(connection_string: str = ':memory:') → Connection
@@ -258,25 +257,25 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 
 **基本的なフォーマット**
 
-| フォーマット                    | 説明                   |
-| ------------------------- | -------------------- |
-| `":memory:"`              | インメモリデータベース (デフォルト)  |
-| `"test.db"`               | 相対パスのデータベースファイル      |
-| `"file:test.db"`          | 相対パスと同じ              |
-| `"/path/to/test.db"`      | 絶対パスのデータベースファイル      |
-| `"file:/path/to/test.db"` | 絶対パスと同じ              |
+| フォーマット                    | 説明               |
+| ------------------------- | ---------------- |
+| `":memory:"`              | 一時データベース (デフォルト) |
+| `"test.db"`               | 相対パスのデータベースファイル  |
+| `"file:test.db"`          | 相対パスと同じ          |
+| `"/path/to/test.db"`      | 絶対パスのデータベースファイル  |
+| `"file:/path/to/test.db"` | 絶対パスと同じ          |
 
 **クエリパラメータ付き**
 
-| フォーマット                                             | 説明            |
-| -------------------------------------------------- | ------------- |
-| `"file:test.db?param1=value1&param2=value2"`       | パラメータ付きの相対パス  |
-| `"file::memory:?verbose&log-level=test"`           | パラメータ付きのインメモリ |
-| `"///path/to/test.db?param1=value1&param2=value2"` | パラメータ付きの絶対パス  |
+| フォーマット                                             | 説明               |
+| -------------------------------------------------- | ---------------- |
+| `"file:test.db?param1=value1&param2=value2"`       | パラメータ付きの相対パス     |
+| `"file::memory:?verbose&log-level=test"`           | パラメータ付きの一時データベース |
+| `"///path/to/test.db?param1=value1&param2=value2"` | パラメータ付きの絶対パス     |
 
 **クエリパラメータの処理**
 
-クエリパラメータは起動引数として ClickHouse engine に渡されます。
+クエリパラメータは起動引数として ClickHouse エンジン に渡されます。
 特殊なパラメータの処理:
 
 | 特殊パラメータ          | 変換後            | 説明          |
@@ -299,31 +298,30 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 | -------------- | ----------------- |
 | `RuntimeError` | データベースへの接続に失敗した場合 |
 
-<Warning>
-  プロセスごとにサポートされる接続は 1 つだけです。
-  新しい接続を作成すると、既存の接続は閉じられます。
-</Warning>
+<Note>
+  1 つのプロセスでは、1 つのデータベースパスに紐付いた埋め込みエンジンが 1 つ実行されます。同じパスへの複数の接続は共存でき、クエリを同時実行できます。いずれかの接続が開いている間に*別の*パスを開くと `RuntimeError` が発生します。先に開いている接続を閉じてください。
+</Note>
 
 **例**
 
 ```pycon
->>> # インメモリデータベース
+>>> # Temporary database
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
->>> # ファイルベースのデータベース
+>>> # File-based database
 >>> conn = connect("my_data.db")
 >>> conn = connect("/path/to/data.db")
 >>>
->>> # パラメータ付き
->>> conn = connect("data.db?mode=ro")  # 読み取り専用モード
->>> conn = connect(":memory:?verbose&log-level=debug")  # デバッグログ
+>>> # With parameters
+>>> conn = connect("data.db?mode=ro")  # Read-only mode
+>>> conn = connect(":memory:?verbose&log-level=debug")  # Debug logging
 >>>
->>> # コンテキストマネージャーを使用した自動クリーンアップ
+>>> # Using context manager for automatic cleanup
 >>> with connect("data.db") as conn:
 ...     result = conn.query("SELECT 1")
 ...     print(result)
->>> # 接続が自動的に閉じられる
+>>> # Connection automatically closed
 ```
 
 **関連項目**
@@ -356,8 +354,7 @@ chDB 関連のエラーに対する基本例外クラスです。
 基底クラス: `object`
 
 セッションはクエリの状態を保持します。
-path が None の場合は、一時ディレクトリが作成され、それがデータベースのパスとして使用されます。
-また、その一時ディレクトリはセッションを閉じると削除されます。
+path が None の場合、セッションはプロセス全体で共有される一時的な (`:memory:`) データベースを使用するため、path を指定しないすべてのセッションは互いのテーブルを参照できます。その一時ディレクトリは、そのような最後のセッションまたは接続が閉じられた場合にのみ削除されます。
 パスを指定して、その場所にデータを保持するデータベースを作成することもできます。
 
 接続文字列を使って、path やその他のパラメータを渡すこともできます。
@@ -368,22 +365,22 @@ class chdb.session.Session(path=None)
 
 **例**
 
-| Connection String                                  | 説明                     |
-| -------------------------------------------------- | ---------------------- |
-| `":memory:"`                                       | インメモリデータベース            |
-| `"test.db"`                                        | 相対パス                   |
-| `"file:test.db"`                                   | 上記と同じ                  |
-| `"/path/to/test.db"`                               | 絶対パス                   |
-| `"file:/path/to/test.db"`                          | 上記と同じ                  |
-| `"file:test.db?param1=value1&param2=value2"`       | クエリパラメータ付きの相対パス        |
-| `"file::memory:?verbose&log-level=test"`           | クエリパラメータ付きのインメモリデータベース |
-| `"///path/to/test.db?param1=value1&param2=value2"` | クエリパラメータ付きの絶対パス        |
+| Connection String                                  | 説明                  |
+| -------------------------------------------------- | ------------------- |
+| `":memory:"`                                       | 一時データベース            |
+| `"test.db"`                                        | 相対パス                |
+| `"file:test.db"`                                   | 上記と同じ               |
+| `"/path/to/test.db"`                               | 絶対パス                |
+| `"file:/path/to/test.db"`                          | 上記と同じ               |
+| `"file:test.db?param1=value1&param2=value2"`       | クエリパラメータ付きの相対パス     |
+| `"file::memory:?verbose&log-level=test"`           | クエリパラメータ付きの一時データベース |
+| `"///path/to/test.db?param1=value1&param2=value2"` | クエリパラメータ付きの絶対パス     |
 
 <Info>
   **接続文字列の引数処理**
 
   “[file:test.db?param1=value1&amp;param2=value2](file:test.db?param1=value1\&param2=value2)” のようにクエリパラメータを含む接続文字列では、
-  “param1=value1” は起動引数として ClickHouse engine に渡されます。
+  “param1=value1” は起動引数として ClickHouse エンジン に渡されます。
 
   詳細については、`clickhouse local –help –verbose` を参照してください。
 
@@ -392,12 +389,12 @@ class chdb.session.Session(path=None)
   * “mode=ro” は clickhouse では “–readonly=1” になります (読み取り専用モード)
 </Info>
 
-<Warning>
+<Note>
   **重要**
 
-  * 同時に存在できるセッションは 1 つだけです。新しいセッションを作成する場合は、既存のセッションを閉じる必要があります。
-  * 新しいセッションを作成すると、既存のセッションは閉じられます。
-</Warning>
+  * 同じデータベースパスを共有している限り、複数のセッションを共存させることができます。
+  * 別のデータベースパスを使用するには、まず開いているセッションを閉じてください。
+</Note>
 
 ***
 
@@ -741,8 +738,7 @@ id,name
 chDB バックグラウンドサーバーへの [Connection](#chdb-state-sqlitelike-connection) を作成します。
 
 この関数は、chDB (ClickHouse) データベースエンジンへの 接続 を確立します。
-プロセスごとに、開ける 接続 は 1 つだけです。同じ
-接続文字列で複数回呼び出すと、同じ 接続 オブジェクトが返されます。
+呼び出すたびに独立した接続が返され、同じデータベース path への接続は同時にいくつでも開くことができます。
 
 **構文**
 
@@ -760,21 +756,21 @@ chdb.state.connect(connection_string: str = ':memory:') → Connection
 
 サポートされている接続文字列のフォーマット:
 
-| Format                    | Description          |
-| ------------------------- | -------------------- |
-| `":memory:"`              | インメモリデータベース (デフォルト)  |
-| `"test.db"`               | 相対パスのデータベースファイル      |
-| `"file:test.db"`          | 相対パスと同じ              |
-| `"/path/to/test.db"`      | 絶対パスのデータベースファイル      |
-| `"file:/path/to/test.db"` | 絶対パスと同じ              |
+| Format                    | Description      |
+| ------------------------- | ---------------- |
+| `":memory:"`              | 一時データベース (デフォルト) |
+| `"test.db"`               | 相対パスのデータベースファイル  |
+| `"file:test.db"`          | 相対パスと同じ          |
+| `"/path/to/test.db"`      | 絶対パスのデータベースファイル  |
+| `"file:/path/to/test.db"` | 絶対パスと同じ          |
 
 **クエリパラメータ付き**
 
-| Format                                             | Description   |
-| -------------------------------------------------- | ------------- |
-| `"file:test.db?param1=value1&param2=value2"`       | パラメータ付きの相対パス  |
-| `"file::memory:?verbose&log-level=test"`           | パラメータ付きのインメモリ |
-| `"///path/to/test.db?param1=value1&param2=value2"` | パラメータ付きの絶対パス  |
+| Format                                             | Description      |
+| -------------------------------------------------- | ---------------- |
+| `"file:test.db?param1=value1&param2=value2"`       | パラメータ付きの相対パス     |
+| `"file::memory:?verbose&log-level=test"`           | パラメータ付きの一時データベース |
+| `"///path/to/test.db?param1=value1&param2=value2"` | パラメータ付きの絶対パス     |
 
 **クエリパラメータの処理**
 
@@ -801,33 +797,30 @@ chdb.state.connect(connection_string: str = ':memory:') → Connection
 | -------------- | ----------------- |
 | `RuntimeError` | データベースへの接続に失敗した場合 |
 
-<Warning>
-  **警告**
-
-  プロセスごとにサポートされる接続は 1 つだけです。
-  新しい接続を作成すると、既存の接続は閉じられます。
-</Warning>
+<Note>
+  1 つのプロセスでは、1 つのデータベースパスにバインドされた埋め込み engine が 1 つ実行されます。同じパスへの複数の接続は共存でき、クエリを同時実行できます。いずれかの接続が開いている間に*異なる*パスを開くと、`RuntimeError` が送出されます。先に開いている接続を閉じてください。
+</Note>
 
 **例**
 
 ```pycon
->>> # インメモリデータベース
+>>> # Temporary database
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
->>> # ファイルベースのデータベース
+>>> # File-based database
 >>> conn = connect("my_data.db")
 >>> conn = connect("/path/to/data.db")
 >>>
->>> # パラメータ付き
->>> conn = connect("data.db?mode=ro")  # 読み取り専用モード
->>> conn = connect(":memory:?verbose&log-level=debug")  # デバッグログ
+>>> # With parameters
+>>> conn = connect("data.db?mode=ro")  # Read-only mode
+>>> conn = connect(":memory:?verbose&log-level=debug")  # Debug logging
 >>>
->>> # コンテキストマネージャを使用して自動的にクリーンアップ
+>>> # Using context manager for automatic cleanup
 >>> with connect("data.db") as conn:
 ...     result = conn.query("SELECT 1")
 ...     print(result)
->>> # 接続が自動的にクローズされる
+>>> # Connection automatically closed
 ```
 
 **関連項目**
@@ -1836,9 +1829,9 @@ chdb.dbapi.connect(*args, **kwargs)
 
 **パラメータ**
 
-| Parameter | Type | Default | Description                          |
-| --------- | ---- | ------- | ------------------------------------ |
-| `path`    | str  | `None`  | データベースファイルのパス。インメモリデータベースの場合は `None` |
+| Parameter | Type | Default | Description                                |
+| --------- | ---- | ------- | ------------------------------------------ |
+| `path`    | str  | `None`  | データベースファイルのパス。一時的な非永続データベースの場合は `None` |
 
 **送出される例外**
 
@@ -1914,10 +1907,10 @@ chdb.dbapi.Binary(x)
 
 chDB データベースへの DB-API 2.0 準拠の接続。
 
-このクラスは、chDB データベースに接続して操作するための標準的な DB-API インターフェイスを提供します。インメモリデータベースとファイルベースのデータベースの両方をサポートしています。
+このクラスは、chDB データベースに接続して操作するための標準的な DB-API インターフェイスを提供します。一時データベースとファイルベースのデータベースの両方をサポートしています。
 
-この接続は基盤となる chDB engine を管理し、
-クエリの実行、transaction の管理 (ClickHouse では no-op) 、およびカーソルの作成のためのメソッドを提供します。
+この接続は基盤となる chDB エンジンを管理し、
+クエリの実行、トランザクションの管理 (ClickHouse では no-op) 、およびカーソルの作成のためのメソッドを提供します。
 
 ```python
 class chdb.dbapi.connections.Connection(path=None)
@@ -1925,9 +1918,9 @@ class chdb.dbapi.connections.Connection(path=None)
 
 **パラメーター**
 
-| パラメーター | 型   | デフォルト  | 説明                                                                                                                |
-| ------ | --- | ------ | ----------------------------------------------------------------------------------------------------------------- |
-| `path` | str | `None` | データベースファイルのパス。None の場合はインメモリデータベースを使用します。&#39;database.db&#39; のようなファイルパス、または &#39;:memory:&#39; を表す None を指定できます |
+| パラメーター | 型   | デフォルト  | 説明                                                                                                                           |
+| ------ | --- | ------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| `path` | str | `None` | データベースファイルのパス。None (デフォルト) の場合は、一時的な非永続データベース (`':memory:'` と同等) を使用します。ディスクに永続化するには、&#39;database.db&#39; のようなファイルパスを指定します。 |
 
 **変数**
 
@@ -1939,7 +1932,7 @@ class chdb.dbapi.connections.Connection(path=None)
 **例**
 
 ```pycon
->>> # インメモリデータベース
+>>> # Temporary database
 >>> conn = Connection()
 >>> cursor = conn.cursor()
 >>> cursor.execute("SELECT 1")
@@ -1948,7 +1941,7 @@ class chdb.dbapi.connections.Connection(path=None)
 ```
 
 ```pycon
->>> # ファイルベースのデータベース
+>>> # File-based database
 >>> conn = Connection('mydata.db')
 >>> with conn.cursor() as cur:
 ...     cur.execute("CREATE TABLE users (id INT, name STRING) ENGINE = MergeTree() order by id")
@@ -1957,7 +1950,7 @@ class chdb.dbapi.connections.Connection(path=None)
 ```
 
 ```pycon
->>> # コンテキストマネージャの使用
+>>> # Context manager usage
 >>> with Connection() as cur:
 ...     cur.execute("SELECT version()")
 ...     version = cur.fetchone()
@@ -3345,7 +3338,7 @@ field&#95;type が単一の型の値である場合に “field&#95;type == STRI
 DB-API 2.0 の型比較用に拡張された frozenset です。
 
 このクラスは、DB-API 2.0 の型比較セマンティクスをサポートするために、frozenset を拡張したものです。
-個々の項目を等価演算子と不等価演算子の両方で Set と比較できるため、
+個々の項目を等値演算子と不等値演算子の両方で Set と比較できるため、
 柔軟な型チェックが可能になります。
 
 これは STRING、BINARY、NUMBER などの型定数で使用され、
@@ -3356,9 +3349,9 @@ field&#95;type が単一の型の値である場合に、「field&#95;type == ST
 
 ```pycon
 >>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
->>> FIELD_TYPE.STRING == string_types  # Trueを返す
->>> FIELD_TYPE.INT != string_types     # Trueを返す
->>> FIELD_TYPE.BLOB in string_types    # Falseを返す
+>>> FIELD_TYPE.STRING == string_types  # Returns True
+>>> FIELD_TYPE.INT != string_types     # Returns True
+>>> FIELD_TYPE.BLOB in string_types    # Returns False
 ```
 
 **使用例**
@@ -3370,16 +3363,16 @@ import chdb.dbapi as dbapi
 
 print("chdb driver version: {0}".format(dbapi.get_client_info()))
 
-# 接続とカーソルを作成する
+# Create connection and cursor
 conn = dbapi.connect()
 cur = conn.cursor()
 
-# クエリを実行する
+# Execute query
 cur.execute('SELECT version()')
 print("description:", cur.description)
 print("data:", cur.fetchone())
 
-# クリーンアップ
+# Clean up
 cur.close()
 conn.close()
 ```
@@ -3392,7 +3385,7 @@ import chdb.dbapi as dbapi
 conn = dbapi.connect()
 cur = conn.cursor()
 
-# テーブルを作成する
+# Create table
 cur.execute("""
     CREATE TABLE employees (
         id UInt32,
@@ -3402,7 +3395,7 @@ cur.execute("""
     ) ENGINE = Memory
 """)
 
-# データを挿入する
+# Insert data
 cur.execute("""
     INSERT INTO employees VALUES
     (1, 'Alice', 'Engineering', 75000.00),
@@ -3410,10 +3403,10 @@ cur.execute("""
     (3, 'Charlie', 'Engineering', 80000.00)
 """)
 
-# データをクエリする
+# Query data
 cur.execute("SELECT * FROM employees WHERE department = 'Engineering'")
 
-# 結果を取得する
+# Fetch results
 print("Column names:", [desc[0] for desc in cur.description])
 for row in cur.fetchall():
     print(row)
@@ -3426,19 +3419,19 @@ conn.close()
 ```python
 import chdb.dbapi as dbapi
 
-# インメモリデータベース（デフォルト）
+# Temporary database (default)
 conn1 = dbapi.connect()
 
-# 永続データベースファイル
+# Persistent database file
 conn2 = dbapi.connect("./my_database.chdb")
 
-# パラメータ付き接続
+# Connection with parameters
 conn3 = dbapi.connect("./my_database.chdb?log-level=debug&verbose")
 
-# 読み取り専用接続
+# Read-only connection
 conn4 = dbapi.connect("./my_database.chdb?mode=ro")
 
-# 接続の自動クリーンアップ
+# Automatic connection cleanup
 with dbapi.connect("test.chdb") as conn:
     cur = conn.cursor()
     cur.execute("SELECT count() FROM numbers(1000)")

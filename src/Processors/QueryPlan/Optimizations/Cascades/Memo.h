@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
-#include <Processors/QueryPlan/Optimizations/Cascades/OptimizationEnvironment.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
 #include <Common/Logger.h>
 
 namespace DB
@@ -21,8 +21,8 @@ public:
 
     size_t getGroupCount() const { return groups_by_id.size(); }
 
-    const OptimizationEnvironment & getEnvironment() const { return environment; }
-    void setEnvironment(OptimizationEnvironment environment_) { environment = std::move(environment_); }
+    const OptimizerContext & getContext() const { return context; }
+    void setContext(OptimizerContext context_) { context = std::move(context_); }
 
     void dump(WriteBuffer & out) const;
     String dump() const;
@@ -30,7 +30,7 @@ public:
 private:
     LoggerPtr log;
     std::vector<GroupPtr> groups_by_id;
-    OptimizationEnvironment environment;
+    OptimizerContext context;
 };
 
 }

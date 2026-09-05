@@ -30,6 +30,8 @@ public:
 
     const MergeTreePartInfo & getPartInfo() const override { return data_part->info; }
 
+    const MergeTreePartition & getPartition() const override { return data_part->partition; }
+
     Int64 getMinDataVersion() const override
     {
         return data_part->info.isPatch()
@@ -77,6 +79,8 @@ public:
     {
         return data_part->getColumnSizes();
     }
+
+    CompressionCodecPtr getDefaultCompressionCodec() const override { return data_part->default_codec; }
 
     ColumnSize getSubcolumnSize(const String & subcolumn_name) const override { return data_part->getSubcolumnSize(subcolumn_name); }
 

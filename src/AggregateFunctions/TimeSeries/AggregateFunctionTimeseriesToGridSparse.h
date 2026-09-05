@@ -10,6 +10,7 @@
 #include <Columns/ColumnNullable.h>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
+#include <AggregateFunctions/TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h>
 
 
 namespace DB
@@ -40,11 +41,15 @@ struct AggregateFunctionTimeseriesToGridSparseTraits
 
         void add(TimestampType timestamp, ValueType value)
         {
-            if (!has_value || timestamp > first || (timestamp == first && value > second))
+            if (!has_value || timestamp > first)
             {
                 first = timestamp;
                 second = value;
                 has_value = true;
+            }
+            else if (timestamp == first)
+            {
+                second = timeseriesMaxValueForDuplicateTimestamp(second, value);
             }
         }
 
@@ -116,6 +121,8 @@ struct AggregateFunctionTimeseriesToGridSparseTraits
 
     /// Resample keeps no preaggregated summary - the bucket (its newest sample) is fed to the aggregator as-is.
     using Bucket = Summary;
+
+    static constexpr UInt16 FORMAT_VERSION = 4;
 };
 
 
@@ -133,13 +140,10 @@ public:
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesToGridSparse, Traits>;
     using Base::Base;
 
-    typename Traits::Aggregator createAggregator(size_t /* num_populated_buckets */) const
+    typename Traits::Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
         return {};
     }
-
-    static constexpr UInt16 FORMAT_VERSION = 3;
-    static constexpr bool DateTime64Supported = true;
 };
 
 }

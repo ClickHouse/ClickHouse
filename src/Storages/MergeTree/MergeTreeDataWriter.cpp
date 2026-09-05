@@ -104,6 +104,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+    extern const MergeTreeSettingsBool skip_empty_columns_on_insert;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
@@ -685,6 +686,82 @@ Block MergeTreeDataWriter::mergeBlock(
     return header->cloneWithColumns(status.chunk.getColumns());
 }
 
+
+/// Omit columns that contain only their type default. The marker preserves the
+/// inserted value; expression columns and patch parts are not eligible.
+static void skipEmptyColumnsOnInsert(
+    NamesAndTypesList & columns,
+    const Block & block,
+    SerializationInfoByName & infos,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeSettingsPtr & data_settings,
+    bool is_patch)
+{
+    if (!(*data_settings)[MergeTreeSetting::skip_empty_columns_on_insert] || is_patch)
+        return;
+
+    /// Old replicas cannot read the marker format, so respect an explicitly pinned version.
+    const MergeTreeSerializationInfoVersion serialization_version = (*data_settings)[MergeTreeSetting::serialization_info_version];
+    if (serialization_version < MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS)
+        return;
+
+    const auto & columns_description = metadata_snapshot->getColumns();
+    NameSet empty_columns;
+    for (const auto & [col_name, type] : columns)
+    {
+        auto col_default = columns_description.getDefault(col_name);
+        if (col_default && col_default->expression)
+            continue;
+        const auto & col_data = block.getByName(col_name);
+        if (!col_data.column->hasOnlyTypeDefaults())
+            continue;
+        /// The frozen IDataType default must match the column's zero representation
+        /// (unlike some Enum and Date32 defaults).
+        auto default_sample = type->createColumn();
+        default_sample->insert(type->getDefault());
+        if (!default_sample->isDefaultAt(0))
+            continue;
+        empty_columns.insert(col_name);
+    }
+    if (empty_columns.empty())
+        return;
+
+    /// A part must retain at least one physical column.
+    auto filtered = columns.eraseNames(empty_columns);
+    if (filtered.empty())
+    {
+        size_t min_bytes = std::numeric_limits<size_t>::max();
+        String keep_name;
+        for (const auto & name : empty_columns)
+        {
+            size_t bytes = block.getByName(name).column->byteSize();
+            if (bytes < min_bytes || (bytes == min_bytes && (keep_name.empty() || name < keep_name)))
+            {
+                min_bytes = bytes;
+                keep_name = name;
+            }
+        }
+        empty_columns.erase(keep_name);
+        filtered = columns.eraseNames(empty_columns);
+    }
+
+    columns = std::move(filtered);
+    for (const auto & name : empty_columns)
+        infos.erase(name);
+
+    SerializationInfoByName::MissingColumns mc;
+    mc.reserve(empty_columns.size());
+    for (const auto & name : empty_columns)
+    {
+        SerializationInfoByName::MissingColumnInfo info;
+        info.name = name;
+        info.type_name = block.getByName(name).type->getName();
+        mc.push_back(std::move(info));
+    }
+    infos.setMissingColumns(std::move(mc));
+}
+
+
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPart(
     BlockWithPartition & block,
     StorageMetadataPtr metadata_snapshot,
@@ -835,7 +912,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         if (max_table_size == 0 || data.getTotalActiveSizeInBytes() + block.bytes() <= max_table_size)
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
-            statistics = ColumnsStatistics(metadata_snapshot->getColumns());
+            const auto & all_columns = metadata_snapshot->getColumns();
+            statistics = ColumnsStatistics(all_columns);
+            /// A non-physical column is never present in a written block, so `build` below would
+            /// reject it. Every other absence stays an error.
+            std::erase_if(statistics, [&](const auto & entry) { return !all_columns.hasPhysical(entry.first); });
             statistics.build(block);
         }
     }
@@ -942,6 +1023,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
+    skipEmptyColumnsOnInsert(columns, block, infos, metadata_snapshot, data_settings, new_data_part->info.isPatch());
+
     for (const auto & [column_name, _] : columns)
     {
         auto & column = block.getByName(column_name);
@@ -960,7 +1043,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     new_data_part->setMinMaxIndex(std::move(minmax_idx));
     new_data_part->is_temp = true;
     /// In case of replicated merge tree with zero copy replication
-    /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+    /// Here ClickHouse claims that this new part can be deleted in temporary state without unlocking the blobs
     /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
     new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 

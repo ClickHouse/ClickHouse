@@ -1,8 +1,9 @@
 ---
-sidebarTitle: 'AWS PrivateLink для ClickPipes'
+sidebarTitle: 'AWS PrivateLink'
+icon: 'aws'
 description: 'Установите защищённое соединение между ClickPipes и источником данных с помощью AWS PrivateLink.'
 slug: /integrations/clickpipes/networking/aws-privatelink
-title: 'AWS PrivateLink для ClickPipes'
+title: 'AWS PrivateLink'
 doc_type: 'guide'
 keywords: ['aws privatelink', 'безопасность ClickPipes', 'конечная точка VPC', 'частное подключение', 'ресурс VPC']
 integration:
@@ -177,7 +178,7 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 Подробнее см. в [руководстве по началу работы](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-getting-started.html).
 
 <Info>
-  Обновите политику кластера MSK и добавьте `072088201116` в список разрешённых субъектов.
+  ClickPipes владеет клиентской VPC и создаёт управляемое VPC-подключение. Чтобы установить сетевое подключение, включите частное подключение multi-VPC в кластере MSK и разрешите доступ аккаунту AWS ClickPipes в политике кластера.
   Подробнее см. в руководстве AWS по [привязке политики кластера](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-cluster-owner-action-policy.html).
 </Info>
 

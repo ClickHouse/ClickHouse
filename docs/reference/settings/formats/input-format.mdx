@@ -514,7 +514,7 @@ Maximum depth of a field in JSON. This is not a strict limit, it does not have t
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "536870912"},{"label": "New setting to limit the maximum size of a single JSON object in bytes"}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "536870912"},{"label": "New setting to limit the maximum size of a single JSON object in bytes"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "536870912"},{"label": "New setting to limit the maximum size of a single JSON object in bytes"}]}]}/>
 
 Maximum allowed size of a single JSON object in bytes. Objects exceeding this limit are rejected as likely malformed. This protects against memory exhaustion when a malformed JSON document is parsed as a single object. The same limit is applied in both parallel and non-parallel parsing paths. Set to 0 to disable the check.
 

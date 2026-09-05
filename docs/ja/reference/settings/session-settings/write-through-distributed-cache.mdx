@@ -14,18 +14,6 @@ import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnly
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="write_through_distributed_cache">
-  ## write_through_distributed_cache
-</div>
-
-<CloudOnlyBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "ClickHouse Cloud 向けの設定"}]}]} />
-
-ClickHouse Cloud でのみ有効です。分散キャッシュへの書き込みを許可します (S3 への書き込みも分散キャッシュ経由で行われます) 。
-
 <div id="write_through_distributed_cache_buffer_size">
   ## write_through_distributed_cache_buffer_size
 </div>

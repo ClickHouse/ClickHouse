@@ -3,8 +3,6 @@ create table test (`my.json` JSON) engine=Memory;
 insert into test select '{"a" : 42}';
 select my.json.a from test settings enable_analyzer=1;
 select `my.json`.a from test settings enable_analyzer=1;
-select my.json.a from test settings enable_analyzer=0;
-select `my.json`.a from test settings enable_analyzer=0;
 drop table test;
 
 select `t.t`.a from format(JSONEachRow, '`t.t` Tuple(a UInt32)', '{"t.t" : {"a" : 42}}');

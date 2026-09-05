@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -73,7 +74,8 @@ std::vector<GroupExpressionPtr> JoinCommutativity::applyImpl(GroupExpressionPtr 
     GroupExpressionPtr expression_with_swapped_inputs = std::make_shared<GroupExpression>(std::move(swapped_join_step));
     expression_with_swapped_inputs->inputs = {expression->inputs[1], expression->inputs[0]};
     expression_with_swapped_inputs->setApplied(*this, {});  /// Mark the swapped join; otherwise the rule would keep swapping it back.
-    memo.getGroup(expression->group_id)->addLogicalExpression(expression_with_swapped_inputs);
+    if (!memo.getGroup(expression->group_id)->addLogicalExpression(expression_with_swapped_inputs))
+        return {};
 
     return {expression_with_swapped_inputs};
 }
