@@ -928,16 +928,18 @@ namespace
 std::vector<String> getAncestors(const String & path)
 {
     /// Walked as a string, because `path` is a znode path rather than a filesystem one: every
-    /// prefix of it that ends just before a `/` is an ancestor, and so is the path itself. The
-    /// root `/` is not reported - there is nothing to create - and a doubled `/` does not start
-    /// a new ancestor. A trailing `/` is not part of the path a caller means.
+    /// prefix of it that ends just before a `/` is an ancestor, and so is the path itself. A
+    /// trailing `/` is not part of the path a caller means, and a run of separators does not
+    /// introduce an extra ancestor. Neither the root `/` of an absolute path nor the first
+    /// component of a relative one is reported - there is nothing above them to create.
     std::vector<String> result;
 
     size_t end = path.size();
     while (end > 0 && path[end - 1] == '/')
         --end;
 
-    for (size_t pos = 1; pos < end; ++pos)
+    const size_t first = path.starts_with('/') ? 1 : path.find('/') + 1;
+    for (size_t pos = first; pos < end; ++pos)
         if (path[pos] == '/' && path[pos - 1] != '/')
             result.push_back(path.substr(0, pos));
 
