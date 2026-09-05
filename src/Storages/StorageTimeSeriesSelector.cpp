@@ -1,6 +1,8 @@
 #include <Storages/StorageTimeSeriesSelector.h>
 
 #include <Common/Exception.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Columns/IColumn.h>
@@ -37,6 +39,9 @@
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
+
+#include <mutex>
+#include <unordered_map>
 
 
 namespace DB
@@ -581,6 +586,69 @@ namespace
             substituteMetricNameInPlace(child, metric_name_value);
     }
 
+    /// Remembers, per tags table and probe shape, that the probe of condition 4 below already found
+    /// a counterexample.
+    ///
+    /// Only that verdict is remembered, never its opposite: reusing it makes the caller return an
+    /// empty condition list, which adds no primary-key range and so can neither exclude a granule
+    /// nor reject a row. A remembered verdict therefore needs no invalidation, and a key collision
+    /// costs at most a missed optimization.
+    ///
+    /// An entry is retired after a fixed number of uses, so a selector that becomes whole-metric
+    /// again is re-probed on the next query of its shape once the entry is exhausted.
+    class WholeMetricProbeNegativeMemo
+    {
+    public:
+        static WholeMetricProbeNegativeMemo & instance()
+        {
+            static WholeMetricProbeNegativeMemo memo;
+            return memo;
+        }
+
+        static UInt128 makeKey(const StorageID & tags_table_id, const IASTHash & probe_shape_hash)
+        {
+            SipHash hash;
+            hash.update(tags_table_id.uuid);
+            hash.update(tags_table_id.database_name);
+            hash.update('\0');
+            hash.update(tags_table_id.table_name);
+            hash.update('\0');
+            hash.update(probe_shape_hash.low64);
+            hash.update(probe_shape_hash.high64);
+            return hash.get128();
+        }
+
+        bool tryUseCounterexampleFound(const UInt128 & key)
+        {
+            std::lock_guard lock{mutex};
+            auto it = remaining_uses.find(key);
+            if (it == remaining_uses.end())
+                return false;
+            if (--it->second == 0)
+                remaining_uses.erase(it);
+            return true;
+        }
+
+        void rememberCounterexampleFound(const UInt128 & key)
+        {
+            std::lock_guard lock{mutex};
+            /// Never raises an existing count: a probe that completes late must not extend a reuse
+            /// window another query is already consuming.
+            if (remaining_uses.contains(key))
+                return;
+            if (remaining_uses.size() >= MAX_ENTRIES)
+                remaining_uses.clear();
+            remaining_uses.emplace(key, MAX_VERDICT_REUSES);
+        }
+
+    private:
+        static constexpr size_t MAX_VERDICT_REUSES = 31;
+        static constexpr size_t MAX_ENTRIES = 16384;
+
+        std::mutex mutex;
+        std::unordered_map<UInt128, size_t, UInt128Hash> remaining_uses TSA_GUARDED_BY(mutex);
+    };
+
     /// Checks whether the selector can carry a primary-key range on the samples table's `id`
     /// column covering the whole metric, and makes the two range conditions if it can.
     ///
@@ -709,6 +777,15 @@ namespace
                     "or", makeASTFunction("not", makeASTForLogicalAnd(std::move(other_matcher_asts))), std::move(counterexample));
             }
 
+            const UInt128 memo_key
+                = WholeMetricProbeNegativeMemo::makeKey(tags_table_id, counterexample->getTreeHash(/*ignore_aliases=*/true));
+            if (WholeMetricProbeNegativeMemo::instance().tryUseCounterexampleFound(memo_key))
+            {
+                LOG_DEBUG(log, "Keeping the id set condition for index analysis: reusing a remembered whole-metric probe result for metric {} of tags table {}",
+                          quoteString(metric_name), tags_table_id.getNameForLogs());
+                return {};
+            }
+
             PrometheusQueryTree::MatcherList name_matcher_only{*name_matcher};
             ASTPtr probe_where = makeASTForLogicalAnd(
                 {makeWhereFilterForTagsTable(name_matcher_only, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, timestamp_data_type),
@@ -751,7 +828,10 @@ namespace
                 while (executor.pull(block))
                 {
                     if (block.rows() > 0)
+                    {
+                        WholeMetricProbeNegativeMemo::instance().rememberCounterexampleFound(memo_key);
                         return {};
+                    }
                 }
             }
             catch (...)
