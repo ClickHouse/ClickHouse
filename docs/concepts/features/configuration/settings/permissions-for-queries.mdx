@@ -125,8 +125,9 @@ belongs to another user, and any `KILL QUERY ... ON CLUSTER`, require the `KILL 
   `allow_ddl`. When it is disabled, executing an introspection function is blocked. Granting the
   `INTROSPECTION` privilege is not blocked.
 - [`allow_non_metadata_alters`](/reference/settings/session-settings/allow#allow_non_metadata_alters)
-  is not a permission setting, but it restricts `ALTER` further: when it is disabled, a command that
-  changes the columns, indexes, projections or TTL of a `MergeTree`-family table is refused if
-  applying it would rewrite data on disk (`DROP COLUMN`, `RENAME COLUMN`, a `MODIFY COLUMN` type
-  change, `MODIFY TTL`). `CLEAR COLUMN`, `CLEAR INDEX` and `CLEAR PROJECTION` are refused too,
-  although they change no metadata.
+  is not a permission setting, but it restricts `ALTER TABLE` further: when it is disabled, a command
+  that alters the table definition is refused on `MergeTree`-family tables if applying it would
+  rewrite data on disk (`DROP COLUMN`, `RENAME COLUMN`, a `MODIFY COLUMN` type change, `MODIFY TTL`).
+  `CLEAR COLUMN`, `CLEAR INDEX` and `CLEAR PROJECTION` are refused too, although they leave the
+  definition unchanged. Statements that are themselves mutations, such as `ALTER TABLE ... DELETE`,
+  `ALTER TABLE ... UPDATE` and `ALTER TABLE ... MATERIALIZE INDEX`, are not affected.
