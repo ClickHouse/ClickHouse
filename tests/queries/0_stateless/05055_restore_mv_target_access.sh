@@ -48,6 +48,9 @@ GRANT BACKUP ON $db.mv_own TO $user;
 GRANT BACKUP ON $db.mv_inner TO $user;
 GRANT BACKUP ON $db.own TO $user;
 GRANT BACKUP ON $db.metrics TO $user;
+-- A Disk(...) backup location is authorized against the DISK source: writing a backup needs WRITE
+-- ON DISK and reading one needs READ ON DISK. Neither half says anything about a view target.
+GRANT READ ON DISK, WRITE ON DISK TO $user;
 -- The inner-table arm needs this under table_engines_require_grant, on CREATE too. It confers no
 -- SELECT or INSERT, so every denial below still comes from the view target.
 GRANT TABLE ENGINE ON MergeTree TO $user;
