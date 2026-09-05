@@ -899,7 +899,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     auto replacement_map = visitor.getReplacementMap();
     const auto & global_in_or_join_nodes = visitor.getGlobalInOrJoinNodes();
 
-    QueryTreeNodePtrWithHashMap<TableNodePtr> global_in_temporary_tables;
+    QueryTreeNodePtrWithHashIgnoreAliasesMap<TableNodePtr> global_in_temporary_tables;
 
     bool enable_add_distinct_to_in_subqueries = planner_context->getQueryContext()->getSettingsRef()[Setting::enable_add_distinct_to_in_subqueries];
 
