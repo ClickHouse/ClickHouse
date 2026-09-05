@@ -1,0 +1,36 @@
+-- compatibility = 26.8
+distributed_cache_min_inflight_bytes_to_discard_connection_on_seek	4194304
+distributed_plan_workers_provisioning_timeout_ms	10000
+patch_parts_version	v2
+query_plan_aggregation_bucket_top_k	1
+query_plan_optimize_lazy_materialization_for_object_storage	1
+use_skip_indexes_on_data_read	1
+-- compatibility = 26.7
+distributed_cache_min_inflight_bytes_to_discard_connection_on_seek	0
+distributed_plan_workers_provisioning_timeout_ms	0
+patch_parts_version	v1
+query_plan_aggregation_bucket_top_k	0
+query_plan_optimize_lazy_materialization_for_object_storage	0
+use_skip_indexes_on_data_read	1
+-- compatibility = 26.1
+distributed_cache_min_inflight_bytes_to_discard_connection_on_seek	0
+distributed_plan_workers_provisioning_timeout_ms	0
+patch_parts_version	v1
+query_plan_aggregation_bucket_top_k	0
+query_plan_optimize_lazy_materialization_for_object_storage	0
+use_skip_indexes_on_data_read	1
+-- compatibility = 25.12
+distributed_cache_min_inflight_bytes_to_discard_connection_on_seek	0
+distributed_plan_workers_provisioning_timeout_ms	0
+patch_parts_version	v1
+query_plan_aggregation_bucket_top_k	0
+query_plan_optimize_lazy_materialization_for_object_storage	0
+use_skip_indexes_on_data_read	0
+-- recorded history
+Session	26.8	distributed_cache_min_inflight_bytes_to_discard_connection_on_seek	0	4194304
+Session	26.8	distributed_plan_workers_provisioning_timeout_ms	0	10000
+MergeTree	26.8	patch_parts_version	v1	v2
+Session	26.8	query_plan_aggregation_bucket_top_k	0	1
+Session	26.8	query_plan_optimize_lazy_materialization_for_object_storage	0	1
+Session	25.9	use_skip_indexes_on_data_read	0	0
+Session	26.1	use_skip_indexes_on_data_read	0	1
