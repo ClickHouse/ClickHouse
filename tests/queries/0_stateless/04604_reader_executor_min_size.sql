@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: the test validates failing read-settings paths around rapid table lifecycle changes.
+
 -- `reader_executor_window_size` / `reader_executor_block_size` below 4 KiB are rejected when the
 -- read settings are loaded (Context::getReadSettings), independent of `use_reader_executor`.
 

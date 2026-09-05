@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel, no-random-detach
 # no-fasttest: needs the s3_cache storage policy.
 # no-parallel: uses a server-wide failpoint that affects all cache writes.
+# no-random-detach: while the failpoint breaks all cache writes, a randomized DETACH/ATTACH cannot
+# re-attach the table; the expected-to-fail SELECT swallows that error and the table stays detached,
+# making the final DROP fail with UNKNOWN_TABLE.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

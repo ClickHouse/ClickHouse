@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-shared-merge-tree, no-parallel-replicas
+-- Tags: no-parallel, no-shared-merge-tree, no-parallel-replicas, no-random-detach
 
 DROP TABLE IF EXISTS t_prewarm_idx_cache_1;
 DROP TABLE IF EXISTS t_prewarm_idx_cache_2;

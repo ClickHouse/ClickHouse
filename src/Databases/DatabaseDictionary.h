@@ -25,10 +25,9 @@ class DatabaseDictionary final : public IDatabase, WithContext
 public:
     DatabaseDictionary(const String & name_, ContextPtr context_);
 
-    String getEngineName() const override
-    {
-        return "Dictionary";
-    }
+    String getEngineName() const override { return "Dictionary"; }
+
+    bool supportsDetachingTables() const override { return false; }
 
     bool isTableExist(const String & table_name, ContextPtr context) const override;
 

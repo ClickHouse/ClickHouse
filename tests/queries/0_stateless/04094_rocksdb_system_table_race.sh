@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: race, no-fasttest, use-rocksdb
+# Tags: race, no-fasttest, use-rocksdb, no-random-detach
+# no-random-detach: race test runs concurrent threads that DROP/CREATE the table; random
+#   DETACH/ATTACH adds extra contention that pushes runtime past the 60s framework timeout.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

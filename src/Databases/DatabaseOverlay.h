@@ -70,6 +70,13 @@ public:
     /// Return false if at least one underlying database is not external, otherwise return true
     bool isExternal() const override;
 
+    /// `clickhouse-local` builds its default database as an Overlay (e.g. `Atomic` + `Filesystem`).
+    /// At least one underlying engine (e.g. `DatabaseFilesystem`) does not implement non-permanent
+    /// `DETACH TABLE`, and the overlay's `attachTable` picks the first underlying database that accepts
+    /// the table, so a detached table is not guaranteed to return to the database it was detached from.
+    /// Be conservative and disallow the randomized `DETACH`/`ATTACH` hook for overlay databases entirely.
+    bool supportsDetachingTables() const override { return false; }
+
     void loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode) override;
     bool supportsLoadingInTopologicalOrder() const override;
     void beforeLoadingMetadata(ContextMutablePtr local_context, LoadingStrictnessLevel mode) override;

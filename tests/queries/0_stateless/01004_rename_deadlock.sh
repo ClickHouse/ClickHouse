@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: deadlock, no-parallel
+# Tags: deadlock, no-parallel, no-random-detach
+# no-random-detach: race condition test, DETACH/ATTACH makes it worse
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

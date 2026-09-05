@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-random-detach, no-flaky-check
+# no-random-detach: test checks query plan
+# no-flaky-check: consistently exceeds the 180 s per-run budget of the flaky check under TSan
+# (three timeouts in one run); this PR-driven run only added a tag, the test itself is unchanged
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

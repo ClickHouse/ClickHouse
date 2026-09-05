@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-random-detach
+# no-random-detach: test uses limited permissions
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

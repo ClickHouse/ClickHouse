@@ -2213,12 +2213,22 @@ def get_random_settings_diagnostics_results_path(args):
     )
 
 
-def save_random_settings_artifact(args, test_name, settings, mt_settings):
+def save_random_settings_artifact(
+    args, test_name, settings, mt_settings,
+    randomize_detach=False, reattach_tables_probability=0.0,
+):
     """Append a failed test's random settings to the diagnostics JSONL file."""
     entry = {
         "test_name": test_name,
         "settings": {k: str(v) for k, v in settings.items()},
         "merge_tree_settings": {k: str(v) for k, v in mt_settings.items()},
+        # Capture the DETACH/ATTACH randomization state so that diagnosis can
+        # faithfully reproduce a detach-induced failure and tell it apart from a
+        # settings-induced one (this is a second, independent randomization channel).
+        "randomize_detach": bool(randomize_detach),
+        "reattach_tables_probability": (
+            reattach_tables_probability if randomize_detach else 0.0
+        ),
     }
     path = get_random_settings_diagnostics_path(args)
     line = json.dumps(entry, ensure_ascii=False)
@@ -2529,16 +2539,29 @@ class TestCase:
 
     def add_effective_settings(self, client_options):
         new_options = ""
+        detach_http_params = ""
+        if self.randomize_detach:
+            new_options += f" --reattach_tables_before_query_execution_probability {self.reattach_tables_probability}"
+            detach_http_params = f"reattach_tables_before_query_execution_probability={self.reattach_tables_probability}"
+
         if self.effective_settings:
             http_params = self.http_format_settings(self.effective_settings)
+            if detach_http_params:
+                http_params = detach_http_params + "&" + http_params
             if len(self.base_url_params) == 0:
                 os.environ["CLICKHOUSE_URL_PARAMS"] = http_params
             else:
                 os.environ["CLICKHOUSE_URL_PARAMS"] = (
                     self.base_url_params + "&" + http_params
                 )
-
             new_options += f" {self.cli_format_settings(self.effective_settings)}"
+        elif detach_http_params:
+            if len(self.base_url_params) == 0:
+                os.environ["CLICKHOUSE_URL_PARAMS"] = detach_http_params
+            else:
+                os.environ["CLICKHOUSE_URL_PARAMS"] = (
+                    self.base_url_params + "&" + detach_http_params
+                )
 
         if self.effective_merge_tree_settings:
             new_options += f" --allow_merge_tree_settings {self.cli_format_settings(self.effective_merge_tree_settings)}"
@@ -2548,8 +2571,12 @@ class TestCase:
         # --allow_repeated_settings, the last occurrence is what takes effect.
         if new_options != "":
             new_options += " --allow_repeated_settings"
+            # Keep `client_options` (e.g. stress-job settings for `.sh` tests) in the exported variable.
+            # `randomize_detach` makes `new_options` non-empty for almost every test, so this branch is taken
+            # nearly always; dropping `client_options` here would stop them reaching `$CLICKHOUSE_CLIENT`.
+            # Put it last so user-supplied `--client-option` values win (last wins with --allow_repeated_settings).
             os.environ["CLICKHOUSE_CLIENT_OPT"] = (
-                new_options + " " + self.base_client_options + " "
+                new_options + " " + self.base_client_options + " " + client_options + " "
             )
         elif client_options:
             client_options += " --allow_repeated_settings"
@@ -2575,20 +2602,32 @@ class TestCase:
         os.environ["CLICKHOUSE_CLIENT_OPT"] = self.base_client_options
 
     def add_info_about_settings(self, description):
+        if self.randomize_detach:
+            description += f"\nRandomization of DETACH/ATTACH tables is used with probability: {self.reattach_tables_probability}\n"
         if self.effective_settings:
-            description += f"\nSettings used in the test: {self.cli_format_settings(self.effective_settings)}"
+            description += f"\nSettings used in the test: {self.cli_format_settings(self.effective_settings)}\n"
         if self.effective_merge_tree_settings:
-            description += f"\n\nMergeTree settings used in test: {self.cli_format_settings(self.effective_merge_tree_settings)}"
+            description += f"\nMergeTree settings used in test: {self.cli_format_settings(self.effective_merge_tree_settings)}\n"
 
         return description + "\n"
 
-    def _run_with_settings(self, args, suite, client_options, settings, mt_settings):
-        """Re-run this test with specific effective settings, returning the TestResult."""
+    def _run_with_settings(
+        self, args, suite, client_options, settings, mt_settings, randomize_detach=None
+    ):
+        """Re-run this test with specific effective settings, returning the TestResult.
+
+        `randomize_detach` overrides the DETACH/ATTACH randomization for this rerun
+        (`None` keeps the current state); it is a separate randomization channel from
+        the settings, so callers must control it explicitly to get a clean baseline.
+        """
         saved_settings = self.effective_settings
         saved_mt_settings = self.effective_merge_tree_settings
         saved_runs_count = self.runs_count
+        saved_randomize_detach = self.randomize_detach
         self.effective_settings = settings
         self.effective_merge_tree_settings = mt_settings
+        if randomize_detach is not None:
+            self.randomize_detach = randomize_detach
         try:
             result = self.run(args, suite, client_options)
             # Don't let diagnosis reruns trigger further retries
@@ -2598,8 +2637,11 @@ class TestCase:
             self.effective_settings = saved_settings
             self.effective_merge_tree_settings = saved_mt_settings
             self.runs_count = saved_runs_count
+            self.randomize_detach = saved_randomize_detach
 
-    def _run_within_budget(self, args, suite, client_options, settings, mt_settings):
+    def _run_within_budget(
+        self, args, suite, client_options, settings, mt_settings, randomize_detach=None
+    ):
         """Run the test repeatedly within the step time budget.
 
         Respects both the per-step budget and the global stop_time limit.
@@ -2617,7 +2659,7 @@ class TestCase:
         timed_out = False
         while time() < deadline:
             result = self._run_with_settings(
-                args, suite, client_options, settings, mt_settings
+                args, suite, client_options, settings, mt_settings, randomize_detach
             )
             if result.status == TestStatus.FAIL:
                 fail_count += 1
@@ -2635,46 +2677,133 @@ class TestCase:
         return args.stop_time and time() > args.stop_time
 
     def diagnose_random_settings(self, args, suite, client_options):
-        """Diagnose which randomized settings caused a test failure.
+        """Diagnose which randomization caused a test failure.
 
         Uses a time-budget approach: each step runs the test as many times as
         possible within a configurable time budget to handle sporadic failures
         reliably. Respects the global stop_time limit.
 
+        There are two independent randomization channels: randomized settings and
+        the DETACH/ATTACH-before-query feature. Both are accounted for here.
+
         Algorithm:
-        1. Re-run with the same settings to confirm reproducibility.
-        2. Re-run without any randomization to confirm the failure is settings-related.
-        3. If step 1 has failures and step 2 does not, minimize the settings via
-           ddmin (delta debugging) to find the minimal set that triggers the failure.
+        1. Re-run reproducing the original randomization (same settings and the
+           original DETACH/ATTACH state) to confirm reproducibility. A mix of
+           passes and failures ends the diagnosis only when DETACH/ATTACH
+           randomization was off: when it was on, the hook fires with probability
+           `reattach_tables_probability`, so a mixed outcome is the normal shape of
+           a failure it causes and the following steps have to run anyway.
+        2. Re-run without any randomization to confirm the failure is
+           randomization-related.
+        3. If DETACH/ATTACH randomization was active, check whether the randomized
+           settings alone (without DETACH/ATTACH) still reproduce the failure, to
+           attribute it to the right channel.
+        4. If the settings are the culprit, minimize them via ddmin (delta
+           debugging) to find the minimal set that triggers the failure.
 
         Returns a diagnosis string to append to the test description.
         """
         failed_settings = dict(self.effective_settings)
         failed_mt_settings = dict(self.effective_merge_tree_settings)
+        failed_detach = bool(self.randomize_detach)
 
         step_budget = args.diagnose_random_settings_step_time_budget
 
-        # No randomized settings — rerun up to 3 times to check reproducibility.
+        # No randomized settings — the only remaining randomization channel is
+        # DETACH/ATTACH (if it was active).
         if not failed_settings and not failed_mt_settings:
-            max_reruns = 3
-            fail_count = 0
-            for i in range(max_reruns):
-                result = self._run_with_settings(args, suite, client_options, {}, {})
-                if result.status == TestStatus.FAIL:
-                    fail_count += 1
-            return (
-                f"--- Failure reproducibility check ---\n"
-                f"Failed {fail_count} out of {max_reruns} reruns.\n"
+            if not failed_detach:
+                # Nothing was randomized — plain reproducibility check.
+                max_reruns = 3
+                fail_count = 0
+                for i in range(max_reruns):
+                    result = self._run_with_settings(
+                        args, suite, client_options, {}, {}, randomize_detach=False
+                    )
+                    if result.status == TestStatus.FAIL:
+                        fail_count += 1
+                return (
+                    f"--- Failure reproducibility check ---\n"
+                    f"Failed {fail_count} out of {max_reruns} reruns.\n"
+                )
+
+            # Only DETACH/ATTACH randomization was active: compare runs with and
+            # without it to decide whether it is the trigger.
+            diagnosis_lines = ["--- DETACH/ATTACH randomization diagnosis ---"]
+            diagnosis_lines.append(
+                f"Step 1: Re-running with DETACH/ATTACH randomization (budget: {step_budget}s)..."
             )
+            fail1, ok1, other1, total1, timed_out = self._run_within_budget(
+                args, suite, client_options, {}, {}, randomize_detach=True
+            )
+            diagnosis_lines.append(
+                f"  Runs: {total1}, Failed: {fail1}, Passed: {ok1}, Other: {other1}"
+            )
+            if timed_out:
+                diagnosis_lines.append("Result: Inconclusive (global time limit reached).")
+                return "\n".join(diagnosis_lines) + "\n"
+            if fail1 == 0:
+                diagnosis_lines.append(
+                    "Result: All reruns passed. The failure is not reproducible (likely a transient issue)."
+                    if ok1 > 0
+                    else "Result: No failures, but no clean passes either. Inconclusive."
+                )
+                return "\n".join(diagnosis_lines) + "\n"
+            if ok1 > 0:
+                # A mix of passes and failures is the *expected* shape of a
+                # DETACH/ATTACH-induced failure: the hook fires with probability
+                # `reattach_tables_probability`, so the reruns where it does not fire
+                # pass. Stopping here would report a generic flake and never compare
+                # against the no-DETACH/ATTACH baseline, which is the only thing that
+                # can attribute the failure to this randomization channel.
+                diagnosis_lines.append(
+                    f"  Mixed outcome ({fail1}/{total1} reruns failed) — expected when the hook "
+                    f"fires with probability {self.reattach_tables_probability}; "
+                    f"continuing to the baseline."
+                )
+            else:
+                diagnosis_lines.append(
+                    "Result: Failure is reproducible with DETACH/ATTACH randomization."
+                )
+            if self._is_global_deadline_reached(args):
+                diagnosis_lines.append("Stopping diagnosis: global time limit reached.")
+                return "\n".join(diagnosis_lines) + "\n"
+
+            diagnosis_lines.append(
+                f"Step 2: Re-running without DETACH/ATTACH randomization (budget: {step_budget}s)..."
+            )
+            fail2, ok2, other2, total2, timed_out = self._run_within_budget(
+                args, suite, client_options, {}, {}, randomize_detach=False
+            )
+            diagnosis_lines.append(
+                f"  Runs: {total2}, Failed: {fail2}, Passed: {ok2}, Other: {other2}"
+            )
+            if timed_out:
+                diagnosis_lines.append("Result: Inconclusive (global time limit reached).")
+            elif fail2 > 0:
+                diagnosis_lines.append(
+                    "Result: Test also fails without DETACH/ATTACH randomization (not a randomization issue)."
+                )
+            elif ok2 == 0:
+                diagnosis_lines.append(
+                    "Result: No failures, but no clean passes either. Inconclusive."
+                )
+            else:
+                diagnosis_lines.append(
+                    "Result: Passes without randomization. Confirmed: the failure is caused by DETACH/ATTACH randomization."
+                )
+            return "\n".join(diagnosis_lines) + "\n"
 
         diagnosis_lines = ["--- Randomized settings diagnosis ---"]
 
-        # Step 1: Re-run with the same settings within the time budget
+        # Step 1: Re-run reproducing the original randomization (same settings and
+        # the original DETACH/ATTACH state) within the time budget.
         diagnosis_lines.append(
             f"Step 1: Re-running with the same randomized settings (budget: {step_budget}s)..."
         )
         fail1, ok1, other1, total1, timed_out = self._run_within_budget(
-            args, suite, client_options, failed_settings, failed_mt_settings
+            args, suite, client_options, failed_settings, failed_mt_settings,
+            randomize_detach=failed_detach,
         )
         diagnosis_lines.append(
             f"  Runs: {total1}, Failed: {fail1}, Passed: {ok1}, Other: {other1}"
@@ -2692,24 +2821,36 @@ class TestCase:
                     "Result: No failures, but no clean passes either. Inconclusive."
                 )
             return "\n".join(diagnosis_lines) + "\n"
-        if ok1 > 0:
+        if ok1 > 0 and not failed_detach:
             diagnosis_lines.append(
                 f"Result: Failure is flaky ({fail1}/{total1} reruns failed)."
             )
             return "\n".join(diagnosis_lines) + "\n"
 
-        diagnosis_lines.append("Result: Failure is reproducible.")
+        if ok1 > 0:
+            # DETACH/ATTACH randomization was active as well, and it only fires with
+            # probability `reattach_tables_probability`, so a mix of passes and
+            # failures is expected here. Keep going: the baseline and the
+            # settings-only rerun below are what attribute the failure to a channel.
+            diagnosis_lines.append(
+                f"  Mixed outcome ({fail1}/{total1} reruns failed) — expected when the hook "
+                f"fires with probability {self.reattach_tables_probability}; "
+                f"continuing to the baseline."
+            )
+        else:
+            diagnosis_lines.append("Result: Failure is reproducible.")
 
         if self._is_global_deadline_reached(args):
             diagnosis_lines.append("Stopping diagnosis: global time limit reached.")
             return "\n".join(diagnosis_lines) + "\n"
 
-        # Step 2: Re-run without any randomization within the time budget
+        # Step 2: Re-run without any randomization (settings AND DETACH/ATTACH)
+        # within the time budget.
         diagnosis_lines.append(
             f"Step 2: Re-running without randomized settings (budget: {step_budget}s)..."
         )
         fail2, ok2, other2, total2, timed_out = self._run_within_budget(
-            args, suite, client_options, {}, {}
+            args, suite, client_options, {}, {}, randomize_detach=False
         )
         diagnosis_lines.append(
             f"  Runs: {total2}, Failed: {fail2}, Passed: {ok2}, Other: {other2}"
@@ -2719,7 +2860,7 @@ class TestCase:
             return "\n".join(diagnosis_lines) + "\n"
         if fail2 > 0:
             diagnosis_lines.append(
-                "Result: Test also fails without randomized settings (not a randomization issue)."
+                "Result: Test also fails without randomization (not a randomization issue)."
             )
             return "\n".join(diagnosis_lines) + "\n"
         if ok2 == 0:
@@ -2728,15 +2869,50 @@ class TestCase:
             )
             return "\n".join(diagnosis_lines) + "\n"
 
-        diagnosis_lines.append(
-            "Result: Passes without randomization. Confirmed: the failure is caused by randomized settings."
-        )
+        if failed_detach:
+            diagnosis_lines.append(
+                "Result: Passes without randomization. The failure is caused by randomized settings and/or DETACH/ATTACH randomization."
+            )
+            if self._is_global_deadline_reached(args):
+                diagnosis_lines.append("Stopping diagnosis: global time limit reached.")
+                return "\n".join(diagnosis_lines) + "\n"
+
+            # Step 2b: DETACH/ATTACH randomization was also active. Check whether
+            # the randomized settings alone (without DETACH/ATTACH) still reproduce
+            # the failure, to attribute it to the right channel.
+            diagnosis_lines.append(
+                f"Step 2b: Re-running with the randomized settings but without DETACH/ATTACH randomization (budget: {step_budget}s)..."
+            )
+            faild, okd, otherd, totald, timed_out = self._run_within_budget(
+                args, suite, client_options, failed_settings, failed_mt_settings,
+                randomize_detach=False,
+            )
+            diagnosis_lines.append(
+                f"  Runs: {totald}, Failed: {faild}, Passed: {okd}, Other: {otherd}"
+            )
+            if timed_out:
+                diagnosis_lines.append("Result: Inconclusive (global time limit reached).")
+                return "\n".join(diagnosis_lines) + "\n"
+            if faild == 0:
+                diagnosis_lines.append(
+                    "Result: The failure requires DETACH/ATTACH randomization "
+                    "(it does not reproduce with the randomized settings alone)."
+                )
+                return "\n".join(diagnosis_lines) + "\n"
+            diagnosis_lines.append(
+                "  The randomized settings reproduce the failure without DETACH/ATTACH; minimizing settings."
+            )
+        else:
+            diagnosis_lines.append(
+                "Result: Passes without randomization. Confirmed: the failure is caused by randomized settings."
+            )
 
         if self._is_global_deadline_reached(args):
             diagnosis_lines.append("Stopping diagnosis: global time limit reached.")
             return "\n".join(diagnosis_lines) + "\n"
 
-        # Step 3: Minimize settings via ddmin (delta debugging)
+        # Step 3: Minimize settings via ddmin (delta debugging), with DETACH/ATTACH
+        # randomization disabled so it cannot confound the settings isolation.
         minimize_budget = args.diagnose_random_settings_minimize_budget
         diagnosis_lines.append(
             f"Step 3: Minimizing settings to find the culprit(s) (budget: {minimize_budget}s)..."
@@ -2757,11 +2933,11 @@ class TestCase:
         if failed_settings and failed_mt_settings:
             # Test regular settings alone (no MergeTree settings)
             result_regular_only = self._run_with_settings(
-                args, suite, client_options, failed_settings, {}
+                args, suite, client_options, failed_settings, {}, randomize_detach=False
             )
             # Test MergeTree settings alone (no regular settings)
             result_mt_only = self._run_with_settings(
-                args, suite, client_options, {}, failed_mt_settings
+                args, suite, client_options, {}, failed_mt_settings, randomize_detach=False
             )
 
             regular_alone_fails = result_regular_only.status == TestStatus.FAIL
@@ -2786,6 +2962,7 @@ class TestCase:
                 failed_settings, failed_mt_settings if minimize_mt else {},
                 is_merge_tree=False,
                 deadline=minimize_deadline,
+                randomize_detach=False,
             )
             minimize_hit_limit = minimize_hit_limit or hit_limit
 
@@ -2797,6 +2974,7 @@ class TestCase:
                 failed_settings if minimize_regular else {}, failed_mt_settings,
                 is_merge_tree=True,
                 deadline=minimize_deadline,
+                randomize_detach=False,
             )
             minimize_hit_limit = minimize_hit_limit or hit_limit
 
@@ -2834,7 +3012,7 @@ class TestCase:
     def _minimize_settings(
         self, args, suite, client_options,
         all_settings, all_mt_settings, is_merge_tree,
-        deadline,
+        deadline, randomize_detach=None,
     ):
         """Delta-debugging (ddmin) minimization for one settings category.
 
@@ -2858,11 +3036,13 @@ class TestCase:
         def run_with_subset(subset_dict):
             if is_merge_tree:
                 return self._run_with_settings(
-                    args, suite, client_options, other_settings, subset_dict
+                    args, suite, client_options, other_settings, subset_dict,
+                    randomize_detach=randomize_detach,
                 )
             else:
                 return self._run_with_settings(
-                    args, suite, client_options, subset_dict, other_mt_settings
+                    args, suite, client_options, subset_dict, other_mt_settings,
+                    randomize_detach=randomize_detach,
                 )
 
         def is_deadline_reached():
@@ -2965,10 +3145,15 @@ class TestCase:
         # Set by `process_result_impl`; read by `retry_matcher_input`.
         self.debug_log_retry_substitution = None
 
+        has_no_random_detach_tag = self.tags and "no-random-detach" in self.tags
         has_no_random_settings_tag = self.tags and "no-random-settings" in self.tags
         has_no_random_merge_tree_settings_tag = (
             self.tags and "no-random-merge-tree-settings" in self.tags
         )
+
+        self.randomize_detach = not (args.no_random_detach or has_no_random_detach_tag)
+        if self.randomize_detach:
+            self.reattach_tables_probability = args.reattach_tables_probability
 
         allow_random_settings = not (args.no_random_settings or has_no_random_settings_tag)
         # If test contains SHOW CREATE TABLE do not
@@ -4836,9 +5021,21 @@ def run_diagnose_from_artifacts(args, stop_testing):
 
             test_case = TestCase(test_suite, case, args, False)
 
-            # Override settings with the saved artifact values (disable randomization)
+            # Override settings with the saved artifact values.
             test_case.effective_settings = settings
             test_case.effective_merge_tree_settings = mt_settings
+            # Restore the DETACH/ATTACH randomization state captured for the failing
+            # run so that diagnosis can faithfully reproduce a detach-induced failure
+            # and attribute it correctly. Older artifacts without this field default
+            # to disabled. `diagnose_random_settings` controls the state explicitly
+            # per step (on to reproduce, off for the clean baseline).
+            test_case.randomize_detach = bool(entry.get("randomize_detach", False))
+            if test_case.randomize_detach:
+                test_case.reattach_tables_probability = float(
+                    entry.get(
+                        "reattach_tables_probability", args.reattach_tables_probability
+                    )
+                )
 
             client_options = get_additional_client_options(args)
 
@@ -4869,6 +5066,12 @@ def run_diagnose_from_artifacts(args, stop_testing):
                 label = ""
             elif "Culprit settings:" in diagnosis or "Culprit MergeTree settings:" in diagnosis:
                 label = "setting"
+            elif "caused by DETACH/ATTACH randomization" in diagnosis or (
+                "requires DETACH/ATTACH randomization" in diagnosis
+            ):
+                # Attributed to the DETACH/ATTACH channel — a real, reproducible
+                # finding, not a transient one.
+                label = "reproducible"
             elif "Failure is flaky" in diagnosis or "not reproducible" in diagnosis.lower():
                 label = "flaky"
             elif (
@@ -5106,6 +5309,8 @@ def run_tests_array(
                     test_case.name,
                     test_case.effective_settings,
                     test_case.effective_merge_tree_settings,
+                    test_case.randomize_detach,
+                    getattr(test_case, "reattach_tables_probability", 0.0),
                 )
 
             # First print the description, then invoke the check result logic
@@ -7235,6 +7440,18 @@ def parse_args():
         action="store_true",
         default=False,
         help="Disable MergeTree settings randomization",
+    )
+    parser.add_argument(
+        "--no-random-detach",
+        action="store_true",
+        default=False,
+        help="Disable randomization of DETACH/ATTACH",
+    )
+    parser.add_argument(
+        "--reattach-tables-probability",
+        type=float,
+        default=0.1,
+        help="Probability of enabling table reattach before query execution when the setting is disabled",
     )
     parser.add_argument(
         "--random-settings-diagnostics-dir",

@@ -1,5 +1,6 @@
--- Tags: no-fasttest, no-parallel-replicas
+-- Tags: no-fasttest, no-parallel-replicas, no-random-detach
 -- no-fasttest: 'countmin' sketches need a 3rd party library
+-- no-random-detach: prewhere ordering relies on materialized statistics; a forced DETACH/ATTACH can reset the cached statistics estimator and change the plan shape.
 
 SET explain_query_plan_default = 'legacy';
 SET allow_statistics = 1;

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-msan, no-azure-blob-storage, no-random-settings
+# Tags: no-fasttest, long, no-msan, no-azure-blob-storage, no-random-settings, no-random-detach
 # no-azure-blob-storage: too slow
 # no-msan: it is too slow
 # no-random-settings: this test is already slow, and randomized settings make it slower
+# no-random-detach: long test, DETACH/ATTACH adds too much overhead
 
 set -e
 

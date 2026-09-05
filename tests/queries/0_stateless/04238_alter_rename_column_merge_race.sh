@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-settings, no-random-merge-tree-settings
+# Tags: long, no-random-settings, no-random-merge-tree-settings, no-random-detach
+# no-random-detach: this deliberately races ALTER RENAME COLUMN against a concurrent
+# merge; a random DETACH/ATTACH mid-operation reloads intersecting parts
+# (Part A intersects next part B), which is unrelated to what the test checks.
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/80648
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

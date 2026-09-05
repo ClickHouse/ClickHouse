@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest, no-object-storage, no-random-settings
+# Tags: no-parallel, no-fasttest, no-object-storage, no-random-settings, no-random-detach
+# no-random-detach: test checks cache state
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 

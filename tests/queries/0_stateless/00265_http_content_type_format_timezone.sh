@@ -4,7 +4,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-CLICKHOUSE_TIMEZONE_ESCAPED=$($CLICKHOUSE_CLIENT --query="SELECT timezone()" | sed 's/[]\/$*.^+:()[]/\\&/g')
+CLICKHOUSE_TIMEZONE_ESCAPED=$($CLICKHOUSE_CLIENT --query="SELECT serverTimezone()" | sed 's/[]\/$*.^+:()[]/\\&/g')
+
+# Remove randomized session_timezone from URL so that X-ClickHouse-Timezone header matches the server timezone
+CLICKHOUSE_URL_WO_SESSION_TZ_1=$(echo "${CLICKHOUSE_URL}" | sed 's/\&session_timezone\=[A-Za-z0-9\/\%\_\-\+\-]*//g' | sed 's/\?session_timezone\=[A-Za-z0-9\/\%\_\-\+\-]*\&/\?/g')
 
 tmpdir="$(mktemp -d "${CLICKHOUSE_TMP}/00265_http_content_type_format_timezone.XXXXXX")"
 trap 'rm -rf "$tmpdir"' EXIT
@@ -32,13 +35,13 @@ curl_headers() {
     cat "$tmpdir/diag"
 }
 
-curl_headers "${CLICKHOUSE_URL}&default_format=JSONCompact" --data-binary @- <<< "SELECT 1" | grep -e '< Content-Type' -e '< X-ClickHouse-Format' -e '< X-ClickHouse-Timezone' | sed "s|$CLICKHOUSE_TIMEZONE_ESCAPED|CLICKHOUSE_TIMEZONE|" | sed 's/\r$//' | sort;
-curl_headers "${CLICKHOUSE_URL}" --data-binary @- <<< "SELECT 1 FORMAT JSON"         | grep -e '< Content-Type' -e '< X-ClickHouse-Format' -e '< X-ClickHouse-Timezone' | sed "s|$CLICKHOUSE_TIMEZONE_ESCAPED|CLICKHOUSE_TIMEZONE|" | sed 's/\r$//' | sort;
-curl_headers "${CLICKHOUSE_URL}" --data-binary @- <<< "SELECT 1"                     | grep -e '< Content-Type' -e '< X-ClickHouse-Format' -e '< X-ClickHouse-Timezone' | sed "s|$CLICKHOUSE_TIMEZONE_ESCAPED|CLICKHOUSE_TIMEZONE|" | sed 's/\r$//' | sort;
-curl_headers "${CLICKHOUSE_URL}" --data-binary @- <<< "SELECT 1 FORMAT TabSeparated" | grep -e '< Content-Type' -e '< X-ClickHouse-Format' -e '< X-ClickHouse-Timezone' | sed "s|$CLICKHOUSE_TIMEZONE_ESCAPED|CLICKHOUSE_TIMEZONE|" | sed 's/\r$//' | sort;
-curl_headers "${CLICKHOUSE_URL}" --data-binary @- <<< "SELECT 1 FORMAT Vertical"     | grep -e '< Content-Type' -e '< X-ClickHouse-Format' -e '< X-ClickHouse-Timezone' | sed "s|$CLICKHOUSE_TIMEZONE_ESCAPED|CLICKHOUSE_TIMEZONE|" | sed 's/\r$//' | sort;
-curl_headers "${CLICKHOUSE_URL}" --data-binary @- <<< "SELECT 1 FORMAT Native"       | grep -e '< Content-Type' -e '< X-ClickHouse-Format' -e '< X-ClickHouse-Timezone' | sed "s|$CLICKHOUSE_TIMEZONE_ESCAPED|CLICKHOUSE_TIMEZONE|" | sed 's/\r$//' | sort;
-curl_headers "${CLICKHOUSE_URL}" --data-binary @- <<< "SELECT 1 FORMAT RowBinary"    | grep -e '< Content-Type' -e '< X-ClickHouse-Format' -e '< X-ClickHouse-Timezone' | sed "s|$CLICKHOUSE_TIMEZONE_ESCAPED|CLICKHOUSE_TIMEZONE|" | sed 's/\r$//' | sort;
+curl_headers "${CLICKHOUSE_URL_WO_SESSION_TZ_1}&default_format=JSONCompact" --data-binary @- <<< "SELECT 1" | grep -e '< Content-Type' -e '< X-ClickHouse-Format' -e '< X-ClickHouse-Timezone' | sed "s|$CLICKHOUSE_TIMEZONE_ESCAPED|CLICKHOUSE_TIMEZONE|" | sed 's/\r$//' | sort;
+curl_headers "${CLICKHOUSE_URL_WO_SESSION_TZ_1}" --data-binary @- <<< "SELECT 1 FORMAT JSON"         | grep -e '< Content-Type' -e '< X-ClickHouse-Format' -e '< X-ClickHouse-Timezone' | sed "s|$CLICKHOUSE_TIMEZONE_ESCAPED|CLICKHOUSE_TIMEZONE|" | sed 's/\r$//' | sort;
+curl_headers "${CLICKHOUSE_URL_WO_SESSION_TZ_1}" --data-binary @- <<< "SELECT 1"                     | grep -e '< Content-Type' -e '< X-ClickHouse-Format' -e '< X-ClickHouse-Timezone' | sed "s|$CLICKHOUSE_TIMEZONE_ESCAPED|CLICKHOUSE_TIMEZONE|" | sed 's/\r$//' | sort;
+curl_headers "${CLICKHOUSE_URL_WO_SESSION_TZ_1}" --data-binary @- <<< "SELECT 1 FORMAT TabSeparated" | grep -e '< Content-Type' -e '< X-ClickHouse-Format' -e '< X-ClickHouse-Timezone' | sed "s|$CLICKHOUSE_TIMEZONE_ESCAPED|CLICKHOUSE_TIMEZONE|" | sed 's/\r$//' | sort;
+curl_headers "${CLICKHOUSE_URL_WO_SESSION_TZ_1}" --data-binary @- <<< "SELECT 1 FORMAT Vertical"     | grep -e '< Content-Type' -e '< X-ClickHouse-Format' -e '< X-ClickHouse-Timezone' | sed "s|$CLICKHOUSE_TIMEZONE_ESCAPED|CLICKHOUSE_TIMEZONE|" | sed 's/\r$//' | sort;
+curl_headers "${CLICKHOUSE_URL_WO_SESSION_TZ_1}" --data-binary @- <<< "SELECT 1 FORMAT Native"       | grep -e '< Content-Type' -e '< X-ClickHouse-Format' -e '< X-ClickHouse-Timezone' | sed "s|$CLICKHOUSE_TIMEZONE_ESCAPED|CLICKHOUSE_TIMEZONE|" | sed 's/\r$//' | sort;
+curl_headers "${CLICKHOUSE_URL_WO_SESSION_TZ_1}" --data-binary @- <<< "SELECT 1 FORMAT RowBinary"    | grep -e '< Content-Type' -e '< X-ClickHouse-Format' -e '< X-ClickHouse-Timezone' | sed "s|$CLICKHOUSE_TIMEZONE_ESCAPED|CLICKHOUSE_TIMEZONE|" | sed 's/\r$//' | sort;
 
 curl_headers "${CLICKHOUSE_URL}" --data-binary @- <<< "SELECT timezone() SETTINGS session_timezone='Europe/Berlin'" | grep '< X-ClickHouse-Timezone' | grep -v 'GET' | tr -d '\r';
 curl_headers "${CLICKHOUSE_URL}" --data-binary @- <<< "SELECT timezone() SETTINGS session_timezone='Africa/Cairo'"  | grep '< X-ClickHouse-Timezone' | grep -v 'GET' | tr -d '\r';

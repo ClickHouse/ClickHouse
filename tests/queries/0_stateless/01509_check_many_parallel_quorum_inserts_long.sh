@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database
+# Tags: long, no-replicated-database, no-random-detach
 # Tag no-replicated-database: Fails due to additional replicas or shards
 
 set -e

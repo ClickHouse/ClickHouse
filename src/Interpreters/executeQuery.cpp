@@ -17,10 +17,13 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/SignalHandlers.h>
 #include <Common/Stopwatch.h>
+#include <Common/atomicRename.h>
 #include <Common/scope_guard_safe.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
@@ -32,20 +35,34 @@
 #include <Processors/Formats/Impl/NullFormat.h>
 
 #include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTWithElement.h>
+#include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTHypotheticalObjectQuery.h>
+#include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTUndropQuery.h>
+#include <Parsers/ASTUpdateQuery.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -62,6 +79,8 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledQuota.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
@@ -85,8 +104,24 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
+#include <Databases/DatabaseOnDisk.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/getTableExpressions.h>
+#include <Interpreters/misc.h>
+#include <Interpreters/ActionLocksManager.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+#include <Storages/IStorage.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/MutationCommands.h>
+#include <Storages/PartitionCommands.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Interpreters/IInterpreter.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
+#include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -108,6 +143,8 @@
 #include <Processors/Formats/Framing/FramingFormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <unordered_map>
+#include <unordered_set>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -170,7 +207,11 @@ namespace Setting
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
+    extern const SettingsBool allow_materialized_view_with_bad_select;
     extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsBool create_index_ignore_unique;
+    extern const SettingsDefaultTableEngine default_table_engine;
+    extern const SettingsDefaultTableEngine default_temporary_table_engine;
     extern const SettingsBool ast_fuzzer_any_query;
     extern const SettingsBool ast_fuzzer_oracle;
     extern const SettingsFloat ast_fuzzer_runs;
@@ -186,6 +227,7 @@ namespace Setting
     extern const SettingsString framing_output_format;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsBool implicit_transaction;
+    extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsOverflowMode join_overflow_mode;
@@ -220,6 +262,8 @@ namespace Setting
     extern const SettingsInt64 query_metric_log_interval;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
+    extern const SettingsBool reattach_tables_before_query_execution;
+    extern const SettingsFloat reattach_tables_before_query_execution_probability;
     extern const SettingsOverflowMode result_overflow_mode;
     extern const SettingsBool run_query_in_background;
     extern const SettingsLogsLevel send_logs_level;
@@ -259,11 +303,22 @@ namespace Setting
     extern const SettingsDouble page;
     extern const SettingsDouble limit;
     extern const SettingsDouble offset;
+    extern const SettingsBool enable_lightweight_delete;
+    extern const SettingsLightweightDeleteMode lightweight_delete_mode;
+    extern const SettingsBool enable_lightweight_update;
+    extern const SettingsAlterUpdateMode alter_update_mode;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
 }
 
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
+    extern const ServerSettingsBool ignore_empty_sql_security_in_create_view_query;
+    extern const ServerSettingsBool disable_insertion_and_mutation;
 }
 
 namespace ErrorCodes
@@ -283,6 +338,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int UNSUPPORTED_PARAMETER;
     extern const int FAULT_INJECTED;
+    extern const int UNKNOWN_TABLE;
     extern const int QUERY_IS_PROHIBITED;
 }
 
@@ -1220,6 +1276,2005 @@ private:
 
 using ImplicitTransactionControlExecutorPtr = std::shared_ptr<ImplicitTransactionControlExecutor>;
 
+namespace
+{
+
+/// The object kind a query reference demands from the table it names. `EXISTS VIEW` / `SHOW CREATE VIEW`
+/// and `EXISTS DICTIONARY` / `SHOW CREATE DICTIONARY` are metadata probes for a specific object kind: on a
+/// name that resolves to a plain table they answer `0` or fail without ever touching that table's storage,
+/// so reattaching the table first would be a side effect the outer query never implies. The reattach loop
+/// skips a collected table whose resolved storage does not match the expected kind.
+enum class ExpectedObjectKind : uint8_t
+{
+    Any,
+    View,
+    Dictionary,
+};
+
+struct CollectTablesData
+{
+    struct CollectedTable
+    {
+        StorageID id;
+        /// The access the outer query is going to check on this table when its interpreter runs
+        /// (recorded by the collector from the AST shape that referenced the table). Used by the
+        /// preflight in `reattachTablesUsedInQuery` to keep access-rejected queries side-effect free.
+        AccessFlags required_access;
+        /// Whether the outer query fails when this table does not exist (recorded by the collector from
+        /// the AST shape that referenced the table). Used by the existence preflight in
+        /// `reattachTablesUsedInQuery` to keep queries referencing a missing table side-effect free.
+        bool existence_required = true;
+        /// The object kind the reference demands (recorded by the collector from the AST shape); the
+        /// reattach loop skips the table when its resolved storage is not of this kind.
+        ExpectedObjectKind expected_kind = ExpectedObjectKind::Any;
+    };
+
+    explicit CollectTablesData(ContextPtr context_) : context(std::move(context_)) {}
+
+    const ContextPtr context;
+    std::vector<CollectedTable> tables;
+
+    /// The database an unqualified table name is completed with while walking the children of a mutation
+    /// carrier (`UPDATE`, `ALTER`, and the rewritten forms of `DELETE`): their interpreters run
+    /// `AddDefaultDatabaseVisitor` with the *target table's* database over the predicates and expressions,
+    /// so `USE db1; UPDATE db2.dst SET x = 1 WHERE a IN (SELECT a FROM src)` reads `db2.src`, not `db1.src`
+    /// (see `mutationExpressionsDatabase`). Empty everywhere else, which keeps the session's current
+    /// database.
+    String default_database;
+
+    void addTableIfNotEmpty(const String & database, const String & table, const std::unordered_set<String> & active_ctes, Context::StorageNamespace resolve_namespace, const AccessFlags & required_access, bool existence_required = true, ExpectedObjectKind expected_kind = ExpectedObjectKind::Any)
+    {
+        if (table.empty())
+            return;
+
+        /// Unqualified reference matching an in-scope CTE name: it refers to the CTE, not a real table.
+        if (database.empty() && active_ctes.contains(table))
+            return;
+
+        StorageID storage_id = StorageID("", table);
+        if (!database.empty())
+            storage_id = StorageID(database, table);
+        else if (!default_database.empty() && !context->tryResolveStorageID(storage_id, Context::ResolveExternal))
+        {
+            /// Inside a mutation carrier's expressions an unqualified name is completed with the target
+            /// table's database — except a name a session temporary table takes, which
+            /// `AddDefaultDatabaseVisitor` leaves unqualified so that the temporary table keeps it.
+            storage_id = StorageID(default_database, table);
+        }
+
+        /// Note: this resolves only the names (e.g. substitutes the current database) — it does not check
+        /// that the table exists in the catalog. Existence is checked by the existence preflight in
+        /// `reattachTablesUsedInQuery`, which is why `existence_required` is carried in `CollectedTable`.
+        /// `resolve_namespace` mirrors the namespace the outer query's interpreter resolves this reference
+        /// in: `ResolveAll` where a same-named session temporary table shadows the persistent one (so the
+        /// reference resolves to the temporary table and is skipped below, exactly as the query never
+        /// touches the persistent table), `ResolveOrdinary` for carriers whose interpreter looks the name
+        /// up only in the persistent catalog (so a same-named temporary table must NOT hide the persistent
+        /// table the query actually uses) — see `mainTableResolveNamespace` and the per-call-site notes in
+        /// `collectTablesInQuery`.
+        auto resolved = context->tryResolveStorageID(storage_id, resolve_namespace);
+        if (!resolved)
+            return;
+
+        /// Skip temporary and external tables — detaching them makes no sense.
+        if (resolved.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE)
+            return;
+
+        tables.emplace_back(CollectedTable{std::move(resolved), required_access, existence_required, expected_kind});
+    }
+};
+
+/// The access the outer query will require on the table referenced by `ast` (one of the
+/// `ASTQueryWithTableAndOutput` family), mirroring the checks the corresponding interpreters perform.
+/// Where the exact requirement depends on execution-time details (or the query class is not enumerated
+/// here), returns all table-level flags: over-requiring only makes the preflight skip randomization,
+/// never lets a query that would fail its access check produce `DETACH`/`ATTACH` side effects.
+AccessFlags requiredAccessForTableQuery(const IAST & ast)
+{
+    if (ast.as<ASTShowCreateTableQuery>() || ast.as<ASTShowCreateViewQuery>())
+        return AccessType::SHOW_COLUMNS;
+    if (ast.as<ASTShowCreateDictionaryQuery>() || ast.as<ASTExistsDictionaryQuery>())
+        return AccessType::SHOW_DICTIONARIES;
+    if (ast.as<ASTExistsTableQuery>() || ast.as<ASTExistsViewQuery>())
+        return AccessType::SHOW_TABLES;
+    if (ast.as<ASTCheckTableQuery>())
+        return AccessType::CHECK;
+    if (ast.as<ASTOptimizeQuery>())
+        return AccessType::OPTIMIZE;
+    /// `InterpreterAlterQuery::getRequiredAccessForCommand` checks per-command flags that are not all inside
+    /// the `ALTER` group: `ATTACH PARTITION` needs `INSERT`, `REPLACE PARTITION ... FROM src` needs
+    /// `ALTER_DELETE | INSERT` on the target (plus `SELECT` on `src`), and `MOVE PARTITION ... TO TABLE dst`
+    /// needs `INSERT` on `dst`. Requiring only `ALTER` here would under-approximate, so a user who has `ALTER`
+    /// but lacks e.g. `INSERT` would pass the preflight and get a real `DETACH`/`ATTACH` before the outer
+    /// `ALTER` fails with `ACCESS_DENIED`. Over-approximate with all table-level flags instead — over-requiring
+    /// only makes the preflight skip randomization, it never produces side effects for a failing query. The
+    /// extra source/destination tables (`from_*`/`to_*`) are folded into the collection in `collectTablesInQuery`.
+    if (ast.as<ASTAlterQuery>())
+        return AccessFlags::allFlagsGrantableOnTableLevel();
+    /// `InterpreterUpdateQuery::execute` governs the `UPDATE ... SET _row_exists = 0` lightweight-delete form by
+    /// `ALTER_DELETE` (and by `ALTER_DELETE | ALTER_UPDATE` when it also assigns other columns) on
+    /// MergeTree-family tables, where `_row_exists` is the hidden virtual marker. Whether that shortcut applies
+    /// depends on execution-time details (the resolved storage's virtual columns), which are not available here,
+    /// so requiring only `ALTER_UPDATE` would under-approximate and let a user who has `ALTER_UPDATE` but not
+    /// `ALTER_DELETE` get a real `DETACH`/`ATTACH` before the outer `UPDATE` fails with `ACCESS_DENIED`.
+    /// Over-approximate with all table-level flags, exactly as for `ALTER` above.
+    if (ast.as<ASTUpdateQuery>())
+        return AccessFlags::allFlagsGrantableOnTableLevel();
+    if (ast.as<ASTDeleteQuery>())
+        return AccessType::ALTER_DELETE;
+    return AccessFlags::allFlagsGrantableOnTableLevel();
+}
+
+/// Whether the query fails when its main table does not exist. References for which a missing table is a
+/// legitimate outcome keep the collector's ignore-on-miss behavior instead of raising
+/// `has_unresolved_required_table`: `CREATE`/`ATTACH` name the table they are about to register (for
+/// `CREATE OR REPLACE` an existing table is possible but not required), `EXISTS ...` answers `0` instead of
+/// failing, `DROP`/`DETACH ... IF EXISTS` is a no-op on a missing table, and `UNDROP` names a table that is
+/// currently dropped, hence never resolvable through the catalog. Everything else (e.g. `SHOW CREATE`,
+/// `CHECK TABLE`, `OPTIMIZE`, `ALTER`, `TRUNCATE`, plain `DROP`) requires the table to exist.
+bool mainTableExistenceRequired(const IAST & ast)
+{
+    if (ast.as<ASTCreateQuery>())
+        return false;
+    if (ast.as<ASTExistsTableQuery>() || ast.as<ASTExistsViewQuery>() || ast.as<ASTExistsDictionaryQuery>())
+        return false;
+    if (const auto * drop = ast.as<ASTDropQuery>())
+        return !drop->if_exists;
+    if (ast.as<ASTUndropQuery>())
+        return false;
+    return true;
+}
+
+/// Whether the query's interpreter actually touches an existing table its main-table reference names, so
+/// detaching and attaching that table exercises a code path the query really takes. Plain `CREATE`/`ATTACH
+/// TABLE dst` and `CREATE ... IF NOT EXISTS dst` never touch an existing `dst`: `InterpreterCreateQuery`
+/// either throws `TABLE_ALREADY_EXISTS` or turns the statement into a no-op before reaching the table's
+/// storage. The same holds for `UNDROP TABLE dst`: `InterpreterUndropQuery::executeToTable` throws
+/// `TABLE_ALREADY_EXISTS` when an active `dst` already exists. A `DETACH`/`ATTACH` of such a target would
+/// give a no-op or failing query a side effect on a table it never touches, breaking the side-effect-free
+/// invariant this hook keeps for failing queries, so those targets are not eligible. The
+/// `CREATE OR REPLACE`/`REPLACE` forms do replace an existing object, but even they validate the new
+/// definition before the replacement path reaches it, so they cannot keep the target eligible either
+/// (the tables a `CREATE` reads — the `AS src` source, the populating `SELECT` — are eligible or not
+/// independently of its destination: see `createQueryStopsBeforeSources`, which suppresses them exactly
+/// when the statement stops on the destination first). The index-management statements that also travel through
+/// `ASTQueryWithTableAndOutput` are handled below for the same reason.
+bool mainTableTouchedIfExists(const IAST & ast, const ContextPtr & context)
+{
+    if (ast.as<ASTCreateQuery>())
+    {
+        /// Even the replacing forms — the only `CREATE` shapes that touch an existing destination —
+        /// validate the new definition before the replacement path ever reaches it. A source-carrying
+        /// form analyzes its populating `SELECT` in `getTablePropertiesAndNormalizeCreateQuery` (so
+        /// `CREATE OR REPLACE TABLE dst AS SELECT missing_col FROM src` throws with `dst` untouched) and
+        /// validates an `AS src` source in `setEngine`; a source-less form can still be rejected there as
+        /// incomplete — `CREATE OR REPLACE TABLE dst` with no column list throws `INCORRECT_QUERY`, and a
+        /// bare definition may fail the engine's own requirements — again with `dst` untouched. Whether
+        /// that validation passes cannot be predicted here, so every replacing destination conservatively
+        /// stays out of scope — erring toward suppressing randomization for a succeeding statement rather
+        /// than detaching the destination of a failing one.
+        return false;
+    }
+    if (ast.as<ASTUndropQuery>())
+        return false;
+    /// `CREATE INDEX` reaches the table only through the `ALTER TABLE ... ADD INDEX` statement
+    /// `InterpreterCreateIndexQuery::execute` rewrites it to, and it rewrites only after
+    /// `validateCreateIndexQuery` accepts the statement. `CREATE UNIQUE INDEX` throws `NOT_IMPLEMENTED`
+    /// unless `create_index_ignore_unique` is set, and `CREATE INDEX` without a `TYPE` either throws
+    /// `INCORRECT_QUERY` or (with `allow_create_index_without_type`) returns an empty `BlockIO` — in all
+    /// of those cases the statement fails or no-ops before touching the table. Unlike `DROP INDEX`, which
+    /// always rewrites, `CREATE INDEX` is therefore eligible only in the shape that really rewrites.
+    if (const auto * create_index = ast.as<ASTCreateIndexQuery>())
+    {
+        if (create_index->unique && !context->getSettingsRef()[Setting::create_index_ignore_unique])
+            return false;
+        const auto * index_decl = create_index->index_decl ? create_index->index_decl->as<ASTIndexDeclaration>() : nullptr;
+        return index_decl && index_decl->getType();
+    }
+    /// `CREATE`/`DROP HYPOTHETICAL INDEX` and `CREATE`/`DROP HYPOTHETICAL PROJECTION` never mutate the
+    /// table they name: `InterpreterHypotheticalObjectQuery` only reads the table's metadata and updates
+    /// the session-local `HypotheticalObjectStore`. Detaching and attaching the table would be a side
+    /// effect on live table state that the query never changes (and `DROP HYPOTHETICAL INDEX ... IF EXISTS`
+    /// may be a pure no-op), so these references are not eligible.
+    if (ast.as<ASTHypotheticalObjectQuery>())
+        return false;
+    return true;
+}
+
+/// The access `InterpreterCreateQuery::getRequiredAccess` checks on the statement's own destination — the
+/// database for `CREATE DATABASE`, the dictionary/view/table being created otherwise, plus the engine grant.
+/// The external `TO`/target tables are deliberately left out: the collector records them separately, with
+/// their own required access, so the generic access preflight covers them.
+AccessRightsElements createQueryDestinationAccess(const ASTCreateQuery & create, const String & database, const String & table)
+{
+    AccessRightsElements required_access;
+
+    if (!create.table)
+        required_access.emplace_back(AccessType::CREATE_DATABASE, database);
+    else if (create.is_dictionary)
+        required_access.emplace_back(AccessType::CREATE_DICTIONARY, database, table);
+    else if (create.isView())
+    {
+        if (create.replace_view)
+            required_access.emplace_back(AccessType::DROP_VIEW | AccessType::CREATE_VIEW, database, table);
+        else if (create.isTemporary())
+            required_access.emplace_back(AccessType::CREATE_TEMPORARY_VIEW);
+        else
+            required_access.emplace_back(AccessType::CREATE_VIEW, database, table);
+    }
+    else if (create.isTemporary())
+    {
+        /// The default engine for a temporary table is `Memory`, and `default_table_engine` does not apply.
+        if (create.storage && create.storage->engine && create.storage->engine->name != "Memory")
+            required_access.emplace_back(AccessType::CREATE_ARBITRARY_TEMPORARY_TABLE);
+        else
+            required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
+    }
+    else
+    {
+        if (create.replace_table)
+            required_access.emplace_back(AccessType::DROP_TABLE, database, table);
+        required_access.emplace_back(AccessType::CREATE_TABLE, database, table);
+    }
+
+    if (create.storage && create.storage->engine)
+        required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
+
+    return required_access;
+}
+
+/// Whether a `CREATE` statement stops on its own destination before its interpreter ever touches the
+/// tables the statement reads. Unlike the destination itself (handled by `mainTableTouchedIfExists`),
+/// those source tables — the `AS src` structure source, the populating `SELECT`, the external `TO dst`
+/// targets — are collected from the statement's other fields and children, so they need this separate
+/// guard: `InterpreterCreateQuery::execute` checks the destination-side access first, and the plain-create
+/// path then short-circuits on a taken destination name, both before reading any source. Without the
+/// guard, `CREATE VIEW v AS SELECT * FROM src` by a user lacking `CREATE VIEW`, or
+/// `CREATE TABLE IF NOT EXISTS existing AS SELECT * FROM src`, would `DETACH`/`ATTACH src` and only then
+/// fail or no-op, breaking the side-effect-free invariant this hook keeps for such queries.
+///
+/// Like the preflights in `reattachTablesUsedInQuery`, this is a best-effort, point-in-time check, and it
+/// errs toward suppressing the hook: an unresolvable destination counts as stopping the statement.
+bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextPtr & context)
+{
+    String destination_database = create.getDatabase();
+    String destination_table = create.getTable();
+
+    /// Temporary tables and views live outside databases and are session-local, so
+    /// `InterpreterCreateQuery::createTable` rejects the forms that contradict that at its very top —
+    /// `ATTACH` of a temporary with `SYNTAX_ERROR`, a database-qualified temporary with
+    /// `BAD_DATABASE_FOR_TEMPORARY_TABLE`, and an `ON CLUSTER` temporary with `INCORRECT_QUERY` — before
+    /// `getTablePropertiesAndNormalizeCreateQuery` ever touches the `AS src` structure source or the
+    /// populating `SELECT`. Mirror those guards so such a rejected statement does not reattach its sources
+    /// on the way to the rejection.
+    if (create.isTemporary() && (create.attach || create.database || !create.cluster.empty()))
+        return true;
+
+    /// `getTablePropertiesAndNormalizeCreateQuery` rejects temporary tables using the `Replicated`,
+    /// `Shared`, or `KeeperMap` engines before it reads an `AS src` structure source or a populating
+    /// `SELECT`. This applies both to an engine inferred from the setting below and to an explicitly
+    /// spelled engine.
+    if (create.isTemporary() && create.storage && create.storage->engine)
+    {
+        const String & engine_name = create.storage->engine->name;
+        if (engine_name.starts_with("Replicated") || engine_name.starts_with("Shared") || engine_name == "KeeperMap")
+            return true;
+    }
+
+    /// A persistent destination is resolved in the ordinary namespace (`InterpreterCreateQuery` never
+    /// resolves it against session temporary tables); a temporary one carries no database at all.
+    if (create.table && !create.isTemporary())
+    {
+        auto resolved = context->tryResolveStorageID(
+            destination_database.empty() ? StorageID("", destination_table) : StorageID(destination_database, destination_table),
+            Context::ResolveOrdinary);
+        if (!resolved)
+            return true;
+        destination_database = resolved.getDatabaseName();
+        destination_table = resolved.getTableName();
+    }
+
+    if (!context->getAccess()->isGranted(createQueryDestinationAccess(create, destination_database, destination_table)))
+        return true;
+
+    /// Parameterized views never analyze their SELECT when they are created, and validating a column
+    /// alias list for an ordinary view can fail before its SELECT is analyzed. Conservatively skip the
+    /// hook for both forms: this also covers an invalid alias list without reattaching its source first.
+    if (create.isView() && create.select && (create.isParameterizedView() || create.aliases_list))
+        return true;
+
+    /// A fresh view definition with query-construction settings is rejected before its SELECT is
+    /// analyzed. `ATTACH` and secondary DDL replays deliberately retain those legacy definitions, but
+    /// the reattach hook only handles initial user queries, so suppress it for the same fresh-create
+    /// case instead of reattaching a source that the rejected statement never touches.
+    if (!create.attach && create.isView() && create.select && hasConstructionSettings(*create.select))
+        return true;
+
+    /// `ATTACH ... FROM` validates that its path is inside `user_files` before it substitutes UDFs or
+    /// analyzes an `AS` source / `AS SELECT`. Do not reattach a source before a path-rejected statement.
+    if (create.attach && create.has_attach_from_path)
+        return true;
+
+    /// `InterpreterCreateQuery::createTable` validates a view's `SQL SECURITY` clause immediately after
+    /// the destination access check and before it reads an `AS src` source or a populating `SELECT`.
+    /// It first adds an empty clause when SQL security is mandatory for this view, so mirror that on a
+    /// clone before processing the option. `processSQLSecurityOption` resolves `CURRENT_USER` in the AST.
+    /// A rejected definer or an unavailable `SQL SECURITY NONE` privilege must suppress the hook just like
+    /// a rejected destination privilege does; otherwise the rejected statement would reattach a source it
+    /// never reaches.
+    if (create.supportSQLSecurity()
+        && (create.sql_security || create.refresh_strategy || !context->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
+    {
+        ASTPtr create_query = create.clone();
+        auto & create_query_clone = create_query->as<ASTCreateQuery &>();
+
+        if (!create_query_clone.sql_security)
+            create_query_clone.set(create_query_clone.sql_security, make_intrusive<ASTSQLSecurity>());
+
+        try
+        {
+            InterpreterCreateQuery::processSQLSecurityOption(
+                context->getQueryContext(), create_query_clone.sql_security->as<ASTSQLSecurity &>(), create.is_materialized_view, LoadingStrictnessLevel::CREATE);
+        }
+        catch (const Exception &)
+        {
+            return true;
+        }
+    }
+
+    /// A non-APPEND refreshable materialized view is rejected before its SELECT is analyzed when its
+    /// destination database is neither `Atomic` nor `Replicated`, or when the OS does not support atomic
+    /// rename. `validateMaterializedViewColumnsAndEngine` performs these checks before looking at the
+    /// SELECT, so mirror them to avoid reattaching a source of a rejected definition.
+    if (create.refresh_strategy && !create.refresh_strategy->append)
+    {
+        if (const auto database = DatabaseCatalog::instance().tryGetDatabase(destination_database);
+            database && database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
+            return true;
+
+        if (!supportsAtomicRename())
+            return true;
+    }
+
+    /// SQL UDF substitution is performed before `getTablePropertiesAndNormalizeCreateQuery`, which reads
+    /// the `AS src` source and populating `SELECT`. Run it on a clone to notice substitutions that fail
+    /// before either source is reached, such as a recursive UDF in a view's `SELECT`.
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+    {
+        ASTPtr create_query = create.clone();
+
+        try
+        {
+            UserDefinedSQLFunctionVisitor::visit(create_query, context);
+        }
+        catch (const Exception &)
+        {
+            return true;
+        }
+    }
+
+    /// `createQueryDestinationAccess` covers the `TABLE ENGINE` grant only for an engine spelled out in the
+    /// statement, but `getTablePropertiesAndNormalizeCreateQuery` re-checks that grant after `setEngine` has
+    /// inferred an engine for the engine-less forms — and it does so before the populating `SELECT` is
+    /// analyzed. Mirror the inference for the shapes whose engine comes from a setting, read without touching
+    /// any collected source: a temporary table takes `default_temporary_table_engine` (and `setEngine` rejects
+    /// a `Replicated`/`Shared`/`KeeperMap` default for it outright), a plain table with no `AS src` structure
+    /// source takes `default_table_engine`, and a `None` default makes `setEngine` throw `ENGINE_REQUIRED` —
+    /// all before any source is read. The remaining engine-less shapes never reach that grant check before
+    /// their sources: an engine inherited from an `AS src` source is read from that source's stored
+    /// definition, a materialized view keeps its inner engine in the target clause (which the re-check does
+    /// not cover), an `ATTACH` takes the engine from stored metadata, and dictionaries and ordinary/window
+    /// views take no engine at all.
+    if (create.table && !create.attach && !create.is_dictionary && !create.isView() && !create.as_table_function
+        && !(create.storage && create.storage->engine))
+    {
+        std::optional<DefaultTableEngine> default_engine;
+        if (create.isTemporary())
+            default_engine = context->getSettingsRef()[Setting::default_temporary_table_engine].value;
+        else if (create.as_table.empty())
+            default_engine = context->getSettingsRef()[Setting::default_table_engine].value;
+
+        if (default_engine)
+        {
+            if (*default_engine == DefaultTableEngine::None)
+                return true;
+
+            const String engine_name = SettingFieldDefaultTableEngine(*default_engine).toString();
+            if (create.isTemporary()
+                && (engine_name.starts_with("Replicated") || engine_name.starts_with("Shared") || engine_name == "KeeperMap"))
+                return true;
+
+            if (!context->getAccess()->isGranted(AccessType::TABLE_ENGINE, engine_name))
+                return true;
+        }
+    }
+
+    /// A full-definition `ATTACH ... AS [NOT] REPLICATED` is rejected before it reads an `AS src`
+    /// structure source or a populating `SELECT`: that syntax is only supported by a short `ATTACH`.
+    if (create.attach && !create.attach_short_syntax && create.attach_as_replicated.has_value())
+        return true;
+
+    /// A stub `ATTACH` (no engine and no column list) applies the table definition from stored metadata
+    /// and rejects any user-supplied clause it would otherwise silently drop — `AS src`, `AS SELECT`,
+    /// `TO dst`, `EMPTY`, `CLONE`, engine-level clauses, and so on: `InterpreterCreateQuery::createTable`
+    /// throws `BAD_ARGUMENTS` on such a statement before reading any source or target table. Mirror that
+    /// guard (`has_dropped_clauses` there) so `ATTACH TABLE detached_dst AS live_src` or
+    /// `ATTACH MATERIALIZED VIEW detached_mv TO dst AS SELECT * FROM src` does not reattach the tables
+    /// collected from those fields on its way to the rejection.
+    if (create.attach && (!create.storage || !create.storage->engine) && !create.columns_list)
+    {
+        bool has_dropped_clauses = false;
+
+        if (create.storage)
+        {
+            const auto & storage = *create.storage;
+            has_dropped_clauses
+                = storage.partition_by != nullptr
+                || storage.primary_key != nullptr
+                || storage.order_by != nullptr
+                || storage.sample_by != nullptr
+                || storage.ttl_table != nullptr
+                || storage.unique_key != nullptr
+                || storage.settings != nullptr;
+        }
+
+        has_dropped_clauses = has_dropped_clauses
+            || create.comment != nullptr
+            || create.refresh_strategy != nullptr
+            || create.sql_security != nullptr
+            || create.select != nullptr
+            || create.targets != nullptr
+            || create.as_table_function != nullptr
+            || create.aliases_list != nullptr
+            || create.is_create_empty
+            || create.is_clone_as
+            || !create.as_database.empty()
+            || !create.as_table.empty()
+            || create.has_attach_from_path
+            || create.has_uuid_clause
+            || create.has_inner_uuid_clause;
+
+        if (has_dropped_clauses)
+            return true;
+    }
+
+    /// External `TimeSeries` targets (`CREATE TABLE ts ENGINE = TimeSeries SAMPLES samples_table TAGS
+    /// tags_table ...`) are resolved and type-checked by `normalizeTimeSeriesDefinition`
+    /// (`readTypesFromExternalTargets`) before the interpreter reads any source table — a missing or
+    /// type-incompatible external `SAMPLES`/`TAGS` target makes the statement throw before its `AS src`
+    /// structure source is touched. Whether an existing target passes that type check cannot be predicted
+    /// here, so any external `SAMPLES`/`TAGS` target conservatively stops the statement — erring toward
+    /// suppressing randomization for a succeeding statement rather than detaching a source of a failing
+    /// one. `ATTACH` is exempt: it skips the external-target resolution (`check_external_targets` is
+    /// false there), because the targets are allowed not to be loaded yet.
+    if (!create.attach && create.targets)
+        for (const auto & target : create.targets->targets)
+            if ((target.kind == ViewTarget::Samples || target.kind == ViewTarget::Tags) && !target.table_id.table_name.empty())
+                return true;
+
+    /// The replacing forms really do replace an existing destination, so a taken name does not stop them.
+    /// `CREATE DATABASE` has no destination table to collide with.
+    if (!create.table || create.replace_table || create.replace_view || create.create_or_replace)
+        return false;
+
+    if (create.isTemporary())
+        return static_cast<bool>(context->tryResolveStorageID(StorageID("", create.getTable()), Context::ResolveExternal));
+
+    /// `setEngine` resolves an `AS table` / `CLONE AS table` source and `getSampleBlock` analyzes a
+    /// populating `SELECT` before the plain-create destination-name checks below. Keep those sources
+    /// eligible even when the destination is already taken: the query has already touched them by then.
+    if (create.select || create.is_clone_as || !create.as_table.empty())
+        return false;
+
+    /// Probing the destination must itself be side-effect free: in databases that do not support
+    /// detaching tables even `isTableExist` can act on behalf of the query — e.g.
+    /// `DatabaseRemote::isTableExist` reaches out to the remote server under the caller's credentials
+    /// and propagates transport/authentication failures. Whether such a statement stops before its
+    /// sources cannot be predicted here, so conservatively report that it does — erring toward
+    /// suppressing randomization for a succeeding statement rather than probing on its behalf.
+    if (const auto database = DatabaseCatalog::instance().tryGetDatabase(destination_database);
+        database && !database->supportsDetachingTables())
+        return true;
+
+    /// A taken destination name makes a source-less plain statement throw `TABLE_ALREADY_EXISTS` (or,
+    /// with `IF NOT EXISTS`, a pure no-op) before it accesses another table.
+    if (DatabaseCatalog::instance().isTableExist(StorageID(destination_database, destination_table), context))
+        return true;
+
+    /// The name may also be reserved by a table in a detached state: its metadata file is present even
+    /// though the table is not in the catalog. That stops a plain create in the same way. `ATTACH` is the
+    /// exception — it is what such a metadata file is for.
+    if (!create.attach)
+    {
+        if (auto database = DatabaseCatalog::instance().tryGetDatabase(destination_database))
+        {
+            try
+            {
+                database->checkMetadataFilenameAvailability(destination_table);
+            }
+            catch (const Exception &)
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+/// The mutation/partition carriers (`DELETE`, `UPDATE`, `ALTER`) need the same kind of stop-before-sources
+/// guard as `CREATE` (see `createQueryStopsBeforeSources`): their interpreters fast-fail on the *target*
+/// table — engine capability (`supportsDelete`, `supportsLightweightUpdate`, `checkMutationIsPossible`,
+/// `checkAlterPartitionIsPossible`), a static storage, server-wide mutation prohibition — before they ever
+/// touch the auxiliary tables the statement's predicates, update expressions, or partition `FROM`/`TO TABLE`
+/// clauses name. Without the guard, `DELETE FROM log_t WHERE a IN (SELECT a FROM src)` would `DETACH`/`ATTACH`
+/// `src` and only then fail on the unsupported `log_t`, breaking the side-effect-free invariant this hook
+/// keeps for failing queries.
+///
+/// The helpers below mirror the fast-fail checks each interpreter runs before its sources, resolving the
+/// target side-effect free and probing the storage's own check methods where outcomes cannot be predicted
+/// otherwise. Like the other preflights, they are best-effort, point-in-time checks that err toward
+/// suppressing randomization for a succeeding statement rather than reattaching a source of a failing one.
+
+/// SQL UDF substitution runs before a mutation carrier's interpreter reaches the tables its predicate and
+/// expressions name (`InterpreterUpdateQuery::execute`, `InterpreterAlterQuery::executeToTable`; the
+/// `DELETE` rewrites inherit it from the `UPDATE` / `ALTER ... UPDATE` statement they build). Run it on a
+/// clone to notice a substitution that fails on the way there, such as a recursive UDF in a predicate.
+bool udfSubstitutionFails(const IAST & ast, const ContextPtr & context)
+{
+    if (UserDefinedSQLFunctionFactory::instance().empty())
+        return false;
+
+    ASTPtr query = ast.clone();
+
+    try
+    {
+        UserDefinedSQLFunctionVisitor::visit(query, context);
+    }
+    catch (const Exception &)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+/// Resolves the target of a mutation-carrying statement, returning nullptr whenever the statement is
+/// going to stop on it or the probe would not be side-effect free (a database that does not support
+/// detaching tables performs remote work even in `isTableExist`/`tryGetTable`). The namespace must be the
+/// one the statement's own interpreter resolves in: `InterpreterAlterQuery::executeToTable` resolves an
+/// unqualified `ALTER` target with the default `ResolveAll`, so a session temporary table shadows the
+/// persistent one there, while `InterpreterUpdateQuery` and `InterpreterDeleteQuery` resolve their target
+/// with an explicit `ResolveOrdinary`. Probing the wrong table would predict the fate of a statement that
+/// is not the one being executed.
+StoragePtr tryResolveMutationTarget(
+    const String & database_name, const String & table_name, Context::StorageNamespace resolve_namespace, const ContextPtr & context)
+{
+    if (table_name.empty())
+        return nullptr;
+
+    auto resolved = context->tryResolveStorageID(
+        database_name.empty() ? StorageID("", table_name) : StorageID(database_name, table_name),
+        resolve_namespace);
+    if (!resolved)
+        return nullptr;
+
+    if (const auto database = DatabaseCatalog::instance().tryGetDatabase(resolved.getDatabaseName());
+        !database || !database->supportsDetachingTables())
+        return nullptr;
+
+    return DatabaseCatalog::instance().tryGetTable(resolved, context);
+}
+
+/// The single `DELETE` mutation command `InterpreterDeleteQuery::execute` builds for its heavy
+/// (`supportsDelete`) path. The lightweight path rewrites the statement into
+/// `UPDATE _row_exists = 0 WHERE <predicate>` instead, but for the checks the probes below exercise
+/// (`checkMutationIsPossible`, the replicated non-determinism validation) the two shapes are
+/// interchangeable — both are rewriting mutations carrying the same predicate — so this one command
+/// serves both paths.
+MutationCommands deleteQueryMutationCommands(const ASTDeleteQuery & delete_query, const ContextPtr & context)
+{
+    MutationCommand mut_command;
+    mut_command.type = MutationCommand::Type::DELETE;
+
+    auto alter_command = make_intrusive<ASTAlterCommand>();
+    alter_command->type = ASTAlterCommand::DELETE;
+    alter_command->predicate = alter_command->children.emplace_back(delete_query.predicate->clone()).get();
+    mut_command.ast_text = alter_command->formatWithSecretsOneLine();
+    mut_command.max_parser_depth = context->getSettingsRef()[Setting::max_parser_depth];
+    mut_command.max_parser_backtracks = context->getSettingsRef()[Setting::max_parser_backtracks];
+
+    MutationCommands mutation_commands;
+    mutation_commands.emplace_back(std::move(mut_command));
+    return mutation_commands;
+}
+
+/// Whether a `DELETE` statement stops on its own target before `MutationsInterpreter`'s validation reads
+/// the tables its predicate names, mirroring the fast-fail order of `InterpreterDeleteQuery::execute`.
+bool deleteQueryStopsBeforeSources(const ASTDeleteQuery & delete_query, const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+
+    /// An `ON CLUSTER` statement is handed to the cluster's DDL queue after its access check; the local
+    /// interpreter never reaches the predicate's tables on the way, and the hook only handles initial
+    /// user queries, so the per-host executions are out of its scope anyway.
+    if (!delete_query.cluster.empty())
+        return true;
+
+    /// A predicate-less statement cannot be executed; nothing to predict for it.
+    if (!delete_query.predicate)
+        return true;
+
+    if (udfSubstitutionFails(delete_query, context))
+        return true;
+
+    const auto table = tryResolveMutationTarget(delete_query.getDatabase(), delete_query.getTable(), Context::ResolveOrdinary, context);
+    if (!table)
+        return true;
+
+    if (table->isStaticStorage())
+        return true;
+
+    if (context->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
+        && table->getStorageID().getDatabaseName() != DatabaseCatalog::SYSTEM_DATABASE)
+        return true;
+
+    try
+    {
+        IInterpreter::checkStorageSupportsTransactionsIfNeeded(table, context);
+    }
+    catch (const Exception &)
+    {
+        return true;
+    }
+
+    const auto mutation_commands = deleteQueryMutationCommands(delete_query, context);
+
+    /// The probes must run before reporting that the sources are reached: `checkMutationIsPossible`
+    /// rejects e.g. immutable disks and `UNIQUE KEY` tables, and the replicated non-determinism
+    /// validation rejects a predicate with a subquery on a replicated target — all before
+    /// `MutationsInterpreter::validate` reads the predicate's tables.
+    const auto mutation_checks_pass = [&]
+    {
+        try
+        {
+            table->checkMutationIsPossible(mutation_commands, settings);
+            MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, mutation_commands, context);
+        }
+        catch (const Exception &)
+        {
+            return false;
+        }
+        return true;
+    };
+
+    /// The heavy path: the statement becomes an `ALTER ... DELETE`-style mutation directly.
+    if (table->supportsDelete())
+        return !mutation_checks_pass();
+
+    /// The lightweight path, gated exactly as in the interpreter.
+    if (table->supportsLightweightDelete())
+    {
+        if (!settings[Setting::enable_lightweight_delete])
+            return true;
+
+        if (const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false); metadata_snapshot->hasProjections())
+            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(table.get());
+                merge_tree_data
+                && (*merge_tree_data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode]
+                    == LightweightMutationProjectionMode::THROW)
+                return true;
+
+        const auto lightweight_delete_mode = settings[Setting::lightweight_delete_mode];
+        const bool supports_lightweight_update
+            = settings[Setting::enable_lightweight_update] && bool(table->supportsLightweightUpdate());
+
+        if (!supports_lightweight_update && lightweight_delete_mode == LightweightDeleteMode::LIGHTWEIGHT_UPDATE_FORCE)
+            return true;
+
+        /// Rewritten to a lightweight `UPDATE`, whose interpreter reads the predicate right after the
+        /// capability checks that just passed here.
+        if (supports_lightweight_update && lightweight_delete_mode != LightweightDeleteMode::ALTER_UPDATE)
+            return false;
+
+        /// Rewritten to `ALTER TABLE ... UPDATE _row_exists = 0 WHERE <predicate>`. That statement can
+        /// itself be forced into a failing lightweight update (`alter_update_mode`), and otherwise
+        /// re-runs the mutation checks before its `MutationsInterpreter` reads the predicate's tables.
+        if (!supports_lightweight_update && settings[Setting::alter_update_mode] == AlterUpdateMode::LIGHTWEIGHT_FORCE)
+            return true;
+
+        return !mutation_checks_pass();
+    }
+
+    /// Neither path applies: the statement throws `BAD_ARGUMENTS` on the target.
+    return true;
+}
+
+/// The columns an update's assignment list writes. Returns `false` for an assignment list of an
+/// unexpected shape, which the caller treats like a possible rejection.
+bool collectUpdatedColumns(const IAST * assignments, NameSet & updated_columns)
+{
+    if (!assignments)
+        return false;
+
+    for (const auto & child : assignments->children)
+    {
+        const auto * assignment = child->as<ASTAssignment>();
+        if (!assignment)
+            return false;
+        updated_columns.insert(assignment->column_name);
+    }
+    return !updated_columns.empty();
+}
+
+/// Whether the target-only column validation that `MutationsInterpreter::prepare` runs
+/// (`validateUpdateColumns`) can reject this update. It runs before the update's predicate and assignment
+/// expressions are resolved, so a statement it rejects never reads the tables they name:
+/// `UPDATE dst SET pk = 1 WHERE id IN (SELECT id FROM src)` fails on `dst` with `CANNOT_UPDATE_COLUMN`
+/// without ever touching `src`, and the hook must not reattach `src` on the way.
+///
+/// Mirrors `validateUpdateColumns`, the key-column set `getKeyColumns` derives from the target's metadata,
+/// and the `column_to_affected_materialized` map `prepare` feeds it (including its transitive closure over
+/// MATERIALIZED columns). Two deliberate deviations, both of which answer "can be rejected" more often than
+/// the real validation does and therefore only suppress randomization: the map is built over every
+/// MATERIALIZED column of the target rather than only those in the mutation task's read set, and metadata
+/// that cannot be inspected answers `true`.
+bool updateColumnsCanBeRejected(const StoragePtr & table, const NameSet & updated_columns, const ContextPtr & context)
+{
+    if (updated_columns.empty())
+        return false;
+
+    try
+    {
+        const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+        const auto & storage_columns = metadata_snapshot->getColumns();
+
+        /// `getKeyColumns`: only a `MergeTree`-family target has key columns to protect.
+        NameSet key_columns;
+        if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(table.get()))
+        {
+            for (const auto & column : metadata_snapshot->getColumnsRequiredForPartitionKey())
+                key_columns.insert(column);
+            for (const auto & column : metadata_snapshot->getColumnsRequiredForSortingKey())
+                key_columns.insert(column);
+            if (!merge_tree_data->merging_params.sign_column.empty())
+                key_columns.insert(merge_tree_data->merging_params.sign_column);
+            if (!merge_tree_data->merging_params.version_column.empty())
+                key_columns.insert(merge_tree_data->merging_params.version_column);
+        }
+
+        /// The MATERIALIZED columns each updated column affects, closed transitively exactly as `prepare`
+        /// closes it.
+        MaterializedColumnDependencies materialized_dependencies(storage_columns, context);
+        std::unordered_map<String, Names> column_to_affected_materialized;
+        std::unordered_map<String, NameSet> materialized_column_dependencies;
+        for (const auto & column : storage_columns)
+        {
+            const auto * materialized = materialized_dependencies.findNode(column.name);
+            /// A MATERIALIZED column reading an EPHEMERAL one is never recomputed, so it is not affected.
+            if (!materialized || materialized->reads_ephemeral)
+                continue;
+            for (const auto & dependency : materialized->dependencies)
+            {
+                materialized_column_dependencies[column.name].insert(dependency);
+                if (updated_columns.contains(dependency))
+                    column_to_affected_materialized[dependency].push_back(column.name);
+            }
+        }
+        for (auto & [updated_column, affected_list] : column_to_affected_materialized)
+        {
+            NameSet in_list(affected_list.begin(), affected_list.end());
+            bool changed = true;
+            while (changed)
+            {
+                changed = false;
+                for (const auto & [materialized_column, dependencies] : materialized_column_dependencies)
+                {
+                    if (in_list.contains(materialized_column))
+                        continue;
+                    if (std::ranges::any_of(dependencies, [&](const auto & dependency) { return in_list.contains(dependency); }))
+                    {
+                        affected_list.push_back(materialized_column);
+                        in_list.insert(materialized_column);
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        for (const auto & column_name : updated_columns)
+        {
+            /// "Cannot UPDATE key column" / "Cannot UPDATE materialized column".
+            if (key_columns.contains(column_name))
+                return true;
+            if (storage_columns.tryGetColumn(GetColumnsOptions::Materialized, column_name))
+                return true;
+
+            /// "Updated column ... affects MATERIALIZED column ..., which is a key column".
+            if (const auto affected = column_to_affected_materialized.find(column_name);
+                affected != column_to_affected_materialized.end())
+            {
+                for (const auto & materialized : affected->second)
+                    if (key_columns.contains(materialized))
+                        return true;
+            }
+
+            const auto ordinary_column = storage_columns.tryGetColumn(GetColumnsOptions::Ordinary, column_name);
+            if (!ordinary_column)
+            {
+                /// The lightweight-delete marker is the one non-ordinary name the validation accepts, and
+                /// only on a target that supports lightweight deletes. Every other virtual name is rejected
+                /// with `NOT_IMPLEMENTED`, and an unknown one with `NO_SUCH_COLUMN_IN_TABLE`.
+                if (column_name != RowExistsColumn::name || !table->supportsLightweightDelete())
+                    return true;
+            }
+            else
+            {
+                /// "Cannot UPDATE column ... because its subcolumn ... is a key column".
+                for (const auto & key_column : key_columns)
+                {
+                    const auto column = storage_columns.getColumnOrSubcolumn(GetColumnsOptions::All, key_column);
+                    if (column.isSubcolumn() && column_name == column.getNameInStorage())
+                        return true;
+                }
+            }
+        }
+
+        return false;
+    }
+    catch (const Exception &)
+    {
+        /// The target's metadata could not be inspected, so the validation's outcome is unknown. Ok to
+        /// answer conservatively: the caller then skips the randomization.
+        return true;
+    }
+}
+
+/// Whether a lightweight `UPDATE` statement stops on its own target before its interpreter reads the
+/// tables its predicate and assignments name, mirroring the fast-fail order of
+/// `InterpreterUpdateQuery::execute`.
+bool updateQueryStopsBeforeSources(const ASTUpdateQuery & update_query, const ContextPtr & context)
+{
+    /// Same `ON CLUSTER` reasoning as in `deleteQueryStopsBeforeSources`.
+    if (!update_query.cluster.empty())
+        return true;
+
+    /// The very first check of `InterpreterUpdateQuery::execute`.
+    if (!context->getSettingsRef()[Setting::enable_lightweight_update])
+        return true;
+
+    if (context->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
+        return true;
+
+    if (udfSubstitutionFails(update_query, context))
+        return true;
+
+    const auto table = tryResolveMutationTarget(update_query.getDatabase(), update_query.getTable(), Context::ResolveOrdinary, context);
+    if (!table)
+        return true;
+
+    if (table->isStaticStorage())
+        return true;
+
+    if (!table->supportsLightweightUpdate())
+        return true;
+
+    /// `updateLightweight` builds a `MutationsInterpreter`, whose `prepare` validates the updated columns
+    /// against the target's metadata before it resolves the predicate's and the assignments' subqueries
+    /// (see `updateColumnsCanBeRejected`).
+    NameSet updated_columns;
+    if (!collectUpdatedColumns(update_query.assignments.get(), updated_columns))
+        return true;
+
+    if (updateColumnsCanBeRejected(table, updated_columns, context))
+        return true;
+
+    return false;
+}
+
+/// Whether an `ALTER` statement stops on its own target before its interpreter reaches the auxiliary
+/// tables its mutation predicates/expressions and partition `FROM`/`TO TABLE` clauses name, mirroring
+/// `InterpreterAlterQuery`: the command classification of `parseAlterCommandSegments`, the segment
+/// validation, and the per-segment fast-fail checks of `runCommandSegments`.
+bool alterQueryStopsBeforeSources(const ASTAlterQuery & alter, const ContextPtr & context)
+{
+    /// The database form (`ALTER DATABASE ... MODIFY COMMENT`) names no auxiliary tables.
+    if (alter.alter_object != ASTAlterQuery::AlterObjectType::TABLE || !alter.command_list)
+        return false;
+
+    /// Same `ON CLUSTER` reasoning as in `deleteQueryStopsBeforeSources`.
+    if (!alter.cluster.empty())
+        return true;
+
+    const auto & settings = context->getSettingsRef();
+
+    /// Classify the commands the way `parseAlterCommandSegments` does — without its
+    /// non-deterministic-scalar and timezone rewrites, which change neither a command's classification
+    /// nor the fields the probes below read. Only the mutation commands' predicates/expressions and the
+    /// partition commands' `FROM`/`TO TABLE` clauses can name auxiliary tables; a statement without
+    /// either carrier has nothing to guard.
+    MutationCommands mutation_commands;
+    PartitionCommands partition_commands;
+    size_t partition_command_runs = 0;
+    bool last_command_was_partition = false;
+    bool has_plain_alter_or_execute = false;
+    bool carries_sources = false;
+    for (const auto & child : alter.command_list->children)
+    {
+        auto * command_ast = child->as<ASTAlterCommand>();
+        if (!command_ast)
+            return true;
+
+        bool is_partition_command = false;
+        if (command_ast->type == ASTAlterCommand::EXECUTE_COMMAND)
+        {
+            has_plain_alter_or_execute = true;
+        }
+        else if (auto alter_command = AlterCommand::parse(command_ast))
+        {
+            has_plain_alter_or_execute = true;
+        }
+        else if (auto partition_command = PartitionCommand::parse(command_ast))
+        {
+            is_partition_command = true;
+            if (!last_command_was_partition)
+                ++partition_command_runs;
+            carries_sources |= !command_ast->from_table.empty() || !command_ast->to_table.empty();
+            partition_commands.push_back(std::move(*partition_command));
+        }
+        else if (auto mutation_command = MutationCommand::parse(
+                     *command_ast,
+                     /* parse_alter_commands = */ false,
+                     /* with_pure_metadata_commands = */ false,
+                     settings[Setting::max_parser_depth],
+                     settings[Setting::max_parser_backtracks]))
+        {
+            carries_sources |= mutation_command->type == MutationCommand::DELETE || mutation_command->type == MutationCommand::UPDATE;
+            mutation_commands.push_back(std::move(*mutation_command));
+        }
+        else
+        {
+            /// `parseAlterCommandSegments` throws on such a command before any segment runs.
+            return true;
+        }
+        last_command_was_partition = is_partition_command;
+    }
+
+    if (!carries_sources)
+        return false;
+
+    if (udfSubstitutionFails(alter, context))
+        return true;
+
+    /// `validateSegmentsCombination` rejects these combinations before any segment runs.
+    if (!partition_commands.empty() && (has_plain_alter_or_execute || partition_command_runs != 1))
+        return true;
+
+    /// The interpreter executes the parsed segments in statement order, so a plain-alter or `EXECUTE`
+    /// segment mixed with the source-carrying commands can fail (`AlterCommands::validate`, the
+    /// engine's own execution) between the probes below and the sources — not predictable here.
+    if (has_plain_alter_or_execute)
+        return true;
+
+    /// `validateMutationsAllowed` rejects the statement before any segment runs.
+    if (context->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
+        && (mutation_commands.hasNonEmptyMutationCommands() || !partition_commands.empty()))
+    {
+        const String database_name = alter.getDatabase().empty() ? context->getCurrentDatabase() : alter.getDatabase();
+        if (database_name != DatabaseCatalog::SYSTEM_DATABASE)
+            return true;
+    }
+
+    const auto table = tryResolveMutationTarget(alter.getDatabase(), alter.getTable(), Context::ResolveAll, context);
+    if (!table)
+        return true;
+
+    if (table->isStaticStorage())
+        return true;
+
+    try
+    {
+        IInterpreter::checkStorageSupportsTransactionsIfNeeded(table, context);
+    }
+    catch (const Exception &)
+    {
+        return true;
+    }
+
+    /// A pure-update statement can be diverted to a lightweight update before the mutation checks
+    /// (see `tryRewriteToLightweightUpdate`), succeeding or failing on its own gates.
+    if (mutation_commands.hasAnyUpdateCommand() && settings[Setting::alter_update_mode] != AlterUpdateMode::HEAVY)
+    {
+        const bool force = settings[Setting::alter_update_mode] == AlterUpdateMode::LIGHTWEIGHT_FORCE;
+        if (!partition_commands.empty())
+        {
+            /// "Not only update commands were passed to alter": under FORCE the statement throws
+            /// before any segment runs; otherwise it falls through to the heavy path probed below.
+            if (force)
+                return true;
+        }
+        else if (settings[Setting::enable_lightweight_update] && mutation_commands.hasOnlyUpdateCommands()
+                 && table->supportsLightweightUpdate())
+        {
+            /// Diverted to `updateLightweight`, which validates the updated columns against the target's
+            /// metadata before it reads the expressions' tables (see `updateColumnsCanBeRejected`).
+            NameSet updated_columns;
+            for (const auto & child : alter.command_list->children)
+            {
+                const auto * command_ast = child->as<ASTAlterCommand>();
+                if (!command_ast || !collectUpdatedColumns(command_ast->update_assignments, updated_columns))
+                    return true;
+            }
+
+            return updateColumnsCanBeRejected(table, updated_columns, context);
+        }
+        else if (force)
+        {
+            return true;
+        }
+    }
+
+    /// `runCommandSegments` runs `checkMutationIsPossible` (plus the replicated non-determinism
+    /// validation) and `checkAlterPartitionIsPossible` before `MutationsInterpreter::validate` /
+    /// `alterPartition` reach the auxiliary tables. Segment order does not matter for the probes:
+    /// probing every check and suppressing on any failure only errs toward suppression.
+    try
+    {
+        if (!mutation_commands.empty())
+        {
+            table->checkMutationIsPossible(mutation_commands, settings);
+            MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, mutation_commands, context);
+        }
+        if (!partition_commands.empty())
+        {
+            const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
+            table->checkAlterPartitionIsPossible(partition_commands, metadata_snapshot, settings, context);
+        }
+    }
+    catch (const Exception &)
+    {
+        return true;
+    }
+
+    /// The heavy path reaches the auxiliary tables through `MutationsInterpreter`, whose `prepare`
+    /// validates the updated columns against the target's metadata before it resolves the commands'
+    /// expressions -- exactly as on the lightweight path above (see `updateColumnsCanBeRejected`).
+    if (mutation_commands.hasAnyUpdateCommand())
+    {
+        NameSet updated_columns;
+        for (const auto & child : alter.command_list->children)
+        {
+            const auto * command_ast = child->as<ASTAlterCommand>();
+            if (!command_ast)
+                return true;
+            if (!command_ast->update_assignments)
+                continue;
+            if (!collectUpdatedColumns(command_ast->update_assignments, updated_columns))
+                return true;
+        }
+
+        if (updateColumnsCanBeRejected(table, updated_columns, context))
+            return true;
+    }
+
+    return false;
+}
+
+/// The database an unqualified table name inside a mutation carrier's predicates and expressions is
+/// completed with. `InterpreterUpdateQuery::execute` and `InterpreterAlterQuery::executeToTable` run
+/// `AddDefaultDatabaseVisitor` with the *target table's* database, so `USE db1; UPDATE db2.dst SET x = 1
+/// WHERE a IN (SELECT a FROM src)` reads `db2.src`. A `DELETE` inherits that qualification through the
+/// `UPDATE` / `ALTER ... UPDATE` statement it is rewritten into, while its heavy (`supportsDelete`) path
+/// hands the predicate to `MutationsInterpreter` unqualified and therefore keeps the session's current
+/// database. Returns an empty string whenever the session's current database applies.
+String mutationExpressionsDatabase(const IAST & ast, const ContextPtr & context)
+{
+    String database;
+    String table;
+    /// The same namespace the carrier's own interpreter resolves its target in, see `tryResolveMutationTarget`.
+    Context::StorageNamespace resolve_namespace = Context::ResolveOrdinary;
+
+    if (const auto * update_query = ast.as<ASTUpdateQuery>())
+    {
+        database = update_query->getDatabase();
+        table = update_query->getTable();
+    }
+    else if (const auto * alter_query = ast.as<ASTAlterQuery>())
+    {
+        if (alter_query->alter_object != ASTAlterQuery::AlterObjectType::TABLE)
+            return {};
+        database = alter_query->getDatabase();
+        table = alter_query->getTable();
+        resolve_namespace = Context::ResolveAll;
+    }
+    else if (const auto * delete_query = ast.as<ASTDeleteQuery>())
+    {
+        const auto target = tryResolveMutationTarget(delete_query->getDatabase(), delete_query->getTable(), Context::ResolveOrdinary, context);
+        if (!target || target->supportsDelete())
+            return {};
+        return target->getStorageID().getDatabaseName();
+    }
+    else
+    {
+        return {};
+    }
+
+    if (table.empty())
+        return {};
+
+    const auto resolved = context->tryResolveStorageID(
+        database.empty() ? StorageID("", table) : StorageID(database, table), resolve_namespace);
+    return resolved ? resolved.getDatabaseName() : String{};
+}
+
+/// Dispatch for the mutation/partition carriers, used by the collector the same way
+/// `createQueryStopsBeforeSources` is: a statement that stops on its target is skipped whole,
+/// children included.
+bool mutationQueryStopsBeforeSources(const IAST & ast, const ContextPtr & context)
+{
+    if (const auto * delete_query = ast.as<ASTDeleteQuery>())
+        return deleteQueryStopsBeforeSources(*delete_query, context);
+    if (const auto * update_query = ast.as<ASTUpdateQuery>())
+        return updateQueryStopsBeforeSources(*update_query, context);
+    if (const auto * alter_query = ast.as<ASTAlterQuery>())
+        return alterQueryStopsBeforeSources(*alter_query, context);
+    return false;
+}
+
+/// Whether an `INSERT ... SELECT` stops on its own destination before its interpreter builds the pipeline
+/// that reads the tables the `SELECT` names. `InterpreterInsertQuery::execute` resolves and validates the
+/// destination first — `getTable`, the insertion prohibitions, the `PARTITION BY` support, the sample block
+/// derived from the statement's column list, the `INSERT` access on that block's columns and
+/// `checkInsertIsAllowed` — and only then looks at `query.select`. Without this guard,
+/// `INSERT INTO dst (no_such_column) SELECT * FROM src` would `DETACH`/`ATTACH` `src` and only then fail on
+/// `dst` with `NO_SUCH_COLUMN_IN_TABLE`, breaking the side-effect-free invariant this hook keeps for
+/// failing queries.
+///
+/// Unlike `createQueryStopsBeforeSources` and `mutationQueryStopsBeforeSources`, this suppresses the
+/// sources only: even a rejected insert resolves its destination, locks it and reads its metadata, so the
+/// destination stays a legitimate reattach candidate.
+///
+/// Like the other preflights, this is a best-effort, point-in-time check that errs toward suppressing the
+/// randomization: a destination whose fate cannot be predicted counts as stopping the statement.
+bool insertQueryStopsBeforeSources(const ASTInsertQuery & insert, const ContextPtr & context)
+{
+    /// A table-function destination is produced by running the function (`ITableFunction::execute` in
+    /// `getTable`), which validates its own arguments and can be rejected there; and a function that needs
+    /// a structure hint has the `SELECT`'s header analyzed even before that. Neither outcome can be
+    /// predicted here, and the header analysis is not the source read this guard accounts for.
+    if (insert.table_function)
+        return true;
+
+    /// `InterpreterInsertQuery::getTable` resolves the destination with the default `ResolveAll` (see the
+    /// collector), and resolving it here has to stay side-effect free, exactly as for a mutation target.
+    const auto table = tryResolveMutationTarget(insert.getDatabase(), insert.getTable(), Context::ResolveAll, context);
+    if (!table)
+        return true;
+
+    /// The server-wide insertion prohibition, with the exemption `InterpreterInsertQuery::execute` makes
+    /// for a destination that writes out to external storage. (Its `no_destination` companion — the
+    /// message-queue prohibition — concerns the background pushes into materialized views, which this hook
+    /// never sees: it runs for initial user queries only.)
+    if (context->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
+    {
+        const auto & database_name = table->getStorageID().getDatabaseName();
+        const bool writes_out_to_external_storage
+            = table->isObjectStorage() || table->isDataLake() || table->isMessageQueue() || table->isExternalDatabase();
+        if (database_name != DatabaseCatalog::SYSTEM_DATABASE && database_name != DatabaseCatalog::TEMPORARY_DATABASE
+            && !writes_out_to_external_storage)
+            return true;
+    }
+
+    if (insert.partition_by && !table->supportsPartitionBy())
+        return true;
+
+    /// `getSampleBlock` turns the statement's column list into the insert header, and rejects it when a
+    /// name is repeated (`DUPLICATE_COLUMN`), is absent from the destination (`NO_SUCH_COLUMN_IN_TABLE`),
+    /// or is materialized while `insert_allow_materialized_columns` is off (`ILLEGAL_COLUMN`). Its outcome
+    /// cannot be predicted without repeating the column-transformer expansion it performs, so probe it —
+    /// it only reads the destination's metadata. `checkInsertIsAllowed`, the storage's own write guard, is
+    /// probed the same way.
+    ///
+    /// The two checks the interpreter makes in between need no counterpart. The column-level `INSERT`
+    /// access is subsumed by this hook's own access preflight, which requires `INSERT` on the whole
+    /// destination table. And the materialized-column loop that follows cannot add a rejection of its own:
+    /// with `insert_allow_materialized_columns` off, `getSampleBlock` has already rejected every
+    /// materialized name, and with it on the loop does not run.
+    try
+    {
+        const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+        /// The header itself is not needed here — only whether building it is rejected.
+        InterpreterInsertQuery::getSampleBlock(
+            insert, table, metadata_snapshot, context, /* no_destination */ false,
+            context->getSettingsRef()[Setting::insert_allow_materialized_columns]);
+        table->checkInsertIsAllowed(context);
+    }
+    catch (const Exception &)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+/// The object kind the query's main-table reference demands (see `ExpectedObjectKind`). Everything not
+/// enumerated here — including `SHOW CREATE TABLE`, `EXISTS TABLE` and plain `DROP`/`DETACH TABLE`, which
+/// accept any object kind — places no constraint on the resolved storage. The kind-specific `DROP`/`DETACH`
+/// forms are constrained because `InterpreterDropQuery::executeToTableImpl` throws `INCORRECT_QUERY` on an
+/// `is_view`/`is_dictionary` mismatch before touching the table's storage.
+ExpectedObjectKind mainTableExpectedObjectKind(const IAST & ast)
+{
+    if (ast.as<ASTExistsViewQuery>() || ast.as<ASTShowCreateViewQuery>())
+        return ExpectedObjectKind::View;
+    if (ast.as<ASTExistsDictionaryQuery>() || ast.as<ASTShowCreateDictionaryQuery>())
+        return ExpectedObjectKind::Dictionary;
+    if (const auto * drop = ast.as<ASTDropQuery>())
+    {
+        if (drop->is_view)
+            return ExpectedObjectKind::View;
+        if (drop->is_dictionary)
+            return ExpectedObjectKind::Dictionary;
+    }
+    return ExpectedObjectKind::Any;
+}
+
+/// The namespace the query's interpreter resolves its main-table reference in (for the non-`TEMPORARY`
+/// forms — `... TEMPORARY TABLE t` references are skipped by the collector before resolution). This must
+/// mirror the interpreter exactly: resolving here more broadly than the interpreter does would let a
+/// same-named session temporary table hide a persistent table the query actually uses (the collector
+/// resolves the temporary hit, drops it, and never records the persistent table), silently disabling the
+/// hook for it; resolving more narrowly would detach a persistent table the query never touches.
+///
+/// `ResolveOrdinary` carriers (the interpreter looks the unqualified name up only in the persistent
+/// catalog, via `Context::resolveDatabase` + catalog or an explicit `ResolveOrdinary`):
+/// `EXISTS TABLE`/`EXISTS VIEW`/`EXISTS DICTIONARY` (`InterpreterExistsQuery`), `SHOW CREATE VIEW`/
+/// `SHOW CREATE DICTIONARY` (`InterpreterShowCreateQuery`), `CREATE`/`ATTACH` targets
+/// (`InterpreterCreateQuery`), `UNDROP` (`InterpreterUndropQuery`), `UPDATE` (`InterpreterUpdateQuery`),
+/// and `DELETE` (`InterpreterDeleteQuery`).
+///
+/// `ResolveAll` carriers (a session temporary table legitimately shadows the persistent one):
+/// `SHOW CREATE TABLE` (`InterpreterShowCreateQuery`), `ALTER` (`InterpreterAlterQuery`), `OPTIMIZE`
+/// (`InterpreterOptimizeQuery`), `CHECK TABLE` (`InterpreterCheckQuery`), and `DROP`/`DETACH`/`TRUNCATE`
+/// (`InterpreterDropQuery` tries `ResolveExternal` first for an unqualified name).
+Context::StorageNamespace mainTableResolveNamespace(const IAST & ast)
+{
+    if (ast.as<ASTExistsTableQuery>() || ast.as<ASTExistsViewQuery>() || ast.as<ASTExistsDictionaryQuery>()
+        || ast.as<ASTShowCreateViewQuery>() || ast.as<ASTShowCreateDictionaryQuery>()
+        || ast.as<ASTCreateQuery>() || ast.as<ASTUndropQuery>()
+        || ast.as<ASTUpdateQuery>() || ast.as<ASTDeleteQuery>())
+        return Context::ResolveOrdinary;
+    return Context::ResolveAll;
+}
+
+/// Collect the expression aliases declared in one alias scope: the aliases an expression of the query level
+/// `ast` belongs to can resolve (`WITH expr AS name`, `SELECT expr AS name`, ...). Used to keep the
+/// bare-identifier right-hand side of `IN` from being mistaken for a table: unlike a `FROM` reference, an
+/// `IN` right-hand side resolves an expression alias in preference to a same-named table
+/// (`WITH (1, 2) AS rhs SELECT 1 IN rhs` never reads the table `rhs`).
+///
+/// The walk stops at a nested `ASTSelectQuery`, because that select starts an alias scope of its own and its
+/// aliases are not visible to its parent: in
+/// `SELECT * FROM lhs WHERE a IN rhs AND 1 = (SELECT 1 AS rhs)` the outer `IN rhs` cannot see the child
+/// scope's `rhs` alias, so it still reads the real table `rhs`. The nested scope is collected on its own when
+/// `collectTablesInQuery` reaches it, and it inherits its ancestors' aliases (which only ever makes the
+/// collector skip a table — the safe direction for a name a nested scope cannot actually resolve).
+void collectScopeAliasNames(const ASTPtr & ast, std::unordered_set<String> & alias_names)
+{
+    if (!ast)
+        return;
+
+    if (const auto & alias = ast->tryGetAlias(); !alias.empty())
+        alias_names.insert(alias);
+
+    for (const auto & child : ast->children)
+    {
+        if (child->as<ASTSelectQuery>())
+            continue;
+        collectScopeAliasNames(child, alias_names);
+    }
+}
+
+/// Walk the AST and collect tables, tracking CTE scope so that an in-scope CTE name does not cause us to
+/// treat an unqualified table reference of the same name as a real table. `active_ctes` is passed by value
+/// so each `ASTSelectQuery`'s WITH names propagate only to its descendants, not to siblings or ancestors.
+///
+/// Scope — this defines the contract of `reattach_tables_before_query_execution`: tables are extracted
+/// from `SELECT` (FROM/JOIN/IN, with the CTE shadowing rules below), `INSERT`, and the `ASTQueryWithTableAndOutput`
+/// family (`SHOW CREATE TABLE`, `EXISTS TABLE`, `CHECK TABLE`, `OPTIMIZE`, `ALTER`, ...) — including the extra
+/// source/destination tables an `ALTER ... REPLACE/ATTACH/MOVE PARTITION` names in its `from_*`/`to_*` fields
+/// the `AS` source of a `CREATE ... AS src` and the external view targets of a `CREATE ... TO dst`
+/// — see the `ASTQueryWithTableAndOutput` branch. Query classes that
+/// keep table references in other AST shapes — `SHOW COLUMNS`, `SHOW INDEXES`, `DESCRIBE`, `RENAME`/`EXCHANGE`,
+/// and all `BACKUP` and `RESTORE` forms — are deliberately not covered: `RENAME` and `EXCHANGE`
+/// manipulate the tables' catalog registration themselves; `BACKUP` and `RESTORE` can both fail before ever
+/// touching the named local table, so reattaching it here would give a failing query a `DETACH`/`ATTACH`
+/// side effect on a table it never touches. For `RESTORE TABLE`, `RestorerFromBackup::run` first resolves
+/// the source objects inside the backup (`findDatabasesAndTablesInBackup`) and only later reaches the local
+/// destination, so a restore whose source entry is missing from the backup never touches an existing
+/// destination table. For `BACKUP TABLE`, `BackupsWorker::BackupStarter::doBackup` opens and validates the
+/// destination (`openBackupForWriting`) before it builds `BackupEntriesCollector`, so a backup with an
+/// invalid destination — an unknown disk, a bad path, an already existing backup — fails before the source
+/// table is ever read; proving the destination valid here would require opening the backup in this
+/// collector. The whole-database/whole-server forms additionally name no explicit table and expand into
+/// per-table work only during execution. Broadening the randomized `DETACH`/`ATTACH` to those queries would
+/// add churn to the test suite without exercising the data-integrity paths this testing hook targets.
+///
+/// Only the `WITH name AS (subquery)` form (`ASTWithElement`) shadows a table identifier in FROM. A scalar
+/// `WITH expr AS alias` binding (e.g. `WITH 1 AS t`) does not: `WITH 1 AS t SELECT * FROM t` reads the table
+/// `t`. A CTE's own name is also not active while walking its own definition body, because the analyzer hides
+/// only the CTE currently being resolved (`WITH t AS (SELECT * FROM t) ...` reads the real table `t` inside).
+/// The bare-identifier right-hand side of `IN` follows the opposite rule — any expression alias wins there —
+/// and is handled separately through `active_aliases`, which — like `active_ctes` — is passed by value so
+/// that a select's aliases reach only its own scope and the scopes nested inside it.
+void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::unordered_set<String> active_ctes, std::unordered_set<String> active_aliases)
+{
+    if (!ast)
+        return;
+
+    if (const auto * select = ast->as<ASTSelectQuery>())
+    {
+        /// This select starts a new alias scope: its own aliases are added to those inherited from the
+        /// enclosing scopes, and neither siblings nor ancestors ever see them (see `collectScopeAliasNames`).
+        collectScopeAliasNames(ast, active_aliases);
+
+        const ASTPtr with = select->with();
+
+        /// Collect only the real CTE names declared in this select's WITH clause. Only the
+        /// `WITH name AS (subquery)` form (`ASTWithElement`) introduces a name that shadows a table
+        /// identifier in FROM. A scalar `WITH expr AS alias` binding does not: `WITH 1 AS t SELECT * FROM t`
+        /// still reads the table `t`, so such aliases must not be treated as shadowing CTE names.
+        std::unordered_set<String> this_level_ctes;
+        if (with)
+        {
+            for (const auto & with_child : with->children)
+                if (const auto * with_element = with_child->as<ASTWithElement>())
+                    this_level_ctes.insert(with_element->name);
+
+            /// Walk each WITH child (CTE definitions and scalar aliases). The analyzer hides only the CTE
+            /// currently being resolved, so a CTE body may still reference a real table with the same name:
+            /// `WITH t AS (SELECT * FROM t) SELECT * FROM t` reads the real table `t` inside the definition.
+            /// Therefore the element's own name is not active while walking its own body, but its siblings are.
+            ///
+            /// `WITH RECURSIVE` is more subtle: the analyzer resolves the non-recursive *seed* term (the
+            /// first `UNION` member) before the recursive temporary table exists, so the seed reads a real
+            /// table of the same name; only the recursive members (after the first) resolve the name through
+            /// the recursive temporary table. So the element's own name must shadow references inside the
+            /// recursive members (otherwise `WITH RECURSIVE t AS (SELECT 1 UNION ALL SELECT ... FROM t) ...`
+            /// would `DETACH`/`ATTACH` a table the query does not read), but must NOT shadow references in
+            /// the seed term (otherwise `WITH RECURSIVE t AS (SELECT ... FROM t UNION ALL ...) ...` would
+            /// miss the real table `t` that the seed term actually reads).
+            for (const auto & with_child : with->children)
+            {
+                auto body_ctes = active_ctes;
+                body_ctes.insert(this_level_ctes.begin(), this_level_ctes.end());
+
+                const auto * with_element = with_child->as<ASTWithElement>();
+
+                if (!select->recursive_with || !with_element)
+                {
+                    /// Non-recursive CTE (or a scalar `WITH expr AS alias` binding): the element's own name
+                    /// does not shadow references inside its own body, because the analyzer hides only the
+                    /// CTE currently being resolved.
+                    if (with_element)
+                        body_ctes.erase(with_element->name);
+                    collectTablesInQuery(with_child, data, body_ctes, active_aliases);
+                    continue;
+                }
+
+                /// `WITH RECURSIVE name AS (seed [UNION ALL recursive ...])`: locate the `UNION` member list
+                /// so the seed term can be walked with `name` un-shadowed and the recursive members with
+                /// `name` shadowed.
+                const ASTSelectWithUnionQuery * union_query = nullptr;
+                if (with_element->subquery)
+                {
+                    union_query = with_element->subquery->as<ASTSelectWithUnionQuery>();
+                    if (!union_query)
+                        for (const auto & sub_child : with_element->subquery->children)
+                            if ((union_query = sub_child->as<ASTSelectWithUnionQuery>()))
+                                break;
+                }
+
+                const ASTPtr members = union_query ? union_query->list_of_selects : nullptr;
+                if (!members || members->children.empty())
+                {
+                    /// Unrecognized recursive body shape: conservatively keep the name shadowed across the
+                    /// whole body (it is better to miss a real table than to detach one the query does not read).
+                    collectTablesInQuery(with_child, data, body_ctes, active_aliases);
+                    continue;
+                }
+
+                /// Seed (first) member: the name is not yet bound to the recursive temporary table, so a
+                /// same-named real table read here is a real table the query reads — do not shadow it.
+                auto seed_ctes = body_ctes;
+                seed_ctes.erase(with_element->name);
+                collectTablesInQuery(members->children.front(), data, seed_ctes, active_aliases);
+
+                /// Recursive members: the name resolves to the recursive temporary table — keep it shadowed.
+                for (size_t i = 1; i < members->children.size(); ++i)
+                    collectTablesInQuery(members->children[i], data, body_ctes, active_aliases);
+            }
+        }
+
+        /// For the rest of the query (FROM and below) all of this select's CTE names shadow table identifiers.
+        active_ctes.insert(this_level_ctes.begin(), this_level_ctes.end());
+
+        /// Walk the FROM table expressions directly so the original (un-resolved) database name is
+        /// preserved. `getDatabaseAndTables` would substitute the current database for unqualified
+        /// references, which defeats the CTE-name check: a CTE shadows only unqualified table references.
+        for (const auto * table_expression : getTableExpressions(*select))
+        {
+            if (!table_expression || !table_expression->database_and_table_name)
+                continue;
+            if (const auto * id = table_expression->database_and_table_name->as<ASTTableIdentifier>())
+                data.addTableIfNotEmpty(id->getDatabaseName(), id->shortName(), active_ctes, Context::ResolveAll, AccessType::SELECT);
+        }
+
+        /// Recurse into the remaining children with the CTE names active. The WITH subtree was already
+        /// walked above with per-element scope, so skip it here to avoid re-adding the element's own name.
+        for (const auto & child : ast->children)
+        {
+            if (child == with)
+                continue;
+            collectTablesInQuery(child, data, active_ctes, active_aliases);
+        }
+        return;
+    }
+    else if (const auto * insert = ast->as<ASTInsertQuery>())
+    {
+        /// `InterpreterInsertQuery::getTable` resolves the target with the default `ResolveAll`, so a
+        /// session temporary table legitimately shadows a persistent one as the `INSERT` destination.
+        data.addTableIfNotEmpty(insert->getDatabase(), insert->getTable(), active_ctes, Context::ResolveAll, AccessType::INSERT);
+
+        /// An insert that can still be rejected on its destination alone never reaches the tables its
+        /// `SELECT` names, so those must not be collected (see `insertQueryStopsBeforeSources`). Only the
+        /// `SELECT` is left out: the destination above is touched by a rejected insert too, and none of
+        /// the statement's other children (the column list, the `PARTITION BY`, the settings, the
+        /// `FROM INFILE` path) names a table.
+        if (insert->select && insertQueryStopsBeforeSources(*insert, data.context))
+        {
+            for (const auto & child : ast->children)
+                if (child != insert->select)
+                    collectTablesInQuery(child, data, active_ctes, active_aliases);
+            return;
+        }
+    }
+    else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
+    {
+        /// `... TEMPORARY TABLE t` (e.g. `EXISTS TEMPORARY TABLE t`, `DROP TEMPORARY TABLE t`,
+        /// `SHOW CREATE TEMPORARY TABLE t`) names a session-local temporary table, and its name is
+        /// unqualified. Resolving it through the persistent catalog would detach an unrelated persistent
+        /// table of the same name that the query never touches, so skip temporary-table references.
+        ///
+        /// A `CREATE` that stops on its own destination — its destination-side access check fails, or the
+        /// plain-create path short-circuits on a taken name — never reaches the tables it reads, so the
+        /// whole statement is skipped here, children included (see `createQueryStopsBeforeSources`).
+        if (const auto * create_query = ast->as<ASTCreateQuery>())
+            if (createQueryStopsBeforeSources(*create_query, data.context))
+                return;
+
+        /// The mutation/partition carriers (`DELETE`, `UPDATE`, `ALTER`) get the same treatment: a
+        /// statement that stops on its own target before its interpreter reaches the tables its
+        /// predicates, update expressions, or partition `FROM`/`TO TABLE` clauses name is skipped whole,
+        /// children included (see `mutationQueryStopsBeforeSources`).
+        if (mutationQueryStopsBeforeSources(*ast, data.context))
+            return;
+
+        /// Targets whose query never touches an existing table of that name (plain `CREATE`/`ATTACH`,
+        /// `CREATE ... IF NOT EXISTS`, `UNDROP`, the failing/no-op shapes of `CREATE INDEX`, and the
+        /// session-local hypothetical-object statements — see `mainTableTouchedIfExists`) are skipped too:
+        /// resolving them would detach a table the statement is about to fail on or no-op against.
+        if (!query_with_output->isTemporary() && mainTableTouchedIfExists(*ast, data.context))
+            data.addTableIfNotEmpty(query_with_output->getDatabase(), query_with_output->getTable(), active_ctes, mainTableResolveNamespace(*ast), requiredAccessForTableQuery(*ast), mainTableExistenceRequired(*ast), mainTableExpectedObjectKind(*ast));
+
+        /// Some `ASTQueryWithTableAndOutput` classes reference additional real tables that live neither in the
+        /// main `database`/`table` nor in child AST nodes, yet the outer query's own access check validates them
+        /// at interpretation time. Collect those here too, so the access preflight stays complete and an
+        /// access-rejected query never produces `DETACH`/`ATTACH` side effects (see the preflight in
+        /// `reattachTablesUsedInQuery`). Their required access is over-approximated with all table-level flags —
+        /// over-requiring only makes the preflight skip randomization, it never lets a failing query detach.
+        if (const auto * alter = ast->as<ASTAlterQuery>())
+        {
+            /// `ALTER ... REPLACE PARTITION ... FROM src` / `ATTACH PARTITION ... FROM src` name a source table
+            /// in `from_*`, and `MOVE PARTITION ... TO TABLE dst` names a destination table in `to_*` (see
+            /// `InterpreterAlterQuery::getRequiredAccessForCommand`). These are plain strings in `ASTAlterCommand`,
+            /// not child AST nodes, so the generic recursion below never reaches them.
+            if (alter->command_list)
+                for (const auto & command_child : alter->command_list->children)
+                    if (const auto * command = command_child->as<ASTAlterCommand>())
+                    {
+                        /// `MergeTreeData::alterPartition` completes an unqualified `from_*`/`to_*` name
+                        /// with the current database directly — no temporary-table shadowing — hence
+                        /// `ResolveOrdinary`.
+                        data.addTableIfNotEmpty(command->from_database, command->from_table, active_ctes, Context::ResolveOrdinary, AccessFlags::allFlagsGrantableOnTableLevel());
+                        data.addTableIfNotEmpty(command->to_database, command->to_table, active_ctes, Context::ResolveOrdinary, AccessFlags::allFlagsGrantableOnTableLevel());
+                    }
+        }
+        else if (const auto * create = ast->as<ASTCreateQuery>())
+        {
+            /// `CREATE ... AS src` / `CREATE ... CLONE AS src` reads `src`'s structure; `InterpreterCreateQuery`
+            /// checks `SHOW_COLUMNS` on `create.as_database`/`create.as_table` before reading it. Without this,
+            /// `CREATE OR REPLACE TABLE dst AS src` would detach an existing `dst` before that check fails. The
+            /// source is a plain string in `ASTCreateQuery`, not a child AST node. The interpreter completes
+            /// an unqualified source with `Context::resolveDatabase` and reads it from the persistent
+            /// catalog — no temporary-table shadowing — hence `ResolveOrdinary`.
+            data.addTableIfNotEmpty(create->as_database, create->as_table, active_ctes, Context::ResolveOrdinary, AccessFlags::allFlagsGrantableOnTableLevel());
+
+            /// External view targets (`CREATE MATERIALIZED VIEW mv TO dst`, `CREATE WINDOW VIEW ... TO dst`,
+            /// the `TimeSeries` targets, ...) live in `create.targets`, not in child AST nodes, and
+            /// `InterpreterCreateQuery::getRequiredAccess` checks `SELECT | INSERT` on each of them. Without
+            /// this, `CREATE MATERIALIZED VIEW mv TO dst AS SELECT * FROM src` would detach and attach `src`
+            /// and only then fail on the missing access to `dst`. An inner (non-external) target carries no
+            /// table name and is skipped by `addTableIfNotEmpty` naturally. The target is completed with the
+            /// current database by `InterpreterCreateQuery` and never resolved against session temporary
+            /// tables, hence `ResolveOrdinary`.
+            ///
+            /// Most targets are not required to exist, because a view may name a target that is created only
+            /// later. The `TO dst` target of a `CREATE MATERIALIZED VIEW ... AS SELECT` is the exception:
+            /// `InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine` resolves it through
+            /// `DatabaseCatalog::getTable` and rethrows unless `allow_materialized_view_with_bad_select` is
+            /// set, and it does so before creating anything — so `CREATE MATERIALIZED VIEW mv TO missing_dst
+            /// AS SELECT * FROM src` fails and must not detach `src` on the way. That validation runs for a
+            /// `CREATE` only (`mode <= LoadingStrictnessLevel::CREATE`), hence the `attach` exclusion.
+            if (create->targets)
+            {
+                const bool to_target_existence_required = create->is_materialized_view && create->select && !create->attach
+                    && !data.context->getSettingsRef()[Setting::allow_materialized_view_with_bad_select];
+
+                for (const auto & target : create->targets->targets)
+                    data.addTableIfNotEmpty(
+                        target.table_id.database_name, target.table_id.table_name, active_ctes,
+                        Context::ResolveOrdinary, AccessType::SELECT | AccessType::INSERT,
+                        /* existence_required */ target.kind == ViewTarget::To && to_target_existence_required);
+            }
+        }
+
+        /// The tables named inside a mutation carrier's predicates and expressions are resolved against the
+        /// target table's database rather than the session's current one, so walk this statement's children
+        /// with that database in effect (see `mutationExpressionsDatabase`).
+        if (const auto expressions_database = mutationExpressionsDatabase(*ast, data.context); !expressions_database.empty())
+        {
+            const auto saved_default_database = data.default_database;
+            data.default_database = expressions_database;
+            for (const auto & child : ast->children)
+                collectTablesInQuery(child, data, active_ctes, active_aliases);
+            data.default_database = saved_default_database;
+            return;
+        }
+    }
+    else if (const auto * function = ast->as<ASTFunction>())
+    {
+        /// `IN table` / `GLOBAL IN table` (and the `NOT IN` / null-aware variants) keep the right-hand-side
+        /// table as a bare identifier that is not part of the `FROM`/`JOIN` table expressions walked above,
+        /// so collect it here (mirroring how `AddDefaultDatabaseVisitor` and `ActionsMatcher::makeSet` treat
+        /// the second `IN` argument). A subquery right-hand side (`... IN (SELECT ...)`) is handled by the
+        /// generic recursion into children below; a tuple/literal or table-function right-hand side names no
+        /// table to detach. The referenced table needs `SELECT` just like a `FROM` table, so a user missing
+        /// `SELECT` on it keeps the whole query side-effect free via the access preflight.
+        ///
+        /// An unqualified right-hand side that matches an expression alias declared in the query is not a
+        /// table either: the analyzer resolves `rhs` in `WITH (1, 2) AS rhs SELECT 1 IN rhs` (and in
+        /// `SELECT (1, 2) AS rhs, 5 IN rhs`) to the alias, so the same-named table is never read. Unlike a
+        /// `FROM` reference — where a scalar alias does not shadow the table, hence the `ASTWithElement`-only
+        /// rule for `active_ctes` above — the alias wins here, so consult `active_aliases` as well. Only the
+        /// aliases of this scope and of the scopes enclosing it count: an alias declared in a nested select
+        /// is invisible here, so it must not hide a real table (see `collectScopeAliasNames`).
+        if (functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() == 2)
+        {
+            if (const auto * id = function->arguments->children[1]->as<ASTIdentifier>())
+                if (auto table_id = id->createTable())
+                    if (!table_id->getDatabaseName().empty() || !active_aliases.contains(table_id->shortName()))
+                        data.addTableIfNotEmpty(table_id->getDatabaseName(), table_id->shortName(), active_ctes, Context::ResolveAll, AccessType::SELECT);
+        }
+    }
+
+    for (const auto & child : ast->children)
+        collectTablesInQuery(child, data, active_ctes, active_aliases);
+}
+
+}
+
+static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr context)
+{
+    CollectTablesData data(context);
+    /// The aliases of the outermost scope — the one a statement that is not a `SELECT` carries its
+    /// expressions in (`ALTER TABLE t DELETE WHERE ...`, ...). For a `SELECT` this collects nothing, because
+    /// the walk stops at the query's own `ASTSelectQuery`, which opens its scope in `collectTablesInQuery`.
+    std::unordered_set<String> root_aliases;
+    collectScopeAliasNames(query, root_aliases);
+
+    collectTablesInQuery(query, data, /* active_ctes */ {}, /* active_aliases */ root_aliases);
+
+    /// Deduplicate: the same table can appear multiple times (e.g. self-joins), possibly in contexts
+    /// requiring different access (e.g. `INSERT INTO t SELECT ... FROM t`) — merge the required access.
+    {
+        std::unordered_map<StorageID, size_t, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> index_in_deduped;
+        std::vector<CollectTablesData::CollectedTable> deduped;
+        deduped.reserve(data.tables.size());
+        for (auto & table : data.tables)
+        {
+            auto [it, inserted] = index_in_deduped.emplace(table.id, deduped.size());
+            if (inserted)
+                deduped.push_back(std::move(table));
+            else
+            {
+                deduped[it->second].required_access |= table.required_access;
+                deduped[it->second].existence_required |= table.existence_required;
+                /// References demanding different kinds can only coexist when at least one of them uses
+                /// the table as a plain table, which legitimizes reattaching it — drop the constraint.
+                if (deduped[it->second].expected_kind != table.expected_kind)
+                    deduped[it->second].expected_kind = ExpectedObjectKind::Any;
+            }
+        }
+        data.tables = std::move(deduped);
+    }
+
+    /// Existence preflight — keep queries referencing a missing table side-effect free. A required
+    /// reference that is absent from the catalog means the query itself is going to fail (typically with
+    /// `UNKNOWN_TABLE`) when its interpreter resolves the same name, so skip the hook for the whole query
+    /// instead of first `DETACH`/`ATTACH`-ing the references that do exist (e.g. `src` in
+    /// `SELECT * FROM src JOIN missing USING a` or `dst` in `CREATE OR REPLACE TABLE dst AS missing`).
+    /// Optional references — ones the query is allowed to create or ignore, such as the target of a
+    /// plain `CREATE` — legitimately may not exist and do not
+    /// disable the hook; the reattach loop below skips them individually. Like the access preflight, this
+    /// is a best-effort, point-in-time check: a table dropped concurrently after it is not caught here,
+    /// and the loop below re-resolves each table before detaching it.
+    ///
+    /// The probe itself must be side-effect free, so databases that do not support detaching tables
+    /// are never probed: in such databases even `isTableExist` can act on behalf of the query — e.g.
+    /// `DatabaseRemote::isTableExist` reaches out to the remote server under the caller's credentials
+    /// and propagates transport/authentication failures — while the reattach loop below skips their
+    /// tables anyway. When such a reference is required, its existence cannot be verified here, so
+    /// skip the hook for the whole query — erring toward skipping randomization, never toward
+    /// producing side effects for a query that may be about to fail on the unverified reference.
+    for (const auto & table : data.tables)
+    {
+        if (!table.existence_required)
+            continue;
+        if (const auto database = DatabaseCatalog::instance().tryGetDatabase(table.id.getDatabaseName());
+            database && !database->supportsDetachingTables())
+            return;
+        if (!DatabaseCatalog::instance().isTableExist(table.id, context))
+            return;
+    }
+
+    /// Access preflight — keep access-rejected queries side-effect free. The outer query's own access
+    /// checks run only later, when its interpreter is constructed, so without this check a user who may
+    /// `DETACH`/`ATTACH` a table but lacks the access the query itself needs on it (e.g. `SELECT`) would
+    /// still trigger a real `DETACH`/`ATTACH` cycle and only then get `ACCESS_DENIED`. Require, for every
+    /// collected table, the access recorded at collection time; if any check fails, skip the hook for the
+    /// whole query — the missing access may concern a different table than the one to be detached.
+    /// The preflight is scoped to what the AST-based collector sees: access enforced against objects that
+    /// materialize only during execution (e.g. inner tables of views) cannot be validated here, and the
+    /// table-level check is conservative with column-level grants (a user granted `SELECT` on a subset of
+    /// columns fails it) — in all those cases the preflight errs toward skipping randomization, never
+    /// toward producing side effects for a failing query.
+    auto access = context->getAccess();
+    for (const auto & table : data.tables)
+        if (!access->isGranted(table.required_access, table.id.getDatabaseName(), table.id.getTableName()))
+            return;
+
+    for (const auto & collected : data.tables)
+    {
+        /// The outer query can already be cancelled while it is still pending — killed by `KILL QUERY`,
+        /// or past its `max_execution_time` deadline. The pre-execution kill gate in `executeQueryImpl`
+        /// runs only later (and only for queries that are inserted into the process list, which the
+        /// internal `DETACH`/`ATTACH` queries below are not, since they run under the outer query's
+        /// process list element), so nothing else stops the cycle here. A cancelled query must not
+        /// mutate table state, so stop the randomization instead of starting another cycle.
+        if (const auto process_list_element = context->getProcessListElementSafe();
+            process_list_element && process_list_element->isKilled())
+            return;
+
+        const auto & table_id = collected.id;
+        if (table_id.getDatabaseName() == "system")
+            continue;
+
+        const auto & catalog = DatabaseCatalog::instance();
+
+        /// Check the database before resolving the table: in databases that resolve tables dynamically,
+        /// the resolution itself is not free of side effects — e.g. a `URL` database infers the table
+        /// structure from the data and throws `ACCESS_DENIED` already in `tryGetTable` when the user
+        /// lacks the read source grant (see `DatabaseURL::getTableImpl`), which would fail an outer
+        /// query (e.g. `EXISTS TABLE`) that succeeds without the hook. All such databases do not
+        /// support detaching tables, so resolving their tables is never needed here.
+        const auto database = catalog.tryGetDatabase(table_id.getDatabaseName());
+        if (!database || !database->supportsDetachingTables())
+            continue;
+
+        /// `SHOW CREATE DICTIONARY` for a dictionary-only user intentionally masks every failed
+        /// catalog lookup as a missing dictionary. Loading a same-named ordinary table here first
+        /// could expose its startup or metadata exception, even though dictionaries are never
+        /// reattach candidates. Skip the reference before the lookup to preserve that fail-closed
+        /// behavior.
+        if (collected.expected_kind == ExpectedObjectKind::Dictionary)
+            continue;
+
+        /// If table doesn't store data on disk, the data will be lost after detach.
+        /// An action lock (e.g. from `SYSTEM STOP MERGES`) is held against the current storage object and
+        /// is discarded by a `DETACH`/`ATTACH` cycle — exactly as by a manual `DETACH TABLE` + `ATTACH TABLE`.
+        /// `hasAny` is a best-effort, point-in-time check that skips the common case (a test stopped some
+        /// action before running queries); it is deliberately not atomic with the detach, so a lock installed
+        /// concurrently after this check can still be lost. That matches manual `DETACH` semantics and is
+        /// acceptable for this testing-only hook.
+        auto table = catalog.tryGetTable(table_id, context);
+        if (!table
+            || !table->storesDataOnDisk()
+            || context->getActionLocksManager()->hasAny(table))
+            continue;
+
+        /// A kind-specific metadata probe (`EXISTS VIEW`, `SHOW CREATE DICTIONARY`, ...) on a name that
+        /// resolved to a different object kind never touches this table's storage — the outer query
+        /// answers `0` or fails on the kind mismatch — so reattaching it would be a side effect the
+        /// query never implies.
+        if ((collected.expected_kind == ExpectedObjectKind::View && !table->isView())
+            || (collected.expected_kind == ExpectedObjectKind::Dictionary && !table->isDictionary()))
+            continue;
+
+        /// Replicated tables (e.g. `ReplicatedMergeTree`) re-run their startup sequence on `ATTACH`,
+        /// and that path can currently trip a broken-part invariant: `ReplicatedMergeTreeRestartingThread::tryStartup`
+        /// calls `createLogEntriesToFetchBrokenParts`, which reaches `removePartAndEnqueueFetch(..., storage_init = true)`
+        /// while the broken part is still in the working set and hits `chassert(!storage_init)`.
+        /// Until that is hardened, skip replicated tables so this testing hook does not introduce a new
+        /// startup exception instead of only exercising existing reattach safety.
+        if (table->supportsReplication())
+            continue;
+
+        if (!catalog.getReferentialDependencies(table_id).empty()
+            || !catalog.getReferentialDependents(table_id).empty()
+            || !catalog.getLoadingDependencies(table_id).empty()
+            || !catalog.getLoadingDependents(table_id).empty())
+            continue;
+
+        /// Tables with columns of dynamic structure (`Dynamic`, `JSON`, `Variant` and types containing them)
+        /// can fail with logical errors during merges that race with DETACH/ATTACH, because part-level
+        /// serialization metadata may differ between the original and re-attached table state.
+        {
+            bool has_dynamic_structure = false;
+            const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+            for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
+            {
+                if (column.type->hasDynamicSubcolumns())
+                {
+                    has_dynamic_structure = true;
+                    break;
+                }
+            }
+            if (has_dynamic_structure)
+                continue;
+        }
+
+        /// Tables with parts involved in `MergeTree` transactions are not safe to reattach yet.
+        /// A part created (or being removed) by a still-running transaction keeps the storage
+        /// referenced by that transaction until it commits or rolls back, so the internal
+        /// `DETACH TABLE ... SYNC` below blocks until then — firing the hook on a non-transactional
+        /// query while another session of a sequential test script holds such a part deadlocks the
+        /// script (the other session cannot advance while this query is blocked). Independently,
+        /// reloading parts with transactional version metadata on `ATTACH` is not hardened: CSN
+        /// update and unknown-state resolution can race with the reattach and leave intersecting
+        /// parts that fail the next server startup. Until that is hardened, skip tables having any
+        /// active part involved in a transaction. Like the action-lock check above, this is a
+        /// best-effort, point-in-time check.
+        if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table.get()))
+        {
+            bool has_transactional_parts = false;
+            for (const auto & part : merge_tree->getDataPartsVectorForInternalUsage())
+            {
+                if (part->version->getInfo().wasInvolvedInTransaction())
+                {
+                    has_transactional_parts = true;
+                    break;
+                }
+            }
+            if (has_transactional_parts)
+                continue;
+
+            /// Tables with a TTL are not safe to reattach yet: `StorageMergeTree::scheduleDataProcessingJob`
+            /// books a `max_number_of_merges_with_ttl_in_pool` slot when it selects a TTL merge, but the slot
+            /// is released through the `MergeList` entry that `MergePlainMergeTreeTask::prepare` creates only
+            /// when the task starts running. The internal `DETACH TABLE ... SYNC` below cancels still-queued
+            /// background tasks (`removeTasksCorrespondingToStorage`), and `MergePlainMergeTreeTask::cancel`
+            /// does not return the booked slot, so every cancelled selected-but-not-started TTL merge leaks a
+            /// slot until server restart; two leaks disable TTL merges server-wide (the default limit is 2).
+            /// Until that leak is fixed (https://github.com/ClickHouse/ClickHouse/pull/111925), skip tables
+            /// whose metadata carries any TTL — TTL merges are only ever selected for those.
+            const auto merge_tree_metadata = merge_tree->getInMemoryMetadataPtr(context, false);
+            if (merge_tree_metadata->hasAnyTTL())
+                continue;
+
+            /// The `DETACH`/`ATTACH` cycle reloads the parts from disk, and an Outdated part that no Active
+            /// part covers is reloaded as Active — resurrecting state the query would otherwise never see.
+            /// Such parts exist until the asynchronous cleanup deletes them from disk: the empty covering
+            /// part left by `ALTER TABLE ... DETACH PART`, an empty part removed from the working set by
+            /// `clearEmptyParts`, or a part removed by `DROP PARTITION` (the same resurrection happens on a
+            /// server restart in that window, so it is pre-existing behavior, but this hook must not turn it
+            /// into a deterministic side effect of an unrelated query). A resurrected part changes `SELECT`
+            /// results and part-level introspection, and a resurrected empty part additionally lacks the
+            /// projections of its neighbors, making a subsequent `OPTIMIZE TABLE ... FINAL` a silent no-op
+            /// ("Parts have different projection sets" in `MergeTreeMergePredicate::canMergeParts`). Like the
+            /// checks above, this is a best-effort, point-in-time check.
+            {
+                const auto active_parts = merge_tree->getDataPartsVectorForInternalUsage();
+                const auto outdated_parts = merge_tree->getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Outdated});
+                bool has_uncovered_outdated_parts = false;
+                for (const auto & outdated : outdated_parts)
+                {
+                    bool covered = false;
+                    for (const auto & active : active_parts)
+                    {
+                        if (active->info.contains(outdated->info))
+                        {
+                            covered = true;
+                            break;
+                        }
+                    }
+                    if (!covered)
+                    {
+                        has_uncovered_outdated_parts = true;
+                        break;
+                    }
+                }
+                if (has_uncovered_outdated_parts)
+                    continue;
+            }
+        }
+
+        /// The internal `DETACH TABLE` and `ATTACH TABLE` below authorize against the actual object kind:
+        /// `InterpreterDropQuery` requires `DROP TABLE` for a plain table but `DROP VIEW`/`DROP DICTIONARY`
+        /// for a view/dictionary, and the `ATTACH` path in `InterpreterCreateQuery` correspondingly requires
+        /// `CREATE TABLE`, `CREATE VIEW` or `CREATE DICTIONARY`. For a plain table the `ATTACH` additionally
+        /// checks the `TABLE ENGINE` grant for the table's engine when
+        /// `access_control_improvements.table_engines_require_grant` is enabled; views and dictionaries have
+        /// no engine of their own, so the engine grant does not apply to them. Mirror all of these
+        /// requirements here; otherwise the hook could `DETACH` a table and then fail to `ATTACH` it back
+        /// (e.g. with `ACCESS_DENIED` on the engine grant), leaving the table detached and failing later
+        /// statements with `UNKNOWN_TABLE`. Skip the table if the user lacks any of them.
+        /// (No view or dictionary kind currently reports `storesDataOnDisk`, so the kind-specific branches
+        /// are defensive; the check above already keeps such objects out of the reattach loop.)
+        /// `isGranted(TABLE_ENGINE, ...)` already accounts for the `table_engines_require_grant` setting.
+        const AccessType drop_access = table->isView() ? AccessType::DROP_VIEW
+            : table->isDictionary() ? AccessType::DROP_DICTIONARY
+            : AccessType::DROP_TABLE;
+        const AccessType create_access = table->isView() ? AccessType::CREATE_VIEW
+            : table->isDictionary() ? AccessType::CREATE_DICTIONARY
+            : AccessType::CREATE_TABLE;
+        if (!access->isGranted(drop_access, table_id.getDatabaseName(), table_id.getTableName())
+            || !access->isGranted(create_access, table_id.getDatabaseName(), table_id.getTableName()))
+            continue;
+        if (!table->isView() && !table->isDictionary()
+            && !access->isGranted(AccessType::TABLE_ENGINE, table->getName()))
+            continue;
+
+        /// The `ATTACH` back also has to fit the database's own `max_tables` limit, which
+        /// `InterpreterCreateQuery` enforces through `DatabaseOnDisk::checkTablesLimit` for an `ATTACH`
+        /// exactly as for a `CREATE`. A database may legitimately hold more tables than its limit allows —
+        /// `ALTER DATABASE ... MODIFY SETTING max_tables` lowers the limit without detaching anything — and
+        /// then the `ATTACH` back is rejected with `TOO_MANY_TABLES`, leaving the table detached and failing
+        /// an outer query that the limit does not concern at all (`DROP TABLE` and `SELECT` never consult
+        /// it). The limit is checked while this table is already detached, so one slot is free by then;
+        /// asking here — while it is still attached — whether *no* additional table would fit answers
+        /// exactly whether the `ATTACH` back is going to be rejected.
+        /// The server-wide limits of `InterpreterCreateQuery::throwIfTooManyEntities` need no counterpart:
+        /// they are not checked for internal queries, which the `ATTACH` below is. Like the checks above,
+        /// this is a best-effort, point-in-time check.
+        if (const auto * database_on_disk = dynamic_cast<const DatabaseOnDisk *>(database.get()))
+        {
+            try
+            {
+                database_on_disk->checkTablesLimit(/* tables_to_add */ 0);
+            }
+            catch (const Exception &)
+            {
+                continue;
+            }
+        }
+
+        /// A table another query is using right now must not be reattached. The internal
+        /// `DETACH TABLE ... SYNC` below removes the table from its database and then waits, with no
+        /// deadline of its own, for the detached storage to stop being referenced
+        /// (`IDatabase::waitDetachedTableNotInUse`). A test that keeps a long query running against a table
+        /// and then issues another statement on it from a second session would block in this hook for as
+        /// long as the first query runs — and the script cannot shorten that, because the session that
+        /// would is the blocked one. `INSERT INTO t SELECT sleep(1) FROM numbers(1000)` in a background
+        /// job, which several tests use to hold a table open, outlasts the whole test timeout that way.
+        ///
+        /// Probing the exclusive lock answers "is this table idle": it is the lock every reader and writer
+        /// of the table holds in shared mode for the duration of its query. It is taken here only to ask
+        /// that question and is released again right away, before the `DETACH`. Like the action-lock and
+        /// part-state checks above, this is best-effort and point-in-time — a query that starts right after
+        /// the probe is not caught, and then the `DETACH` does wait for it.
+        {
+            /// Short on purpose: the answer wanted here is "idle right now", and answering "no" for a table
+            /// that becomes idle a moment later only skips one randomization, which is always safe.
+            const Poco::Timespan busy_probe_timeout(0, 100 * 1000);
+            try
+            {
+                TableExclusiveLockHolder busy_probe = table->lockExclusively(context->getCurrentQueryId(), busy_probe_timeout);
+            }
+            catch (...)
+            {
+                /// `DEADLOCK_AVOIDED` — the table is in use — or `TABLE_IS_DROPPED` — a concurrent query
+                /// detached or dropped it first. Either outcome is ok here: there is nothing left for this
+                /// hook to reattach, and the randomization is skipped for that table.
+                continue;
+            }
+        }
+
+        table.reset();
+
+        auto quoted_name = backQuoteIfNeed(table_id.getDatabaseName()) + "." + backQuoteIfNeed(table_id.getTableName());
+        auto detach_query = fmt::format("DETACH TABLE {} SYNC", quoted_name);
+        auto attach_query = fmt::format("ATTACH TABLE {}", quoted_name);
+
+        /// The outer query is already registered in the process list with its `query_id`.
+        /// Internal `DETACH`/`ATTACH` queries must use a fresh context with their own
+        /// `query_id`, otherwise `ProcessList::insert` will reject them with
+        /// `QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING`.
+        auto make_internal_context = [&]
+        {
+            auto internal_context = Context::createCopy(context);
+            internal_context->makeQueryContext();
+            internal_context->setCurrentQueryId({});
+            internal_context->setProcessListElement(context->getProcessListElementSafe());
+            return internal_context;
+        };
+
+        bool detached = false;
+        try
+        {
+            {
+                auto internal_context = make_internal_context();
+                auto detach = executeQuery(detach_query, internal_context, QueryFlags{.internal = true, .inherit_process_list_element = true}).second;
+                executeTrivialBlockIO(detach, internal_context);
+                detached = true;
+            }
+
+            {
+                auto internal_context = make_internal_context();
+                auto attach = executeQuery(attach_query, internal_context, QueryFlags{.internal = true, .inherit_process_list_element = true}).second;
+                executeTrivialBlockIO(attach, internal_context);
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException("reattachTablesUsedInQuery", "", LogsLevel::warning);
+
+            /// If DETACH succeeded but ATTACH failed, try to re-attach the table
+            /// to avoid leaving it in a detached state.
+            /// Decide recovery from the actual post-exception state, not only from the `detached`
+            /// flag: `DETACH TABLE ... SYNC` first removes the table from the database and only
+            /// then waits for the detached table to become unused, so an exception from that wait
+            /// (e.g. when the query is killed) leaves the table detached while `detached` is still
+            /// `false`.
+            ///
+            /// But a concurrent query may have detached or dropped the table before our `DETACH`
+            /// acquired the `DDLGuard`; then our `DETACH TABLE ... SYNC` fails with `UNKNOWN_TABLE`
+            /// and we did not detach anything. In that case the table is missing because of the other
+            /// query, not because of this hook, so re-attaching here would undo that query's detach.
+            /// Only treat the table as detached-by-us when the failure was not `UNKNOWN_TABLE`.
+            if (!detached && getCurrentExceptionCode() != ErrorCodes::UNKNOWN_TABLE)
+                detached = !catalog.isTableExist(table_id, context);
+
+            if (detached)
+            {
+                try
+                {
+                    auto internal_context = make_internal_context();
+                    auto attach = executeQuery(attach_query, internal_context, QueryFlags{.internal = true, .inherit_process_list_element = true}).second;
+                    executeTrivialBlockIO(attach, internal_context);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("reattachTablesUsedInQuery",
+                        fmt::format("Failed to re-attach table {} after failed DETACH/ATTACH cycle", quoted_name),
+                        LogsLevel::error);
+                    /// Re-throw so the outer query fails clearly instead of running against a permanently
+                    /// detached table and producing confusing `UNKNOWN_TABLE` errors later.
+                    throw;
+                }
+            }
+        }
+    }
+}
 
 /// The introspection port is open while the shared state is either not fully constructed or is being
 /// torn down, so anything that creates, changes or removes state is rejected there.
@@ -2796,7 +4851,7 @@ static BlockIO executeQueryImpl(
         }
 
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
-        if (!(out_ast && out_ast->as<ASTShowProcesslistQuery>()))
+        if (!flags.inherit_process_list_element && !(out_ast && out_ast->as<ASTShowProcesslistQuery>()))
         {
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
             process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, out_ast.get(), context, start_watch.getStart(), internal);
@@ -2805,6 +4860,45 @@ static BlockIO executeQueryImpl(
 
         /// Load external tables if they were provided
         context->initializeExternalTablesIfSet();
+
+        /// Reattach tables only after AST validations pass, the query is admitted
+        /// to the process list, and external tables are initialized — so queries
+        /// rejected before this point do not produce DETACH/ATTACH side effects,
+        /// and external tables correctly shadow persistent ones during resolution.
+        /// Skip EXPLAIN: it should not mutate server state.
+        if (out_ast)
+        {
+            bool is_initial_query = client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
+            bool has_transaction = context->getCurrentTransaction() || settings[Setting::implicit_transaction];
+            bool is_explain = out_ast->as<ASTExplainQuery>() != nullptr;
+            /// An `ON CLUSTER` statement is skipped entirely: on the initiator the interpreter delegates
+            /// to `executeDDLQueryOnCluster` before performing any local table operation, so reattaching
+            /// here would give a side effect on a local table the query itself may never touch (the local
+            /// host may not even be in the target cluster). The real per-host executions replayed by the
+            /// `DDLWorker` are not `INITIAL_QUERY` (see `DDLTaskBase::makeQueryContext`), so they are
+            /// filtered out by the gate above and are not randomized either.
+            const auto * query_on_cluster = dynamic_cast<const ASTQueryWithOnCluster *>(out_ast.get());
+            bool is_on_cluster = query_on_cluster && !query_on_cluster->cluster.empty();
+            if (!internal && is_initial_query && !has_transaction && !is_explain && !is_on_cluster)
+            {
+                bool need_reattach_tables = settings[Setting::reattach_tables_before_query_execution];
+                auto reattach_probability = std::clamp(
+                    static_cast<double>(settings[Setting::reattach_tables_before_query_execution_probability]),
+                    0.0, 1.0);
+
+                if (!need_reattach_tables && reattach_probability > 0.0)
+                {
+                    std::bernoulli_distribution distribution(reattach_probability);
+                    need_reattach_tables |= distribution(thread_local_rng);
+                }
+
+                if (need_reattach_tables)
+                {
+                    LOG_DEBUG(getLogger("executeQuery"), "Will DETACH and ATTACH back tables used in query");
+                    reattachTablesUsedInQuery(out_ast, context);
+                }
+            }
+        }
         std::shared_ptr<QueryPlanAndSets> query_plan;
         if (stage == QueryProcessingStage::QueryPlan)
             query_plan = context->getDeserializedQueryPlan();
@@ -3672,6 +5766,52 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 }
 
 
+/// Helper that runs the failpoints used to test crash-log/stack-trace features.
+/// Kept separate (and `noinline`) from `executeQuery` so the symbolizer always
+/// reports a frame whose function name contains "executeQuery", regardless of
+/// how the compiler lays out the catch handlers in the surrounding function
+/// (the symbol attribution for cold paths inside `executeQuery` can otherwise
+/// be lost depending on unrelated changes in this translation unit).
+[[gnu::noinline, gnu::cold]]
+static void executeQueryFailpoints()
+{
+    fiu_do_on(FailPoints::terminate_with_exception,
+    {
+        try
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint terminate_with_exception");
+        }
+        catch (...)
+        {
+            std::terminate();
+        }
+    });
+
+    fiu_do_on(FailPoints::terminate_with_std_exception,
+    {
+        try
+        {
+            throw std::runtime_error("Failpoint terminate_with_std_exception");
+        }
+        catch (...)
+        {
+            std::terminate();
+        }
+    });
+
+    fiu_do_on(FailPoints::libcxx_hardening_out_of_bounds_assertion,
+    {
+        std::vector<int> v;
+        (void)v[0];
+    });
+
+    fiu_do_on(FailPoints::trigger_sanitizer_error,
+    {
+        triggerSanitizerError();
+    });
+}
+
+
 std::pair<ASTPtr, BlockIO> executeQuery(
     std::string_view query,
     ContextMutablePtr context,
@@ -3704,40 +5844,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     /// The 'SYSTEM ENABLE FAILPOINT terminate_with_exception' query itself should succeed.
     if (ast && !ast->as<ASTSystemQuery>())
     {
-        fiu_do_on(FailPoints::terminate_with_exception,
-        {
-            try
-            {
-                throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint terminate_with_exception");
-            }
-            catch (...)
-            {
-                std::terminate();
-            }
-        });
-
-        fiu_do_on(FailPoints::terminate_with_std_exception,
-        {
-            try
-            {
-                throw std::runtime_error("Failpoint terminate_with_std_exception");
-            }
-            catch (...)
-            {
-                std::terminate();
-            }
-        });
-
-        fiu_do_on(FailPoints::libcxx_hardening_out_of_bounds_assertion,
-        {
-            std::vector<int> v;
-            (void)v[0];
-        });
-
-        fiu_do_on(FailPoints::trigger_sanitizer_error,
-        {
-            triggerSanitizerError();
-        });
+        executeQueryFailpoints();
     }
 
     const bool is_shared_catalog_internal = context->getClientInfo().is_shared_catalog_internal;

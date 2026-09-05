@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-fasttest, no-ordinary-database
+-- Tags: no-parallel, no-fasttest, no-ordinary-database, no-random-detach
+-- no-random-detach: test checks cache state
 -- no-parallel: looks at server-wide metrics
 
 -- Tests the vector index cache.

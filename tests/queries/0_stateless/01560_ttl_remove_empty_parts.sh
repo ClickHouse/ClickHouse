@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-random-detach
+# no-random-detach: random DETACH/ATTACH interferes with TTL part removal and changes part counts
 set -euo pipefail
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

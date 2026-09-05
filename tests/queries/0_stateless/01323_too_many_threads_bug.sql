@@ -1,3 +1,8 @@
+-- Tags: no-random-detach, no-flaky-check
+-- no-random-detach: one more thread is used
+-- no-flaky-check: consistently exceeds the 180 s per-run budget of the flaky check under TSan;
+-- this PR-driven run only added a tag, the test itself is unchanged
+
 drop table if exists table_01323_many_parts;
 
 set remote_filesystem_read_method = 'read';

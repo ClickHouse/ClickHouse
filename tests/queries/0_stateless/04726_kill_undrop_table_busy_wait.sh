@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# Tags: no-random-detach
+# no-random-detach: the test orchestrates storage pointer reference counts (`UNDROP TABLE` busy-waits
+# while a long `SELECT` holds the storage); a random `DETACH`/`ATTACH` cycle replaces the storage
+# object, so the dropped table's storage pointer becomes unique and the `UNDROP` returns instead of
+# waiting to be killed.
 # Tags: no-ordinary-database, no-replicated-database
 # Tag no-ordinary-database, no-replicated-database: `UNDROP TABLE` is not supported by these database engines.
 

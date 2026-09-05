@@ -1,4 +1,5 @@
--- Tags: no-random-settings, no-object-storage, no-parallel
+-- Tags: no-random-settings, no-object-storage, no-parallel, no-random-detach
+-- no-random-detach: test checks profile events
 -- no-parallel: Running `DROP MARK CACHE` can have a big impact on other concurrent tests
 -- Tag no-object-storage: this test relies on the number of opened files in MergeTree that can differ in object storages
 

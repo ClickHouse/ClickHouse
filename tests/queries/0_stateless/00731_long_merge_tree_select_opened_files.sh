@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Tags: long, no-object-storage, no-tsan
+# Tags: long, no-object-storage, no-tsan, no-random-detach, no-flaky-check
+# no-random-detach: test checks profile events
+# no-flaky-check: `long` test whose `OPTIMIZE ... FINAL` exceeds the merge-wait timeout in the debug
+#                 build under the flaky check's repeated-run load; it only reaches the flaky check
+#                 because this file was touched to add the tag above
 # no-s3 because read FileOpen metric
 
 set -e

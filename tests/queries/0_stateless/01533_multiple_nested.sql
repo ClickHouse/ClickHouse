@@ -1,4 +1,5 @@
--- Tags: no-object-storage, no-random-merge-tree-settings, no-parallel
+-- Tags: no-object-storage, no-random-detach, no-random-merge-tree-settings, no-parallel
+-- no-object-storage and no-random-detach because read FileOpen metric
 -- no-s3 because read FileOpen metric
 DROP TABLE IF EXISTS nested;
 
