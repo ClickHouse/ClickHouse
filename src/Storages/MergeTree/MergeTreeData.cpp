@@ -56,6 +56,9 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/ActionsDAG.h>
@@ -5306,6 +5309,14 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         bool is_initial_alter = true;
         if (auto txn = local_context->getZooKeeperMetadataTransaction())
             is_initial_alter = txn->isInitialQuery();
+
+#if CLICKHOUSE_CLOUD
+        /// Shared Catalog replays have no metadata transaction: the initiator is rerouted through the catalog and secondary
+        /// replicas re-run the interpreter as internal queries, so use the catalog's own discriminator for them (the same
+        /// carve-out `AlterCommands::apply` makes for `MODIFY QUERY`).
+        if (local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context))
+            is_initial_alter = false;
+#endif
 
         bool changes_order_by = false;
         for (const auto & command : commands)
