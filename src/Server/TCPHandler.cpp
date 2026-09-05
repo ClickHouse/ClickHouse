@@ -38,6 +38,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Server/TCPServer.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
+#include <Storages/StorageTableProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/defines.h>
 #include <base/scope_guard.h>
@@ -1782,6 +1783,12 @@ void TCPHandler::processTablesStatusRequest()
         StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id, context_to_resolve_table_names);
         if (!table)
             continue;
+
+        /// The cast below would report a lazily loaded table's stand-in as not replicated, which the
+        /// initiator reads as "no delay, up to date" and routes the query to a replica whose fetches have
+        /// not even started, silently serving stale rows. Resolve it - the query this status request
+        /// precedes is about to read the table anyway.
+        table = resolveLazyTable(table);
 
         TableStatus status;
         if (auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))

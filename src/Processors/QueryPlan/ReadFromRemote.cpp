@@ -46,6 +46,7 @@
 #include <Functions/FunctionsMiscellaneous.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageTableProxy.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 
@@ -607,7 +608,10 @@ void ReadFromRemote::addLazyPipe(
     if (!table_func_ptr)
     {
         const StorageID resolved_id = context->resolveStorageID(shard.main_table ? shard.main_table : main_table);
-        storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
+        /// Resolve a lazily loaded table's stand-in, which is not a `StorageReplicatedMergeTree`: the
+        /// stale-replica branch below reads the local delay off this storage and reports anything that
+        /// is not replicated as a `LOGICAL_ERROR`.
+        storage = resolveLazyTable(DatabaseCatalog::instance().tryGetTable(resolved_id, context));
         if (!storage)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Storage with id {} not found", resolved_id);
     }

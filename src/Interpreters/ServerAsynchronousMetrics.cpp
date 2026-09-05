@@ -37,6 +37,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageTableProxy.h>
 #if CLICKHOUSE_CLOUD
 #include <Storages/StorageSharedMergeTree.h>
 #endif
@@ -495,7 +496,11 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                 if (is_system)
                     ++total_number_of_tables_system;
 
-                const auto & table = iterator->table();
+                /// Resolve a lazily loaded table's stand-in, which is neither a `MergeTreeData` nor a
+                /// `StorageReplicatedMergeTree` and would be left out of every metric below for as long
+                /// as the server runs. Only the stand-ins whose tables are already loaded: a metrics
+                /// thread must not load the catalog and defeat `lazy_load_tables`.
+                const auto table = resolveLazyTableIfLoaded(iterator->table());
                 if (!table)
                     continue;
 
