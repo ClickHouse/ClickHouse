@@ -34,7 +34,9 @@ When set to 1, allows queries such as:
 - Read queries (like `SELECT` and equivalent queries).
 - Queries that modify only session context (like `USE`).
 
-When set to 2, allows the above plus `SET` and `CREATE TEMPORARY TABLE`.
+When set to 2, allows the above plus `SET`, `CREATE TEMPORARY TABLE` and `RESTORE`. A `RESTORE` can
+create a table and load data into it, so `readonly = 2` does not by itself stop a session from
+writing; `readonly = 1` refuses it.
 
 Most table functions need the `CREATE TEMPORARY TABLE` privilege, so a `SELECT` that reads from one is
 refused at `readonly = 1` but not at `readonly = 2`. Some, such as `numbers`, are allowed in read-only
@@ -123,6 +125,8 @@ belongs to another user, and any `KILL QUERY ... ON CLUSTER`, require the `KILL 
   `allow_ddl`. When it is disabled, executing an introspection function is blocked. Granting the
   `INTROSPECTION` privilege is not blocked.
 - [`allow_non_metadata_alters`](/reference/settings/session-settings/allow#allow_non_metadata_alters)
-  is not a permission setting, but it restricts `ALTER` further: when it is disabled, an `ALTER` that
-  changes table metadata in a way that would also rewrite data on disk is refused on
-  `MergeTree`-family tables.
+  is not a permission setting, but it restricts `ALTER` further: when it is disabled, a command that
+  changes the columns, indexes, projections or TTL of a `MergeTree`-family table is refused if
+  applying it would rewrite data on disk (`DROP COLUMN`, `RENAME COLUMN`, a `MODIFY COLUMN` type
+  change, `MODIFY TTL`). `CLEAR COLUMN`, `CLEAR INDEX` and `CLEAR PROJECTION` are refused too,
+  although they change no metadata.
