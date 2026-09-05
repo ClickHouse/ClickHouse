@@ -1,0 +1,9 @@
+wide_parts	1
+payload_matches_row	100	100
+aligned_eq_unaligned	1
+dense_granule_payload_matches_row	200	200
+multi_block_granule_payload_matches_row	500	500
+two_vector_columns_eq_unaligned	1
+two_vector_columns_match_row	20	20
+dropped_and_readded_column	50	0	50
+added_column_default	50	50

@@ -1,0 +1,9 @@
+int8_wide_parts	1
+int8_aligned_eq_unaligned	1
+int8_nearest_is_self	1
+bf16_wide_parts	1
+bf16_aligned_eq_unaligned	1
+bf16_nearest_is_self	1
+pq_aligned_codebook_intact	5000	5000
+pq_aligned_eq_unaligned	1
+pq_nearest_is_self	1
