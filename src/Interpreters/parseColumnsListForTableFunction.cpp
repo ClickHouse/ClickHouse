@@ -1,4 +1,7 @@
+#include <Core/Defines.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -11,6 +14,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserDataType.h>
 #include <Parsers/parseQuery.h>
 
 namespace DB
@@ -158,6 +162,94 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
     validate_callback(*type_to_check);
     if (settings.validate_nested_types)
         type_to_check->forEachChild(validate_callback);
+
+    /// `DataTypeVariant` deduplicates its elements by rendered name, so an element whose name does not
+    /// round-trip is silently lost when a reload parses the stored name. That is an integrity
+    /// requirement rather than a suspicious-type policy, hence not gated by a setting.
+    auto check_variant_name_collisions = [&](const IDataType & data_type)
+    {
+        const auto * variant_type = typeid_cast<const DataTypeVariant *>(&data_type);
+        if (!variant_type)
+            return;
+
+        const auto & variants = variant_type->getVariants();
+        if (variants.size() < 2)
+            return;
+
+        ParserDataType data_type_parser;
+        std::unordered_map<String, String> reparsed_to_original;
+        for (const auto & variant : variants)
+        {
+            const auto original_name = variant->getName();
+
+            /// The limits are fixed on purpose: they are the ones `dataTypeToAST` uses when a name is
+            /// persisted, so reading them from the settings could make this check stricter than the
+            /// statement which produced the type. A name that cannot be read back proves no collision,
+            /// so it is skipped; a try-parse still throws on either depth limit, hence both arms.
+            DataTypePtr reparsed_type;
+            try
+            {
+                String out_error;
+                const char * start = original_name.data();
+                ASTPtr reparsed_ast = tryParseQuery(
+                    data_type_parser,
+                    start,
+                    start + original_name.size(),
+                    out_error,
+                    /*hilite=*/false,
+                    "data type",
+                    /*allow_multi_statements=*/false,
+                    /*max_query_size=*/0,
+                    DBMS_DEFAULT_MAX_PARSER_DEPTH,
+                    DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
+                    /*skip_insignificant=*/true);
+                if (reparsed_ast)
+                    reparsed_type = DataTypeFactory::instance().tryGet(reparsed_ast);
+            }
+            catch (...) // Ok: a name that cannot be parsed proves no collision
+            {
+                continue;
+            }
+
+            if (!reparsed_type)
+                continue;
+
+            auto [it, inserted] = reparsed_to_original.emplace(reparsed_type->getName(), original_name);
+            if (!inserted)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create column with type '{}' because variants '{}' and '{}' have the same name '{}' "
+                    "when the type name is parsed back, so the column could not be read after a reload. "
+                    "Note that version 0 is omitted from the name of an AggregateFunction type and is then "
+                    "resolved to the default version. Consider using a single variant instead of these 2 variants",
+                    data_type.getName(),
+                    it->second,
+                    original_name,
+                    it->first);
+        }
+    };
+
+    /// `forEachChild` does not reach the argument types of an aggregate function, which is the only
+    /// reason this recursion exists. `SimpleAggregateFunction` has the same gap, but its first argument
+    /// type is also its base type, so it is already reached without recursing into it.
+    IDataType::ChildCallback check_type_and_aggregate_arguments;
+    check_type_and_aggregate_arguments = [&](const IDataType & data_type)
+    {
+        check_variant_name_collisions(data_type);
+
+        const auto * aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(&data_type);
+        if (!aggregate_type)
+            return;
+
+        for (const auto & argument_type : aggregate_type->getArgumentsDataTypes())
+        {
+            check_type_and_aggregate_arguments(*argument_type);
+            argument_type->forEachChild(check_type_and_aggregate_arguments);
+        }
+    };
+
+    check_type_and_aggregate_arguments(*type_to_check);
+    type_to_check->forEachChild(check_type_and_aggregate_arguments);
 }
 
 ColumnsDescription parseColumnsListFromString(const std::string & structure, const ContextPtr & context)

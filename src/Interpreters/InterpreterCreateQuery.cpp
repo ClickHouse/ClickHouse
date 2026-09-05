@@ -1173,6 +1173,16 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
     const auto & settings = getContext()->getSettingsRef();
 
+    /// The two passes below have different scopes on purpose. The suspicious type policy is a CREATE
+    /// only, physical columns only matter and stays exactly as narrow as it has always been. The
+    /// integrity check, which refuses a type that cannot be read back, covers every persisted
+    /// declaration of every fresh definition, so it runs for an ATTACH carrying a whole definition and
+    /// for a materialized view as well, and over columns of every kind. Metadata loading through
+    /// `createTableFromAST`, and a short `ATTACH TABLE t`, are marked `attach_short_syntax` and are
+    /// checked by neither. `RESTORE` and recovery of a lost `Replicated` replica carry no such marker,
+    /// so the integrity check does run for them; it cannot reject an already collapsed column, because
+    /// the stored name omits version 0 and `DataTypeVariant` squashes the pair before validation.
+
     /// If it's not attach and not materialized view to existing table,
     /// we need to validate data types (check for experimental or suspicious types).
     if (!create.attach && !create.is_materialized_view)
@@ -1180,6 +1190,13 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
         DataTypeValidationSettings validation_settings(settings);
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
             validateDataType(name_and_type_pair.type, validation_settings);
+    }
+
+    if (!create.attach_short_syntax)
+    {
+        DataTypeValidationSettings integrity_checks_only;
+        for (const auto & name_and_type_pair : properties.columns.getAll())
+            validateDataType(name_and_type_pair.type, integrity_checks_only);
     }
 }
 
@@ -2249,7 +2266,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 namespace
 {
 
-void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
+void checkForUnsupportedColumns(
+    IStorage & storage,
+    LoadingStrictnessLevel mode,
+    ContextPtr context,
+    bool is_temporary,
+    bool columns_were_inferred,
+    bool definition_is_fresh)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(context, false);
 
@@ -2258,6 +2281,20 @@ void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode,
     /// not subject to this check on load.
     if (mode <= LoadingStrictnessLevel::CREATE && !is_temporary && !storage.isView() && !storage.isDictionary())
         checkAllTypesAreAllowedInTable(metadata_snapshot->getColumns().getAll());
+
+    /// An inferred column list is written into the persisted definition and parsed back on reload, so a
+    /// type which cannot be read back is refused here as well. Only the checks that are not gated by a
+    /// setting apply: the suspicious type policy has never covered inferred columns. A column list
+    /// spelled out in the query was already checked before the storage was built.
+    /// The predicate is freshness of the definition rather than `mode`: an ATTACH which carries a whole
+    /// definition is fresh input even though its strictness level is ATTACH, while a definition read
+    /// back from stored metadata is marked `attach_short_syntax` and keeps its columns as they are.
+    if (definition_is_fresh && columns_were_inferred)
+    {
+        DataTypeValidationSettings integrity_checks_only;
+        for (const auto & name_and_type_pair : metadata_snapshot->getColumns().getAll())
+            validateDataType(name_and_type_pair.type, integrity_checks_only);
+    }
 
     if (mode <= LoadingStrictnessLevel::CREATE && hasColumnsWithDynamicStructure(metadata_snapshot->getColumns()) && !storage.supportsColumnsWithDynamicStructure())
     {
@@ -2294,11 +2331,17 @@ void validateVirtualColumns(IStorage & storage, ContextPtr context)
     }
 }
 
-void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
+void validateStorage(
+    IStorage & storage,
+    LoadingStrictnessLevel mode,
+    ContextPtr context,
+    bool is_temporary,
+    bool columns_were_inferred = false,
+    bool definition_is_fresh = true)
 try
 {
     validateVirtualColumns(storage, context);
-    checkForUnsupportedColumns(storage, mode, context, is_temporary);
+    checkForUnsupportedColumns(storage, mode, context, is_temporary, columns_were_inferred, definition_is_fresh);
 }
 catch (...)
 {
@@ -2510,6 +2553,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         database_on_disk->checkTablesLimit(getNumberOfTablesToCreate(create, mode));
 
     StoragePtr res;
+    bool columns_were_inferred = false;
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
     {
@@ -2546,13 +2590,13 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
         /// If schema was inferred while storage creation, add columns description to create query.
         auto & create_query = query_ptr->as<ASTCreateQuery &>();
-        addColumnsDescriptionToCreateQueryIfNecessary(create_query, res);
+        columns_were_inferred = addColumnsDescriptionToCreateQueryIfNecessary(create_query, res);
         /// Add any inferred engine args if needed. For example, data format for engines File/S3/URL/etc
         if (auto * engine_args = getEngineArgsFromCreateQuery(create_query))
             res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
     }
 
-    validateStorage(*res, mode, getContext(), create.isTemporary());
+    validateStorage(*res, mode, getContext(), create.isTemporary(), columns_were_inferred, !create.attach_short_syntax);
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
@@ -3711,10 +3755,10 @@ void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
     }
 }
 
-void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage)
+bool InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage)
 {
     if (create.is_dictionary || (create.columns_list && create.columns_list->columns && !create.columns_list->columns->children.empty()))
-        return;
+        return false;
 
     auto ast_storage = make_intrusive<ASTStorage>();
     unsigned max_parser_depth_v = static_cast<unsigned>(getContext()->getSettingsRef()[Setting::max_parser_depth]);
@@ -3732,6 +3776,8 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
         ASTPtr columns = make_intrusive<ASTExpressionList>(*create_query_from_storage.columns_list->columns);
         create.columns_list->set(create.columns_list->columns, columns);
     }
+
+    return true;
 }
 
 void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view, LoadingStrictnessLevel mode)
