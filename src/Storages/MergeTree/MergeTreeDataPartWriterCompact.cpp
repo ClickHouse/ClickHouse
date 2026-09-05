@@ -361,6 +361,13 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                     chassert(result_stream->hashing_buf.offset() == 0);
                     prev_stream->hashing_buf.next();
                 }
+                else if (prev_stream && settings.compress_per_substream_in_compact_parts && index_granularity_info.mark_type.with_substreams)
+                {
+                    /// Start a new compressed block per substream so reading a single subcolumn doesn't
+                    /// decompress blocks shared with the column's other substreams. Only useful with
+                    /// per-substream marks (otherwise a subcolumn read still seeks to the column start).
+                    prev_stream->hashing_buf.next();
+                }
 
                 /// We have 2 types of marks in Compact part. With or without substreams.
                 /// In format without substreams we write single mark per column (here once on the first requested substream).
