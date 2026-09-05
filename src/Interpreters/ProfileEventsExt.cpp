@@ -176,7 +176,7 @@ DB::Block getProfileEvents(
             prev_group_snapshot != last_sent_snapshots.end()
             ? CountersIncrement(group_counters, prev_group_snapshot->second)
             : CountersIncrement(group_counters);
-        new_snapshots[0] = std::move(group_counters);
+        new_snapshots.emplace(0, std::move(group_counters));
     }
     last_sent_snapshots = std::move(new_snapshots);
 
