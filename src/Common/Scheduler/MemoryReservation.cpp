@@ -1,6 +1,7 @@
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/Scheduler/IAllocationQueue.h>
 #include <Common/MemoryTracker.h>
+#include <Common/MemorySpillScheduler.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -33,8 +34,14 @@ namespace ErrorCodes
 }
 
 MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size_)
-    : ResourceAllocation(*link.allocation_queue, id_)
+    : MemoryReservation(link, id_, reserved_size_, Settings{})
+{
+}
+
+MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size_, Settings settings_)
+    : ResourceAllocation(*link.allocation_queue, id_, settings_.pressure_policy)
     , reserved_size(reserved_size_)
+    , settings(settings_)
     , approved_increment(CurrentMetrics::MemoryReservationApproved, 0)
     , demand_increment(CurrentMetrics::MemoryReservationDemand, 0)
 {
@@ -115,34 +122,35 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
 {
     ResourceCost pending_increase = 0;
     ResourceCost pending_decrease = 0;
+    std::shared_ptr<MemorySpillScheduler> recovery_scheduler;
+    UInt64 observed_recovery_epoch = 0;
+    bool recovery_timed_out = false;
     {
         std::unique_lock lock(mutex);
 
-        // Serialization: block all threads while an increase is pending.
-        // Multiple query threads may call syncWithMemoryTracker concurrently
-        // (the MemoryTracker reflects total memory across all threads).
-        // By blocking here we ensure at most one increase is in flight at a time.
-        if (enqueued_demand != 0)
-            cv.wait(lock, [this] { return enqueued_demand == 0 || kill_reason || fail_reason; });
+        // Normal growth serializes all query threads. A parked request opens a narrow recovery lane:
+        // the query may run spill/release work, but it still cannot acquire more reserved memory.
+        if (enqueued_demand != 0 && !growth_recovery_active)
+            cv.wait(lock, [this] { return enqueued_demand == 0 || kill_reason || fail_reason || growth_recovery_active; });
 
         throwIfNeeded();
 
-        // Make sure reservation size is always respected
+        if (enqueued_demand != 0 && growth_recovery_active)
+        {
+            recovery_scheduler = memory_spill_scheduler.lock();
+            observed_recovery_epoch = recovery_epoch;
+            recovery_timed_out = settings.suction_queue_timeout_ms > 0
+                && std::chrono::steady_clock::now() - recovery_started_at
+                    >= std::chrono::milliseconds(settings.suction_queue_timeout_ms);
+        }
+
+        // Make sure reservation size is always respected. Decreases are approved asynchronously,
+        // so compare against the allocation that will remain after the in-flight decrease.
         ResourceCost new_actual_size = std::max(memory_tracker->get(), reserved_size);
-
-        // Decreases are approved asynchronously: an increase sized against the current allocated
-        // value would end short by the in-flight decrease, and the wait below would never finish.
-        // Size requests against the value the allocation will hold once the decrease is approved.
         ResourceCost expected_allocated = allocated_size - enqueued_decrease;
-
-        // An unchanged tracker value alone does not imply there is nothing to do: a shortfall or
-        // excess may remain from an earlier sync, so skip only when fully in sync.
-        if (new_actual_size == actual_size && new_actual_size == expected_allocated)
-            return;
-
         actual_size = new_actual_size;
 
-        if (actual_size > expected_allocated)
+        if (actual_size > expected_allocated && enqueued_demand == 0)
         {
             chassert(!removed);
             pending_increase = actual_size - expected_allocated;
@@ -163,20 +171,126 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
     else if (pending_decrease > 0)
         queue.decreaseAllocation(*this, pending_decrease);
 
+    if (recovery_scheduler && observed_recovery_epoch != 0)
+    {
+        const auto result = recovery_scheduler->getForcedSpillResult(observed_recovery_epoch);
+        if (result.outcome != MemorySpillScheduler::ForcedSpillOutcome::Pending || recovery_timed_out)
+        {
+            bool notify_recovery_progress = false;
+            {
+                std::unique_lock lock(mutex);
+                if (growth_recovery_active && recovery_epoch == observed_recovery_epoch
+                    && reported_recovery_epoch < observed_recovery_epoch)
+                {
+                    reported_recovery_epoch = observed_recovery_epoch;
+                    growth_recovery_active = false;
+                    recovery_epoch = 0;
+                    notify_recovery_progress = true;
+                    cv.notify_all();
+                }
+            }
+            if (notify_recovery_progress)
+            {
+                recovery_scheduler->finishMemoryPressure();
+                queue.notifyRecoveryProgress(*this);
+            }
+        }
+    }
+
     {
         std::unique_lock lock(mutex);
-        // Wait on increase to make sure memory is reserved when requested.
-        // Decrease is not waited for, but counted as already gone: once approved,
-        // its capacity may be granted to another workload.
-        if (actual_size > allocated_size - enqueued_decrease)
+        // Wait on increase to make sure memory is reserved when requested. The recovery lane is the
+        // sole exception: it returns control to the pipeline only so a spillable processor can run.
+        // An in-flight decrease is counted as already released because its capacity may be granted
+        // elsewhere before the asynchronous approval reaches this allocation.
+        if (actual_size > allocated_size - enqueued_decrease && !growth_recovery_active)
         {
             auto increase_timer = CurrentThread::getProfileEvents().timer(ProfileEvents::MemoryReservationIncreaseMicroseconds);
-            cv.wait(lock, [this] { return kill_reason || fail_reason || actual_size <= allocated_size - enqueued_decrease; });
+            cv.wait(lock, [this]
+            {
+                return kill_reason || fail_reason || actual_size <= allocated_size - enqueued_decrease || growth_recovery_active;
+            });
         }
 
         metrics.apply();
         throwIfNeeded();
     }
+}
+
+void MemoryReservation::setMemorySpillScheduler(const std::shared_ptr<MemorySpillScheduler> & scheduler)
+{
+    std::unique_lock lock(mutex);
+    memory_spill_scheduler = scheduler;
+}
+
+ResourceAllocation::GrowthPressureAction MemoryReservation::onGrowthPressure()
+{
+    if (!settings.force_spill_before_eviction)
+        return GrowthPressureAction::Protect;
+
+    std::shared_ptr<MemorySpillScheduler> scheduler;
+    {
+        std::unique_lock lock(mutex);
+        scheduler = memory_spill_scheduler.lock();
+    }
+
+    if (!scheduler)
+        return GrowthPressureAction::Protect;
+
+    const auto spill_request = scheduler->requestForcedSpill();
+    {
+        std::unique_lock lock(mutex);
+        growth_recovery_active = true;
+        recovery_epoch = spill_request.epoch;
+        recovery_started_at = std::chrono::steady_clock::now();
+        cv.notify_all();
+    }
+    return GrowthPressureAction::Yield;
+}
+
+void MemoryReservation::onGrowthPressureResolved()
+{
+    std::shared_ptr<MemorySpillScheduler> scheduler;
+    {
+        std::unique_lock lock(mutex);
+        growth_recovery_active = false;
+        recovery_epoch = 0;
+        reported_recovery_epoch = 0;
+        recovery_started_at = {};
+        scheduler = memory_spill_scheduler.lock();
+        cv.notify_all();
+    }
+    if (scheduler)
+        scheduler->finishMemoryPressure();
+}
+
+bool MemoryReservation::isGrowthRecoveryActive()
+{
+    std::unique_lock lock(mutex);
+    return growth_recovery_active;
+}
+
+ResourceCost MemoryReservation::reconcilePendingIncrease(ResourceCost scheduler_allocated_size, ResourceCost requested_size)
+{
+    std::unique_lock lock(mutex);
+    if (enqueued_demand == 0)
+        return requested_size;
+
+    const ResourceCost reconciled_size
+        = actual_size > scheduler_allocated_size ? actual_size - scheduler_allocated_size : 0;
+    if (reconciled_size > enqueued_demand)
+        demand_increment.add(reconciled_size - enqueued_demand);
+    else if (reconciled_size < enqueued_demand)
+        demand_increment.sub(enqueued_demand - reconciled_size);
+    enqueued_demand = reconciled_size;
+    return reconciled_size;
+}
+
+void MemoryReservation::increaseCancelled()
+{
+    std::unique_lock lock(mutex);
+    enqueued_demand = 0;
+    cv.notify_all();
 }
 
 void MemoryReservation::throwIfNeeded()
@@ -205,6 +319,7 @@ void MemoryReservation::Metrics::apply()
 
 void MemoryReservation::killAllocation(const std::exception_ptr & reason)
 {
+    onGrowthPressureResolved();
     std::unique_lock lock(mutex);
     metrics.killed++;
     kill_reason = reason;
@@ -248,6 +363,7 @@ void MemoryReservation::decreaseApproved(const DecreaseRequest & decrease)
 
 void MemoryReservation::allocationFailed(const std::exception_ptr & reason)
 {
+    onGrowthPressureResolved();
     std::unique_lock lock(mutex);
     metrics.failed++;
     fail_reason = reason;

@@ -1,9 +1,11 @@
 #include <memory>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Scheduler/MemoryReservation.h>
+#include <Common/MemorySpillScheduler.h>
 #include <Common/ISlotControl.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ConcurrencyControl.h>
 #include <Common/Scheduler/CPULeaseAllocation.h>
@@ -69,6 +71,11 @@ struct WorkloadResources
         {
             lease->startConsumption();
             last_renew_ns = clock_gettime_ns();
+        }
+        if (reservation)
+        {
+            if (auto group = CurrentThread::getGroup())
+                reservation->setMemorySpillScheduler(group->memory_spill_scheduler);
         }
     }
 
@@ -138,6 +145,11 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
         exception.addMessage("Query pipeline:\n" + buf.str());
 
         throw;
+    }
+    if (auto group = CurrentThread::getGroup())
+    {
+        for (const auto & processor : *processors)
+            group->memory_spill_scheduler->registerProcessor(processor.get());
     }
     if (process_list_element)
     {
@@ -773,3 +785,4 @@ String PipelineExecutor::dumpPipeline() const
 }
 
 }
+

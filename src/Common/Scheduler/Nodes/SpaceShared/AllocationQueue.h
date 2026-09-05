@@ -6,6 +6,7 @@
 #include <boost/intrusive/set.hpp>
 #include <boost/intrusive/options.hpp>
 
+#include <atomic>
 #include <mutex>
 #include <exception>
 
@@ -29,6 +30,12 @@ public:
     void insertAllocation(ResourceAllocation & allocation, ResourceCost initial_size) override;
     void increaseAllocation(ResourceAllocation & allocation, ResourceCost increase_size) override;
     void decreaseAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) override;
+    bool trySuspendIncrease(ResourceAllocation & allocation) override;
+    void notifyRecoveryProgress(ResourceAllocation & allocation) override;
+    bool retrySuction(ResourceAllocation & allocation) override;
+    void retrySuspendedIncreases() override;
+    bool hasSuspendedIncrease() const override;
+    ResourceAllocation * getSuctionAllocation() const override;
     void removeAllocation(ResourceAllocation & allocation) override;
     void purgeQueue() override;
     void propagateUpdate(ISpaceSharedNode &, Update &&) override;
@@ -47,9 +54,13 @@ public:
     UInt64 getPending() const;
 
 private:
-    bool setIncrease();
+    bool setIncrease(IncreaseRequest * preferred_suction = nullptr);
     bool setDecrease();
     void ensureUsable() const;
+    void clearMemoryGrowthSuspension();
+    void consumeSuctionClaim(ResourceAllocation & allocation);
+    bool tryPromoteEvictionQueueHead(IncreaseRequest * & preferred_suction);
+    bool canEnterSuction(const ResourceAllocation & allocation) const;
 
     /// Protects all the following fields
     mutable std::mutex mutex;
@@ -65,8 +76,17 @@ private:
     ResourceAllocation::DecreasingList decreasing_allocations; /// Allocations with pending decrease request
     ResourceAllocation::RemovingList removing_allocations; /// Allocations to remove
 
+    /// A running allocation whose growth is parked at a hard limit.
+    ResourceAllocation * suspended_growth = nullptr;
+    /// Scheduler-thread state published through Update; avoids scanning mutex-protected containers.
+    ResourceAllocation * suction_growth = nullptr;
+    UInt64 last_eviction_order = 0;
+
     size_t last_unique_id = 0;
     ResourceCost pending_allocations_size = 0;
+    /// Cross-thread change notification; consumers clear it while holding `mutex`.
+    std::atomic_bool memory_growth_suspension_changed = false;
+    bool memory_growth_suspension_retry_requested = false;
 
     UInt64 rejects = 0; /// Number of rejected allocations
 };

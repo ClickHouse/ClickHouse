@@ -4,6 +4,23 @@
 namespace DB
 {
 
+ResourceAllocation::ResourceAllocation(IAllocationQueue & queue_, const String & id_)
+    : ResourceAllocation(queue_, id_, MemoryPressurePolicy{})
+{
+}
+
+ResourceAllocation::ResourceAllocation(
+    IAllocationQueue & queue_,
+    const String & id_,
+    MemoryPressurePolicy memory_pressure_policy_)
+    : queue(queue_)
+    , id(id_)
+    , memory_pressure_policy(memory_pressure_policy_)
+    , increase(*this)
+    , decrease(*this)
+{
+}
+
 ResourceAllocation::~ResourceAllocation()
 {
     chassert(!pending_hook.is_linked());

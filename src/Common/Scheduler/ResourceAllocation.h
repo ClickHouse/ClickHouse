@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <exception>
 #include <Common/Scheduler/IncreaseRequest.h>
 #include <Common/Scheduler/DecreaseRequest.h>
@@ -14,6 +15,7 @@ namespace DB
 class ISpaceSharedNode;
 class IAllocationQueue;
 class AllocationQueue;
+class AllocationLimit;
 
 /// Represents a resource allocation that could change its size during its lifetime.
 /// Both increase and decrease of size are done through interaction with IAllocationQueue.
@@ -24,9 +26,29 @@ class AllocationQueue;
 class ResourceAllocation : public boost::noncopyable
 {
 public:
-    explicit ResourceAllocation(IAllocationQueue & queue_, const String & id_ = {})
-        : queue(queue_), id(id_), increase(*this), decrease(*this)
-    {}
+    enum class GrowthPressureAction : UInt8
+    {
+        Yield,
+        Protect,
+    };
+
+    enum class SuctionQueuePolicy : UInt8
+    {
+        Fifo,
+        LargestMemoryFirst,
+    };
+
+    struct MemoryPressurePolicy
+    {
+        bool protect_from_eviction = false;
+        UInt64 max_allocation_before_suction_bytes = 0;
+        UInt64 suction_max_allocation_bytes = 0;
+        UInt64 suction_reserved_bytes = 0;
+        SuctionQueuePolicy suction_queue_policy = SuctionQueuePolicy::Fifo;
+    };
+
+    explicit ResourceAllocation(IAllocationQueue & queue_, const String & id_ = {});
+    ResourceAllocation(IAllocationQueue & queue_, const String & id_, MemoryPressurePolicy memory_pressure_policy_);
 
     virtual ~ResourceAllocation();
 
@@ -44,15 +66,63 @@ public:
     /// just triggering procedure, not doing the kill itself.
     virtual void killAllocation(const std::exception_ptr & reason) = 0;
 
+    /// External query-level pressure controller. The allocation scheduler only consumes the
+    /// decision; reclaim/spill policy and accumulated suction priority live outside its hierarchy.
+    /// Without an external recovery controller there is no reclaim episode to wait for, so the
+    /// deterministic choice is to inject suction immediately. AllocationLimit still performs one
+    /// complete fitting-work search before consuming this decision.
+    virtual GrowthPressureAction onGrowthPressure() { return GrowthPressureAction::Protect; }
+    virtual void onGrowthPressureResolved() {}
+    virtual bool isGrowthRecoveryActive() { return false; }
+
+    /// At an explicit recovery checkpoint, reconcile a parked request with the allocation's
+    /// current demand. Called by the scheduler thread under the allocation-queue mutex.
+    virtual ResourceCost reconcilePendingIncrease(ResourceCost, ResourceCost requested_size) { return requested_size; }
+    virtual void increaseCancelled() {}
+
     IAllocationQueue & queue; /// Queue that manages this allocation.
     String const id; /// ID of this allocation for introspection purposes.
 
+    /// Suspended increases remain queued but are temporarily invisible to every scheduling layer.
+    /// The allocation itself keeps running and may still release resources.
+    bool isIncreaseSuspended() const { return memory_growth_suspended; }
+    bool isSuctioned() const { return memory_growth_suction_priority; }
+    bool isProtectedFromEviction() const { return memory_pressure_policy.protect_from_eviction; }
+    bool canStartSuctionBeforeSpillCompletes() const
+    {
+        const UInt64 allocation_limit = memory_pressure_policy.max_allocation_before_suction_bytes;
+        return allocation_limit == 0 || static_cast<UInt64>(allocated) <= allocation_limit;
+    }
+
+    bool canAllocateInSuction(ResourceCost increase_size) const
+    {
+        const UInt64 total_limit = memory_pressure_policy.suction_max_allocation_bytes;
+        if (total_limit == 0)
+            return true;
+
+        const UInt64 current_allocation = static_cast<UInt64>(allocated);
+        const UInt64 pending_increase = static_cast<UInt64>(increase_size);
+        return current_allocation <= total_limit && pending_increase <= total_limit - current_allocation;
+    }
+    UInt64 getSuctionReservedBytes() const { return memory_pressure_policy.suction_reserved_bytes; }
+    SuctionQueuePolicy getSuctionQueuePolicy() const { return memory_pressure_policy.suction_queue_policy; }
+
 private:
+    friend class ISpaceSharedNode;
     friend class AllocationQueue;
+    friend class AllocationLimit;
 
     ResourceCost allocated = 0; /// Currently allocated.
+    const MemoryPressurePolicy memory_pressure_policy;
     bool admitted = false; /// True once `apply(IncreaseRequest)` has incremented `allocations` in the hierarchy for this allocation.
-
+    /// A hard-limit constraint may temporarily park a running allocation's pending growth so another
+    /// request can be considered. The allocation can still decrease or be removed while growth is parked.
+    bool memory_growth_suspended = false; /// Scheduler-thread only.
+    bool memory_growth_suspension_attempted = false; /// Scheduler-thread only.
+    UInt64 memory_growth_eviction_order = 0; /// Queue-local order assigned on eviction nomination.
+    std::atomic_bool memory_growth_recovery_pending = false; /// Durable query-to-scheduler hand-off.
+    bool memory_growth_suction_priority = false; /// The allocation owns the one suction slot in its scope.
+    bool kill_requested = false; /// Scheduler-thread marker preventing duplicate victim selection across stacked limits.
     IncreaseRequest increase;
     DecreaseRequest decrease;
 

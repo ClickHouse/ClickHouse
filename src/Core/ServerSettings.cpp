@@ -400,6 +400,18 @@ The maximum memory consumption of the server is further restricted by setting `m
 
 As a special case, a value of `0` (default) means the server may consume all available memory (excluding further restrictions imposed by `max_server_memory_usage_to_ram_ratio`).
 )", 0) \
+    DECLARE(UInt64, memory_reservation_max_allocation_before_suction_bytes, 0, R"(
+Maximum memory a query may already have allocated for an active forced-spill pass to end early and transition to memory-reservation suction. The pending increase is not included. Spill completion also permits the transition regardless of this value. This setting does not initiate spilling; `memory_reservation_force_spill_before_eviction` controls that independently. A value of `0` means unlimited, allowing the transition immediately after spill is requested.
+)", 0) \
+    DECLARE(UInt64, memory_reservation_suction_max_allocation_bytes, 0, R"(
+Maximum total query allocation, including its pending increase, that may be served after memory-reservation suction starts. A query whose prospective total exceeds this value proceeds to eviction. This setting does not initiate or prolong spilling. A value of `0` means unlimited.
+)", 0) \
+    DECLARE(UInt64, memory_reservation_suction_reserved_bytes, 0, R"(
+Memory withheld from ordinary allocations at the top memory-reservation limit. The capacity becomes available to the top-level parent while its selected descendant is in suction, giving that scope a final opportunity to approve growth before eviction. A value of `0` disables the reserve.
+)", 0) \
+    DECLARE(String, memory_reservation_suction_queue_policy, "fifo", R"(
+Policy used to select the next completed-spill query for memory-reservation suction. Supported values are `fifo` and `largest_memory_first`.
+)", 0) \
     DECLARE(UInt64, max_per_cpu_untracked_memory, (8 * 1024 * 1024), R"(
 Upper bound, in bytes, on the untracked memory all threads running on one CPU may hold at once before it is flushed to the memory tracker. While `max_untracked_memory` bounds a single thread, this bounds the per-CPU total, so many threads cannot multiply their per-thread allowance into a large server-wide overcommit. The total untracked memory is therefore bounded by roughly `number_of_cpus * max_per_cpu_untracked_memory`. A value of `0` disables the per-CPU bound (only the per-thread `max_untracked_memory` applies). Linux only.
 )", 0) \
@@ -1975,6 +1987,29 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
             e.addMessage("while parsing setting '{}' value", name);
             throw;
         }
+    }
+
+    const UInt64 max_allocation_before_suction
+        = get("memory_reservation_max_allocation_before_suction_bytes").safeGet<UInt64>();
+    const UInt64 suction_max_allocation = get("memory_reservation_suction_max_allocation_bytes").safeGet<UInt64>();
+    const UInt64 suction_reserved = get("memory_reservation_suction_reserved_bytes").safeGet<UInt64>();
+    if (max_allocation_before_suction != 0 && max_allocation_before_suction < suction_reserved)
+    {
+        LOG_WARNING(
+            getLogger("ServerSettings"),
+            "`memory_reservation_max_allocation_before_suction_bytes` ({}) is smaller than "
+            "`memory_reservation_suction_reserved_bytes` ({})",
+            max_allocation_before_suction,
+            suction_reserved);
+    }
+    if (suction_max_allocation != 0 && suction_max_allocation < suction_reserved)
+    {
+        LOG_WARNING(
+            getLogger("ServerSettings"),
+            "`memory_reservation_suction_max_allocation_bytes` ({}) is smaller than "
+            "`memory_reservation_suction_reserved_bytes` ({}); part of the suction reserve cannot be used by one eligible allocation",
+            suction_max_allocation,
+            suction_reserved);
     }
 }
 
@@ -3758,3 +3793,4 @@ std::optional<String> ServerSettings::tryGetLiveValueAsString(ContextPtr context
     return it->second.first;
 }
 }
+

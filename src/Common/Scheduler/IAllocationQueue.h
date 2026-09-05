@@ -36,6 +36,21 @@ public:
     /// `decrease_size` must be positive.
     virtual void decreaseAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) = 0;
 
+    /// Temporarily parks an over-limit regular increase before eviction, or an alternative request that
+    /// cannot fit during the same suspension round. A memory release makes the requests eligible for
+    /// another attempt. Returns true when the request was parked, false when suspension is exhausted.
+    /// Deliberately non-blocking because
+    /// a parent constraint may call it while an `AllocationQueue` mutex is held during decrease propagation.
+    virtual bool trySuspendIncrease(ResourceAllocation & allocation) = 0;
+
+    /// Query-thread recovery checkpoint after parked growth was allowed to run releasing work.
+    /// Implementations must only schedule a retry; they must not synchronously traverse parents.
+    virtual void notifyRecoveryProgress(ResourceAllocation & allocation) = 0;
+
+    /// Make exactly one suctioned request visible after a local release. Other force-spilling
+    /// requests remain parked and cannot capture the release.
+    virtual bool retrySuction(ResourceAllocation & allocation) = 0;
+
     /// Requests to remove an allocation from the queue.
     /// The removal is processed asynchronously by the scheduler thread.
     /// For pending allocations, `ResourceAllocation::allocationFailed` will be called.

@@ -5,12 +5,15 @@
 #include <Common/CurrentMetrics.h>
 
 #include <memory>
+#include <chrono>
 #include <mutex>
 
 class MemoryTracker;
 
 namespace DB
 {
+
+class MemorySpillScheduler;
 
 /// `MemoryReservation` bridges a running query and the memory scheduler: the scheduler caps each
 /// workload's memory while the query's `MemoryTracker` stays the source of truth. It backs:
@@ -48,12 +51,23 @@ namespace DB
 struct MemoryReservation : public ResourceAllocation
 {
 public:
+    struct Settings
+    {
+        MemoryPressurePolicy pressure_policy;
+        bool force_spill_before_eviction = false;
+        UInt64 suction_queue_timeout_ms = 0;
+    };
+
     // Blocks until reservation is admitted iff reserved_size > 0
     MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size);
+    MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size, Settings settings_);
     ~MemoryReservation() override;
 
     // Sync actual size with MemoryTracker, issues and waits increase/decrease requests as needed.
     void syncWithMemoryTracker(const MemoryTracker * memory_tracker);
+
+    /// Pipeline threads bind the query-scoped spill controller once their ThreadGroup exists.
+    void setMemorySpillScheduler(const std::shared_ptr<MemorySpillScheduler> & scheduler);
 
 private:
     void throwIfNeeded();
@@ -68,8 +82,14 @@ private:
     void increaseApproved(const IncreaseRequest & increase) override;
     void decreaseApproved(const DecreaseRequest & decrease) override;
     void allocationFailed(const std::exception_ptr & reason) override;
+    GrowthPressureAction onGrowthPressure() override;
+    void onGrowthPressureResolved() override;
+    bool isGrowthRecoveryActive() override;
+    ResourceCost reconcilePendingIncrease(ResourceCost scheduler_allocated_size, ResourceCost requested_size) override;
+    void increaseCancelled() override;
 
     const ResourceCost reserved_size; // value of `reserve_memory` query setting
+    const Settings settings;
 
     /// Protects all the fields in this allocation that may be accessed from the scheduler thread.
     /// Lock ordering: AllocationQueue::mutex -> MemoryReservation::mutex (scheduler thread acquires
@@ -85,6 +105,12 @@ private:
     ResourceCost actual_size = 0; // real size of the resource used by the allocation
     ResourceCost enqueued_demand = 0; // amount added to demand_increment when increase was enqueued
     ResourceCost enqueued_decrease = 0; // size of the in-flight decrease request
+
+    std::weak_ptr<MemorySpillScheduler> memory_spill_scheduler;
+    bool growth_recovery_active = false;
+    UInt64 recovery_epoch = 0;
+    UInt64 reported_recovery_epoch = 0;
+    std::chrono::steady_clock::time_point recovery_started_at;
 
     /// Helper struct. Holds postponed ProfileEvents increments to be executed from a query thread.
     struct Metrics
@@ -104,3 +130,4 @@ private:
 using MemoryReservationPtr = std::unique_ptr<MemoryReservation>;
 
 }
+
