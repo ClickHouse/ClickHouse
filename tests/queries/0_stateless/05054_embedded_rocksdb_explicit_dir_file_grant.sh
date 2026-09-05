@@ -156,10 +156,19 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${VICTIM} SYNC SETTINGS ignore_dro
 victim_rc=$?
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER}"
 
+# A drop that reports success and leaves the table behind is the silent skip above, not a lost race,
+# so it is reported rather than trusted. A failed probe is not read as absence: the directories stay.
+victim_left=$(${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${VICTIM}")
+probe_rc=$?
+if [ "$victim_rc" -eq 0 ] && [ "$probe_rc" -eq 0 ] && [ "$victim_left" != "0" ]; then
+    echo "victim-survived-a-successful-drop (unexpected)"
+fi
+
 # Dropping such a table closes its handle but leaves the directory, so remove the three this test made,
 # once both drops above have reported success: a stored definition whose `rocksdb_dir` is gone cannot
-# be attached, and a table that fails to attach aborts metadata loading, so the server cannot start.
-if [ -n "${CLICKHOUSE_USER_FILES}" ] && [ "$poc_rc" -eq 0 ] && [ "$victim_rc" -eq 0 ]; then
+# be attached.
+if [ -n "${CLICKHOUSE_USER_FILES}" ] && [ "$poc_rc" -eq 0 ] && [ "$victim_rc" -eq 0 ] \
+   && [ "$probe_rc" -eq 0 ] && [ "$victim_left" = "0" ]; then
     rm -rf "${CLICKHOUSE_USER_FILES:?}/${SECRET_DIR}" "${CLICKHOUSE_USER_FILES:?}/${RW_DIR}" \
         "${CLICKHOUSE_USER_FILES:?}/${RESTORE_DIR}" "${CLICKHOUSE_USER_FILES:?}/${MISSING_DIR}"
 fi
