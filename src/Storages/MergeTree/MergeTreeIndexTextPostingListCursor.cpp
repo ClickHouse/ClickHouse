@@ -375,22 +375,6 @@ void PostingListCursor::decodeBlock(size_t block_idx)
     index = 0;
 }
 
-/// Lower bound over decoded posting values. The target is usually close to `first`.
-/// Probe at offsets 1, 2, 4, ... and binary-search only the last interval.
-static const uint32_t * gallopingLowerBound(const uint32_t * first, const uint32_t * last, uint32_t target)
-{
-    const size_t size = static_cast<size_t>(last - first);
-    if (size == 0 || *first >= target)
-        return first;
-
-    size_t bound = 1;
-    while (bound < size && first[bound] < target)
-        bound *= 2;
-
-    /// first[bound / 2] < target, so the answer is in (bound / 2, bound], clamped to the range.
-    return std::lower_bound(first + bound / 2 + 1, first + std::min(bound + 1, size), target);
-}
-
 void PostingListCursor::advance(uint32_t target)
 {
     ++counters.advance_count;
@@ -400,7 +384,7 @@ void PostingListCursor::advance(uint32_t target)
 
     if (is_embedded)
     {
-        const auto * it = gallopingLowerBound(decoded_values_ptr + index, decoded_values_ptr + decoded_count, target);
+        const auto * it = std::lower_bound(decoded_values_ptr, decoded_values_ptr + decoded_count, target);
         if (it != decoded_values_ptr + decoded_count)
         {
             index = static_cast<size_t>(it - decoded_values_ptr);
@@ -443,7 +427,7 @@ bool PostingListCursor::advanceImpl(uint32_t target)
     /// If current block contains the target, search within it.
     if (decoded_count > 0 && target <= decoded_values_ptr[decoded_count - 1])
     {
-        const auto * it = gallopingLowerBound(decoded_values_ptr + index, decoded_values_ptr + decoded_count, target);
+        const auto * it = std::lower_bound(decoded_values_ptr + index, decoded_values_ptr + decoded_count, target);
         if (it != decoded_values_ptr + decoded_count)
         {
             index = static_cast<size_t>(it - decoded_values_ptr);
@@ -462,8 +446,8 @@ bool PostingListCursor::advanceImpl(uint32_t target)
     if (j != current_block || decoded_count == 0)
         decodeBlock(j);
 
-    /// Search within the decoded packed block.
-    const auto * found_it = gallopingLowerBound(decoded_values_ptr, decoded_values_ptr + decoded_count, target);
+    /// Binary search within the decoded packed block.
+    const auto * found_it = std::lower_bound(decoded_values_ptr, decoded_values_ptr + decoded_count, target);
     if (found_it != decoded_values_ptr + decoded_count)
     {
         index = static_cast<size_t>(found_it - decoded_values_ptr);
@@ -521,7 +505,6 @@ inline const uint32_t * findRowRangeEnd(const uint32_t * begin, const uint32_t *
     size_t exclusive_end = row_offset + num_rows;
     if (exclusive_end > std::numeric_limits<uint32_t>::max())
         return end;
-
     return std::lower_bound(begin, end, static_cast<uint32_t>(exclusive_end));
 }
 
@@ -695,22 +678,23 @@ void PostingListCursor::linearSegments(UInt8 * data, size_t row_offset, size_t n
         }
 
         /// Decode all blocks in this segment that overlap with [row_offset, row_offset + num_rows).
-        const auto & block_last_row_ids = current_segment->block_last_row_ids;
-        const auto * first_block_it = std::lower_bound(block_last_row_ids.begin(), block_last_row_ids.end(), static_cast<uint32_t>(row_offset));
-        const size_t first_block_idx = static_cast<size_t>(first_block_it - block_last_row_ids.begin());
-
-        for (size_t block_idx = first_block_idx; block_idx < current_segment->block_count; ++block_idx)
+        for (size_t block_idx = 0; block_idx < current_segment->block_count; ++block_idx)
         {
-            if (block_idx > 0 && block_last_row_ids[block_idx - 1] == std::numeric_limits<uint32_t>::max())
+            uint32_t block_last = current_segment->block_last_row_ids[block_idx];
+
+            if (block_idx > 0 && current_segment->block_last_row_ids[block_idx - 1] == std::numeric_limits<uint32_t>::max())
             {
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "Corrupted data in lazy posting list cursor: previous block_last_row_id is UInt32::max "
                     "at block {}, computing block_first would overflow", block_idx);
             }
 
-            uint32_t block_first = (block_idx == 0) ? static_cast<uint32_t>(seg_begin) : (block_last_row_ids[block_idx - 1] + 1);
-            uint32_t block_last = block_last_row_ids[block_idx];
-            chassert(block_last >= row_offset);
+            uint32_t block_first = (block_idx == 0)
+                ? static_cast<uint32_t>(seg_begin)
+                : (current_segment->block_last_row_ids[block_idx - 1] + 1);
+
+            if (block_last < row_offset)
+                continue;
 
             if (block_first >= row_offset + num_rows)
                 break;
@@ -733,11 +717,9 @@ void PostingListCursor::linearSegments(UInt8 * data, size_t row_offset, size_t n
                 }
             }
 
-            /// A block that straddles two consecutive windows is still decoded from the previous call.
-            if (block_idx != current_block || decoded_count == 0)
-                decodeBlock(block_idx);
+            decodeBlock(block_idx);
 
-            const auto * begin_it = gallopingLowerBound(decoded_values_ptr, decoded_values_ptr + decoded_count, static_cast<uint32_t>(row_offset));
+            const auto * begin_it = std::lower_bound(decoded_values_ptr, decoded_values_ptr + decoded_count, static_cast<uint32_t>(row_offset));
             const auto * end_it = findRowRangeEnd(begin_it, decoded_values_ptr + decoded_count, row_offset, num_rows);
             size_t begin_idx = static_cast<size_t>(begin_it - decoded_values_ptr);
             size_t end_idx = static_cast<size_t>(end_it - decoded_values_ptr);
@@ -772,7 +754,7 @@ void PostingListCursor::linearEmbedded(UInt8 * data, size_t row_offset, size_t n
         }
     }
 
-    const auto * begin_it = gallopingLowerBound(decoded_values_ptr, decoded_values_ptr + decoded_count, static_cast<uint32_t>(row_offset));
+    const auto * begin_it = std::lower_bound(decoded_values_ptr, decoded_values_ptr + decoded_count, static_cast<uint32_t>(row_offset));
     const auto * end_it = findRowRangeEnd(begin_it, decoded_values_ptr + decoded_count, row_offset, num_rows);
     size_t begin_idx = static_cast<size_t>(begin_it - decoded_values_ptr);
     size_t end_idx = static_cast<size_t>(end_it - decoded_values_ptr);

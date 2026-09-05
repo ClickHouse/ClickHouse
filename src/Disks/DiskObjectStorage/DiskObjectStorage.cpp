@@ -1,4 +1,5 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/IOSchedulingSettings.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Memory/MetadataStorageFromMemory.h>
 #include <Common/CurrentThread.h>
 
@@ -83,7 +84,7 @@ ObjectStoragePtr DiskObjectStorage::getObjectStorage()
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 {
-    return std::make_shared<DiskObjectStorageTransaction>(cluster, metadata_storage, object_storages, blob_killer, copy_object_pool, wait_blob_removal);
+    return std::make_shared<DiskObjectStorageTransaction>(cluster, metadata_storage, object_storages, blob_killer, copy_object_pool, wait_blob_removal, getReadResourceName(), getWriteResourceName());
 }
 
 DiskObjectStorage::DiskObjectStorage(const DiskObjectStorage & base, MetadataStoragePtr metadata_storage_)
@@ -104,6 +105,8 @@ DiskObjectStorage::DiskObjectStorage(const DiskObjectStorage & base, MetadataSto
     data_source_description.metadata_type = metadata_storage->getType();
 
     std::lock_guard lock(base.resource_mutex);
+    read_resource_name_from_config = base.read_resource_name_from_config;
+    write_resource_name_from_config = base.write_resource_name_from_config;
     read_resource_name_from_sql = base.read_resource_name_from_sql;
     write_resource_name_from_sql = base.write_resource_name_from_sql;
     read_resource_name_from_sql_any = base.read_resource_name_from_sql_any;
@@ -119,7 +122,7 @@ DiskObjectStoragePtr DiskObjectStorage::wrapWithMemoryMetadata()
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk)
 {
-    return std::make_shared<MultipleDisksObjectStorageTransaction>(cluster, metadata_storage, object_storages, to_disk.cluster, to_disk.metadata_storage, to_disk.object_storages, to_disk.copy_object_pool);
+    return std::make_shared<MultipleDisksObjectStorageTransaction>(cluster, metadata_storage, object_storages, to_disk.cluster, to_disk.metadata_storage, to_disk.object_storages, to_disk.copy_object_pool, getReadResourceName(), to_disk.getWriteResourceName());
 }
 
 DiskObjectStorage::DiskObjectStorage(
@@ -143,6 +146,8 @@ DiskObjectStorage::DiskObjectStorage(
         CurrentMetrics::DiskObjectStorageCopyObjectThreadsActive,
         CurrentMetrics::DiskObjectStorageCopyObjectThreadsScheduled,
         getCopyObjectThreadPoolSize(config, config_prefix)))
+    , read_resource_name_from_config(config.getString(config_prefix + ".read_resource", ""))
+    , write_resource_name_from_config(config.getString(config_prefix + ".write_resource", ""))
     , enable_distributed_cache(config.getBool(config_prefix + ".enable_distributed_cache", true))
     , wait_blob_removal(config.getBool(config_prefix + ".wait_for_blob_removal", Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::disk_transaction_wait_for_blob_removal]))
     , remove_shared_recursive_file_limit(config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT))
@@ -250,8 +255,6 @@ DiskObjectStorage::DiskObjectStorage(
                 LOG_INFO(log, "Using resource '{}' instead of '{}' for READ", new_read_resource, old_read_resource);
             if (old_write_resource != new_write_resource)
                 LOG_INFO(log, "Using resource '{}' instead of '{}' for WRITE", new_write_resource, old_write_resource);
-
-            propagateResourceNamesNoLock();
         });
     cluster->applyNewSettings(config, config_prefix);
     blob_killer->applyNewSettings(config, config_prefix + ".data_background_cleanup");
@@ -787,31 +790,32 @@ bool DiskObjectStorage::supportsHardLinks() const
     return !metadata_storage->isWriteOnce() && !metadata_storage->isPlain();
 }
 
+String DiskObjectStorage::getReadResourceName() const
+{
+    std::unique_lock lock(resource_mutex);
+    return getReadResourceNameNoLock();
+}
+
+String DiskObjectStorage::getWriteResourceName() const
+{
+    std::unique_lock lock(resource_mutex);
+    return getWriteResourceNameNoLock();
+}
+
 String DiskObjectStorage::getReadResourceNameNoLock() const
 {
-    return read_resource_name_from_sql.empty() ? read_resource_name_from_sql_any : read_resource_name_from_sql;
+    if (read_resource_name_from_config.empty())
+        return read_resource_name_from_sql.empty() ? read_resource_name_from_sql_any : read_resource_name_from_sql;
+    else
+        return read_resource_name_from_config;
 }
 
 String DiskObjectStorage::getWriteResourceNameNoLock() const
 {
-    return write_resource_name_from_sql.empty() ? write_resource_name_from_sql_any : write_resource_name_from_sql;
-}
-
-void DiskObjectStorage::propagateResourceNamesNoLock() const
-{
-    String read_resource = getReadResourceNameNoLock();
-    String write_resource = getWriteResourceNameNoLock();
-
-    /// TODO(Michicosun): too adhoc, need to introduce WrappedObjectStorage that will simply delegate all methods.
-    if (wrapped_disk)
-    {
-        object_storages->takePointingTo(cluster->getLocalLocation())->setIOSchedulingResourceNames(read_resource, write_resource);
-    }
+    if (write_resource_name_from_config.empty())
+        return write_resource_name_from_sql.empty() ? write_resource_name_from_sql_any : write_resource_name_from_sql;
     else
-    {
-        for (const auto & [location, storage] : object_storages->getRegistry())
-            storage->setIOSchedulingResourceNames(read_resource, write_resource);
-    }
+        return write_resource_name_from_config;
 }
 
 void DiskObjectStorage::prepareRead(
@@ -842,7 +846,7 @@ void DiskObjectStorage::prepareRead(
 
     const StoredObjects storage_objects = metadata_storage->getStorageObjects(path);
 
-    auto read_settings = settings;
+    auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     auto global_context = Context::getGlobalContextInstance();
     auto storage = object_storages->takePointingTo(cluster->getLocalLocation());
 
@@ -1011,6 +1015,10 @@ void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration
 
     {
         std::unique_lock lock(resource_mutex);
+        if (String new_read_resource_name = config.getString(config_prefix + ".read_resource", ""); new_read_resource_name != read_resource_name_from_config)
+            read_resource_name_from_config = new_read_resource_name;
+        if (String new_write_resource_name = config.getString(config_prefix + ".write_resource", ""); new_write_resource_name != write_resource_name_from_config)
+            write_resource_name_from_config = new_write_resource_name;
         enable_distributed_cache = config.getBool(config_prefix + ".enable_distributed_cache", true);
     }
 

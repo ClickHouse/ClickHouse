@@ -1,5 +1,5 @@
 {
-  "group": "ODBC driver",
+  "group": "Pilote ODBC",
   "pages": [
     "fr/concepts/features/interfaces/odbc/index"
   ]

@@ -98,10 +98,10 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
 }
 
 /// Tries to estimate compressed size of a column by serializing a sample of it.
-static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTypeAndName & column, const CompressionCodecPtr & codec)
+static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTypeAndName & column)
 {
     NullWriteBuffer null_buf;
-    CompressedWriteBuffer compressed_buf(null_buf, codec);
+    CompressedWriteBuffer compressed_buf(null_buf);
     auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(DBMS_TCP_PROTOCOL_VERSION, column);
     // To avoid spending too much time on serialization, we limit the number of rows to serialize.
     const auto limit = std::max<size_t>(std::min(8192ul, column_to_write->size()), column_to_write->size() / 10);
@@ -140,12 +140,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
     size_t compressed_bytes = 0;
     if (shouldSampleBlock(statistics, num_rows))
     {
-        /// Only output columns get here, and they model what a replica sends to the initiator rather than
-        /// anything stored in a part, so there is no column `CODEC` to resolve as in `recordInputColumns`.
-        /// The transfer codec is `network_compression_method`, whose default the default codec matches.
         for (const auto & col : cols)
         {
-            auto [sample, compressed] = estimateCompressedColumnSize(col, CompressionCodecFactory::instance().getDefaultCodec());
+            auto [sample, compressed] = estimateCompressedColumnSize(col);
             sample_bytes += sample;
             compressed_bytes += compressed;
         }
@@ -244,8 +241,6 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     const NameSet & partially_read_columns,
     const NamesAndTypesList & part_columns,
     const ColumnSizeByName & column_sizes,
-    const ColumnCodecByName & column_codecs,
-    const CompressionCodecPtr & default_codec,
     size_t read_bytes,
     std::optional<bool> & should_continue_sampling)
 {
@@ -303,9 +298,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                     // Paranoid check in case some, e.g., prewhere filter columns are present among the input columns
                     if (part_columns.contains(column.name))
                     {
-                        const auto codec_it = column_codecs.find(column.name);
-                        const auto [sample, compressed] = estimateCompressedColumnSize(
-                            column, codec_it == column_codecs.end() ? default_codec : codec_it->second);
+                        const auto [sample, compressed] = estimateCompressedColumnSize(column);
                         sample_bytes += sample;
                         compressed_bytes += compressed;
                     }

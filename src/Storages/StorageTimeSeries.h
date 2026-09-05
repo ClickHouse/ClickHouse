@@ -55,12 +55,14 @@ public:
     /// Whether this table has a target of the given kind (the RecentSamples target is optional).
     bool hasTarget(ViewTarget::Kind target_kind) const;
 
-    /// Returns all possible target kinds: Samples, RecentSamples, Tags, and Metrics.
-    /// A concrete table can have no RecentSamples target (see hasTarget).
-    static constexpr std::array<ViewTarget::Kind, 4> getTargetKinds()
+    /// Returns all possible target kinds: Samples, Tags, Metrics, and the optional RecentSamples.
+    static constexpr std::array<ViewTarget::Kind, 4> getAllTargetKinds()
     {
-        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::Metrics};
+        return {ViewTarget::Samples, ViewTarget::Tags, ViewTarget::Metrics, ViewTarget::RecentSamples};
     }
+
+    /// Returns the kinds of the targets of this table: Samples, Tags, Metrics, and RecentSamples if the recent samples table is enabled.
+    std::vector<ViewTarget::Kind> getTargetKinds() const;
 
     void readImpl(
         QueryPlan & query_plan,
@@ -71,10 +73,6 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
-
-    /// With `FINAL` the read deduplicates unmerged rows of the inner "tags" table, so a series is returned
-    /// exactly once (see `makeASTSelectFromTimeSeries`).
-    bool supportsFinal() const override { return true; }
 
     static VirtualColumnsDescription createVirtuals();
 

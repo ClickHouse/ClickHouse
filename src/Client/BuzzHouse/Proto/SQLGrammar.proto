@@ -400,7 +400,6 @@ message ExprInType {
         ExprList array = 2;
         ExprList tuple = 3;
         ExplainQuery sel = 4;
-        bool empty_list = 5;
     }
 }
 

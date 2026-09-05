@@ -40,15 +40,11 @@ SerializationInfoSettings::SerializationInfoSettings(
 
 void SerializationInfoSettings::tryDowngradeToBasic()
 {
-    /// WITH_TYPES only carries type-specialized settings and can be omitted when
-    /// all of them are default. Later versions may carry independent metadata.
-    if (version != MergeTreeSerializationInfoVersion::WITH_TYPES)
+    if (version == MergeTreeSerializationInfoVersion::BASIC)
         return;
 
     bool no_specialization = string_serialization_version == MergeTreeStringSerializationVersion::SINGLE_STREAM
-        && nullable_serialization_version == MergeTreeNullableSerializationVersion::BASIC
-        && map_serialization_version == MergeTreeMapSerializationVersion::BASIC
-        && !propagate_types_serialization_versions_to_nested_types;
+        && nullable_serialization_version == MergeTreeNullableSerializationVersion::BASIC && map_serialization_version == MergeTreeMapSerializationVersion::BASIC;
 
     if (no_specialization)
         version = MergeTreeSerializationInfoVersion::BASIC;

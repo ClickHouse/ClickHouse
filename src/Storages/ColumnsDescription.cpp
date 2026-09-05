@@ -663,24 +663,7 @@ NamesAndTypesList ColumnsDescription::getNested(const String & column_name) cons
     return nested;
 }
 
-static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
-{
-    switch (kind)
-    {
-        case ColumnDefaultKind::Default:
-            return GetColumnsOptions::Ordinary;
-        case ColumnDefaultKind::Materialized:
-            return GetColumnsOptions::Materialized;
-        case ColumnDefaultKind::Alias:
-            return GetColumnsOptions::Aliases;
-        case ColumnDefaultKind::Ephemeral:
-            return GetColumnsOptions::Ephemeral;
-    }
-
-    return GetColumnsOptions::None;
-}
-
-void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list, const GetColumnsOptions & options) const
+void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) const
 {
     NamesAndTypesList subcolumns_list;
     for (const auto & col : source_list)
@@ -692,20 +675,8 @@ void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list, co
             continue;
 
         auto range = subcolumns.get<1>().equal_range(col.name);
-        for (auto subcolumn_it = range.first; subcolumn_it != range.second; ++subcolumn_it)
-        {
-            /// A column may be named like a subcolumn of another column (see the note in
-            /// `addSubcolumns`). `tryGetColumn` answers such a name with the column, so the shadowed
-            /// subcolumn is unreachable and must not be listed next to the column: a block that holds
-            /// both under one name is rejected as soon as their types differ, which made every read of
-            /// the table fail after an `ALTER TABLE ... MODIFY COLUMN` of the shadowing column.
-            auto shadowing_column = columns.get<1>().find(subcolumn_it->name);
-            if (shadowing_column != columns.get<1>().end()
-                && (defaultKindToGetKind(shadowing_column->default_desc.kind) & options.kind))
-                continue;
-
-            subcolumns_list.push_back(*subcolumn_it);
-        }
+        if (range.first != range.second)
+            subcolumns_list.insert(subcolumns_list.end(), range.first, range.second);
     }
 
     source_list.splice(source_list.end(), std::move(subcolumns_list));
@@ -783,7 +754,7 @@ NamesAndTypesList ColumnsDescription::get(const GetColumnsOptions & options) con
     }
 
     if (options.with_subcolumns)
-        addSubcolumnsToList(res, options);
+        addSubcolumnsToList(res);
 
     auto cached = std::make_shared<const NamesAndTypesList>(std::move(res));
     {
@@ -808,6 +779,23 @@ bool ColumnsDescription::hasNested(const String & column_name) const
 {
     auto range = getNameRange(columns, column_name);
     return range.first != range.second && range.first->name.length() > column_name.length();
+}
+
+static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
+{
+    switch (kind)
+    {
+        case ColumnDefaultKind::Default:
+            return GetColumnsOptions::Ordinary;
+        case ColumnDefaultKind::Materialized:
+            return GetColumnsOptions::Materialized;
+        case ColumnDefaultKind::Alias:
+            return GetColumnsOptions::Aliases;
+        case ColumnDefaultKind::Ephemeral:
+            return GetColumnsOptions::Ephemeral;
+    }
+
+    return GetColumnsOptions::None;
 }
 
 bool ColumnsDescription::hasSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const

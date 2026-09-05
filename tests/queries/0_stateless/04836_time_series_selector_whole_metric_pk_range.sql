@@ -1,5 +1,7 @@
--- Tags: no-fasttest, long
+-- Tags: no-fasttest, no-replicated-database, long
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
+-- Tag no-replicated-database: `DatabaseReplicated::dropTable` does not drop `TimeSeries` inner tables
+-- synchronously, so the deferred inner DROPs are rejected with "ON CLUSTER is not allowed for Replicated database".
 
 -- `timeSeriesSelector` (and every PromQL selector evaluated through it) filters the samples table with
 -- `id IN <tags subquery>`. With a two-component id layout `Tuple(hash(metric_name), hash(tags))`

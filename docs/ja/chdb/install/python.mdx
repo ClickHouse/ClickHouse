@@ -66,29 +66,29 @@ print(f"Execution time: {result.elapsed()} seconds")
 ```python
 import chdb
 
-# Create connection (":memory:" is a temporary, non-persistent database)
+# 接続を作成（デフォルトはインメモリ）
 conn = chdb.connect(":memory:")
-# Or use file-based: conn = chdb.connect("mydata.db")
+# ファイルベースの場合: conn = chdb.connect("mydata.db")
 
-# Create cursor for query execution
+# クエリ実行用カーソルを作成
 cur = conn.cursor()
 
-# Execute queries
+# クエリを実行
 cur.execute("SELECT number, toString(number) as str FROM system.numbers LIMIT 3")
 
-# Fetch results in different ways
-print(cur.fetchone())    # Single row: (0, '0')
-print(cur.fetchmany(2))  # Multiple rows: ((1, '1'), (2, '2'))
+# 異なる方法で結果を取得
+print(cur.fetchone())    # 単一行: (0, '0')
+print(cur.fetchmany(2))  # 複数行: ((1, '1'), (2, '2'))
 
-# Get metadata
+# メタデータを取得
 print(cur.column_names())  # ['number', 'str']
 print(cur.column_types())  # ['UInt64', 'String']
 
-# Use cursor as iterator
+# カーソルをイテレータとして使用
 for row in cur:
     print(row)
 
-# Always close resources
+# 必ずリソースをクローズ
 cur.close()
 conn.close()
 ```

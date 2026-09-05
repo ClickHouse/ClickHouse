@@ -32,7 +32,6 @@
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
-#include <Common/saturatedWaitDuration.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
@@ -149,9 +148,7 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
     if (config.has(root_ca_file_property))
         params.caLocation = config.getString(root_ca_file_property);
 
-    /// Unlike `Poco::Net::SSLManager`, the default CA certificates are not trusted unless `loadDefaultCAFile` is set.
-    constexpr bool load_default_cas_default = false;
-    params.loadDefaultCAs = config.getBool(load_default_ca_file_property, load_default_cas_default);
+    params.loadDefaultCAs = config.getBool(load_default_ca_file_property, false);
     params.verificationMode = Poco::Net::Utility::convertVerificationMode(config.getString(verification_mode_property, "none"));
 
     const String cipher_list_property = config_prefix + "cipherList";
@@ -177,8 +174,6 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
             disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_1;
         else if (token == "tlsv1_2")
             disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_2;
-        else if (token == "tlsv1_3")
-            disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_3;
     }
 
     auto prefer_server_cypher = config.getBool(config_prefix + "preferServerCiphers", false);
@@ -199,7 +194,7 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
 
         /// Try to register with CertificateReloader for hot-reload support.
         /// If registration fails, fall back to static certificate loading.
-        if (!CertificateReloader::instance().registerAdditionalContext(ssl_ctx, config_prefix, load_default_cas_default))
+        if (!CertificateReloader::instance().registerAdditionalContext(ssl_ctx, config_prefix))
         {
             /// For passphrase-protected keys, load certificates manually
             if (certificate_data)
@@ -1409,7 +1404,7 @@ void KeeperServer::waitInit()
     std::unique_lock lock(initialized_mutex);
 
     int64_t timeout = keeper_context->getCoordinationSettings()[CoordinationSetting::startup_timeout].totalMilliseconds();
-    if (!initialized_cv.wait_for(lock, saturatedWaitMilliseconds(timeout), [&] { return initialized_flag.load(); }))
+    if (!initialized_cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] { return initialized_flag.load(); }))
         LOG_WARNING(log, "Failed to wait for RAFT initialization in {}ms, will continue in background", timeout);
 }
 

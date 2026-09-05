@@ -50,7 +50,7 @@ StorageType parseStorageTypeFromLocation(const std::string & location)
     return parseStorageTypeFromString(location.substr(0, pos));
 }
 
-std::optional<StorageType> tryParseStorageTypeFromString(const std::string & type)
+StorageType parseStorageTypeFromString(const std::string & type)
 {
     auto capitalize_first_letter = [] (const std::string & s)
     {
@@ -80,18 +80,13 @@ std::optional<StorageType> tryParseStorageTypeFromString(const std::string & typ
     else if (storage_type_str == "abfss") /// Azure Blob File System Secure
         storage_type_str = "Azure";
 
-    return magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));
-}
-
-StorageType parseStorageTypeFromString(const std::string & type)
-{
-    auto storage_type = tryParseStorageTypeFromString(type);
+    auto storage_type = magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));
 
     if (!storage_type)
     {
         throw DB::Exception(
             DB::ErrorCodes::NOT_IMPLEMENTED,
-            "Unsupported storage type: {}", type);
+            "Unsupported storage type: {}", storage_type_str);
     }
 
     return *storage_type;

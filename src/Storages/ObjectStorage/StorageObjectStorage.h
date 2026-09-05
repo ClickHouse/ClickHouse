@@ -128,8 +128,6 @@ public:
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
-    size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override;
-
     static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name);
 
     static ColumnsDescription resolveSchemaFromData(

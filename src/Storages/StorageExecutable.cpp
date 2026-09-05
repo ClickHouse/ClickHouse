@@ -90,8 +90,7 @@ namespace
                 }
             }
 
-            auto source = std::make_shared<SourceFromSingleChunk>(
-                std::make_shared<const Block>(std::move(result_block)), /*enable_auto_progress=*/false);
+            auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(result_block)));
             inputs[i] = Pipe(std::move(source));
         }
     }

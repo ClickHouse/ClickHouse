@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from ci.praktika.result import Result
-from ci.praktika.utils import Shell, Utils
+from ci.praktika.utils import Shell
 
 
 def fetch_org_contributors(org: str = "ClickHouse", limit: int = 1000) -> set:
@@ -95,7 +95,7 @@ def parse_timestamp(timestamp: str) -> Optional[datetime]:
     """
     if not timestamp:
         return None
-    return Utils.gh_str_to_datetime(timestamp)
+    return datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
 
 
 def fetch_approvers(

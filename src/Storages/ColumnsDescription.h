@@ -288,7 +288,7 @@ private:
     SubcolumnsContainter subcolumns;
 
     void modifyColumnOrder(const String & column_name, const String & after_column, bool first);
-    void addSubcolumnsToList(NamesAndTypesList & source_list, const GetColumnsOptions & options) const;
+    void addSubcolumnsToList(NamesAndTypesList & source_list) const;
 
     void addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage);
     void removeSubcolumns(const String & name_in_storage);
