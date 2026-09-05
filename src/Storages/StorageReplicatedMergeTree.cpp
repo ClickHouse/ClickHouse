@@ -6416,6 +6416,10 @@ void StorageReplicatedMergeTree::foreachActiveParts(Func && func, bool select_se
 
 std::optional<UInt64> StorageReplicatedMergeTree::totalRows(ContextPtr query_context) const
 {
+    /// Transactions are not supported for ReplicatedMergeTree.
+    if (unlikely(!query_context || query_context->getCurrentTransaction()))
+        return {};
+
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::totalRows");
     const auto & settings = query_context->getSettingsRef();
     UInt64 res = 0;

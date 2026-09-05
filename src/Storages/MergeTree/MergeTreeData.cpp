@@ -7233,30 +7233,12 @@ size_t MergeTreeData::getTotalUncompressedBytesInPatches() const
 }
 
 MergeTreeData::ColumnDefaultnessStatsUnavailableReason
-MergeTreeData::getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context, const MutationsSnapshotPtr & mutations_snapshot)
-{
-    /// A transaction can change which parts are visible vs the snapshot we'd reason about.
-    if (query_context->getCurrentTransaction())
-        return ColumnDefaultnessStatsUnavailableReason::ActiveTransaction;
-
-    if (!mutations_snapshot)
-        return ColumnDefaultnessStatsUnavailableReason::None;
-
-    if (mutations_snapshot->hasPatchParts())
-        return ColumnDefaultnessStatsUnavailableReason::PatchParts;
-    if (mutations_snapshot->hasDataMutations())
-        return ColumnDefaultnessStatsUnavailableReason::DataMutations;
-    if (mutations_snapshot->hasAlterMutations())
-        return ColumnDefaultnessStatsUnavailableReason::AlterMutations;
-
-    return ColumnDefaultnessStatsUnavailableReason::None;
-}
-
-MergeTreeData::ColumnDefaultnessStatsUnavailableReason
 MergeTreeData::getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context) const
 {
-    /// A transaction can change which parts are visible vs the snapshot we'd reason about.
-    if (query_context->getCurrentTransaction())
+    /// Storages supporting transactions should return stats from the actual visible snapshot.
+    /// If the storage does not support transactions it may return stats from all active parts instead of snapshot
+    /// visible to the transaction.
+    if (!supportsTransactions() && query_context->getCurrentTransaction())
         return ColumnDefaultnessStatsUnavailableReason::ActiveTransaction;
 
     /// Patch parts apply updates/deletes at read time and don't update the base part's
