@@ -2772,7 +2772,7 @@ is added so the join order optimizer can consider direct (A JOIN C) plans.
 )", BETA) \
     \
     DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
-Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash, full_sorting_merge and parallel_full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
+Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash, full_sorting_merge and parallel_full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption. A join with the parallel_sorted_merge algorithm is sharded this way regardless of this setting - for it the sharding is the source of parallelism - while a join selected as sorted_merge is never sharded even with the setting enabled, because that algorithm is the explicitly single-stream variant.
 )", 0) \
     \
     DECLARE(Bool, query_plan_display_internal_aliases, false, R"(
@@ -3810,8 +3810,8 @@ Several algorithms can be specified, and an available one would be chosen for a 
 
 Most algorithms affect a query only when they are the one selected for it. Some, however, change planning merely by being listed — even as a lower-priority fallback that is not ultimately selected — because the decision is made before the algorithm is picked. There are two such effects:
 
-- Join-key type inference becomes stricter (a merge join cannot join keys of different types, for example `String` and `Nullable(String)`). This can change the result types of `USING` columns, and can make a join into a `Join`-engine table fail with `TYPE_MISMATCH`. Triggered by `full_sorting_merge` and `parallel_full_sorting_merge`.
-- `ORDER BY ... LIMIT` on the preserved side of a join gets an explicit sort instead of a read in primary-key order, because the join is assumed to break the ordered read (a merge join inserts its own pre-join sort; a partial merge join re-sorts the left blocks; a join that can produce delayed blocks does not propagate the ordered read either). The result is the same, the plan is less efficient. Triggered by `full_sorting_merge`, `parallel_full_sorting_merge`, `partial_merge`, `prefer_partial_merge`, `grace_hash` and `auto`, and also by a non-zero `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join`.
+- Join-key type inference becomes stricter (a merge join cannot join keys of different types, for example `String` and `Nullable(String)`). This can change the result types of `USING` columns, and can make a join into a `Join`-engine table fail with `TYPE_MISMATCH`. Triggered by `full_sorting_merge`, `parallel_full_sorting_merge`, `sorted_merge` and `parallel_sorted_merge`.
+- `ORDER BY ... LIMIT` on the preserved side of a join gets an explicit sort instead of a read in primary-key order, because the join is assumed to break the ordered read (a merge join inserts its own pre-join sort; a partial merge join re-sorts the left blocks; a join that can produce delayed blocks does not propagate the ordered read either). The result is the same, the plan is less efficient. Triggered by `full_sorting_merge`, `parallel_full_sorting_merge`, `sorted_merge`, `parallel_sorted_merge`, `partial_merge`, `prefer_partial_merge`, `grace_hash` and `auto`, and also by a non-zero `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join`.
 
 Both apply even when the query eventually runs with `hash` or another algorithm. If this is undesirable, do not list the algorithms above in `join_algorithm` for the affected queries.
 
@@ -3881,6 +3881,16 @@ Possible values:
  - While the initiator builds a distributed plan (`make_distributed_plan`), because the scattered sort is not serializable for remote execution. The local single-fragment plan and the per-worker fragments re-optimize with that setting disabled, so they can still be sharded.
 
  Skipping it disables only this rewrite, not parallelism in general: the join runs as a single `full_sorting_merge`, and MergeTree sides read in order can still be sharded at the source by primary-key ranges (which order by the same comparison the join uses, so equal keys stay together) when `query_plan_join_shard_by_pk_ranges` is enabled.
+
+- sorted_merge
+
+ A merge join that relies on the tables' order instead of sorting: it is available only when both join inputs can be efficiently read in the order of the join keys, so the pre-join sorts become cheap or disappear. Such an input is currently detected only for tables of the `MergeTree` family read directly, with a primary key starting with the join keys, and for the output of another merge join below it in the query plan (a merge join emits its rows sorted by its join keys, so in a multi-way join on a shared key every join above the first one is eligible as well and the whole chain stays merge-only, with no re-sorting); other ordered sources (for example, `Merge` or object-storage tables) are not considered, and the selection falls through to the next algorithm for them. The corresponding join-key types must already be equal: the common-type casts that a join would otherwise add can change a table's physical key order. A null-safe equality (`<=>`) on nullable keys is not eligible either: such keys are compared wrapped into `tuple(...)`, and a wrapped key cannot be read in table order. When the tables' order cannot be exploited, the algorithm is simply not selected and the next algorithm in the list is used. This makes it meaningful as a high-priority preference: `sorted_merge,parallel_hash` uses the streaming merge join exactly when it is certainly beneficial and a hash join otherwise. If no other algorithm is listed and the order cannot be exploited, the query fails with an error. The join itself runs in a single stream: the name encodes the parallelism choice, so even enabling `query_plan_join_shard_by_pk_ranges` does not shard a join selected as `sorted_merge` - use `parallel_sorted_merge` for the sharded variant.
+
+ Requires the analyzer (`enable_analyzer = 1`); with the old analyzer the algorithm is never selected. In rare cases the plan-level prediction can be too optimistic (for example, reading with `FINAL` can refuse the in-order read later); the join then runs like `full_sorting_merge`, with a full sort.
+
+- parallel_sorted_merge
+
+ Same as `sorted_merge`, but the join is additionally sharded by ranges of the common primary-key prefix of the two tables into independent per-shard merge joins that run in parallel, keeping the in-order reads intact (the same sharding `query_plan_join_shard_by_pk_ranges` applies, enabled for this join automatically). When the sharding does not apply (for example, `ASOF` joins or no common primary-key prefix), the join runs as a single `sorted_merge`.
 
 - prefer_partial_merge
 

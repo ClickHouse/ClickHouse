@@ -1088,12 +1088,15 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
 
+    /// `sorted_merge` and `parallel_sorted_merge` are intentionally not handled: they are available only when
+    /// the join inputs can be efficiently read in the order of the join keys, which is decided on the query
+    /// plan level and is implemented only for the analyzer (see `PlannerJoins.cpp`). With the old analyzer
+    /// they are never selected and the priority list falls through to the next algorithm.
     if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
     {
         if (FullSortingMergeJoin::isSupported(analyzed_join))
             return std::make_shared<FullSortingMergeJoin>(
-                analyzed_join, right_sample_block, /*null_direction_=*/1,
-                /*is_parallel_=*/algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
+                analyzed_join, right_sample_block, /*null_direction_=*/1, algorithm);
     }
 
     if (algorithm == JoinAlgorithm::GRACE_HASH)

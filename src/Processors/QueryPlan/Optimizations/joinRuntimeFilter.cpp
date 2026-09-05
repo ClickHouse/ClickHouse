@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Interpreters/MergeJoin.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -251,6 +252,48 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// Sometimes cross join can be represented by inner join without expressions
     if (join_operator.expression.empty())
         return false;
+
+    /// A `sorted_merge` / `parallel_sorted_merge` listed before the first runtime-filter-compatible
+    /// algorithm wins the selection when the join inputs can be read in the order of the join keys, and a
+    /// merge join cannot use a runtime filter (it reads both sides concurrently, so the probe side would
+    /// wait forever on a filter that is only complete when the build side is fully read). Planting the
+    /// filter would also erase the merge algorithms from the list below, silently overriding the
+    /// priority order the user asked for - the defining feature of these two algorithms. When the inputs
+    /// cannot be read in order, those algorithms are not selectable anyway, so the filter (and the erase)
+    /// stays. The predicate is memoized on the step, and `buildPhysicalJoin` uses the same one, so the
+    /// two passes cannot disagree.
+    for (auto algorithm : join_algorithms)
+    {
+        if (supportsRuntimeFilter(algorithm))
+            break;
+
+        /// `partial_merge` is a merge algorithm too. If it is supported and precedes
+        /// `sorted_merge` / `parallel_sorted_merge`, it wins algorithm selection and cannot use a
+        /// runtime filter.
+        if (algorithm == JoinAlgorithm::PARTIAL_MERGE
+            && join_step->isPartialMergeJoinSupported())
+            return false;
+
+        /// Unlike the sorted-merge algorithms below, these algorithms may be selected without
+        /// exploiting the input order. If one precedes `sorted_merge` / `parallel_sorted_merge`, it
+        /// wins algorithm selection, so the runtime filter must remain enabled for that join.
+        if (algorithm == JoinAlgorithm::DEFAULT
+            || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE
+            || algorithm == JoinAlgorithm::AUTO
+            || algorithm == JoinAlgorithm::FULL_SORTING_MERGE
+            || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
+            break;
+
+        if ((algorithm == JoinAlgorithm::SORTED_MERGE || algorithm == JoinAlgorithm::PARALLEL_SORTED_MERGE)
+            && optimization_settings.read_in_order
+            && join_step->inputsCanBeReadInJoinKeyOrder(node))
+        {
+            /// `applyParallelReplicas` may later invalidate the eligibility; the pass is then re-run
+            /// for the joins skipped here, so the fall-through algorithm gets its filter back.
+            join_step->setRuntimeFilterSuppressedForSortedMerge();
+            return false;
+        }
+    }
 
     /// Skip if the probe side is known to produce at most `join_runtime_filter_min_probe_rows` rows
     /// Planning and pipeline overhead outweighs any saving on a tiny probe.

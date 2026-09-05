@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -456,7 +457,27 @@ void optimizeTreeSecondPass(
     {
         traverseQueryPlan(stack, root,
             [&](auto &) {},
-            [&](auto & frame_node) { convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings); });
+            [&](auto & frame_node)
+            {
+                /// `applyParallelReplicas` may have replaced a join input with a distributed read; the
+                /// join-key-order eligibility memoized before it (by `tryAddJoinRuntimeFilter`) is stale
+                /// then, so recompute it on the final plan - a sorted-merge algorithm must fall through
+                /// to the next one of `join_algorithm` when its input is no longer readable in order.
+                if (auto * join_logical = typeid_cast<JoinStepLogical *>(frame_node.step.get()))
+                {
+                    join_logical->resetInputsCanBeReadInJoinKeyOrder();
+                    /// If the filter pass skipped this join because an eligible sorted-merge algorithm
+                    /// won the selection, re-run it on the final plan: when the rewrite broke the
+                    /// eligibility, the selection falls through to a hash-family algorithm, which must
+                    /// get its runtime filter back. The re-added filter stays adjacent to the join (the
+                    /// push-down passes have already run), which costs only the deeper placement and the
+                    /// index analysis, not correctness.
+                    if (optimization_settings.enable_join_runtime_filters
+                        && join_logical->isRuntimeFilterSuppressedForSortedMerge())
+                        tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
+                }
+                convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
+            });
 
         /// The joins are physical only now, so this is the first point where lazy column indexing can be
         /// applied to the joins left in the outer plan. Joins inside a shipped fragment get it from the
@@ -838,8 +859,11 @@ void optimizeTreeSecondPass(
     /// Propagate stream disjointness so that DISTINCT / LIMIT BY / GROUP BY can skip merging streams.
     applyStreamDisjointness(optimization_settings, root);
 
-    if (optimization_settings.query_plan_join_shard_by_pk_ranges)
-        optimizeJoinByShards(root);
+    /// Without `query_plan_join_shard_by_pk_ranges` the pass still runs, but restricted to joins whose
+    /// selected algorithm is `parallel_sorted_merge`: for them the primary-key-range sharding is not an
+    /// opt-in extra but the way the algorithm parallelizes (it keeps the in-order reads intact, unlike the
+    /// hash scatter below, which must not touch pre-sorted sides).
+    optimizeJoinByShards(root, /*only_parallel_sorted_merge=*/!optimization_settings.query_plan_join_shard_by_pk_ranges);
 
     /// Shard `parallel_full_sorting_merge` joins by the hash of the join keys. The `join_algorithm`
     /// choice is the gate (this is a no-op unless a join uses that algorithm).

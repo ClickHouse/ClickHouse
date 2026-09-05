@@ -34,6 +34,7 @@
 #include <Interpreters/DirectJoinMergeTreeEntity.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/MergeJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Processors/QueryPlan/IEJoinStep.h>
 #include <Interpreters/IJoin.h>
@@ -46,10 +47,15 @@
 #include <IO/Operators.h>
 
 #include <Planner/PlannerJoins.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -1169,6 +1175,409 @@ static bool tryAddDisjunctiveConditions(
     return true;
 }
 
+/// Which columns of a merge join's output its rows come out sorted by, position by position: for every
+/// position of the join-key sort description, the names of the output columns that carry that key. The
+/// merge join reads both inputs sorted by their keys and emits the rows in that key order, so the output is
+/// sorted by the keys of the side whose rows are all emitted: the left keys for `INNER` and `LEFT` (`ASOF`
+/// included - its left input is sorted by all of its keys, the inequality one last), the right keys for
+/// `RIGHT`, and, for `INNER`, the right keys as well, because every emitted row carries equal left and right
+/// key values (except for the `ASOF` inequality key, which is matched by an inequality). A `FULL` join
+/// interleaves the unmatched rows of both sides, with defaults or NULLs in the other side's keys, so no
+/// single output column of it is sorted. The positions stop at the first key that is missing from the
+/// output header: an order by a later key alone is not implied. Empty if the output is not sorted.
+using MergeJoinOutputOrder = std::vector<Names>;
+
+static MergeJoinOutputOrder mergeJoinOutputOrder(
+    JoinKind kind, JoinStrictness strictness, const Names & left_keys, const Names & right_keys, const Block & output_header)
+{
+    if (!isInner(kind) && !isLeft(kind) && !isRight(kind))
+        return {};
+
+    MergeJoinOutputOrder order;
+    for (size_t i = 0; i < left_keys.size() && i < right_keys.size(); ++i)
+    {
+        const bool is_asof_inequality_key = strictness == JoinStrictness::Asof && i + 1 == left_keys.size();
+        Names sorted_columns;
+        if ((isInner(kind) || isLeft(kind)) && output_header.has(left_keys[i]))
+            sorted_columns.push_back(left_keys[i]);
+        if (((isInner(kind) && !is_asof_inequality_key) || isRight(kind)) && output_header.has(right_keys[i]))
+            sorted_columns.push_back(right_keys[i]);
+        if (sorted_columns.empty())
+            break;
+        order.push_back(std::move(sorted_columns));
+    }
+    return order;
+}
+
+/// The order of a nested join's output when that join is a merge join (a physical `JoinStep` carrying a
+/// `FullSortingMergeJoin`, whichever `join_algorithm` variant selected it) or is predicted to become one (a
+/// `JoinStepLogical`, only seen while the runtime-filter pass runs before any join is physical - see
+/// `predictMergeJoinOutputOrder`). Empty for a hash join and the other algorithms, whose output order is
+/// not exploitable.
+static MergeJoinOutputOrder nestedJoinOutputOrder(const QueryPlan::Node & join_node)
+{
+    if (const auto * join_step = typeid_cast<const JoinStep *>(join_node.step.get()))
+    {
+        const auto * merge_join = typeid_cast<const FullSortingMergeJoin *>(join_step->getJoin().get());
+        if (!merge_join || !join_step->getOutputHeader())
+            return {};
+        const auto & table_join = merge_join->getTableJoin();
+        const auto & clause = table_join.getOnlyClause();
+        return mergeJoinOutputOrder(
+            table_join.kind(), table_join.strictness(), clause.key_names_left, clause.key_names_right, *join_step->getOutputHeader());
+    }
+
+    if (auto * join_logical = typeid_cast<JoinStepLogical *>(join_node.step.get()))
+        return join_logical->predictMergeJoinOutputOrder(join_node);
+
+    return {};
+}
+
+/// Walks down from a merge-join input through the single-input steps that keep the order of their rows
+/// (the same ones `findReadingStep` of `optimizeReadInOrder.cpp` walks through) to the step whose order the
+/// input could inherit: a `ReadFromMergeTree`, or a nested join. `chain` receives the steps passed, from the
+/// top down. Returns nullptr when some other step breaks the chain.
+static const QueryPlan::Node * findOrderProvidingStep(const QueryPlan::Node & input, std::vector<const QueryPlan::Node *> & chain)
+{
+    const QueryPlan::Node * node = &input;
+    while (true)
+    {
+        const IQueryPlanStep * step = node->step.get();
+        if (typeid_cast<const ReadFromMergeTree *>(step) || typeid_cast<const JoinStep *>(step)
+            || typeid_cast<const JoinStepLogical *>(step))
+            return node;
+
+        if (node->children.size() != 1)
+            return nullptr;
+
+        const auto * distinct = typeid_cast<const DistinctStep *>(step);
+        if (typeid_cast<const ExpressionStep *>(step) || typeid_cast<const FilterStep *>(step)
+            || typeid_cast<const ArrayJoinStep *>(step)
+            || (distinct && distinct->isPreliminary())
+            || typeid_cast<const CreatingSetsStep *>(step) || typeid_cast<const DelayedCreatingSetsStep *>(step))
+        {
+            chain.push_back(node);
+            node = node->children.front();
+            continue;
+        }
+
+        return nullptr;
+    }
+}
+
+struct NestedMergeJoinOrder
+{
+    /// The prefix of the requested keys by which the input's rows already arrive sorted, as the prefix
+    /// sort description of a `FinishSorting`. Empty when nothing is known to be sorted.
+    SortDescription sorted_prefix;
+    /// The nested join providing that order (a `JoinStep`, or a `JoinStepLogical` while predicting).
+    const QueryPlan::Node * join_node = nullptr;
+};
+
+/// Whether (and by which prefix of `key_names`, columns of `input`'s output) the rows of a merge-join input
+/// already arrive sorted thanks to a nested merge join below it. The join emits its rows sorted by its own
+/// keys (`mergeJoinOutputOrder`); the steps in between may only rename them for the order to survive:
+/// aliases are followed down to the join's output column, a key computed by a function inherits no order.
+/// The requested keys are matched position by position against the join's, so `ON a.k1 = c.k1 AND a.k2 = c.k2`
+/// above `ON a.k1 = b.k1 AND a.k2 = b.k2` is fully sorted, `ON a.k1 = c.k1` above it is sorted too (a prefix),
+/// while `ON a.k2 = c.k2` above it is not.
+static NestedMergeJoinOrder findNestedMergeJoinOrder(const QueryPlan::Node & input, const Names & key_names)
+{
+    std::vector<const QueryPlan::Node *> chain;
+    const auto * join_node = findOrderProvidingStep(input, chain);
+    if (!join_node || typeid_cast<const ReadFromMergeTree *>(join_node->step.get()))
+        return {};
+
+    const auto output_order = nestedJoinOutputOrder(*join_node);
+    if (output_order.empty())
+        return {};
+
+    const auto & join_header = join_node->step->getOutputHeader();
+    if (!join_header)
+        return {};
+
+    /// Follow the keys down to the join's output columns through the expressions in between, the same way
+    /// `optimizeJoinByShards` traces the join keys down to the reading step.
+    ActionsDAG dag(join_header->getColumnsWithTypeAndName());
+    const std::unordered_set<const ActionsDAG::Node *> join_output_nodes(dag.getInputs().begin(), dag.getInputs().end());
+    for (const auto * chain_node : chain | std::views::reverse)
+    {
+        const IQueryPlanStep * step = chain_node->step.get();
+        if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
+            dag.mergeInplace(expression->getExpression().clone());
+        else if (const auto * filter = typeid_cast<const FilterStep *>(step))
+            dag.mergeInplace(filter->getExpression().clone());
+        else if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(step))
+        {
+            /// `ARRAY JOIN` only repeats the rows, so the other columns keep their order, but it replaces the
+            /// array columns with their elements: those lose the order along with the type.
+            const auto & array_joined_columns = array_join->getColumns();
+            const std::unordered_set<std::string_view> array_joined(array_joined_columns.begin(), array_joined_columns.end());
+            std::erase_if(dag.getOutputs(), [&](const ActionsDAG::Node * output) { return array_joined.contains(output->result_name); });
+        }
+        /// The remaining steps of the chain (a preliminary DISTINCT, set creation) do not change the columns.
+    }
+
+    NestedMergeJoinOrder result;
+    result.join_node = join_node;
+    for (size_t i = 0; i < key_names.size() && i < output_order.size(); ++i)
+    {
+        const auto * node = dag.tryFindInOutputs(key_names[i]);
+        while (node && node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.front();
+        if (!node || node->type != ActionsDAG::ActionType::INPUT || !join_output_nodes.contains(node))
+            break;
+        if (std::find(output_order[i].begin(), output_order[i].end(), node->result_name) == output_order[i].end())
+            break;
+        result.sorted_prefix.emplace_back(key_names[i]);
+    }
+    return result;
+}
+
+/// Whether one merge-join input can be efficiently read in the order of its join keys, i.e. whether the
+/// `Sort ... before JOIN` above it will be a cheap `FinishSorting` (or a bare merge of the pre-sorted streams)
+/// instead of a full sort. Gates the `sorted_merge` and `parallel_sorted_merge` algorithms at selection
+/// time, which happens during plan physicalization - several passes before `optimizeReadInOrder` runs and
+/// before the sorting step even exists. So this is a prediction: it finds the step providing the order the
+/// same way `findReadingStep` in `optimizeReadInOrder.cpp` does. For a `ReadFromMergeTree` it probes the
+/// actual read-in-order matcher (`wouldReadInOrderBeUseful`) with the join-key sort the physicalization is
+/// about to build. A false positive (a later pass declines what was predicted here, e.g.
+/// `requestReadingInOrder` refusing a `FINAL` read) degrades gracefully - the join runs like
+/// `full_sorting_merge` with a full sort; a false negative just makes the selection fall through to the
+/// next algorithm in the `join_algorithm` list.
+///
+/// The other order provider is a nested merge join: it emits its rows sorted by its own join keys, so a
+/// join above it on (a prefix of) those keys needs no re-sort at all - physicalization builds the sort as
+/// a `FinishSorting` right away (`findNestedMergeJoinOrder`). This is what keeps a multi-way join on a
+/// shared key a chain of merge joins: without it only the bottom join could ever be a sorted merge, and
+/// every join above it would fall through to the next listed algorithm. The join below is a physical
+/// `JoinStep` by the time the join above is inspected (joins are physicalized bottom-up), except in the
+/// runtime-filter pass with parallel replicas, where the algorithm the nested join will select is predicted
+/// (`predictMergeJoinOutputOrder`) and the memoized answer is recomputed on the final plan anyway.
+///
+/// Join keys that are not plain input columns (an expression computed by the pre-join actions, e.g. a type
+/// cast) disable the gate.
+///
+/// The gate is also deliberately narrower than `checkSupportedReadingStep` in what it reads from:
+/// only a direct `ReadFromMergeTree` qualifies, while `optimizeReadInOrder` can additionally exploit
+/// the order of `ReadFromMerge` and `ReadFromObjectStorageStep`. A `Merge` table has no single sorting
+/// key to probe `wouldReadInOrderBeUseful` with (only a common prefix computed across the selected
+/// tables at optimization time), and an in-order object-storage read is a much rarer and less tested
+/// combination - so for now these sources conservatively fall through to the next algorithm in the
+/// `join_algorithm` list, which is the documented contract of `sorted_merge` selection.
+static bool joinInputCanBeReadInJoinKeyOrder(
+    const QueryPlan::Node & input,
+    const Names & key_names,
+    const SortingStep::Settings & sorting_settings)
+{
+    if (key_names.empty())
+        return false;
+
+    const auto & input_header = input.step->getOutputHeader();
+    if (!input_header)
+        return false;
+    for (const auto & key_name : key_names)
+        if (!input_header->has(key_name))
+            return false;
+
+    std::vector<const QueryPlan::Node *> chain;
+    const auto * order_provider = findOrderProvidingStep(input, chain);
+    if (!order_provider)
+        return false;
+
+    const auto * reading = typeid_cast<const ReadFromMergeTree *>(order_provider->step.get());
+    if (!reading)
+        return !findNestedMergeJoinOrder(input, key_names).sorted_prefix.empty();
+
+    /// Mirror `checkSupportedReadingStep`: a STREAM read returns parts in commit order, an already
+    /// in-order read cannot be requested again, and an empty sorting key gives no order to exploit.
+    if (reading->getQueryInfo().isStream() || reading->getQueryInfo().input_order_info)
+        return false;
+    /// Parallel replicas reading cannot serve an in-order request made this late.
+    if (reading->isParallelReadingEnabled())
+        return false;
+
+    const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
+    if (sorting_key.column_names.empty())
+        return false;
+
+    SortDescription sort_description;
+    sort_description.reserve(key_names.size());
+    for (const auto & key_name : key_names)
+        sort_description.emplace_back(key_name);
+
+    /// The probe step is ephemeral - nothing is attached to the real plan.
+    SortingStep probe_sorting_step(
+        input_header, std::move(sort_description), 0 /*limit*/, sorting_settings, true /*is_sorting_for_merge_join*/);
+
+    return QueryPlanOptimizations::wouldReadInOrderBeUseful(probe_sorting_step, sorting_key, input);
+}
+
+bool JoinStepLogical::collectMergeJoinKeys(Names & left_keys, Names & right_keys) const
+{
+    /// The shape of the join must be one a merge join can actually execute, otherwise the physical
+    /// selection declines the sorted-merge algorithms (`FullSortingMergeJoin::isSupported`) and falls
+    /// through to the next entry of `join_algorithm`. The answer here must not be more optimistic than
+    /// that: `tryAddJoinRuntimeFilter` uses the same predicate to leave an eligible sorted-merge join
+    /// alone, so a `true` for a join that ends up as `hash` would cost it a runtime filter for nothing.
+    if (!FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(join_operator.kind, join_operator.strictness))
+        return false;
+
+    /// Collect the join key pairs in the same order physicalization uses for its merge-join sort
+    /// description: equality keys first, followed by the `ASOF` inequality key.
+    /// The raw operand names are used - without the type-cast wrapping the physicalization may add. A
+    /// conversion can change the input order (for example, `Enum` to `String`), so do not predict an
+    /// in-order read if the operands do not already have equal types. This is deliberately conservative:
+    /// it can make a monotonic conversion fall through, but it cannot select `sorted_merge` when the
+    /// physical sort needs a full re-sort. The null-safe `tuple` wrapping is different:
+    /// it applies to every nullable `<=>` key, so those joins are excluded below outright.
+    ///
+    /// Anything that is not such a two-sided key predicate makes the join unsupported by the merge
+    /// algorithm and therefore ineligible: a one-sided `ON` condition (e.g. `ON l.k = r.k AND r.flag = 1`)
+    /// becomes a clause filter condition, and a disjunction (a single `or` condition here) gives more than
+    /// one clause - `FullSortingMergeJoin::isSupported` rejects both.
+    std::optional<std::pair<String, String>> asof_key;
+    for (const auto & condition : join_operator.expression)
+    {
+        auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
+        const bool is_equality
+            = predicate_op == JoinConditionOperator::Equals || predicate_op == JoinConditionOperator::NullSafeEquals;
+        /// The single inequality of an `ASOF` join is a key of the same clause, not a filter condition.
+        const bool is_asof_inequality
+            = join_operator.strictness == JoinStrictness::Asof && operatorToAsofInequality(predicate_op).has_value();
+        if (!is_equality && !is_asof_inequality)
+            return false;
+        /// A null-safe equality over nullable operands is not a plain ordered-key proof: physicalization
+        /// wraps both of its keys into `tuple(...)` (see `addJoinPredicatesToTableJoin`), and the merge join
+        /// is then sorted by the wrapped names. The read-in-order matcher understands only exact matches and
+        /// monotonic wrappers, and `tuple` is neither, so such a join would always pay a full pre-join sort.
+        /// Declare it ineligible so that it falls through to the next entry of `join_algorithm` instead.
+        /// The common-type conversion that runs before the wrapping can only add nullability, never remove
+        /// it, so it is enough to look at one operand here.
+        if (predicate_op == JoinConditionOperator::NullSafeEquals
+            && (isNullableOrLowCardinalityNullable(lhs.getType()) || isNullableOrLowCardinalityNullable(rhs.getType())))
+            return false;
+        if (lhs.fromRight() && rhs.fromLeft())
+            std::swap(lhs, rhs);
+        else if (!lhs.fromLeft() || !rhs.fromRight())
+            return false;
+        if (!lhs.getType()->equals(*rhs.getType()))
+            return false;
+        if (is_asof_inequality)
+        {
+            /// Physicalization rejects a second inequality (`ASOF join does not support multiple
+            /// inequality predicates in JOIN ON expression`), so there is no order to predict.
+            if (asof_key)
+                return false;
+            asof_key.emplace(lhs.getColumnName(), rhs.getColumnName());
+            continue;
+        }
+        left_keys.push_back(lhs.getColumnName());
+        right_keys.push_back(rhs.getColumnName());
+    }
+
+    /// The `ASOF` inequality key is appended to the clause only after every equality key of it
+    /// (`addJoinPredicatesToTableJoin` runs first, the `ASOF` block afterwards), so the merge-join
+    /// sort description ends with it no matter where the inequality was written in `ON`.
+    if (asof_key)
+    {
+        left_keys.push_back(asof_key->first);
+        right_keys.push_back(asof_key->second);
+    }
+
+    return !left_keys.empty();
+}
+
+bool JoinStepLogical::inputsCanBeReadInJoinKeyOrder(const QueryPlan::Node & node)
+{
+    if (inputs_can_be_read_in_join_key_order.has_value())
+        return *inputs_can_be_read_in_join_key_order;
+
+    inputs_can_be_read_in_join_key_order = false;
+
+    /// The eligibility only matters for (and is only computed for) the sorted-merge algorithms.
+    if (!TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::SORTED_MERGE)
+        && !TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::PARALLEL_SORTED_MERGE))
+        return false;
+
+    if (node.children.size() != 2 || node.step.get() != this)
+        return false;
+
+    Names left_keys;
+    Names right_keys;
+    if (!collectMergeJoinKeys(left_keys, right_keys))
+        return false;
+
+    inputs_can_be_read_in_join_key_order
+        = joinInputCanBeReadInJoinKeyOrder(*node.children[0], left_keys, sorting_settings)
+        && joinInputCanBeReadInJoinKeyOrder(*node.children[1], right_keys, sorting_settings);
+    return *inputs_can_be_read_in_join_key_order;
+}
+
+std::vector<Names> JoinStepLogical::predictMergeJoinOutputOrder(const QueryPlan::Node & node)
+{
+    if (node.children.size() != 2 || node.step.get() != this || !getOutputHeader())
+        return {};
+
+    Names left_keys;
+    Names right_keys;
+    if (!collectMergeJoinKeys(left_keys, right_keys))
+        return {};
+
+    /// Replay the selection of `chooseJoinAlgorithm`: the first algorithm of the list that applies wins.
+    /// The always-available merge variants apply as soon as the shape allows (checked above), the
+    /// sorted-merge ones need the inputs' order as well. `direct` applies only to joins with key-value
+    /// storages, which a merge join could not execute anyway, so it is skipped over like the selection does
+    /// for ordinary tables. Any other algorithm is taken as selected: its output order is not exploitable.
+    for (auto algorithm : join_settings.join_algorithms)
+    {
+        switch (algorithm)
+        {
+            case JoinAlgorithm::SORTED_MERGE:
+            case JoinAlgorithm::PARALLEL_SORTED_MERGE:
+                if (inputsCanBeReadInJoinKeyOrder(node))
+                    return mergeJoinOutputOrder(join_operator.kind, join_operator.strictness, left_keys, right_keys, *getOutputHeader());
+                continue;
+            case JoinAlgorithm::FULL_SORTING_MERGE:
+            case JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE:
+                return mergeJoinOutputOrder(join_operator.kind, join_operator.strictness, left_keys, right_keys, *getOutputHeader());
+            case JoinAlgorithm::DIRECT:
+                continue;
+            default:
+                return {};
+        }
+    }
+    return {};
+}
+
+bool JoinStepLogical::isPartialMergeJoinSupported() const
+{
+    if (!MergeJoin::isSupported(join_operator.kind, join_operator.strictness))
+        return false;
+
+    /// Keep this in sync with `MergeJoin::isSupported(table_join)`: a mixed condition is
+    /// stored on `TableJoin` and cannot be evaluated by `MergeJoin`, while a one-sided
+    /// condition is pushed down and does not affect its selectability. An `OR` condition
+    /// creates multiple clauses, so it is likewise not supported by `MergeJoin`.
+    for (const auto & condition : join_operator.expression)
+    {
+        auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
+        const bool is_equality
+            = predicate_op == JoinConditionOperator::Equals || predicate_op == JoinConditionOperator::NullSafeEquals;
+        const bool is_asof_inequality
+            = join_operator.strictness == JoinStrictness::Asof && operatorToAsofInequality(predicate_op).has_value();
+
+        if (predicate_op == JoinConditionOperator::Or || !lhs || !rhs)
+            return false;
+
+        if (!is_equality && !is_asof_inequality
+            && ((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft())))
+            return false;
+    }
+
+    return true;
+}
+
 static void addSortingForMergeJoin(
     const FullSortingMergeJoin * join_ptr,
     QueryPlan::Node *& left_node,
@@ -1191,6 +1600,24 @@ static void addSortingForMergeJoin(
         auto sorting_step = std::make_unique<SortingStep>(
             node->step->getOutputHeader(), std::move(sort_description), 0 /*limit*/, sort_settings, true /*is_sorting_for_merge_join*/);
         sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_table_side), max_step_description_length);
+
+        /// A nested merge join below this input emits its rows sorted by its own join keys; when those cover
+        /// (a prefix of) the keys of this join, the input needs no re-sort - only the suffix of the sort
+        /// description, if any, has to be finished. This is what keeps a multi-way join on a shared key a
+        /// chain of streaming merge joins. `optimizeReadInOrder` cannot make this conversion later: it looks
+        /// for a reading step below the sort, and a join is not one.
+        if (auto nested_order = findNestedMergeJoinOrder(*node, key_names); !nested_order.sorted_prefix.empty())
+        {
+            sorting_step->convertToFinishSorting(
+                std::move(nested_order.sorted_prefix), /*use_buffering_=*/ false, /*apply_virtual_row_conversions_=*/ false);
+
+            /// The nested join's single sorted stream is consumed as such: spreading it over `max_threads`
+            /// streams (as a merge join otherwise does for the steps above it) would only make this sort
+            /// merge those streams back into one.
+            if (auto * nested_join_step = typeid_cast<JoinStep *>(nested_order.join_node->step.get()))
+                nested_join_step->keepLeftPipelineInOrder();
+        }
+
         node = &nodes.emplace_back(QueryPlan::Node{std::move(sorting_step), {node}});
     };
 
@@ -1226,9 +1653,12 @@ static void addSortingForMergeJoin(
     /// Sorting on a stream with const keys can start returning rows immediately and pipeline may stuck.
     /// Note: it's also doesn't work with the read-in-order optimization.
     /// No checks here because read in order is not applied if we have `CreateSetAndFilterOnTheFlyStep` in the pipeline between the reading and sorting steps.
+    /// For that same reason the step must not be added for `sorted_merge` / `parallel_sorted_merge`:
+    /// those algorithms were selected precisely for the in-order read, which this step would defeat.
     bool has_non_const_keys = has_non_const(*left_node->step->getOutputHeader(), join_clause.key_names_left)
         && has_non_const(*right_node->step->getOutputHeader() , join_clause.key_names_right);
-    if (join_settings.max_rows_in_set_to_optimize_join > 0 && join_type_allows_filtering && has_non_const_keys)
+    if (join_settings.max_rows_in_set_to_optimize_join > 0 && join_type_allows_filtering && has_non_const_keys
+        && !join_ptr->isSortedMerge())
     {
         auto * left_set = add_create_set(left_node, join_clause.key_names_left, JoinTableSide::Left);
         auto * right_set = add_create_set(right_node, join_clause.key_names_right, JoinTableSide::Right);
@@ -1916,6 +2346,14 @@ void JoinStepLogical::buildPhysicalJoin(
                 join_step->join_algorithm_params->rhs_size_estimation = hint->source_rows;
         }
     }
+
+    /// `sorted_merge` / `parallel_sorted_merge` are supported only when both inputs can be efficiently
+    /// read in the order of the join keys. Only here, on the physicalization path, the input subplans are
+    /// visible, so the eligibility is decided here and carried into `chooseJoinAlgorithm` via the params.
+    /// The same memoized predicate already made `tryAddJoinRuntimeFilter` keep its hands off an eligible
+    /// join, so an eligible sorted-merge algorithm listed before a hash algorithm really gets selected.
+    join_step->join_algorithm_params->inputs_can_be_read_in_join_key_order
+        = optimization_settings.read_in_order && join_step->inputsCanBeReadInJoinKeyOrder(node);
 
     LogicalJoinInfo logical_join_info{
         .readable_relation_name = join_step->getReadableRelationName(),

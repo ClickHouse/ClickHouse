@@ -1289,8 +1289,21 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     {
         if (FullSortingMergeJoin::isSupported(table_join))
             return std::make_shared<FullSortingMergeJoin>(
-                table_join, right_table_expression_header, /*null_direction_=*/1,
-                /*is_parallel_=*/algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
+                table_join, right_table_expression_header, /*null_direction_=*/1, algorithm);
+    }
+
+    /// `sorted_merge` and `parallel_sorted_merge` also build `FullSortingMergeJoin`, but unlike the
+    /// always-available `full_sorting_merge` variants they are supported only when both join inputs can be
+    /// efficiently read in the order of the join keys (so the pre-join sorts become cheap or disappear).
+    /// This makes them meaningful as a high-priority preference in the `join_algorithm` list: when the
+    /// tables' order cannot be exploited, the selection falls through to the next listed algorithm.
+    /// The eligibility is decided on the query plan by inspecting the join input subplans
+    /// (see `joinInputCanBeReadInJoinKeyOrder`), so these algorithms exist only for the analyzer.
+    if (algorithm == JoinAlgorithm::SORTED_MERGE || algorithm == JoinAlgorithm::PARALLEL_SORTED_MERGE)
+    {
+        if (params.inputs_can_be_read_in_join_key_order && FullSortingMergeJoin::isSupported(table_join))
+            return std::make_shared<FullSortingMergeJoin>(
+                table_join, right_table_expression_header, /*null_direction_=*/1, algorithm);
     }
 
     if (algorithm == JoinAlgorithm::GRACE_HASH)
