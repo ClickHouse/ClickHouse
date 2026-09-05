@@ -58,6 +58,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+String DataTypeObject::getCombinedSubcolumnName(const String & key)
+{
+    return String(1, COMBINED_SUBCOLUMN_PREFIX) + backQuote(key);
+}
+
 DataTypeObject::DataTypeObject(
     const SchemaFormat & schema_format_,
     std::unordered_map<String, DataTypePtr> typed_paths_,
@@ -1122,6 +1127,20 @@ SELECT getSubcolumn(json, 'a.b'), getSubcolumn(json, 'a.g'), getSubcolumn(json, 
 │                         0 │ ᴺᵁᴸᴸ                      │ ᴺᵁᴸᴸ                    │ 2020-01-02              │
 │                        43 │ 43.43                     │ [4,5,6]                 │ ᴺᵁᴸᴸ                    │
 └───────────────────────────┴───────────────────────────┴─────────────────────────┴─────────────────────────┘
+```
+
+Bracket syntax `json['key']` can also be used to access JSON paths. Nested access is supported via chaining:
+
+```sql title="Query"
+SELECT json['a']['b'], json['c'], json['d'] FROM test;
+```
+
+```text title="Response"
+┌─arrayElement(arrayElement(json, 'a'), 'b')─┬─arrayElement(json, 'c')─┬─arrayElement(json, 'd')─┐
+│ 42                                         │ [1,2,3]                 │ 2020-01-01              │
+│ 0                                          │ ᴺᵁᴸᴸ                    │ 2020-01-02              │
+│ 43                                         │ [4,5,6]                 │ ᴺᵁᴸᴸ                    │
+└────────────────────────────────────────────┴─────────────────────────┴─────────────────────────┘
 ```
 
 If the requested path wasn't found in the data, it will be filled with `NULL` values:
