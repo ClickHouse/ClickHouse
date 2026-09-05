@@ -86,7 +86,7 @@ SYSTEM START MERGES t_ttl_column_wide;
 OPTIMIZE TABLE t_ttl_column_wide FINAL;
 SELECT count(), sum(v) FROM t_ttl_column_wide;
 
-SELECT '-- column TTL, compact part';
+SELECT '-- column TTL, compact part: in-range control (the values are already read per row here)';
 
 CREATE TABLE t_ttl_column_compact (ts DateTime, v UInt64 TTL ts + INTERVAL 1 SECOND)
 ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 1000000000;

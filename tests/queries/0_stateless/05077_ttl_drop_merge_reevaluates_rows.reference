@@ -19,3 +19,6 @@ TTLDropMerge	2
 -- a column TTL whose values survive stays selectable for a later reset
 1	7777
 1	0
+-- a compact part's column TTL stays selectable for a later reset
+1	7777
+1	0

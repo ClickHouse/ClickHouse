@@ -17,7 +17,7 @@ function wait_for_ttl_merge_matching()
 {
     local table=$1
     local reason_pattern=$2
-    for _ in $(seq 1 300); do
+    for _ in $(seq 1 600); do
         ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS part_log"
         local count
         count=$(${CLICKHOUSE_CLIENT} -q "
@@ -40,7 +40,8 @@ function wait_for_query_result()
 {
     local query=$1
     local want=$2
-    for _ in $(seq 1 120); do
+    local iterations=${3:-120}
+    for _ in $(seq 1 "$iterations"); do
         local got
         got=$(${CLICKHOUSE_CLIENT} -q "$query")
         if [ "$got" = "$want" ]; then
@@ -52,7 +53,7 @@ function wait_for_query_result()
 
 function wait_for_row_count()
 {
-    wait_for_query_result "SELECT count() FROM $1" "$2"
+    wait_for_query_result "SELECT count() FROM $1" "$2" "$3"
 }
 
 echo "-- a TTLDrop merge keeps rows the current expression does not expire"
@@ -181,7 +182,8 @@ echo "-- a GROUP BY TTL whose rows survive stays selectable for a later rollup"
 # and recalculate from scratch. Patching the column the expression reads keeps the key, which is
 # what leaves the stored bounds expired while no row is.
 #
-# `ts` lands 15 seconds ahead because the first merge has to run while no row is expired yet.
+# `ts` lands far enough ahead that the first merge runs while no row is expired yet, even when the
+# background pools are saturated.
 #
 # The second merge has to be selector-driven. `OPTIMIZE ... FINAL` would reach the rows through
 # `MergeTreeDataPartTTLInfos::update`, which clears this flag for GROUP BY rules, so a forced merge
@@ -197,7 +199,7 @@ ${CLICKHOUSE_CLIENT} -q "
     SYSTEM STOP MERGES t_ttl_group_by_stays;
     INSERT INTO t_ttl_group_by_stays VALUES (1, now() - INTERVAL 1 DAY, 10), (1, now() - INTERVAL 1 DAY, 20);
     SET enable_lightweight_update = 1;
-    UPDATE t_ttl_group_by_stays SET ts = now() + INTERVAL 15 SECOND WHERE 1;
+    UPDATE t_ttl_group_by_stays SET ts = now() + INTERVAL 45 SECOND WHERE 1;
     SYSTEM START MERGES t_ttl_group_by_stays;
 "
 
@@ -211,7 +213,7 @@ ${CLICKHOUSE_CLIENT} -q "
       AND event_type = 'MergeParts' AND merge_reason LIKE 'TTL%'
     ORDER BY event_time_microseconds LIMIT 1"
 
-wait_for_row_count "t_ttl_group_by_stays" 1
+wait_for_row_count "t_ttl_group_by_stays" 1 240
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count(), sum(v) FROM t_ttl_group_by_stays"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_group_by_stays"
@@ -223,7 +225,8 @@ echo "-- a rows TTL whose rows survive stays selectable for a later delete"
 #
 # `MergeTreeDataPartTTLInfos::update` rebuilds only GROUP BY entries as unfinished, so for a rows or
 # a column TTL a forced merge cannot clear the flag and the poisoning merge may be `OPTIMIZE FINAL`.
-# The live rule lands 10 seconds ahead, which is both after that merge and before the wait below.
+# The live rule lands far enough ahead to outlast that merge on a loaded arm, and near enough to
+# expire inside the wait below.
 ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE t_ttl_rows_stays_selectable (ts DateTime, v UInt64)
     ENGINE = MergeTree ORDER BY tuple()
@@ -233,7 +236,7 @@ ${CLICKHOUSE_CLIENT} -q "
 
     SYSTEM STOP MERGES t_ttl_rows_stays_selectable;
     INSERT INTO t_ttl_rows_stays_selectable VALUES (now() - INTERVAL 1 DAY, 42);
-    ALTER TABLE t_ttl_rows_stays_selectable MODIFY TTL ts + INTERVAL 1 DAY + INTERVAL 10 SECOND
+    ALTER TABLE t_ttl_rows_stays_selectable MODIFY TTL ts + INTERVAL 1 DAY + INTERVAL 30 SECOND
     SETTINGS materialize_ttl_after_modify = 0;
     SYSTEM START MERGES t_ttl_rows_stays_selectable;
     OPTIMIZE TABLE t_ttl_rows_stays_selectable FINAL;
@@ -259,7 +262,7 @@ ${CLICKHOUSE_CLIENT} -q "
     SYSTEM STOP MERGES t_ttl_column_stays_selectable;
     INSERT INTO t_ttl_column_stays_selectable VALUES (now() - INTERVAL 1 DAY, 7777);
     ALTER TABLE t_ttl_column_stays_selectable
-    MODIFY COLUMN v UInt64 TTL ts + INTERVAL 1 DAY + INTERVAL 10 SECOND
+    MODIFY COLUMN v UInt64 TTL ts + INTERVAL 1 DAY + INTERVAL 30 SECOND
     SETTINGS materialize_ttl_after_modify = 0;
     SYSTEM START MERGES t_ttl_column_stays_selectable;
     OPTIMIZE TABLE t_ttl_column_stays_selectable FINAL;
@@ -271,3 +274,30 @@ wait_for_query_result "SELECT sum(v) FROM t_ttl_column_stays_selectable" 0
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count(), sum(v) FROM t_ttl_column_stays_selectable"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_column_stays_selectable"
+
+echo "-- a compact part's column TTL stays selectable for a later reset"
+
+# The same rule on a compact part, where the stored bounds never stand in for the values, so the
+# surviving value is not what separates the two states here: the reset below is, and it can only
+# happen if the merge left the rule unfinished.
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_column_stays_selectable_compact (ts DateTime, v UInt64 TTL ts + INTERVAL 1 SECOND)
+    ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS min_bytes_for_wide_part = 1000000000, merge_with_ttl_timeout = 0,
+             merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 500;
+
+    SYSTEM STOP MERGES t_ttl_column_stays_selectable_compact;
+    INSERT INTO t_ttl_column_stays_selectable_compact VALUES (now() - INTERVAL 1 DAY, 7777);
+    ALTER TABLE t_ttl_column_stays_selectable_compact
+    MODIFY COLUMN v UInt64 TTL ts + INTERVAL 1 DAY + INTERVAL 30 SECOND
+    SETTINGS materialize_ttl_after_modify = 0;
+    SYSTEM START MERGES t_ttl_column_stays_selectable_compact;
+    OPTIMIZE TABLE t_ttl_column_stays_selectable_compact FINAL;
+"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count(), sum(v) FROM t_ttl_column_stays_selectable_compact"
+
+wait_for_query_result "SELECT sum(v) FROM t_ttl_column_stays_selectable_compact" 0
+
+${CLICKHOUSE_CLIENT} -q "SELECT count(), sum(v) FROM t_ttl_column_stays_selectable_compact"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_column_stays_selectable_compact"

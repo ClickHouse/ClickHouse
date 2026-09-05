@@ -9,7 +9,7 @@ Horizontal
 Vertical
 -- column TTL, wide part
 1	7777
--- column TTL, compact part
+-- column TTL, compact part: in-range control (the values are already read per row here)
 1	7777
 -- MATERIALIZE TTL repairs a part instead of emptying it
 1	42
