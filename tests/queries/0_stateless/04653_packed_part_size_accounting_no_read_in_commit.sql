@@ -108,45 +108,17 @@ SELECT 'packed', countDistinct(part_storage_type) = 1, any(part_storage_type)
 FROM system.parts
 WHERE database = currentDatabase() AND table LIKE 'packed_commit_%' AND active;
 
--- Reading a size sets the table level flag, which is what makes the commit update the aggregates at
--- all.
-SELECT 'accounted', sum(data_compressed_bytes) > 0
-FROM system.data_skipping_indices
-WHERE database = currentDatabase() AND table LIKE 'packed_commit_%';
-
--- A predicate matching no rows takes the untouched-part shortcut, which clones the part and keeps
--- its block range, so the source part is covered and both accounting paths run in the commit.
--- `untouched` below asserts that shortcut was taken.
-ALTER TABLE packed_commit_cold UPDATE a = concat(a, 'x') WHERE s = 'no_such_key' SETTINGS mutations_sync = 2;
-ALTER TABLE packed_commit_warm UPDATE a = concat(a, 'x') WHERE s = 'no_such_key' SETTINGS mutations_sync = 2;
-
-SYSTEM FLUSH LOGS part_log;
-
-SELECT 'rows', count() = 2
-FROM system.part_log
-WHERE database = currentDatabase() AND table LIKE 'packed_commit_%' AND event_type = 'MutatePart';
-
--- `MutationUntouchedParts` is read per table from the `MutatePart` row rather than from
--- `system.events`, whose counters are process-wide and lifetime-cumulative, so a concurrent test
--- taking the same shortcut would satisfy the assertion for us and it would fail open.
-SELECT 'untouched',
-    minIf(ProfileEvents['MutationUntouchedParts'], table = 'packed_commit_cold') > 0
-  AND minIf(ProfileEvents['MutationUntouchedParts'], table = 'packed_commit_warm') > 0
-FROM system.part_log
-WHERE database = currentDatabase() AND table LIKE 'packed_commit_%' AND event_type = 'MutatePart';
-
--- The commit must not load the skip-indices archive index at all, so the cold arm's count is 0. The
--- warm control computes the sizes when it loads the cloned part, and that load is single-threaded and
--- memoized, so its count is exactly 1.
-SELECT 'cold_no_archive_load',
-    maxIf(ProfileEvents['PackedSkipIndicesArchiveIndexLoads'], table = 'packed_commit_cold') = 0
-FROM system.part_log
-WHERE database = currentDatabase() AND table LIKE 'packed_commit_%' AND event_type = 'MutatePart';
-
-SELECT 'warm_one_archive_load',
-    maxIf(ProfileEvents['PackedSkipIndicesArchiveIndexLoads'], table = 'packed_commit_warm') = 1
-FROM system.part_log
-WHERE database = currentDatabase() AND table LIKE 'packed_commit_%' AND event_type = 'MutatePart';
+-- Reading a size computes it, which sets that table's flag, and the flag is what makes the commit
+-- update the aggregates at all. Asserted per table, because an aggregate over both tables would also
+-- be satisfied with one of them left unarmed.
+SELECT 'accounted', count() = 2, min(idx_bytes > 0)
+FROM
+(
+    SELECT sum(data_compressed_bytes) AS idx_bytes
+    FROM system.data_skipping_indices
+    WHERE database = currentDatabase() AND table LIKE 'packed_commit_%'
+    GROUP BY table
+);
 
 SELECT 'full_storage', countDistinct(part_storage_type) = 1, any(part_storage_type)
 FROM system.parts
@@ -161,31 +133,13 @@ FROM
     GROUP BY table
 );
 
+-- A predicate matching no rows takes the untouched-part shortcut, which clones the part and keeps
+-- its block range, so the source part is covered and both accounting paths run in the commit.
+-- `untouched` further below asserts that shortcut was taken.
+ALTER TABLE packed_commit_cold UPDATE a = concat(a, 'x') WHERE s = 'no_such_key' SETTINGS mutations_sync = 2;
+ALTER TABLE packed_commit_warm UPDATE a = concat(a, 'x') WHERE s = 'no_such_key' SETTINGS mutations_sync = 2;
 ALTER TABLE full_commit_archive UPDATE a = concat(a, 'x') WHERE s = 'no_such_key' SETTINGS mutations_sync = 2;
 ALTER TABLE full_commit_no_archive UPDATE a = concat(a, 'x') WHERE s = 'no_such_key' SETTINGS mutations_sync = 2;
-
-SYSTEM FLUSH LOGS part_log;
-
-SELECT 'full_rows', count() = 2
-FROM system.part_log
-WHERE database = currentDatabase() AND table LIKE 'full_commit_%' AND event_type = 'MutatePart';
-
--- Both rows have to exist, otherwise `maxIf` over an empty set would satisfy the `= 0` row below.
-SELECT 'full_untouched',
-    minIf(ProfileEvents['MutationUntouchedParts'], table = 'full_commit_archive') > 0
-  AND minIf(ProfileEvents['MutationUntouchedParts'], table = 'full_commit_no_archive') > 0
-FROM system.part_log
-WHERE database = currentDatabase() AND table LIKE 'full_commit_%' AND event_type = 'MutatePart';
-
-SELECT 'full_one_archive_load',
-    maxIf(ProfileEvents['PackedSkipIndicesArchiveIndexLoads'], table = 'full_commit_archive') = 1
-FROM system.part_log
-WHERE database = currentDatabase() AND table LIKE 'full_commit_%' AND event_type = 'MutatePart';
-
-SELECT 'full_no_archive_zero_load',
-    maxIf(ProfileEvents['PackedSkipIndicesArchiveIndexLoads'], table = 'full_commit_no_archive') = 0
-FROM system.part_log
-WHERE database = currentDatabase() AND table LIKE 'full_commit_%' AND event_type = 'MutatePart';
 
 -- The aggregates must stay correct: dropping them and rebuilding on the next read has to give the
 -- same answer the incremental update gave. The warm control is that answer, because it never takes
@@ -256,7 +210,60 @@ FROM
 
 SELECT 'rows_intact', count() FROM packed_commit_cold;
 
+-- The tables are dropped before the part log is read, because a synchronous mutation is reported done
+-- as soon as its result part becomes visible, which is before the mutation task writes its
+-- `MutatePart` row: a flush issued right after the ALTER can miss that row. Dropping a table waits for
+-- that table's background tasks, so afterwards every row is queued and one flush observes all of them.
 DROP TABLE packed_commit_cold SYNC;
 DROP TABLE packed_commit_warm SYNC;
 DROP TABLE full_commit_archive SYNC;
 DROP TABLE full_commit_no_archive SYNC;
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT 'rows', count() = 2
+FROM system.part_log
+WHERE database = currentDatabase() AND table LIKE 'packed_commit_%' AND event_type = 'MutatePart';
+
+-- `MutationUntouchedParts` is read per table from the `MutatePart` row rather than from
+-- `system.events`, whose counters are process-wide and lifetime-cumulative, so a concurrent test
+-- taking the same shortcut would satisfy the assertion for us and it would fail open.
+SELECT 'untouched',
+    minIf(ProfileEvents['MutationUntouchedParts'], table = 'packed_commit_cold') > 0
+  AND minIf(ProfileEvents['MutationUntouchedParts'], table = 'packed_commit_warm') > 0
+FROM system.part_log
+WHERE database = currentDatabase() AND table LIKE 'packed_commit_%' AND event_type = 'MutatePart';
+
+-- The commit must not load the skip-indices archive index at all, so the cold arm's count is 0. The
+-- warm control computes the sizes when it loads the cloned part, and that load is single-threaded and
+-- memoized, so its count is exactly 1.
+SELECT 'cold_no_archive_load',
+    maxIf(ProfileEvents['PackedSkipIndicesArchiveIndexLoads'], table = 'packed_commit_cold') = 0
+FROM system.part_log
+WHERE database = currentDatabase() AND table LIKE 'packed_commit_%' AND event_type = 'MutatePart';
+
+SELECT 'warm_one_archive_load',
+    maxIf(ProfileEvents['PackedSkipIndicesArchiveIndexLoads'], table = 'packed_commit_warm') = 1
+FROM system.part_log
+WHERE database = currentDatabase() AND table LIKE 'packed_commit_%' AND event_type = 'MutatePart';
+
+SELECT 'full_rows', count() = 2
+FROM system.part_log
+WHERE database = currentDatabase() AND table LIKE 'full_commit_%' AND event_type = 'MutatePart';
+
+-- Both rows have to exist, otherwise `maxIf` over an empty set would satisfy the `= 0` row below.
+SELECT 'full_untouched',
+    minIf(ProfileEvents['MutationUntouchedParts'], table = 'full_commit_archive') > 0
+  AND minIf(ProfileEvents['MutationUntouchedParts'], table = 'full_commit_no_archive') > 0
+FROM system.part_log
+WHERE database = currentDatabase() AND table LIKE 'full_commit_%' AND event_type = 'MutatePart';
+
+SELECT 'full_one_archive_load',
+    maxIf(ProfileEvents['PackedSkipIndicesArchiveIndexLoads'], table = 'full_commit_archive') = 1
+FROM system.part_log
+WHERE database = currentDatabase() AND table LIKE 'full_commit_%' AND event_type = 'MutatePart';
+
+SELECT 'full_no_archive_zero_load',
+    maxIf(ProfileEvents['PackedSkipIndicesArchiveIndexLoads'], table = 'full_commit_no_archive') = 0
+FROM system.part_log
+WHERE database = currentDatabase() AND table LIKE 'full_commit_%' AND event_type = 'MutatePart';

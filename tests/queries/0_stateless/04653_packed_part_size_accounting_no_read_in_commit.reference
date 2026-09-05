@@ -1,15 +1,15 @@
 packed	1	Packed
-accounted	1
+accounted	1	1
+full_storage	1	Full
+full_indices	1	1
+sizes_index_equal	1	1	1
+sizes_column_equal	1	1	1
+rows_intact	2000
 rows	1
 untouched	1
 cold_no_archive_load	1
 warm_one_archive_load	1
-full_storage	1	Full
-full_indices	1	1
 full_rows	1
 full_untouched	1
 full_one_archive_load	1
 full_no_archive_zero_load	1
-sizes_index_equal	1	1	1
-sizes_column_equal	1	1	1
-rows_intact	2000
