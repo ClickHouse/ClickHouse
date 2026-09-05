@@ -1,27 +1,29 @@
-#include <Processors/QueryPlan/RuntimeFilterLookup.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/IDataType.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsLogical.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnSet.h>
-#include <Columns/ColumnsCommon.h>
-#include <Columns/IColumn.h>
-#include <DataTypes/DataTypeSet.h>
-#include <Interpreters/PreparedSets.h>
-#include <Common/FieldAccurateComparison.h>
-#include <Common/SharedLockGuard.h>
-#include <Common/SharedMutex.h>
-#include <Common/typeid_cast.h>
-#include <Common/logger_useful.h>
-#include <Common/ProfileEvents.h>
 #include <algorithm>
 #include <cmath>
 #include <optional>
 #include <vector>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSet.h>
+#include <Columns/ColumnsCommon.h>
+#include <Columns/IColumn.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeSet.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/NullableUtils.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Interpreters/PreparedSets.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <Common/FieldAccurateComparison.h>
+#include <Common/ProfileEvents.h>
+#include <Common/SharedLockGuard.h>
+#include <Common/SharedMutex.h>
+#include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 
 namespace ProfileEvents
 {
@@ -52,8 +54,7 @@ bool typeSupportsMinMaxRange(const DataTypePtr & type)
 
     DataTypePtr inner = removeNullable(recursiveRemoveLowCardinality(type));
     WhichDataType which(inner);
-    return which.isInt() || which.isUInt()
-        || which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64();
+    return which.isInt() || which.isUInt() || which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64();
 }
 }
 
@@ -283,10 +284,64 @@ void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch &&
 UInt64 growBloomFilterBytes(UInt64 distinct_keys, UInt64 hash_functions, UInt64 default_bloom_filter_bytes, Float64 max_ratio_of_set_bits)
 {
     const Float64 target_fill_rate = std::min(RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE, max_ratio_of_set_bits);
-    const double ideal_bloom_filter_bytes = std::ceil(-static_cast<double>(hash_functions) * static_cast<double>(distinct_keys) / std::log1p(-target_fill_rate) / 8.0);
-    const double clamped_bloom_filter_bytes = std::clamp(ideal_bloom_filter_bytes, 0.0, static_cast<double>(MAX_STATS_SIZED_BLOOM_FILTER_BYTES));
+    const double ideal_bloom_filter_bytes
+        = std::ceil(-static_cast<double>(hash_functions) * static_cast<double>(distinct_keys) / std::log1p(-target_fill_rate) / 8.0);
+    const double clamped_bloom_filter_bytes
+        = std::clamp(ideal_bloom_filter_bytes, 0.0, static_cast<double>(MAX_STATS_SIZED_BLOOM_FILTER_BYTES));
     return std::max(static_cast<UInt64>(clamped_bloom_filter_bytes), default_bloom_filter_bytes);
 }
+}
+
+namespace
+{
+
+struct PreparedRuntimeFilterColumn
+{
+    ColumnPtr full_column;
+    const IColumn * key_column = nullptr;
+    ConstNullMapPtr null_map = nullptr;
+};
+
+PreparedRuntimeFilterColumn prepareRuntimeFilterColumn(const ColumnPtr & column, bool extract_null_map)
+{
+    PreparedRuntimeFilterColumn prepared;
+    prepared.full_column = recursiveRemoveLowCardinality(column->convertToFullIfWrapped());
+    prepared.key_column = prepared.full_column.get();
+
+    if (!extract_null_map || prepared.key_column->empty())
+        return prepared;
+
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(prepared.key_column))
+    {
+        /// Only an outer Nullable means that the complete join key is SQL NULL.
+        /// NULLs nested in Tuple, Dynamic, or Variant are hashable parts of the key.
+        prepared.key_column = &nullable->getNestedColumn();
+        prepared.null_map = &nullable->getNullMapData();
+    }
+
+    return prepared;
+}
+
+void forceResultForNullRows(ColumnPtr & result, ConstNullMapPtr null_map, bool value_for_null_rows)
+{
+    if (!null_map)
+        return;
+
+    auto mutable_result = IColumn::mutate(std::move(result));
+    auto * result_vector = typeid_cast<ColumnUInt8 *>(mutable_result.get());
+    if (!result_vector)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected `UInt8` column as runtime filter result");
+
+    auto & result_data = result_vector->getData();
+    for (size_t i = 0; i < result_data.size(); ++i)
+    {
+        if ((*null_map)[i])
+            result_data[i] = value_for_null_rows;
+    }
+
+    result = std::move(mutable_result);
+}
+
 }
 
 void ExactContainsRuntimeFilter::merge(const IRuntimeFilter * source)
@@ -330,11 +385,8 @@ void ExactNotContainsRuntimeFilter::merge(const IRuntimeFilter * source)
 bool ApproximateRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
 {
     /// Runtime BloomFilter hashing uses byte representation from either fixed contiguous column storage or getDataAt().
-    /// LowCardinality reports a contiguous representation unconditionally, but its getDataAt() delegates to the
-    /// dictionary column; for LowCardinality(Nullable(...)) that is ColumnNullable::getDataAt(), which throws on a NULL.
-    /// Strip LowCardinality and test the inner type so LC(Nullable(...)) falls back to the exact (NULL-safe) Set path,
-    /// exactly like a plain Nullable(...) key already does.
-    return removeLowCardinality(data_type)->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
+    auto bloom_filter_value_type = removeNullableOrLowCardinalityNullable(recursiveRemoveLowCardinality(data_type));
+    return bloom_filter_value_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
 }
 
 ApproximateRuntimeFilter::ApproximateRuntimeFilter(
@@ -347,7 +399,13 @@ ApproximateRuntimeFilter::ApproximateRuntimeFilter(
     UInt64 bloom_filter_hash_functions_,
     Float64 max_ratio_of_set_bits_in_bloom_filter_,
     std::optional<UInt64> distinct_keys_hint_)
-    : RuntimeFilterBase(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_, bytes_limit_, exact_values_limit_)
+    : RuntimeFilterBase(
+          filters_to_merge_,
+          filter_column_target_type_,
+          pass_ratio_threshold_for_disabling_,
+          blocks_to_skip_before_reenabling_,
+          bytes_limit_,
+          exact_values_limit_)
     , bloom_filter_hash_functions(bloom_filter_hash_functions_)
     , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
     , distinct_keys_hint(distinct_keys_hint_)
@@ -456,6 +514,14 @@ ColumnPtr RuntimeFilterBase<negate>::findImpl(const ColumnWithTypeAndName & valu
         case ValuesCount::MANY:
         {
             auto result = exact_values->execute({values}, negate);
+            if constexpr (!negate)
+            {
+                if (argument_can_have_nulls)
+                {
+                    auto prepared_values = prepareRuntimeFilterColumn(values.column, true);
+                    forceResultForNullRows(result, prepared_values.null_map, false);
+                }
+            }
             updateStats(values.column->size(), countPassedStats(result));
             return result;
         }
@@ -469,16 +535,37 @@ ColumnPtr ApproximateRuntimeFilter::findImpl(const ColumnWithTypeAndName & value
 
     if (bloom_filter)
     {
+        auto prepared_values = prepareRuntimeFilterColumn(values.column, true);
+
         auto dst = ColumnVector<UInt8>::create();
         auto & dst_data = dst->getData();
-        dst_data.resize(values.column->size());
+        dst_data.resize(prepared_values.key_column->size());
 
         size_t found_count = 0;
-        forEachColumnHashBatch(*values.column, bloom_filter->getSeed(),
-            [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t start_row)
+        if (prepared_values.null_map)
+        {
+            for (size_t row = 0; row < prepared_values.key_column->size(); ++row)
             {
-                found_count += bloom_filter->findHashPairs(hash_pairs, count, dst_data.data() + start_row);
-            });
+                if ((*prepared_values.null_map)[row])
+                {
+                    dst_data[row] = false;
+                    continue;
+                }
+
+                const auto & value = prepared_values.key_column->getDataAt(row);
+                const bool found = bloom_filter->find(value.data(), value.size());
+                found_count += found ? 1 : 0;
+                dst_data[row] = found;
+            }
+        }
+        else
+        {
+            forEachColumnHashBatch(*prepared_values.key_column, bloom_filter->getSeed(),
+                [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t start_row)
+                {
+                    found_count += bloom_filter->findHashPairs(hash_pairs, count, dst_data.data() + start_row);
+                });
+        }
         updateStats(values.column->size(), found_count);
 
         return dst;
@@ -491,7 +578,23 @@ ColumnPtr ApproximateRuntimeFilter::findImpl(const ColumnWithTypeAndName & value
 
 void ApproximateRuntimeFilter::insertIntoBloomFilter(ColumnPtr values)
 {
-    forEachColumnHashBatch(*values, bloom_filter->getSeed(),
+    auto prepared_values = prepareRuntimeFilterColumn(values, true);
+
+    if (prepared_values.null_map)
+    {
+        const size_t num_rows = prepared_values.key_column->size();
+        for (size_t row = 0; row < num_rows; ++row)
+        {
+            if ((*prepared_values.null_map)[row])
+                continue;
+
+            auto value = prepared_values.key_column->getDataAt(row);
+            bloom_filter->add(value.data(), value.size());
+        }
+        return;
+    }
+
+    forEachColumnHashBatch(*prepared_values.key_column, bloom_filter->getSeed(),
         [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t /* start_row */)
         {
             bloom_filter->addHashPairs(hash_pairs, count);
@@ -505,7 +608,8 @@ void ApproximateRuntimeFilter::switchToBloomFilter()
 
     UInt64 bloom_filter_bytes = getBytesLimit();
     if (distinct_keys_hint)
-        bloom_filter_bytes = growBloomFilterBytes(*distinct_keys_hint, bloom_filter_hash_functions, getBytesLimit(), max_ratio_of_set_bits_in_bloom_filter);
+        bloom_filter_bytes = growBloomFilterBytes(
+            *distinct_keys_hint, bloom_filter_hash_functions, getBytesLimit(), max_ratio_of_set_bits_in_bloom_filter);
 
     bloom_filter = std::make_unique<BloomFilter>(bloom_filter_bytes, bloom_filter_hash_functions, BLOOM_FILTER_SEED);
     insertIntoBloomFilter(getValuesColumn());
@@ -533,10 +637,7 @@ SharedFixedHashTableRuntimeFilter::SharedFixedHashTableRuntimeFilter(
     std::optional<Range> key_range_,
     ColumnPtr recorded_key_values_)
     : IRuntimeFilter(
-        /*filters_to_merge_=*/0,
-        filter_column_target_type_,
-        pass_ratio_threshold_for_disabling_,
-        blocks_to_skip_before_reenabling_)
+          /*filters_to_merge_=*/0, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_)
     , probe_fn(std::move(probe_fn_))
     , recorded_key_values(std::move(recorded_key_values_))
 {
@@ -644,22 +745,22 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
     /// Work in the filter's target type; cast the column to avoid overflow.
     const auto & target_type = filter.getFilterColumnTargetType();
     const auto & key_node = dag.addInput(column_name, column_type);
-    const auto & key_casted = column_type->equals(*target_type)
-        ? key_node
-        : dag.addCast(key_node, target_type, {}, context);
+    const auto & key_casted = column_type->equals(*target_type) ? key_node : dag.addCast(key_node, target_type, {}, context);
 
     if (exact_values)
     {
         LOG_DEBUG(
             getLogger("JoinRuntimeFilterIndexAnalysis"),
             "Index analysis engaged on join key '{}': pruning by exact IN-set of {} value(s)",
-            column_name, exact_values->size());
+            column_name,
+            exact_values->size());
 
         ColumnWithTypeAndName set_values(exact_values, target_type, "__runtime_filter_in_values_" + column_name);
         auto future_set = std::make_shared<FutureSetFromTuple>(
             CityHash_v1_0_2::uint128{}, ASTPtr{}, ColumnsWithTypeAndName{set_values}, /*transform_null_in=*/false, SizeLimits{});
         auto set_column = ColumnConst::create(ColumnSet::create(1, std::move(future_set)), 0);
-        const auto & set_node = dag.addColumn(std::move(set_column), std::make_shared<DataTypeSet>(), "__runtime_filter_in_set_" + column_name);
+        const auto & set_node
+            = dag.addColumn(std::move(set_column), std::make_shared<DataTypeSet>(), "__runtime_filter_in_set_" + column_name);
 
         auto in_func = FunctionFactory::instance().get("in", context);
         return &dag.addFunction(in_func, {&key_casted, &set_node}, {});
@@ -668,12 +769,13 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
     LOG_DEBUG(
         getLogger("JoinRuntimeFilterIndexAnalysis"),
         "Index analysis engaged on join key '{}': pruning by range {}",
-        column_name, range->toString());
+        column_name,
+        range->toString());
 
-    const auto & min_node = dag.addColumn(
-        target_type->createColumnConst(1, range->left), target_type, "__runtime_filter_min_" + column_name);
-    const auto & max_node = dag.addColumn(
-        target_type->createColumnConst(1, range->right), target_type, "__runtime_filter_max_" + column_name);
+    const auto & min_node
+        = dag.addColumn(target_type->createColumnConst(1, range->left), target_type, "__runtime_filter_min_" + column_name);
+    const auto & max_node
+        = dag.addColumn(target_type->createColumnConst(1, range->right), target_type, "__runtime_filter_max_" + column_name);
 
     auto ge_func = FunctionFactory::instance().get("greaterOrEquals", context);
     auto le_func = FunctionFactory::instance().get("lessOrEquals", context);
@@ -698,7 +800,8 @@ const ActionsDAG::Node * buildRuntimeRangePredicate(
         if (!filter)
             continue;
 
-        if (const auto * predicate = convertRuntimeFilterToKeyConditionDAG(*filter, descr.key_column_name, descr.key_column_type, dag, context))
+        if (const auto * predicate
+            = convertRuntimeFilterToKeyConditionDAG(*filter, descr.key_column_name, descr.key_column_type, dag, context))
             and_args.push_back(predicate);
     }
 
@@ -710,5 +813,4 @@ const ActionsDAG::Node * buildRuntimeRangePredicate(
     FunctionOverloadResolverPtr and_func = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
     return &dag.addFunction(and_func, std::move(and_args), {});
 }
-
 }
