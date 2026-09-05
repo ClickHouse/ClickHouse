@@ -26,6 +26,8 @@ run "CREATE TABLE ${db}.\"ns.existing\" (x UInt8) ENGINE = Memory"
 run "DROP USER IF EXISTS ${creator}, ${renamer}"
 run "CREATE USER ${creator}"
 run "CREATE USER ${renamer}"
+# The test configuration sets `table_engines_require_grant`: the engine is granted so that the only thing that can deny a `CREATE TABLE` is the database.
+run "GRANT TABLE ENGINE ON Memory TO ${creator}"
 
 echo '--- CREATE TABLE db.ns.c with a grant on the nonexistent database db.ns only'
 run "GRANT CREATE TABLE ON \"${db}.ns\".* TO ${creator}"
