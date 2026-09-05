@@ -1745,6 +1745,61 @@ bool isReplicated(const ASTStorage & storage)
 
 }
 
+void InterpreterCreateQuery::resolveHierarchicalNames(ASTCreateQuery & create, bool is_on_cluster) const
+{
+    /// Temporary tables are created out of databases.
+    if (!create.table || create.isTemporary())
+        return;
+
+    auto & catalog = DatabaseCatalog::instance();
+    String current_database = getContext()->getCurrentDatabase();
+
+    /// The table (`CREATE TABLE a.b.c`, or `CREATE TABLE c` inside `USE a.b`) is placed into an existing database, the rest
+    /// of the name becoming the table name (`a`.`b.c`). The current database of the context stays as selected by `USE`
+    /// (possibly `a.b`): the names inside the query (the `SELECT` of a view) are relative to it.
+    StorageID as_written(create.database ? create.getDatabase() : "", create.getTable());
+    std::optional<StorageID> placement;
+    if (is_on_cluster)
+    {
+        /// The database may exist on the other hosts of the cluster only: then the name is shipped as written, and every
+        /// host resolves it against its own catalog.
+        placement = catalog.tryResolveHierarchicalNameForCreation(as_written, getContext());
+    }
+    else
+    {
+        placement = catalog.resolveHierarchicalNameForCreation(as_written, getContext());
+    }
+
+    if (placement)
+    {
+        if (placement->table_name != create.getTable())
+            create.setTable(placement->table_name);
+        if (!create.database || placement->database_name != create.getDatabase())
+            create.setDatabase(placement->database_name);
+    }
+
+    /// The targets of a view (`TO a.b.t`, or `TO t` inside `USE a.b`) are the existing tables they refer to, or their placement.
+    if (create.targets)
+    {
+        bool current_database_is_hierarchical = !current_database.empty() && !catalog.isDatabaseExist(current_database);
+        for (size_t i = 0; i < create.targets->targets.size(); ++i)
+        {
+            auto kind = create.targets->targets[i].kind;
+            StorageID target_id = create.targets->targets[i].table_id;
+            if (!target_id)
+                continue;
+
+            bool is_hierarchical = target_id.database_name.contains('.') || target_id.table_name.contains('.')
+                || (target_id.database_name.empty() && current_database_is_hierarchical);
+            if (!is_hierarchical)
+                continue;
+
+            StorageID resolved = catalog.resolveHierarchicalName(target_id, getContext());
+            create.targets->setTableID(kind, StorageID(resolved.database_name, resolved.table_name));
+        }
+    }
+}
+
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
     auto component_guard = Coordination::setCurrentComponent("InterpreterCreateQuery::createTable");
@@ -1763,20 +1818,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             "You should not specify a cluster for a temporary objects.");
 
     String current_database = getContext()->getCurrentDatabase();
-
-    /// A hierarchical name (`CREATE TABLE a.b.c`, or `CREATE TABLE c` inside `USE a.b`) is placed into an existing
-    /// database, the rest of the name becoming the table name (`a`.`b.c`); see `DatabaseCatalog`. `current_database`
-    /// stays as selected by `USE` (possibly `a.b`): the names inside the query (the `SELECT` of a view) are relative to it.
-    if (!create.isTemporary())
-    {
-        StorageID placement = DatabaseCatalog::instance().resolveHierarchicalNameForCreation(
-            StorageID(create.database ? create.getDatabase() : "", create.getTable()), getContext());
-        if (placement.table_name != create.getTable())
-            create.setTable(placement.table_name);
-        if (!create.database || placement.database_name != create.getDatabase())
-            create.setDatabase(placement.database_name);
-    }
-
     auto database_name = create.database ? create.getDatabase() : current_database;
 
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
@@ -1948,25 +1989,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         create.setDatabase(current_database);
 
     if (create.targets)
-    {
-        /// Inside `USE a.b` (a hierarchical name, not a database), a target without a database (`TO t`) is `a`.`b.t`:
-        /// an existing table, or its placement.
-        if (!DatabaseCatalog::instance().isDatabaseExist(current_database))
-        {
-            for (auto kind : {ViewTarget::To, ViewTarget::Inner, ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::Metrics})
-            {
-                if (!create.targets->hasTableID(kind))
-                    continue;
-                auto target_id = create.targets->getTableID(kind);
-                if (target_id.database_name.empty())
-                {
-                    auto resolved = DatabaseCatalog::instance().resolveHierarchicalName(target_id, getContext());
-                    create.targets->setTableID(kind, StorageID(resolved.database_name, resolved.table_name));
-                }
-            }
-        }
         create.targets->setCurrentDatabase(current_database);
-    }
 
     if (create.select && create.isView())
     {
@@ -3577,7 +3600,15 @@ BlockIO InterpreterCreateQuery::execute()
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
 
     bool is_create_database = create.database && !create.table;
-    if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
+    bool is_on_cluster = !create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext());
+
+    /// Hierarchical names (see `DatabaseCatalog`) are bound to the database and the table they denote before the access
+    /// is checked, so that the check and the query agree on what is created: a grant on the (nonexistent) database `a.b`
+    /// must not allow `CREATE TABLE a.b.c` to create the table `b.c` in the database `a`.
+    if (!is_create_database)
+        resolveHierarchicalNames(create, is_on_cluster);
+
+    if (is_on_cluster)
     {
         if (create.attach_as_replicated.has_value())
             throw Exception(

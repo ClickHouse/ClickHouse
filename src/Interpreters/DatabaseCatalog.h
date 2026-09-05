@@ -182,6 +182,10 @@ public:
     /// The first table of a namespace is created by quoting the name: `CREATE TABLE a."b.c"`.
     /// Throws UNKNOWN_DATABASE when there is no candidate.
     StorageID resolveHierarchicalNameForCreation(const StorageID & table_id, ContextPtr context_) const;
+    /// The same, but returns nothing instead of throwing when no candidate exists here. A query executed ON CLUSTER
+    /// ships the name as written then: the database may exist on the other hosts only, and every host resolves the
+    /// name against its own catalog.
+    std::optional<StorageID> tryResolveHierarchicalNameForCreation(const StorageID & table_id, ContextPtr context_) const;
 
     struct HierarchicalDatabase
     {
@@ -200,6 +204,16 @@ public:
 
     /// Whether the database has tables whose names start with `prefix` (a namespace, `b.`).
     static bool hasTablesWithPrefix(const IDatabase & database, const String & prefix, ContextPtr context_);
+
+    /// The dot-separated parts of a name. A name with an empty part (`.inner_id.x`, `t.`, `a..b`) is not hierarchical
+    /// and is a single part, so that an empty part never becomes a database or a table name.
+    static std::vector<String> splitHierarchicalName(std::string_view name);
+
+    /// A qualified name written as a string (`'a.b.c'`, the first argument of `joinGet` or `dictGet`), split the same
+    /// way as `ASTTableIdentifier` splits an identifier: the database is all the parts but the last (`a.b`); the other
+    /// splits are tried when the name is resolved. A name without dots is a table name without a database.
+    /// Throws UNKNOWN_TABLE for an empty name.
+    static StorageID parseHierarchicalName(const String & name);
 
     DatabasePtr getDatabaseForTemporaryTables() const;
     DatabasePtr getSystemDatabase() const;

@@ -104,6 +104,11 @@ private:
     BlockIO createDatabase(ASTCreateQuery & create);
     BlockIO createTable(ASTCreateQuery & create);
 
+    /// Binds the hierarchical names of the query (the table and the targets of a view; see `DatabaseCatalog`) to the
+    /// database and the table they denote, rewriting the query. Done before the access check, which must see the same
+    /// names as the creation. On a cluster, a name whose database does not exist here is left as written.
+    void resolveHierarchicalNames(ASTCreateQuery & create, bool is_on_cluster) const;
+
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
     TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create, LoadingStrictnessLevel mode);
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;

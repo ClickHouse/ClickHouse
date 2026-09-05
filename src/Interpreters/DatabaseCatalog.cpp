@@ -637,15 +637,18 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
     resolveHierarchicalDatabase(database_name);
 }
 
-namespace
+std::vector<String> DatabaseCatalog::splitHierarchicalName(std::string_view name)
 {
+    if (name.empty() || name.starts_with('.') || name.ends_with('.') || name.contains(".."))
+        return {String(name)};
 
-std::vector<String> splitHierarchicalName(std::string_view name)
-{
     std::vector<String> parts;
     splitInto<'.'>(parts, name);
     return parts;
 }
+
+namespace
+{
 
 String joinHierarchicalName(const std::vector<String> & parts, size_t begin, size_t end)
 {
@@ -674,6 +677,14 @@ void addHierarchicalNameSplits(const std::vector<String> & parts, std::vector<St
     }
 }
 
+}
+
+StorageID DatabaseCatalog::parseHierarchicalName(const String & name)
+{
+    std::vector<String> parts = splitHierarchicalName(name);
+    if (parts.size() == 1)
+        return StorageID("", parts[0]);
+    return StorageID(joinHierarchicalName(parts, 0, parts.size() - 1), parts.back());
 }
 
 std::vector<StorageID> DatabaseCatalog::getHierarchicalNameCandidates(const StorageID & table_id, const String & current_database)
@@ -786,31 +797,37 @@ bool DatabaseCatalog::hasTablesWithPrefix(const IDatabase & database, const Stri
     return iterator->isValid();
 }
 
-StorageID DatabaseCatalog::resolveHierarchicalNameForCreation(const StorageID & table_id, ContextPtr context_) const
+namespace
+{
+
+/// See `DatabaseCatalog::resolveHierarchicalNameForCreation`. Returns nothing when there is no candidate;
+/// `candidate_in_a_new_namespace` is then the first candidate skipped because its namespace of tables does not
+/// exist yet, if any (for the error message).
+std::optional<StorageID> resolveHierarchicalNameForCreationImpl(
+    const DatabaseCatalog & catalog, const StorageID & table_id, ContextPtr context_, std::optional<StorageID> & candidate_in_a_new_namespace)
 {
     String current_database = context_->getCurrentDatabase();
     String database_as_written = table_id.database_name.empty() ? current_database : table_id.database_name;
     if (database_as_written.empty())
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
+        return std::nullopt;
 
     /// Fast path: the database as written exists.
-    if (isDatabaseExist(database_as_written))
+    if (catalog.isDatabaseExist(database_as_written))
         return StorageID(database_as_written, table_id.table_name);
 
-    size_t table_name_parts = splitHierarchicalName(table_id.table_name).size();
-    std::optional<StorageID> candidate_in_a_new_namespace;
-    for (const auto & candidate : getHierarchicalNameCandidates(table_id, current_database))
+    size_t table_name_parts = DatabaseCatalog::splitHierarchicalName(table_id.table_name).size();
+    for (const auto & candidate : DatabaseCatalog::getHierarchicalNameCandidates(table_id, current_database))
     {
-        auto database = tryGetDatabase(candidate.database_name);
+        auto database = catalog.tryGetDatabase(candidate.database_name);
         if (!database)
             continue;
 
-        std::vector<String> candidate_table_parts = splitHierarchicalName(candidate.table_name);
+        std::vector<String> candidate_table_parts = DatabaseCatalog::splitHierarchicalName(candidate.table_name);
         if (candidate_table_parts.size() > table_name_parts)
         {
             /// The unquoted parts of the name became a namespace of the table: it must exist already.
             String table_prefix = joinHierarchicalName(candidate_table_parts, 0, candidate_table_parts.size() - table_name_parts) + '.';
-            if (!hasTablesWithPrefix(*database, table_prefix, context_))
+            if (!DatabaseCatalog::hasTablesWithPrefix(*database, table_prefix, context_))
             {
                 if (!candidate_in_a_new_namespace)
                     candidate_in_a_new_namespace = candidate;
@@ -820,6 +837,28 @@ StorageID DatabaseCatalog::resolveHierarchicalNameForCreation(const StorageID & 
 
         return candidate;
     }
+
+    return std::nullopt;
+}
+
+}
+
+std::optional<StorageID> DatabaseCatalog::tryResolveHierarchicalNameForCreation(const StorageID & table_id, ContextPtr context_) const
+{
+    std::optional<StorageID> candidate_in_a_new_namespace;
+    return resolveHierarchicalNameForCreationImpl(*this, table_id, context_, candidate_in_a_new_namespace);
+}
+
+StorageID DatabaseCatalog::resolveHierarchicalNameForCreation(const StorageID & table_id, ContextPtr context_) const
+{
+    String current_database = context_->getCurrentDatabase();
+    String database_as_written = table_id.database_name.empty() ? current_database : table_id.database_name;
+    if (database_as_written.empty())
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
+
+    std::optional<StorageID> candidate_in_a_new_namespace;
+    if (auto placement = resolveHierarchicalNameForCreationImpl(*this, table_id, context_, candidate_in_a_new_namespace))
+        return *placement;
 
     if (candidate_in_a_new_namespace)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE,

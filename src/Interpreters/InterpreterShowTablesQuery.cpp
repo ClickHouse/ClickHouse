@@ -15,7 +15,6 @@
 #include <Common/Macros.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
-#include <base/find_symbols.h>
 
 #include <fmt/ranges.h>
 
@@ -41,8 +40,7 @@ std::vector<InterpreterShowTablesQuery::HierarchicalDatabaseSource> InterpreterS
 {
     const auto & catalog = DatabaseCatalog::instance();
 
-    std::vector<String> parts;
-    splitInto<'.'>(parts, database);
+    std::vector<String> parts = DatabaseCatalog::splitHierarchicalName(database);
 
     /// The databases `a.b.*`, when there are such.
     bool has_nested_databases = false;

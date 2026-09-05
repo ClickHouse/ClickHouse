@@ -1,0 +1,23 @@
+--- CREATE TABLE db.ns.c with a grant on the nonexistent database db.ns only
+ACCESS_DENIED
+0
+ACCESS_DENIED
+0
+--- and with a grant on the database db
+1
+ns.c
+ns.existing
+--- RENAME TABLE db.ns.c with grants on the nonexistent database db.ns only
+ACCESS_DENIED
+1
+0
+--- and with grants on the database db
+0
+1
+--- the destination of RENAME is checked as the table it is placed as
+ACCESS_DENIED
+0
+1
+--- DROP TABLE db.ns.existing with a grant on the nonexistent database db.ns only
+ACCESS_DENIED
+1

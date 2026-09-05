@@ -87,6 +87,11 @@ private:
 
     AccessRightsElements getRequiredAccess(RenameType type) const;
 
+    /// Binds the hierarchical names of the tables (see `DatabaseCatalog`) to the tables they denote, rewriting the
+    /// query. Done before the access check, which must see the same names as the rename. On a cluster, a destination
+    /// whose database does not exist here is left as written.
+    void resolveHierarchicalNames(ASTRenameQuery & rename, bool is_on_cluster) const;
+
     ASTPtr query_ptr;
     bool renamed_instead_of_exchange{false};
     PreSwapCheck pre_swap_check;
