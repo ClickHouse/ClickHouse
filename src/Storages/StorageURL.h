@@ -249,8 +249,12 @@ public:
 
     void onFinish() override;
 
+    void cancel(CancelReason reason) noexcept override;
+
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
 
+    /// Returns no buffer when a hard teardown of the pipeline is noticed between the options while
+    /// nothing else reports the interruption - the caller must end the stream then, see initialize.
     static std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> getFirstAvailableURIAndReadBuffer(
         std::vector<String>::const_iterator & option,
         const std::vector<String>::const_iterator & end,
@@ -262,7 +266,8 @@ public:
         Poco::Net::HTTPBasicCredentials & credentials,
         const HTTPHeaderEntries & headers,
         bool glob_url,
-        bool delay_initialization);
+        bool delay_initialization,
+        ReadWriteBufferFromHTTP::CancellationPtr cancellation = nullptr);
 
 private:
     void addNumRowsToCache(const String & uri, size_t num_rows);
@@ -292,6 +297,12 @@ private:
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
     Poco::Net::HTTPBasicCredentials credentials;
+
+    /// Tells the buffers created by this source to stop retrying HTTP requests, see cancel. Also
+    /// remembers whether the cancellation is one after which the query must still succeed - a soft
+    /// `max_execution_time` with the `break` overflow mode, or a consumer that has enough data - so
+    /// that generate then discards the failure of the interrupted read instead of failing the query.
+    ReadWriteBufferFromHTTP::CancellationPtr cancellation = std::make_shared<ReadWriteBufferFromHTTP::Cancellation>();
 
     Map http_response_headers;
     bool http_response_headers_initialized = false;

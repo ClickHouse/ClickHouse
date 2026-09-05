@@ -1,0 +1,4 @@
+the error of the only option was caught before it was handled
+the query was killed while the error was held
+the killed query is reported as cancelled
+1

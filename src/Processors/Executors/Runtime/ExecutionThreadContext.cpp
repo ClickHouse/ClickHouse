@@ -75,12 +75,18 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
             }
         }
     }
-    catch (Exception exception) /// NOLINT
+    catch (Exception & exception)
     {
-        /// Copy exception before modifying it because multiple threads can rethrow the same exception
-        if (checkCanAddAdditionalInfoToException(exception))
-            exception.addMessage("While executing " + node->processor()->getName());
-        throw exception;
+        /// The same exception can be rethrown by several threads, so it must not be modified in
+        /// place: copy it before adding anything. The copy slices the exception to `Exception`, so
+        /// rethrow the original when there is nothing to add - the callers which recognize an
+        /// exception of their own by its type, such as `StorageURLSource::generate`, then still can.
+        if (!checkCanAddAdditionalInfoToException(exception))
+            throw;
+
+        Exception annotated = exception; /// NOLINT
+        annotated.addMessage("While executing " + node->processor()->getName());
+        throw annotated; /// NOLINT
     }
 }
 

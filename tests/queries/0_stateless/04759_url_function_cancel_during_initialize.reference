@@ -1,0 +1,8 @@
+the query timed out in the metadata request succeeded
+no rows were emitted after the cancellation
+returned soon after the timeout
+the data was not requested after the cancellation
+the query timed out in the failover probing succeeded
+returned soon after the timeout
+the next failover option was not probed after the cancellation
+a query which is not interrupted reads the data despite the failing metadata request
