@@ -77,6 +77,7 @@ namespace FailPoints
     extern const char remote_query_executor_cancel_before_send[];
     extern const char remote_query_executor_receive_packet_pause[];
     extern const char remote_query_executor_finish_drain_pause[];
+    extern const char remote_query_executor_finish_drain_hold[];
 }
 
 ThrottlerPtr getThrottler(const ContextPtr & context)
@@ -1005,6 +1006,13 @@ void RemoteQueryExecutor::finish()
         return;
     }
 
+    /// Publish the state `cancel` needs before the first blocking read below, and clear it on every
+    /// exit from the loop, including the two that throw.
+    drain_in_progress = true;
+    SCOPE_EXIT({ drain_in_progress = false; });
+
+    FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_finish_drain_hold);
+
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
     /// We do this manually instead of calling drain() because we want to process Log, ProfileEvents and Progress
     /// packets that had been sent before the connection is fully finished in order to have final statistics of what
@@ -1077,6 +1085,12 @@ void RemoteQueryExecutor::finish()
 
 void RemoteQueryExecutor::cancel()
 {
+    /// While `finish` is draining, the `tryCancel` that preceded the drain has already done everything
+    /// this call would do. `ExecutingGraph::cancel` runs this for every processor in turn under
+    /// `processors_mutex`, so blocking here would stall cancellation of the rest of the pipeline.
+    if (drain_in_progress)
+        return;
+
     LockAndBlocker guard(was_cancelled_mutex);
     cancelUnlocked();
 }
