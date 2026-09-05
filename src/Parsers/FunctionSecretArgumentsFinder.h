@@ -219,6 +219,10 @@ protected:
     void findBackupDatabaseSecretArguments();
     void findBackupNameSecretArguments();
 
+    /// A backup destination reads a different signature than the table engine of the same name, so the
+    /// table-engine rule leaves an argument it does not model visible.
+    void findAzureBlobStorageBackupSecretArguments();
+
     /// Whether a specified argument can be the name of a named collection?
     bool isNamedCollectionName(size_t arg_idx) const;
 

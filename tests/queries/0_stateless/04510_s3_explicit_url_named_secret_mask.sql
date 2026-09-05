@@ -250,6 +250,26 @@ BACKUP TABLE nonexistent_04510 TO Null('SEKRIT_TONULLOVER'); -- { serverError NU
 BACKUP TABLE nonexistent_04510 TO Foo('SEKRIT_TOUNKNOWN'); -- { serverError BACKUP_ENGINE_NOT_FOUND }
 BACKUP TABLE nonexistent_04510 TO Null(); -- { serverError UNKNOWN_TABLE }
 
+-- The AzureBlobStorage backup destination reads a different signature than the table engine of the same
+-- name: a named collection with an optional filename, three arguments (connection string or account url,
+-- container, path), or five (adding account_name and account_key). An argument outside those shapes is
+-- rejected only after the statement is logged, and AzureQueue has no backup engine at all. The last
+-- three statements are the controls: five arguments hide only the account_key, a connection string hides
+-- its AccountKey, and the three-argument shape has nothing to hide, so it stays visible verbatim.
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/acct', 'cont', 'blob',
+                 'SEKRIT_AZTO4'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing, 'dir',
+                 'SEKRIT_AZTONCPOS'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureQueue('http://localhost:11111/acct', 'cont', 'blob',
+                 'SEKRIT_AZQTO'); -- { serverError BACKUP_ENGINE_NOT_FOUND }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=a;AccountKey=SEKRIT_AZTOCSKEY==;',
+                 'cont', 'blob', 'acct', 'SEKRIT_AZTOCS5'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/acct#f', 'cont', 'blob',
+                 'acct', 'SEKRIT_AZTO5KEY'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=a;AccountKey=c2VrcmV0Cg==;',
+                 'cont', 'visible_04510_dir/b.zip'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/acct', 'visible_04510_cont', 'visible_04510_dir/b.zip'); -- { serverError BAD_ARGUMENTS }
+
 -- Backup database engine reconstructs the nested S3 destination; extra_credentials must be masked.
 CREATE DATABASE db_04510_ec ENGINE = Backup('', S3('url_dbec', 'ak', 'SEKRIT_SAK',
                  extra_credentials(external_id = 'SEKRIT_EID'))); -- { serverError BAD_ARGUMENTS }

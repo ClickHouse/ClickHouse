@@ -16,6 +16,7 @@ s2=${CLICKHOUSE_DATABASE}_s2
 v1=${CLICKHOUSE_DATABASE}_v1
 v2=${CLICKHOUSE_DATABASE}_v2
 merged=${CLICKHOUSE_DATABASE}_merged
+restored=${CLICKHOUSE_DATABASE}_restored
 
 # Access key id 'test', secret 'testtest': the credentials the stateless suite uses for S3. They are
 # two distinct strings, so the assertions below tell the id apart from the secret.
@@ -33,6 +34,7 @@ DROP DATABASE IF EXISTS ${s2};
 DROP DATABASE IF EXISTS ${v1};
 DROP DATABASE IF EXISTS ${v2};
 DROP DATABASE IF EXISTS ${merged};
+DROP DATABASE IF EXISTS ${restored};
 CREATE DATABASE ${s1};
 CREATE TABLE ${s1}.t1 (id UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO ${s1}.t1 SELECT number FROM numbers(3);
@@ -64,7 +66,18 @@ echo "$err" | grep -c -m1 '\[HIDDEN\]'
 echo '-- archived locator still identifiable in the error (must be 1)'
 echo "$err" | grep -c -m1 dupdef1
 
+# The archived definition has to keep the credential as written: attaching a Backup database checks the
+# backup with the credentials the locator carries, so a definition archived with '[HIDDEN]' would fail
+# the restore below with ACCESS_DENIED instead of reading the source table through it.
+${CLICKHOUSE_CLIENT} "${client_opts[@]}" -q "RESTORE DATABASE ${v1} AS ${restored} FROM ${outer}" > /dev/null
+echo '-- restored Backup database reads its source table (must be 3)'
+${CLICKHOUSE_CLIENT} "${client_opts[@]}" -q "SELECT count() FROM ${restored}.t1"
+echo '-- the restored locator is hidden on display (must be 1)'
+${CLICKHOUSE_CLIENT} "${client_opts[@]}" -q \
+    "SHOW CREATE DATABASE ${restored} SETTINGS format_display_secrets_in_show_and_select = 0" | grep -c -m1 '\[HIDDEN\]'
+
 ${CLICKHOUSE_CLIENT} "${client_opts[@]}" -m -q "
+DROP DATABASE IF EXISTS ${restored};
 DROP DATABASE IF EXISTS ${merged};
 DROP DATABASE ${v1};
 DROP DATABASE ${v2};
