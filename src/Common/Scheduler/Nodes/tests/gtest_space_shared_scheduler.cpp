@@ -621,7 +621,7 @@ TEST(SchedulerSpaceShared, RapidCreateDestroy)
 /// A minimal allocation for driving the scheduler deterministically: requests are issued without waiting
 /// (so several can be queued while the scheduler thread is parked) and kill signals are recorded. Lock
 /// ordering mirrors `MemoryReservation`: AllocationQueue::mutex -> ManualAllocation::mutex.
-ResourceAllocation::MemoryPressurePolicy protectedFromEvictionPolicy()
+static ResourceAllocation::MemoryPressurePolicy protectedFromEvictionPolicy()
 {
     ResourceAllocation::MemoryPressurePolicy policy;
     policy.protect_from_eviction = true;
