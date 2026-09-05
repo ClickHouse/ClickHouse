@@ -7,7 +7,9 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -71,6 +73,17 @@ void ReadFromSystemOneStep::initializePipeline(QueryPipelineBuilder & pipeline, 
     source->addTotalRowsApprox(1);
 
     pipeline.init(Pipe(source));
+}
+
+
+void ReadFromSystemOneStep::serialize(Serialization & ctx) const
+{
+    /// The step is stateless: the output header (invariantly `dummy UInt8`) already travels in the
+    /// generic per-node preamble, so the body is just the storage name the paired decoder expects.
+    /// PAIRED DECODER: `ReadFromStorageStep::deserialize` in
+    /// src/Processors/QueryPlan/ReadFromPreparedSource.cpp, registered as "ReadFromStorage" (see
+    /// `getSerializationName`). Payload = exactly one string, "SystemOne" - keep both sides in sync.
+    writeStringBinary("SystemOne", ctx.out);
 }
 
 }
