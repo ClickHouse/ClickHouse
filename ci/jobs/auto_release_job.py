@@ -29,6 +29,16 @@ MAIN_BRANCH = "master"
 # not-ready rather than reaching arbitrarily deep into history.
 MAX_COMMITS_TO_CONSIDER = 8
 
+# Release-branch CI check-runs that validate the published artifacts install.
+# AutoReleases gates a candidate on these instead of the whole ReleaseBranchCI,
+# which also runs release-irrelevant test jobs (integration/stateless/stress)
+# that are frequently red and would otherwise starve branches of patch releases.
+# Names must match the `Install packages` jobs ReleaseBranchCI emits as check-runs.
+RELEASE_VALIDATION_CHECKS = (
+    "Install packages (amd_release)",
+    "Install packages (arm_release)",
+)
+
 # The dispatched release workflow, referenced by its generated YAML file name
 # (what `gh workflow run` / `gh run list --workflow` expect — the workflow *name*
 # "CreateRelease" is not accepted with a `.yml` suffix). Generated from
@@ -100,44 +110,36 @@ def _latest_release_tag(branch: str) -> Optional[str]:
     return tags[-1] if tags else None
 
 
-def _wf_completed(sha: str) -> bool:
-    """True when every check run on the commit has completed.
+def _release_checks_passed(sha: str) -> bool:
+    """True when every RELEASE_VALIDATION_CHECKS check-run concluded success.
 
-    Empty check-runs means CI has not started reporting yet — treat as not
-    completed (the commit is not a release candidate) rather than as done."""
+    Uses the newest run per name (GitHub keeps a row per re-run). A required
+    check that is missing, unfinished, or not success makes the commit not a
+    candidate."""
     out = GH.get_output_with_retries(
         f"gh api --paginate repos/{{owner}}/{{repo}}/commits/{sha}/check-runs"
-        f" --jq '.check_runs[].status'"
+        f" --jq '.check_runs[] | [.name, .started_at, .status, .conclusion] | @tsv'"
     )
-    statuses = [s for s in out.splitlines() if s.strip()]
-    if not statuses:
-        print(f"   No check runs reported yet for [{sha}]")
-        return False
-    incomplete = [s for s in statuses if s != "completed"]
-    if incomplete:
-        print(f"   {len(incomplete)} check run(s) still in progress for [{sha}]")
-        return False
-    return True
-
-
-def _failed_statuses(sha: str) -> List[str]:
-    """Commit-status contexts whose latest state is not success.
-
-    Keeps only the newest status per context (GitHub records one row per
-    update) before deciding pass/fail, matching the legacy logic."""
-    out = GH.get_output_with_retries(
-        f"gh api --paginate repos/{{owner}}/{{repo}}/commits/{sha}/statuses"
-        f" --jq '.[] | [.context, .state, .updated_at] | @tsv'",
-        strict=True,
-    )
-    latest: Dict[str, Tuple[str, str]] = {}
+    latest: Dict[str, Tuple[str, str, str]] = {}
     for line in out.splitlines():
         if not line.strip():
             continue
-        context, state, updated_at = line.split("\t")
-        if context not in latest or latest[context][1] < updated_at:
-            latest[context] = (state, updated_at)
-    return [ctx for ctx, (state, _) in latest.items() if state != "success"]
+        name, started_at, status, conclusion = line.split("\t")
+        if name not in latest or latest[name][0] < started_at:
+            latest[name] = (started_at, status, conclusion)
+    for name in RELEASE_VALIDATION_CHECKS:
+        run = latest.get(name)
+        if run is None:
+            print(f"   {name} not reported yet for [{sha}]")
+            return False
+        _, status, conclusion = run
+        if status != "completed":
+            print(f"   {name} still {status} for [{sha}]")
+            return False
+        if conclusion != "success":
+            print(f"   {name} concluded {conclusion} for [{sha}]")
+            return False
+    return True
 
 
 def _release_version_for_commit(commit_sha: str) -> str:
@@ -189,8 +191,9 @@ def _release_build_artifacts_ready(release_branch: str, commit_sha: str) -> bool
 def _find_release_candidate(branch: str) -> Tuple[str, str, str]:
     """Return (commit_sha, reason, status) for `branch`.
 
-    commit_sha is the newest fully-green commit within MAX_COMMITS_TO_CONSIDER
-    of the branch head, excluding the version-bump commit; empty when none
+    commit_sha is the newest commit within MAX_COMMITS_TO_CONSIDER of the branch
+    head, excluding the version-bump commit, whose RELEASE_VALIDATION_CHECKS are
+    green and whose release build artifacts are present; empty when none
     qualifies, with `reason` explaining why. `status` is what the sub-result
     reports: SKIPPED when not ready yet, ERROR when the branch is broken."""
     tag = _latest_release_tag(branch)
@@ -218,23 +221,17 @@ def _find_release_candidate(branch: str) -> Tuple[str, str, str]:
     last_failure = ""
     for idx, commit in enumerate(commits_to_check):
         print(f"[{branch}~{idx + 1}] check commit [{commit}] as release candidate")
-        if not _wf_completed(commit):
-            print("   CI in progress - check previous commit")
+        if not _release_checks_passed(commit):
+            last_failure = last_failure or "release validation checks not green"
             continue
-        failed = _failed_statuses(commit)
-        if failed:
-            print(f"   CI failed: {failed} - check previous commit")
-            last_failure = last_failure or f"failed jobs: {failed}"
-            continue
-        # CI is green, but "no failed statuses" also passes when the release
-        # build was deduplicated by the CI cache (reported `skipped`, not
-        # `failed`) so no packages were uploaded under this commit's SHA.
-        # Releasing such a commit fails later in CreateRelease's package
-        # download, so require the exact artifacts to actually be present.
+        # The install-packages checks prove the .deb/.rpm install, but not that
+        # every object CreateRelease downloads is present: a dedup-skipped build
+        # uploads nothing under this SHA (and macOS signed artifacts are separate),
+        # so CreateRelease's package download 404s. Require them to be present.
         if not _release_build_artifacts_ready(branch, commit):
             print(
-                f"   CI green but release build artifacts missing for [{commit}]"
-                f" - check previous commit"
+                f"   release validation green but release build artifacts missing"
+                f" for [{commit}] - check previous commit"
             )
             last_failure = (
                 last_failure
@@ -245,7 +242,7 @@ def _find_release_candidate(branch: str) -> Tuple[str, str, str]:
 
     return (
         "",
-        last_failure or "no completed green commit in range",
+        last_failure or "no commit with green release validation in range",
         Result.Status.SKIPPED,
     )
 
