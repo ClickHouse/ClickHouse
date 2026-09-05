@@ -194,6 +194,41 @@ GTEST_TEST(JSONPathValues, StableTokenBytes)
     EXPECT_EQ(toHex(*validation), "640000000007");
 }
 
+GTEST_TEST(JSONPathValues, PreparedPathTypesRemainValidAcrossAlternatingValues)
+{
+    using namespace JSONPathValues;
+    struct Consumer
+    {
+        void addToken(std::string_view token) { tokens.emplace_back(token); }
+        std::vector<String> tokens;
+    } consumer;
+    const PathMatcher matcher({}, {}, {}, {});
+    Extractor<Consumer> extractor(64, matcher, consumer);
+    const FormatSettings settings;
+
+    for (size_t row = 0; row != 4; ++row)
+    {
+        for (const auto & path : {String(32, 'a'), String(32, 'b')})
+        {
+            const auto * prepared = extractor.preparePath(path);
+            ASSERT_NE(prepared, nullptr);
+            extractor.consumeSharedScalar(*prepared, BinaryTypeIndex::String, "value");
+
+            /// Use a new type on each iteration so cached dispatch must retain its own `DataTypePtr`.
+            const auto type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
+            auto column = type->createColumn();
+            column->insert(Array{Field{Int64(42)}});
+            extractor.consumeValue(*prepared, *type, type->getName(), *type->getDefaultSerialization(), *column, 0, false, settings);
+
+            ASSERT_EQ(consumer.tokens.size(), 2);
+            EXPECT_EQ(consumer.tokens[0], encodeValue(path, std::make_shared<DataTypeString>(), "value", 64)->token);
+            EXPECT_EQ(consumer.tokens[1], encodeValue(
+                encodePathTypePrefix(path, type), "42", 64, true, Kind::ArrayElementComplete, Kind::ArrayElementTruncated)->token);
+            consumer.tokens.clear();
+        }
+    }
+}
+
 GTEST_TEST(JSONPathValues, EscapedComponentsPreserveOrdering)
 {
     using namespace JSONPathValues;

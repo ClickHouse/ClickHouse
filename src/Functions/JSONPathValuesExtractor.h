@@ -4,6 +4,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <DataTypes/DataTypeArray.h>
@@ -58,6 +59,18 @@ private:
 template <typename Consumer>
 class Extractor
 {
+    struct PreparedType
+    {
+        DataTypePtr type;
+        DataTypePtr base_type;
+        String prefix;
+        const DataTypeArray * array_type = nullptr;
+        const DataTypeMap * map_type = nullptr;
+        bool is_string = false;
+        bool is_map = false;
+        bool is_supported_dynamic_scalar = false;
+    };
+
 public:
     struct PreparedPath
     {
@@ -67,6 +80,8 @@ public:
         bool should_visit = false;
         bool should_index = false;
         bool has_json_descendants = false;
+        mutable UnorderedMapWithMemoryTracking<String, PreparedType, StringHashForHeterogeneousLookup, std::equal_to<>> types;
+        mutable const std::pair<const String, PreparedType> * last_type = nullptr;
     };
 
     Extractor(size_t max_token_bytes_, const PathMatcher & path_matcher_, Consumer & consumer_)
@@ -79,9 +94,10 @@ public:
     void consumeNull(std::string_view, bool) {}
     const PreparedPath * preparePath(std::string_view path, const IDataType * static_type = nullptr)
     {
-        auto [it, inserted] = literal_path_cache.try_emplace(String(path));
-        if (inserted)
+        auto it = literal_path_cache.find(path);
+        if (it == literal_path_cache.end())
         {
+            it = literal_path_cache.try_emplace(String(path)).first;
             it->second.path = it->first;
             it->second.filter_path = escapeLiteralPath(path);
             preparePathFilter(it->second);
@@ -99,7 +115,8 @@ public:
     void consumeSharedScalar(const PreparedPath & path, BinaryTypeIndex type_index, std::string_view value)
     {
         const auto & element = getSimpleDataTypesCache().getElement(type_index);
-        preparePathType(path.path, *element.type, element.name);
+        const auto & prepared = preparePathType(path, *element.type, element.name);
+        const auto & path_type_prefix = prepared.prefix;
 
         const size_t capacity = valueCapacity(path_type_prefix);
         const bool complete = value.size() <= capacity;
@@ -128,36 +145,37 @@ public:
         bool is_dynamic,
         const FormatSettings & format_settings)
     {
-        preparePathType(path.path, data_type, type_name);
+        const auto & prepared = preparePathType(path, data_type, type_name);
+        const auto & path_type_prefix = prepared.prefix;
 
         const IColumn * value_column = &source_column;
         if (const auto * nullable = typeid_cast<const ColumnNullable *>(value_column))
             value_column = &nullable->getNestedColumn();
 
-        if (cached_array_type)
+        if (prepared.array_type)
         {
             insertArray(
-                path.path, path.filter_path, path_type_prefix, *cached_array_type, serialization, *value_column, row, format_settings);
+                path.path, path.filter_path, path_type_prefix, *prepared.array_type, serialization, *value_column, row, format_settings);
             if (is_dynamic && path.should_index)
                 insertDynamicValidation(path.path);
             return;
         }
 
-        if (cached_is_map)
+        if (prepared.is_map)
         {
-            if (path.should_index && cached_map_type && !is_dynamic)
+            if (path.should_index && prepared.map_type && !is_dynamic)
                 insertMap(path_type_prefix, *value_column, row);
             if (is_dynamic && path.should_index)
                 insertDynamicValidation(path.path);
             return;
         }
 
-        if (cached_base_type->getTypeId() == TypeIndex::Object)
+        if (prepared.base_type->getTypeId() == TypeIndex::Object)
         {
             PrefixedConsumer nested_consumer(*this, path.path, path.filter_path);
             DB::enumerateJSONValues(
                 assert_cast<const ColumnObject &>(*value_column),
-                assert_cast<const DataTypeObject &>(*cached_base_type),
+                assert_cast<const DataTypeObject &>(*prepared.base_type),
                 nested_consumer,
                 row,
                 1);
@@ -172,13 +190,13 @@ public:
         const size_t typed_capacity = valueCapacity(path_type_prefix);
         if (typed_capacity == 0 && path_type_prefix.size() + 1 > max_token_bytes)
         {
-            if (is_dynamic && !cached_is_string && !cached_is_supported_dynamic_scalar)
+            if (is_dynamic && !prepared.is_string && !prepared.is_supported_dynamic_scalar)
                 insertDynamicValidation(path.path);
             return;
         }
 
         const auto rendered = render(
-            cached_is_string ? value_column : nullptr,
+            prepared.is_string ? value_column : nullptr,
             source_column,
             serialization,
             row,
@@ -186,7 +204,7 @@ public:
             format_settings);
 
         const bool typed_complete = rendered.complete && rendered.value.size() <= typed_capacity;
-        if (!(cached_is_string && typed_complete && rendered.value.empty()))
+        if (!(prepared.is_string && typed_complete && rendered.value.empty()))
         {
             if (encodeValueTo(
                     token_buffer,
@@ -200,7 +218,7 @@ public:
                 consumer.addToken(token_buffer);
         }
 
-        if (is_dynamic && !cached_is_string && !cached_is_supported_dynamic_scalar)
+        if (is_dynamic && !prepared.is_string && !prepared.is_supported_dynamic_scalar)
             insertDynamicValidation(path.path);
     }
 
@@ -334,7 +352,7 @@ private:
         void consumeSharedScalar(const PreparedPath & path, BinaryTypeIndex type_index, std::string_view value)
         {
             const auto & element = getSimpleDataTypesCache().getElement(type_index);
-            extractor.insertArrayJSONSharedScalar(path.path, *element.type, element.name, value);
+            extractor.insertArrayJSONSharedScalar(path, *element.type, element.name, value);
         }
 
         void consumeNull(std::string_view, bool) {}
@@ -365,7 +383,7 @@ private:
                 return;
             }
 
-            extractor.insertArrayJSONLeaf(path.path, data_type, type_name, serialization, source_column, row, format_settings);
+            extractor.insertArrayJSONLeaf(path, data_type, type_name, serialization, source_column, row, format_settings);
         }
 
         void setRow(size_t) {}
@@ -393,33 +411,33 @@ private:
         String filter_prefix;
     };
 
-    void preparePathType(std::string_view path, const IDataType & data_type, std::string_view type_name)
+    const PreparedType & preparePathType(const PreparedPath & path, const IDataType & data_type, std::string_view type_name)
     {
-        const bool type_changed = !cached_binary_type || type_name != cached_type_name;
-        if (type_changed)
+        if (path.last_type && path.last_type->first == type_name)
+            return path.last_type->second;
+        auto it = path.types.find(type_name);
+        if (it == path.types.end())
         {
-            cached_type_name.assign(type_name);
-            cached_type = removeNullableOrLowCardinalityNullable(data_type.getPtr());
-            cached_base_type = removeLowCardinality(cached_type);
-            cached_array_type = typeid_cast<const DataTypeArray *>(cached_type.get());
-            cached_map_type = typeid_cast<const DataTypeMap *>(cached_type.get());
-            cached_is_map = cached_map_type;
-            if (cached_map_type
-                && (!WhichDataType(removeLowCardinality(cached_map_type->getKeyType())).isString()
-                    || !WhichDataType(removeLowCardinality(cached_map_type->getValueType())).isString()))
-                cached_map_type = nullptr;
-            cached_is_string = WhichDataType(cached_base_type).isStringOrFixedString();
-            cached_is_supported_dynamic_scalar = isSupportedDynamicScalar(*cached_base_type);
-            auto type_it = binary_types.find(cached_type_name);
+            it = path.types.try_emplace(String(type_name)).first;
+            auto & prepared = it->second;
+            prepared.type = removeNullableOrLowCardinalityNullable(data_type.getPtr());
+            prepared.base_type = removeLowCardinality(prepared.type);
+            prepared.array_type = typeid_cast<const DataTypeArray *>(prepared.type.get());
+            prepared.map_type = typeid_cast<const DataTypeMap *>(prepared.type.get());
+            prepared.is_map = prepared.map_type;
+            if (prepared.map_type
+                && (!WhichDataType(removeLowCardinality(prepared.map_type->getKeyType())).isString()
+                    || !WhichDataType(removeLowCardinality(prepared.map_type->getValueType())).isString()))
+                prepared.map_type = nullptr;
+            prepared.is_string = WhichDataType(prepared.base_type).isStringOrFixedString();
+            prepared.is_supported_dynamic_scalar = isSupportedDynamicScalar(*prepared.base_type);
+            auto type_it = binary_types.find(it->first);
             if (type_it == binary_types.end())
-                type_it = binary_types.emplace(cached_type_name, encodeDataType(cached_type)).first;
-            cached_binary_type = &type_it->second;
+                type_it = binary_types.emplace(it->first, encodeDataType(prepared.type)).first;
+            encodePathTypePrefix(prepared.prefix, path.path, type_it->second);
         }
-        if (type_changed || path != cached_path)
-        {
-            cached_path.assign(path);
-            encodePathTypePrefix(path_type_prefix, path, *cached_binary_type);
-        }
+        path.last_type = &*it;
+        return it->second;
     }
     struct RenderedValue
     {
@@ -532,7 +550,7 @@ private:
     }
 
     void insertArrayJSONSharedScalar(
-        std::string_view path,
+        const PreparedPath & path,
         const IDataType & data_type,
         std::string_view type_name,
         std::string_view value)
@@ -540,7 +558,7 @@ private:
         const auto element_type = removeNullableOrLowCardinalityNullable(data_type.getPtr());
         const auto array_type = std::make_shared<DataTypeArray>(element_type);
         const String array_type_name = "Array(" + String(type_name) + ")";
-        preparePathType(path, *array_type, array_type_name);
+        const auto & path_type_prefix = preparePathType(path, *array_type, array_type_name).prefix;
 
         const size_t capacity = valueCapacity(path_type_prefix);
         const bool complete = value.size() <= capacity;
@@ -560,7 +578,7 @@ private:
     }
 
     void insertArrayJSONLeaf(
-        std::string_view path,
+        const PreparedPath & path,
         const IDataType & data_type,
         std::string_view,
         const ISerialization & serialization,
@@ -575,7 +593,7 @@ private:
             return;
 
         const auto array_type = std::make_shared<DataTypeArray>(element_type);
-        preparePathType(path, *array_type, array_type->getName());
+        const auto & path_type_prefix = preparePathType(path, *array_type, array_type->getName()).prefix;
         insertArrayElement(
             path_type_prefix,
             serialization,
@@ -657,19 +675,8 @@ private:
     const PathMatcher & path_matcher;
     std::array<char, 2048> scratch{};
     String serialization_prefix;
-    String path_type_prefix;
     String token_buffer;
-    String cached_path;
-    String cached_type_name;
-    DataTypePtr cached_type;
-    DataTypePtr cached_base_type;
-    const DataTypeArray * cached_array_type = nullptr;
-    const DataTypeMap * cached_map_type = nullptr;
-    bool cached_is_string = false;
-    bool cached_is_map = false;
-    bool cached_is_supported_dynamic_scalar = false;
-    const String * cached_binary_type = nullptr;
-    UnorderedMapWithMemoryTracking<String, PreparedPath> literal_path_cache;
+    UnorderedMapWithMemoryTracking<String, PreparedPath, StringHashForHeterogeneousLookup, std::equal_to<>> literal_path_cache;
     UnorderedMapWithMemoryTracking<String, PreparedPath> prefixed_path_cache;
     UnorderedMapWithMemoryTracking<String, String> binary_types;
     UnorderedSetWithMemoryTracking<String> seen_map_keys;
