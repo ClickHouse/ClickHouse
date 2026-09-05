@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from shlex import quote
-from threading import Event, Thread
+from threading import Event, Lock, Thread
 from types import SimpleNamespace
 from typing import Any, Dict, Iterator, List, Optional, Type, TypeVar, Union
 
@@ -294,11 +294,15 @@ class Shell:
 
     @classmethod
     def _terminate(cls, process) -> None:
+        # A group we are not permitted to signal is treated as alive: calling it dead
+        # stops enforcing the bound, while a signal it rejects costs nothing.
         try:
             os.killpg(process.pid, signal.SIGTERM)
         except ProcessLookupError:
             print("Process already terminated.")
             return
+        except PermissionError:
+            pass
 
         time_wait = 0
         wait_interval = 5
@@ -310,6 +314,8 @@ class Shell:
                 os.killpg(process.pid, 0)
             except ProcessLookupError:
                 return
+            except PermissionError:
+                pass
             print("Waiting for process to exit...")
             time.sleep(wait_interval)
             time_wait += wait_interval
@@ -319,6 +325,8 @@ class Shell:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             print("Process already terminated.")
+        except PermissionError:
+            print("WARNING: Not permitted to signal the process group; it is left running")
 
     @classmethod
     def _check_timeout(cls, timeout, idle_timeout, process, finished, state) -> None:
@@ -344,13 +352,20 @@ class Shell:
                 deadlines.append(("idle", state["last_output"] + idle_timeout))
             passed = [(name, at) for name, at in deadlines if at <= now]
             if passed:
-                # Nothing to kill and nothing to report once the caller is done with the
-                # process, whatever the clock says.
-                if finished.is_set():
-                    return
-                # `min` keeps the first of equal keys, and `total` is listed first, so a
-                # child that never wrote anything is reported as the total expiry it is.
-                cause = min(passed, key=lambda item: item[1])[0]
+                # Decided under the lock the caller sets `finished` under, so a command
+                # finishing as its deadline passes gets one outcome, not both. Nothing
+                # blocking belongs inside: across `_terminate` it would stall the caller.
+                with state["arbiter"]:
+                    # Nothing to kill and nothing to report once the caller is done with the
+                    # process, whatever the clock says.
+                    if finished.is_set():
+                        return
+                    # `min` keeps the first of equal keys, and `total` is listed first, so a
+                    # child that never wrote anything is reported as the total expiry it is.
+                    cause = min(passed, key=lambda item: item[1])[0]
+                    # Recorded before terminating: the readers unblock when the child
+                    # closes its pipes, so the caller can read `state` mid-`_terminate`.
+                    state["expired"] = cause
                 break
             # Recomputed every iteration: arriving output moves the idle deadline later.
             # Waits on the caller being done with the process, not on the leader exiting: a background
@@ -358,10 +373,6 @@ class Shell:
             # that group is exactly what the timeout has to reach.
             if finished.wait(min(at for _, at in deadlines) - now):
                 return
-        # Recorded before terminating, never after: the reader threads unblock the moment
-        # the child closes its pipes, so the caller can be reading `state` while
-        # `_terminate` is still working.
-        state["expired"] = cause
         if cause == "total":
             print(
                 f"WARNING: Timeout exceeded [{timeout}], sending SIGTERM to process group [{process.pid}]"
@@ -441,6 +452,7 @@ class Shell:
                         "started": started,
                         "last_output": started,
                         "expired": None,
+                        "arbiter": Lock(),
                     }
                     if timeout or idle_timeout:
                         t = Thread(
@@ -497,8 +509,10 @@ class Shell:
                     finally:
                         # Only here: the readers return when the last writer closes the pipe, so
                         # setting this at the leader's exit would retire the watchdog while a
-                        # descendant it must still reach keeps this call blocked.
-                        finished.set()
+                        # descendant it must still reach keeps this call blocked. Under the
+                        # arbiter, so a watchdog mid-decision either sees this or wins outright.
+                        with watchdog_state["arbiter"]:
+                            finished.set()
 
                     if watchdog is not None:
                         # Joined until the kill it started has finished: the grace waits on the
