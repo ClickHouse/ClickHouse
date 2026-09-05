@@ -1,0 +1,62 @@
+Results are the same with and without an ESCAPE clause when the escape character is not used in the pattern
+1024
+1024
+1024
+1024
+1024
+5120
+5120
+ESCAPE used to match a literal LIKE wildcard returns the expected zero rows
+0
+0
+The escaped % is a literal, so the same pattern without its ESCAPE clause matches nothing
+1024
+0
+1024
+The index selects 8 of 48 granules for that pattern, the same as for the equivalent backslash-escaped pattern
+Parts: 1 | Granules: 8
+Granules: 48/48
+Name: idx
+Granules: 8/48
+Parts: 1 | Granules: 8
+Granules: 48/48
+Name: idx
+Granules: 8/48
+The same pattern without its ESCAPE clause keeps a second part as a candidate and selects 16 of 48 granules
+Parts: 2 | Granules: 16
+Granules: 48/48
+Name: idx
+Granules: 16/48
+Text index analysis with LIKE ESCAPE: index narrows to 1 part / 8 granules out of 6 parts / 48 granules
+Name: idx
+Description: text GRANULARITY 100000000
+Parts: 1/6
+Granules: 8/48
+Text index analysis with LIKE ESCAPE on a non-existent token: 0 parts and 0 granules selected
+Name: idx
+Description: text GRANULARITY 100000000
+Parts: 0/6
+Granules: 0/48
+Text index analysis with ILIKE ESCAPE: index narrows correctly
+Name: idx
+Description: text GRANULARITY 100000000
+Parts: 1/6
+Granules: 8/48
+Functional 3-argument form like(haystack, needle, escape) is equivalent to the operator form
+1024
+1024
+Name: idx
+Description: text GRANULARITY 100000000
+Parts: 1/6
+Granules: 8/48
+The ESCAPE form is handed to the index at data-read time too, like the 2-argument form
+1
+1
+Text index with array tokenizer also uses the index with LIKE ESCAPE
+1024
+1024
+Name: idx
+Description: text GRANULARITY 100000000
+Parts: 1/4
+Granules: 8/32
+An ESCAPE argument that is not a single ASCII character is rejected, also by EXPLAIN

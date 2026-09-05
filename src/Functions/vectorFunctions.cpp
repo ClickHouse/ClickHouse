@@ -2540,17 +2540,22 @@ Calculates the approximate [cosine distance](https://en.wikipedia.org/wiki/Cosin
             {"UInt"}}};
     FunctionDocumentation::ReturnedValue returned_value_cosine_distance_transposed
         = {"Returns the approximate cosine distance (one minus the cosine similarity). Always returns Float64.", {"Float64"}};
+    /// The example rounds the result, and the one of `cosineDistanceTransposedQuantized` below does the same, because the
+    /// unrounded value is not the same on every architecture: the cosine kernels normalize with a reciprocal square root
+    /// approximation, which SimSIMD implements per instruction set, so the result differs in its last digits between an
+    /// aarch64 and an x86_64 server (and between x86_64 servers of different capabilities, since the kernel is resolved from
+    /// the CPU at run time). The distance is documented as approximate anyway - the surplus digits carried no meaning.
     FunctionDocumentation::Examples examples_cosine_distance_transposed
         = {{"Basic usage",
             R"(
 CREATE TABLE qbit (id UInt32, vec QBit(Float64, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, [0, 1]);
-SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
+SELECT round(cosineDistanceTransposed(vec, array(1, 2), 16), 6) FROM qbit;
 )",
             R"(
-┌─cosineDistanceTransposed(vec, [1, 2], 16)─┐
-│                       0.10557280905788935 │
-└───────────────────────────────────────────┘
+┌─round(cosineDistanceTransposed(vec, [1, 2], 16), 6)─┐
+│                                            0.105573 │
+└─────────────────────────────────────────────────────┘
             )"}};
     FunctionDocumentation::IntroducedIn introduced_in_cosine_distance_transposed = {26, 1};
     FunctionDocumentation::Category category_cosine_distance_transposed = FunctionDocumentation::Category::Distance;
@@ -2703,17 +2708,19 @@ SELECT L2DistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM q
            quantized_used_dims_argument};
     FunctionDocumentation::ReturnedValue returned_value_cosine_distance_transposed_quantized
         = {"Returns the approximate cosine distance (one minus the cosine similarity). Always returns `Float64`.", {"Float64"}};
+    /// Rounded for the reason given at the example of `cosineDistanceTransposed`: the last digits of a cosine distance are
+    /// architecture-dependent.
     FunctionDocumentation::Examples examples_cosine_distance_transposed_quantized
         = {{"Basic usage",
             R"(
 CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
-SELECT cosineDistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
+SELECT round(cosineDistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8), 6) FROM qbit;
 )",
             R"(
-┌─cosineDistanceTransposedQuantized(vec, CAST('[0.1, -0.5]', 'Array(Float32)'), 8)─┐
-│                                                          0.000027192636379513857 │
-└──────────────────────────────────────────────────────────────────────────────────┘
+┌─round(cosineDistanceTransposedQuantized(vec, CAST('[0.1, -0.5]', 'Array(Float32)'), 8), 6)─┐
+│                                                                                   0.000027 │
+└────────────────────────────────────────────────────────────────────────────────────────────┘
             )"}};
     FunctionDocumentation documentation_cosine_distance_transposed_quantized
         = {description_cosine_distance_transposed_quantized,

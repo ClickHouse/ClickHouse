@@ -359,6 +359,13 @@ void StreamingExchangeSink::consume(Chunk chunk)
 
     if (chunk.getNumColumns() > 0)
     {
+        /// The exchange stream uses the server default codec (now `ZSTD(3)`): `network_compression_method`
+        /// is a per-query setting and the sink has no query settings at hand (it is constructed from a
+        /// header, a connection and a stream name), so the setting is not plumbed here. This is safe:
+        /// each compressed frame is self-describing (the receiver auto-detects the codec via
+        /// `CompressedReadBuffer`), and the exchange is a transient, same-version channel —
+        /// `StreamingExchangeProtocol` rejects peers on a different protocol version during the
+        /// handshake, so a stream is never read back by a node expecting a different codec.
         auto compressed_buf = std::make_unique<CompressedWriteBuffer>(*out);
         auto writer = std::make_unique<NativeWriter>(*compressed_buf, DBMS_TCP_PROTOCOL_VERSION, input.getSharedHeader());
 

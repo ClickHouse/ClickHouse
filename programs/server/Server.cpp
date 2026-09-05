@@ -24,7 +24,6 @@
 #include <Common/ErrorHandlers.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <base/getMemoryAmount.h>
-#include <base/getAvailableMemoryAmount.h>
 #include <base/errnoToString.h>
 #include <base/coverage.h>
 #include <base/getFQDNOrHostName.h>
@@ -34,7 +33,6 @@
 #include <Common/PoolId.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTracker.h>
-#include <Common/PerCPU.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/MemoryWorker.h>
 #include <Common/OOMCanary/OOMCanary.h>
@@ -71,6 +69,7 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Server/createServer.h>
+#include <Server/StartupWarnings.h>
 #include <Server/socketBindListen.h>
 #include <Server/stopServers.h>
 #include <Server/waitServersToFinish.h>
@@ -80,7 +79,6 @@
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromFile.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/S3/Credentials.h>
 #include <Interpreters/CancellationChecker.h>
@@ -207,11 +205,6 @@ namespace Setting
     extern const SettingsSeconds http_send_timeout;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsSeconds send_timeout;
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
 }
 
 namespace ServerSetting
@@ -431,6 +424,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
     extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
+    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_size;
+    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_free_size;
+    extern const ServerSettingsUInt64 iceberg_manifest_decode_thread_pool_queue_size;
     extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
@@ -490,6 +486,10 @@ namespace ServerSetting
     extern const ServerSettingsString logger_shutdown_level;
     extern const ServerSettingsString openssl_server_certificate_file;
     extern const ServerSettingsString openssl_server_private_key_file;
+    extern const ServerSettingsString openssl_server_ca_config;
+    extern const ServerSettingsString openssl_client_certificate_file;
+    extern const ServerSettingsString openssl_client_private_key_file;
+    extern const ServerSettingsString openssl_client_ca_config;
     extern const ServerSettingsString distributed_ddl_path;
     extern const ServerSettingsString distributed_ddl_replicas_path;
     extern const ServerSettingsInt32 distributed_ddl_pool_size;
@@ -863,270 +863,6 @@ void Server::defineOptions(Poco::Util::OptionSet & options)
 namespace
 {
 
-/// Unused in other builds
-#if defined(OS_LINUX)
-String readLine(const String & path)
-{
-    ReadBufferFromFile in(path);
-    String contents;
-    readStringUntilNewlineInto(contents, in);
-    return contents;
-}
-
-int readNumber(const String & path)
-{
-    ReadBufferFromFile in(path);
-    int result = {};
-    readText(result, in);
-    return result;
-}
-
-#endif
-
-void sanityChecks(Server & server, const ServerSettings & server_settings)
-{
-    std::string data_path = getCanonicalPath(String(server_settings[ServerSetting::path]), server.getOriginalWorkingDirectory());
-    std::string logs_path = server_settings[ServerSetting::logger_log];
-
-    if (server.logger().is(Poco::Message::PRIO_TEST))
-        server.context()->addOrUpdateWarningMessage(
-            Context::WarningType::SERVER_LOGGING_LEVEL_TEST,
-            PreformattedMessage::create(
-                "Server logging level is set to 'test' and performance is degraded. This cannot be used in production."));
-#if defined(OS_LINUX)
-    try
-    {
-        const std::unordered_set<std::string> fast_clock_sources = {
-            // ARM clock
-            "arch_sys_counter",
-            // KVM guest clock
-            "kvm-clock",
-            // X86 clock
-            "tsc",
-        };
-        const char * filename = "/sys/devices/system/clocksource/clocksource0/current_clocksource";
-        if (!fast_clock_sources.contains(readLine(filename)))
-            server.context()->addOrUpdateWarningMessage(
-                Context::WarningType::LINUX_FAST_CLOCK_SOURCE_NOT_USED,
-                PreformattedMessage::create("Linux is not using a fast clock source. Performance can be degraded. Check {}", filename));
-    }
-    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
-    {
-    }
-
-    if (!PerCPU::haveRSeq())
-        server.context()->addOrUpdateWarningMessage(
-            Context::WarningType::LINUX_RSEQ_UNAVAILABLE,
-            PreformattedMessage::create(
-                "The Linux 'restartable sequences' (rseq) feature is not enabled for this process. "
-                "ClickHouse uses it to cheaply detect which CPU core a thread is running on, which keeps "
-                "per-CPU performance counters (used for internal profiling and statistics) fast to update. "
-                "Without it, a slower fallback is used (a real system call on some platforms, such as AArch64), "
-                "making these counters more expensive and slightly degrading performance. "
-                "This means the runtime C library or the kernel did not register a usable rseq area for this process. "
-                "Possible causes: the kernel does not support rseq (it was introduced in Linux 4.18); "
-                "the C library does not register it (glibc does so automatically since version 2.35, so upgrading glibc may help; "
-                "other libraries, such as musl, do not register it); "
-                "or registration was disabled or failed at startup (with glibc, see the 'glibc.pthread.rseq' tunable)."));
-
-    try
-    {
-        const char * filename = "/proc/sys/vm/overcommit_memory";
-        if (readNumber(filename) == 2)
-            server.context()->addOrUpdateWarningMessage(
-                Context::WarningType::LINUX_MEMORY_OVERCOMMIT_DISABLED,
-                PreformattedMessage::create("Linux memory overcommit is disabled. Check {}", String(filename)));
-    }
-    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
-    {
-    }
-
-    try
-    {
-        const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
-        if (readLine(filename).contains("[always]"))
-            server.context()->addOrUpdateWarningMessage(
-                Context::WarningType::LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
-                PreformattedMessage::create("Linux transparent hugepages are set to \"always\". Check {}", String(filename)));
-    }
-    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
-    {
-    }
-
-    try
-    {
-        const char * filename = "/proc/sys/kernel/pid_max";
-        if (readNumber(filename) < 30000)
-            server.context()->addOrUpdateWarningMessage(
-                Context::WarningType::LINUX_MAX_PID_TOO_LOW,
-               PreformattedMessage::create("Linux max PID is too low. Check {}", String(filename)));
-    }
-    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
-    {
-    }
-
-    try
-    {
-        const char * filename = "/proc/sys/kernel/threads-max";
-        if (readNumber(filename) < 30000)
-            server.context()->addOrUpdateWarningMessage(
-                Context::WarningType::LINUX_MAX_THREADS_COUNT_TOO_LOW,
-                PreformattedMessage::create("Linux threads max count is too low. Check {}", String(filename)));
-    }
-    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
-    {
-    }
-
-    try
-    {
-        const char * filename = "/proc/sys/kernel/task_delayacct";
-        if (readNumber(filename) == 0)
-            server.context()->addOrUpdateWarningMessage(
-                Context::WarningType::DELAY_ACCOUNTING_DISABLED,
-                PreformattedMessage::create(
-                    "Delay accounting is not enabled, OSIOWaitMicroseconds will not be gathered. You can enable it "
-                    "using `sudo sh -c 'echo 1 > {}'` or by using sysctl.",
-                    String(filename)));
-    }
-    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
-    {
-    }
-
-    std::string dev_id = getBlockDeviceId(data_path);
-    if (getBlockDeviceType(dev_id) == BlockDeviceType::ROT && getBlockDeviceReadAheadBytes(dev_id) == 0)
-        server.context()->addOrUpdateWarningMessage(
-            Context::WarningType::ROTATIONAL_DISK_WITH_DISABLED_READHEAD,
-            PreformattedMessage::create(
-                "Rotational disk with disabled readahead is in use. Performance can be degraded. Used for data: {}", String(data_path)));
-
-    try
-    {
-        /// Check if any mdraid arrays are currently being checked, repaired, or degraded.
-        /// Resynchronization can significantly degrade disk I/O performance.
-        /// A degraded array means one or more disks are missing or faulty.
-        fs::path sys_block("/sys/block");
-        if (fs::exists(sys_block))
-        {
-            std::optional<PreformattedMessage> resync_warning;
-            std::optional<PreformattedMessage> degraded_warning;
-
-            for (const auto & entry : fs::directory_iterator(sys_block))
-            {
-                const auto name = entry.path().filename().string();
-                if (!name.starts_with("md"))
-                    continue;
-
-                auto sync_action_path = entry.path() / "md" / "sync_action";
-                if (fs::exists(sync_action_path))
-                {
-                    String sync_action = readLine(sync_action_path.string());
-                    if (sync_action != "idle")
-                    {
-                        resync_warning = PreformattedMessage::create(
-                            "Linux mdraid array {} is currently performing `{}`. Disk I/O performance can be degraded. Check {}",
-                            name, sync_action, sync_action_path.string());
-                    }
-                }
-
-                auto array_state_path = entry.path() / "md" / "array_state";
-                if (fs::exists(array_state_path))
-                {
-                    static const std::unordered_set<String> normal_states = {"active", "active-idle", "clean", "write-pending", "readonly", "read-auto"};
-                    String array_state = readLine(array_state_path.string());
-                    if (!normal_states.contains(array_state))
-                    {
-                        degraded_warning = PreformattedMessage::create(
-                            "Linux mdraid array {} has state `{}`. Check {}",
-                            name, array_state, array_state_path.string());
-                    }
-                }
-
-                if (resync_warning && degraded_warning)
-                    break;
-            }
-
-            server.context()->addOrUpdateWarningMessage(
-                Context::WarningType::LINUX_MDRAID_IS_BEING_RESYNCHRONIZED, resync_warning);
-            server.context()->addOrUpdateWarningMessage(
-                Context::WarningType::LINUX_MDRAID_IS_DEGRADED, degraded_warning);
-        }
-    }
-    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
-    {
-    }
-#endif
-
-#if USE_JEMALLOC && (defined(OS_LINUX) || defined(OS_DARWIN))
-    {
-        /// Whether disabled at runtime by jemalloc itself or overridden by the operator, per-CPU
-        /// arenas are worth recommending on platforms with a working current-CPU query.
-        const char * effective_mode = nullptr;
-        if (Jemalloc::tryGetValue("opt.percpu_arena", effective_mode) && effective_mode == std::string_view("disabled"))
-        {
-            server.context()->addOrUpdateWarningMessage(
-                Context::WarningType::JEMALLOC_PERCPU_ARENA_DISABLED,
-                PreformattedMessage::create(
-                    "jemalloc per-CPU arenas are disabled, either via configuration or automatically by jemalloc itself "
-                    "(it disables them at startup when it cannot query the current CPU). They reduce memory usage by "
-                    "capping the arena count at the number of CPUs"));
-        }
-    }
-#endif
-
-    try
-    {
-        if (getAvailableMemoryAmount() < (2l << 30))
-            server.context()->addOrUpdateWarningMessage(
-                Context::WarningType::AVAILABLE_MEMORY_TOO_LOW,
-                PreformattedMessage::create("Available memory at server startup is too low (2GiB)."));
-    }
-    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
-    {
-    }
-
-    try
-    {
-        if (!enoughSpaceInDirectory(data_path, 1ull << 30))
-            server.context()->addOrUpdateWarningMessage(
-                Context::WarningType::AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
-                PreformattedMessage::create("Available disk space for data at server startup is too low (1GiB): {}", String(data_path)));
-    }
-    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
-    {
-    }
-
-    try
-    {
-        if (!logs_path.empty() && fs::is_regular_file(logs_path))
-        {
-            auto logs_parent = fs::path(logs_path).parent_path();
-            if (!enoughSpaceInDirectory(logs_parent, 1ull << 30))
-                server.context()->addOrUpdateWarningMessage(
-                    Context::WarningType::AVAILABLE_DISK_SPACE_TOO_LOW_FOR_LOGS,
-                    PreformattedMessage::create("Available disk space for logs at server startup is too low (1GiB): {}", String(logs_parent)));
-        }
-    }
-    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
-    {
-    }
-
-    if (server.context()->getMergeTreeSettings()[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
-    {
-        constexpr auto message_format_string
-            = "The setting 'allow_remote_fs_zero_copy_replication' is enabled for MergeTree tables."
-              " But the feature of 'zero-copy replication' is under development and is not ready for production."
-              " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production.";
-        server.context()->addOrUpdateWarningMessage(
-            Context::WarningType::SETTING_ZERO_COPY_REPLICATION_ENABLED,
-            PreformattedMessage::create(message_format_string));
-    }
-}
-
-}
-
-namespace
-{
-
 void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const ServerSettings & server_settings, ContextMutablePtr context, Poco::Logger * log)
 {
     try
@@ -1277,31 +1013,6 @@ namespace
 Strings servedHTTPHandlersKeys(const Poco::Util::AbstractConfiguration & config);
 bool hasPrometheusListener(const Poco::Util::AbstractConfiguration & config);
 }
-
-#if defined(SANITIZER)
-namespace
-{
-std::vector<String> getSanitizerNames()
-{
-    std::vector<String> names;
-
-#if defined(ADDRESS_SANITIZER)
-    names.push_back("address");
-#endif
-#if defined(THREAD_SANITIZER)
-    names.push_back("thread");
-#endif
-#if defined(MEMORY_SANITIZER)
-    names.push_back("memory");
-#endif
-#if defined(UNDEFINED_BEHAVIOR_SANITIZER)
-    names.push_back("undefined behavior");
-#endif
-
-    return names;
-}
-}
-#endif
 
 int Server::main(const std::vector<std::string> & /*args*/)
 try
@@ -1608,40 +1319,8 @@ try
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
 
-#if !defined(NDEBUG) || !defined(__OPTIMIZE__)
-    global_context->addOrUpdateWarningMessage(Context::WarningType::SERVER_BUILT_IN_DEBUG_MODE, PreformattedMessage::create("Server was built in debug mode. It will work slowly."));
-#endif
-
-    {
-        const auto & thread_fuzzer = ThreadFuzzer::instance();
-        thread_fuzzer.setup();
-        if (thread_fuzzer.isEffective())
-            global_context->addOrUpdateWarningMessage(
-                Context::WarningType::THREAD_FUZZER_IS_ENABLED,
-                PreformattedMessage::create("ThreadFuzzer is enabled. Application will run slowly and unstable."));
-    }
-
-#if defined(SANITIZER)
-    auto sanitizers = getSanitizerNames();
-
-    String log_message;
-    if (sanitizers.empty())
-        log_message = "sanitizer";
-    else if (sanitizers.size() == 1)
-        log_message = fmt::format("{} sanitizer", sanitizers.front());
-    else
-        log_message = fmt::format("sanitizers ({})", fmt::join(sanitizers, ", "));
-
-    global_context->addOrUpdateWarningMessage(
-        Context::WarningType::SERVER_BUILT_WITH_SANITIZERS,
-        PreformattedMessage::create("Server was built with {}. It will work slowly.", log_message));
-#endif
-
-#if WITH_COVERAGE
-    global_context->addOrUpdateWarningMessage(
-        Context::WarningType::SERVER_BUILT_WITH_COVERAGE,
-        PreformattedMessage::create("Server was built with code coverage. It will work slowly."));
-#endif
+    ThreadFuzzer::instance().setup();
+    addBuildWarnings(global_context);
 
     /// Under thread sanitizer we use frame-pointer-based unwinding (via abseil) which does not
     /// call dl_iterate_phdr in the signal handler, so the PHDR cache is not needed.
@@ -1654,6 +1333,14 @@ try
         LOG_INFO(log, "Query Profiler and TraceCollector are disabled because async-signal-safe stack unwinding"
             " is not available in this build (on Linux this requires the lock-free PHDR cache, otherwise"
             " 'dl_iterate_phdr' is not lock free and not async-signal safe).");
+#endif
+
+#if defined(MEMORY_SANITIZER)
+    /// The TraceCollector itself stays enabled: the memory profiler, `trace_profile_events` and
+    /// `SYSTEM INSTRUMENT` all feed it from ordinary code rather than from a signal handler.
+    LOG_INFO(log, "The sampling Query Profiler is disabled under Memory Sanitizer, because a profiler signal"
+        " delivered to a thread that is printing a sanitizer report aborts the process and truncates the"
+        " report. See QUERY_PROFILER_SUPPORTED in Common/QueryProfiler.h.");
 #endif
 
     // Settings validation for page cache. Ensure that page_cache_max_size is > page_cache_min_size.
@@ -1997,6 +1684,11 @@ try
         server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
         server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 
+    getIcebergManifestDecodeThreadPool().initialize(
+        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
+        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
+        server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
+
     std::string path_str = getCanonicalPath(String(server_settings[ServerSetting::path]), original_working_directory);
     fs::path path = path_str;
 
@@ -2053,18 +1745,7 @@ try
     /// Create the dedicated MergeTree metadata arena pool. Placed after the ZooKeeper-include reload
     /// above so a `from_zk` value of the setting is honored, and still well before any parts are loaded.
     JemallocMergeTreeArena::initialize(server_settings[ServerSetting::jemalloc_merge_tree_arenas]);
-    const size_t created_arenas = JemallocMergeTreeArena::getArenaIndices().size();
-    const size_t intended_arenas = JemallocMergeTreeArena::getIntendedArenaCount();
-    if (created_arenas < intended_arenas)
-    {
-        global_context->addOrUpdateWarningMessage(
-            Context::WarningType::MERGE_TREE_JEMALLOC_ARENA_POOL_DEGRADED,
-            PreformattedMessage::create(
-                "Could only create {} of the {} requested dedicated jemalloc arena(s) for MergeTree metadata; {}.",
-                created_arenas, intended_arenas,
-                created_arenas > 0 ? "the pool runs with the created arenas"
-                                   : "MergeTree metadata falls back to the default arenas"));
-    }
+    addMergeTreeArenaPoolWarnings(global_context);
 
 #if defined(OS_LINUX)
     if (server_settings[ServerSetting::skip_binary_checksum_checks])
@@ -2668,26 +2349,25 @@ try
         tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
     }
 
-    std::string cert_path = server_settings[ServerSetting::openssl_server_certificate_file];
-    std::string key_path = server_settings[ServerSetting::openssl_server_private_key_file];
-
+    /// TLS certificates, keys and CA certificates are reloaded by CertificateReloader when these files change.
     std::vector<std::string> extra_paths = {include_from_path};
-    if (!cert_path.empty())
-        extra_paths.emplace_back(cert_path);
-    if (!key_path.empty())
-        extra_paths.emplace_back(key_path);
+    auto watch_path = [&](const std::string & file_path)
+    {
+        if (!file_path.empty())
+            extra_paths.emplace_back(file_path);
+    };
+    watch_path(server_settings[ServerSetting::openssl_server_certificate_file]);
+    watch_path(server_settings[ServerSetting::openssl_server_private_key_file]);
+    watch_path(server_settings[ServerSetting::openssl_server_ca_config]);
+    watch_path(server_settings[ServerSetting::openssl_client_certificate_file]);
+    watch_path(server_settings[ServerSetting::openssl_client_private_key_file]);
+    watch_path(server_settings[ServerSetting::openssl_client_ca_config]);
 
     Poco::Util::AbstractConfiguration::Keys protocols;
     config().keys("protocols", protocols);
     for (const auto & protocol : protocols)
-    {
-        cert_path = config().getString("protocols." + protocol + ".certificateFile", "");
-        key_path = config().getString("protocols." + protocol + ".privateKeyFile", "");
-        if (!cert_path.empty())
-            extra_paths.emplace_back(cert_path);
-        if (!key_path.empty())
-            extra_paths.emplace_back(key_path);
-    }
+        for (const auto * key : {"certificateFile", "privateKeyFile", "caConfig"})
+            watch_path(config().getString("protocols." + protocol + "." + key, ""));
 
     DNSResolver::instance().setFilterSettings(server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
     /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
@@ -3046,6 +2726,11 @@ try
                 new_server_settings[ServerSetting::max_format_parsing_thread_pool_size],
                 new_server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
                 new_server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
+
+            getIcebergManifestDecodeThreadPool().reloadConfiguration(
+                new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
+                new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
+                new_server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
 
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
@@ -3538,7 +3223,7 @@ try
     /// NOTE: Do sanity checks after we loaded all possible substitutions (for the configuration) from ZK
     /// Additionally, making the check after the default profile is initialized.
     /// It is important to initialize MergeTreeSettings after Settings, to support compatibility for MergeTreeSettings.
-    sanityChecks(*this, server_settings);
+    addEnvironmentWarnings(global_context, logger(), path_str, server_settings[ServerSetting::logger_log]);
 
     /// Check sanity of MergeTreeSettings on server startup
     {

@@ -29,6 +29,7 @@ namespace Setting
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool distributed_plan_optimize_exchanges;
+    extern const SettingsBool cascades_aggregation_pushdown;
     extern const SettingsBool enable_cascades_optimizer;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool enable_join_runtime_filters;
@@ -60,7 +61,10 @@ namespace Setting
     extern const SettingsBool query_plan_enable_optimizations;
     extern const SettingsBool query_plan_execute_functions_after_sorting;
     extern const SettingsBool query_plan_filter_push_down;
+    extern const SettingsBool query_plan_propagate_predicate_across_join;
     extern const SettingsBool query_plan_fuse_filter_into_array_join;
+    extern const SettingsBool query_plan_lower_array_join_function;
+    extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool query_plan_join_shard_by_pk_ranges;
     extern const SettingsBool query_plan_lift_up_array_join;
@@ -89,6 +93,7 @@ namespace Setting
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
     extern const SettingsBool use_join_disjunctions_push_down;
+    extern const SettingsBool use_primary_key;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsBool use_skip_indexes_for_top_k;
@@ -118,6 +123,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 distributed_plan_default_reader_bucket_count;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
+    extern const SettingsBool distributed_plan_read_in_order;
     extern const SettingsBool distributed_plan_prefer_replicas_over_workers;
     extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
     extern const SettingsUInt64 join_runtime_bloom_filter_hash_functions;
@@ -180,7 +186,12 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     merge_filters = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filters];
     push_limit_by_into_sort = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_limit_by_into_sort];
     filter_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_filter_push_down];
+    /// Without `use_primary_key` the copy would just be a full scan filter
+    propagate_predicate_across_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_propagate_predicate_across_join]
+        && from[Setting::use_primary_key];
     fuse_filter_into_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_fuse_filter_into_array_join];
+    lower_array_join_function = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lower_array_join_function];
+    enable_lazy_columns_replication = from[Setting::enable_lazy_columns_replication];
     short_circuit_function_evaluation_disabled = from[Setting::short_circuit_function_evaluation] == ShortCircuitFunctionEvaluation::DISABLE;
     push_down_volume_reducing_functions
         = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_volume_reducing_functions];
@@ -303,12 +314,14 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distributed_plan_force_exchange_kind = "Persisted";
 #endif
     distributed_plan_max_rows_to_broadcast = from[Setting::distributed_plan_max_rows_to_broadcast];
+    distributed_plan_read_in_order = from[Setting::distributed_plan_read_in_order];
     distributed_plan_force_shuffle_aggregation = from[Setting::distributed_plan_force_shuffle_aggregation];
     distributed_aggregation_memory_efficient = from[Setting::distributed_aggregation_memory_efficient];
     distributed_plan_prefer_replicas_over_workers = from[Setting::distributed_plan_prefer_replicas_over_workers];
     exact_rows_before_limit = from[Setting::exact_rows_before_limit];
 
     enable_cascades_optimizer = from[Setting::enable_cascades_optimizer];
+    cascades_aggregation_pushdown = from[Setting::cascades_aggregation_pushdown];
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization] && from[Setting::allow_experimental_analyzer];
     optimize_lazy_materialization_for_object_storage = from[Setting::query_plan_optimize_lazy_materialization_for_object_storage];

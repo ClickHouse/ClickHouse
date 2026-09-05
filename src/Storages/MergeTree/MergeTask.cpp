@@ -31,8 +31,8 @@
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ExtractColumnsStep.h>
@@ -241,23 +241,16 @@ private:
     std::shared_ptr<BuildStatisticsTransform> transform;
 };
 
-/// `PullingPipelineExecutor::pull` returns `false` both on a genuine end-of-stream and when the
-/// pipeline is cancelled (query kill or a soft `max_execution_time` with `timeout_overflow_mode = 'break'`).
-/// A merge that ran with the user query's limits (e.g. `OPTIMIZE ... DRY RUN`, which executes the merge
-/// synchronously in the query) can therefore be silently truncated. If we treat that as a normal finish,
-/// the merge finalizes a partial part and the row-count invariants in the merge stages fire a LOGICAL_ERROR.
-/// Detect the cancellation here and throw the proper error instead.
-static void throwIfMergePipelineCancelled(const PullingPipelineExecutor & executor)
+static void throwIfPipelineCancelled(const QueryPipeline & pipeline)
 {
-    switch (executor.getExecutionStatus())
-    {
-        case PipelineExecutor::ExecutionStatus::CancelledByTimeout:
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while merging parts");
-        case PipelineExecutor::ExecutionStatus::CancelledByUser:
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while merging parts");
-        default:
-            break;
-    }
+    const auto process_list_element = pipeline.getProcessListElement();
+    if (!process_list_element || process_list_element->checkTimeLimitSoft())
+        return;
+
+    if (process_list_element->isKilled() && process_list_element->getCancelReason() != CancelReason::TIMEOUT)
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
+    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded");
 }
 
 /// Manages the "rows_sources" temporary file that is used during vertical merge.
@@ -1047,13 +1040,43 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// (which is locked in shared mode when input streams are created) and when inserting new data
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
-    auto part_compression_codec = global_ctx->data->getCompressionCodecForPart(
-        global_ctx->metadata_snapshot,
-        global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
-        global_ctx->new_data_part->ttl_infos,
-        global_ctx->time_of_merge);
-    global_ctx->compression_codec = std::move(part_compression_codec.codec);
-    global_ctx->is_explicit_recompression = part_compression_codec.is_explicit_recompression;
+    /// The parent's default codec is worth inheriting only when it is a fact. When the parent part
+    /// lost its `default_compression_codec.txt` and the codec was merely recovered from
+    /// `checksums.txt` (`IMergeTreeDataPart::default_codec_is_approximate`), inheriting it would
+    /// compress this freshly written projection with a guess and record that guess as authoritative
+    /// in the projection's own codec file. Choose the codec for the projection independently in that
+    /// case - nothing of the parent is reused here, the projection data is written from scratch.
+    const bool inherit_parent_codec = global_ctx->projection && !global_ctx->parent_part->default_codec_is_approximate;
+
+    if (inherit_parent_codec)
+    {
+        /// When merging existing projection parts, inherit the default codec of the parent part
+        /// they belong to. Choosing it from the projection's own (much smaller) combined size would
+        /// leave a projection of a large (`ZSTD`) parent part on the size-aware `LZ4` - and would
+        /// even downgrade a projection that was already written as `ZSTD` back to `LZ4`. The parent
+        /// resolves its codec before its projections are merged. Preserve whether the parent codec
+        /// came from an explicit `RECOMPRESS` TTL: adaptive codec selection must not replace that
+        /// codec while rewriting the projection data.
+        chassert(global_ctx->parent_part->default_codec);
+        global_ctx->compression_codec = global_ctx->parent_part->default_codec;
+        global_ctx->is_explicit_recompression = global_ctx->parent_part->default_codec_is_explicit_recompression;
+    }
+    else
+    {
+        auto part_compression_codec = global_ctx->data->getCompressionCodecForPart(
+            global_ctx->metadata_snapshot,
+            global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
+            global_ctx->new_data_part->ttl_infos,
+            global_ctx->time_of_merge);
+        global_ctx->compression_codec = std::move(part_compression_codec.codec);
+        global_ctx->is_explicit_recompression = part_compression_codec.is_explicit_recompression;
+    }
+
+    /// Record the chosen codec on the part so that its projections (merged by the sub-merge above,
+    /// or rebuilt via `writeTempProjectionPart`) inherit the same codec, together with whether it
+    /// was asked for by an explicit `RECOMPRESS` TTL.
+    global_ctx->new_data_part->default_codec = global_ctx->compression_codec;
+    global_ctx->new_data_part->default_codec_is_explicit_recompression = global_ctx->is_explicit_recompression;
 
     switch (global_ctx->chosen_merge_algorithm)
     {
@@ -1616,7 +1639,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
     {
         auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
         auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-            *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+            *global_ctx->data, result, projection, global_ctx->new_data_part.get(),
+            global_ctx->compression_codec, ++ctx->projection_block_num,
+            /*use_selected_codec=*/ false, global_ctx->is_explicit_recompression, global_ctx->context);
 
         tmp_part->finalize();
         tmp_part->part->getDataPartStorage().commitTransaction();
@@ -1658,7 +1683,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+                *global_ctx->data, result, projection, global_ctx->new_data_part.get(),
+                global_ctx->compression_codec, ++ctx->projection_block_num,
+                /*use_selected_codec=*/ false, global_ctx->is_explicit_recompression, global_ctx->context);
 
             temp_part->finalize();
             temp_part->part->getDataPartStorage().commitTransaction();
@@ -1803,7 +1830,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
             if (cancelled)
                 global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
             else
-                throwIfMergePipelineCancelled(*global_ctx->merging_executor);
+                throwIfPipelineCancelled(global_ctx->merged_pipeline);
             finalize();
             return false;
         }
@@ -2181,7 +2208,7 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
             if (cancelled)
                 global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
             else
-                throwIfMergePipelineCancelled(*ctx->executor);
+                throwIfPipelineCancelled(ctx->column_parts_pipeline);
             return false;
         }
 
