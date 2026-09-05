@@ -36,6 +36,16 @@ ACCESS_DENIED
 ACCESS_DENIED
 -- analyzer=1: 19 custom key shipped to the replicas, over granted column
 2
+-- analyzer=1: 20 definer view, custom key over a view column shadowing a denied table column
+2
+-- analyzer=1: 21 none view, custom key over a view column shadowing a denied table column
+2
+-- analyzer=1: 22 definer view, custom key over a denied table column that the view does not expose
+UNKNOWN_IDENTIFIER
+-- analyzer=1: 23 definer view, custom key over a view column
+1
+-- analyzer=1: 24 none view, filter keyed by underlying table over denied column
+2
 -- analyzer=0: 01 control
 ACCESS_DENIED
 -- analyzer=0: 02 filter over denied column
@@ -73,4 +83,14 @@ ACCESS_DENIED
 -- analyzer=0: 18 custom key shipped to the replicas, over denied column
 ACCESS_DENIED
 -- analyzer=0: 19 custom key shipped to the replicas, over granted column
+2
+-- analyzer=0: 20 definer view, custom key over a view column shadowing a denied table column
+2
+-- analyzer=0: 21 none view, custom key over a view column shadowing a denied table column
+2
+-- analyzer=0: 22 definer view, custom key over a denied table column that the view does not expose
+UNKNOWN_IDENTIFIER
+-- analyzer=0: 23 definer view, custom key over a view column
+1
+-- analyzer=0: 24 none view, filter keyed by underlying table over denied column
 2

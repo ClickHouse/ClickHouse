@@ -8198,6 +8198,8 @@ Simple expressions using primary keys are preferred.
 
 If the setting is used on a cluster that consists of a single shard with multiple replicas, those replicas will be converted into virtual shards.
 Otherwise, it will behave same as for `SAMPLE` key, it will use multiple replicas of each shard.
+
+The expression is checked against the column-level `SELECT` grants of the user. For a view with `SQL SECURITY DEFINER` or `NONE` it is applied to the columns of the view; the body of the view is read without it.
 )", BETA) \
     DECLARE(UInt64, parallel_replicas_custom_key_range_lower, 0, R"(
 Allows the filter type `range` to split the work evenly between replicas based on the custom range `[parallel_replicas_custom_key_range_lower, INT_MAX]`.

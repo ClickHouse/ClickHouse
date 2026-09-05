@@ -22,6 +22,10 @@ CREATE TABLE d (id UInt8, public_label String, secret_token String) ENGINE = Dis
 CREATE TABLE d3 (id UInt8, public_label String, secret_token String) ENGINE = Distributed(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t);
 CREATE VIEW v_inv SQL SECURITY INVOKER AS SELECT id, public_label FROM t;
 CREATE VIEW v_def SQL SECURITY DEFINER DEFINER = CURRENT_USER AS SELECT id, public_label FROM t;
+-- The view column secret_token shadows the denied table column: a custom key over it resolves on the view,
+-- and must not be re-evaluated over the table inside the DEFINER/NONE body.
+CREATE VIEW v_def_shadow SQL SECURITY DEFINER DEFINER = CURRENT_USER AS SELECT id, public_label, '' AS secret_token FROM t;
+CREATE VIEW v_none_shadow SQL SECURITY NONE AS SELECT id, public_label, '' AS secret_token FROM t;
 
 CREATE USER $u_low IDENTIFIED WITH plaintext_password BY 'password';
 CREATE USER $u_alias IDENTIFIED WITH plaintext_password BY 'password';
@@ -33,6 +37,8 @@ GRANT SELECT(id, public_label) ON $DB.d3 TO $u_low;
 GRANT SELECT ON $DB.v_inv TO $u_low;
 GRANT SELECT(alias_col) ON $DB.t TO $u_alias;
 GRANT SELECT ON $DB.v_def TO $u_view;
+GRANT SELECT ON $DB.v_def_shadow TO $u_view;
+GRANT SELECT ON $DB.v_none_shadow TO $u_view;
 "
 
 err_file="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.err"
@@ -110,9 +116,29 @@ run "$u_low" "SELECT sum(c) FROM (SELECT count() AS c FROM d3) SETTINGS enable_a
 echo "-- analyzer=$analyzer: 19 custom key shipped to the replicas, over granted column"
 run "$u_low" "SELECT sum(c) FROM (SELECT count() AS c FROM d3) SETTINGS enable_analyzer=$analyzer, max_parallel_replicas = 3, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'id'"
 
+# The invoker's key is applied to the view's own columns, where it is 0 for every row, so replica 0 of 2 keeps
+# both rows. The DEFINER/NONE body reads without the key: re-evaluated over t as the definer, the key
+# would be 1 for the row with the real secret, that row would drop out, and the count would reveal it.
+echo "-- analyzer=$analyzer: 20 definer view, custom key over a view column shadowing a denied table column"
+run "$u_view" "SELECT count() FROM v_def_shadow SETTINGS enable_analyzer=$analyzer, cluster_for_parallel_replicas = 'test_shard_localhost', max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_count = 2, parallel_replica_offset = 0, parallel_replicas_custom_key = 'secret_token = ''$T'''"
+
+echo "-- analyzer=$analyzer: 21 none view, custom key over a view column shadowing a denied table column"
+run "$u_view" "SELECT count() FROM v_none_shadow SETTINGS enable_analyzer=$analyzer, cluster_for_parallel_replicas = 'test_shard_localhost', max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_count = 2, parallel_replica_offset = 0, parallel_replicas_custom_key = 'secret_token = ''$T'''"
+
+echo "-- analyzer=$analyzer: 22 definer view, custom key over a denied table column that the view does not expose"
+run "$u_view" "SELECT count() FROM v_def SETTINGS enable_analyzer=$analyzer, cluster_for_parallel_replicas = 'test_shard_localhost', max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_count = 2, parallel_replica_offset = 1, parallel_replicas_custom_key = 'secret_token = ''$T'''"
+
+echo "-- analyzer=$analyzer: 23 definer view, custom key over a view column"
+run "$u_view" "SELECT count() FROM v_def SETTINGS enable_analyzer=$analyzer, cluster_for_parallel_replicas = 'test_shard_localhost', max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_count = 2, parallel_replica_offset = 1, parallel_replicas_custom_key = 'id'"
+
+echo "-- analyzer=$analyzer: 24 none view, filter keyed by underlying table over denied column"
+run "$u_view" "SELECT count() FROM v_none_shadow SETTINGS enable_analyzer=$analyzer, additional_table_filters = {'$DB.t': 'secret_token = ''$T'''}"
+
 done
 
 $CLICKHOUSE_CLIENT -n -q "
+DROP VIEW IF EXISTS v_none_shadow;
+DROP VIEW IF EXISTS v_def_shadow;
 DROP VIEW IF EXISTS v_def;
 DROP VIEW IF EXISTS v_inv;
 DROP TABLE IF EXISTS d3;
