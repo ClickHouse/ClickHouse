@@ -52,6 +52,14 @@ SELECT 'qualify_r', count(), uniqExact(k) FROM (SELECT l.k AS k FROM ${DB}.jm_m 
 SELECT 'having_r', count(), uniqExact(k) FROM (SELECT l.k AS k FROM ${DB}.jm_m AS l LEFT JOIN ${DB}.jr AS r USING (k) HAVING r.k);
 SELECT 'qualify_l', count(), uniqExact(k) FROM (SELECT l.k AS k FROM ${DB}.jm_m AS l LEFT JOIN ${DB}.jr AS r USING (k) QUALIFY l.k);
 
+-- PREWHERE is stripped through a separate call site from WHERE, so it is pinned on its own.
+-- Only the inner-join form is pinned: its result does not depend on whether the predicate is
+-- applied before or after the join, so it must equal the WHERE form of the same predicate.
+-- With an outer join, PREWHERE is applied before the join by design (#89097).
+SELECT 'prewhere_r', count(), uniqExact(k) FROM (SELECT l.k AS k FROM ${DB}.jm_m AS l JOIN ${DB}.jr AS r USING (k) PREWHERE r.k);
+SELECT 'prewhere_on_r', count(), uniqExact(k) FROM (SELECT l.k AS k FROM ${DB}.jm_m AS l JOIN ${DB}.jr AS r ON l.k = r.k PREWHERE r.k);
+SELECT 'prewhere_l', count(), uniqExact(k) FROM (SELECT l.k AS k FROM ${DB}.jm_m AS l JOIN ${DB}.jr AS r USING (k) PREWHERE l.k);
+
 -- Self-join of the Merge table, with ON and with USING: one table is enough to reach it.
 SELECT 'self_join_on_r', count(), uniqExact(k) FROM (SELECT l.k AS k FROM ${DB}.jm_m AS l JOIN ${DB}.jm_m AS r ON l.k = r.k WHERE r.k);
 SELECT 'self_join_using_r', count(), uniqExact(k) FROM (SELECT l.k AS k FROM ${DB}.jm_m AS l JOIN ${DB}.jm_m AS r USING (k) WHERE r.k);
