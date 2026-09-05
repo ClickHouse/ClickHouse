@@ -16,6 +16,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <base/find_symbols.h>
 #include <Common/assert_cast.h>
+#include <Common/logger_useful.h>
 
 namespace DB::ErrorCodes
 {
@@ -341,6 +342,24 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                         lower_reference_data_file_path.emplace(Iceberg::IcebergPathFromMetadata::deserialize(lower.safeGet<String>()));
                     if (!upper.isNull())
                         upper_reference_data_file_path.emplace(Iceberg::IcebergPathFromMetadata::deserialize(upper.safeGet<String>()));
+
+                    /// A lower bound sorting above the upper bound describes no range of paths, so it cannot say
+                    /// which data files this delete file references. Dropping both leaves them as a manifest that
+                    /// declares no bounds does.
+                    if (lower_reference_data_file_path.has_value() && upper_reference_data_file_path.has_value()
+                        && *upper_reference_data_file_path < *lower_reference_data_file_path)
+                    {
+                        LOG_WARNING(
+                            getLogger("AvroForIcebergDeserializer"),
+                            "Manifest file '{}' declares a reference data file lower bound above its upper bound for "
+                            "position delete file '{}' ('{}' > '{}'); ignoring both bounds",
+                            manifest_file_path.serialize(),
+                            file_path_key.serialize(),
+                            lower_reference_data_file_path->serialize(),
+                            upper_reference_data_file_path->serialize());
+                        lower_reference_data_file_path.reset();
+                        upper_reference_data_file_path.reset();
+                    }
                 }
             }
             return std::make_shared<const ParsedManifestFileEntry>(
