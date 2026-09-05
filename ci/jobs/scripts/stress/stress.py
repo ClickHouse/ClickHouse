@@ -434,14 +434,47 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
 
     if i % 5 == 1:
         client_options.append("memory_tracker_fault_probability=0.001")
+        if random.random() < 1 / 2:
+            # Track allocations in 1 MiB batches instead of the default 4 MiB, so more
+            # allocations pass through the tracker and can draw an injected fault.
+            client_options.append("max_untracked_memory=1048576")
+        # Write sampled allocations to system.trace_log as MemorySample. users.d/memory_profiler.xml
+        # sets memory_profiler_step and max_untracked_memory but leaves this at 0, so allocation
+        # sampling is off in every stress run today.
+        client_options.append("memory_profiler_sample_probability=0.01")
 
     if i % 5 == 1:
         client_options.append(
             "merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.05"
         )
 
+    if i % 5 == 3:
+        # Keeper fault injection: every replicated INSERT commit and every BACKUP/RESTORE
+        # coordination step can draw a fault, exercising the retry and dedup logic.
+        client_options.append("insert_keeper_fault_injection_probability=0.005")
+        client_options.append("backup_restore_keeper_fault_injection_probability=0.005")
+        # Fault after the ReplicatedMergeTree metadata is written to Keeper but before the
+        # table is created, exercising dropIfEmpty() cleanup and re-creation over the leftover
+        # znodes. This one throws instead of retrying, and a CREATE is far rarer than an INSERT
+        # commit, so it gets a higher probability than the two above but stays low.
+        client_options.append(
+            "create_replicated_merge_tree_fault_injection_probability=0.01"
+        )
+
     if i % 2 == 1 and not upgrade_check:
         client_options.append("group_by_use_nulls=1")
+
+    # Widen NULL coverage the way join_use_nulls/group_by_use_nulls do: each of these rewrites
+    # a broad query class (IN evaluation, every CAST, every aggregate over an empty set).
+    # Independent draws so the three can combine, up to all three on one worker. Not keyed on
+    # `i`: --num-parallel is min(8, cpu_count()), so the earlier `i % 7 == 4` / `i % 7 == 6`
+    # arms never fired at all on a runner with fewer than 5 and 7 cores.
+    if random.random() < 1 / 3:
+        client_options.append("transform_null_in=1")
+    if random.random() < 1 / 3:
+        client_options.append("cast_keep_nullable=1")
+    if random.random() < 1 / 3:
+        client_options.append("aggregate_functions_null_for_empty=1")
 
     # TODO: Enable implicit_transaction back after the issue with `assertHasValidVersionMetadata` will be fixed:
     # https://play.clickhouse.com/play?user=play&run=1#U0VMRUNUIGNoZWNrX3N0YXJ0X3RpbWUsIGNoZWNrX25hbWUsIHRlc3RfbmFtZSwgcmVwb3J0X3VybApGUk9NIGNoZWNrcwpXSEVSRSAxCiAgICBBTkQgY2hlY2tfc3RhcnRfdGltZSA+PSBub3coKSAtIElOVEVSVkFMIDEwIERBWQogICAgQU5EIChoZWFkX3JlZiA9ICdtYXN0ZXInIEFORCBzdGFydHNXaXRoKGhlYWRfcmVwbywgJ0NsaWNrSG91c2UvJykpCiAgICBBTkQgdGVzdF9zdGF0dXMgIT0gJ1NLSVBQRUQnCiAgICBBTkQgKHRlc3Rfc3RhdHVzIExJS0UgJ0YlJyBPUiB0ZXN0X3N0YXR1cyBMSUtFICdFJScpCiAgICBBTkQgY2hlY2tfc3RhdHVzICE9ICdzdWNjZXNzJwogICAgQU5EIGNoZWNrX25hbWUgTk9UIExJS0UgJ2xpYkZ1enplciUnCiAgICBBTkQgY2hlY2tfbmFtZSAhPSAnQ2xpY2tIb3VzZSBLZWVwZXIgSmVwc2VuJwogICAgQU5EIHRlc3RfbmFtZSBMSUtFICclYXNzZXJ0SGFzVmFsaWRWZXJzaW9uTWV0YWRhdGElJwpPUkRFUiBCWSBjaGVja19zdGFydF90aW1lIERFU0M=
@@ -462,6 +495,9 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         client_options.append("max_parallel_replicas=3")
         client_options.append("cluster_for_parallel_replicas='parallel_replicas'")
         client_options.append("parallel_replicas_for_non_replicated_merge_tree=1")
+        if random.random() < 1 / 2:
+            # Ship serialized query plans to the replicas instead of query text.
+            client_options.append("serialize_query_plan=1")
 
     if random.random() < 0.2:
         client_options.append(
@@ -481,9 +517,66 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
 
     if random.random() < 0.2:
         client_options.append("async_insert=1")
+        # Fire-and-forget: the INSERT returns before the flush lands. Disabled because any
+        # test that inserts then selects reads an empty table, which fails the smoke check.
+        # if random.random() < 1 / 2:
+        #     client_options.append("wait_for_async_insert=0")
 
     if random.random() < 0.05:
         client_options.append("enable_join_runtime_filters=1")
+
+    # A 26.8 setting: the pre-upgrade load of the upgrade check runs against the previous
+    # release server, which may reject it as unknown.
+    if random.random() < 0.2 and not upgrade_check:
+        client_options.append("enable_cascades_optimizer=1")
+
+    if random.random() < 0.2:
+        client_options.append("apply_mutations_on_fly=1")
+
+    if random.random() < 0.2:
+        # Collect per-query metrics every 100ms instead of the default 1000ms.
+        client_options.append("query_metric_log_interval=100")
+
+    if random.random() < 0.2:
+        client_options.append("opentelemetry_start_trace_probability=0.1")
+        if random.random() < 1 / 2:
+            # Traced queries also get one span per processor, multiplying the span volume.
+            client_options.append("opentelemetry_trace_processors=1")
+
+    if random.random() < 0.2:
+        client_options.append("network_compression_method='zstd'")
+
+    if random.random() < 0.2:
+        # Route DELETE FROM and ALTER UPDATE through lightweight updates (patch parts) instead
+        # of heavy mutations. The `*_force` variants fail where patch parts are unsupported, so
+        # they stay the rare arm.
+        delete_mode = (
+            "lightweight_update_force"
+            if random.random() < 0.25
+            else "lightweight_update"
+        )
+        update_mode = (
+            "lightweight_force" if random.random() < 0.25 else "lightweight"
+        )
+        client_options.append(f"lightweight_delete_mode='{delete_mode}'")
+        client_options.append(f"alter_update_mode='{update_mode}'")
+        client_options.append(
+            f"update_parallel_mode='{random.choice(['sync', 'auto'])}'"
+        )
+
+    if random.random() < 0.2:
+        # Dependent materialized views are written in parallel instead of sequentially.
+        client_options.append("parallel_view_processing=1")
+
+    if random.random() < 0.2:
+        # Rewrite IN/JOIN to GLOBAL IN/GLOBAL JOIN; pays off in the replicated-database and
+        # parallel-replicas workers.
+        client_options.append("prefer_global_in_and_join=1")
+
+    # Compute extremes for every SELECT. Disabled because it appends an extremes block
+    # (blank line, then the min and max rows) to every result, so no reference matches.
+    # if random.random() < 0.2:
+    #     client_options.append("extremes=1")
 
     # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
     # That is why we use it with fallback to 'greedy'.
