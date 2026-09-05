@@ -1974,6 +1974,18 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Bool, use_statistics_for_min_max_aggregation, true, R"(
+Answer `min`, `max` and `count` aggregations from per-part column statistics instead of reading data.
+
+When enabled, a query of the form `SELECT min(column), max(column), count() FROM table` without `GROUP BY` and filters
+is answered from column statistics (e.g. MinMax statistics, see the `auto_statistics_types` MergeTree setting)
+for the data parts that have them materialized, and only the remaining parts are read.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
     DECLARE(Bool, use_top_k_dynamic_filtering, true, R"(
 Enable dynamic filtering optimization when executing a `ORDER BY <column> LIMIT n` query.
 
@@ -8749,6 +8761,9 @@ Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or 
 )", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
+)", 0) \
+    DECLARE(Bool, enable_join_key_only_hash_tables, true, R"(
+Use hash tables that store the join keys alone, without a reference to a right row, for joins whose result can never contain a value taken from a right row: `LEFT ANTI`, and `LEFT SEMI` when no right column is selected. Such a table has a smaller cell and lets the right blocks be dropped instead of stored.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_join_lazy_indexing, 1000, R"(Control maximum limit value that allows to use query plan for lazy indexing optimization in JOIN. If zero, there is no limit.
 )", 0) \
