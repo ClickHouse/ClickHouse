@@ -33,7 +33,7 @@ flowchart LR
 
 Replication is asynchronous, so analytical results can lag behind committed Postgres changes. The two databases have separate transaction boundaries: CDC and `pg_clickhouse` do not provide a shared transaction across Postgres and ClickHouse. Reads that require the latest committed application state should use Postgres.
 
-You can start with Postgres alone and add ClickHouse when you need it. Follow the [managed Postgres quickstart](/products/managed-postgres/quickstart) to try both services, or go directly to [adding analytics](/products/managed-postgres/quickstart#part-2) if you already have a Postgres service.
+You can start with Postgres alone and add ClickHouse when you need it. Follow the [ClickHouse Managed Postgres quickstart](/products/managed-postgres/quickstart) to try both services, or go directly to [adding analytics](/products/managed-postgres/quickstart#part-2) if you already have a Postgres service.
 
 ## NVMe-powered performance {#nvme-performance}
 
