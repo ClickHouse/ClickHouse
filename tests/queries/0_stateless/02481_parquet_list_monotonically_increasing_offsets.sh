@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-ubsan, no-fasttest, no-tsan, no-msan, no-asan, no-parallel
+# Tag no-parallel: intentionally uses large memory (up to 10 GiB via `max_memory_usage`)
+# while parsing a big Parquet list column; running concurrently with other tests risks
+# OOM-ing the shared test server.
 # - It is too slow under TSan
 # - It eats too much memory under ASan or MSan
 # Memory limits: 10 GiB

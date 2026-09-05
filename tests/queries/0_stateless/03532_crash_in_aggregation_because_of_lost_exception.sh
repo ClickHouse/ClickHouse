@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: long, no-random-settings, no-parallel, no-distributed-cache
+# Tag no-parallel: asserts wall-clock or resource-sensitive behavior
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

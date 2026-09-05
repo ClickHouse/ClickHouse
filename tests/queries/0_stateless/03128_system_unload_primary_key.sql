@@ -1,4 +1,3 @@
--- Tags: no-parallel
 DROP TABLE IF EXISTS test;
 DROP TABLE IF EXISTS test2;
 
@@ -10,6 +9,7 @@ INSERT INTO test2 SELECT randomString(1000) FROM numbers(10000);
 
 SELECT round(primary_key_bytes_in_memory, -7), round(primary_key_bytes_in_memory_allocated, -7) FROM system.parts WHERE database = currentDatabase() AND table IN ('test', 'test2');
 
-SYSTEM UNLOAD PRIMARY KEY;
+SYSTEM UNLOAD PRIMARY KEY test;
+SYSTEM UNLOAD PRIMARY KEY test2;
 
 SELECT primary_key_bytes_in_memory, primary_key_bytes_in_memory_allocated FROM system.parts WHERE database = currentDatabase() AND table IN ('test', 'test2')

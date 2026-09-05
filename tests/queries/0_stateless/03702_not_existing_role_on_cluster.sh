@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-parallel, no-flaky-check
+# Tags: no-replicated-database, no-flaky-check
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -10,9 +10,6 @@ role="role03702_${CLICKHOUSE_DATABASE}_$RANDOM"
 db=${CLICKHOUSE_DATABASE}
 
 ${CLICKHOUSE_CLIENT} <<EOF
-DROP DATABASE IF EXISTS shard_0;
-DROP DATABASE IF EXISTS shard_1;
-
 CREATE DATABASE IF NOT EXISTS shard_0;
 CREATE DATABASE IF NOT EXISTS shard_1;
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-ordinary-database, no-encrypted-storage, no-parallel
+# Tag no-parallel: uses a process-global failpoint
 # Tag rationale: enables a server-wide failpoint.
 #
 # Verifies that a transactional `COMMIT` does not return to the client until every part

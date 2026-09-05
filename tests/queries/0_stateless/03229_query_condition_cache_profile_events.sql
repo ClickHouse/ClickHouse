@@ -1,5 +1,5 @@
 -- Tags: no-parallel
--- Tag no-parallel: Messes with internal cache
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 -- add_minmax_index_for_numeric_columns=0: Would use the index instead (used before the QueryConditionCache)
 
 -- w/o local plan for parallel replicas the test will fail in ParallelReplicas CI run since filter steps will be executed as part of remote queries
@@ -13,7 +13,6 @@ SET query_plan_optimize_prewhere = 1;
 
 SELECT '--- with move to PREWHERE';
 
-SYSTEM CLEAR QUERY CONDITION CACHE;
 
 DROP TABLE IF EXISTS tab;
 
@@ -22,6 +21,12 @@ INSERT INTO tab SELECT number, number FROM numbers(1_000_000); -- 1 mio rows sou
 
 SELECT count(*) FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true;
 
+SELECT * FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true;
+
+-- The second query must follow the first one immediately: concurrent tests write
+-- their own entries into the global query condition cache, and an intervening log
+-- flush plus query_log scan gives LRU eviction a window to drop this test's entry.
+-- The query_log checks for both queries therefore happen after both runs.
 SYSTEM FLUSH LOGS query_log;
 SELECT
     ProfileEvents['QueryConditionCacheHits'],
@@ -34,8 +39,6 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     AND query = 'SELECT count(*) FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true;'
 ORDER BY
     event_time_microseconds;
-
-SELECT * FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT
@@ -56,6 +59,12 @@ SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT count(*) FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;
 
+SELECT * FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;
+
+-- The second query must follow the first one immediately: concurrent tests write
+-- their own entries into the global query condition cache, and an intervening log
+-- flush plus query_log scan gives LRU eviction a window to drop this test's entry.
+-- The query_log checks for both queries therefore happen after both runs.
 SYSTEM FLUSH LOGS query_log;
 SELECT
     ProfileEvents['QueryConditionCacheHits'],
@@ -68,8 +77,6 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     AND query = 'SELECT count(*) FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;'
 ORDER BY
     event_time_microseconds;
-
-SELECT * FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT

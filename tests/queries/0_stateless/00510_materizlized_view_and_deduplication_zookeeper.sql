@@ -1,5 +1,8 @@
 -- Tags: zookeeper, no-ordinary-database, no-parallel
--- Tag no-parallel: static UUID
+-- Tag no-parallel: `CREATE MATERIALIZED VIEW ... UUID '...'` parses the UUID clause as a plain
+--  string literal (ParserStringLiteral, before query-parameter substitution), so the two fixed
+--  UUIDs used to address `.inner_id.<uuid>` directly cannot be made per-run; a concurrent copy of
+--  this same test (e.g. a flaky-check rerun) would collide on them.
 
 DROP TABLE IF EXISTS with_deduplication;
 DROP TABLE IF EXISTS without_deduplication;

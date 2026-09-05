@@ -1,5 +1,9 @@
 -- Tags: no-parallel, no-fasttest, no-shared-merge-tree, no-async-insert
--- Tag no-parallel - due to static databases
+-- Tag no-parallel: unconditionally `create`/`drop database shard_0`/`shard_1` (hardcoded as
+--  `default_database` for the `test_cluster_two_replicas_different_databases_internal_replication`
+--  cluster in tests/config/config.d/clusters.xml and shared with other test files) and writes a
+--  fixed Keeper path (`/tables/shard_1/data/replicas/read`); a concurrent test using the same
+--  cluster/database or path would collide or have its tables destroyed by this test's `drop database`.
 -- Tag no-fasttest - S3 is required
 -- Tag no-shared-merge-tree - no reliable way to make SMT read-only in stateless test
 

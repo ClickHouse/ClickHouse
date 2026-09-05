@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-random-merge-tree-settings
+# Tag no-parallel: Checks exact `UncompressedCacheHits`, `Seek`, and `ReadCompressedBytes` after warming a shared cache; concurrent tests can evict its entries.
 # add_minmax_index_for_numeric_columns=0: Changes the number of files and bytes read
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

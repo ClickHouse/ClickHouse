@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-azure-blob-storage
+# Tags: zookeeper, no-azure-blob-storage
 # no-azure-blob-storage: this test runs parallel `INSERT` threads against
 #   `ReplicatedMergeTree` and exceeds the test framework timeout under slow Azure blob
 #   storage. CIDB shows 14 failures / 4491 OKs (0.31%) on

@@ -1,4 +1,5 @@
--- Tags: use-xray
+-- Tags: use-xray, no-parallel:xray
+-- Tag no-parallel: all `use-xray` tests share process-global XRay instrumentation state.
 
 -- A non-negative integer literal larger than `Int64::max` cannot be stored
 -- as `Int64` and must be rejected with a parse error rather than silently

@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 SET create_if_not_exists=0;  -- Default
 

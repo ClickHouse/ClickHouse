@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings
+# Tags: long, no-fasttest, no-object-storage, no-random-settings, no-parallel:filesystem-cache
+# Tag no-parallel: issues an unscoped `SYSTEM CLEAR FILESYSTEM CACHE` and then
+# repeatedly reads through the process-wide filesystem caches.
 
 # set -x
 

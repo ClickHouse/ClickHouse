@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-fasttest
-# no-parallel: the server only allows one WORKER THREAD resource at a time,
+# Tag no-parallel: the server only allows one WORKER THREAD resource at a time,
 #   so concurrent runs would fail with "The second resource for WORKER THREAD
 #   is not allowed".
 # no-fasttest: the 5-second benchmark makes this too slow for fast test.

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: atomic-database, memory-engine, no-parallel
+# Tag no-parallel: `SYSTEM ... ALL BACKGROUND` affects every refreshable view on the server.
 
 # Uses `SYSTEM ... ALL BACKGROUND` commands, which affect all refreshable views
 # on the server, so it cannot run concurrently with other tests that create RMV

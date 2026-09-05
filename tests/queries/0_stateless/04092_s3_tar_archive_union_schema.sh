@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel:metadata-caches
+# Tag no-parallel: serializes tests that mutate or assert the shared `metadata-caches` resource
 # Tag no-fasttest: Depends on S3
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/101544

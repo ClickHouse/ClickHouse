@@ -1,4 +1,4 @@
--- Tags: replica, no-parallel
+-- Tags: replica
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 

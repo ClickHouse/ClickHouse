@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Tag no-parallel: uses a process-global failpoint
 -- Uses a global one-shot failpoint in `ReplicatedMergeTreeSink::commitPart`.
 
 SYSTEM DISABLE FAILPOINT replicated_merge_tree_restore_attach_retry;

@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 CLICKHOUSE_PORT_TCP=50111
 CLICKHOUSE_DATABASE=default
+
+# This test starts a second server with the *embedded* default config, which opens the HTTP, MySQL,
+# PostgreSQL and interserver listeners besides the TCP one. Overriding only `tcp_port` leaves those
+# at their defaults, so the throwaway server competes for ports the main test server serves. It can
+# win: on macOS the main server binds only `::`, which leaves `127.0.0.1` free for a second bind of
+# the same port. `clickhouse-test` creates and drops every per-test database over HTTP on 8123, so
+# those requests would land on this server - which has its own empty `--path` - and unrelated tests
+# would then fail with `UNKNOWN_DATABASE`. Give every listener a port of its own.
+SERVER_PORT_HTTP=50112
+SERVER_PORT_MYSQL=50113
+SERVER_PORT_POSTGRESQL=50114
+SERVER_PORT_INTERSERVER=50115
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -10,7 +21,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 echo "Starting clickhouse-server"
 
-$CLICKHOUSE_BINARY server -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "${CLICKHOUSE_TMP}/" > "${CLICKHOUSE_TMP}/server.log" 2>&1 &
+$CLICKHOUSE_BINARY server -- --tcp_port "$CLICKHOUSE_PORT_TCP" --http_port "$SERVER_PORT_HTTP" \
+    --mysql_port "$SERVER_PORT_MYSQL" --postgresql_port "$SERVER_PORT_POSTGRESQL" \
+    --interserver_http_port "$SERVER_PORT_INTERSERVER" \
+    --path "${CLICKHOUSE_TMP}/" > "${CLICKHOUSE_TMP}/server.log" 2>&1 &
 PID=$!
 
 function finish()

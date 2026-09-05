@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-parallel, no-fasttest
+-- Tags: zookeeper, no-fasttest
 
 SELECT path, name
 FROM system.zookeeper

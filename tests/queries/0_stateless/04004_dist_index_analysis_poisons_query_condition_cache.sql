@@ -1,5 +1,4 @@
--- Tags: no-parallel, long
--- Tag no-parallel: Messes with internal cache
+-- Tags: long
 
 -- Test that distributed index analysis does not poison the query condition cache.
 --
@@ -46,8 +45,19 @@ SELECT count() AS parts FROM system.parts WHERE database = currentDatabase() AND
 SELECT count() FROM t_dia_qcc WHERE value > 300000 AND value < 700000
     SETTINGS use_query_condition_cache = 1, distributed_index_analysis = 0;
 
--- Confirm cache is populated.
-SELECT count() > 0 AS cache_populated FROM system.query_condition_cache;
+-- Confirm the cache is populated. Scoping `system.query_condition_cache` to this
+-- table needs its `table_uuid` column, which exists only in debug and sanitizer
+-- builds, while the unscoped row count is shared with every other test on the
+-- server. The per-query `QueryConditionCacheHits` ProfileEvent is exact, isolated
+-- and available in every build: a rerun of the step-1 query can only report hits
+-- if step 1 wrote entries for this table.
+SELECT count() FROM t_dia_qcc WHERE value > 300000 AND value < 700000
+    SETTINGS use_query_condition_cache = 1, distributed_index_analysis = 0, log_comment = '04004_populated' FORMAT Null;
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['QueryConditionCacheHits'] > 0 AS cache_populated
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '04004_populated' AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 -- Step 2: Run the same query with distributed index analysis enabled.
 -- This triggers the bug: the diff computation between `res_parts` (sorted) and

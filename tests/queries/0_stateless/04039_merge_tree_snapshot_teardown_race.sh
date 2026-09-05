@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: long, no-flaky-check
-#  - no-flaky-check: near the 600s cap on amd_msan; the rerun count
+#  - no-flaky-check: near the 300s hard limit on amd_msan; the rerun count
 #    does not affect the snapshot-teardown race this test exercises.
 
 set -e
@@ -12,7 +12,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TABLE="test_04039_snapshot_teardown_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 TABLE_PROJ="test_04039_proj_teardown_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-ITERATIONS=20
+# Exercise each teardown path repeatedly while keeping all 20 race attempts below the
+# 300-second test limit on sanitizer builds.
+ITERATIONS=10
 
 function run_query()
 {

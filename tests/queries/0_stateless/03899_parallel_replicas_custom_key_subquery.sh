@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, long
-# no-parallel: reads its own rows from system.query_log by initial_query_id.
+# Tag no-parallel: reads its own rows from system.query_log by initial_query_id.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -1,7 +1,6 @@
 #!/usr/bin/expect -f
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 # no-fasttest: requires mysql client, rapidjson and s2geometry
-# no-parallel: can't provide currentDatabase() to SHOW COLUMNS
 
 # Tests the output of SHOW COLUMNS when called through the MySQL protocol.
 
@@ -28,6 +27,9 @@ expect_after {
 }
 spawn bash -c "source $basedir/../shell_config.sh ; \$MYSQL_CLIENT_BINARY \$MYSQL_CLIENT_OPT"
 expect -nocase -re "mysql.*> "
+
+send -- "USE $env(CLICKHOUSE_DATABASE);\r"
+expect "Database changed"
 
 send -- "DROP TABLE IF EXISTS tab;\r"
 expect "Query OK, 0 rows affected"

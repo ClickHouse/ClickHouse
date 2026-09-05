@@ -1,5 +1,8 @@
 -- Tags: no-parallel
--- Tag no-parallel: Messes with internal cache
+-- Tag no-parallel: `query_cache_max_size_in_bytes` and `query_cache_max_entries` are per-user
+-- quotas counted across the whole server-wide query cache and all stateless tests run as the
+-- same user, so the unscoped `SYSTEM CLEAR QUERY CACHE` below is required to start from zero
+-- entries and concurrent tests caching query results would perturb the expected entry counts.
 
 -- Tests per-user quotas of the query cache. Settings 'query_cache_max_size_in_bytes' and 'query_cache_max_entries' are actually supposed to
 -- be used in a settings profile, together with a readonly constraint. For simplicity, test both settings stand-alone in a stateless test

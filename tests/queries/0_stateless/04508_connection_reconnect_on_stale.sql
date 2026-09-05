@@ -1,5 +1,5 @@
 -- Tags: no-parallel
--- - no-parallel - the fail point below affects connection establishment globally on the server
+-- Tag no-parallel: the fail point below affects connection establishment globally on the server
 
 -- A pooled connection is no longer pinged before every query. A connection that the server closed
 -- while it was idle in the pool is instead detected when it is first used, and is transparently

@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel
+-- Tags: no-fasttest
 
 -- Test for buffer pointer invalidation in ReadBufferFromEncryptedFile when
 -- async prefetch is enabled with cached encrypted S3 storage.

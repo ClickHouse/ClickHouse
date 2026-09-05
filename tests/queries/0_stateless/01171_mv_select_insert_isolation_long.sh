@@ -4,6 +4,9 @@
 # shellcheck disable=SC2119
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# The S3-storage lane may successfully retry transient AWS 5xx responses after logging them at
+# error level. Query failures and the explicit isolation assertions remain visible.
+export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
@@ -159,11 +162,12 @@ function select_insert_action()
 }
 
 MIN_SECONDS=5
-MAX_SECONDS=400
-WAIT_FINISH=60
+# Leave half of the 300-second hard limit for an in-flight action, query cleanup, and final checks.
+MAX_SECONDS=120
+WAIT_FINISH=30
 
-if [[ $((MAX_SECONDS + WAIT_FINISH)) -ge  550 ]]; then
-    echo "time sttings are wrong" 2>&1
+if [[ $((MAX_SECONDS + WAIT_FINISH)) -ge 270 ]]; then
+    echo "time settings leave too little room before the 300-second hard limit" 2>&1
     exit 1
 fi
 

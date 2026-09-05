@@ -1,4 +1,8 @@
 -- Tags: no-parallel, no-shared-merge-tree, no-parallel-replicas
+-- Tag no-parallel: asserts that prewarmed marks stay resident in the shared mark cache
+--   (only 128 MiB in stateless CI, see `tests/config/config.d/small_caches.xml`). Concurrent
+--   tests push the cache above `mark_cache_prewarm_ratio` - which makes `prewarmCaches` skip
+--   parts - or evict the prewarmed entries before the assertion queries run.
 
 DROP TABLE IF EXISTS t_prewarm_idx_cache_1;
 DROP TABLE IF EXISTS t_prewarm_idx_cache_2;
@@ -11,8 +15,10 @@ CREATE TABLE t_prewarm_idx_cache_2 (a UInt64, b UInt64, c String, INDEX idx_b b 
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/03985_prewarm_index_mark_cache/t', '2')
 ORDER BY a SETTINGS prewarm_mark_cache = 1;
 
-SYSTEM DROP MARK CACHE;
-SYSTEM DROP INDEX MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR INDEX MARK CACHE;
+SYSTEM CLEAR INDEX MARK CACHE;
 
 SYSTEM STOP FETCHES t_prewarm_idx_cache_2;
 
@@ -21,8 +27,10 @@ INSERT INTO t_prewarm_idx_cache_1 SELECT number, number, randomString(10) FROM n
 SELECT count() FROM t_prewarm_idx_cache_1 WHERE b < 10000 AND NOT ignore(*) SETTINGS log_comment = 'prewarm on insert';
 
 -- Check that prewarm works on fetch.
-SYSTEM DROP MARK CACHE;
-SYSTEM DROP INDEX MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR INDEX MARK CACHE;
+SYSTEM CLEAR INDEX MARK CACHE;
 
 SYSTEM START FETCHES t_prewarm_idx_cache_2;
 SYSTEM SYNC REPLICA t_prewarm_idx_cache_2;
@@ -38,8 +46,10 @@ SELECT count() FROM t_prewarm_idx_cache_1 WHERE b < 10000 AND NOT ignore(*) SETT
 SELECT count() FROM t_prewarm_idx_cache_2 WHERE b < 10000 AND NOT ignore(*) SETTINGS log_comment = 'after prewarm on merge';
 
 -- Check that prewarm works on restart.
-SYSTEM DROP MARK CACHE;
-SYSTEM DROP INDEX MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR INDEX MARK CACHE;
+SYSTEM CLEAR INDEX MARK CACHE;
 
 DETACH TABLE t_prewarm_idx_cache_1;
 DETACH TABLE t_prewarm_idx_cache_2;
@@ -50,8 +60,10 @@ ATTACH TABLE t_prewarm_idx_cache_2;
 SELECT count() FROM t_prewarm_idx_cache_1 WHERE b < 10000 AND NOT ignore(*) SETTINGS log_comment = 'after prewarm on restart';
 SELECT count() FROM t_prewarm_idx_cache_2 WHERE b < 10000 AND NOT ignore(*) SETTINGS log_comment = 'after prewarm on restart';
 
-SYSTEM DROP MARK CACHE;
-SYSTEM DROP INDEX MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR INDEX MARK CACHE;
+SYSTEM CLEAR INDEX MARK CACHE;
 
 SELECT count() FROM t_prewarm_idx_cache_1 WHERE b < 10000 AND NOT ignore(*) SETTINGS log_comment = 'after drop mark cache';
 

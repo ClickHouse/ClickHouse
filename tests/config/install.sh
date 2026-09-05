@@ -233,7 +233,7 @@ function is_sanitizer_build()
     # vcall or cast without a sanitizer runtime, so symbolization runs at full speed.
     [ "$(clickhouse local --query "SELECT value LIKE '%-DSANITIZER%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" = "1" ]
 }
-if is_sanitizer_build; then
+if [[ "$LLVM_COVERAGE" -eq 1 ]] || is_sanitizer_build; then
     ln -sf $SRC_PATH/config.d/trace_log_no_symbolize.xml $DEST_SERVER_PATH/config.d/
 fi
 ln -sf $SRC_PATH/config.d/memory_profiler.yaml $DEST_SERVER_PATH/config.d/

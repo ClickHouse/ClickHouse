@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-flaky-check
+-- Tags: no-flaky-check
 
 create database if not exists shard_0;
 create database if not exists shard_1;
@@ -15,6 +15,3 @@ insert into dist_01850 values (1); -- { serverError UNKNOWN_TABLE }
 
 drop table if exists dist_01850;
 drop table shard_0.data_01850;
-
-drop database shard_0;
-drop database shard_1;

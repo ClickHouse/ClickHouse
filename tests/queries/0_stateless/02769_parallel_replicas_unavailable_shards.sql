@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Tag no-parallel: uses a process-global failpoint
 -- - no-parallel - due to usage of fail points
 
 DROP TABLE IF EXISTS test_parallel_replicas_unavailable_shards;

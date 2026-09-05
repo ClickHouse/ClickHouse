@@ -3,7 +3,7 @@
 --   type there and CREATE TABLE would fail
 -- no-ordinary-database: an Ordinary database gives the table a nil UUID, and the query condition
 --   cache is never written for a nil table UUID
--- no-parallel: drops the (instance-wide) query condition cache
+-- Tag no-parallel: drops the (instance-wide) query condition cache
 -- no-parallel-replicas: the query condition cache is populated per replica, and the vector-search
 --   optimization is disabled for parallel replicas, so the poisoning is not reproducible there
 

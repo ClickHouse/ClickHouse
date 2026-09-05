@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};

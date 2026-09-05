@@ -1,6 +1,7 @@
 -- Tags: no-parallel, no-release
--- Tag no-parallel: Messes with internal cache
--- Tag no-release: Checks fields in system.query_condition_cache which are not available in release builds
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
+-- Tag no-release: reads `part_name` from `system.query_condition_cache`, which is available only
+-- in debug and sanitizer builds.
 -- add_minmax_index_for_numeric_columns=0: Would use indices instead of the projections that we want to test
 
 SET use_statistics_for_part_pruning = 0; -- Prevent auto_statistics_types from pruning parts before query condition cache
@@ -22,11 +23,11 @@ insert into t select 20, number from numbers(10);
 
 insert into t select 1, number + 1 from numbers(10);
 
-system clear query condition cache;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 select j from t where j > 3 and i = 20 order by j settings max_threads = 1, use_query_condition_cache = 1, query_condition_cache_store_conditions_as_plaintext = 1;
 
-select part_name from system.query_condition_cache order by part_name;
+select part_name from system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('t')) order by part_name;
 
 select j from t where j > 3 and i = 20 order by j settings max_threads = 1, use_query_condition_cache = 1, query_condition_cache_store_conditions_as_plaintext = 1;
 

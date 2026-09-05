@@ -1,5 +1,5 @@
 -- Tags: no-random-merge-tree-settings, no-random-settings, no-parallel
--- no-parallel: SYSTEM CLEAR MARK CACHE is used.
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 
 DROP TABLE IF EXISTS t_lightweight_mut_5;
 

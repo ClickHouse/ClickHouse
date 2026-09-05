@@ -1,4 +1,5 @@
 -- Tags: no-object-storage, no-random-merge-tree-settings, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 -- no-s3 because read FileOpen metric
 DROP TABLE IF EXISTS nested;
 

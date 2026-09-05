@@ -1,12 +1,12 @@
 1
-SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = \'abc\'	abc
+SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = \'02494_query_cache_tag_abc\'	02494_query_cache_tag_abc
 ---
 1
 1
-SELECT 1 SETTINGS use_query_cache = true	
-SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = \'abc\'	abc
+SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = \'02494_query_cache_tag\'	02494_query_cache_tag
+SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = \'02494_query_cache_tag_abc\'	02494_query_cache_tag_abc
 ---
 1
 1
-SELECT 1 SETTINGS use_query_cache = true	abc
-SELECT 1 SETTINGS use_query_cache = true	def
+SELECT 1 SETTINGS use_query_cache = true	02494_query_cache_tag_abc
+SELECT 1 SETTINGS use_query_cache = true	02494_query_cache_tag_def

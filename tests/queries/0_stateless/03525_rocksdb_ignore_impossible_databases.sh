@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Tags: use-rocksdb, no-parallel
-# Tag no-parallel - broken PG database may affect tests, reading system.tablesg
+# Tag no-parallel: creates a PostgreSQL database pointing at an unreachable host; it is visible
+#   in system.tables, so a concurrent unfiltered scan also tries to connect to it, and the
+#   connection-failure Error-level log lines land in that query's client stderr, failing
+#   unrelated tests with "having stderror". A concurrency group is not enough: the victims
+#   are arbitrary tests outside any group.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

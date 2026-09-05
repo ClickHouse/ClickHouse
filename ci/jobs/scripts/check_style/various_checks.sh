@@ -209,21 +209,42 @@ find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py'
 # Skip comment lines and EXPLAIN SYNTAX (the parser grammar test uses the bare form).
 find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' | xargs grep --with-filename -i -E -e "system\s*flush\s*async\s*insert\s*queue\s*(;|\$|\"|')" | grep -vE ':[[:space:]]*(--|#)' | grep -vi 'EXPLAIN' && echo "Please use SYSTEM FLUSH ASYNC INSERT QUEUE table over global SYSTEM FLUSH ASYNC INSERT QUEUE"
 
-# Tests with SYSTEM DROP should have no-parallel tag, because SYSTEM DROP commands
-# (like SYSTEM DROP ... CACHE, SYSTEM DROP REPLICA, etc.) affect server-wide shared state
-# and interfere with other tests running concurrently.
-#
-# Known exceptions where the command is not actually executed:
-# - 04307, 04339, 04350: the SYSTEM DROP text appears only inside SQL string literals passed to
-#   parseQueryToJSON/formatQueryFromJSON for AST round-trip and validation testing; nothing is executed.
-tests_with_system_drop=( $(
+# Unscoped cache clears affect every test sharing the server. Scoped forms such as
+# `FOR TABLE`, query-cache `TAG`, and named filesystem caches are parallel-safe.
+# The `query cache` branch must come after `query condition`, otherwise the shorter
+# alternative would never let the more specific cache name be recognised.
+# Occurrences inside `formatQuery`/`parseQuery`-style calls are query *text*, never executed,
+# so they are skipped along with `EXPLAIN SYNTAX` and `clickhouse-local` invocations.
+tests_with_global_cache_drop=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
-        xargs grep -liP 'system\s+drop' |
-        grep -vP '04307_ast_json_roundtrip_lossless|04339_ast_json_review_followup_hardening|04350_ast_json_parser_impossible_field_combinations' |
+        xargs grep -liP '^(?!\s*(?:--|#|EXPLAIN\s+SYNTAX|SELECT\s+(?:format|parse|normalize)Query|\$CLICKHOUSE_LOCAL\b)).*system\s+(?:clear|drop)\s+(?:(?:mark|primary\s+index|uncompressed|index\s+mark|index\s+uncompressed|vector\s+similarity\s+index|text\s+index(?:\s+(?:tokens|header|postings))?|query\s+condition|query|compiled\s+expression|parquet\s+metadata|iceberg\s+metadata|page)\s+cache|text\s+index\s+caches)(?![^;\n]*(?:for\s+table|for\s+source|\btag\b))' |
         sort -u
 ) )
-for test_case in "${tests_with_system_drop[@]}"; do
-    grep -qP '(--|#)\s*[Tt]ags:.*no-parallel' "$test_case" || echo "Test with SYSTEM DROP should have no-parallel tag: $test_case"
+for test_case in "${tests_with_global_cache_drop[@]}"; do
+    grep -qP '(?:[Tt]ags:\s*|,\s*)no-parallel(?::[a-z0-9-]+)?(?=\s*(?:,|$))' "$test_case" || echo "Test with a global SYSTEM cache clear should have a no-parallel tag: $test_case"
+done
+
+# Keep in sync with NO_PARALLEL_GROUPS in tests/clickhouse-test: a group this check
+# accepts but the runner does not know makes `clickhouse-test` raise while it builds
+# the suite, which is a much worse way to find out about a typo.
+allowed_no_parallel_groups='mark-cache|primary-index-cache|filesystem-cache|query-condition-cache|metadata-caches|misc-caches|xml-entities|stateful|xray'
+tests_with_no_parallel_group=( $(
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
+        xargs grep -lP '(--|#)\s*[Tt]ags:.*no-parallel:' |
+        sort -u
+) )
+for test_case in "${tests_with_no_parallel_group[@]}"; do
+    invalid_groups=$(grep -oP 'no-parallel:\K[a-z0-9-]+' "$test_case" | grep -vP "^(${allowed_no_parallel_groups})$" || true)
+    [ -z "$invalid_groups" ] || echo "Unknown no-parallel concurrency group in $test_case: $invalid_groups"
+done
+
+tests_with_no_parallel=( $(
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
+        xargs grep -lP '(?:[Tt]ags:\s*|,\s*)no-parallel(?::[a-z0-9-]+)?(?=\s*(?:,|$))' |
+        sort -u
+) )
+for test_case in "${tests_with_no_parallel[@]}"; do
+    grep -qP '(--|#)\s*Tag no-parallel:\s*\S' "$test_case" || echo "Test with no-parallel tag should document its reason: $test_case"
 done
 
 # Shell tests that send HTTP requests via curl and then check system log tables

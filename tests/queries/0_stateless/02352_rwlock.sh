@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-fasttest, no-debug
-# Tag no-parallel -- to avoid running it in parallel, this will avoid possible issues due to high pressure
+# Tag no-parallel: the test relies on hard-coded lock-acquire-timeout races (a 20s INSERT vs. a
+# 10s DROP vs. an 11s SELECT). Under heavy parallel CI load, thread-pool scheduling delays before
+# the DROP/SELECT queries actually start executing can eat into these tight margins and produce
+# false timeouts unrelated to the `WRITE`-lock-notifies-`READ` behavior under test.
 
 # Test that ensures that WRITE lock failure notifies READ.
 # In other words to ensure that after WRITE lock failure (DROP),

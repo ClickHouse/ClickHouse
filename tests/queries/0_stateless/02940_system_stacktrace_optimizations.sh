@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
+# Tag no-parallel: `system.stack_trace` enumerates and signals every thread of the whole
+# server process; concurrently-running tests' threads would change which/how many threads
+# get signaled and perturb the exact "Send signal to N threads" messages being asserted.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

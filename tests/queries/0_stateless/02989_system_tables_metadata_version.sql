@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-parallel
+-- Tags: zookeeper
 
 DROP TABLE IF EXISTS test_temporary_table_02989;
 CREATE TEMPORARY TABLE test_temporary_table_02989
