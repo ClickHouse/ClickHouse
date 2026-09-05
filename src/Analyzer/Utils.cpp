@@ -449,14 +449,8 @@ static ASTPtr convertIntoTableExpressionAST(
         const auto & identifier_node = table_expression_node->as<IdentifierNode &>();
         const auto & identifier = identifier_node.getIdentifier();
 
-        if (identifier.getPartsSize() == 1)
-            table_expression_node_ast = make_intrusive<ASTTableIdentifier>(identifier[0]);
-        else if (identifier.getPartsSize() == 2)
-            table_expression_node_ast = make_intrusive<ASTTableIdentifier>(identifier[0], identifier[1]);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Identifier for table expression must contain 1 or 2 parts. Actual '{}'",
-                identifier.getFullName());
+        /// Any number of parts: `a.b.c` is a hierarchical name (see `ASTTableIdentifier`).
+        table_expression_node_ast = make_intrusive<ASTTableIdentifier>(std::vector<String>(identifier.getParts()));
 
         table_expression_node_ast->setAlias(identifier_node.getAlias());
     }

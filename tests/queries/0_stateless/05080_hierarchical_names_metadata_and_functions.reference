@@ -1,0 +1,47 @@
+--- SHOW COLUMNS and SHOW INDEXES
+id	UInt64	NO	PRI SOR	\N	
+s	String	NO		\N	
+id	UInt64	NO	PRI SOR	\N	
+s	String	NO		\N	
+id	UInt64	NO	PRI SOR	\N	
+s	String	NO		\N	
+id	UInt64	NO	PRI SOR	\N	
+s	String	NO		\N	
+ns.t	1	idx_s	1		\N	0	\N	\N	\N	BLOOM_FILTER			YES	s
+ns.t	1	PRIMARY	1	id	A	0	\N	\N	\N	PRIMARY			YES	
+ns.t	1	idx_s	1		\N	0	\N	\N	\N	BLOOM_FILTER			YES	s
+ns.t	1	PRIMARY	1	id	A	0	\N	\N	\N	PRIMARY			YES	
+--- joinGet
+one
+one
+one
+one
+one
+--- dictGet
+ns.d
+uno
+uno
+uno
+uno
+uno
+1
+--- qualified asterisks
+1	a
+1	a
+1	a
+1	a
+--- a name with an empty part is not hierarchical
+1
+1
+.inner.t
+x	UInt8	NO		\N	
+1
+.inner.t
+--- ON CLUSTER: the database may exist on the other hosts only
+UNKNOWN_DATABASE
+1
+1
+ns.d
+ns.j
+ns.t
+src

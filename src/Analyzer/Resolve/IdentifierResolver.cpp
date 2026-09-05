@@ -647,20 +647,13 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
 
     if (identifier_lookup.isTableExpressionLookup())
     {
-        size_t parts_size = identifier_lookup.identifier.getPartsSize();
-        if (parts_size != 1 && parts_size != 2)
-            throw Exception(ErrorCodes::INVALID_IDENTIFIER,
-                "Expected identifier '{}' to contain 1 or 2 parts to be resolved as table expression. In scope {}",
-                identifier_lookup.identifier.getFullName(),
-                table_expression_node->formatASTForErrorMessage());
-
-        if (parts_size == 1 && path_start == table_name)
-            return true;
+        size_t parts_size = identifier.getPartsSize();
         if (parts_size == 1 && !materialized_cte_name.empty() && path_start == materialized_cte_name)
             return true;
-        if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
-            return true;
-        return false;
+
+        /// The table name, or `database.table`, written in any number of parts: the names are hierarchical (see `DatabaseCatalog`).
+        return table_expression_data.matchTableName(identifier, scope.context) == parts_size
+            || table_expression_data.matchDatabaseAndTableName(identifier) == parts_size;
     }
 
     if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier)) || table_expression_data.canBindIdentifier(IdentifierView(identifier)))
@@ -1048,6 +1041,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             if (lookup_result.resolved_identifier)
                 return lookup_result;
         }
+
+        /// The whole identifier is the table name (`ns.t` for the table `ns.t`): not a column expression, but as the
+        /// qualifier of a matcher (`ns.t.*`) it is resolved as a table expression next.
+        if (table_name_parts == identifier.getPartsSize() && identifier_lookup.is_matcher_qualifier)
+            return {};
 
         /// No other interpretation is possible: repeat the lookup to throw the proper exception.
         if (!identifier_can_fall_through_to_database_and_table())

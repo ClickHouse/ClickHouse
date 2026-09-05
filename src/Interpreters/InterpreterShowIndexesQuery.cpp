@@ -25,9 +25,11 @@ InterpreterShowIndexesQuery::InterpreterShowIndexesQuery(const ASTPtr & query_pt
 String InterpreterShowIndexesQuery::getRewrittenQuery()
 {
     const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
-    String table = escapeString(query.table);
-    String resolved_database = getContext()->resolveDatabase(query.database);
-    String database = escapeString(resolved_database);
+    /// A hierarchical name (`a.b.c`, or `c` inside `USE a.b`) is the database and the table of the table it refers to
+    /// (see `DatabaseCatalog`).
+    StorageID table_id = DatabaseCatalog::instance().resolveHierarchicalName({getContext()->resolveDatabase(query.database), query.table}, getContext());
+    String table = escapeString(table_id.table_name);
+    String database = escapeString(table_id.database_name);
     String where_expression = query.where_expression ? fmt::format("WHERE ({})", query.where_expression->formatWithSecretsOneLine()) : "";
 
     String rewritten_query = fmt::format(R"(
