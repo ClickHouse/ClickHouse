@@ -44,6 +44,7 @@ class KeeperTCPHandler : public Poco::Net::TCPServerConnection
 public:
     static void registerConnection(KeeperTCPHandler * conn);
     static void unregisterConnection(KeeperTCPHandler * conn);
+    static void closeAllConnections();
     /// dump all connections statistics
     static void dumpConnections(WriteBufferFromOwnString & buf, bool brief);
     static void resetConnsStats();
