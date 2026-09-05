@@ -1949,8 +1949,6 @@ TEST(KeeperDispatcher, InterruptibleSleepReturnsAtOnceForNonPositivePeriod)
     }
 }
 
-#endif
-
 
 /// The histogram means "time a read waited for the write it depends on". A read parked in
 /// `LateReads` while the batch still has uncommitted writes is such a wait; a read parked after the
@@ -2012,3 +2010,5 @@ TEST(KeeperDispatcher, ReadWaitForWriteNotObservedForDroppedReads)
         << "an abandoned wait was recorded in keeper_read_wait_for_write_time_milliseconds";
     EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1) << "the dropped batch was not popped";
 }
+
+#endif
