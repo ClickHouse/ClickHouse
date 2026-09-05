@@ -3227,6 +3227,230 @@ def test_follower_drop_table_keeps_shared_data(started_cluster):
                 pass
 
 
+SHARED_UUID_LAZY_FOLLOWER_DROP = "12345678-abcd-abcd-abcd-12345678ab49"
+SHARED_UUID_LAZY_FOLLOWER_DROP_UNLOADABLE = "12345678-abcd-abcd-abcd-12345678ab50"
+
+
+def attach_lazy_database_with_table(node, database, table, uuid):
+    """Attach `table` in a fresh `lazy_load_tables = 1` database and leave it unloaded.
+
+    Returns with the table present in the catalog as an unloaded `StorageTableProxy`:
+    the database is detached and re-attached after the `ATTACH TABLE`, so the table is
+    only known from its metadata file and its real `StorageMergeTree` has never been
+    constructed. That is the shape in which `DROP TABLE` reaches
+    `StorageTableProxy::drop` rather than `StorageMergeTree::drop`.
+    """
+    node.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+    node.query(f"CREATE DATABASE {database} ENGINE = Atomic SETTINGS lazy_load_tables = 1")
+    node.query(
+        f"""
+        ATTACH TABLE {database}.{table} UUID '{uuid}' (x UInt64)
+        ENGINE = MergeTree ORDER BY x
+        SETTINGS {TABLE_SETTINGS}
+        """
+    )
+    node.query(f"DETACH DATABASE {database}")
+    node.query(f"ATTACH DATABASE {database}")
+    engine = node.query(
+        f"SELECT engine FROM system.tables WHERE database = '{database}' AND name = '{table}'"
+    ).strip()
+    assert engine == "TableProxy", (
+        f"The table is not an unloaded lazy proxy (engine = {engine!r}), "
+        "so the scenario under test was not reached"
+    )
+
+
+def test_follower_lazy_drop_table_keeps_shared_data(started_cluster):
+    """
+    The lazy sibling of `test_follower_drop_table_keeps_shared_data`. That test drops an
+    already-loaded table, which goes through `StorageMergeTree::drop` and asks the
+    `StorageMergeTree` itself whether the per-disk cleanup must be skipped. A table in a
+    `lazy_load_tables = 1` database that has never been accessed is a `StorageTableProxy`
+    instead, and the drop goes through `StorageTableProxy::drop`: it must materialize the
+    nested storage, delegate the drop to it, and — crucially — keep the materialized
+    storage around, because `DatabaseCatalog::dropTableFinally` queries
+    `dropSkipsDataDirectoryCleanup` right after `drop()` returns. A proxy that dropped its
+    reference (or never took one) falls back to the unsafe default of `false`, and the
+    catalog then runs `removeRecursive` over `store/<uuid>` on the shared `plain_rewritable`
+    disk — destroying the data of a live leader from a follower's local drop.
+    """
+    ensure_node_up(node1)
+    ensure_node_up(node2)
+    table = "test_lazy_follower_drop"
+    database = "lazy_follower_drop_db"
+    try:
+        create_table_on_first_node(node1, table, SHARED_UUID_LAZY_FOLLOWER_DROP)
+        wait_for_leader([node1], table_name=table)
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+
+        part_name = node1.query(
+            f"SELECT name FROM system.parts WHERE database = currentDatabase()"
+            f" AND table = '{table}' AND active AND rows > 1 LIMIT 1"
+        ).strip()
+        assert part_name
+        part_prefix = find_part_object_key_prefix(SHARED_UUID_LAZY_FOLLOWER_DROP, part_name)
+        assert part_prefix, "Could not locate the part's S3 prefix before the drop"
+
+        # The second node attaches the same table into a lazy database and never touches it,
+        # so it stays an unloaded proxy. It is a follower by construction: node1 holds the
+        # lease and the proxy has not even constructed a `MergeTree` to contend for it.
+        attach_lazy_database_with_table(
+            node2, database, table, SHARED_UUID_LAZY_FOLLOWER_DROP
+        )
+        node2.query(f"DROP TABLE {database}.{table} SYNC")
+
+        # The proxy must have answered `dropSkipsDataDirectoryCleanup` on behalf of the
+        # nested `MergeTree`. The message is anchored to this table so an earlier
+        # (eagerly loaded) drop in the same session cannot satisfy it.
+        assert node2.contains_in_log(
+            f"Skipping per-disk data cleanup of dropped table {database}.{table} "
+            f"({SHARED_UUID_LAZY_FOLLOWER_DROP})"
+        ), (
+            "The catalog did not skip the per-disk cleanup for the dropped lazy proxy, "
+            "so the shared data was only saved by chance"
+        )
+
+        objects_after_drop = list(
+            cluster.minio_client.list_objects(
+                cluster.minio_bucket, part_prefix, recursive=True
+            )
+        )
+        assert objects_after_drop, (
+            "DROP TABLE of an unloaded lazy proxy on the follower removed shared S3 data "
+            "owned by the leader"
+        )
+
+        # The leader is untouched: it still reads the data and accepts writes.
+        rows = node1.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").strip()
+        assert rows == "1\n2\n3", (
+            f"Leader lost data after a follower-side lazy DROP TABLE, got: {rows!r}"
+        )
+        node1.query(f"INSERT INTO {table} VALUES (10)")
+
+        # And a freshly attached follower still sees all of it.
+        attach_table_on_second_node(node2, table, SHARED_UUID_LAZY_FOLLOWER_DROP)
+        expected = "1\n2\n3\n10"
+        deadline = time.monotonic() + 60
+        rows = ""
+        while time.monotonic() < deadline:
+            rows = node2.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").strip()
+            if rows == expected:
+                break
+            time.sleep(1)
+        assert rows == expected, (
+            f"Re-attached follower does not see the shared data, got: {rows!r}"
+        )
+    finally:
+        for node in (node1, node2):
+            try:
+                node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass
+        try:
+            node2.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+        except Exception:
+            pass
+
+
+def test_follower_lazy_drop_unmaterializable_table_keeps_shared_data(started_cluster):
+    """
+    The fail-closed branch of `StorageTableProxy::drop`: the nested storage cannot be
+    materialized at all, so the proxy cannot ask it whether the data is shared. It reports
+    the ownership as *unknown* (`dropDataOwnershipUnknown`), and
+    `DatabaseCatalog::dropTableFinally` then cleans node-local disks but skips disks whose
+    metadata is shared across nodes (`plain_rewritable` / `keeper`). Without that, the
+    unloadable proxy falls back to the default `dropSkipsDataDirectoryCleanup() == false`
+    and the catalog destroys the leader's data with `removeRecursive`.
+
+    The materialization failure is injected with the `storage_table_proxy_drop_load_failure`
+    failpoint, because a genuine load failure of a shared-storage table (an unreachable
+    endpoint, a metadata layout the node cannot read) is not reproducible on demand here.
+    """
+    ensure_node_up(node1)
+    ensure_node_up(node2)
+    failpoint = "storage_table_proxy_drop_load_failure"
+    table = "test_lazy_follower_drop_unloadable"
+    database = "lazy_follower_drop_unloadable_db"
+    try:
+        create_table_on_first_node(
+            node1, table, SHARED_UUID_LAZY_FOLLOWER_DROP_UNLOADABLE
+        )
+        wait_for_leader([node1], table_name=table)
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+
+        part_name = node1.query(
+            f"SELECT name FROM system.parts WHERE database = currentDatabase()"
+            f" AND table = '{table}' AND active AND rows > 1 LIMIT 1"
+        ).strip()
+        assert part_name
+        part_prefix = find_part_object_key_prefix(
+            SHARED_UUID_LAZY_FOLLOWER_DROP_UNLOADABLE, part_name
+        )
+        assert part_prefix, "Could not locate the part's S3 prefix before the drop"
+
+        attach_lazy_database_with_table(
+            node2, database, table, SHARED_UUID_LAZY_FOLLOWER_DROP_UNLOADABLE
+        )
+
+        node2.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        node2.query(f"DROP TABLE {database}.{table} SYNC")
+        node2.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        store_path = (
+            f"store/{SHARED_UUID_LAZY_FOLLOWER_DROP_UNLOADABLE[:3]}/"
+            f"{SHARED_UUID_LAZY_FOLLOWER_DROP_UNLOADABLE}"
+        )
+        assert node2.contains_in_log(f"Not removing data directory {store_path}"), (
+            "The catalog did not take the fail-closed path for the unloadable proxy, "
+            "so the scenario under test was not reached"
+        )
+
+        objects_after_drop = list(
+            cluster.minio_client.list_objects(
+                cluster.minio_bucket, part_prefix, recursive=True
+            )
+        )
+        assert objects_after_drop, (
+            "DROP TABLE of a lazy proxy whose storage could not be materialized removed "
+            "shared S3 data owned by the leader"
+        )
+
+        rows = node1.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").strip()
+        assert rows == "1\n2\n3", (
+            f"Leader lost data after a follower-side drop of an unloadable proxy, got: {rows!r}"
+        )
+        node1.query(f"INSERT INTO {table} VALUES (10)")
+
+        attach_table_on_second_node(
+            node2, table, SHARED_UUID_LAZY_FOLLOWER_DROP_UNLOADABLE
+        )
+        expected = "1\n2\n3\n10"
+        deadline = time.monotonic() + 60
+        rows = ""
+        while time.monotonic() < deadline:
+            rows = node2.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").strip()
+            if rows == expected:
+                break
+            time.sleep(1)
+        assert rows == expected, (
+            f"Re-attached follower does not see the shared data, got: {rows!r}"
+        )
+    finally:
+        for node in (node1, node2):
+            try:
+                node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            except Exception:
+                pass
+            try:
+                node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass
+        try:
+            node2.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+        except Exception:
+            pass
+
+
 SHARED_UUID_LEADER_DROP = "12345678-abcd-abcd-abcd-12345678ab33"
 
 
