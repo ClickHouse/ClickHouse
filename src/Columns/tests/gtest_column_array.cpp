@@ -15,6 +15,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/scope_guard_safe.h>
 
+#include <limits>
 #include <thread>
 
 #include <gtest/gtest.h>
@@ -240,6 +241,16 @@ TEST(ColumnArray, InsertManyFromRepeatedSmallArrays)
     destination->insertManyFrom(*source, 100, 0);
     EXPECT_EQ(destination->size(), 9);
     EXPECT_EQ(destination->getData().size(), 8);
+}
+
+TEST(ColumnArray, InsertManyFromRejectsRowCountOverflow)
+{
+    auto source = createArray({}, {0});
+    auto destination = createArray({}, {0});
+
+    EXPECT_THROW(destination->insertManyFrom(*source, 0, std::numeric_limits<size_t>::max()), Exception);
+    EXPECT_EQ(destination->size(), 1);
+    EXPECT_EQ(destination->getData().size(), 0);
 }
 
 TEST(ColumnArray, InsertManyFromSelfString)
