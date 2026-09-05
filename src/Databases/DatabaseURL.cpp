@@ -10,7 +10,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Disks/IVolume.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageFile.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageURL.h>
 #include <TableFunctions/ITableFunction.h>
@@ -283,20 +285,23 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     if (classifyURLScheme(url) != URLSchemeTarget::File)
         return true;
 
+    const bool is_local = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
+    const VolumePtr user_files_volume = is_local ? VolumePtr{} : context_->getUserFilesVolume();
+
     fs::path fs_path(getLocalPathFromFileURL(url));
     if (fs_path.is_relative())
         fs_path = fs::path(context_->getUserFilesPath()) / fs_path;
-    const String path = fs::absolute(fs_path).lexically_normal().string();
+
+    /// For a disk-backed `user_files_policy` the user-files path is the disk root, which is not
+    /// necessarily host-absolute - for `s3_plain` it is an object-key prefix. `fs::absolute`
+    /// would prepend the server working directory and break the disk-prefix match in
+    /// `splitUserFilesAbsolutePath`, so in that case normalize only lexically.
+    const String path = user_files_volume
+        ? fs_path.lexically_normal().string()
+        : fs::absolute(fs_path).lexically_normal().string();
 
     /// A path with globs matches a dynamic set of files, possibly empty, so it always "exists".
     if (containsGlobs(path))
-        return true;
-
-    /// Outside clickhouse-local, do not probe paths outside of user_files: instead of leaking
-    /// whether such a file exists through the error message, claim the table and let the `file`
-    /// engine report the access error.
-    const bool is_local = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
-    if (!is_local && !fileOrSymlinkPathStartsWith(path, context_->getUserFilesPath()))
         return true;
 
     /// The result of this probe is reported to the user (`EXISTS TABLE` returns it, and the
@@ -306,6 +311,42 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     /// Claim the table, as above: a resolution of it fails with the access error, and `EXISTS`
     /// answers what it answers for a remote URL, which is not probed either.
     if (!isFileReadGranted(context_))
+        return true;
+
+    /// When `user_files_policy` is configured, `fs::exists` only checks the local filesystem
+    /// and would reject valid paths that exist on the configured `IDisk`. Route the existence
+    /// check through `IDisk`, mirroring `DatabaseFilesystem::checkTableFilePath`.
+    if (user_files_volume)
+    {
+        auto [disk, disk_relative_path] = splitUserFilesAbsolutePath(path, user_files_volume->getDisks());
+
+        /// Do not probe paths outside of user_files: instead of leaking whether such a file
+        /// exists through the error message, claim the table and let the `file` engine report
+        /// the access error.
+        if (!disk || !isDiskRelativePathInsideRoot(disk, disk_relative_path))
+            return true;
+
+        if (!disk->existsFileOrDirectory(disk_relative_path))
+        {
+            if (throw_on_error)
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path);
+            return false;
+        }
+
+        if (!disk->existsFile(disk_relative_path))
+        {
+            if (throw_on_error)
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", path);
+            return false;
+        }
+
+        return true;
+    }
+
+    /// Outside clickhouse-local, do not probe paths outside of user_files: instead of leaking
+    /// whether such a file exists through the error message, claim the table and let the `file`
+    /// engine report the access error.
+    if (!is_local && !weaklyCanonicalPathStartsWith(path, context_->getUserFilesPath()))
         return true;
 
     if (!fs::exists(path))

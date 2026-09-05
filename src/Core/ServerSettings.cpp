@@ -1596,6 +1596,50 @@ The directory with user files. Used in the table function [file()](/reference/fu
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 )", 0) \
+    DECLARE(String, user_files_policy, "", R"(
+Storage policy for user files directory. When set, user files reside on the disk configured in the specified policy.
+The policy must have exactly one volume containing exactly one disk. If set, this takes precedence over `user_files_path`.
+
+:::note
+Remote (non-plain-local) disks are supported only by the features that access user files through the disk interface: reading and writing whole files with the [file()](/sql-reference/table-functions/file) table function and the `File` table engine.
+
+Features that require a local filesystem path — for example the [filesystem()](/sql-reference/table-functions/filesystem) table function, `ATTACH ... FROM`, the `FileLog` engine, dictionary sources with the `FILE` type defined via DDL, `catboostEvaluate`, and reading `file()` / `File` with `format = 'Distributed'` — still require the policy's disk to be a plain local disk and throw an exception otherwise.
+
+The following `file()` and `File` modes are not supported with `user_files_policy` at all, on any disk type, and throw an exception:
+- archive syntax (`file('archive.zip :: data.csv')`);
+- `INSERT ... PARTITION BY` into `file()` and partitioned writes with the `File` engine.
+
+The `rename_files_after_processing` setting additionally requires the policy's disk to be a plain local disk.
+:::
+
+**Example**
+
+```xml
+<clickhouse>
+<storage_configuration>
+    <disks>
+        <user_files_s3>
+            <type>s3_plain</type>
+            <endpoint>https://example.s3.amazonaws.com/user_files/</endpoint>
+            <access_key_id>...</access_key_id>
+            <secret_access_key>...</secret_access_key>
+        </user_files_s3>
+    </disks>
+    <policies>
+        <user_files_remote>
+            <volumes>
+                <main>
+                    <disk>user_files_s3</disk>
+                </main>
+            </volumes>
+        </user_files_remote>
+    </policies>
+</storage_configuration>
+
+<user_files_policy>user_files_remote</user_files_policy>
+</clickhouse>
+```
+)", 0) \
     DECLARE(String, dictionaries_lib_path, "/var/lib/clickhouse/dictionaries_lib/", R"(The directory with shared libraries for the `library` dictionary source. The setting is deprecated: the `library` dictionary source was removed.)", SettingsTierType::OBSOLETE) \
     DECLARE(String, user_scripts_path, "/var/lib/clickhouse/user_scripts/", R"(
 The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](/reference/functions/regular-functions/udf#executable-user-defined-functions).

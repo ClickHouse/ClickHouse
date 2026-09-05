@@ -271,6 +271,20 @@ bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path
     return fileOrSymlinkPathStartsWith(filesystem_path, filesystem_prefix_path);
 }
 
+bool weaklyCanonicalPathStartsWith(const String & path, const String & prefix_path)
+{
+    std::error_code ec;
+    const auto resolved_path = fs::weakly_canonical(path, ec);
+    if (ec)
+        return false;
+
+    const auto resolved_prefix_path = fs::weakly_canonical(prefix_path, ec);
+    if (ec)
+        return false;
+
+    return pathStartsWith(resolved_path, resolved_prefix_path);
+}
+
 size_t getSizeFromFileDescriptor(int fd, const String & file_name)
 {
     struct stat buf{};

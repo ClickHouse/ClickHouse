@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Client/Connection.h>
+#include <Disks/IVolume.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/IStorageCluster.h>
 #include <Storages/StorageURL.h>
@@ -39,6 +40,7 @@ private:
     void updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) override;
 
     Strings paths;
+    VolumePtr user_files_volume;
     String filename;
     String format_name;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;

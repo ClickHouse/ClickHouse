@@ -11,6 +11,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 
@@ -50,6 +52,25 @@ public:
 
     void initBridge(const ColumnConst * name_col) const
     {
+        /// The CatBoost bridge reads both the library and the model through host-local filesystem
+        /// I/O (`std::filesystem::exists` + `CatBoostLibraryBridgeHelper`), but `user_files_policy`
+        /// can resolve `user_files_path` to a non-local disk root (e.g. `s3_plain`) or to a local
+        /// encrypted/cached disk whose backing bytes differ from the logical contents. With such a
+        /// policy no valid model can both pass the containment check and be read correctly, so reject
+        /// up front (before touching the filesystem), mirroring the explicit guards added for the
+        /// other local-only `user_files` consumers.
+        if (auto user_files_volume = getContext()->getUserFilesVolume())
+        {
+            for (const auto & disk : user_files_volume->getDisks())
+            {
+                if (!isPlainLocalDisk(*disk))
+                    throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
+                        "catboostEvaluate is not supported with non-plain-local `user_files_policy` disks "
+                        "(disk `{}` is not a plain local filesystem disk)",
+                        disk->getName());
+            }
+        }
+
         String library_path = getContext()->getConfigRef().getString("catboost_lib_path");
         if (!std::filesystem::exists(library_path))
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can't load library {}: file doesn't exist", library_path);
@@ -62,7 +83,7 @@ public:
         if (context->getApplicationType() != Context::ApplicationType::LOCAL)
         {
             const String user_files_path = context->getUserFilesPath();
-            if (!fileOrSymlinkPathStartsWith(model_path, user_files_path))
+            if (!context->isUserFilesPath(model_path))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                     "CatBoost model path must be inside the user_files directory ({})", user_files_path);
         }

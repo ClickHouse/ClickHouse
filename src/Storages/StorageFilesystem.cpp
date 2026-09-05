@@ -140,11 +140,13 @@ public:
         std::unordered_set<String> visited;
         const String user_files_absolute_path_string;
         const bool need_check;
+        const bool resolve_symlinks;
 
-        PathInfo(String user_files_absolute_path_string_, bool need_check_)
+        PathInfo(String user_files_absolute_path_string_, bool need_check_, bool resolve_symlinks_)
             : queue(TRAVERSAL_QUEUE_CAPACITY)
             , user_files_absolute_path_string(std::move(user_files_absolute_path_string_))
             , need_check(need_check_)
+            , resolve_symlinks(resolve_symlinks_)
         {
         }
     };
@@ -307,15 +309,41 @@ private:
                     return;
 
                 fs::path child_path = fs::absolute(child.path()).lexically_normal();
+                bool unresolved_symlink_inside_user_files = false;
 
-                if (path_info->need_check && !fileOrSymlinkPathStartsWith(child_path.string(), path_info->user_files_absolute_path_string))
+                const bool child_is_inside_user_files = path_info->resolve_symlinks
+                    ? weaklyCanonicalPathStartsWith(child_path.string(), path_info->user_files_absolute_path_string)
+                    : fileOrSymlinkPathStartsWith(child_path.string(), path_info->user_files_absolute_path_string);
+
+                if (path_info->need_check && !child_is_inside_user_files)
                 {
-                    LOG_DEBUG(getLogger("StorageFilesystem"), "Path {} is not inside user_files {}",
-                        child_path.string(), path_info->user_files_absolute_path_string);
-                    continue;
+                    /// Keep an in-root symlink that cannot be resolved (for example, a symlink cycle)
+                    /// visible in the listing, but never traverse into it. A successfully resolved symlink
+                    /// outside `user_files` is still rejected by `weaklyCanonicalPathStartsWith`.
+                    std::error_code canonical_ec;
+                    (void)fs::weakly_canonical(child_path, canonical_ec);
+
+                    std::error_code symlink_ec;
+                    unresolved_symlink_inside_user_files = canonical_ec
+                        && child.is_symlink(symlink_ec)
+                        && !symlink_ec
+                        && fileOrSymlinkPathStartsWith(child_path.string(), path_info->user_files_absolute_path_string);
+
+                    if (unresolved_symlink_inside_user_files)
+                    {
+                        LOG_DEBUG(getLogger("StorageFilesystem"),
+                            "Cannot resolve symlink {}: {}, not traversing",
+                            child_path.string(), canonical_ec.message());
+                    }
+                    else
+                    {
+                        LOG_DEBUG(getLogger("StorageFilesystem"), "Path {} is not inside user_files {}",
+                            child_path.string(), path_info->user_files_absolute_path_string);
+                        continue;
+                    }
                 }
 
-                bool expand = true;
+                bool expand = !unresolved_symlink_inside_user_files;
                 if (child.is_directory(ec) && child.is_symlink(ec))
                 {
                     std::error_code canon_ec;
@@ -524,6 +552,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
         bool local_mode_,
+        bool user_files_policy_,
         String path_,
         String user_files_absolute_path_string_,
         size_t max_block_size_,
@@ -535,6 +564,7 @@ public:
             storage_snapshot_,
             context_)
         , local_mode(local_mode_)
+        , user_files_policy(user_files_policy_)
         , path(std::move(path_))
         , user_files_absolute_path_string(std::move(user_files_absolute_path_string_))
         , max_block_size(max_block_size_)
@@ -576,7 +606,7 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        auto path_info = std::make_shared<FilesystemSource::PathInfo>(user_files_absolute_path_string, !local_mode);
+        auto path_info = std::make_shared<FilesystemSource::PathInfo>(user_files_absolute_path_string, !local_mode, user_files_policy);
 
         fs::path file_path(path);
         if (file_path.is_relative())
@@ -592,7 +622,11 @@ public:
             file_path = fs::path(s);
         }
 
-        if (path_info->need_check && !fileOrSymlinkPathStartsWith(file_path.string(), path_info->user_files_absolute_path_string))
+        const bool file_is_inside_user_files = path_info->resolve_symlinks
+            ? weaklyCanonicalPathStartsWith(file_path.string(), path_info->user_files_absolute_path_string)
+            : fileOrSymlinkPathStartsWith(file_path.string(), path_info->user_files_absolute_path_string);
+
+        if (path_info->need_check && !file_is_inside_user_files)
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Path {} is not inside user_files {}",
                 file_path.string(), path_info->user_files_absolute_path_string);
 
@@ -622,6 +656,7 @@ public:
 
 private:
     bool local_mode;
+    bool user_files_policy;
     String path;
     String user_files_absolute_path_string;
     size_t max_block_size;
@@ -645,7 +680,7 @@ void StorageFilesystem::read(
 {
     query_plan.addStep(std::make_unique<ReadFromFilesystem>(
         column_names, query_info, storage_snapshot, context,
-        local_mode, path, user_files_absolute_path_string,
+        local_mode, user_files_policy, path, user_files_absolute_path_string,
         max_block_size, num_streams));
 }
 
@@ -655,10 +690,12 @@ StorageFilesystem::StorageFilesystem(
     const ConstraintsDescription & constraints_,
     const String & comment,
     bool local_mode_,
+    bool user_files_policy_,
     String path_,
     String user_files_absolute_path_string_)
     : IStorage(table_id_)
     , local_mode(local_mode_)
+    , user_files_policy(user_files_policy_)
     , path(std::move(path_))
     , user_files_absolute_path_string(std::move(user_files_absolute_path_string_))
 {

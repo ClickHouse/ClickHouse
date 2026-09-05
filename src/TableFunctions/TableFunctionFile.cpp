@@ -58,6 +58,7 @@ StorageFile::FileSource parseFileSourceFromStringArray(const Array & sources, co
         if (is_first_source)
         {
             result.format_from_filenames = source.format_from_filenames;
+            result.user_files_volume = std::move(source.user_files_volume);
             is_first_source = false;
         }
         else if (result.format_from_filenames != source.format_from_filenames)
@@ -179,9 +180,11 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
 
         ColumnsDescription columns;
         if (format == "auto")
-            columns = StorageFile::getTableStructureAndFormatFromFile(file_source->paths, compression_method, std::nullopt, context, file_source->archive_info).first;
+            columns = StorageFile::getTableStructureAndFormatFromFile(
+                file_source->paths, compression_method, std::nullopt, context, file_source->archive_info, file_source->user_files_volume).first;
         else
-            columns = StorageFile::getTableStructureFromFile(format, file_source->paths, compression_method, std::nullopt, context, file_source->archive_info);
+            columns = StorageFile::getTableStructureFromFile(
+                format, file_source->paths, compression_method, std::nullopt, context, file_source->archive_info, file_source->user_files_volume);
 
         auto sample_path = file_source->paths.empty() ? String{} : file_source->paths.front();
 
@@ -251,6 +254,14 @@ DESC format(LineAsString, 'Hello\nWorld')
 ## Returned value {#returned-value}
 
 A table for reading or writing data in a file.
+
+## Limitations with `user_files_policy` {#user-files-policy-limitations}
+
+When the [`user_files_policy`](/reference/settings/server-settings/settings/user) server setting is configured, user files are accessed through the disk configured in that policy instead of a local directory. In that mode the following are not supported and throw an exception:
+
+- archive syntax (`file('archive.zip :: data.csv')`);
+- [partitioned writes](#partitioned-write-to-multiple-tsv-files) with `INSERT ... PARTITION BY`;
+- the [`rename_files_after_processing`](/reference/settings/session-settings/other#rename_files_after_processing) setting, unless the policy's disk is a plain local filesystem disk.
 
 ## Examples for Writing to a File {#examples-for-writing-to-a-file}
 

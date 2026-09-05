@@ -1,0 +1,1408 @@
+# pylint: disable=unused-argument
+# pylint: disable=redefined-outer-name
+
+import uuid
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+
+cluster = ClickHouseCluster(__file__)
+
+node_local = cluster.add_instance(
+    "node_local",
+    main_configs=["configs/config.d/storage_configuration.xml"],
+    tmpfs=[
+        "/test_user_files_disk1:size=100M",
+    ],
+)
+
+node_s3 = cluster.add_instance(
+    "node_s3",
+    main_configs=["configs/config.d/remote_storage_configuration.xml"],
+    with_minio=True,
+    # The restart test needs to stop and start the server.
+    stay_alive=True,
+)
+
+# This node deliberately sets an unusable legacy `user_files_path` together with a
+# `user_files_policy`. The fact that the cluster starts at all proves the policy takes
+# precedence over the local path during startup (see the precedence test below).
+node_precedence = cluster.add_instance(
+    "node_precedence",
+    main_configs=["configs/config.d/storage_configuration_bad_local_path.xml"],
+    tmpfs=[
+        "/test_user_files_disk_precedence:size=100M",
+    ],
+)
+
+# This node backs `user_files_policy` with a local `DiskEncrypted`. It is not remote, so a
+# guard that tested only `disk->isRemote()` would (incorrectly) accept it; the bytes at the
+# backing path are ciphertext, so local-only consumers that bypass `IDisk` must fail closed.
+node_encrypted = cluster.add_instance(
+    "node_encrypted",
+    main_configs=["configs/config.d/storage_configuration_encrypted.xml"],
+    tmpfs=[
+        "/test_user_files_disk_encrypted_backing:size=100M",
+    ],
+)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def start_cluster():
+    try:
+        cluster.start()
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
+def test_local_read_file_from_disk():
+    """Test that `file` function can read files from the configured disk."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo 'hello from disk1' > /test_user_files_disk1/test1.csv",
+        ]
+    )
+
+    result = node_local.query("SELECT * FROM file('test1.csv', 'CSV', 'x String')")
+    assert result.strip() == "hello from disk1"
+
+
+def test_local_glob_pattern():
+    """Test that glob patterns match files on the configured disk."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo '1' > /test_user_files_disk1/glob_test_a.csv",
+        ]
+    )
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo '2' > /test_user_files_disk1/glob_test_b.csv",
+        ]
+    )
+
+    result = node_local.query(
+        "SELECT * FROM file('glob_test_*.csv', 'CSV', 'x UInt64') ORDER BY x"
+    )
+    assert result.strip() == "1\n2"
+
+
+def test_local_absolute_path_on_disk():
+    """Test that absolute paths under the configured disk root are accepted."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo 'abs1' > /test_user_files_disk1/abs_test.csv",
+        ]
+    )
+
+    result = node_local.query(
+        "SELECT * FROM file('/test_user_files_disk1/abs_test.csv', 'CSV', 'x String')"
+    )
+    assert result.strip() == "abs1"
+
+
+def test_local_absolute_path_outside_disks_rejected():
+    """Test that absolute paths outside the policy's disks are rejected."""
+    with pytest.raises(Exception, match="DATABASE_ACCESS_DENIED|not inside"):
+        node_local.query(
+            "SELECT * FROM file('/etc/passwd', 'CSV', 'x String')"
+        )
+
+
+def test_local_absolute_path_equal_to_disk_root():
+    """An absolute path equal to the disk root (with or without trailing slash)
+    must resolve to the disk root itself, not be rejected as an outside path."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo 'root_match' > /test_user_files_disk1/root_match.csv",
+        ]
+    )
+
+    # With trailing slash: directory listing should expand to the file inside.
+    result = node_local.query(
+        "SELECT * FROM file('/test_user_files_disk1/', 'CSV', 'x String') WHERE x = 'root_match'"
+    )
+    assert result.strip() == "root_match"
+
+    # Without trailing slash: same behavior expected.
+    result = node_local.query(
+        "SELECT * FROM file('/test_user_files_disk1', 'CSV', 'x String') WHERE x = 'root_match'"
+    )
+    assert result.strip() == "root_match"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "../../etc/passwd",
+        "foo/../../../etc/passwd",
+        "./../../etc/passwd",
+        "/test_user_files_disk1/../../../etc/passwd",
+    ],
+)
+def test_local_path_traversal_rejected(path):
+    """Test that disk-relative '..' traversal is rejected (does not escape the disk root)."""
+    with pytest.raises(Exception, match="DATABASE_ACCESS_DENIED|escapes"):
+        node_local.query(
+            f"SELECT * FROM file('{path}', 'CSV', 'x String')"
+        )
+
+
+def test_local_symlink_escape_rejected():
+    """An in-root symlink pointing outside the disk root must not be followed.
+
+    Lexical normalization alone (`..` rejection) does not catch this case: the
+    symlink target is resolved by the local filesystem at I/O time, so a path
+    like `escape_link/passwd` would otherwise read `/etc/passwd` even though
+    every component looks valid.
+    """
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "ln -snf /etc /test_user_files_disk1/escape_link",
+        ]
+    )
+    try:
+        with pytest.raises(Exception, match="DATABASE_ACCESS_DENIED|outside"):
+            node_local.query(
+                "SELECT * FROM file('escape_link/passwd', 'CSV', 'x String')"
+            )
+        with pytest.raises(Exception, match="DATABASE_ACCESS_DENIED|outside"):
+            node_local.query(
+                "SELECT * FROM file('/test_user_files_disk1/escape_link/passwd', 'CSV', 'x String')"
+            )
+        # Glob with an in-root symlink prefix must also fail closed - otherwise
+        # the iteration would call `iterateDirectory`/`getFileSize` on entries
+        # outside the disk root and merely drop matches in a post-filter,
+        # leaking metadata about files like `/etc/*` even when the query
+        # returns no rows.
+        result = node_local.query_and_get_error(
+            "SELECT * FROM file('escape_link/*', 'CSV', 'x String')"
+        )
+        assert "DATABASE_ACCESS_DENIED" in result or "FILE_DOESNT_EXIST" in result
+    finally:
+        node_local.exec_in_container(
+            ["bash", "-c", "rm -f /test_user_files_disk1/escape_link"]
+        )
+
+
+def test_local_scalar_file_function():
+    """The scalar `file(path)` function has its own `user_files_policy` branch in
+    `FunctionFile`, separate from the `file` table function / `StorageFile`. Cover
+    a success case, the symlink-escape rejection, and the optional-default fallback
+    so a regression in that branch is caught."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo -n 'scalar contents' > /test_user_files_disk1/scalar_test.txt",
+        ]
+    )
+
+    # Success: relative path resolves through the configured disk.
+    assert node_local.query("SELECT file('scalar_test.txt')").strip() == "scalar contents"
+
+    # Absolute path equal to the disk-rooted file resolves the same way.
+    assert (
+        node_local.query("SELECT file('/test_user_files_disk1/scalar_test.txt')").strip()
+        == "scalar contents"
+    )
+
+    # `..` traversal is rejected lexically.
+    with pytest.raises(Exception, match="DATABASE_ACCESS_DENIED|escapes"):
+        node_local.query("SELECT file('../../etc/passwd')")
+
+    # In-root symlink pointing outside the disk root is blocked by the symlink-aware check.
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "ln -snf /etc /test_user_files_disk1/scalar_escape_link",
+        ]
+    )
+    try:
+        with pytest.raises(Exception, match="DATABASE_ACCESS_DENIED|outside"):
+            node_local.query("SELECT file('scalar_escape_link/passwd')")
+    finally:
+        node_local.exec_in_container(
+            ["bash", "-c", "rm -f /test_user_files_disk1/scalar_escape_link"]
+        )
+
+    # Optional default is returned on failure instead of throwing.
+    result = node_local.query("SELECT file('nonexistent_scalar.txt', 'fallback')")
+    assert result.strip() == "fallback"
+
+
+def test_local_scalar_file_missing_reports_file_doesnt_exist():
+    """A single-argument `file(path)` for an in-bounds path that simply does not exist must
+    surface the natural missing-file error (`FILE_DOESNT_EXIST`), not `DATABASE_ACCESS_DENIED`.
+
+    Regression for the `user_files_policy` branch of `FunctionFile`: it used to probe the disks
+    with `existsFile` to pick which disk owns the request. Once `setUserFilesPolicy` began to
+    require a single-disk volume that probe no longer routed anything, but it turned every missing
+    in-bounds file into a misleading access-denied error. The disk is now selected directly after
+    the containment check so `readFile` reports the real backend error."""
+    err = node_local.query_and_get_error("SELECT file('definitely_missing_scalar.txt')")
+    assert "FILE_DOESNT_EXIST" in err or "does not exist" in err, err
+    assert "DATABASE_ACCESS_DENIED" not in err, err
+
+
+def test_local_insert_into_file():
+    """Test that writing files uses the first disk by default."""
+    node_local.query(
+        "INSERT INTO FUNCTION file('write_test.csv', 'CSV', 'x UInt64') SELECT 42"
+    )
+
+    result = node_local.query(
+        "SELECT * FROM file('write_test.csv', 'CSV', 'x UInt64')"
+    )
+    assert result.strip() == "42"
+
+    # Verify the file was written to the first disk
+    output = node_local.exec_in_container(
+        ["bash", "-c", "cat /test_user_files_disk1/write_test.csv"]
+    )
+    assert "42" in output
+
+
+def test_s3_write_and_read():
+    """Test that file() function can write to and read from an S3-backed disk."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('s3_test.csv', 'CSV', 'x UInt64') SELECT 123"
+    )
+
+    result = node_s3.query("SELECT * FROM file('s3_test.csv', 'CSV', 'x UInt64')")
+    assert result.strip() == "123"
+
+
+def test_s3_write_and_read_multiple_rows():
+    """Test writing and reading multiple rows via S3-backed disk."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('s3_multi.csv', 'CSV', 'x UInt64, y String') "
+        "SELECT number, toString(number) FROM numbers(10)"
+    )
+
+    result = node_s3.query(
+        "SELECT count() FROM file('s3_multi.csv', 'CSV', 'x UInt64, y String')"
+    )
+    assert result.strip() == "10"
+
+
+def test_s3_read_nonexistent_file():
+    """Test that reading a non-existent file from S3 produces an error."""
+    with pytest.raises(Exception, match="FILE_DOESNT_EXIST|Cannot stat|doesn't exist"):
+        node_s3.query(
+            "SELECT * FROM file('nonexistent_file_12345.csv', 'CSV', 'x UInt64')"
+        )
+
+
+def test_s3_glob_pattern():
+    """Test glob patterns on S3-backed disk."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('s3_glob_a.csv', 'CSV', 'x UInt64') SELECT 1"
+    )
+    node_s3.query(
+        "INSERT INTO FUNCTION file('s3_glob_b.csv', 'CSV', 'x UInt64') SELECT 2"
+    )
+
+    result = node_s3.query(
+        "SELECT * FROM file('s3_glob_*.csv', 'CSV', 'x UInt64') ORDER BY x"
+    )
+    assert result.strip() == "1\n2"
+
+
+def test_local_time_virtual_column():
+    """Test that _time virtual column returns a real timestamp for disk-backed files."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo 'mtime_test' > /test_user_files_disk1/mtime_test.csv",
+        ]
+    )
+
+    result = node_local.query(
+        "SELECT _time > toDateTime('2000-01-01') "
+        "FROM file('mtime_test.csv', 'CSV', 'x String')"
+    )
+    assert result.strip() == "1"
+
+
+def test_s3_time_virtual_column():
+    """Same as above but for S3-backed disk (covers the DiskObjectStorage path)."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('s3_mtime.csv', 'CSV', 'x UInt64') SELECT 7"
+    )
+    result = node_s3.query(
+        "SELECT _time > toDateTime('2000-01-01') "
+        "FROM file('s3_mtime.csv', 'CSV', 'x UInt64')"
+    )
+    assert result.strip() == "1"
+
+
+def test_local_time_virtual_column_matches_exact_mtime():
+    """`_time` must be the file's real last-modified time as reported by `IDisk`.
+
+    The weaker "is it after year 2000" checks above would still pass if the metadata
+    path regressed to some unrelated timestamp, so pin an exact value here.
+    """
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo 'exact_mtime_test' > /test_user_files_disk1/exact_mtime_test.csv && "
+            "touch -d '2020-03-04 05:06:07 UTC' /test_user_files_disk1/exact_mtime_test.csv",
+        ]
+    )
+
+    result = node_local.query(
+        "SELECT _time = toDateTime('2020-03-04 05:06:07', 'UTC') "
+        "FROM file('exact_mtime_test.csv', 'CSV', 'x String')"
+    )
+    assert result.strip() == "1"
+
+
+def test_s3_time_virtual_column_tracks_the_object():
+    """On a remote disk `_time` comes from `disk->getLastModified`; check it is the
+    object's own modification time (close to the write) and that it advances when the
+    object is rewritten."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('s3_mtime_tracked.csv', 'CSV', 'x UInt64') SELECT 1"
+    )
+    near_now = node_s3.query(
+        "SELECT abs(dateDiff('second', _time, now())) < 600 "
+        "FROM file('s3_mtime_tracked.csv', 'CSV', 'x UInt64')"
+    )
+    assert near_now.strip() == "1"
+
+    first = int(
+        node_s3.query(
+            "SELECT toUnixTimestamp(_time) "
+            "FROM file('s3_mtime_tracked.csv', 'CSV', 'x UInt64')"
+        ).strip()
+    )
+
+    node_s3.query(
+        "INSERT INTO FUNCTION file('s3_mtime_tracked.csv', 'CSV', 'x UInt64') "
+        "SELECT 2 SETTINGS engine_file_truncate_on_insert = 1"
+    )
+    second = int(
+        node_s3.query(
+            "SELECT toUnixTimestamp(_time) "
+            "FROM file('s3_mtime_tracked.csv', 'CSV', 'x UInt64')"
+        ).strip()
+    )
+    assert second >= first
+
+
+def test_local_insert_appends_to_existing_file():
+    """Append-capable formats (CSV/TSV) must not silently overwrite an existing file."""
+    node_local.query(
+        "INSERT INTO FUNCTION file('append_test.csv', 'CSV', 'x UInt64') SELECT 1"
+    )
+    node_local.query(
+        "INSERT INTO FUNCTION file('append_test.csv', 'CSV', 'x UInt64') SELECT 2"
+    )
+
+    result = node_local.query(
+        "SELECT count() FROM file('append_test.csv', 'CSV', 'x UInt64')"
+    )
+    assert result.strip() == "2"
+
+
+def test_local_insert_truncate_on_insert():
+    """`engine_file_truncate_on_insert=1` must overwrite existing data."""
+    node_local.query(
+        "INSERT INTO FUNCTION file('truncate_test.csv', 'CSV', 'x UInt64') SELECT 1"
+    )
+    node_local.query(
+        "INSERT INTO FUNCTION file('truncate_test.csv', 'CSV', 'x UInt64') SELECT 2 "
+        "SETTINGS engine_file_truncate_on_insert = 1"
+    )
+
+    result = node_local.query(
+        "SELECT * FROM file('truncate_test.csv', 'CSV', 'x UInt64')"
+    )
+    assert result.strip() == "2"
+
+
+def test_local_schema_inference_from_disk():
+    """Schema inference must read through `IDisk` so it works for non-local backends.
+
+    Without disk-aware schema inference, `ReadBufferFromFileIterator` falls back to
+    `stat`/`ReadBufferFromFile` on the absolute disk path, which fails for object
+    storage. The local case still exercises the disk-aware code path because
+    `user_files_policy` is configured.
+    """
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo -e 'a,b\\n1,foo\\n2,bar' > /test_user_files_disk1/infer.csv",
+        ]
+    )
+
+    result = node_local.query(
+        "SELECT count() FROM file('infer.csv', 'CSVWithNames')"
+    )
+    assert result.strip() == "2"
+
+
+def test_s3_schema_inference_from_disk():
+    """Same as above for the S3-backed disk: schema inference must go through `IDisk`."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('s3_infer.csv', 'CSVWithNames', 'a UInt64, b String') "
+        "SELECT number, toString(number) FROM numbers(3)"
+    )
+    result = node_s3.query(
+        "SELECT count() FROM file('s3_infer.csv', 'CSVWithNames')"
+    )
+    assert result.strip() == "3"
+
+
+def test_s3_schema_inference_for_table_function_metadata():
+    """Metadata and automatic-format inference for `file` must keep the policy
+    volume, because neither path can use host-local `stat` for an S3 object."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('s3_infer_metadata', 'CSVWithNames', 'a UInt64, b String') "
+        "SELECT number, toString(number) FROM numbers(3)"
+    )
+
+    describe = node_s3.query("DESCRIBE TABLE file('s3_infer_metadata', 'CSVWithNames')")
+    assert "a\t" in describe, describe
+    assert "b\t" in describe, describe
+
+    result = node_s3.query(
+        "SELECT count() FROM file('s3_infer_metadata', 'auto', 'a UInt64, b String')"
+    )
+    assert result.strip() == "3", result
+
+
+def test_local_partitioned_insert_rejected():
+    """`INSERT ... PARTITION BY` must be rejected with a clear error under user_files_policy
+    until disk-aware partitioned writes are implemented (silent fall-through to the local
+    filesystem would bypass the configured backend)."""
+    with pytest.raises(Exception, match="NOT_IMPLEMENTED|not supported with user_files_policy"):
+        node_local.query(
+            "INSERT INTO FUNCTION file('part_{_partition_id}.csv', 'CSV', 'x UInt64') "
+            "PARTITION BY x SELECT number FROM numbers(3)"
+        )
+
+
+def test_local_partitioned_insert_rejected_when_glob_target_exists():
+    """The partitioned-write rejection must not be bypassable by a pre-existing file.
+
+    Regression for `getPathsListOnDisk`: it expanded `{_partition_id}` as an ordinary
+    `{...}` enum glob (to the literal `_partition_id`) before the write-side rejection saw
+    it. If a file matching that expansion (`part__partition_id.csv`) already existed on the
+    disk, the pattern resolved to that single literal file, so `path_for_partitioned_write`
+    no longer contained the wildcard, `INSERT ... PARTITION BY` was no longer recognized as a
+    partitioned write, and all data was silently written into the wrong file instead of
+    throwing the intended unsupported-mode exception."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            # The literal name that `{_partition_id}` expands to.
+            "echo 'preexisting' > /test_user_files_disk1/part__partition_id.csv",
+        ]
+    )
+
+    with pytest.raises(Exception, match="NOT_IMPLEMENTED|not supported with user_files_policy"):
+        node_local.query(
+            "INSERT INTO FUNCTION file('part_{_partition_id}.csv', 'CSV', 'x UInt64') "
+            "PARTITION BY x SELECT number FROM numbers(3)"
+        )
+
+    # The pre-existing file must be untouched: with the bug it would have been overwritten
+    # with the inserted rows (0, 1, 2) instead of the query being rejected.
+    output = node_local.exec_in_container(
+        ["bash", "-c", "cat /test_user_files_disk1/part__partition_id.csv"]
+    )
+    assert output.strip() == "preexisting", output
+
+
+def test_local_truncate_table_routes_through_disk():
+    """`TRUNCATE TABLE` for `File` engine must route through `IDisk` so it actually
+    empties the underlying file. Without disk-aware truncation, `fs::exists`/`::truncate`
+    on the absolute disk path would silently no-op for non-local backends (and even for
+    local disks, this exercises the disk-routing path used for object storage)."""
+    node_local.query("DROP TABLE IF EXISTS truncate_routed")
+    node_local.query(
+        "CREATE TABLE truncate_routed (x UInt64) ENGINE = File(CSV, 'truncate_routed.csv')"
+    )
+    node_local.query("INSERT INTO truncate_routed VALUES (1), (2), (3)")
+    assert node_local.query("SELECT count() FROM truncate_routed").strip() == "3"
+
+    node_local.query("TRUNCATE TABLE truncate_routed")
+    assert node_local.query("SELECT count() FROM truncate_routed").strip() == "0"
+    node_local.query("DROP TABLE truncate_routed")
+
+
+def test_s3_truncate_table_routes_through_disk():
+    """Same as above for the S3-backed disk: `TRUNCATE TABLE` must remove the
+    underlying object instead of relying on local `fs::exists`/`::truncate`,
+    which would silently no-op against an object-storage backend."""
+    node_s3.query("DROP TABLE IF EXISTS s3_truncate_routed")
+    node_s3.query(
+        "CREATE TABLE s3_truncate_routed (x UInt64) ENGINE = File(CSV, 's3_truncate_routed.csv')"
+    )
+    node_s3.query("INSERT INTO s3_truncate_routed VALUES (10), (20)")
+    assert node_s3.query("SELECT count() FROM s3_truncate_routed").strip() == "2"
+
+    node_s3.query("TRUNCATE TABLE s3_truncate_routed")
+    assert node_s3.query("SELECT count() FROM s3_truncate_routed").strip() == "0"
+    node_s3.query("DROP TABLE s3_truncate_routed")
+
+
+def test_s3_file_table_function_array_routes_through_disk():
+    """The array form of `file` must preserve the policy volume while combining
+    its individual sources, so each path is read through `IDisk`."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('array_source_1.csv', 'CSV', 'x UInt64') VALUES (1)"
+    )
+    node_s3.query(
+        "INSERT INTO FUNCTION file('array_source_2.csv', 'CSV', 'x UInt64') VALUES (2)"
+    )
+
+    result = node_s3.query(
+        "SELECT x FROM file(['array_source_1.csv', 'array_source_2.csv'], 'CSV', 'x UInt64') ORDER BY x"
+    )
+    assert result == "1\n2\n", result
+
+
+def test_local_filesystem_database():
+    """The `Filesystem` database engine must resolve a relative path against the
+    configured `user_files_policy` disk root and read tables through `IDisk`."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "mkdir -p /test_user_files_disk1/fsdb && echo '42' > /test_user_files_disk1/fsdb/t.csv",
+        ]
+    )
+    node_local.query("DROP DATABASE IF EXISTS test_fs_db")
+    node_local.query("CREATE DATABASE test_fs_db ENGINE = Filesystem('fsdb')")
+    assert node_local.query("SELECT * FROM test_fs_db.`t.csv`").strip() == "42"
+    node_local.query("DROP DATABASE test_fs_db")
+
+
+def test_s3_filesystem_database():
+    """Same for the S3-backed disk: a relative `Filesystem` database path must keep
+    the disk-root prefix so `splitUserFilesAbsolutePath` matches, instead of being
+    mangled into a host-absolute path by `fs::absolute` (which would make valid
+    directories on the disk look missing)."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('fsdb_s3/t.csv', 'CSV', 'x UInt64') SELECT 42"
+    )
+    node_s3.query("DROP DATABASE IF EXISTS test_fs_db_s3")
+    node_s3.query("CREATE DATABASE test_fs_db_s3 ENGINE = Filesystem('fsdb_s3')")
+    assert node_s3.query("SELECT * FROM test_fs_db_s3.`t.csv`").strip() == "42"
+    node_s3.query("DROP DATABASE test_fs_db_s3")
+
+
+def test_s3_filesystem_database_survives_restart():
+    """Database metadata preserves the original user input of `CREATE DATABASE`, so on
+    reload the constructor sees the same relative path again and must resolve it against
+    the disk root exactly as it did at creation time, keeping the database loadable and
+    pointing at the same directory after a restart."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('fsdb_s3_restart/t.csv', 'CSV', 'x UInt64') SELECT 42"
+    )
+    node_s3.query("DROP DATABASE IF EXISTS test_fs_db_s3_restart")
+    node_s3.query(
+        "CREATE DATABASE test_fs_db_s3_restart ENGINE = Filesystem('fsdb_s3_restart')"
+    )
+    assert (
+        node_s3.query("SELECT * FROM test_fs_db_s3_restart.`t.csv`").strip() == "42"
+    )
+
+    node_s3.restart_clickhouse()
+
+    assert (
+        node_s3.query("SELECT * FROM test_fs_db_s3_restart.`t.csv`").strip() == "42"
+    )
+    node_s3.query("DROP DATABASE test_fs_db_s3_restart")
+
+
+def test_s3_relative_path_starting_with_disk_root_prefix():
+    """A relative `file()` path that begins with the s3_plain disk's own key prefix
+    (as reported by `system.disks`) must be treated as a genuine relative path under
+    the disk root - not mistaken for an already-disk-qualified path and silently
+    stripped down to a different object at the disk root.
+
+    Regression for the path-resolution ambiguity in `getPathsListOnDisk`: for an
+    object-storage disk `disk->getPath()` is itself a relative object-key prefix, so a
+    user path like `<prefix>/nested.csv` is a valid relative object name. Previously
+    the leading prefix was stripped, so a write to `<prefix>/nested.csv` and a read of
+    the short `nested.csv` would hit the *same* object, which could silently read the
+    wrong object or overwrite unrelated data."""
+    disk_path = node_s3.query(
+        "SELECT path FROM system.disks WHERE name = 'disk_s3_plain'"
+    ).strip()
+    # The bug premise only holds when the disk root is a relative key prefix.
+    assert disk_path, "disk_s3_plain has no path"
+    assert not disk_path.startswith("/"), f"unexpected absolute disk path: {disk_path}"
+
+    long_rel = disk_path.rstrip("/") + "/prefix_collision.csv"
+
+    # Write a row through the long relative path (which begins with the disk prefix).
+    node_s3.query(
+        f"INSERT INTO FUNCTION file('{long_rel}', 'CSV', 'x UInt64') SELECT 777"
+    )
+
+    # The long relative path must round-trip to the same row.
+    assert (
+        node_s3.query(f"SELECT * FROM file('{long_rel}', 'CSV', 'x UInt64')").strip()
+        == "777"
+    )
+
+    # The short path is a *different* object at the disk root and must not exist.
+    # With the bug, the long path was stripped to the short one, so this read would
+    # have returned 777 instead of failing.
+    short_read = node_s3.query_and_get_error(
+        "SELECT * FROM file('prefix_collision.csv', 'CSV', 'x UInt64')"
+    )
+    assert (
+        "FILE_DOESNT_EXIST" in short_read
+        or "Cannot stat" in short_read
+        or "doesn't exist" in short_read
+    ), short_read
+
+
+def test_s3_filesystem_database_relative_path_starting_with_disk_root_prefix():
+    """Mirrors `test_s3_relative_path_starting_with_disk_root_prefix` for the
+    `Filesystem` database engine: a relative database path that begins with the
+    s3_plain disk's own key prefix must resolve under the disk root, i.e.
+    `CREATE DATABASE db ENGINE = Filesystem('<prefix>/nested')` names
+    `<prefix>/<prefix>/nested`.
+
+    Regression for the relative-prefix ambiguity in the `DatabaseFilesystem`
+    constructor: previously such input was mistaken for an already-disk-qualified
+    metadata path and left unchanged, so the database silently pointed at the
+    *different* directory `<prefix>/nested` at the disk root."""
+    disk_path = node_s3.query(
+        "SELECT path FROM system.disks WHERE name = 'disk_s3_plain'"
+    ).strip()
+    # The bug premise only holds when the disk root is a relative key prefix.
+    assert disk_path, "disk_s3_plain has no path"
+    assert not disk_path.startswith("/"), f"unexpected absolute disk path: {disk_path}"
+
+    long_rel_dir = disk_path.rstrip("/") + "/prefix_db_collision"
+
+    # The directory the database must point at: <disk_root>/<prefix>/prefix_db_collision.
+    node_s3.query(
+        f"INSERT INTO FUNCTION file('{long_rel_dir}/t.csv', 'CSV', 'x UInt64') SELECT 777"
+    )
+    # Decoy directory at the disk root: <disk_root>/prefix_db_collision. With the bug,
+    # the database was silently retargeted here and this read would return 888.
+    node_s3.query(
+        "INSERT INTO FUNCTION file('prefix_db_collision/t.csv', 'CSV', 'x UInt64') SELECT 888"
+    )
+
+    node_s3.query("DROP DATABASE IF EXISTS test_fs_db_prefix_collision")
+    node_s3.query(
+        f"CREATE DATABASE test_fs_db_prefix_collision ENGINE = Filesystem('{long_rel_dir}')"
+    )
+    assert (
+        node_s3.query("SELECT * FROM test_fs_db_prefix_collision.`t.csv`").strip()
+        == "777"
+    )
+
+    # `SHOW CREATE DATABASE` serializes the disk-relative form of the qualified path,
+    # which the constructor maps back to the same directory (round-trip safe for RESTORE).
+    # TSV output escapes the quotes of the string literal, so unescape before matching.
+    show_create = node_s3.query("SHOW CREATE DATABASE test_fs_db_prefix_collision").replace(
+        "\\'", "'"
+    )
+    assert f"Filesystem('{long_rel_dir}')" in show_create, show_create
+
+    # Reloading from metadata (which preserves the original user input) must resolve to
+    # the same directory instead of stripping or doubling the prefix.
+    node_s3.query("DETACH DATABASE test_fs_db_prefix_collision")
+    node_s3.query("ATTACH DATABASE test_fs_db_prefix_collision")
+    assert (
+        node_s3.query("SELECT * FROM test_fs_db_prefix_collision.`t.csv`").strip()
+        == "777"
+    )
+    node_s3.query("DROP DATABASE test_fs_db_prefix_collision")
+
+
+def test_local_disk_glob_recursion_depth_guarded():
+    """A deeply nested directory tree under a `user_files_policy` disk must surface
+    `TOO_DEEP_RECURSION` from the disk-backed `**` glob walker instead of exhausting the
+    stack. The disk walker must enforce the same `MAX_LIST_FILES_RECURSION_DEPTH` bound
+    as the local-filesystem walker `listFilesWithRegexpMatchingImpl`."""
+    # Build a directory chain deeper than MAX_LIST_FILES_RECURSION_DEPTH (1000). The
+    # physical (single-slash) path stays well under PATH_MAX; the walker throws at depth
+    # 1001 before the path it constructs internally can grow that large.
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            'd=/test_user_files_disk1/deep_glob; '
+            'for i in $(seq 1 1100); do d="$d/d"; done; '
+            'mkdir -p "$d"',
+        ]
+    )
+    err = node_local.query_and_get_error(
+        "SELECT count() FROM file('deep_glob/**', 'CSV', 'x UInt64')"
+    )
+    assert "TOO_DEEP_RECURSION" in err, err
+
+
+def test_s3_truncate_then_insert():
+    """`INSERT` after `TRUNCATE TABLE` must work on an S3-backed `File` table.
+
+    `TRUNCATE` leaves a zero-byte object behind (it rewrites an empty file to mirror
+    local `::truncate` semantics). A subsequent `INSERT` must rewrite that zero-byte
+    object rather than switch to `WriteMode::Append` (a zero-byte object has no format
+    prefix to preserve), because `s3_plain` rejects append and the table would otherwise
+    become un-insertable after truncation."""
+    node_s3.query("DROP TABLE IF EXISTS s3_truncate_insert")
+    node_s3.query(
+        "CREATE TABLE s3_truncate_insert (x UInt64) ENGINE = File(CSV, 's3_truncate_insert.csv')"
+    )
+    node_s3.query("INSERT INTO s3_truncate_insert VALUES (1), (2)")
+    assert node_s3.query("SELECT count() FROM s3_truncate_insert").strip() == "2"
+
+    node_s3.query("TRUNCATE TABLE s3_truncate_insert")
+    assert node_s3.query("SELECT count() FROM s3_truncate_insert").strip() == "0"
+
+    # This INSERT previously failed on `s3_plain`: the zero-byte object left by TRUNCATE
+    # made the sink choose `WriteMode::Append`, which `s3_plain` does not support.
+    node_s3.query("INSERT INTO s3_truncate_insert VALUES (99)")
+    assert node_s3.query("SELECT * FROM s3_truncate_insert").strip() == "99"
+    node_s3.query("DROP TABLE s3_truncate_insert")
+
+
+def test_s3_glob_wildcard_directory_component():
+    """A glob with a wildcard *directory* component (e.g. `dir*/data.csv`) must match
+    nested objects on an S3-backed `user_files_policy` disk.
+
+    Regression for the disk-glob walker join: after a directory-component glob matches
+    (say `wglob_a`), the walker recursed with the parent passed as `wglob_a/` and the
+    remaining suffix `/data.csv`, joining them as `wglob_a//data.csv`. POSIX local disks
+    collapse the `//`, but object-storage disks treat `wglob_a//data.csv` as a key
+    distinct from `wglob_a/data.csv`, so the matching objects were silently missed and
+    the query returned no rows."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('wglob_a/data.csv', 'CSV', 'x UInt64') SELECT 1"
+    )
+    node_s3.query(
+        "INSERT INTO FUNCTION file('wglob_b/data.csv', 'CSV', 'x UInt64') SELECT 2"
+    )
+
+    result = node_s3.query(
+        "SELECT * FROM file('wglob_*/data.csv', 'CSV', 'x UInt64') ORDER BY x"
+    )
+    assert result.strip() == "1\n2", result
+
+
+def test_s3_recursive_glob_nested_object():
+    """A `**` recursive glob must descend into nested directories on an S3-backed disk.
+
+    This covers the recursive branch of the disk-glob walker, which used the same
+    parent-directory join that produced a `dir//suffix` double slash. With the bug, the
+    file directly under the glob root (`gstar_root/top.csv`) was still found, but the
+    object one level deeper (`gstar_root/sub/deep.csv`) was reached only via a recursive
+    descent whose prefix became `gstar_root/sub//`, so it was silently missed on object
+    storage."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('gstar_root/top.csv', 'CSV', 'x UInt64') SELECT 10"
+    )
+    node_s3.query(
+        "INSERT INTO FUNCTION file('gstar_root/sub/deep.csv', 'CSV', 'x UInt64') SELECT 20"
+    )
+
+    # Both the top-level and the nested object must be matched; the nested one only
+    # surfaces if the recursive descent joins paths with a single separator.
+    result = node_s3.query(
+        "SELECT sum(x) FROM file('gstar_root/**', 'CSV', 'x UInt64')"
+    )
+    assert result.strip() == "30", result
+
+
+def test_s3_recursive_glob_middle_literal_suffix():
+    """A `**` between literal components (`dir/**/data.csv`) must match the same set of
+    objects on an S3-backed `user_files_policy` disk as it does on the local
+    `user_files_path` walker: `**/` stands for *zero or more* directory levels.
+
+    Regression for two divergences of `listFilesWithRegexpMatchingOnDisk` from
+    `listFilesWithRegexpMatchingImpl`: it lacked the zero-directory branch (so the
+    globstar-adjacent file `gmid_root/data.csv` was skipped) and it dropped the `**`
+    when descending (so only the *single* level `gmid_root/one/data.csv` matched, while
+    deeper `gmid_root/one/two/data.csv` was missed). With the fix all three depths match
+    and the non-matching sibling `gmid_root/one/other.csv` is excluded."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('gmid_root/data.csv', 'CSV', 'x UInt64') SELECT 1"
+    )
+    node_s3.query(
+        "INSERT INTO FUNCTION file('gmid_root/one/data.csv', 'CSV', 'x UInt64') SELECT 2"
+    )
+    node_s3.query(
+        "INSERT INTO FUNCTION file('gmid_root/one/two/data.csv', 'CSV', 'x UInt64') SELECT 4"
+    )
+    # A file whose name does not match the literal suffix must be excluded.
+    node_s3.query(
+        "INSERT INTO FUNCTION file('gmid_root/one/other.csv', 'CSV', 'x UInt64') SELECT 8"
+    )
+
+    result = node_s3.query(
+        "SELECT x FROM file('gmid_root/**/data.csv', 'CSV', 'x UInt64') ORDER BY x"
+    )
+    assert result.strip() == "1\n2\n4", result
+
+
+def test_s3_recursive_glob_adjacent_globstars_no_duplicates():
+    """Adjacent globstars (`**/**/data.csv`) can reach the same object through both the
+    zero-level branch and the recursive descent, so the disk walker must deduplicate its
+    matches - otherwise a single object is returned multiple times and its bytes are
+    counted more than once in the read progress.
+
+    `gadj_root/data.csv` is reachable with both globstars empty, and
+    `gadj_root/one/data.csv` is reachable two ways (`one`+empty and empty+`one`); each
+    must appear exactly once."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('gadj_root/data.csv', 'CSV', 'x UInt64') SELECT 100"
+    )
+    node_s3.query(
+        "INSERT INTO FUNCTION file('gadj_root/one/data.csv', 'CSV', 'x UInt64') SELECT 200"
+    )
+
+    # Each matching object must be counted once: two rows, summing to 300 (not 500+,
+    # which is what the un-deduplicated walker would return for the twice-reachable file).
+    result = node_s3.query(
+        "SELECT count(), sum(x) FROM file('gadj_root/**/**/data.csv', 'CSV', 'x UInt64')"
+    )
+    assert result.strip() == "2\t300", result
+
+
+def test_local_recursive_glob_middle_literal_suffix():
+    """Parity check on a local `user_files_policy` disk: `dir/**/data.csv` must match the
+    globstar-adjacent file and every deeper level, exactly like the plain
+    `user_files_path` walker. Locks `listFilesWithRegexpMatchingOnDisk` to the semantics
+    of `listFilesWithRegexpMatchingImpl` for the disk-backed local case too."""
+    node_local.query(
+        "INSERT INTO FUNCTION file('lmid_root/data.csv', 'CSV', 'x UInt64') SELECT 1"
+    )
+    node_local.query(
+        "INSERT INTO FUNCTION file('lmid_root/one/data.csv', 'CSV', 'x UInt64') SELECT 2"
+    )
+    node_local.query(
+        "INSERT INTO FUNCTION file('lmid_root/one/two/data.csv', 'CSV', 'x UInt64') SELECT 4"
+    )
+
+    result = node_local.query(
+        "SELECT x FROM file('lmid_root/**/data.csv', 'CSV', 'x UInt64') ORDER BY x"
+    )
+    assert result.strip() == "1\n2\n4", result
+
+
+def test_user_files_policy_precedence_over_bad_local_path():
+    """`user_files_policy` must take precedence over `user_files_path` during startup.
+
+    `node_precedence` sets `user_files_path` to `/dev/null/user_files/` - a path under a
+    character device, so creating the legacy local directory would fail. The server must
+    still start (the policy's disk provides the user files location) and `file()` must
+    resolve against the policy disk, not the bogus local path. Without skipping the local
+    `user_files_path` setup when a policy is configured, `fs::create_directories` throws
+    during startup and the server never comes up."""
+    # The instance being up at all already proves startup did not fail on the unusable
+    # local path; this confirms the server is actually serving.
+    assert node_precedence.query("SELECT 1").strip() == "1"
+
+    node_precedence.query(
+        "INSERT INTO FUNCTION file('precedence_test.csv', 'CSV', 'x UInt64') SELECT 555"
+    )
+    assert (
+        node_precedence.query(
+            "SELECT * FROM file('precedence_test.csv', 'CSV', 'x UInt64')"
+        ).strip()
+        == "555"
+    )
+
+    # The file must land on the policy disk, not under the bogus `/dev/null/...` path.
+    output = node_precedence.exec_in_container(
+        ["bash", "-c", "cat /test_user_files_disk_precedence/precedence_test.csv"]
+    )
+    assert "555" in output
+
+
+def test_encrypted_disk_read_through_idisk_and_reject_local_consumers():
+    """A local `DiskEncrypted` `user_files_policy` is not remote, but its backing path holds
+    ciphertext. The disk-aware `file` path must read/write the logical (decrypted) contents
+    through `IDisk`, while local-only consumers that bypass `IDisk` (here the `filesystem`
+    table function) must fail closed instead of exposing the ciphertext / backing files.
+
+    Regression for the fail-open guard that tested only `disk->isRemote()`: a local encrypted
+    disk passed that test, so `filesystem()` would list and read the encrypted backing
+    directory via `std::filesystem` / `ReadBufferFromFile`."""
+    secret = "secret_plaintext_value"
+
+    # `file()` is disk-aware: write and read round-trip to the logical (decrypted) value.
+    node_encrypted.query(
+        f"INSERT INTO FUNCTION file('enc_test.csv', 'CSV', 'x String') SELECT '{secret}'"
+    )
+    assert (
+        node_encrypted.query(
+            "SELECT * FROM file('enc_test.csv', 'CSV', 'x String')"
+        ).strip()
+        == secret
+    )
+
+    # The bytes physically stored on the backing disk must be ciphertext: the plaintext must
+    # not appear anywhere under the backing directory. This is exactly why local-POSIX
+    # consumers cannot be allowed to read the disk root directly.
+    backing = node_encrypted.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "grep -rl '" + secret + "' /test_user_files_disk_encrypted_backing/ || true",
+        ]
+    )
+    assert backing.strip() == "", f"plaintext leaked to backing store: {backing}"
+
+    # A local-only consumer must reject the encrypted disk (fail closed), not read ciphertext.
+    err = node_encrypted.query_and_get_error("SELECT count() FROM filesystem()")
+    assert "not a plain local filesystem disk" in err, err
+
+
+def test_local_literal_partition_id_filename():
+    """A literal file name that merely contains the `{_partition_id}` substring, read without
+    `INSERT ... PARTITION BY`, must resolve to a real disk-qualified path.
+
+    Regression for the `{_partition_id}` fast path in `getPathsListOnDisk`: it returned the raw
+    user input instead of the internal `<disk_path>/<relative>` form, so on the read path
+    `splitUserFilesAbsolutePath` could not recover a disk and the file was reported missing
+    (`FILE_DOESNT_EXIST`), unlike the local `user_files_path` implementation which pushes the
+    resolved absolute path."""
+    # The single-quotes keep the literal `{_partition_id}` in the file name (bash does not
+    # brace-expand a single-element `{...}`, but quoting makes the intent explicit).
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo 'literal_part' > '/test_user_files_disk1/lit_{_partition_id}.csv'",
+        ]
+    )
+
+    result = node_local.query(
+        "SELECT * FROM file('lit_{_partition_id}.csv', 'CSV', 'x String')"
+    )
+    assert result.strip() == "literal_part", result
+
+
+def test_s3_non_glob_directory_trailing_slash():
+    """A non-glob directory path with a trailing slash (`file('dir/', ...)`) must read the same
+    objects as without the slash (`file('dir', ...)`) on an S3-backed disk.
+
+    Regression for the directory expansion in `getPathsListOnDisk`: `normalizeDiskRelativePath`
+    preserved a trailing slash, so `relative_pattern` was `dir/` and the per-entry join produced
+    `dir//name`. POSIX local disks collapse the double slash, but `s3_plain` object keys are exact,
+    so `file('dir/', ...)` silently missed objects that `file('dir', ...)` finds."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('trail_dir/a.csv', 'CSV', 'x UInt64') SELECT 1"
+    )
+    node_s3.query(
+        "INSERT INTO FUNCTION file('trail_dir/b.csv', 'CSV', 'x UInt64') SELECT 2"
+    )
+
+    without_slash = node_s3.query(
+        "SELECT * FROM file('trail_dir', 'CSV', 'x UInt64') ORDER BY x"
+    ).strip()
+    with_slash = node_s3.query(
+        "SELECT * FROM file('trail_dir/', 'CSV', 'x UInt64') ORDER BY x"
+    ).strip()
+
+    assert without_slash == "1\n2", without_slash
+    assert with_slash == without_slash, with_slash
+
+
+def test_encrypted_disk_rejects_embedded_rocksdb():
+    """`EmbeddedRocksDB` with an explicit `rocksdb_dir` opens RocksDB via local POSIX APIs
+    (`fs::create_directories` / `rocksdb::DB::Open`) under `user_files_path`, so it must reject a
+    `user_files_policy` disk that is not plain local. A local `DiskEncrypted` is not remote, so a
+    guard testing only `disk->isRemote()` would accept it and operate on the ciphertext backing
+    files; the guard must use `isPlainLocalDisk` instead.
+
+    A plain local `user_files_policy` disk (here `node_local`) must still be accepted."""
+    node_encrypted.query("DROP TABLE IF EXISTS rocksdb_enc")
+    err = node_encrypted.query_and_get_error(
+        "CREATE TABLE rocksdb_enc (k UInt64, v String) "
+        "ENGINE = EmbeddedRocksDB(0, 'rocksdb_enc_dir') PRIMARY KEY(k)"
+    )
+    assert "not a plain local filesystem disk" in err, err
+
+    # The plain local policy disk must not be over-rejected: the same statement succeeds there.
+    node_local.query("DROP TABLE IF EXISTS rocksdb_plain_local")
+    node_local.query(
+        "CREATE TABLE rocksdb_plain_local (k UInt64, v String) "
+        "ENGINE = EmbeddedRocksDB(0, 'rocksdb_plain_local_dir') PRIMARY KEY(k)"
+    )
+    node_local.query("INSERT INTO rocksdb_plain_local VALUES (1, 'a')")
+    assert node_local.query("SELECT v FROM rocksdb_plain_local WHERE k = 1").strip() == "a"
+    node_local.query("DROP TABLE rocksdb_plain_local")
+
+
+def test_encrypted_disk_rejects_catboost():
+    """`catboostEvaluate` loads the model through host-local filesystem I/O
+    (`std::filesystem::exists` + `CatBoostLibraryBridgeHelper`) after validating the model path
+    against `getUserFilesPath()`. `user_files_policy` rewires that path to the configured disk root,
+    so on a non-plain-local disk (here a local `DiskEncrypted`) no valid model can both pass the
+    containment check and be read correctly: the bridge would read the encrypted backing bytes
+    instead of the logical model. `catboostEvaluate` must reject such a disk up front (before it
+    touches the filesystem), mirroring the other local-only `user_files` consumers.
+
+    A plain local `user_files_policy` disk must not be over-rejected: there the disk guard passes
+    and the call fails later for an unrelated reason (no catboost library / model configured)."""
+    err = node_encrypted.query_and_get_error(
+        "SELECT catboostEvaluate('model.bin', 1.0)"
+    )
+    assert "not a plain local filesystem disk" in err, err
+
+    # The plain local policy disk must not be over-rejected: the disk guard passes and the failure
+    # is about the missing catboost library / model, not the `user_files_policy` disk.
+    err_local = node_local.query_and_get_error(
+        "SELECT catboostEvaluate('model.bin', 1.0)"
+    )
+    assert "not a plain local filesystem disk" not in err_local, err_local
+
+
+def test_local_count_from_cache_fast_path():
+    """The count-from-cache shortcut (`use_cache_for_count_from_files`) must keep working when a
+    plain local disk is configured via `user_files_policy`, exactly as it does with the legacy
+    `user_files_path`: the first `count()` reads the file and populates the per-path row-count
+    cache, the second is served from the cache and never opens the file.
+
+    Regression for the `user_files_volume` read branch in `StorageFileSource::generate`, which
+    used to skip the `stat`-based fast paths entirely, so every policy-backed `count()` re-read
+    the file."""
+    node_local.query(
+        "INSERT INTO FUNCTION file('count_cache_test.csv', 'CSV', 'x UInt64') "
+        "SELECT number FROM numbers(1000) "
+        "SETTINGS engine_file_truncate_on_insert = 1"
+    )
+
+    # The row-count cache treats an entry as stale when the file's mtime is not strictly older
+    # than the entry's registration time (second resolution), so a file written in the same
+    # second as the first `count()` would defeat the cache. Backdate the mtime to make the
+    # cache hit deterministic.
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "touch -d '1 minute ago' /test_user_files_disk1/count_cache_test.csv",
+        ]
+    )
+
+    # The `log_comment` is unique per invocation so a rerun in the same cluster does not pick
+    # up rows an earlier run of this test left in `query_log`.
+    run_id = uuid.uuid4().hex
+    settings = (
+        "SETTINGS use_cache_for_count_from_files = 1, optimize_count_from_files = 1, "
+        f"max_threads = 1, log_comment = 'count-cache-{{}}-{run_id}'"
+    )
+    q1 = node_local.query(
+        "SELECT count() FROM file('count_cache_test.csv', 'CSV', 'x UInt64') "
+        + settings.format("q1")
+    )
+    q2 = node_local.query(
+        "SELECT count() FROM file('count_cache_test.csv', 'CSV', 'x UInt64') "
+        + settings.format("q2")
+    )
+    assert q1.strip() == "1000", q1
+    assert q2 == q1, q2
+
+    node_local.query("SYSTEM FLUSH LOGS query_log")
+    # `EngineFileLikeReadFiles` increments only when a real reader over the file is built;
+    # a `count()` served from the row-count cache returns before that point.
+    reads = node_local.query(
+        "SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log "
+        f"WHERE type = 'QueryFinish' AND log_comment LIKE 'count-cache-q%-{run_id}' "
+        "ORDER BY log_comment"
+    )
+    assert reads.strip() == "1\n0", reads
+
+
+def test_local_parquet_metadata_cache():
+    """The format-level metadata cache (here the Parquet footer cache) must be reachable for files
+    on a plain local `user_files_policy` disk: the read path has to compute the same stat-based
+    file version token as the legacy `user_files_path` branch and hand it to the input format as
+    the object "etag", otherwise every policy-backed read re-parses the footer.
+
+    Regression for the `user_files_volume` read branch in `StorageFileSource::generate` (see
+    `test_local_count_from_cache_fast_path`)."""
+    node_local.query(
+        "INSERT INTO FUNCTION file('metadata_cache_test.parquet', 'Parquet', 'x UInt64') "
+        "SELECT number FROM numbers(1000) "
+        "SETTINGS engine_file_truncate_on_insert = 1"
+    )
+    node_local.query("SYSTEM DROP PARQUET METADATA CACHE")
+
+    # The row-count cache would serve the second `count()` before the Parquet reader is built,
+    # so disable it to force both queries through the metadata cache. Single-threaded so the
+    # hit/miss counts are deterministic. The `log_comment` is unique per invocation so a rerun
+    # in the same cluster does not pick up rows an earlier run of this test left in `query_log`.
+    run_id = uuid.uuid4().hex
+    settings = (
+        "SETTINGS use_parquet_metadata_cache = 1, use_cache_for_count_from_files = 0, "
+        f"max_threads = 1, log_comment = 'parquet-meta-{{}}-{run_id}'"
+    )
+    for comment in ["q1", "q2"]:
+        result = node_local.query(
+            "SELECT count() FROM file('metadata_cache_test.parquet', 'Parquet', 'x UInt64') "
+            + settings.format(comment)
+        )
+        assert result.strip() == "1000", result
+
+    node_local.query("SYSTEM FLUSH LOGS query_log")
+    counters = node_local.query(
+        "SELECT ProfileEvents['ParquetMetadataCacheHits'], "
+        "ProfileEvents['ParquetMetadataCacheMisses'] FROM system.query_log "
+        f"WHERE type = 'QueryFinish' AND log_comment LIKE 'parquet-meta-q%-{run_id}' "
+        "ORDER BY log_comment"
+    )
+    assert counters.strip() == "0\t1\n1\t0", counters
+
+
+@pytest.mark.parametrize("node", [node_local, node_s3], ids=["local", "s3"])
+def test_archive_syntax_rejected(node):
+    """Archive syntax (`archive.zip :: data.csv`) is not routed through `IDisk`, so it is
+    rejected up front for every `user_files_policy` disk — including a plain local one, where
+    a silent fall-through would read host-local paths instead of the configured disk.
+
+    The restriction is documented in the `user_files_policy` setting description and on the
+    `file` table function / `File` engine docs pages; this test pins the contract."""
+    err = node.query_and_get_error(
+        "SELECT * FROM file('archive.zip :: data.csv', 'CSV', 'x UInt64')"
+    )
+    assert "Archive syntax is not supported with user_files_policy" in err, err
+
+    err_engine = node.query_and_get_error(
+        "CREATE TABLE archive_engine (x UInt64) ENGINE = File(CSV, 'archive.zip :: data.csv')"
+    )
+    assert "Archive syntax is not supported with user_files_policy" in err_engine, err_engine
+
+
+def test_rename_files_after_processing_rejected_on_non_plain_local():
+    """`rename_files_after_processing` renames through local filesystem APIs, so on a
+    non-plain-local `user_files_policy` disk it would target the metadata path instead of the
+    configured backend (and the failure is swallowed in the renamer's destructor). It must be
+    rejected up front, while a plain local policy disk keeps working."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('rename_reject.csv', 'CSV', 'x UInt64') SELECT 1 "
+        "SETTINGS engine_file_truncate_on_insert = 1"
+    )
+    err = node_s3.query_and_get_error(
+        "SELECT * FROM file('rename_reject.csv', 'CSV', 'x UInt64') "
+        "SETTINGS rename_files_after_processing = 'processed_%a'"
+    )
+    assert "`rename_files_after_processing` is not supported" in err, err
+
+    # A plain local policy disk must not be over-rejected: the read succeeds and the file is
+    # renamed on the disk.
+    node_local.query(
+        "INSERT INTO FUNCTION file('rename_ok.csv', 'CSV', 'x UInt64') SELECT 1 "
+        "SETTINGS engine_file_truncate_on_insert = 1"
+    )
+    result = node_local.query(
+        "SELECT * FROM file('rename_ok.csv', 'CSV', 'x UInt64') "
+        "SETTINGS rename_files_after_processing = 'processed_%a'"
+    )
+    assert result.strip() == "1", result
+    assert (
+        node_local.query(
+            "SELECT count() FROM file('processed_rename_ok.csv', 'CSV', 'x UInt64')"
+        ).strip()
+        == "1"
+    )
+
+
+@pytest.mark.parametrize("node", [node_s3, node_encrypted], ids=["s3", "encrypted"])
+def test_local_data_lake_rejected_before_touching_the_filesystem(node):
+    """A local data lake (`IcebergLocal` / `DeltaLakeLocal` / `PaimonLocal`) reads through
+    `LocalObjectStorage`, i.e. the host filesystem namespace, so a non-plain-local
+    `user_files_policy` disk must be rejected.
+
+    Regression for the ordering of that rejection: it used to happen in
+    `DataLakeConfiguration::assertLocalPathCorrect`, i.e. only *after*
+    `StorageLocalConfiguration::createObjectStorage` had already constructed
+    `LocalObjectStorage`, whose constructor eagerly calls `fs::create_directories` on the key
+    prefix. An unsupported configuration therefore mutated the local filesystem before the
+    query failed. The guard must fail closed before the local backend is constructed."""
+    err = node.query_and_get_error(
+        "CREATE TABLE local_data_lake (x UInt64) ENGINE = IcebergLocal('lake_dir')"
+    )
+    assert "not a plain local filesystem disk" in err, err
+
+    # Nothing must have been created on the host filesystem for the rejected table.
+    listing = node.exec_in_container(
+        ["bash", "-c", "find / -xdev -maxdepth 6 -name 'lake_dir' -print || true"]
+    )
+    assert listing.strip() == "", f"rejected query created local paths: {listing}"
+
+    # A plain local policy disk must not be over-rejected: the disk guard passes and the
+    # failure is about the missing Iceberg metadata, not the `user_files_policy` disk.
+    err_local = node_local.query_and_get_error(
+        "CREATE TABLE local_data_lake (x UInt64) ENGINE = IcebergLocal('lake_dir')"
+    )
+    assert "not a plain local filesystem disk" not in err_local, err_local
+
+
+@pytest.mark.parametrize("node", [node_local, node_s3], ids=["local", "s3"])
+def test_url_database_file_scheme(node):
+    """A `file://` table of a `URL` database delegates to the `file` engine, which reads
+    policy-backed files through `IDisk`. The existence preflight in
+    `DatabaseURL::checkFileURLExists` must therefore also be disk-aware: probing
+    `getUserFilesPath` with `std::filesystem` would reject valid objects on a disk-backed
+    `user_files_policy` (for `s3_plain` the "path" is an object-key prefix that does not
+    exist on the host filesystem) with `FILE_DOESNT_EXIST` before the delegate is built."""
+    node.query(
+        "INSERT INTO FUNCTION file('urldb.csv', 'CSV', 'x UInt64') SELECT 42 "
+        "SETTINGS engine_file_truncate_on_insert = 1"
+    )
+    node.query("DROP DATABASE IF EXISTS test_url_db")
+    node.query("CREATE DATABASE test_url_db ENGINE = URL('file://')")
+
+    assert node.query("SELECT * FROM test_url_db.`urldb.csv`").strip() == "42"
+    assert node.query("EXISTS TABLE test_url_db.`urldb.csv`").strip() == "1"
+
+    # A missing file must still be reported by the disk-aware preflight: `tryGetTable`
+    # returns no table, and the analyzer reports the identifier as an unknown table
+    # (same as with a plain local `user_files_path`).
+    err = node.query_and_get_error("SELECT * FROM test_url_db.`no_such_file.csv`")
+    assert "UNKNOWN_TABLE" in err, err
+    assert node.query("EXISTS TABLE test_url_db.`no_such_file.csv`").strip() == "0"
+
+    node.query("DROP DATABASE test_url_db")
+
+
+@pytest.mark.parametrize("node", [node_local, node_s3], ids=["local", "s3"])
+def test_url_database_file_scheme_does_not_probe_without_file_grant(node):
+    """A user without the `FILE` source grant must not learn whether a policy-backed
+    `file://` target exists through `EXISTS TABLE` or a different error from `SELECT`."""
+    user = "user_files_policy_no_file_grant"
+    database = "test_url_access_db"
+    filename = "url_access.csv"
+
+    node.query(f"DROP USER IF EXISTS {user}")
+    node.query(f"DROP DATABASE IF EXISTS {database}")
+    node.query(
+        f"INSERT INTO FUNCTION file('{filename}', 'CSV', 'x UInt64') SELECT 42 "
+        "SETTINGS engine_file_truncate_on_insert = 1"
+    )
+    node.query(f"CREATE DATABASE {database} ENGINE = URL('file://')")
+    node.query(f"CREATE USER {user}")
+    node.query(f"GRANT SHOW TABLES ON {database}.* TO {user}")
+
+    try:
+        assert node.query(f"EXISTS TABLE {database}.`{filename}`", user=user).strip() == "1"
+        assert node.query(f"EXISTS TABLE {database}.`missing.csv`", user=user).strip() == "1"
+
+        existing_error = node.query_and_get_error(
+            f"SELECT * FROM {database}.`{filename}`", user=user
+        )
+        missing_error = node.query_and_get_error(
+            f"SELECT * FROM {database}.`missing.csv`", user=user
+        )
+        assert "ACCESS_DENIED" in existing_error, existing_error
+        assert "ACCESS_DENIED" in missing_error, missing_error
+    finally:
+        node.query(f"DROP USER IF EXISTS {user}")
+        node.query(f"DROP DATABASE IF EXISTS {database}")
+
+
+@pytest.mark.parametrize(
+    "node, lazy_expected",
+    [(node_local, True), (node_s3, False), (node_encrypted, False)],
+    ids=["local", "s3", "encrypted"],
+)
+def test_parquet_lazy_materialization_only_on_plain_local_disk(node, lazy_expected):
+    """The lazy `Parquet` materialization pass (`query_plan_optimize_lazy_materialization_for_file`)
+    reopens the recorded paths directly with `stat` + `ReadBufferFromFile`, bypassing `IDisk`.
+    On a policy backed by a non-plain-local disk those paths are object keys (`s3_plain`) or
+    ciphertext backing paths (`DiskEncrypted`), so the optimization must stay off there: the
+    query must keep the single-pass plan and return correct rows instead of throwing
+    `CANNOT_STAT` or rereading the wrong bytes. On a plain local disk the recorded paths are
+    the very files the main pass read, so the optimization must stay available."""
+    node.query(
+        "INSERT INTO FUNCTION file('lazy_mat.parquet', Parquet, 'k UInt64, s String') "
+        "SELECT number, concat('value_', toString(number)) FROM numbers(100) "
+        "SETTINGS engine_file_truncate_on_insert = 1"
+    )
+
+    query = (
+        "SELECT k, s FROM file('lazy_mat.parquet', Parquet, 'k UInt64, s String') "
+        "ORDER BY k DESC LIMIT 3"
+    )
+    settings = {"query_plan_optimize_lazy_materialization_for_file": 1}
+
+    result = node.query(query, settings=settings)
+    assert result.split("\n")[:3] == ["99\tvalue_99", "98\tvalue_98", "97\tvalue_97"]
+
+    explain = node.query("EXPLAIN " + query, settings=settings)
+    assert ("LazilyReadFromFile" in explain) == lazy_expected
+
+
+@pytest.mark.parametrize(
+    "node", [node_local, node_s3, node_encrypted], ids=["local", "s3", "encrypted"]
+)
+@pytest.mark.parametrize("snappy_mode", ["basic", "framed"])
+def test_snappy_mode_round_trip_through_disk(node, snappy_mode):
+    """`snappy` has two incompatible wire formats and `snappy_mode` selects between them. The
+    disk-backed read helper used to ignore the setting and always decode `SnappyMode::Basic`,
+    so a file written with `snappy_mode = 'framed'` could be written but never read back under
+    `user_files_policy`. Both modes must round-trip on every disk type."""
+    filename = f"snappy_{snappy_mode}_{uuid.uuid4().hex}.csv.snappy"
+    node.query(
+        f"INSERT INTO FUNCTION file('{filename}', 'CSV', 'x UInt64') "
+        "SELECT number FROM numbers(10) "
+        f"SETTINGS engine_file_truncate_on_insert = 1, snappy_mode = '{snappy_mode}'"
+    )
+    result = node.query(
+        f"SELECT sum(x) FROM file('{filename}', 'CSV', 'x UInt64') "
+        f"SETTINGS snappy_mode = '{snappy_mode}'"
+    )
+    assert result.strip() == "45", result
+
+
+@pytest.mark.parametrize("node", [node_s3, node_encrypted], ids=["s3", "encrypted"])
+def test_distributed_format_rejected_on_non_plain_local(node):
+    """The `Distributed` format is read by `DistributedAsyncInsertSource`, which opens a
+    `ReadBufferFromFile` on the path it is handed instead of going through `IDisk`. On
+    `s3_plain` that path is an object key naming no local file, and on `DiskEncrypted` it is
+    the ciphertext backing path, so the combination must be refused rather than silently
+    reading unrelated - or encrypted - local bytes."""
+    err = node.query_and_get_error(
+        "SELECT * FROM file('distributed_reject.bin', 'Distributed')"
+    )
+    assert "Distributed format is not supported" in err, err
+
+    err = node.query_and_get_error(
+        "CREATE TABLE distributed_reject (x UInt64) "
+        "ENGINE = File(Distributed, 'distributed_reject.bin')"
+    )
+    assert "Distributed format is not supported" in err, err
+
+
+def test_distributed_format_allowed_on_plain_local_disk():
+    """A plain local policy disk must not be over-rejected: the path denotes the very local
+    file the disk would return, so `Distributed` stays available and fails only because there
+    is no such file."""
+    err = node_local.query_and_get_error(
+        "SELECT * FROM file('distributed_missing.bin', 'Distributed')"
+    )
+    assert "Distributed format is not supported" not in err, err
