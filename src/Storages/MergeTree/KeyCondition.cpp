@@ -421,6 +421,18 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 out.relaxed = true;
                 return true;
             }
+        },
+        {
+            "pointInEllipses",
+            [] (RPNElement & out, const Field &)
+            {
+                /// The atom stores the union bounding box of the ellipses as a rectangle ring
+                /// and reuses the pointInPolygon evaluation; the box over-approximates the
+                /// ellipses, so the condition is relaxed.
+                out.function = RPNElement::FUNCTION_POINT_IN_POLYGON;
+                out.relaxed = true;
+                return true;
+            }
         }
 };
 
@@ -2980,6 +2992,69 @@ private:
     Kind kind = Kind::NO_CONST;
 };
 
+/// `tupleElement` extracting the FIRST element of a tuple-typed key column (e.g. `coord.1` for a
+/// key column `coord` of type `Point`). The generic `tupleElement` function declares no
+/// monotonicity: for any element other than the first it has none (inside a range of tuples with
+/// different first elements, the other elements take arbitrary values). But tuple columns sort
+/// lexicographically, so taking the first element is a non-strictly monotonic, non-decreasing map
+/// from the tuple order: t1 <= t2 implies t1.1 <= t2.1, while distinct tuples can share the first
+/// element (hence not strict).
+class FunctionFirstTupleElementOfKey : public FunctionWithOptionalConstArg
+{
+public:
+    using FunctionWithOptionalConstArg::FunctionWithOptionalConstArg;
+
+    bool hasInformationAboutMonotonicity() const override { return true; }
+
+    IFunctionBase::Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
+    {
+        return {.is_monotonic = true, .is_positive = true, .is_always_monotonic = true, .is_strict = false, .is_always_monotonic_where_defined = true};
+    }
+};
+
+/// Whether a `tupleElement` chain link with the constant argument `index_arg` extracts the first
+/// element of the tuple-typed key `key_type` (see `FunctionFirstTupleElementOfKey`). The first
+/// element type must compare the same way as it sorts inside the tuple column, so `Nullable` and
+/// `LowCardinality` elements are excluded (a `NULL` inside a `Range` bound would be taken for an
+/// unbounded side).
+/// Whether the first element of the tuple can be analyzed through the monotonic-functions chain.
+/// The analysis maps `Range` bounds of the tuple to bounds of the element, which is only sound
+/// when the element type compares the same way as it sorts inside the tuple column; `Nullable`
+/// and `LowCardinality` elements are excluded (a `NULL` inside a `Range` bound would be taken
+/// for an unbounded side).
+static bool firstTupleElementIsAnalyzable(const DataTypeTuple & tuple_type)
+{
+    if (tuple_type.getElements().empty())
+        return false;
+
+    const auto & first_element_type = tuple_type.getElements()[0];
+    return !first_element_type->isNullable() && !first_element_type->lowCardinality() && first_element_type->isComparable();
+}
+
+static bool tupleElementTakesFirstElement(const ColumnWithTypeAndName & index_arg, const IDataType & key_type)
+{
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&key_type);
+    if (!tuple_type || !firstTupleElementIsAnalyzable(*tuple_type))
+        return false;
+
+    /// Constants inside an `ActionsDAG` are often `ColumnConst` of size 0; `ColumnConst`
+    /// reads the nested value regardless of size, so take the value via `getField`.
+    if (!index_arg.column || !isColumnConst(*index_arg.column))
+        return false;
+    Field index_value = assert_cast<const ColumnConst &>(*index_arg.column).getField();
+
+    if (index_value.getType() == Field::Types::UInt64)
+        return index_value.safeGet<UInt64>() == 1;
+    if (index_value.getType() == Field::Types::Int64)
+        return index_value.safeGet<Int64>() == 1;
+    if (index_value.getType() == Field::Types::String)
+    {
+        auto position = tuple_type->tryGetPositionByName(index_value.safeGet<String>());
+        return position && *position == 0;
+    }
+    return false;
+}
+
 DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func)
 {
     const auto & arg_types = func.getArgumentTypes();
@@ -2993,6 +3068,52 @@ DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func)
 }
 
 
+std::optional<KeyCondition::TupleElementSubcolumn> KeyCondition::tryParseTupleElementSubcolumnOfKey(
+    const RPNBuilderTreeNode & node, const BuildInfo & info) const
+{
+    /// Subcolumn inputs only come from the analyzer's ActionsDAG; without a DAG node there is
+    /// nothing to verify the type against, so decline.
+    const auto * dag_node = node.getDAGNode();
+    if (!dag_node)
+        return {};
+
+    const String name = node.getColumnName();
+    const auto & sample_block = info.key_expr->getSampleBlock();
+
+    /// An element name can itself contain a dot, so try every split position.
+    for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
+    {
+        String column_name = name.substr(0, pos);
+        String element_name = name.substr(pos + 1);
+
+        auto it = key_columns.find(column_name);
+        if (it == key_columns.end() || !sample_block.has(column_name))
+            continue;
+
+        DataTypePtr type = sample_block.getByName(column_name).type;
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+        if (!tuple_type)
+            continue;
+
+        /// Positional access resolves through the implicit element names ('1', '2', ...)
+        /// of an unnamed tuple; explicit names resolve directly.
+        std::optional<size_t> element_position = tuple_type->tryGetPositionByName(element_name);
+        if (!element_position)
+            continue;
+
+        /// A defense against a genuine top-level column whose name collides with the flattened
+        /// element name (MergeTree DDL rejects such a column because of a data-stream name
+        /// collision, and for external sources a real column wins the direct key lookup above,
+        /// but require positive evidence anyway): the node must have exactly the element's type.
+        if (!dag_node->result_type->equals(*tuple_type->getElements()[*element_position]))
+            continue;
+
+        return TupleElementSubcolumn{column_name, it->second, type, *element_position};
+    }
+
+    return {};
+}
+
 bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
@@ -3004,9 +3125,11 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
 {
     std::vector<RPNBuilderFunctionTreeNode> chain_not_tested_for_monotonicity;
     DataTypePtr key_column_type;
+    bool first_tuple_element_subcolumn = false;
 
     if (!isKeyPossiblyWrappedByMonotonicFunctionsImpl(
-        node, info, out_key_column_num, out_argument_num_of_space_filling_curve, key_column_type, chain_not_tested_for_monotonicity))
+        node, info, out_key_column_num, out_argument_num_of_space_filling_curve, key_column_type,
+        chain_not_tested_for_monotonicity, first_tuple_element_subcolumn))
         return false;
 
     /// Build every chain function against a `LowCardinality`-stripped key type so the chain
@@ -3016,6 +3139,27 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
     /// `Bad cast` when fed the stripped column. Reachable via statistics part pruning, whose
     /// key columns keep their raw `LowCardinality` type.
     key_column_type = recursiveRemoveLowCardinality(key_column_type);
+
+    if (first_tuple_element_subcolumn)
+    {
+        /// The innermost node is a subcolumn read of the first element of a tuple-typed key
+        /// column (e.g. `p.x`); no `tupleElement` node exists in the tree, so prepend the
+        /// equivalent `tupleElement(key, 1)` chain link here.
+        auto func_builder = FunctionFactory::instance().tryGet("tupleElement", node.getTreeContext().getQueryContext());
+        if (!func_builder)
+            return false;
+
+        auto index_type = std::make_shared<DataTypeUInt8>();
+        ColumnWithTypeAndName const_arg{index_type->createColumnConst(1, Field(static_cast<UInt64>(1))), index_type, ""};
+        ColumnsWithTypeAndName arguments{{nullptr, key_column_type, ""}, const_arg};
+        auto func = func_builder->build(arguments);
+        if (!func)
+            return false;
+
+        key_column_type = func->getResultType();
+        out_functions_chain.push_back(
+            std::make_shared<FunctionFirstTupleElementOfKey>(func, const_arg, FunctionWithOptionalConstArg::Kind::RIGHT_CONST));
+    }
 
     for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
     {
@@ -3051,7 +3195,22 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
             arguments.push_back({ nullptr, key_column_type, "" });
         auto func = func_builder->build(arguments);
 
-        if (!func || !func->isDeterministicInScopeOfQuery() || (!assume_function_monotonicity && !func->hasInformationAboutMonotonicity()))
+        if (!func || !func->isDeterministicInScopeOfQuery())
+            return false;
+
+        /// `tupleElement` taking the first element of a tuple-typed key has no generic
+        /// monotonicity information, but is non-strictly monotonic w.r.t. the lexicographic order
+        /// of the tuples (see `FunctionFirstTupleElementOfKey`). This makes conditions such as
+        /// `coord.1 < 100` use the index of a table ordered by a `Point` column `coord`.
+        if (kind == FunctionWithOptionalConstArg::Kind::RIGHT_CONST && function.getFunctionName() == "tupleElement"
+            && tupleElementTakesFirstElement(const_arg, *key_column_type))
+        {
+            key_column_type = func->getResultType();
+            out_functions_chain.push_back(std::make_shared<FunctionFirstTupleElementOfKey>(func, const_arg, kind));
+            continue;
+        }
+
+        if (!assume_function_monotonicity && !func->hasInformationAboutMonotonicity())
             return false;
 
         if (!assume_function_monotonicity && !isFunctionReallyMonotonic(*func, *key_column_type))
@@ -3075,7 +3234,8 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     size_t & out_key_column_num,
     std::optional<size_t> & out_argument_num_of_space_filling_curve,
     DataTypePtr & out_key_column_type,
-    std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain)
+    std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain,
+    bool & out_first_tuple_element_subcolumn)
 {
     /** By itself, the key column can be a functional expression. for example, `intHash32(UserID)`.
       * Therefore, use the full name of the expression for search.
@@ -3091,6 +3251,22 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         out_key_column_num = it->second;
         out_key_column_type = sample_block.getByName(name).type;
         return true;
+    }
+
+    /// A subcolumn read of a tuple-typed key column: the analyzer plans access to an element of
+    /// a named tuple (`p.x`) as a subcolumn input instead of a `tupleElement` function call.
+    /// The first element is analyzable through the monotonic-functions chain (tuples are ordered
+    /// lexicographically); the caller prepends the equivalent `tupleElement(key, 1)` chain link.
+    if (auto subcolumn = tryParseTupleElementSubcolumnOfKey(node, info))
+    {
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(subcolumn->tuple_type.get());
+        if (subcolumn->element_position == 0 && tuple_type && firstTupleElementIsAnalyzable(*tuple_type))
+        {
+            out_key_column_num = subcolumn->key_column_num;
+            out_key_column_type = subcolumn->tuple_type;
+            out_first_tuple_element_subcolumn = true;
+            return true;
+        }
     }
 
     /** The case of space-filling curves.
@@ -3149,7 +3325,8 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
                     out_key_column_num,
                     out_argument_num_of_space_filling_curve,
                     out_key_column_type,
-                    out_functions_chain);
+                    out_functions_chain,
+                    out_first_tuple_element_subcolumn);
             }
             else if (function_node.getArgumentAt(1).isConstant())
             {
@@ -3159,7 +3336,8 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
                     out_key_column_num,
                     out_argument_num_of_space_filling_curve,
                     out_key_column_type,
-                    out_functions_chain);
+                    out_functions_chain,
+                    out_first_tuple_element_subcolumn);
             }
         }
         else
@@ -3170,7 +3348,8 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
                 out_key_column_num,
                 out_argument_num_of_space_filling_curve,
                 out_key_column_type,
-                out_functions_chain);
+                out_functions_chain,
+                out_first_tuple_element_subcolumn);
         }
 
         return result;
@@ -3687,6 +3866,111 @@ static bool tryRewriteFloatLiteralForIntKeyComparison(
     UNREACHABLE();
 }
 
+/// A tuple type suitable for the single-key-column form of point-in-geometry analysis:
+/// two coordinates ordered lexicographically (e.g. the `Point` type).
+static bool isTupleOfTwoNativeNumbers(const DataTypeTuple * tuple_type)
+{
+    return tuple_type && tuple_type->getElements().size() == 2
+        && isNativeNumber(tuple_type->getElements()[0])
+        && isNativeNumber(tuple_type->getElements()[1]);
+}
+
+bool KeyCondition::resolvePointCoordinateArguments(
+    const RPNBuilderTreeNode & x_argument,
+    const RPNBuilderTreeNode & y_argument,
+    const BuildInfo & info,
+    std::vector<size_t> & out_key_columns) const
+{
+    out_key_columns.clear();
+
+    /// Two separate key columns (or key expressions), as in pointInPolygon((x, y), ...).
+    {
+        auto x_it = key_columns.find(x_argument.getColumnName());
+        auto y_it = key_columns.find(y_argument.getColumnName());
+        if (x_it != key_columns.end() && y_it != key_columns.end())
+        {
+            out_key_columns.push_back(x_it->second);
+            out_key_columns.push_back(y_it->second);
+            return true;
+        }
+    }
+
+    /// The two elements of one tuple-typed key column written explicitly, as in
+    /// pointInPolygon((coord.1, coord.2), ...) - the desugared form of `t.N` is
+    /// `tupleElement(t, N)`. Resolved to the single-key-column form: `checkInHyperrectangle`
+    /// derives the point's bounding box from the range of the tuple key column.
+    struct TupleElementAccess
+    {
+        String tuple_name;
+        Field index;
+    };
+
+    auto parse_tuple_element = [&](const RPNBuilderTreeNode & node) -> std::optional<TupleElementAccess>
+    {
+        if (node.isFunction())
+        {
+            auto function_node = node.toFunctionNode();
+            if (function_node.getFunctionName() != "tupleElement" || function_node.getArgumentsSize() != 2)
+                return {};
+            Field index_value;
+            DataTypePtr index_type;
+            if (!function_node.getArgumentAt(1).tryGetConstant(index_value, index_type))
+                return {};
+            return TupleElementAccess{function_node.getArgumentAt(0).getColumnName(), index_value};
+        }
+
+        /// A subcolumn read of a tuple-typed key column: the analyzer plans access to an element
+        /// of a named tuple (`p.x`) as a subcolumn input instead of a `tupleElement` call.
+        if (auto subcolumn = tryParseTupleElementSubcolumnOfKey(node, info))
+            return TupleElementAccess{subcolumn->column_name, Field(static_cast<UInt64>(subcolumn->element_position + 1))};
+
+        return {};
+    };
+
+    auto x_access = parse_tuple_element(x_argument);
+    auto y_access = parse_tuple_element(y_argument);
+    if (!x_access || !y_access || x_access->tuple_name != y_access->tuple_name)
+        return false;
+
+    auto it = key_columns.find(x_access->tuple_name);
+    if (it == key_columns.end())
+        return false;
+
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(
+        info.key_expr->getSampleBlock().getByName(x_access->tuple_name).type.get());
+    if (!isTupleOfTwoNativeNumbers(tuple_type))
+        return false;
+
+    /// The element access is 1-based positional (`t.1`) or by element name.
+    auto element_position = [&](const Field & index) -> std::optional<size_t>
+    {
+        if (index.getType() == Field::Types::UInt64)
+        {
+            UInt64 value = index.safeGet<UInt64>();
+            if (value == 1 || value == 2)
+                return value - 1;
+            return {};
+        }
+        if (index.getType() == Field::Types::Int64)
+        {
+            Int64 value = index.safeGet<Int64>();
+            if (value == 1 || value == 2)
+                return value - 1;
+            return {};
+        }
+        if (index.getType() == Field::Types::String)
+            return tuple_type->tryGetPositionByName(index.safeGet<String>());
+        return {};
+    };
+
+    if (element_position(x_access->index) != std::optional<size_t>(0)
+        || element_position(y_access->index) != std::optional<size_t>(1))
+        return false;
+
+    out_key_columns.push_back(it->second);
+    return true;
+}
+
 bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out)
 {
     const auto * node_dag = node.getDAGNode();
@@ -3789,18 +4073,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 && point_argument.toFunctionNode().getFunctionName() == "tuple"
                 && point_argument.toFunctionNode().getArgumentsSize() == 2)
             {
-                auto first_argument = point_argument.toFunctionNode();
-                for (size_t i = 0; i < 2; ++i)
-                {
-                    auto name = first_argument.getArgumentAt(i).getColumnName();
-                    auto it = key_columns.find(name);
-                    if (it == key_columns.end())
-                    {
-                        out.key_columns.clear();
-                        break;
-                    }
-                    out.key_columns.push_back(it->second);
-                }
+                /// Either two key columns, as in pointInPolygon((x, y), ...), or the two elements
+                /// of one tuple-typed key column, as in pointInPolygon((coord.1, coord.2), ...).
+                auto tuple_function = point_argument.toFunctionNode();
+                resolvePointCoordinateArguments(
+                    tuple_function.getArgumentAt(0), tuple_function.getArgumentAt(1), info, out.key_columns);
             }
 
             if (out.key_columns.empty())
@@ -3816,9 +4093,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
                 const auto * tuple_type = typeid_cast<const DataTypeTuple *>(
                     info.key_expr->getSampleBlock().getByName(name).type.get());
-                if (!tuple_type || tuple_type->getElements().size() != 2
-                    || !isNativeNumber(tuple_type->getElements()[0])
-                    || !isNativeNumber(tuple_type->getElements()[1]))
+                if (!isTupleOfTwoNativeNumbers(tuple_type))
                     return false;
 
                 out.key_columns.push_back(it->second);
@@ -3860,6 +4135,87 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             /// costly `intersects` checks
             boost::geometry::envelope(out.polygon->ring, out.polygon->bbox);
 
+            return atom_it->second(out, const_value);
+        };
+
+        auto analyze_point_in_ellipses = [&, this]() -> bool
+        {
+            /// pointInEllipses(x, y, x0_0, y0_0, a_0, b_0, ..., x0_i, y0_i, a_i, b_i):
+            /// the point coordinates followed by 4 constant parameters per ellipse
+            /// (the function itself enforces 2 + 4 * N arguments of type Float64,
+            /// with constant ellipse parameters).
+            if (num_args < 6 || (num_args - 2) % 4 != 0)
+                return false;
+
+            if (!resolvePointCoordinateArguments(func.getArgumentAt(0), func.getArgumentAt(1), info, out.key_columns))
+                return false;
+
+            /// The union bounding box of the ellipses, with the function's exact semantics
+            /// (see `pointInEllipses.cpp`): an ellipse with a non-positive or NaN parameter
+            /// matches no point at all, because the function's own bounding-box check
+            /// `x >= x0 - a && x <= x0 + a` (and the analogous check for `y`) never passes for it.
+            Float64 x_min = std::numeric_limits<Float64>::infinity();
+            Float64 x_max = -std::numeric_limits<Float64>::infinity();
+            Float64 y_min = std::numeric_limits<Float64>::infinity();
+            Float64 y_max = -std::numeric_limits<Float64>::infinity();
+            bool has_nonempty_ellipse = false;
+
+            for (size_t i = 2; i + 3 < num_args; i += 4)
+            {
+                Float64 ellipse[4];
+                for (size_t j = 0; j < 4; ++j)
+                {
+                    Field parameter_value;
+                    DataTypePtr parameter_type;
+                    if (!func.getArgumentAt(i + j).tryGetConstant(parameter_value, parameter_type)
+                        || parameter_value.getType() != Field::Types::Float64)
+                        return false;
+                    ellipse[j] = parameter_value.safeGet<Float64>();
+                }
+
+                Float64 x0 = ellipse[0];
+                Float64 y0 = ellipse[1];
+                Float64 a = ellipse[2];
+                Float64 b = ellipse[3];
+
+                if (std::isnan(x0) || std::isnan(y0) || std::isnan(a) || std::isnan(b) || a <= 0 || b <= 0)
+                    continue;
+
+                x_min = std::min(x_min, x0 - a);
+                x_max = std::max(x_max, x0 + a);
+                y_min = std::min(y_min, y0 - b);
+                y_max = std::max(y_max, y0 + b);
+                has_nonempty_ellipse = true;
+            }
+
+            if (!has_nonempty_ellipse)
+            {
+                /// Every ellipse is empty: the predicate is false for every point.
+                out.function = RPNElement::ALWAYS_FALSE;
+                return true;
+            }
+
+            /// An infinite parameter makes the box unbounded (or NaN via `inf - inf`); such a box
+            /// cannot be represented as a ring for the intersection check. Prune nothing.
+            if (!std::isfinite(x_min) || !std::isfinite(x_max) || !std::isfinite(y_min) || !std::isfinite(y_max))
+                return false;
+
+            /// Store the union box as a rectangle ring and reuse the pointInPolygon evaluation:
+            /// the granule's bounding box is intersected with this ring in `checkInHyperrectangle`.
+            /// The ellipses are subsets of the box, so this only over-approximates the condition
+            /// (the atom is relaxed and `can_be_false` always stays true).
+            out.polygon->ring.emplace_back(x_min, y_min);
+            out.polygon->ring.emplace_back(x_min, y_max);
+            out.polygon->ring.emplace_back(x_max, y_max);
+            out.polygon->ring.emplace_back(x_max, y_min);
+            boost::geometry::correct(out.polygon->ring);
+            if (!boost::geometry::is_valid(out.polygon->ring))
+                return false;
+            boost::geometry::envelope(out.polygon->ring, out.polygon->bbox);
+
+            out.point_in_polygon_function_name = func_name;
+
+            const auto atom_it = atom_map.find(func_name);
             return atom_it->second(out, const_value);
         };
 
@@ -4221,6 +4577,9 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 /// Case2 has holes in polygon, when checking skip index, the hole will be ignored.
                 return analyze_point_in_polygon();
             }
+
+            if (func_name == "pointInEllipses")
+                return analyze_point_in_ellipses();
 
             return false;
         }
