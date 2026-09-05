@@ -5,6 +5,7 @@
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
 
 #include <iostream>
+#include <vector>
 
 namespace DB
 {
@@ -33,7 +34,12 @@ protected:
 
     std::vector<String> getCompletions(const String & prefix) const;
 
+    void handleHostOption(const std::string & name, const std::string & value);
+    void handlePortOption(const std::string & name, const std::string & value);
+
     zkutil::ZooKeeperArgs zk_args;
+    std::vector<String> hosts;
+    std::vector<String> ports;
 
     String history_file;
     UInt32 history_max_entries = 0; /// Maximum number of entries in the history file.
