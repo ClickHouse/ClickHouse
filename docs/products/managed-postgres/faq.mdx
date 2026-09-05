@@ -29,9 +29,13 @@ For complete details on backup frequency, retention, and how to perform point-in
 
 ## Infrastructure and automation {#infrastructure-and-automation}
 
+### Which cloud providers are supported? {#supported-cloud-providers}
+
+ClickHouse Managed Postgres is available on AWS in public beta. GCP is in Private Preview. You can sign up for the GCP Private Preview waitlist [here](TODO KG GCP Waitlist HERE) and read the [announcement](TODO KG GCP Blog HERE) to learn more. See [Supported cloud providers](/cloud/managed-postgres#supported-cloud-providers) for details.
+
 ### Is Terraform support available for ClickHouse Managed Postgres? {#terraform-support}
 
-Terraform support for ClickHouse Managed Postgres isn't currently available. We recommend using the ClickHouse Cloud console or [OpenAPI](/products/managed-postgres/openapi) to create and manage your instances.
+Yes. You can create and manage ClickHouse Managed Postgres services with the ClickHouse Terraform provider using the `clickhouse_postgres_service` resource. See the [Terraform reference](/cloud/managed-postgres/terraform) for details. You can also use the ClickHouse Cloud console or [OpenAPI](/products/managed-postgres/openapi) to create and manage your instances.
 
 ## Extensions and configuration {#extensions-and-configuration}
 
