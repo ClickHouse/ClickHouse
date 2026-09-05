@@ -3435,12 +3435,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
     return ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter, false};
 }
 
-std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForFilterPushDown(
-    const std::string & filter_name,
-    bool removes_filter,
-    const Names & available_inputs,
-    const ColumnsWithTypeAndName & all_inputs,
-    bool allow_non_deterministic_functions)
+ActionsDAG::Node * ActionsDAG::findPredicateToSplit(const std::string & filter_name)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
@@ -3449,9 +3444,55 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
             filter_name,
             dumpDAG());
 
-    /// If condition is constant let's do nothing.
-    /// It means there is nothing to push down or optimization was already applied.
-    if (predicate->type == ActionType::COLUMN)
+    /// A constant condition has nothing to split: either there is nothing to push down, or the
+    /// optimization was already applied.
+    return predicate->type == ActionType::COLUMN ? nullptr : predicate;
+}
+
+std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitConjunction(
+    NodeRawConstPtrs allowed, NodeRawConstPtrs rejected, Node * predicate,
+    const ColumnsWithTypeAndName & all_inputs, bool removes_filter)
+{
+    if (allowed.empty())
+        return {};
+
+    auto actions = createActionsForConjunction(std::move(allowed), all_inputs);
+    if (!actions)
+        return {};
+
+    /// Now, when actions are created, update the current DAG.
+    actions->is_filter_const_after_push_down = removeUnusedConjunctions(std::move(rejected), predicate, removes_filter);
+
+    return actions;
+}
+
+std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForFilterPushDown(
+    const std::string & filter_name,
+    bool removes_filter,
+    const ColumnsWithTypeAndName & all_inputs,
+    const std::function<bool(const Node *)> & can_push)
+{
+    Node * predicate = findPredicateToSplit(filter_name);
+    if (!predicate)
+        return {};
+
+    NodeRawConstPtrs allowed;
+    NodeRawConstPtrs rejected;
+    for (const auto * atom : extractConjunctionAtoms(predicate))
+        (can_push(atom) ? allowed : rejected).push_back(atom);
+
+    return splitConjunction(std::move(allowed), std::move(rejected), predicate, all_inputs, removes_filter);
+}
+
+std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForFilterPushDown(
+    const std::string & filter_name,
+    bool removes_filter,
+    const Names & available_inputs,
+    const ColumnsWithTypeAndName & all_inputs,
+    bool allow_non_deterministic_functions)
+{
+    Node * predicate = findPredicateToSplit(filter_name);
+    if (!predicate)
         return {};
 
     std::unordered_set<const Node *> allowed_nodes;
@@ -3473,21 +3514,11 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
         }
     }
 
-    auto conjunction = getConjunctionNodes(predicate, allowed_nodes, allow_non_deterministic_functions);
-
-    if (conjunction.allowed.empty())
-        return {};
-
     chassert(predicate->result_type);
 
-    auto actions = createActionsForConjunction(conjunction.allowed, all_inputs);
-    if (!actions)
-        return {};
-
-    /// Now, when actions are created, update the current DAG.
-    actions->is_filter_const_after_push_down = removeUnusedConjunctions(std::move(conjunction.rejected), predicate, removes_filter);
-
-    return actions;
+    auto conjunction = getConjunctionNodes(predicate, allowed_nodes, allow_non_deterministic_functions);
+    return splitConjunction(
+        std::move(conjunction.allowed), std::move(conjunction.rejected), predicate, all_inputs, removes_filter);
 }
 
 ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPushDown(

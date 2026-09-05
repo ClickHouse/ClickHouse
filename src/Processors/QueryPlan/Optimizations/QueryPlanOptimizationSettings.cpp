@@ -149,7 +149,6 @@ namespace Setting
     extern const SettingsBool enable_join_transitive_predicates;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
-    extern const SettingsBool parallel_replicas_filter_pushdown;
     extern const SettingsBool parallel_replicas_plan_based;
 }
 
@@ -387,7 +386,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     // It doesn't have to be equal to this setting, it just appears to be a better value than hardcoded 2Mi
     min_bytes_per_task_for_reading = from[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
 
-    parallel_replicas_filter_pushdown = from[Setting::parallel_replicas_filter_pushdown];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)

@@ -1,0 +1,13 @@
+equality, default: not in the local plan
+5	5	1
+equality, setting enabled: in the local plan
+Prewhere filter column:  a = 5
+5	5	1
+comparison, default: in the local plan
+Prewhere filter column:  a > 995
+4
+equality off the sorting key, default: not in the local plan either
+5	5	1
+bare boolean, default: in the local plan
+Prewhere filter column:  flag
+500

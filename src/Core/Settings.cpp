@@ -8292,7 +8292,24 @@ Replace table function engines with their -Cluster alternatives
 Allow usage of materialized views with parallel replicas
 )", 0) \
     DECLARE(Bool, parallel_replicas_filter_pushdown, false, R"(
-Allow pushing down filters to part of query which parallel replicas choose to execute
+Allow pushing down filters into the query shipped to remote replicas, so that a filter which the
+initiator applies to the result of a parallel replicas read is applied by the replicas themselves,
+and into the initiator's own local plan alongside it.
+
+Without this setting a condition may still go into the local plan, but only when it cannot change
+the coordination mode the initiator announces. That is decided conservatively: the condition must
+contain no equality at all, or the local fragment must read nothing that has a sorting key. Join
+runtime filters qualify, and they are the case that matters, being the one condition this setting
+could never ship to the replicas anyway. An ordinary `WHERE b = 'x'` does not, even where `b` has
+nothing to do with the sorting key, and waits for this setting.
+
+The condition is shipped by rewriting the replicas' query, so this setting has no effect unless
+`allow_push_predicate_ast_for_distributed_subqueries` is on, and none when the replicas run a
+serialized plan (`serialize_query_plan`) rather than that query. The rewrite also declines for a
+query it cannot attribute the condition to (one reading more than a single table) or will not
+rewrite at all (`FINAL`, `LIMIT`, a window function in the `SELECT` list), and for a condition it
+cannot express against what that query selects. Where it declines, the condition is treated as
+though the setting were off.
 )", BETA) \
     DECLARE(Bool, parallel_replicas_allow_view_over_mergetree, false, R"(
 Allow parallel replicas to execute the outer query of a simple view over `MergeTree` tables (instead of the view's inner query), improving parallelization across nodes. Also applies to `UNION ALL` views whose branches all read from different `MergeTree` tables.

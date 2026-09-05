@@ -1,0 +1,9 @@
+Aggregating
+Aggregating
+Filter column: RF1(a, a from default.b_rf_read_mode)
+ReadFromMergeTree (default.t_rf_read_mode)
+Read type: InOrder
+Filter column: RF1(a, a from default.b_rf_read_mode)
+ReadFromMergeTree (default.b_rf_read_mode)
+Read type: Default
+200

@@ -73,9 +73,6 @@ struct Optimization
 
         size_t max_block_size{};
 
-        // parallel replicas
-        bool parallel_replicas_filter_pushdown = false;
-
         /// Mirrors `QueryPlanOptimizationSettings::push_down_volume_reducing_functions`.
         /// `tryExecuteFunctionsAfterSorting` consults it to avoid pinging volume-reducing
         /// functions back above a `SortingStep` that `tryPushDownVolumeReducingFunction`

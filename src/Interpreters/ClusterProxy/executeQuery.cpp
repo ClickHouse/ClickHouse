@@ -1098,13 +1098,20 @@ void executeQueryWithParallelReplicas(
         /// The subquery carries its own SETTINGS (shipped to remote replicas via the AST). Pass its
         /// context down so the local plan is optimized with the same read-in-order settings as the
         /// replicas, and the initiator does not end up with a different coordination mode.
-        ContextPtr local_context = new_context;
-        if (const auto * query_node = query_tree->as<QueryNode>())
-            local_context = query_node->getContext();
-        else if (const auto * union_node = query_tree->as<UnionNode>())
-            local_context = union_node->getContext();
+        ContextPtr local_context = getShippedQueryContext(query_tree, new_context);
 
-        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(std::move(local_plan), std::move(local_context));
+        /// The local plan may only take a condition that could change how it reads if the replicas end up
+        /// with that same condition, so let plan optimization ask `addFilters` in advance, about the
+        /// actual condition it is holding. Bound to this query, which is the one the replicas run - and
+        /// silent when they run `remote_query_plan` instead, which no rewrite of the AST can reach.
+        std::function<bool(const ActionsDAG &)> can_ship_condition;
+        if (!remote_query_plan && canAddFiltersToShippedQuery(forwarded_query_ast, query_tree, planner_context, new_context, nullptr))
+            can_ship_condition = [ast = forwarded_query_ast, query_tree, planner_context, ctx = new_context](
+                                     const ActionsDAG & condition)
+            { return canAddFiltersToShippedQuery(ast, query_tree, planner_context, ctx, &condition); };
+
+        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(
+            std::move(local_plan), std::move(local_context), std::move(can_ship_condition));
         auto stub_local_plan = std::make_unique<QueryPlan>();
         stub_local_plan->addStep(std::move(read_from_local));
 

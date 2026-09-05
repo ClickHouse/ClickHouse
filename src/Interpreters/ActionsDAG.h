@@ -552,6 +552,15 @@ public:
         const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column = {},
         bool single_output_condition_node = true);
 
+    /// Same as the overload above, but the conjunction atoms to push down are chosen by `can_push`
+    /// rather than by which inputs are available. The atoms that stay are left in this DAG, so the
+    /// step owning it is rebuilt around what is left, exactly as in the other overload.
+    std::optional<ActionsForFilterPushDown> splitActionsForFilterPushDown(
+        const std::string & filter_name,
+        bool removes_filter,
+        const ColumnsWithTypeAndName & all_inputs,
+        const std::function<bool(const Node *)> & can_push);
+
     /// Check if `predicate` is a combination of AND functions.
     /// Returns a list of nodes representing atomic predicates.
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
@@ -575,6 +584,14 @@ public:
      *   - remove_filter: whether the filter column should be removed from original DAG after evaluation
      */
     static std::optional<ActionsForFilterPushDown> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+
+    /// The two halves both `splitActionsForFilterPushDown` overloads share: find the predicate to split
+    /// (null when it is constant and there is nothing to split), and turn an already-partitioned
+    /// conjunction into the pushed-down actions, rebuilding this DAG around what stayed.
+    Node * findPredicateToSplit(const std::string & filter_name);
+    std::optional<ActionsForFilterPushDown> splitConjunction(
+        NodeRawConstPtrs allowed, NodeRawConstPtrs rejected, Node * predicate,
+        const ColumnsWithTypeAndName & all_inputs, bool removes_filter);
 
 private:
     NodeRawConstPtrs getParents(const Node * target) const;

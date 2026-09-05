@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
@@ -461,6 +462,138 @@ ASTPtr tryBuildAdditionalFilterAST(
     return node_to_ast[dag.getOutputs().front()];
 }
 
+/// The one table expression the shipped query reads, or null when its shape is not one a predicate can
+/// be spliced into: `PredicateRewriteVisitor` attributes the predicate to a single table, so a join
+/// tree with two of them has nowhere to put it. One level of subquery is followed through.
+///
+/// Split out of `addFilters` because it depends only on the query, not on the predicate. That lets
+/// plan optimization ask it before there is a predicate to push - `tryPushDownFilter` may only put a
+/// condition the replicas do not have into the initiator's local plan when that condition cannot
+/// change how the local fragment reads.
+static QueryTreeNodePtr findSingleShippedTableExpression(const QueryTreeNodePtr & query_tree)
+{
+    const auto * query_node = query_tree ? query_tree->as<QueryNode>() : nullptr;
+    if (!query_node)
+        return nullptr;
+
+    const auto is_table = [](const QueryTreeNodePtr & expr)
+    { return expr->as<TableNode>() || expr->as<TableFunctionNode>(); };
+
+    auto table_expressions = extractTableExpressions(query_node->getJoinTreeNodeTyped());
+    /// Case with JOIN is not supported so far.
+    if (table_expressions.size() != 1)
+        return nullptr;
+
+    if (is_table(table_expressions.front()))
+        return table_expressions.front();
+
+    const auto * inner_query_node = table_expressions.front()->as<QueryNode>();
+    if (!inner_query_node)
+        return nullptr;
+
+    table_expressions = extractTableExpressions(inner_query_node->getJoinTreeNodeTyped());
+    /// Case with JOIN is not supported so far.
+    if (table_expressions.size() != 1)
+        return nullptr;
+
+    return is_table(table_expressions.front()) ? table_expressions.front() : nullptr;
+}
+
+ContextPtr getShippedQueryContext(const QueryTreeNodePtr & query_tree, const ContextPtr & fallback)
+{
+    if (const auto * query_node = query_tree ? query_tree->as<QueryNode>() : nullptr)
+        return query_node->getContext();
+    if (const auto * union_node = query_tree ? query_tree->as<UnionNode>() : nullptr)
+        return union_node->getContext();
+    return fallback;
+}
+
+/// What the shipped query alone decides about taking a pushed-down predicate: the settings must allow
+/// the rewrite, the query must read a single table (`findSingleShippedTableExpression`), and it must be
+/// one `PredicateRewriteVisitor` will rewrite at all - a `FINAL`, a `LIMIT`, or a `SELECT` list carrying
+/// a window function bars every predicate alike (`canRewriteSubquery`).
+///
+/// Every setting here is read from the shipped query's own context, never the ambient one: a jointly
+/// scoped `SETTINGS` clause gives the subquery its own, and its value is the one that governs what the
+/// replicas run. See `04746_distributed_plan_execute_locally_subquery_settings`.
+static bool shippedQueryCanTakeAPredicate(
+    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
+    const PlannerContextPtr & planner_context,
+    const ContextPtr & shipped_query_context)
+{
+    if (!query_ast || !query_tree || !planner_context)
+        return false;
+
+    const auto & settings = shipped_query_context->getSettingsRef();
+    if (!settings[Setting::allow_push_predicate_ast_for_distributed_subqueries])
+        return false;
+
+    if (!query_tree->as<QueryNode>() || !findSingleShippedTableExpression(query_tree))
+        return false;
+
+    return canRewriteSubquery(
+        getSelectQuery(query_ast),
+        settings[Setting::enable_optimize_predicate_expression_to_final_subquery],
+        settings[Setting::allow_push_predicate_when_subquery_contains_with],
+        shipped_query_context);
+}
+
+/// The predicate to splice into the shipped query, or null when it cannot be spliced. `external_tables`
+/// is where an `IN` set's temporary table gets registered; a caller that only wants the answer passes
+/// null and gets a no for such a predicate, which is the safe direction.
+/// `context` is the one the rewrite acts on - `tryBuildAdditionalFilterAST` registers an `IN` set's
+/// temporary table in it - while the settings that decide whether to rewrite at all come from the
+/// shipped query's own context.
+static ASTPtr tryBuildShippedQueryPredicate(
+    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
+    const PlannerContextPtr & planner_context,
+    Tables * external_tables,
+    ContextMutablePtr & context,
+    const ActionsDAG & pushed_down_filters)
+{
+    /// Ask what the query decides first: `tryBuildAdditionalFilterAST` can register external tables, and
+    /// there is no point doing that for a query no predicate can enter.
+    if (!shippedQueryCanTakeAPredicate(query_ast, query_tree, planner_context, getShippedQueryContext(query_tree, context)))
+        return nullptr;
+
+    /// We are building a set with projection names and a map with execution names here.
+    /// They are needed to substitute inputs in ActionsDAG. See comment in tryBuildAdditionalFilterAST.
+
+    const auto & query_node = query_tree->as<const QueryNode &>();
+
+    std::unordered_set<std::string> projection_names;
+    for (const auto & col : query_node.getProjectionColumns())
+        projection_names.insert(col.name);
+
+    std::unordered_map<std::string, QueryTreeNodePtr> execution_name_to_projection_query_tree;
+    for (const auto & node : query_node.getProjection())
+        execution_name_to_projection_query_tree[calculateActionNodeName(node, *planner_context)] = node;
+
+    return tryBuildAdditionalFilterAST(
+        pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context);
+}
+
+bool canAddFiltersToShippedQuery(
+    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
+    const PlannerContextPtr & planner_context,
+    ContextMutablePtr context,
+    const ActionsDAG * pushed_down_filters)
+{
+    /// This one is the parallel-replicas caller's own gate - `ReadFromRemote`'s plain distributed path
+    /// reaches `addFilters` without it - and like the rest it is read from the shipped query's context.
+    if (!getShippedQueryContext(query_tree, context)->getSettingsRef()[Setting::parallel_replicas_filter_pushdown])
+        return false;
+
+    if (!pushed_down_filters)
+        return shippedQueryCanTakeAPredicate(query_ast, query_tree, planner_context, getShippedQueryContext(query_tree, context));
+
+    return tryBuildShippedQueryPredicate(query_ast, query_tree, planner_context, nullptr, context, *pushed_down_filters)
+        != nullptr;
+}
+
 static void addFilters(
     Tables * external_tables,
     ContextMutablePtr & context,
@@ -469,80 +602,35 @@ static void addFilters(
     const PlannerContextPtr & planner_context,
     const ActionsDAG & pushed_down_filters)
 {
-    if (!query_tree || !planner_context)
-        return;
-
-    const auto & settings = context->getSettingsRef();
-    if (!settings[Setting::allow_push_predicate_ast_for_distributed_subqueries])
-        return;
-
-    const auto * query_node = query_tree->as<QueryNode>();
-    if (!query_node)
-        return;
-
-    /// We are building a set with projection names and a map with execution names here.
-    /// They are needed to substitute inputs in ActionsDAG. See comment in tryBuildAdditionalFilterAST.
-
-    std::unordered_set<std::string> projection_names;
-    for (const auto & col : query_node->getProjectionColumns())
-        projection_names.insert(col.name);
-
-    std::unordered_map<std::string, QueryTreeNodePtr> execution_name_to_projection_query_tree;
-    for (const auto & node : query_node->getProjection())
-        execution_name_to_projection_query_tree[calculateActionNodeName(node, *planner_context)] = node;
-
-    ASTPtr predicate = tryBuildAdditionalFilterAST(pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context);
+    ASTPtr predicate = tryBuildShippedQueryPredicate(
+        query_ast, query_tree, planner_context, external_tables, context, pushed_down_filters);
     if (!predicate)
         return;
 
-    auto table_expressions = extractTableExpressions(query_node->getJoinTreeNodeTyped());
-    /// Case with JOIN is not supported so far.
-    if (table_expressions.size() != 1)
-        return;
+    const auto & settings = context->getSettingsRef();
+    auto shipped_table_expression = findSingleShippedTableExpression(query_tree);
 
-    /// Extract the storage snapshot, identifier (when available) and alias from the table expression.
-    /// Supported cases:
-    ///   - TableNode (a real table)
-    ///   - TableFunctionNode (e.g. `numbers(3)`, `remote(...)`)
-    ///   - QueryNode wrapping any of the above (one level of subquery)
+    /// Extract the storage snapshot, identifier (when available) and alias from the table expression
+    /// `findSingleShippedTableExpression` resolved to - a `TableNode` (a real table) or a
+    /// `TableFunctionNode` (e.g. `numbers(3)`, `remote(...)`).
     StorageSnapshotPtr table_snapshot;
     ASTPtr table_identifier_ast;
     String table_alias;
 
-    auto extract_from_expression = [&](const QueryTreeNodePtr & expr) -> bool
+    if (const auto * tn = shipped_table_expression->as<TableNode>())
     {
-        if (const auto * tn = expr->as<TableNode>())
-        {
-            table_snapshot = tn->getStorageSnapshot();
-            table_identifier_ast = tn->toASTIdentifier();
-            table_alias = tn->getAlias();
-            return true;
-        }
-        if (const auto * tfn = expr->as<TableFunctionNode>())
-        {
-            table_snapshot = tfn->getStorageSnapshot();
-            /// Table functions don't have a stable database/table identifier - we only
-            /// need the alias on the receiving side so `setColumnShortName` can strip it.
-            table_identifier_ast = nullptr;
-            table_alias = tfn->getAlias();
-            return true;
-        }
-        return false;
-    };
-
-    if (!extract_from_expression(table_expressions.front()))
+        table_snapshot = tn->getStorageSnapshot();
+        table_identifier_ast = tn->toASTIdentifier();
+        table_alias = tn->getAlias();
+    }
+    else
     {
-        const auto * inner_query_node = table_expressions.front()->as<QueryNode>();
-        if (!inner_query_node)
-            return;
-
-        table_expressions = extractTableExpressions(inner_query_node->getJoinTreeNodeTyped());
-        /// Case with JOIN is not supported so far.
-        if (table_expressions.size() != 1)
-            return;
-
-        if (!extract_from_expression(table_expressions.front()))
-            return;
+        const auto & tfn = shipped_table_expression->as<TableFunctionNode &>();
+        table_snapshot = tfn.getStorageSnapshot();
+        /// Table functions don't have a stable database/table identifier - we only
+        /// need the alias on the receiving side so `setColumnShortName` can strip it.
+        table_identifier_ast = nullptr;
+        table_alias = tfn.getAlias();
     }
 
     TableWithColumnNamesAndTypes table_with_columns(
@@ -1093,7 +1181,8 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDes
 
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown] && filter_actions_dag)
+    if (filter_actions_dag
+        && getShippedQueryContext(query_tree, context)->getSettingsRef()[Setting::parallel_replicas_filter_pushdown])
         addFilters(&external_tables, context, query_ast, query_tree, planner_context, *filter_actions_dag);
 
     Pipes pipes = addPipes(query_ast, output_header);

@@ -1,0 +1,100 @@
+single node
+Read type: InOrder
+Read type: InOrder
+parallel replicas
+Read type: Default
+42
+142
+242
+342
+442
+Read type: Default
+100	499200
+sort inside the fragment
+Read type: Default
+42
+142
+242
+342
+442
+sort inside the fragment, filter shipped to the replicas too
+Read type: InOrder
+42
+142
+242
+342
+442
+sort inside the fragment, join runtime filter
+Read type: Default
+Runtime filters: RF1(tenant, tenant from default.b_pr_read_mode)
+Read type: Default
+100
+sort inside the fragment, runtime filter conjoined with an ordinary one
+Read type: Default
+Runtime filters: RF1(tenant, tenant from default.b_pr_read_mode)
+Read type: Default
+42
+142
+242
+342
+442
+sort inside the fragment, the filter cannot reach the replicas
+no AST predicate push-down
+Read type: Default
+42
+142
+242
+342
+442
+the replicas run a serialized plan
+Read type: Default
+42
+142
+242
+342
+442
+the shipped query reads two tables
+Sorting
+Filter column: tenant = 42
+Sorting
+Read type: Default
+Read type: Default
+Filter column: tenant = 42
+42
+142
+242
+342
+442
+the shipped query selects a window function
+Sorting
+Sorting
+Filter column: tenant = 42
+Read type: Default
+Filter column: tenant = 42
+42	100
+142	100
+242	100
+342	100
+442	100
+the shipped query carries its own SETTINGS
+off outside, on inside: the replicas do get it
+Read type: InOrder
+42
+142
+242
+342
+442
+on outside, off inside: they do not
+Read type: Default
+42
+142
+242
+342
+442
+on outside, AST push-down off inside: they do not either
+Read type: Default
+42
+142
+242
+342
+442

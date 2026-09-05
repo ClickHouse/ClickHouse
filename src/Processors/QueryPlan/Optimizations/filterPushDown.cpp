@@ -19,12 +19,14 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -146,6 +148,61 @@ bool constifyFilterColumnAfterPushDown(ActionsDAG & expression, const String & f
 }
 }
 
+/// Whatever chose the atoms, a split can leave the filter column's constness wrong for the step that
+/// keeps it, and a Const column reaching a parent (a `UnionStep`, say) is a "Block structure mismatch".
+/// Every caller of `splitActionsForFilterPushDown` needs this, so it does not belong inside one of them.
+static void fixFilterColumnConstnessAfterPushDown(
+    FilterStep & filter,
+    ActionsDAG::ActionsForFilterPushDown & result,
+    bool is_filter_column_const_before,
+    const ColumnPtr & original_filter_const_column)
+{
+    auto & expression = filter.getExpression();
+    const auto & filter_column_name = filter.getFilterColumnName();
+
+    if (is_filter_column_const_before && !result.is_filter_const_after_push_down)
+    {
+        /// The filter column was const before push-down (e.g., AND short-circuits to constant false)
+        /// but became non-const after extracting the constant parts. Restore constness.
+        result.is_filter_const_after_push_down
+            = constifyFilterColumnAfterPushDown(expression, filter_column_name, original_filter_const_column);
+        return;
+    }
+
+    bool is_filter_const_after = result.is_filter_const_after_push_down;
+
+    /// After push-down, the remaining expression may produce a Const filter column
+    /// even though `is_filter_const_after_push_down` is false (that flag is only set
+    /// when ALL conjunctions are pushed down). This happens when the remaining expression
+    /// contains a NULL constant argument — `defaultImplementationForNulls` short-circuits
+    /// to a ColumnConst, e.g. `plus(count(), NULL)` becomes Const(NULL).
+    if (!is_filter_column_const_before && !is_filter_const_after && !filter.removesFilterColumn())
+    {
+        auto test_header = expression.updateHeader(*filter.getInputHeaders().front());
+        const auto * filter_col = test_header.findByName(filter_column_name);
+        if (filter_col && filter_col->column && isColumnConst(*filter_col->column))
+            is_filter_const_after = true;
+    }
+
+    materializeFilterColumnIfNeededAfterPushDown(filter, is_filter_column_const_before, is_filter_const_after);
+}
+
+/// Rebuild the step that owned the condition around what stayed in it: nothing left to filter makes it
+/// a plain expression, otherwise it keeps filtering by the rest.
+static void rebuildStepAfterPushDown(QueryPlanStepPtr & parent, FilterStep & filter, IQueryPlanStep & child, bool all_conditions_pushed)
+{
+    if (all_conditions_pushed)
+    {
+        auto new_step = std::make_unique<ExpressionStep>(child.getOutputHeader(), filter.getExpression().clone());
+        new_step->setStepDescription(filter);
+        parent = std::move(new_step);
+    }
+    else
+    {
+        filter.updateInputHeader(child.getOutputHeader());
+    }
+}
+
 static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(QueryPlan::Node * parent_node, bool step_changes_the_number_of_rows, const Names & available_inputs, size_t child_idx = 0)
 {
     QueryPlan::Node * child_node = parent_node->children.front();
@@ -171,36 +228,7 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(QueryPlan
     auto result = expression.splitActionsForFilterPushDown(
         filter_column_name, removes_filter, available_inputs, all_inputs, allow_deterministic_functions);
     if (result)
-    {
-        if (is_filter_column_const_before && !result->is_filter_const_after_push_down)
-        {
-            /// The filter column was const before push-down (e.g., AND short-circuits to constant false)
-            /// but became non-const after extracting the constant parts. Restore constness.
-            result->is_filter_const_after_push_down
-                = constifyFilterColumnAfterPushDown(expression, filter_column_name, original_filter_const_column);
-        }
-        else
-        {
-            bool is_filter_const_after = result->is_filter_const_after_push_down;
-
-            /// After push-down, the remaining expression may produce a Const filter column
-            /// even though `is_filter_const_after_push_down` is false (that flag is only set
-            /// when ALL conjunctions are pushed down). This happens when the remaining expression
-            /// contains a NULL constant argument — `defaultImplementationForNulls` short-circuits
-            /// to a ColumnConst, e.g. `plus(count(), NULL)` becomes Const(NULL).
-            /// If uncorrected, the Const output header propagates to parent steps (e.g. UnionStep)
-            /// causing a "Block structure mismatch" exception.
-            if (!is_filter_column_const_before && !is_filter_const_after && !removes_filter)
-            {
-                auto test_header = expression.updateHeader(*filter->getInputHeaders().front());
-                const auto * filter_col = test_header.findByName(filter_column_name);
-                if (filter_col && filter_col->column && isColumnConst(*filter_col->column))
-                    is_filter_const_after = true;
-            }
-
-            materializeFilterColumnIfNeededAfterPushDown(*filter, is_filter_column_const_before, is_filter_const_after);
-        }
-    }
+        fixFilterColumnConstnessAfterPushDown(*filter, *result, is_filter_column_const_before, original_filter_const_column);
     return result;
 }
 
@@ -243,20 +271,7 @@ static size_t addNewFilterStepOrThrow(
     child->updateInputHeader(node.step->getOutputHeader(), child_idx);
 
     if (update_parent_filter)
-    {
-        if (!filter_node || split_filter.is_filter_const_after_push_down)
-        {
-            /// This means that all predicates of filter were pushed down.
-            /// Replace current actions to expression, as we don't need to filter anything.
-            auto new_step = std::make_unique<ExpressionStep>(child->getOutputHeader(), std::move(expression));
-            new_step->setStepDescription(*filter);
-            parent = std::move(new_step);
-        }
-        else
-        {
-            filter->updateInputHeader(child->getOutputHeader());
-        }
-    }
+        rebuildStepAfterPushDown(parent, *filter, *child, !filter_node || split_filter.is_filter_const_after_push_down);
 
     return 3;
 }
@@ -1131,7 +1146,84 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     return updated_steps;
 }
 
-size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
+/// Whether a condition might fix a column to a single value, which is what could make a read go in
+/// order and so change the coordination mode the fragment announces: `WHERE tenant = 42` can, while
+/// `WHERE tenant > 42`, a bare boolean or a join runtime filter leave the decision alone.
+///
+/// Deliberately structural, and not `appendFixedColumnsFromFilterExpression` - the analysis read-in-order
+/// itself uses - even though reusing that would be narrower and exact. It inspects `FUNCTION` nodes and
+/// descends only `and`, so an `ALIAS` around the condition, which is how a conjunction usually arrives
+/// here, makes it report that nothing is fixed. Reading it that way pushed `tenant = 42` into a fragment
+/// that then read `InOrder` while the replicas read `Default`. Missing a fixed column costs that analysis
+/// an optimization and costs this one correctness, so the two cannot share a test until the analysis
+/// looks through aliases.
+///
+/// The price is refusing far more than it must: an equality under an `or`, one between two non-constant
+/// expressions, or an `isNotDistinctFrom` fixes nothing and still waits for the setting.
+static bool mayFixColumn(const ActionsDAG::Node * condition)
+{
+    std::vector<const ActionsDAG::Node *> stack{condition};
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.emplace(node).second)
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            const auto & name = node->function_base->getName();
+            if (name == "equals" || name == "isNotDistinctFrom")
+                return true;
+        }
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    return false;
+}
+
+/// Whether a fixed column could change how `plan` reads: does anything in the fragment read by a
+/// sorting key at all. Only that can be asked here - not whether anything would *request* an ordered
+/// read, because at this point the fragment holds just the read (`Expression -> ReadFromMergeTree`);
+/// the `Sorting` or `Window` that decides the order sits in the outer plan and only reaches the read
+/// once the fragment is spliced in. Nor whether the sorting key involves the fixed column, which means
+/// following the condition's columns down through the fragment's projections - `buildInputOrderInfo`'s
+/// job, not a second copy of it here.
+static bool fixedColumnMayChangeReadMode(const QueryPlan * plan)
+{
+    if (!plan || !plan->isInitialized())
+        return false;
+
+    std::vector<const QueryPlan::Node *> stack{plan->getRootNode()};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        const auto * step = node->step.get();
+
+        if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
+        {
+            if (!reading->getStorageMetadata()->getSortingKey().column_names.empty())
+                return true;
+        }
+        else if (typeid_cast<const ISourceStep *>(step))
+        {
+            /// A source that only expands into its real reads later (`ReadFromMerge`) has nothing to
+            /// inspect yet; being wrong here costs the mode mismatch this gate exists to prevent.
+            return true;
+        }
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    return false;
+}
+
+size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
 {
     if (parent_node->children.size() != 1)
         return 0;
@@ -1404,13 +1496,57 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * parallel_replicas_local_plan = typeid_cast<ReadFromLocalParallelReplicaStep *>(child.get()))
     {
-        if (!settings.parallel_replicas_filter_pushdown)
+        /// Only the initiator's share of the read gets the condition here, so a condition the replicas do
+        /// not also have may not change what this fragment announces to the shared coordinator: an
+        /// equality fixes a sort key column, the fragment then reads in order, and the initiator
+        /// announces `WithOrder` against the replicas' `Default`.
+        ///
+        /// The replicas get it only by the splice into their query, which declines for queries it cannot
+        /// rewrite and conditions it cannot express - so put this condition to it rather than trusting a
+        /// setting, all the more since `parallel_replicas_filter_pushdown` is jointly scoped and the
+        /// value that governs is the shipped query's own. A join runtime filter it can never carry, and
+        /// never has to: see `mayFixColumn`.
+        const bool replicas_get_the_condition = parallel_replicas_local_plan->shippedQueryCanCarry(filter->getExpression());
+
+        if (replicas_get_the_condition || !fixedColumnMayChangeReadMode(parallel_replicas_local_plan->getQueryPlan()))
+        {
+            // actual push down will be done when plan for local parallel replica will be optimized
+            FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};
+            parallel_replicas_local_plan->addFilter(std::move(info));
+            std::swap(*parent_node, *child_node);
+            return 1;
+        }
+
+        /// Take the runtime filters out of the conjunction rather than giving up on the whole condition:
+        /// `WHERE ...` merged with a runtime filter is the common shape, and the runtime filter is the
+        /// half worth having down there. What is left stays in this step's own condition.
+        ///
+        /// The fragment is a source step, so what is available below it is its output, not an input
+        /// header. Everything after the split is what the other push-downs do, through the same helpers.
+        const bool is_filter_column_const_before = isFilterColumnConst(*filter);
+        ColumnPtr original_filter_const_column;
+        if (is_filter_column_const_before)
+            original_filter_const_column = filter->getOutputHeader()->getByName(filter->getFilterColumnName()).column;
+
+        auto split = filter->getExpression().splitActionsForFilterPushDown(
+            filter->getFilterColumnName(),
+            filter->removesFilterColumn(),
+            child->getOutputHeader()->getColumnsWithTypeAndName(),
+            [](const ActionsDAG::Node * atom) { return !mayFixColumn(atom); });
+
+        if (!split)
             return 0;
 
-        // actual push down will be done when plan for local parallel replica will be optimized
-        FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};
-        parallel_replicas_local_plan->addFilter(std::move(info));
-        std::swap(*parent_node, *child_node);
+        fixFilterColumnConstnessAfterPushDown(*filter, *split, is_filter_column_const_before, original_filter_const_column);
+
+        const auto * remaining = filter->getExpression().tryFindInOutputs(filter->getFilterColumnName());
+
+        String pushed_filter_column_name = split->dag.getOutputs()[split->filter_pos]->result_name;
+        parallel_replicas_local_plan->addFilter(
+            FilterDAGInfo{std::move(split->dag), std::move(pushed_filter_column_name), split->remove_filter});
+
+        rebuildStepAfterPushDown(parent, *filter, *child, !remaining || split->is_filter_const_after_push_down);
+
         return 1;
     }
 
