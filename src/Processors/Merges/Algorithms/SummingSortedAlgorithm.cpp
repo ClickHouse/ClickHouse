@@ -3,7 +3,9 @@
 #include <memory>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
@@ -59,6 +61,14 @@ struct SummingSortedAlgorithm::AggregateDescription
     bool remove_default_values{};
     bool aggregate_all_columns = false;
 
+    /// Versioned coalescing: keep the non-NULL value of the row with the maximum version.
+    bool is_versioned = false;
+    /// Versioned coalescing: this is the per-column versions map itself, filled in finishGroup.
+    bool is_column_versions = false;
+    /// Single-row copy of the best value seen so far and the raw 64-bit form of its version.
+    MutableColumnPtr column_value;
+    UInt64 column_version = 0;
+
     String sum_function_map_name;
 
     void init(const char * function_name, const DataTypes & argument_types)
@@ -80,7 +90,9 @@ struct SummingSortedAlgorithm::AggregateDescription
     {
         if (created)
             return;
-        if (is_agg_func_type)
+        if (is_versioned || is_column_versions)
+            column_value = nullptr;
+        else if (is_agg_func_type)
             merged_column->insertDefault();
         else
             function->create(state.data());
@@ -91,7 +103,9 @@ struct SummingSortedAlgorithm::AggregateDescription
     {
         if (!created)
             return;
-        if (!is_agg_func_type)
+        if (is_versioned || is_column_versions)
+            column_value = nullptr;
+        else if (!is_agg_func_type)
             function->destroy(state.data());
         created = false;
     }
@@ -258,7 +272,8 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     const String & sum_function_map_name,
     bool remove_default_values,
     bool aggregate_all_columns,
-    bool allow_tuple_element_aggregation)
+    bool allow_tuple_element_aggregation,
+    const String & version_column)
 {
     SummingSortedAlgorithm::ColumnsDefinition def;
     def.allow_tuple_element_aggregation = allow_tuple_element_aggregation;
@@ -281,6 +296,19 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
 
     NameSet original_column_names = header.getNameSet();
 
+    if (!version_column.empty() && !aggregate_all_columns)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Version column is only supported in the coalescing mode (aggregate_all_columns)");
+    if (!version_column.empty())
+    {
+        if (!header_flatten.has(version_column) || !header_flatten.has(ColumnVersionsColumn::name))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns {} and {} must be present in the header {}",
+                            version_column, ColumnVersionsColumn::name, header_flatten.dumpNames());
+        def.version_column_number = header_flatten.getPositionByName(version_column);
+        def.column_versions_number = header_flatten.getPositionByName(ColumnVersionsColumn::name);
+        def.version_is_signed = !header_flatten.getByPosition(*def.version_column_number).type->isValueRepresentedByUnsignedInteger();
+    }
+
     /// name of nested structure -> the column numbers that refer to it.
     std::unordered_map<std::string, std::vector<size_t>> discovered_maps;
 
@@ -292,6 +320,18 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     for (size_t i = 0; i < num_columns; ++i)
     {
         const ColumnWithTypeAndName & column = header_flatten.safeGetByPosition(i);
+
+        /// The per-column versions map is the algorithm's own output, filled in finishGroup.
+        if (def.column_versions_number && i == *def.column_versions_number)
+        {
+            SummingSortedAlgorithm::AggregateDescription desc;
+            desc.aggregate_all_columns = aggregate_all_columns;
+            desc.is_column_versions = true;
+            desc.column_numbers = {i};
+            desc.real_type = column.type;
+            def.columns_to_aggregate.emplace_back(std::move(desc));
+            continue;
+        }
 
         const auto * simple = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName());
         bool is_non_empty_tuple = typeid_cast<const DataTypeTuple *>(column.type.get()) && !typeid_cast<const DataTypeTuple *>(column.type.get())->getElements().empty();
@@ -340,7 +380,10 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 }
                 else if (!is_agg_func)
                 {
-                    desc.init(sum_function_name.c_str(), {column.type});
+                    if (def.version_column_number)
+                        desc.is_versioned = true;
+                    else
+                        desc.init(sum_function_name.c_str(), {column.type});
                 }
 
                 def.columns_to_aggregate.emplace_back(std::move(desc));
@@ -438,7 +481,11 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 continue;
             }
 
+            /// The version column is aggregated regardless of the explicit columns list:
+            /// the group result keeps the maximum version, like in ReplacingMergeTree.
+            bool is_version_column = def.version_column_number && i == *def.version_column_number;
             if (column_names_to_sum.empty()
+                || is_version_column
                 || isColumnOrAncestorInNames(i, header_flatten, flatten_ancestors, column_names_to_sum))
             {
                 // Create aggregator to sum this column
@@ -463,10 +510,15 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 }
                 else if (!is_agg_func)
                 {
-                    desc.init(sum_function_name.c_str(), {column.type});
+                    if (def.version_column_number)
+                        desc.is_versioned = true;
+                    else
+                        desc.init(sum_function_name.c_str(), {column.type});
                 }
 
                 def.columns_to_aggregate.emplace_back(std::move(desc));
+                if (is_version_column)
+                    def.version_desc_number = def.columns_to_aggregate.size() - 1;
             }
             else
             {
@@ -721,6 +773,33 @@ static void setRow(Row & row, Columns & row_columns, const ColumnRawPtrs & raw_c
 }
 
 
+static bool versionLess(UInt64 lhs, UInt64 rhs, bool is_signed)
+{
+    if (is_signed)
+        return static_cast<Int64>(lhs) < static_cast<Int64>(rhs);
+    return lhs < rhs;
+}
+
+/// The version of the value in the given column of the row: the entry of the per-column versions
+/// map when present, the row's version column otherwise.
+static UInt64 rowColumnVersion(
+    const SummingSortedAlgorithm::ColumnsDefinition & def, const ColumnRawPtrs & raw_columns, size_t row, const String & column_name)
+{
+    if (def.column_versions_number)
+    {
+        const auto & map_column = assert_cast<const ColumnMap &>(*raw_columns[*def.column_versions_number]);
+        const auto & entries = map_column.getNestedData();
+        const auto & offsets = map_column.getNestedColumn().getOffsets();
+        const auto & values = assert_cast<const ColumnUInt64 &>(entries.getColumn(1));
+
+        for (size_t i = offsets[row - 1]; i != offsets[row]; ++i)
+            if (entries.getColumn(0).getDataAt(i) == column_name)
+                return values.getElement(i);
+    }
+
+    return raw_columns[*def.version_column_number]->get64(row);
+}
+
 SummingSortedAlgorithm::SummingMergedData::SummingMergedData(UInt64 max_block_size_rows_, UInt64 max_block_size_bytes_, std::optional<size_t> max_dynamic_subcolumns_, ColumnsDefinition & def_)
     : MergedData(false, max_block_size_rows_, max_block_size_bytes_, max_dynamic_subcolumns_)
     , def(def_), current_row(def.column_names.size()), current_row_columns(def.column_names.size())
@@ -814,12 +893,42 @@ void SummingSortedAlgorithm::SummingMergedData::finishGroup()
     if (def.columns_to_aggregate.empty())
         current_row_is_zero = false;
 
+    /// Remember which values are older than the group's version, so that later merges and late
+    /// inserts still resolve by the value's own version. Values at the group's version are omitted.
+    Map group_column_versions;
+    if (def.column_versions_number)
+    {
+        std::optional<UInt64> group_version;
+        if (def.version_desc_number)
+            group_version = def.columns_to_aggregate[*def.version_desc_number].column_version;
+
+        for (const auto & desc : def.columns_to_aggregate)
+            if (desc.is_versioned && desc.column_value
+                && (!group_version || versionLess(desc.column_version, *group_version, def.version_is_signed)))
+                group_column_versions.push_back(Tuple{def.column_names[desc.column_numbers[0]], desc.column_version});
+    }
+
     for (auto & desc : def.columns_to_aggregate)
     {
         // Do not insert if the aggregation state hasn't been created
         if (desc.created)
         {
-            if (desc.is_agg_func_type)
+            if (desc.is_column_versions)
+            {
+                desc.merged_column->insert(group_column_versions);
+                current_row_is_zero = false;
+            }
+            else if (desc.is_versioned)
+            {
+                /// Insert the value of the row with the maximum version, or the default value
+                /// (NULL for Nullable columns) if the column was NULL in every row of the group.
+                if (desc.column_value)
+                    desc.merged_column->insertFrom(*desc.column_value, 0);
+                else
+                    desc.merged_column->insertDefault();
+                current_row_is_zero = false;
+            }
+            else if (desc.is_agg_func_type)
             {
                 current_row_is_zero = false;
             }
@@ -897,6 +1006,33 @@ void SummingSortedAlgorithm::SummingMergedData::addRowImpl(ColumnRawPtrs & raw_c
         if (!desc.created)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in SummingSortedAlgorithm, there are no description");
 
+        /// The per-column versions map is consumed by rowColumnVersion and produced in finishGroup.
+        if (desc.is_column_versions)
+            continue;
+
+        if (desc.is_versioned)
+        {
+            const IColumn * value_col = raw_columns[desc.column_numbers[0]];
+
+            /// Coalescing: NULL means "no value", it never overwrites the stored one.
+            if (value_col->isNullAt(row))
+                continue;
+
+            /// Keep the value of the row with the maximum version. On equal versions the later
+            /// row wins, the same as in ReplacingMergeTree.
+            UInt64 candidate_version = rowColumnVersion(def, raw_columns, row, def.column_names[desc.column_numbers[0]]);
+            if (desc.column_value && versionLess(candidate_version, desc.column_version, def.version_is_signed))
+                continue;
+
+            /// Store a single-row copy: the raw columns do not outlive the chunk, while a group
+            /// can span multiple chunks.
+            auto value_holder = value_col->cloneEmpty();
+            value_holder->insertFrom(*value_col, row);
+            desc.column_value = std::move(value_holder);
+            desc.column_version = candidate_version;
+            continue;
+        }
+
         if (desc.is_agg_func_type)
         {
             // desc.state is not used for AggregateFunction types
@@ -962,10 +1098,11 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     const String & sum_function_map_name,
     bool remove_default_values,
     bool aggregate_all_columns,
-    bool allow_tuple_element_aggregation_)
+    bool allow_tuple_element_aggregation_,
+    const String & version_column)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_))
     , columns_definition(
-          defineColumns(*header_, description, column_names_to_sum, partition_and_sorting_required_columns, sum_function_name, sum_function_map_name, remove_default_values, aggregate_all_columns, allow_tuple_element_aggregation_))
+          defineColumns(*header_, description, column_names_to_sum, partition_and_sorting_required_columns, sum_function_name, sum_function_map_name, remove_default_values, aggregate_all_columns, allow_tuple_element_aggregation_, version_column))
     , merged_data(max_block_size_rows, max_block_size_bytes, max_dynamic_subcolumns_, columns_definition)
 {
     columns_definition.origin_header = header_;

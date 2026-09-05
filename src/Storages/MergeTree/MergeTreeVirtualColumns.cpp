@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTFunction.h>
@@ -45,6 +46,9 @@ const String BlockOffsetColumn::name = "_block_offset";
 const DataTypePtr BlockOffsetColumn::type = std::make_shared<DataTypeUInt64>();
 const ASTPtr BlockOffsetColumn::codec = getCompressionCodecDeltaLZ4();
 
+const String ColumnVersionsColumn::name = "_column_versions";
+const DataTypePtr ColumnVersionsColumn::type = std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>());
+
 const String PartDataVersionColumn::name = "_part_data_version";
 const DataTypePtr PartDataVersionColumn::type = std::make_shared<DataTypeUInt64>();
 
@@ -79,6 +83,10 @@ Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTree
 
     if (column_name == PartDataVersionColumn::name)
         return part.info.getDataVersion();
+
+    /// A part without the column has every value at the version of its version column.
+    if (column_name == ColumnVersionsColumn::name)
+        return Map{};
 
     if (column_name == "_partition_value")
         return Tuple(part.partition.value.begin(), part.partition.value.end());

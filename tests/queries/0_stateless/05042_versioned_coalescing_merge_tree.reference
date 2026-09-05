@@ -1,0 +1,24 @@
+basic: out-of-order upserts resolved by version
+VersionedCoalescingMergeTree
+FINAL before merge
+1	2	42	first
+2	2	\N	x
+FINAL with a subset of columns
+1	42
+2	\N
+after OPTIMIZE FINAL
+1	2	42	first
+2	2	\N	x
+ties: on equal versions the later inserted row wins
+1	1	2	one
+multiple parts with interleaved versions
+1	3	22	v3
+explicit list of columns to coalesce
+1	2	7
+non-Nullable columns keep the value of the row with the maximum version
+1	5	v5
+rows of a single INSERT are not merged at insert time
+2
+1	2	42	first
+tuple element aggregation
+1	2	(42,'y1')

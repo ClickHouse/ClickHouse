@@ -386,7 +386,7 @@ std::optional<String> extractZooKeeperPathFromReplicatedTableDef(const ASTCreate
 
 static StoragePtr create(const StorageFactory::Arguments & args)
 {
-    /** [Replicated][|Summing|VersionedCollapsing|Collapsing|Aggregating|Replacing|Graphite]MergeTree (2 * 7 combinations) engines
+    /** [Replicated][|Summing|VersionedCollapsing|Collapsing|Aggregating|Replacing|Coalescing|VersionedCoalescing|Graphite]MergeTree (2 * 9 combinations) engines
         * The argument for the engine should be:
         *  - (for Replicated) The path to the table in ZooKeeper
         *  - (for Replicated) Replica name in ZooKeeper
@@ -452,6 +452,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         merging_params.mode = MergeTreeData::MergingParams::Replacing;
     else if (name_part == "Coalescing")
         merging_params.mode = MergeTreeData::MergingParams::Coalescing;
+    else if (name_part == "VersionedCoalescing")
+        merging_params.mode = MergeTreeData::MergingParams::VersionedCoalescing;
     else if (name_part == "Graphite")
         merging_params.mode = MergeTreeData::MergingParams::Graphite;
     else if (name_part == "VersionedCollapsing")
@@ -516,6 +518,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             break;
         case MergeTreeData::MergingParams::Coalescing:
             add_optional_param("list of columns to sum");
+            break;
+        case MergeTreeData::MergingParams::VersionedCoalescing:
+            add_mandatory_param("version");
+            add_optional_param("list of columns to coalesce");
             break;
         case MergeTreeData::MergingParams::Collapsing:
             add_mandatory_param("sign column");
@@ -633,6 +639,21 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             merging_params.columns_to_sum = extractColumnNames(engine_args[arg_cnt - 1]);
             --arg_cnt;
         }
+    }
+    else if (merging_params.mode == MergeTreeData::MergingParams::VersionedCoalescing)
+    {
+        /// Signature: VersionedCoalescingMergeTree(version [, columns]).
+        /// The optional list of columns to coalesce goes last, like in CoalescingMergeTree,
+        /// and is only allowed with the extended storage definition syntax.
+        if (arg_cnt - arg_num == 2 && !engine_args[arg_cnt - 1]->as<ASTLiteral>() && is_extended_storage_def)
+        {
+            merging_params.columns_to_sum = extractColumnNames(engine_args[arg_cnt - 1]);
+            --arg_cnt;
+        }
+
+        if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.version_column))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Version column name must be an identifier {}", verbose_help_message);
+        --arg_cnt;
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Graphite)
     {
@@ -1154,12 +1175,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (arg_num != arg_cnt)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong number of engine arguments.");
 
-    /// Only SummingMergeTree, AggregatingMergeTree and CoalescingMergeTree understand
-    /// `allow_tuple_element_aggregation`. For other engines the setting is silently
-    /// ignored so that the default value can be flipped on without breaking them.
+    /// Only SummingMergeTree, AggregatingMergeTree, CoalescingMergeTree and
+    /// VersionedCoalescingMergeTree understand `allow_tuple_element_aggregation`.
+    /// For other engines the setting is silently ignored so that the default
+    /// value can be flipped on without breaking them.
     if (merging_params.mode == MergeTreeData::MergingParams::Summing
         || merging_params.mode == MergeTreeData::MergingParams::Aggregating
-        || merging_params.mode == MergeTreeData::MergingParams::Coalescing)
+        || merging_params.mode == MergeTreeData::MergingParams::Coalescing
+        || merging_params.mode == MergeTreeData::MergingParams::VersionedCoalescing)
     {
         merging_params.allow_tuple_element_aggregation
             = (*storage_settings)[MergeTreeSetting::allow_tuple_element_aggregation];
@@ -3373,7 +3396,97 @@ SELECT key, data.value_a, data.value_b, data.nested.value_c FROM coalescing_tupl
 ```
 )DOCS_MD",
         .syntax = "ENGINE = CoalescingMergeTree([columns]) ORDER BY expr",
-        .related = {"MergeTree", "SummingMergeTree", "AggregatingMergeTree", "ReplicatedCoalescingMergeTree"}});
+        .related = {"MergeTree", "SummingMergeTree", "AggregatingMergeTree", "VersionedCoalescingMergeTree", "ReplicatedCoalescingMergeTree"}});
+
+    factory.registerStorage("VersionedCoalescingMergeTree", create, features, Documentation{
+        .description = R"DOCS_MD(
+This engine inherits from [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) and serves the same purpose as [CoalescingMergeTree](/reference/engines/table-engines/mergetree-family/coalescingmergetree): during part merges, all rows with the same primary key (or more precisely, the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree)) are replaced with a single row that contains the latest non-NULL values for each column.
+
+The difference is how "latest" is determined. `CoalescingMergeTree` relies on the insertion order, so the data must be inserted in the order of actuality. `VersionedCoalescingMergeTree` uses an explicit `version` column instead, the same way [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) does with its `ver` parameter: for each column, the resulting row keeps the non-NULL value that comes from the row with the maximum version. This allows inserting the data in any order, with multiple threads or from multiple sources.
+
+`VersionedCoalescingMergeTree` is intended for use with Nullable types in non-key columns, which enables column-level upserts: you can update only specific columns of a row rather than the entire row, even when updates arrive out of order.
+
+## Creating a table {#creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = VersionedCoalescingMergeTree(version [, columns])
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
+```
+
+For a description of request parameters, see [request description](/reference/statements/create/table).
+
+### Parameters of VersionedCoalescingMergeTree {#parameters-of-versionedcoalescingmergetree}
+
+#### version {#version}
+
+`version` — The name of the column with the version. Required. The column must be of an integer type or of type `Date`/`DateTime`/`DateTime64`, must not be `Nullable`, and must not be a part of the sorting or partition key.
+
+For each group of rows with the same sorting key:
+
+- Every coalesced column keeps the non-NULL value from the row with the maximum version. Rows with equal versions are ranked by insertion order, the later row wins — the same tie-breaking rule as in `ReplacingMergeTree`.
+- The version column of the resulting row is the maximum version of the group.
+
+Values of different columns of the resulting row may come from rows with different versions. The engine remembers the version of every value in a hidden `_column_versions` column of the data part, so a value is only replaced by a value with a version not lower than its own — regardless of the order of inserts and merges. A late insert therefore resolves correctly even after rows with newer versions have already been merged.
+
+Columns of type `AggregateFunction` and `SimpleAggregateFunction` keep their own aggregation semantics, the same as in `SummingMergeTree` and `CoalescingMergeTree`: their states are combined across all rows of the group, and the version does not apply to them.
+
+#### columns {#columns}
+
+`columns` — Optional. A tuple with the names of columns where values will be united. The provided columns must not be in the partition or sorting key, and must not include the version column. If `columns` is not specified, ClickHouse unites the values in all columns that are not in the sorting key.
+
+### Query clauses {#query-clauses}
+
+When creating a `VersionedCoalescingMergeTree` table the same [clauses](/reference/engines/table-engines/mergetree-family/mergetree) are required, as when creating a `MergeTree` table.
+
+## Usage example {#usage-example}
+
+Consider the following table:
+
+```sql
+CREATE TABLE test_table
+(
+    key UInt64,
+    version UInt64,
+    value_int Nullable(UInt32),
+    value_string Nullable(String)
+)
+ENGINE = VersionedCoalescingMergeTree(version)
+ORDER BY key
+```
+
+Insert data to it, the row with the higher version arriving first:
+
+```sql
+INSERT INTO test_table VALUES (1, 2, 42, NULL);
+INSERT INTO test_table VALUES (1, 1, 10, 'first');
+```
+
+Recommended query for correct and final result:
+
+```sql
+SELECT * FROM test_table FINAL ORDER BY key;
+```
+
+```text
+┌─key─┬─version─┬─value_int─┬─value_string─┐
+│   1 │       2 │        42 │ first        │
+└─────┴─────────┴───────────┴──────────────┘
+```
+
+`value_int` keeps `42` because it comes from the row with the higher version, even though that row was inserted earlier. `value_string` is `NULL` in the row with version `2`, so the value from version `1` is used. With `CoalescingMergeTree` the same inserts would have produced `value_int = 10`, because the row with version `1` was inserted later.
+
+Using the `FINAL` modifier forces ClickHouse to apply merge logic at query time, ensuring you get the correct, coalesced "latest" value for each column. This is the safest and most accurate method when querying from a `VersionedCoalescingMergeTree` table.
+)DOCS_MD",
+        .syntax = "ENGINE = VersionedCoalescingMergeTree(version [, columns]) ORDER BY expr",
+        .related = {"MergeTree", "CoalescingMergeTree", "ReplacingMergeTree", "ReplicatedVersionedCoalescingMergeTree"}});
 
     factory.registerStorage("AggregatingMergeTree", create, features, Documentation{
         .description = R"DOCS_MD(
@@ -4360,6 +4473,7 @@ Replication is only supported for tables in the MergeTree family
 
 - ReplicatedSummingMergeTree
 - ReplicatedCoalescingMergeTree
+- ReplicatedVersionedCoalescingMergeTree
 - ReplicatedVersionedCollapsingMergeTree
 - ReplicatedCollapsingMergeTree
 - ReplicatedGraphiteMergeTree
@@ -4702,6 +4816,11 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
         .description = "Replicated version of the CoalescingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedCoalescingMergeTree('zoo_path', 'replica_name'[, columns]) ORDER BY expr",
         .related = {"CoalescingMergeTree"}});
+
+    factory.registerStorage("ReplicatedVersionedCoalescingMergeTree", create, features, Documentation{
+        .description = "Replicated version of the VersionedCoalescingMergeTree engine.",
+        .syntax = "ENGINE = ReplicatedVersionedCoalescingMergeTree('zoo_path', 'replica_name', version [, columns]) ORDER BY expr",
+        .related = {"VersionedCoalescingMergeTree"}});
 
     factory.registerStorage("ReplicatedGraphiteMergeTree", create, features, Documentation{
         .description = "Replicated version of the GraphiteMergeTree engine.",

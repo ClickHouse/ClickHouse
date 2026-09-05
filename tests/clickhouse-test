@@ -279,7 +279,7 @@ class SharedEngineReplacer:
     # genuine tests.
     TEMP_FILE_MARKER = "shared_engine_replacer_tmp"
 
-    SPECIALIZED_ENGINES = "Collapsing|VersionedCollapsing|Summing|Replacing|Aggregating|Coalescing"
+    SPECIALIZED_ENGINES = "Collapsing|VersionedCollapsing|Summing|Replacing|Aggregating|Coalescing|VersionedCoalescing"
     ENGINES_NON_REPLICATED_REGEXP = (
         rf"(?i)ENGINE[ =]{{0,5}}(({SPECIALIZED_ENGINES}|)MergeTree\(?\)?)"
     )
@@ -294,6 +294,10 @@ class SharedEngineReplacer:
         ("ReplicatedReplacingMergeTree", "SharedReplacingMergeTree"),
         ("ReplicatedAggregatingMergeTree", "SharedAggregatingMergeTree"),
         ("ReplicatedCoalescingMergeTree", "SharedCoalescingMergeTree"),
+        (
+            "ReplicatedVersionedCoalescingMergeTree",
+            "SharedVersionedCoalescingMergeTree",
+        ),
     ]
     NEW_SYNTAX_REPLICATED_MERGE_TREE_RE = (
         r"Replicated[a-zA-Z]*MergeTree\((\\?'.*\\?')?,?(\\?'.*\\?')?[a-zA-Z, _}{]*\)"

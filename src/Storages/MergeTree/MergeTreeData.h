@@ -458,6 +458,7 @@ public:
             Graphite            = 6,
             VersionedCollapsing = 7,
             Coalescing          = 8,
+            VersionedCoalescing = 9,
         };
 
         Mode mode{};
@@ -468,10 +469,10 @@ public:
         /// For Replacing mode. Can be empty for Replacing.
         String is_deleted_column;
 
-        /// For Summing mode. If empty - columns_to_sum is determined automatically.
+        /// For Summing, Coalescing and VersionedCoalescing modes. If empty - columns_to_sum is determined automatically.
         Names columns_to_sum;
 
-        /// For Replacing and VersionedCollapsing mode. Can be empty for Replacing.
+        /// For Replacing, VersionedCollapsing and VersionedCoalescing modes. Can be empty for Replacing.
         String version_column;
 
         /// For Graphite mode.

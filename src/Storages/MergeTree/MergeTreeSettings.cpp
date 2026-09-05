@@ -2153,8 +2153,8 @@ When enabled, allows summing columns in a SummingMergeTree table to be used in
 the partition or sorting key.
 )", 0) \
     DECLARE(Bool, allow_coalescing_columns_in_partition_or_order_key, false, R"(
-When enabled, allows coalescing columns in a CoalescingMergeTree table to be used in
-the partition or sorting key.
+When enabled, allows coalescing columns in a CoalescingMergeTree or VersionedCoalescingMergeTree
+table to be used in the partition or sorting key.
 )", 0) \
     DECLARE(Bool, allow_dimensions_outside_sorting_key, false, R"(
 In `AggregatingMergeTree`, background merges collapse rows that share the same value of the sorting
