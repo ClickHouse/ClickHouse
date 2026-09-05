@@ -68,16 +68,21 @@ private:
 };
 
 /// A local disk whose first writer fails a chosen flush. Later writers are healthy, so the log can recover.
+/// It can also fail a chosen `writeFile` call outright, which makes an unwanted attempt to open a log
+/// file observable. `fail_write_file_on_call` counts every call and 0 means no such failure.
 class DiskFailingOnNthFlush : public DiskLocal
 {
 public:
-    DiskFailingOnNthFlush(const String & path_, size_t fail_on_flush_)
-        : DiskLocal("faulty_flush", path_), fail_on_flush(fail_on_flush_)
+    DiskFailingOnNthFlush(const String & path_, size_t fail_on_flush_, size_t fail_write_file_on_call_ = 0)
+        : DiskLocal("faulty_flush", path_), fail_on_flush(fail_on_flush_), fail_write_file_on_call(fail_write_file_on_call_)
     {
     }
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings) override
     {
+        if (++write_file_calls == fail_write_file_on_call)
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while opening {}", path);
+
         auto impl = DiskLocal::writeFile(path, buf_size, mode, settings);
         if (std::exchange(inject, false))
             return std::make_unique<WriteBufferFailingOnNthFlush>(std::move(impl), fail_on_flush);
@@ -86,7 +91,9 @@ public:
 
 private:
     bool inject = true;
+    size_t write_file_calls = 0;
     const size_t fail_on_flush;
+    const size_t fail_write_file_on_call;
 };
 
 /// The error code matters: a `LOGICAL_ERROR` would mean the defect fired instead of the injection.
@@ -243,6 +250,47 @@ TEST(MergeTreeDeduplicationLog, CanceledWriterRecoversThroughDropPart)
         EXPECT_TRUE(log.addPart({"block1"}, part("all_4_4_0")).empty());
         /// The record added through the replaced writer reached the disk as well.
         EXPECT_FALSE(log.addPart({"block3"}, part("all_4_4_0")).empty());
+    }
+
+    std::filesystem::remove_all(disk_path);
+}
+
+/// A drop that covers no retained block ID writes no record, so it must neither open a log file nor
+/// fail, even when the writer of the deduplication log is dead.
+TEST(MergeTreeDeduplicationLog, DropPartWithNothingToWriteDoesNotRecover)
+{
+    const auto disk_path
+        = std::filesystem::temp_directory_path() / ("clickhouse_gtest_dedup_log_dropnomatch_" + std::to_string(getpid()));
+    std::filesystem::remove_all(disk_path);
+    std::filesystem::create_directories(disk_path);
+
+    /// `load` opens the first log, and that writer fails its second flush. The second `writeFile` call
+    /// fails outright, so an attempt to open a log file after the cancellation is observable.
+    auto disk = std::make_shared<DiskFailingOnNthFlush>(disk_path.string() + "/", 2, 2);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_1_1_0")).empty());
+
+        /// The flush of the second record fails, which cancels the writer.
+        expectInjectedFailure([&] { log.addPart({"block2"}, part("all_2_2_0")); });
+
+        /// `all_9_9_0` covers nothing in the deduplication map, so no record is needed and no log is opened.
+        EXPECT_NO_THROW(log.dropPart(part("all_9_9_0")));
+
+        /// The recovery is only deferred: the next operation that does have a record to write is the one
+        /// that opens the log file whose `writeFile` call fails, and it reports that failure.
+        expectInjectedFailure([&] { log.addPart({"block3"}, part("all_3_3_0")); });
+
+        /// A failed recovery is retried, so the log still ends up usable.
+        EXPECT_TRUE(log.addPart({"block3"}, part("all_3_3_0")).empty());
+        /// The drop wrote nothing, so it left the deduplication state alone.
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_4_4_0")).empty());
     }
 
     std::filesystem::remove_all(disk_path);
