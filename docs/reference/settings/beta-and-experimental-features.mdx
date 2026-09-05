@@ -8,11 +8,11 @@ doc_type: 'reference'
 
 Because ClickHouse is open-source, it receives many contributions not only from ClickHouse employees but also from the community. These contributions are often developed at different speeds; certain features may require a lengthy prototyping phase or more time for sufficient community feedback and iteration to be considered generally available (GA).
 
-Due to the uncertainty of when features are classified as generally available, we delineate features into two categories: **Beta** and **Experimental**.
+Due to the uncertainty of when features are classified as generally available, we delineate features into three categories: **Beta**, **Experimental**, and **Private preview**.
 
-**Beta** features are officially supported by the ClickHouse team. **Experimental** features are early prototypes driven by either the ClickHouse team or the community and aren't officially supported.
+**Beta** features are officially supported by the ClickHouse team. **Experimental** features are early prototypes driven by either the ClickHouse team or the community and aren't officially supported. **Private preview** features are on a clear path to general availability but still have limited applicability and are not recommended for production use.
 
-The sections below explicitly describe the properties of **Beta** and **Experimental** features:
+The sections below explicitly describe the properties of **Beta**, **Experimental**, and **Private preview** features:
 
 ## Beta features {#beta-features}
 
@@ -38,6 +38,14 @@ Note: please be sure to be using a current version of the ClickHouse [compatibil
 - Can't be enabled in the cloud
 
 Please note: no additional experimental features are allowed to be enabled in ClickHouse Cloud other than those listed above as Beta.
+
+## Private preview features {#private-preview-features}
+
+- On a clear path to general availability (GA)
+- Applicability is still limited
+- Not recommended for production use
+- Functionality may change in the future
+- Need to be deliberately enabled
 
 {/* The inner content of the tags below are replaced at build time with a table generated from source
      Please don't modify or remove the tags

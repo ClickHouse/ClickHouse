@@ -199,7 +199,7 @@ SETTINGS_GENERATORS = [
         # Run after the split settings families so both `--write` and `--check`
         # resolve links from their freshly generated routing metadata.
         "name": "beta-and-experimental",
-        "sql": ["beta-settings.sql", "experimental-settings.sql"],
+        "sql": ["beta-settings.sql", "experimental-settings.sql", "private-preview-settings.sql"],
         "outfile": "experimental-beta-settings.md",
         "dest": "docs/about-us/beta-and-experimental-features.md",
         "method": "markers",
