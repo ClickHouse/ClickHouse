@@ -1006,8 +1006,8 @@ void RemoteQueryExecutor::finish()
         return;
     }
 
-    /// Publish the state `cancel` needs before the first blocking read below, and clear it on every
-    /// exit from the loop, including the two that throw.
+    /// Published only once the `tryCancel` above has returned, so a `cancel` that observes it has
+    /// nothing left to send.
     drain_in_progress = true;
     SCOPE_EXIT({ drain_in_progress = false; });
 
@@ -1085,9 +1085,8 @@ void RemoteQueryExecutor::finish()
 
 void RemoteQueryExecutor::cancel()
 {
-    /// While `finish` is draining, the `tryCancel` that preceded the drain has already done everything
-    /// this call would do. `ExecutingGraph::cancel` runs this for every processor in turn under
-    /// `processors_mutex`, so blocking here would stall cancellation of the rest of the pipeline.
+    /// While `finish` drains it has already sent the `Cancel` packet, and the external-table flags
+    /// `cancelUnlocked` sets have no reader until it releases `was_cancelled_mutex`.
     if (drain_in_progress)
         return;
 
