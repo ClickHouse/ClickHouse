@@ -39,6 +39,7 @@ TEST(ThreadFuzzer, mutex)
 
 #include <atomic>
 #include <csignal>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <span>
@@ -125,6 +126,14 @@ ProfTimer profTimer()
     result.value_us = toMicroseconds(current.it_value);
     result.interval_us = toMicroseconds(current.it_interval);
     return result;
+}
+
+/// Read back from the environment the parent exported, not repeated as a literal, so the period a
+/// case expects cannot drift from the period it configured.
+UInt64 configuredCpuTimePeriodUs()
+{
+    const char * env = getenv("THREAD_FUZZER_CPU_TIME_PERIOD_US"); // NOLINT(concurrency-mt-unsafe)
+    return env ? static_cast<UInt64>(strtoull(env, nullptr, 10)) : 0;
 }
 
 bool injectsMemoryLimitException()
@@ -217,10 +226,15 @@ TEST(ThreadFuzzerTimer, StopStartTogglePerturbationChild)
 
     ASSERT_TRUE(DB::ThreadFuzzer::instance().isEffective());
 
+    /// The reload period, asserted rather than merely found nonzero: a re-arm at any other period
+    /// changes the perturbation cadence while leaving a presence-only oracle green.
+    const UInt64 configured_period_us = configuredCpuTimePeriodUs();
+    ASSERT_NE(0UL, configured_period_us) << "the child image was given no CPU time period";
+
     DB::ThreadFuzzer::instance().setup();
     ProfTimer timer = profTimer();
     EXPECT_NE(0UL, timer.value_us) << "setup() did not arm ITIMER_PROF";
-    EXPECT_NE(0UL, timer.interval_us) << "setup() armed ITIMER_PROF to fire only once";
+    EXPECT_EQ(configured_period_us, timer.interval_us) << "setup() armed ITIMER_PROF off the configured period";
     EXPECT_TRUE(DB::ThreadFuzzer::isStarted());
     EXPECT_TRUE(injectsMemoryLimitException()) << "no fault injected while started";
 
@@ -233,7 +247,7 @@ TEST(ThreadFuzzerTimer, StopStartTogglePerturbationChild)
     DB::ThreadFuzzer::start();
     timer = profTimer();
     EXPECT_NE(0UL, timer.value_us) << "start() did not re-arm ITIMER_PROF";
-    EXPECT_NE(0UL, timer.interval_us) << "start() armed ITIMER_PROF to fire only once";
+    EXPECT_EQ(configured_period_us, timer.interval_us) << "start() re-armed ITIMER_PROF off the configured period";
     EXPECT_TRUE(injectsMemoryLimitException()) << "start() did not resume fault injection";
 
     /// gtest teardown, the global Context destructor and the thread pool shutdowns that follow run
