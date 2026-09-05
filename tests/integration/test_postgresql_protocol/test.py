@@ -1134,6 +1134,39 @@ def test_flush_error_discards_until_sync(started_cluster):
     sock.close()
 
 
+def test_out_of_cycle_rejection_keeps_connection_usable(started_cluster):
+    # A rejected message outside an extended-query cycle has no `Sync` to recover at,
+    # so it must be answered with an error and one `ReadyForQuery`.
+    node = started_cluster.instances["node"]
+
+    def read_types(read_until_ready):
+        # A missing `ReadyForQuery` surfaces as a read timeout, which is the hang itself.
+        try:
+            return read_until_ready(timeout=15.0)
+        except socket.timeout:
+            return ["<no ReadyForQuery, client left waiting>"]
+
+    # `H` is `Flush`; `f` is `CopyFail`, a real message type this server does not accept.
+    for label, message in (("Flush", _fe("H", b"")), ("CopyFail", _fe("f", b""))):
+        sock, read_until_ready = _pg_raw_extended_query_session(node)
+
+        sock.sendall(_fe("Q", b"SELECT 1\x00"))
+        types = read_types(read_until_ready)
+        assert "C" in types, f"{label}: control query must complete, got {types}"
+
+        sock.sendall(message)
+        types = read_types(read_until_ready)
+        assert types.count("Z") == 1, (
+            f"{label} outside a cycle must emit one ReadyForQuery, got {types}"
+        )
+        assert "E" in types, f"{label} must produce an ErrorResponse, got {types}"
+
+        sock.sendall(_fe("Q", b"SELECT 7\x00"))
+        types = read_types(read_until_ready)
+        assert "C" in types, f"connection stopped answering after {label}, got {types}"
+        sock.close()
+
+
 def test_bind_binary_result_format_accepted_as_text(started_cluster):
     # Accept binary result requests while returning correctly advertised text.
     node = started_cluster.instances["node"]
