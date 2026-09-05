@@ -73,9 +73,6 @@ void writeOutlineBody(const PlanOutline & outline, WriteBuffer & out)
         }
 
         writeVarUInt(node.payload_size, out);
-
-        writeVarUInt(node.extension_bytes.size(), out);
-        out.write(node.extension_bytes.data(), node.extension_bytes.size());
     }
 
     writeVarUInt(outline.sets.size(), out);
@@ -132,8 +129,8 @@ PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 
 
         UInt8 node_flags = 0;
         readIntBinary(node_flags, in);
-        /// Only bit 0 is assigned. Ignorable additions go in `extension_bytes`, so a bit set here
-        /// means something this reader would have to act on and cannot.
+        /// Only bit 0 is assigned; a spare bit set here means something this reader would have to
+        /// act on and cannot.
         if (node_flags & ~UInt8(1))
             throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
                 "Query plan node carries unknown flags {:#x}", UInt32(node_flags));
@@ -157,10 +154,6 @@ PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 
         }
 
         node.payload_size = readCappedVarUInt(in, max_frame_bytes, "step payload bytes");
-
-        /// Later outline layouts add data here; a reader that does not know it skips it, which is
-        /// what keeps printing the shape of a plan from a newer server working.
-        node.extension_bytes = readCappedSizedBytes(in, MAX_OUTLINE_FIELD_BYTES, "node extra bytes");
 
         outline.nodes.push_back(std::move(node));
     }

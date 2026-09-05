@@ -1068,22 +1068,6 @@ TEST(QueryPlanOutline, TrailingBytesInsideFrameAreRejected)
     EXPECT_ANY_THROW(readQueryPlanOutline(in, 0, bytes.size()));
 }
 
-TEST(QueryPlanOutline, ExtensionBytesAreSkippedForFutureLayouts)
-{
-    registerStepsOnce();
-    auto outline = makeTestOutline();
-    outline.nodes[0].extension_bytes = "future outline fields";
-
-    auto bytes = writeOutlineToString(outline);
-    ReadBufferFromString in(bytes);
-    auto restored = readQueryPlanOutline(in, 0, bytes.size());
-
-    /// A reader that does not understand the extra bytes still reconstructs the shape.
-    EXPECT_EQ(restored.nodes[0].extension_bytes, "future outline fields");
-    EXPECT_TRUE(validateQueryPlanOutline(restored, outline_version).ok());
-    EXPECT_FALSE(formatQueryPlanOutline(restored).empty());
-}
-
 TEST(QueryPlanOutline, FormatShowsShapeWithUnknownSteps)
 {
     registerStepsOnce();

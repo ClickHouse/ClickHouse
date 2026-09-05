@@ -25,8 +25,8 @@ class ReadBuffer;
 ///    `formatQueryPlanOutline`;
 ///  - read one payload at a time instead of holding the whole plan.
 ///
-/// The layout only ever grows at the end: new per-node data goes into `extension_bytes`, which
-/// older readers skip, so both of those keep working for plans written by newer servers.
+/// A larger change picks a new `format_kind` in the head, which an older reader skips whole by the
+/// body size; a smaller change bumps the plan version, which an older reader rejects by `min_reader`.
 struct PlanOutline
 {
     /// name + flags (bit 0: ignorable) + length-prefixed setting-field value bytes.
@@ -58,7 +58,6 @@ struct PlanOutline
         SharedHeader header;                    /// nullptr for a step with no output header
         std::vector<SettingEntry> settings;
         UInt64 payload_size = 0;                /// bytes this node takes in the payload part
-        String extension_bytes;                 /// empty today; a reader skips what it does not know
     };
 
     /// Every child comes before its parent and the root is last. `Delayed*` steps are skipped here,
