@@ -14,8 +14,21 @@ function insert_with_log_check() {
     $CLICKHOUSE_CLIENT_WITH_LOG --async-insert=1 --async_insert_deduplicate=1 --wait_for_async_insert=1 -q "$1" 2>&1 | grep -Fc "Setting async_insert=1, but INSERT query will be executed synchronously"
 }
 
+# Both counts come from one run, so the positive signal is not asserted against a second,
+# separately deduplicated insert.
+function insert_with_route_log_check() {
+    local log
+    log=$($CLICKHOUSE_CLIENT_WITH_LOG --async-insert=1 --async_insert_deduplicate=1 --wait_for_async_insert=1 -q "$1" 2>&1)
+    echo "$log" | grep -Fc "Setting async_insert=1, but INSERT query will be executed synchronously"
+    echo "$log" | grep -Fc "INSERT ... SELECT is eligible for the asynchronous insert queue route"
+}
+
 insert_with_log_check "INSERT INTO 02784_async_table_with_dedup VALUES (1), (2)"
-insert_with_log_check "INSERT INTO 02784_async_table_with_dedup SELECT number as a FROM system.numbers LIMIT 10 OFFSET 3"
+# `INSERT ... SELECT` whose result is a single block within `async_insert_max_data_size` takes the
+# async queue route instead of falling back to synchronous, so the "executed synchronously" message
+# is absent and the route's own message is present. Asserting only the absence would also pass if
+# the diagnostic disappeared while the query still ran synchronously.
+insert_with_route_log_check "INSERT INTO 02784_async_table_with_dedup SELECT number as a FROM system.numbers LIMIT 10 OFFSET 3"
 
 DATA_FILE=test_02784_async_$CLICKHOUSE_TEST_UNIQUE_NAME.csv
 echo -e '13\n14' > $DATA_FILE

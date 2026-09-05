@@ -5601,6 +5601,9 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
 )", 0) \
     DECLARE(Bool, optimize_trivial_insert_select, false, R"(
 Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
+
+Pair this with an explicit `max_insert_threads` setting: the optimization caps the `SELECT` to
+`max_insert_threads` reading threads, which changes how many blocks the `SELECT` produces.
 )", 0) \
     DECLARE(Bool, allow_non_metadata_alters, true, R"(
 Allow to execute alters which affects not only tables metadata, but also data on disk

@@ -70,22 +70,35 @@ For details, and for the one restriction that applies to materialized views unde
 Asynchronous inserts can be enabled for a particular user, or for a specific query:
 
 - Enabling asynchronous inserts at the user level.  This example uses the user `default`, if you create a different user then substitute that username:
+
   ```sql
   ALTER USER default SETTINGS async_insert = 1
   ```
+
 - You can specify the asynchronous insert settings by using the SETTINGS clause of insert queries:
+
   ```sql
   INSERT INTO YourTable SETTINGS async_insert=1, wait_for_async_insert=1 VALUES (...)
   ```
+
 - You can also specify asynchronous insert settings as connection parameters when using a ClickHouse programming language client.
 
   As an example, this is how you can do that within a JDBC connection string when you use the ClickHouse Java JDBC driver for connecting to ClickHouse Cloud:
+
   ```bash
   "jdbc:ch://HOST.clickhouse.cloud:8443/?user=default&password=PASSWORD&ssl=true&custom_http_params=async_insert=1,wait_for_async_insert=1"
   ```
 
 <Note>
-Asynchronous inserts don't apply to `INSERT INTO ... SELECT` queries. When the insert contains a `SELECT` clause, the query is always executed synchronously regardless of the `async_insert` setting.
+`INSERT ... SELECT` is supported on the async path when `async_insert = 1` and the entire result is a single block within `async_insert_max_data_size`. `wait_for_async_insert` applies here the same as for any other async insert: the default (`wait_for_async_insert = 1`) waits for the flush, and `wait_for_async_insert = 0` returns as soon as the block is handed to the queue. The insert runs synchronously instead when the result spans more than one block, exceeds `async_insert_max_data_size`, is empty, runs inside a transaction (explicit or with `implicit_transaction = 1`), or uses non-parallel quorum (`insert_quorum` is set and `insert_quorum_parallel = 0`). Only a destination in the `MergeTree` family is eligible, resolved through aliases, and a destination that has dependent materialized views is not; inserting into a materialized view itself is not eligible either, since `MergeTree`-family eligibility is checked against the view, not its target table. A `Distributed` or otherwise remote destination, a table function destination, and the `CREATE TABLE ... AS SELECT` populate are excluded, as is a query where `insert_null_as_default` has to substitute a default for a `Nullable` `SELECT` column feeding a non-`Nullable` one. Routing decided before the async gate wins, so the `SELECT` side can rule the async path out: with `parallel_distributed_insert_select` (enabled by default) an `INSERT ... SELECT` reading from a cluster source such as `s3Cluster` into a replicated table is executed by the distributed insert path and never reaches the async queue. The same holds for parallel replicas.
+
+If you enable [`optimize_trivial_insert_select`](/reference/settings/session-settings/optimize-trivial#optimize_trivial_insert_select) for a trivial `INSERT INTO table SELECT ... FROM table`, pair it with an explicit [`max_insert_threads`](/reference/settings/session-settings/max-insert#max_insert_threads): the optimization caps the `SELECT` to `max_insert_threads` reading threads, and capping the read side to one thread commonly makes the `SELECT` produce a single block, which is a precondition for taking the async insert queue route above.
+
+On this route the write side is attributed to the flush, not to the original query: write-related `ProfileEvents` such as `InsertedRows` and `InsertedBytes`, and the write-side row in `system.query_log`, belong to the internal flush query the queue schedules, not to the `query_id` of the `INSERT ... SELECT` that queued the data. A client that measures write amplification, part counts, or write-related `ProfileEvents` by its own `query_id` sees only the read-side counters for this query id; look at the flush's own row in `system.query_log` and `system.asynchronous_insert_log` for the write-side numbers. In the default `wait_for_async_insert = 1` mode, the `written_rows` and `written_bytes` of the query's own row, and the same numbers in the HTTP `X-ClickHouse-Summary` header, are still reported: they come from the flush result once it is known, so a failed flush reports nothing written. With `wait_for_async_insert = 0`, these numbers are not reported at all, because the query returns before the flush result exists. The `WRITTEN_BYTES` quota is charged by the flush too, once, and only for a write that really happened.
+
+If a client kills a queued `INSERT ... SELECT` (`KILL QUERY`) or its `max_execution_time` is reached while it is waiting for the flush, the client still gets an error, but the data may still be written: the block was already handed to the queue before the wait started, so cancellation stops the client from waiting, not the queue from flushing. Do not treat a cancelled or timed-out `INSERT ... SELECT` on this route as proof that no rows were written. With `timeout_overflow_mode = 'break'` there is neither an error nor an early return: the query keeps waiting for the flush past `max_execution_time`, up to `wait_for_async_insert_timeout`, because breaking out would report success before the write is known to have succeeded.
+
+Eligibility, table resolution, and access are decided once at query start, before the block is queued; the actual write against the destination happens later, at flush time, against the catalog and access-control state current then rather than the state at query start. A materialized view attached to the destination, or an access grant revoked, between push and flush affects the flush. This is not specific to `INSERT ... SELECT`: a plain `INSERT ... VALUES` under `async_insert = 1` has always had the same property, because both reach the same flush thread. What is specific to `INSERT ... SELECT` is that whether it reaches this late-bound queue route at all, versus the synchronous route that decides everything once at query start and never re-reads the catalog, now depends on the result's block shape in addition to the `async_insert` setting.
 </Note>
 
 ### Flushing buffers on shutdown {#flushing-buffers-on-shutdown}

@@ -754,6 +754,8 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         }
 
         if (data_to_process)
+            /// This flush's ProfileEvents and system.query_log row are attributed to the
+            /// flush itself, not to the original query; see docs/snippets/_async_inserts.mdx.
             scheduleDataProcessingJob(key, std::move(data_to_process), getContext(), shard_num);
         else
             shard.are_tasks_available.notify_one();
@@ -1418,7 +1420,7 @@ catch (const Poco::Exception & e)
 }
 catch (const std::exception & e)
 {
-    finishWithException(key.query, data->entries, e);
+    finishWithException(key.query, data->entries, Exception(Exception::CreateFromSTDTag{}, e));
 }
 catch (...)
 {
