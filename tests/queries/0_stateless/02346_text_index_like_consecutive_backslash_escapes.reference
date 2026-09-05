@@ -1,0 +1,11 @@
+text index with the ngrams tokenizer
+-- LIKE with two consecutive literal backslashes before a wildcard
+[1]
+[1]
+-- the same pattern reached through a custom ESCAPE character
+[1]
+[1]
+ngrambf_v1 index
+-- LIKE with two consecutive literal backslashes before a wildcard
+[1]
+[1]
