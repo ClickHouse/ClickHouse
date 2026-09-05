@@ -1402,6 +1402,15 @@ void MutationsInterpreter::prepare(bool dry_run)
                     new_updated_columns.insert(elem.first);
                 }
 
+                /// A column TTL resets its column to the default, which makes every `MATERIALIZED`
+                /// column derived from it stale. `TTLTransform` recomputes those, but only the ones
+                /// that are in the block, so they have to be read and written here - and this command
+                /// is the one that repairs a part no later merge is going to touch.
+                for (const auto & column : columns_desc)
+                    if (available_columns_set.contains(column.name)
+                        && !materialized_dependencies.findColumnsToRecalculate(column.name, new_updated_columns).empty())
+                        dependencies.emplace(column.name, ColumnDependency::TTL_TARGET);
+
                 auto all_columns_vec = all_columns.getNames();
                 auto all_columns_set = NameSet(all_columns_vec.begin(), all_columns_vec.end());
                 auto all_dependencies = getAllColumnDependencies(metadata_snapshot, all_columns_set, has_dependency);
