@@ -29,6 +29,7 @@
 #include <fmt/ranges.h>
 
 #include <algorithm>
+#include <ranges>
 #include <set>
 
 
@@ -88,6 +89,10 @@ std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(con
 
     target.remote_time_series_storage_id.database_name = distributed->getRemoteDatabaseName();
     target.remote_time_series_storage_id.table_name = distributed->getRemoteTableName();
+    /// Restated on the generated cluster() call as its own declaration, so ClusterProxy applies its usual precedence.
+    const auto & declared = distributed->getDistributedSettingsRef();
+    target.skip_unavailable_shards = declared[DistributedSetting::skip_unavailable_shards].value;
+    target.skip_unavailable_shards_mode = declared[DistributedSetting::skip_unavailable_shards_mode].toString();
     return target;
 }
 
@@ -95,14 +100,8 @@ namespace
 {
 bool hasInstantSelector(const PrometheusQueryTree::Node * node)
 {
-    if (!node)
-        return false;
-    if (node->node_type == PrometheusQueryTree::NodeType::InstantSelector)
-        return true;
-    for (const auto * child : node->children)
-        if (hasInstantSelector(child))
-            return true;
-    return false;
+    return node
+        && (node->node_type == PrometheusQueryTree::NodeType::InstantSelector || std::ranges::any_of(node->children, hasInstantSelector));
 }
 }
 
@@ -166,23 +165,15 @@ namespace
         std::set<String> wrong_types;
         /// Unreachable, or without the table: the sink cannot use them either, and what answers to the name later is unchecked.
         Strings unavailable_replicas;
-        const auto & shards_info = cluster->getShardsInfo();
-        const auto & shards_addresses = cluster->getShardsAddresses();
-        for (size_t shard_index = 0; shard_index != shards_info.size(); ++shard_index)
-            for (size_t replica_index = 0; replica_index != shards_info[shard_index].per_replica_pools.size(); ++replica_index)
+        for (const auto [shard_info, shard_addresses] : std::views::zip(cluster->getShardsInfo(), cluster->getShardsAddresses()))
+            for (const auto [pool, address] : std::views::zip(shard_info.per_replica_pools, shard_addresses))
             {
-                const auto & pool = shards_info[shard_index].per_replica_pools[replica_index];
-                /// A cluster assembled from a subset of another carries no addresses: treat those as remote.
-                const bool runs_on_the_caller = shard_index < shards_addresses.size()
-                    && replica_index < shards_addresses[shard_index].size() && shards_addresses[shard_index][replica_index].is_local;
-                RemoteQueryExecutor probe(pool, make_probe_query(runs_on_the_caller), probe_header, probe_context);
+                RemoteQueryExecutor probe(pool, make_probe_query(address.is_local), probe_header, probe_context);
                 bool answered = false;
                 try
                 {
                     for (Block block = probe.readBlock(); !block.empty(); block = probe.readBlock())
                     {
-                        if (!block.rows())
-                            continue;
                         block = convertBLOBColumns(block);
                         answered = true;
                         const Field engine = (*block.getByPosition(0).column)[0];
@@ -284,8 +275,7 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
 
     /// The read pins prefer_localhost_replica on and parallel replicas off, so a shard that is this server itself
     /// runs in-process on the caller's context: the selector's own grants are asked for here, before the probe.
-    const auto cluster = typeid_cast<const StorageDistributed &>(storage).getCluster();
-    if (std::ranges::any_of(cluster->getShardsInfo(), &Cluster::ShardInfo::isLocal))
+    if (typeid_cast<const StorageDistributed &>(storage).getCluster()->getLocalShardCount())
     {
         context->checkAccess(AccessType::SELECT, context->resolveStorageID(target->remote_time_series_storage_id));
         context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
@@ -311,15 +301,6 @@ void checkPrometheusQueryDistributedWrite(const IStorage & storage, const Contex
             storage.getStorageID().getNameForLogs());
 
     checkShardTargets(storage, *target, context, /* refuse_unavailable = */ true);
-}
-
-std::pair<bool, String> declaredShardSkipSettings(const IStorage & storage)
-{
-    /// Handed to the generated cluster() call as its own declaration, so ClusterProxy applies the
-    /// query-overrides-declaration rule itself rather than this file restating it.
-    const auto & declared = typeid_cast<const StorageDistributed &>(storage).getDistributedSettingsRef();
-    return {declared[DistributedSetting::skip_unavailable_shards].value,
-            declared[DistributedSetting::skip_unavailable_shards_mode].toString()};
 }
 
 }

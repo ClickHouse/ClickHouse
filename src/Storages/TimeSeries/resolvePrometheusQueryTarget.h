@@ -17,6 +17,9 @@ struct PrometheusQueryDistributedTarget
 {
     String cluster_name;
     StorageID remote_time_series_storage_id = StorageID::createEmpty();
+    /// The wrapper's declared shard-skip settings, restated on the generated cluster() call.
+    bool skip_unavailable_shards = false;
+    String skip_unavailable_shards_mode;
 };
 
 /// Checks that a table can be used as a target of a prometheus query, i.e. that it's either a TimeSeries table
@@ -35,13 +38,8 @@ void checkNoBypassedReadRestriction(
 /// all before the probe; then every replica's target must be a TimeSeries table of the wrapper's `time_series` type.
 void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context);
 
-/// The same targets for a write, refused while any replica is unreachable, has no such table or does not show its
-/// `time_series` type (it would take samples unchecked), and under insert_shard_id / insert_distributed_one_random_shard:
-/// the key alone routes a batch.
+/// The same probe for a write, which also refuses an unreachable replica or a missing table or type (it would take
+/// samples unchecked) and insert_shard_id / insert_distributed_one_random_shard: the sharding key alone routes a batch.
 void checkPrometheusQueryDistributedWrite(const IStorage & storage, const ContextPtr & context);
-
-/// The wrapper's declared {skip_unavailable_shards, skip_unavailable_shards_mode}, restated as the
-/// generated cluster() call's own declaration so ClusterProxy applies its usual precedence.
-std::pair<bool, String> declaredShardSkipSettings(const IStorage & storage);
 
 }

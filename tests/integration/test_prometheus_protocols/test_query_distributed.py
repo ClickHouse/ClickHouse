@@ -10,6 +10,7 @@ from helpers.cluster import ClickHouseCluster
 from .prometheus_test_utils import (
     execute_query_via_http_api,
     execute_range_query_via_http_api,
+    keyed_result,
 )
 
 cluster = ClickHouseCluster(__file__)
@@ -76,32 +77,28 @@ def start_cluster():
         cluster.shutdown()
 
 
-def keyed_result(data_json):
-    """Keys the series of a query result by their labels: only range queries come back
-    ordered by tags, so an instant result is keyed before the answers are compared."""
-    data = json.loads(data_json)
-    keyed = {
-        tuple(sorted(series["metric"].items())): (
-            series["value"] if "value" in series else series["values"]
-        )
-        for series in data["result"]
-    }
-    assert len(keyed) == len(data["result"]), f"Duplicate label sets in {data_json}"
-    return data["resultType"], keyed
-
-
 def query(handler, promql):
     return keyed_result(
-        execute_query_via_http_api(
-            node.ip_address, 9093, f"{handler}/query", promql, EVALUATION_TIME
+        json.loads(
+            execute_query_via_http_api(
+                node.ip_address, 9093, f"{handler}/query", promql, EVALUATION_TIME
+            )
         )
     )
 
 
 def range_query(handler, promql, start, end, step):
     return keyed_result(
-        execute_range_query_via_http_api(
-            node.ip_address, 9093, f"{handler}/query_range", promql, start, end, step
+        json.loads(
+            execute_range_query_via_http_api(
+                node.ip_address,
+                9093,
+                f"{handler}/query_range",
+                promql,
+                start,
+                end,
+                step,
+            )
         )
     )
 

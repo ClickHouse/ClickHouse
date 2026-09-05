@@ -1,6 +1,6 @@
-"""The shard-target check asks every replica afresh on every request, so a table swapped under the name is
-caught by the next one; a replica it cannot reach, or without its table, passes a read and refuses a write,
-not queued."""
+"""The shard-target check runs afresh on every request, so a table swapped under the name is caught by the
+next one; a replica it cannot reach, or without its table, passes a read but refuses a write, never queued.
+"""
 
 import json
 

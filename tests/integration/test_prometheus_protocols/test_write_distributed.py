@@ -7,7 +7,6 @@ from .prometheus_test_utils import (
     convert_time_series_to_protobuf,
     execute_query_via_http_api,
     get_response_to_remote_write,
-    send_protobuf_to_remote_write,
 )
 
 cluster = ClickHouseCluster(__file__)
@@ -68,8 +67,20 @@ def start_cluster():
         cluster.shutdown()
 
 
-def count_on_the_shards(wrapper, metric_name):
-    node.query(f"SYSTEM FLUSH DISTRIBUTED {wrapper}")
+def write(path, metric_name, hosts=("h0",)):
+    """One sample per host, staggered so the samples of a batch stay distinct."""
+    time_series = [
+        ({"__name__": metric_name, "host": host}, {START_TIME + i: float(i)})
+        for i, host in enumerate(hosts)
+    ]
+    return get_response_to_remote_write(
+        node.ip_address, 9093, path, convert_time_series_to_protobuf(time_series)
+    )
+
+
+def count_on_the_shards(wrapper, metric_name, flush=True):
+    if flush:
+        node.query(f"SYSTEM FLUSH DISTRIBUTED {wrapper}")
     return int(
         node.query(
             f"SELECT (SELECT count() FROM timeSeriesTags(shard_0.ts_local) WHERE metric_name = '{metric_name}')"
@@ -81,9 +92,7 @@ def count_on_the_shards(wrapper, metric_name):
 def test_remote_write_rejects_non_timeseries_shards():
     """The wrapper declares no remote database, so each shard resolves `mt_bad` in its own default
     database - the case the initiator cannot answer with its own `currentDatabase()`."""
-    time_series = [({"__name__": "bad_metric", "host": "h0"}, {START_TIME: 1.0})]
-    protobuf = convert_time_series_to_protobuf(time_series)
-    response = get_response_to_remote_write(node.ip_address, 9093, "/bad/write", protobuf)
+    response = write("/bad/write", "bad_metric")
     assert response.status_code >= 400
     assert "UNEXPECTED_TABLE_ENGINE" in response.text
     # Nothing was written anywhere, on either shard.
@@ -96,9 +105,7 @@ def test_remote_write_rejects_non_timeseries_shards():
 
 
 def test_remote_write_rejects_a_mismatching_time_series_type():
-    time_series = [({"__name__": "coarse_metric", "host": "h0"}, {START_TIME: 1.0})]
-    protobuf = convert_time_series_to_protobuf(time_series)
-    response = get_response_to_remote_write(node.ip_address, 9093, "/coarse/write", protobuf)
+    response = write("/coarse/write", "coarse_metric")
     assert response.status_code >= 400
     assert "TYPE_MISMATCH" in response.text
     # The refusal names both types, and nothing was written to either shard.
@@ -108,12 +115,7 @@ def test_remote_write_rejects_a_mismatching_time_series_type():
 
 
 def test_remote_write_over_distributed():
-    time_series = [
-        ({"__name__": "dist_metric", "host": host}, {START_TIME + i: float(i)})
-        for i, host in enumerate(HOSTS)
-    ]
-    protobuf = convert_time_series_to_protobuf(time_series)
-    send_protobuf_to_remote_write(node.ip_address, 9093, "/dist/write", protobuf)
+    assert write("/dist/write", "dist_metric", HOSTS).status_code == 204
 
     # Every sample lands exactly once across the shards, and the fixed hash split fills both.
     assert_eq_with_retry(
@@ -145,23 +147,14 @@ def test_remote_write_over_distributed_ignores_async_insert():
             "SELECT sum(value) FROM system.events WHERE event = 'AsyncInsertQuery'"
         )
     )
-    time_series = [
-        ({"__name__": "async_dist_metric", "host": host}, {START_TIME: 1.0})
-        for host in HOSTS
-    ]
-    protobuf = convert_time_series_to_protobuf(time_series)
-    send_protobuf_to_remote_write(
-        node.ip_address, 9093, "/dist/write?async_insert=1", protobuf
+    assert (
+        write("/dist/write?async_insert=1", "async_dist_metric", HOSTS).status_code
+        == 204
     )
 
     # The samples are on the shards, and no asynchronous insert ran: the batch never waited in
     # the queue for a busy timeout before reaching them.
-    on_the_shards = int(
-        node.query(
-            "SELECT (SELECT count() FROM timeSeriesTags(shard_0.ts_local) WHERE metric_name = 'async_dist_metric')"
-            " + (SELECT count() FROM timeSeriesTags(shard_1.ts_local) WHERE metric_name = 'async_dist_metric')"
-        )
-    )
+    on_the_shards = count_on_the_shards("prom_dist", "async_dist_metric", flush=False)
     assert on_the_shards == len(HOSTS)
     assert (
         int(
@@ -176,14 +169,7 @@ def test_remote_write_over_distributed_ignores_async_insert():
 def test_remote_write_refuses_insert_shard_id():
     """A plain INSERT with insert_shard_id = 1 sends the batch to shard 1 whatever the key says; the
     endpoint refuses it instead, so a 204 always means the wrapper's own placement."""
-    time_series = [
-        ({"__name__": "pinned_metric", "host": host}, {START_TIME + i: float(i)})
-        for i, host in enumerate(HOSTS)
-    ]
-    protobuf = convert_time_series_to_protobuf(time_series)
-    response = get_response_to_remote_write(
-        node.ip_address, 9093, "/dist/write?insert_shard_id=1", protobuf
-    )
+    response = write("/dist/write?insert_shard_id=1", "pinned_metric", HOSTS)
     assert response.status_code == 400
     assert "BAD_ARGUMENTS" in response.text
     assert "does not accept insert_shard_id" in response.text
@@ -197,13 +183,8 @@ def test_remote_write_refuses_insert_shard_id_from_the_profile():
     )
     node.query("GRANT INSERT ON default.prom_dist TO prom_pinned")
     try:
-        time_series = [
-            ({"__name__": "profile_metric", "host": host}, {START_TIME + i: float(i)})
-            for i, host in enumerate(HOSTS)
-        ]
-        protobuf = convert_time_series_to_protobuf(time_series)
-        response = get_response_to_remote_write(
-            node.ip_address, 9093, "/dist/write?user=prom_pinned&password=", protobuf
+        response = write(
+            "/dist/write?user=prom_pinned&password=", "profile_metric", HOSTS
         )
         assert response.status_code == 400
         assert "does not accept insert_shard_id" in response.text
@@ -213,23 +194,13 @@ def test_remote_write_refuses_insert_shard_id_from_the_profile():
 
 
 def test_remote_write_refuses_one_random_shard_on_a_keyless_wrapper():
-    time_series = [
-        ({"__name__": "random_metric", "host": host}, {START_TIME + i: float(i)})
-        for i, host in enumerate(HOSTS)
-    ]
-    protobuf = convert_time_series_to_protobuf(time_series)
     # Without a shard choice the sink itself refuses a keyless multi-shard wrapper...
-    response = get_response_to_remote_write(
-        node.ip_address, 9093, "/keyless/write", protobuf
-    )
+    response = write("/keyless/write", "random_metric", HOSTS)
     assert response.status_code >= 400
     assert "no sharding key provided" in response.text
     # ...and the setting that would let it scatter whole batches over random shards is refused first.
-    response = get_response_to_remote_write(
-        node.ip_address,
-        9093,
-        "/keyless/write?insert_distributed_one_random_shard=1",
-        protobuf,
+    response = write(
+        "/keyless/write?insert_distributed_one_random_shard=1", "random_metric", HOSTS
     )
     assert response.status_code == 400
     assert "BAD_ARGUMENTS" in response.text

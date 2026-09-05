@@ -223,14 +223,12 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 {
     PrometheusQueryEvaluationSettings evaluation_settings;
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
-    bool is_distributed_target = false;
     if (auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage))
     {
-        is_distributed_target = true;
         evaluation_settings.cluster_name = std::move(distributed_target->cluster_name);
         evaluation_settings.remote_time_series_storage_id = std::move(distributed_target->remote_time_series_storage_id);
-        std::tie(evaluation_settings.skip_unavailable_shards, evaluation_settings.skip_unavailable_shards_mode)
-            = declaredShardSkipSettings(*time_series_storage);
+        evaluation_settings.skip_unavailable_shards = distributed_target->skip_unavailable_shards;
+        evaluation_settings.skip_unavailable_shards_mode = std::move(distributed_target->skip_unavailable_shards_mode);
     }
 
     /// A Distributed table created `AS <TimeSeries table>` declares the same `time_series` column,
@@ -250,7 +248,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     auto query_tree = std::make_shared<PrometheusQueryTree>();
     query_tree->parse(params.promql_query, timestamp_scale);
     /// Applied only when the query actually reads the table, as on the table-function path.
-    if (is_distributed_target && prometheusQueryReadsTimeSeries(*query_tree))
+    if (!evaluation_settings.cluster_name.empty() && prometheusQueryReadsTimeSeries(*query_tree))
         checkPrometheusQueryDistributedRead(*time_series_storage, getContext());
     LOG_TRACE(log, "Parsed PromQL query: {}. Result type: {}", params.promql_query, query_tree->getResultType());
 
@@ -292,7 +290,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
     /// A shard that is this server itself is always read in-process, as the shard-target check assumes.
-    if (is_distributed_target)
+    if (!evaluation_settings.cluster_name.empty())
     {
         query_context->setSetting("prefer_localhost_replica", true);
         query_context->setSetting("enable_parallel_replicas", false);
