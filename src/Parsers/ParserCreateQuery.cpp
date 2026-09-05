@@ -272,9 +272,8 @@ bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 }
 
 
-bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool parseProjectionDeclarationBody(IParser::Pos & pos, Expected & expected, const String & name, ASTPtr & node)
 {
-    ParserIdentifier name_p;
     ParserProjectionSelectQuery query_p;
     ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
@@ -284,14 +283,10 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserExpressionWithOptionalArguments type_p;
     ParserNotEmptyExpressionList expression_list_p(/* allow_alias_without_as_keyword */ false);
     ParserKeyword s_with_settings(Keyword::WITH_SETTINGS);
-    ASTPtr name;
     ASTPtr query;
     ASTPtr index;
     ASTPtr type;
     ASTPtr with_settings;
-
-    if (!name_p.parse(pos, name, expected))
-        return false;
 
     if (s_lparen.ignore(pos, expected))
     {
@@ -330,7 +325,7 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     }
 
     auto projection = make_intrusive<ASTProjectionDeclaration>();
-    projection->name = name->as<ASTIdentifier &>().name();
+    projection->name = name;
     if (query)
         projection->set(projection->query, query);
     if (index)
@@ -342,6 +337,15 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     node = projection;
 
     return true;
+}
+
+bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier name_p;
+    ASTPtr name;
+    if (!name_p.parse(pos, name, expected))
+        return false;
+    return parseProjectionDeclarationBody(pos, expected, name->as<ASTIdentifier &>().name(), node);
 }
 
 bool ParserForeignKeyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
