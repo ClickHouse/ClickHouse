@@ -156,6 +156,17 @@ bool ExecutionThreadContext::executeTask()
     return success;
 }
 
+void ExecutionThreadContext::setException(std::exception_ptr exception_)
+{
+    if (!exception)
+        exception = std::move(exception_);
+}
+
+std::exception_ptr ExecutionThreadContext::getException()
+{
+    return exception;
+}
+
 void ExecutionThreadContext::rethrowExceptionIfHas()
 {
     if (exception)
