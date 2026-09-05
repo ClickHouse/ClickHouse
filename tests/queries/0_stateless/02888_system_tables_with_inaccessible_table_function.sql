@@ -102,9 +102,13 @@ CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc11 (x String) AS merge(cu
 SELECT data_compressed_bytes > 0 FROM system.columns
     WHERE database = currentDatabase() AND table = 'tablefunc11';
 SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.tablefunc11;
-SELECT data_compressed_bytes > 0 FROM system.columns
-    WHERE database = currentDatabase() AND table = 'tablefunc11';
+SELECT (data_compressed_bytes, data_uncompressed_bytes, marks_bytes)
+     = (SELECT (data_compressed_bytes, data_uncompressed_bytes, marks_bytes) FROM system.columns
+        WHERE database = currentDatabase() AND table = 'sizes_src' AND name = 'x')
+    FROM system.columns WHERE database = currentDatabase() AND table = 'tablefunc11';
 
--- Not covered: `lifetime_rows`/`lifetime_bytes` (only `Buffer` reports them), a forwarded lock (only a `timeSeries*` target holds one), `tryGetColumnSizes` (no proxy overrides it) and the `StorageTableProxy` stand-in of `lazy_load_tables`.
+-- Not covered: `lifetime_rows`/`lifetime_bytes` (only `Buffer` reports them), a forwarded lock
+-- (only a `timeSeries*` target holds one), `tryGetColumnSizes` (no proxy overrides it) and the
+-- `StorageTableProxy` stand-in of `lazy_load_tables`.
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
