@@ -568,6 +568,24 @@ static constexpr const char * manifest_entry_v2_schema = R"(
                         "field-id": 135
                     },
                     {
+                        "name": "referenced_data_file",
+                        "type": ["null", "string"],
+                        "doc": "Fully qualified location of a data file that all deletes reference",
+                        "field-id": 143
+                    },
+                    {
+                        "name": "content_offset",
+                        "type": ["null", "long"],
+                        "doc": "Offset in the file where referenced content starts",
+                        "field-id": 144
+                    },
+                    {
+                        "name": "content_size_in_bytes",
+                        "type": ["null", "long"],
+                        "doc": "Length of referenced content stored in the file",
+                        "field-id": 145
+                    },
+                    {
                         "name": "sort_order_id",
                         "type": ["null", "int"],
                         "doc": "Sort order ID",

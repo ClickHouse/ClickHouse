@@ -582,15 +582,14 @@ void validateMutationWriteFormat(const String & write_format)
 
 namespace
 {
-/// Walks the data files referenced by `metadata`'s current snapshot and throws
-/// `NOT_IMPLEMENTED` if any is not Parquet. Iceberg permits mixed-format tables;
-/// the read side rejects position-deletes for non-Parquet data files in
-/// `IcebergDataObjectInfo::addPositionDeleteObject`, so a mutation that touched
-/// them would silently leave the table unreadable. Called inside the `mutate`
-/// retry loop so validation is bound to the exact metadata version that will be
-/// written, closing the TOCTOU gap where a concurrent writer commits non-Parquet
-/// files after a pre-check. See issue #102508 and the PR #105893 review.
-void validateSnapshotDataFileFormatsForMutation(
+/// Validates that the current snapshot can be mutated by ClickHouse. Iceberg
+/// permits mixed-format tables, but ClickHouse mutations write Parquet position
+/// delete files. A snapshot containing non-Parquet data files or deletion vectors
+/// would produce delete files that the read side cannot safely apply. Called inside
+/// the `mutate` retry loop so validation is bound to the exact metadata version
+/// that will be written, closing the TOCTOU gap where a concurrent writer commits
+/// incompatible files after a pre-check. See issue #102508 and the PR #105893 review.
+void validateSnapshotForMutation(
     Poco::JSON::Object::Ptr metadata,
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
@@ -639,6 +638,14 @@ void validateSnapshotDataFileFormatsForMutation(
                     file_entry->parsed_entry->file_path_key.serialize(),
                     file_format);
         }
+
+        for (const auto & file_entry : files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
+        {
+            if (Poco::toUpper(file_entry->parsed_entry->file_format) == "PUFFIN")
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Iceberg DELETE and UPDATE are not supported for snapshots containing deletion vectors");
+        }
     }
 }
 }
@@ -685,8 +692,11 @@ void mutate(
 
         auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
 
-        if (metadata->getValue<Int32>(f_format_version) < 2)
+        const auto format_version = metadata->getValue<Int32>(f_format_version);
+        if (format_version < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations are supported only for the second version of iceberg format");
+        if (format_version >= 3)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg DELETE and UPDATE are not supported for format-version 3 tables");
         auto partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
         auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
         Poco::JSON::Object::Ptr partititon_spec;
@@ -714,7 +724,7 @@ void mutate(
         /// Validate against the freshly-fetched snapshot. Bound to this exact
         /// metadata version, so a concurrent writer that commits non-Parquet
         /// data files between iterations is caught by the next retry.
-        validateSnapshotDataFileFormatsForMutation(
+        validateSnapshotForMutation(
             metadata, object_storage, persistent_table_components, context, log, static_cast<Int32>(current_schema_id));
 
         TableStateSnapshot current_iceberg_snapshot;

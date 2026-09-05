@@ -35,6 +35,13 @@ struct IcebergObjectSerializableInfo
     std::optional<UInt64> first_row_id;
     std::vector<std::pair<String, Field>> identity_partition_columns;
 
+    bool hasDeletionVector() const
+    {
+         /// A deletion vector replaces all position delete files and blocks later ones,
+        /// so when present it is the only entry.
+        return position_deletes_objects.size() == 1 && position_deletes_objects.front().isDeletionVector();
+    }
+
     void serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const;
     void deserializeForClusterFunctionProtocol(ReadBuffer & in, size_t protocol_version);
 

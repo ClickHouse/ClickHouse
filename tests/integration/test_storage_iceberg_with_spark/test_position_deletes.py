@@ -1,7 +1,9 @@
 import json
 import re
-import pytest
+from pathlib import Path
 from typing import Optional
+
+import pytest
 
 from helpers.iceberg_utils import (
     default_upload_directory,
@@ -17,6 +19,106 @@ def get_array(query_result: str):
     arr = sorted([int(x) for x in query_result.strip().split("\n")])
     print(arr)
     return arr
+
+
+def verify_puffin_deletion_vector_exists(table_name: str, error_message: str):
+    table_path = Path(f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}")
+    assert any(table_path.rglob("*.puffin")), error_message
+
+
+def create_spark_v3_table_without_deletion_vectors(started_cluster_iceberg_with_spark, table_name: str):
+    spark = started_cluster_iceberg_with_spark.spark_session
+    spark.sql(
+        f"""
+        CREATE TABLE {table_name} (id bigint, data string) USING iceberg
+        TBLPROPERTIES (
+            'format-version' = '3',
+            'write.delete.mode' = 'merge-on-read',
+            'write.update.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {table_name} select id, char(id + ascii('a')) from range(0, 100)")
+
+
+def create_spark_v3_deletion_vector_table(started_cluster_iceberg_with_spark, table_name: str):
+    spark = started_cluster_iceberg_with_spark.spark_session
+
+    spark.sql(
+        f"""
+        CREATE TABLE {table_name} (id bigint, data string) USING iceberg
+        TBLPROPERTIES (
+            'format-version' = '3',
+            'write.delete.mode' = 'merge-on-read',
+            'write.update.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {table_name} select id, char(id + ascii('a')) from range(0, 100)")
+    spark.sql(f"DELETE FROM {table_name} WHERE id < 10 OR id >= 90")
+
+    verify_puffin_deletion_vector_exists(
+        table_name, "Spark Iceberg runtime did not produce Puffin deletion vector files")
+
+
+def create_spark_v3_deletion_vector_multi_data_file_table(started_cluster_iceberg_with_spark, table_name: str):
+    spark = started_cluster_iceberg_with_spark.spark_session
+
+    spark.sql(
+        f"""
+        CREATE TABLE {table_name} (id bigint, partition_id int, data string) USING iceberg
+        PARTITIONED BY (partition_id)
+        TBLPROPERTIES (
+            'format-version' = '3',
+            'write.delete.mode' = 'merge-on-read',
+            'write.update.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(
+        f"INSERT INTO {table_name} "
+        "SELECT id, CAST(id / 100 AS INT), char(id + ascii('a')) FROM range(0, 200)"
+    )
+    spark.sql(f"DELETE FROM {table_name} WHERE partition_id = 0 AND id < 10")
+
+    verify_puffin_deletion_vector_exists(
+        table_name, "Spark Iceberg runtime did not produce Puffin deletion vector files")
+
+
+def create_spark_mixed_v2_position_delete_and_v3_deletion_vector_table(started_cluster_iceberg_with_spark, table_name: str):
+    spark = started_cluster_iceberg_with_spark.spark_session
+
+    spark.sql(
+        f"""
+        CREATE TABLE {table_name} (id bigint, data string) USING iceberg
+        TBLPROPERTIES (
+            'format-version' = '2',
+            'write.delete.mode' = 'merge-on-read',
+            'write.update.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {table_name} select id, char(id + ascii('a')) from range(0, 100)")
+    spark.sql(f"DELETE FROM {table_name} WHERE id < 10")
+    spark.sql(
+        f"""
+        ALTER TABLE {table_name} SET TBLPROPERTIES (
+            'format-version' = '3',
+            'write.delete.mode' = 'merge-on-read',
+            'write.update.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(f"DELETE FROM {table_name} WHERE id >= 90")
+
+    verify_puffin_deletion_vector_exists(
+        table_name, "Spark Iceberg runtime did not produce Puffin deletion vector files after v3 upgrade")
+
 
 @pytest.mark.parametrize("run_on_cluster", [False, True])
 @pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
@@ -166,6 +268,204 @@ def test_position_deletes_out_of_order(started_cluster_iceberg_with_spark, use_r
     assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME} WHERE NOT sleepEachRow(1/100) order by id", settings=settings)) == list(range(10, 103)) + [104]
 
     instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
+@pytest.mark.parametrize("run_on_cluster", [False, True])
+@pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_v3_deletion_vectors_table_function(
+        started_cluster_iceberg_with_spark, use_roaring_bitmaps, storage_type, run_on_cluster):
+    if storage_type == "local" and run_on_cluster:
+        pytest.skip("Local storage with cluster execution is not supported")
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_v3_deletion_vectors_" + storage_type + "_" + get_uuid_str()
+    create_spark_v3_deletion_vector_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    expression = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        format_version=3,
+        run_on_cluster=run_on_cluster,
+        table_function=True)
+
+    # Must read data files; SELECT count() uses metadata optimization and skips delete transforms.
+    default_behavior_error = instance.query_and_get_error(f"SELECT min(id) FROM {expression}")
+    assert "Iceberg v3 deletion vectors are not enabled. Set allow_iceberg_deletion_vectors = 1" in default_behavior_error
+
+    settings = {
+        "allow_iceberg_deletion_vectors": 1,
+        "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
+    }
+    assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(10, 90))
+    assert int(instance.query(f"SELECT count() FROM {expression}", settings=settings)) == 80
+    assert int(instance.query(f"SELECT count() FROM {expression} WHERE id >= 85", settings=settings)) == 5
+
+@pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
+def test_v3_deletion_vectors_named_local_table(started_cluster_iceberg_with_spark, use_roaring_bitmaps):
+    storage_type = "local"
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_v3_deletion_vectors_named_local_" + get_uuid_str()
+    create_spark_v3_deletion_vector_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        format_version=3)
+
+    settings = {
+        "allow_iceberg_deletion_vectors": 1,
+        "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
+    }
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}", settings=settings)) == list(range(10, 90))
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings=settings)) == 80
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} WHERE id < 15", settings=settings)) == 5
+
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
+@pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
+def test_v3_deletion_vectors_reject_clickhouse_mutations(started_cluster_iceberg_with_spark, use_roaring_bitmaps):
+    storage_type = "local"
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_v3_deletion_vectors_mutations_" + get_uuid_str()
+    create_spark_v3_deletion_vector_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        format_version=3)
+
+    settings = {
+        "allow_iceberg_deletion_vectors": 1,
+        "allow_insert_into_iceberg": 1,
+        "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
+    }
+    for mutation in [
+        f"ALTER TABLE {TABLE_NAME} DELETE WHERE id = 10",
+        f"ALTER TABLE {TABLE_NAME} UPDATE data = 'updated' WHERE id = 10",
+    ]:
+        error = instance.query_and_get_error(mutation, settings=settings)
+        assert "Iceberg DELETE and UPDATE are not supported for format-version 3 tables" in error
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings=settings)) == 80
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
+def test_v3_tables_without_deletion_vectors_reject_clickhouse_mutations(started_cluster_iceberg_with_spark):
+    storage_type = "local"
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_v3_tables_without_deletion_vectors_mutations_" + get_uuid_str()
+    create_spark_v3_table_without_deletion_vectors(started_cluster_iceberg_with_spark, TABLE_NAME)
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        format_version=3)
+
+    settings = {"allow_insert_into_iceberg": 1}
+    for mutation in [
+        f"ALTER TABLE {TABLE_NAME} DELETE WHERE id = 10",
+        f"ALTER TABLE {TABLE_NAME} UPDATE data = 'updated' WHERE id = 10",
+    ]:
+        error = instance.query_and_get_error(mutation, settings=settings)
+        assert "Iceberg DELETE and UPDATE are not supported for format-version 3 tables" in error
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
+@pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
+def test_v3_deletion_vectors_apply_only_to_referenced_data_file(started_cluster_iceberg_with_spark, use_roaring_bitmaps):
+    storage_type = "local"
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_v3_deletion_vectors_referenced_data_file_" + get_uuid_str()
+    create_spark_v3_deletion_vector_multi_data_file_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    expression = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        format_version=3,
+        table_function=True)
+
+    settings = {
+        "allow_iceberg_deletion_vectors": 1,
+        "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
+    }
+    assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(10, 200))
+    assert int(instance.query(f"SELECT count() FROM {expression} WHERE id >= 100", settings=settings)) == 100
+
+
+@pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
+def test_mixed_v2_position_deletes_and_v3_deletion_vectors(started_cluster_iceberg_with_spark, use_roaring_bitmaps):
+    storage_type = "local"
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_mixed_v2_pos_deletes_v3_dv_" + get_uuid_str()
+    create_spark_mixed_v2_position_delete_and_v3_deletion_vector_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    expression = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        format_version=3,
+        table_function=True)
+
+    settings = {
+        "allow_iceberg_deletion_vectors": 1,
+        "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
+    }
+    assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(10, 90))
+    assert int(instance.query(f"SELECT count() FROM {expression} WHERE id < 15", settings=settings)) == 5
+    assert int(instance.query(f"SELECT count() FROM {expression} WHERE id >= 85", settings=settings)) == 5
 
 
 class LogEntry:
