@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- Tag no-old-analyzer: the fix is in the planner; `enable_analyzer = 0` still expands CUBE and
+-- ROLLUP from the deduplicated key list.
 -- CUBE and ROLLUP are defined over the GROUP BY list as written: CUBE takes its power set and
 -- ROLLUP its prefixes. Repeated expressions were deduplicated before either was expanded, so the
 -- number of grouping sets was computed from the distinct keys and the extra sets were lost. The

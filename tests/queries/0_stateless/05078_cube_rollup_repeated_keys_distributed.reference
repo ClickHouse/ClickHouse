@@ -1,0 +1,11 @@
+cube over a repeated key, in and out of a serialized plan
+13
+13
+rollup over a repeated key
+9
+9
+GROUPING over a repeated key
+13
+no repetition is unchanged either way
+5
+5
