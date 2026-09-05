@@ -26,7 +26,7 @@
         ) ENGINE = MergeTree ORDER BY k
     </create_query>
 
-    <fill_query>INSERT INTO nullable_bulk_left SELECT toUInt64(0) FROM numbers(1048576)</fill_query>
+    <fill_query>INSERT INTO nullable_bulk_left SELECT toUInt64(0) FROM numbers(2097152)</fill_query>
     <fill_query>INSERT INTO nullable_bulk_right SELECT toUInt64(0), repeat('x', 64) FROM numbers(1)</fill_query>
 
     <query>
