@@ -141,6 +141,12 @@ no conversion	0
 -- a Nullable(Tuple(...)) wrapper nested inside a Tuple still reaches the erased leaf
 1	1	2	2	2	2
 1	1
+-- a container under a Nullable(Tuple(...)) wrapper is decided by equals, not held back by the barrier
+hidden container materialized	0	1	1	1	1
+hidden container materialized	1	1	1	1	1
+hidden container row alone   	0	1	1
+hidden container row alone   	1	1	1
+hidden container const array 	0	1	1
 -- Map(LowCardinality(String), String): a NULL needle, whose dictionary has no null entry
 0	0	0	0
 0	0

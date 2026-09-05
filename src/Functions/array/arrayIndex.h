@@ -997,7 +997,9 @@ private:
         return labels;
     }
 
-    /// True when `type` is an Array or Map, at the top level or inside any chain of Tuple wrappers.
+    /// True when `type` is an Array or Map, at the top level or inside a chain of bare Tuple wrappers.
+    /// A Nullable wrapper ends the chain, unlike in hasTypeErasingElement: a container below one is
+    /// reached by decomposing, and `equals` decides it exactly as it decides the plain twin.
     static bool hasContainer(const IDataType & type)
     {
         checkStackSize();

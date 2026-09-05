@@ -609,6 +609,38 @@ SELECT
     toUInt8(v[1] = tuple(7::UInt8, CAST(tuple(1::UInt8::Dynamic), 'Nullable(Tuple(Dynamic))'))) AS want
 FROM t_nested_null_tuple_pos2;
 
+SELECT '-- a container under a Nullable(Tuple(...)) wrapper is decided by equals, not held back by the barrier';
+
+-- The Array/Map barrier stops at a container the erased alternative names itself; a Nullable wrapper
+-- ends that walk, so these rows are peeled and answered by `=`. Holding them back instead would
+-- answer 0 for a materialized array while a constant one still matched numerically, so the three
+-- regimes are asserted together, each against `=` on the same pair.
+DROP TABLE IF EXISTS t_null_tuple_container;
+CREATE TABLE t_null_tuple_container (id UInt8, v Array(Dynamic), n Dynamic) ENGINE = Memory;
+INSERT INTO t_null_tuple_container
+SELECT 0, [CAST(tuple(CAST(tuple([1::UInt64]), 'Nullable(Tuple(Array(UInt64)))')), 'Dynamic')],
+          CAST(tuple(CAST(tuple([1::UInt8]), 'Nullable(Tuple(Array(UInt8)))')), 'Dynamic');
+INSERT INTO t_null_tuple_container
+SELECT 1, [CAST(tuple(CAST(tuple(map('k', 1::UInt64)), 'Nullable(Tuple(Map(String, UInt64)))')), 'Dynamic')],
+          CAST(tuple(CAST(tuple(map('k', 1::UInt8)), 'Nullable(Tuple(Map(String, UInt8)))')), 'Dynamic');
+
+SELECT 'hidden container materialized', id,
+    has(v, n) AS got,
+    toUInt8(arrayExists(x -> x = n, v)) AS want,
+    indexOf(v, n) AS index_of_got,
+    countEqual(v, n) AS count_equal_got
+FROM t_null_tuple_container ORDER BY id;
+
+SELECT 'hidden container row alone   ', id, has(v, n) AS got, toUInt8(arrayExists(x -> x = n, v)) AS want
+FROM t_null_tuple_container WHERE id = 0;
+SELECT 'hidden container row alone   ', id, has(v, n) AS got, toUInt8(arrayExists(x -> x = n, v)) AS want
+FROM t_null_tuple_container WHERE id = 1;
+
+SELECT 'hidden container const array ', id,
+    has([CAST(tuple(CAST(tuple([1::UInt64]), 'Nullable(Tuple(Array(UInt64)))')), 'Dynamic')], n) AS got,
+    toUInt8(arrayExists(x -> x = n, [CAST(tuple(CAST(tuple([1::UInt64]), 'Nullable(Tuple(Array(UInt64)))')), 'Dynamic')])) AS want
+FROM t_null_tuple_container WHERE id = 0;
+
 SET enable_nullable_tuple_type = 0;
 
 SELECT '-- Map(LowCardinality(String), String): a NULL needle, whose dictionary has no null entry';
