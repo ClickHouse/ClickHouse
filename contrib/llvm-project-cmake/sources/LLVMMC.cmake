@@ -1,6 +1,7 @@
 # Source files for LLVMMC
 set(LLVMMC_SOURCES
     ${LLVM_SOURCE_DIR}/lib/MC/ConstantPools.cpp
+    ${LLVM_SOURCE_DIR}/lib/MC/DXContainerInfo.cpp
     ${LLVM_SOURCE_DIR}/lib/MC/DXContainerPSVInfo.cpp
     ${LLVM_SOURCE_DIR}/lib/MC/DXContainerRootSignature.cpp
     ${LLVM_SOURCE_DIR}/lib/MC/ELFObjectWriter.cpp
@@ -34,6 +35,8 @@ set(LLVMMC_SOURCES
     ${LLVM_SOURCE_DIR}/lib/MC/MCInstrDesc.cpp
     ${LLVM_SOURCE_DIR}/lib/MC/MCInstrInfo.cpp
     ${LLVM_SOURCE_DIR}/lib/MC/MCLabel.cpp
+    ${LLVM_SOURCE_DIR}/lib/MC/MCLFI.cpp
+    ${LLVM_SOURCE_DIR}/lib/MC/MCLFIRewriter.cpp
     ${LLVM_SOURCE_DIR}/lib/MC/MCLinkerOptimizationHint.cpp
     ${LLVM_SOURCE_DIR}/lib/MC/MCMachObjectTargetWriter.cpp
     ${LLVM_SOURCE_DIR}/lib/MC/MCMachOStreamer.cpp

@@ -14,14 +14,21 @@ RUN apt-get update \
             psmisc \
             rsync \
             tree \
+            unzip \
             vim \
-            awscli \
     && apt-get autoremove --yes \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
+# The awscli apt package is gone in ubuntu:24.04, install AWS CLI v2
+# the same way as the fasttest and stateless-test images
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip" \
+    && unzip -q awscliv2.zip \
+    && ./aws/install \
+    && rm -rf awscliv2.zip aws
+
 COPY requirements.txt /
-RUN python3.13 -m pip install --no-cache-dir -r /requirements.txt
+RUN python3.13 -m pip install --ignore-installed --no-cache-dir -r /requirements.txt
 
 COPY * /
 

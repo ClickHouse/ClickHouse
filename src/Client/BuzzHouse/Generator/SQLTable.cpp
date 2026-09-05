@@ -1409,26 +1409,26 @@ void StatementGenerator::generateEngineDetails(
         else if (b.isBufferEngine())
         {
             /// num_layers
-            te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 101));
+            te->add_params()->set_num(rg.nextLargeNumber() % 101);
             /// min_time, max_time, min_rows, max_rows, min_bytes, max_bytes
             for (int i = 0; i < 6; i++)
             {
-                te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 1001));
+                te->add_params()->set_num(rg.nextLargeNumber() % 1001);
             }
             if (rg.nextSmallNumber() < 7)
             {
                 /// flush_time
-                te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 61));
+                te->add_params()->set_num(rg.nextLargeNumber() % 61);
             }
             if (rg.nextSmallNumber() < 7)
             {
                 /// flush_rows
-                te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 1001));
+                te->add_params()->set_num(rg.nextLargeNumber() % 1001);
             }
             if (rg.nextSmallNumber() < 7)
             {
                 /// flush_bytes
-                te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 1001));
+                te->add_params()->set_num(rg.nextLargeNumber() % 1001);
             }
         }
     }

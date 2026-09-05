@@ -20,7 +20,7 @@ SimpleFaultInjection::SimpleFaultInjection(Float64 probability_before, Float64 p
     exceptions_level = std::uncaught_exceptions();
 }
 
-SimpleFaultInjection::~SimpleFaultInjection() noexcept(false)
+SimpleFaultInjection::~SimpleFaultInjection() noexcept(false) /// NOLINT(bugprone-unsafe-to-allow-exceptions) throwing is the point of fault injection
 {
     if (likely(probability_after == 0.0))
         return;

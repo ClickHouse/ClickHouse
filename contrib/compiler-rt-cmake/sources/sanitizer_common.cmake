@@ -96,6 +96,7 @@ set(SANITIZER_COMMON_SYMBOLIZER_SOURCES
     sanitizer_symbolizer_report_fuchsia.cpp
     sanitizer_symbolizer_win.cpp
     sanitizer_thread_history.cpp
+    sanitizer_unwind_aix.cpp
     sanitizer_unwind_linux_libcdep.cpp
     sanitizer_unwind_fuchsia.cpp
     sanitizer_unwind_win.cpp

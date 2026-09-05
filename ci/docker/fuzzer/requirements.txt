@@ -1,7 +1,6 @@
 legacy-cgi==2.6.4
 blinker==1.4
 cryptography==48.0.1
-dbus-python==1.2.18
 distro==1.7.0
 httplib2==0.20.2
 importlib-metadata==4.6.4
