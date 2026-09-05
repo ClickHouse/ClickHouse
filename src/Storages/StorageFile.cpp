@@ -713,7 +713,7 @@ bool userFilesPathExists(const String & absolute_path, const Disks & disks)
 /// and on `DiskEncrypted` it points at the ciphertext backing directory. Reject the combination up
 /// front instead of silently reading an unrelated - or encrypted - local file, mirroring the other
 /// call sites that gate a local-only feature on the disk type.
-void checkDistributedFormatIsAllowedOnUserFilesVolume(const String & format_name, const VolumePtr & user_files_volume)
+static void checkDistributedFormatIsAllowedOnUserFilesVolume(const String & format_name, const VolumePtr & user_files_volume)
 {
     if (format_name != "Distributed" || !user_files_volume)
         return;
