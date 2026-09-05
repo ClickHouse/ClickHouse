@@ -10,6 +10,7 @@ from ci.defs.defs import (
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_tested
+from ci.workflows.create_release import PR_DRY_RUN_JOBS
 
 # Functional tests with sanitizers are trimmed down in pull requests: instead of
 # the full suite, their `selected tests` counterparts run only the tests selected
@@ -236,6 +237,8 @@ workflow = Workflow.Config(
             .set_name("Keeper Stress Tests (PR)")
             .set_timeout(3 * 3600),
         *JobConfigs.toolchain_build_jobs,
+        # Release-pipeline dry run; digest-gated, runs only when release code changes.
+        *PR_DRY_RUN_JOBS,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,

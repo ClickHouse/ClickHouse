@@ -1,6 +1,6 @@
 from praktika import Job, Secret, Workflow
 
-from ci.defs.defs import SECRETS
+from ci.defs.defs import SECRETS, RunnerLabels
 
 robot_token_secret = Secret.Config(
     name="ROBOT_CLICKHOUSE_COMMIT_TOKEN",
@@ -18,6 +18,71 @@ release_job = Job.Config(
     # release-branch tag). release_job.py exports it as GH_TOKEN.
     secrets=[robot_token_secret],
 )
+
+# PR check: rehearse the release pipeline in --dry-run on the small PR pool (no release-maker creds, no robot PAT — gh reads use the minted PR token); it publishes nothing but keeps every validation, so the recovery-ref guard still drives prepare() through its states.
+_release_dry_run_digest = Job.CacheDigestConfig(
+    include_paths=[
+        "./.github/workflows/create_release.yml",
+        "./ci/workflows/create_release.py",
+        "./ci/jobs/release_job.py",
+        "./ci/jobs/scripts/create_release.py",
+        "./ci/jobs/scripts/clickhouse_version.py",
+        "./ci/jobs/scripts/expect_release_refusal.py",
+        # Other release entrypoints the dry run invokes directly; a change must invalidate the cache or the guard would miss it.
+        "./tests/ci/changelog.py",
+        "./ci/jobs/scripts/artifactory.py",
+        "./ci/jobs/scripts/release_packages.py",
+    ],
+)
+
+
+def _dry_run_job(name: str, job_args: str) -> Job.Config:
+    return Job.Config(
+        name=name,
+        runs_on=RunnerLabels.ARM_SMALL,
+        command=f"PYTHONPATH=. python3 {job_args}",
+        enable_gh_auth=True,
+        digest_config=_release_dry_run_digest,
+        timeout=1800,
+    )
+
+
+# "new" cuts from master (its vX.Y.1.1-new tag is the state prepare() expects); "patch" (--ref auto) rehearses a fresh patch and the artifact-download path; "recovery" (--ref recovery-auto) re-publishes a tagged release with --skip-repo --skip-docker, the one mode those flags are valid.
+_RELEASE_DRY_RUN_POSITIVE = [
+    _dry_run_job(
+        "Release Dry Run (new)",
+        "./ci/jobs/release_job.py --ref master --release-type new --dry-run",
+    ),
+    _dry_run_job(
+        "Release Dry Run (patch)",
+        "./ci/jobs/release_job.py --ref auto --release-type patch --dry-run",
+    ),
+    _dry_run_job(
+        "Release Dry Run (recovery)",
+        "./ci/jobs/release_job.py --ref recovery-auto --release-type patch"
+        " --dry-run --skip-repo --skip-docker",
+    ),
+]
+
+# Negative checks: prepare() must refuse these — "out of order" (a commit behind the branch's latest release) and "recovery misuse" (--skip-repo/--skip-docker on an untagged --ref auto); expect_release_refusal.py scores the refusal as a pass.
+_RELEASE_DRY_RUN_NEGATIVE = [
+    _dry_run_job(
+        "Release Dry Run (out of order)",
+        "./ci/jobs/scripts/expect_release_refusal.py"
+        " --expect 'Refusing out-of-order release' --"
+        " --ref out-of-order-auto --release-type patch"
+        " --dry-run --skip-repo --skip-docker",
+    ),
+    _dry_run_job(
+        "Release Dry Run (recovery misuse guard)",
+        "./ci/jobs/scripts/expect_release_refusal.py"
+        " --expect 'must be run against its release tag' --"
+        " --ref auto --release-type patch"
+        " --dry-run --skip-repo --skip-docker",
+    ),
+]
+
+PR_DRY_RUN_JOBS = _RELEASE_DRY_RUN_POSITIVE + _RELEASE_DRY_RUN_NEGATIVE
 
 workflow = Workflow.Config(
     name="CreateRelease",
