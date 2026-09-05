@@ -86,11 +86,27 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     node.query("INSERT INTO dl.t SELECT number, toString(number) FROM numbers(100)")
     node.query("INSERT INTO dl.t2 SELECT number, toString(number) FROM numbers(100)")
 
+    # A wide part, so a mutation that touches one column hardlinks the files it was not told to skip
+    # instead of rewriting the whole part.
+    node.query(
+        "CREATE TABLE dl.t3 (a UInt64, b String, c String) ENGINE = MergeTree ORDER BY a"
+        " SETTINGS min_bytes_for_wide_part = 0"
+    )
+    node.query(
+        "ALTER TABLE dl.t3 ADD PROJECTION pp (SELECT b, a GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+    node.query(
+        "INSERT INTO dl.t3 SELECT number, toString(number), '' FROM numbers(100)"
+    )
+
     # Armed: every declaration is analyzed and materialized.
     assert projections("t") == "1"
     assert projections("t2") == "2"
+    assert projections("t3") == "1"
     assert active_projection_parts("t") == "1"
     assert active_projection_parts("t2") == "2"
+    assert active_projection_parts("t3") == "1"
 
     node.restart_clickhouse()
 
@@ -98,6 +114,7 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     # for the recovery assertions at the end.
     assert projections("t") == "0"
     assert projections("t2") == "0"
+    assert projections("t3") == "0"
     assert node.query("SELECT count() FROM dl.t").strip() == "100"
     assert node.query("SELECT count() FROM dl.t2").strip() == "100"
 
@@ -108,6 +125,13 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert "DROP PROJECTION" in error
     assert "PROJECTION" in node.query("SHOW CREATE TABLE dl.t")
     assert declarations_on_disk("t") == "1"
+
+    # A mutation is not a metadata `ALTER`, so it is not refused. Nothing knows whether `pp`'s
+    # materialized data still matches the rows it rewrites, so that data must be left out of the new
+    # part rather than hardlinked into it and served as current after recovery.
+    node.query(
+        "ALTER TABLE dl.t3 UPDATE b = 'z' WHERE a < 10", settings={"mutations_sync": 2}
+    )
 
     error = node.query_and_get_error(
         "ALTER TABLE dl.t2 ADD PROJECTION rr (SELECT a GROUP BY a)"
@@ -127,8 +151,9 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert "PROJECTION qq" in node.query("SHOW CREATE TABLE dl.t2")
     assert declarations_on_disk("t2") == "1"
 
-    # `CLEAR PROJECTION` is exempt on purpose: it deletes the data the user named and keeps the
-    # declaration, so it never validates against a smaller set than the table declares.
+    # `CLEAR PROJECTION` carries the same command type as `DROP PROJECTION` and is exempt on purpose:
+    # `AlterCommands::apply` deliberately keeps the declaration when `clear` is set, so it changes
+    # projection data and no metadata that the unanalyzable declaration could be validated against.
     node.query("ALTER TABLE dl.t2 CLEAR PROJECTION qq")
     assert "PROJECTION qq" in node.query("SHOW CREATE TABLE dl.t2")
 
@@ -158,3 +183,14 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
 
     # `t2` has no projections, because the user dropped those declarations.
     assert projections("t2") == "0"
+
+    # `t3`'s declaration survived, but the mutation rewrote the part that held the projection data, so
+    # the projection comes back with nothing materialized instead of with pre-mutation rows.
+    assert projections("t3") == "1"
+    assert active_projection_parts("t3") == "0"
+    assert node.query("SELECT countIf(b = 'z') FROM dl.t3").strip() == "10"
+    error = node.query_and_get_error(
+        "SELECT countIf(b = 'z') FROM (SELECT b, a FROM dl.t3 GROUP BY b, a)",
+        settings={"force_optimize_projection_name": "pp"},
+    )
+    assert "not used" in error

@@ -5978,8 +5978,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         local_context->checkMergeTreeSettingsConstraints(
             *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
 
-    /// A declaration that could not be analyzed is absent from `new_metadata.projections`, so every check below sees
-    /// fewer projections than the table declares. `DROP PROJECTION` is exempt because it can only shrink the set.
+    /// A declaration that could not be analyzed is not in the analyzed set the checks below iterate, so they would
+    /// validate this ALTER against fewer projections than the table declares and then persist that reduced set.
+    /// `DROP PROJECTION` and `CLEAR PROJECTION` share a command type and are exempt: neither changes anything the
+    /// unanalyzable declaration could be validated against.
     if (!is_replay_on_another_replica && new_metadata.projections.hasUnavailable())
     {
         for (const auto & command : commands)
