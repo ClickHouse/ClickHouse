@@ -1,0 +1,5 @@
+<clickhouse>
+    <use_query_slot_to_refresh_materialized_view>true</use_query_slot_to_refresh_materialized_view>
+    <background_schedule_pool_size>5</background_schedule_pool_size>
+    <background_schedule_pool_initial_size>5</background_schedule_pool_initial_size>
+</clickhouse>
