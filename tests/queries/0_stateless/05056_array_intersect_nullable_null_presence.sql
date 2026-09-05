@@ -2,6 +2,7 @@
 
 SELECT arrayIntersect(CAST([NULL, 2] AS Array(Nullable(UInt8))), CAST([1] AS Array(Nullable(UInt8))));
 SELECT arrayIntersect(CAST([1] AS Array(Nullable(UInt8))), CAST([NULL, 2] AS Array(Nullable(UInt8))));
+SELECT arrayIntersect([1, NULL], [1], [1, NULL]);
 SELECT arrayIntersect(
     materialize(CAST([NULL] AS Array(Nullable(UInt8)))),
     materialize(CAST([1] AS Array(Nullable(UInt8)))))
