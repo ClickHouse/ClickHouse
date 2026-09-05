@@ -32,16 +32,12 @@ inline bool isLoadingFromExistingMetadata(LoadingStrictnessLevel level)
     return level == LoadingStrictnessLevel::FORCE_ATTACH || level == LoadingStrictnessLevel::FORCE_RESTORE;
 }
 
-/// Returns true when a definition is user-supplied rather than read back from metadata stored on this
-/// server. A full-definition `ATTACH TABLE t UUID '...' (...)` is CREATE-like input that also runs
-/// under ATTACH; a restored definition instead carries `attach_short_syntax`, as does SECONDARY_CREATE.
-/// `secondary` must be passed separately because a replayed or recovered definition can also carry
-/// `attach`, which outranks SECONDARY_CREATE in `getLoadingStrictnessLevel`.
-inline bool isFreshDefinition(LoadingStrictnessLevel level, bool attach_short_syntax, bool secondary = false)
+/// Whether the definition comes from the user now rather than being replayed. A full-definition
+/// `ATTACH TABLE t UUID '...' (...) ENGINE = ...` is user input and runs under `ATTACH`; a definition
+/// stored on this server is replayed under `attach_short_syntax`, `SECONDARY_CREATE` or above.
+inline bool isFreshTableDefinition(LoadingStrictnessLevel level, bool attach_short_syntax)
 {
-    if (secondary)
-        return false;
-    return level == LoadingStrictnessLevel::CREATE
+    return level <= LoadingStrictnessLevel::CREATE
         || (level == LoadingStrictnessLevel::ATTACH && !attach_short_syntax);
 }
 

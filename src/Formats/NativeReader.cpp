@@ -86,7 +86,7 @@ void NativeReader::resetParser()
 
 void NativeReader::readData(
     const ISerialization & serialization,
-    ColumnPtr & column,
+    IColumn & column,
     ReadBuffer & istr,
     const FormatSettings * format_settings,
     size_t rows,
@@ -117,13 +117,13 @@ void NativeReader::readData(
     ISerialization::DeserializeBinaryBulkStatePtr state;
 
     serialization.deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-    serialization.deserializeBinaryBulkWithMultipleStreams(column, 0, rows, settings, state, nullptr);
+    serialization.deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state, nullptr);
 
-    if (column->size() != rows)
+    if (column.size() != rows)
         throw Exception(
             ErrorCodes::CANNOT_READ_ALL_DATA,
             "Cannot read all data in NativeReader. Rows read: {}. Rows expected: {}",
-            column->size(),
+            column.size(),
             rows);
 }
 
@@ -177,6 +177,13 @@ Block NativeReader::read()
     if (columns == 0 && header.empty() && rows != 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Zero columns but {} rows in Native format.", rows);
 
+    /// `rows` comes from the block header, and the limit it is checked against is deliberately
+    /// generous, so it must not be used to preallocate the columns: a header declaring a huge row
+    /// count would reserve that much per column before a single byte of column data is read.
+    /// Reserving is only an optimization here - deserialization appends to the column anyway - so
+    /// bound it by a plausible block size and let the column grow past that on its own.
+    const size_t rows_to_reserve = std::min<size_t>(rows, DEFAULT_INSERT_BLOCK_SIZE);
+
     for (size_t i = 0; i < columns; ++i)
     {
         if (use_index)
@@ -206,7 +213,7 @@ Block NativeReader::read()
         setVersionToAggregateFunctions(column.type, true, server_revision);
 
         SerializationPtr serialization;
-        ColumnPtr read_column;
+        MutableColumnPtr read_column;
 
         if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
@@ -222,14 +229,14 @@ Block NativeReader::read()
 
             serialization = column.type->getSerialization(*info);
             auto new_column = column.type->createColumn(*serialization);
-            new_column->reserve(rows);
+            new_column->reserve(rows_to_reserve);
             read_column = std::move(new_column);
         }
         else
         {
             serialization = column.type->getDefaultSerialization();
             auto new_column = column.type->createColumn(*serialization);
-            new_column->reserve(rows);
+            new_column->reserve(rows_to_reserve);
             read_column = std::move(new_column);
         }
 
@@ -246,7 +253,7 @@ Block NativeReader::read()
         {
             const auto * format = format_settings ? &*format_settings : nullptr;
             NameAndTypePair name_and_type = {column.name, column.type};
-            readData(*serialization, read_column, istr, format, rows, &name_and_type, &avg_value_size_hints);
+            readData(*serialization, *read_column, istr, format, rows, &name_and_type, &avg_value_size_hints);
         }
 
         column.column = std::move(read_column);

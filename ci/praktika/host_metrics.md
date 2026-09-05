@@ -81,6 +81,55 @@ Low utilization ⇒ over-provisioned pipeline (wasted spend); high stall ⇒
 contention / under-provisioning. The weighting normalizes across
 differently-sized runners so the numbers are comparable pipeline-wide.
 
+## CIDB — the `attributes` column
+
+Both levels are also written to the CIDB `checks` table (see `cidb.py`), into the
+`JSON` column `attributes`, as a **flat map of scalar leaves** (no nested objects
+or arrays — those do not belong in the `attributes` column). Every row also
+carries the `workflow_name` column. Values are `NULL`/absent when the underlying
+metric is unavailable (e.g. no `disk`/`psi`, or metrics predating the `peaks`
+schema).
+
+### Per-job row — host usage
+
+Each job's own row (`check_name` = job name, empty `test_name`) carries its
+whole-VM host usage in `attributes`, built by `CIDB._host_usage_attributes` from
+`Result.ext["metrics"]`. Test-case sub-rows do not repeat it. Keys mirror the
+job-level fields above with a `host_` prefix:
+
+| `attributes` key | Source |
+|---|---|
+| `host_cpu_count`, `host_duration_s`, `host_mem_total_gb`, `host_disk_total_gb` | capacity / runtime |
+| `host_cpu_peak_pct`, `host_iowait_peak_pct`, `host_mem_peak_pct`, `host_disk_peak_pct` | `peaks.*` |
+| `host_mem_peak_gb`, `host_disk_peak_gb` | `peaks.mem_gb` / `peaks.disk_gb` (absolute) |
+| `host_cpu_avg_pct`, `host_iowait_avg_pct`, `host_mem_avg_pct`, `host_disk_avg_pct` | `averages.*` |
+| `host_cpu_stall_s` | `psi.cpu_s` |
+| `host_mem_stall_s`, `host_mem_stall_all_s` | `psi.mem_some_s` / `psi.mem_full_s` |
+| `host_io_stall_s`, `host_io_stall_all_s` | `psi.io_some_s` / `psi.io_full_s` |
+
+### Workflow summary row — pipeline / storage / compute usage
+
+The Finish-workflow (final) job writes one extra row (`check_name` = workflow
+name, empty `test_name`) via `CIDB.insert_workflow_usage`, carrying all three
+workflow-level aggregates from the workflow `Result.ext`. This is a **synthetic
+metrics row**: its canonical `check_status` / `check_duration_ms` are left
+empty/zero so it is not mistaken for the workflow's own status record — the real
+workflow status and duration are carried in `attributes` instead.
+
+| `attributes` key | Source |
+|---|---|
+| `pipeline_status` | the workflow's overall status (legacy CIDB form, e.g. `success`/`failure`) |
+| `pipeline_start_time` | actual pipeline start (first job), unlike the row's `check_start_time` which is stamped when the final job writes the summary |
+| `pipeline_duration_s` | whole-pipeline wall-clock duration (first job start to last job end), distinct from `pipeline_wall_time_s` which sums job runtimes |
+| `pipeline_total_jobs`, `pipeline_run_jobs`, `pipeline_success_jobs`, `pipeline_failed_jobs`, `pipeline_skipped_jobs`, `pipeline_dropped_jobs` | job counts in the pipeline by status (`run` = jobs that actually ran, i.e. not skipped/dropped), unlike `pipeline_jobs` which counts only the qualifying jobs |
+| `pipeline_*` (e.g. `pipeline_jobs`, `pipeline_cpu_hours`, `pipeline_mem_gb_hours`, `pipeline_disk_gb_hours`, `pipeline_cpu_util_pct`, `pipeline_cpu_stall_pct`, `pipeline_mem_full_pct`, …) | every field of `PipelineUtilization.to_summary`, prefixed `pipeline_` |
+| `storage_uploaded_bytes`, `storage_uploaded_items`, `storage_downloaded_bytes`, `storage_downloaded_items` | `StorageUsage` |
+| `compute_usage_seconds` | `ComputeUsage` as a `{runner_type: seconds}` map (provisioned wall-time per runner) |
+
+This replaces an older scheme that encoded storage/compute numbers into the
+`check_duration_ms` / `test_name` / `test_context_raw` columns, whose schema
+meaning did not match the data.
+
 ## Settings
 
 All knobs live in `settings.py` (overridable via the settings directory):

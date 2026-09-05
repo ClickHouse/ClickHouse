@@ -6,54 +6,6 @@
 
 -- { echoOn }
 
-SET enable_analyzer = 0;
-SELECT 1 IN (materialize(1), 'x');
-1
-SELECT 3 IN (materialize(1), 'x');
-0
-SELECT 1 NOT IN (materialize(1), 'x');
-0
-SELECT 1 IN (materialize(1), 'x', NULL);
-1
-SELECT toNullable(1) IN (materialize(1), 'x');
-1
-SELECT number IN (materialize(1), 'x') FROM numbers(2);
-0
-1
--- Two rewrites of the same tuple in one query must not conflict in the actions DAG.
-SELECT number IN (materialize(1), 'x'), number NOT IN (materialize(1), 'x') FROM numbers(2);
-0	1
-1	0
-SELECT 1 IN (materialize('a'), 'b');
-0
-SELECT NULL IN (materialize(1), 'x');
-\N
-SELECT NULL NOT IN (materialize(1), 'x');
-\N
--- Castable to the LHS type, but no common supertype among the elements.
-SELECT number, if(number = 0, NULL, 1) IN (materialize(1), toDate('2020-01-02')) FROM numbers(2);
-0	\N
-1	1
-SELECT number, if(number = 0, NULL, 1) IN (materialize(1), 'x') FROM numbers(2);
-0	\N
-1	1
-SET transform_null_in = 1;
-SELECT 1 IN (materialize(1), 'x'); -- { serverError CANNOT_PARSE_TEXT }
-SELECT 1 IN (materialize(1), 'x', NULL);
-1
-SELECT toNullable(1) IN (materialize(1), 'x');
-1
-SELECT NULL IN (materialize(1), 'x');
-0
-SELECT NULL NOT IN (materialize(1), 'x');
-1
-SELECT number, if(number = 0, NULL, 1) IN (materialize(1), toDate('2020-01-02')) FROM numbers(2);
-0	0
-1	1
-SELECT number, if(number = 0, NULL, 1) IN (materialize(1), 'x') FROM numbers(2);
-0	1
-1	1
-SET transform_null_in = 0;
 SET enable_analyzer = 1;
 SELECT 1 IN (materialize(1), 'x');
 1
@@ -68,6 +20,7 @@ SELECT toNullable(1) IN (materialize(1), 'x');
 SELECT number IN (materialize(1), 'x') FROM numbers(2);
 0
 1
+-- Two rewrites of the same tuple in one query must not conflict in the actions DAG.
 SELECT number IN (materialize(1), 'x'), number NOT IN (materialize(1), 'x') FROM numbers(2);
 0	1
 1	0

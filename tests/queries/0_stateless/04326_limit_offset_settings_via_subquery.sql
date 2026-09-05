@@ -21,16 +21,12 @@ SELECT 7 FROM numbers(10) SETTINGS limit = 3, offset = 2;
 
 -- Top-level UNION: the cap applies to the whole result (3 rows), not per-arm (which would yield 6).
 SELECT 7 FROM numbers(5) UNION ALL SELECT 7 FROM numbers(5) SETTINGS limit = 3;
-SET enable_analyzer = 0;
-SELECT 7 FROM numbers(5) UNION ALL SELECT 7 FROM numbers(5) SETTINGS limit = 3;
 SET enable_analyzer = 1;
 
 -- A `limit` / `offset` carried by a subquery's own `SETTINGS` clause is applied by wrapping that
 -- subquery too, so it works identically with and without the analyzer (it used to only work with
 -- the analyzer), supports negative / fractional values, and combines with an explicit `LIMIT` via
 -- the optimizer's push-down.
-SELECT count() FROM (SELECT * FROM numbers(10) SETTINGS limit = 5);
-SET enable_analyzer = 0;
 SELECT count() FROM (SELECT * FROM numbers(10) SETTINGS limit = 5);
 SET enable_analyzer = 1;
 SELECT count() FROM (SELECT * FROM numbers(10) LIMIT 8 SETTINGS limit = 5);

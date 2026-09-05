@@ -65,10 +65,12 @@ SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'see cat') SE
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'see cat') SETTINGS query_plan_direct_read_from_text_index = 0;
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'see the cat') SETTINGS query_plan_direct_read_from_text_index = 1;
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'see the cat') SETTINGS query_plan_direct_read_from_text_index = 0;
--- Contrast: the 3-argument form bypasses the index and runs literal hasPhrase (no postprocessor), so
--- 'see cat' only matches the literal 'see cat' (3), and 'see the cat' only the literal 'see the cat' (1).
+-- Naming the index tokenizer explicitly gives the same results as the two-argument form above.
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'see cat', 'splitByNonAlpha');
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'see the cat', 'splitByNonAlpha');
+-- Contrast: a different tokenizer does not match the index, so literal hasPhrase runs and the
+-- postprocessor is not applied. Only the literal 'see cat' (3) matches.
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'see cat', 'ngrams(3)');
 
 DROP TABLE tab;
 
