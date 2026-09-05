@@ -12,16 +12,11 @@ from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.test_selection_manifest import (
     SELECTION_MANIFEST,
-    configuration_report,
     load_selection,
 )
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.functional_tests.export_coverage import CoverageExporter
-from ci.jobs.scripts.functional_tests_results import (
-    FTResultsProcessor,
-    GLOBAL_TIME_LIMIT_EXIT_CODE,
-    MAX_FAILURES_EXIT_CODE,
-)
+from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -871,9 +866,6 @@ def main():
                 status=Result.Status.SKIPPED, info="No tests to run"
             ).complete_job()
 
-    selection_manifest = None
-    selection_events = f"{temp_dir}/selection-events.jsonl"
-    selection_report = f"{temp_dir}/selection-execution.json"
     if is_targeted_check or is_selected_tests_run:
         assert not args.test, "--test cannot override a selection manifest"
         try:
@@ -883,25 +875,14 @@ def main():
                 tests = filter_selected_tests_by_flavor(
                     tests, keep_sequential="sequential" in test_options
                 )
-            Path(selection_events).write_text("")
-            Path(selection_report).write_text(
-                json.dumps(
-                    configuration_report(
-                        selection_manifest, tests, info.job_name, selection_events
-                    ),
-                    indent=2,
-                )
-                + "\n"
-            )
             results.append(
                 Result(
                     name="Fetch relevant tests",
                     status=Result.Status.OK,
                     info=f"Base selection: {len(selection_manifest['tests'])}; compatible flavor: {len(tests)}",
-                    files=[str(SELECTION_MANIFEST), selection_report],
+                    files=[str(SELECTION_MANIFEST)],
                 )
             )
-            runner_options += f" --selection-events {selection_events}"
         except Exception as ex:
             Result.create_from(
                 status=Result.Status.ERROR, info=f"Failed to load test selection: {ex}"
@@ -911,7 +892,6 @@ def main():
                 status=Result.Status.SKIPPED,
                 info="No compatible selected tests",
                 results=results,
-                files=[selection_report],
             ).complete_job()
 
     stage = args.param or JobStages.INSTALL_CLICKHOUSE
@@ -1187,27 +1167,6 @@ def main():
             is_bugfix_validation=is_labeled_bugfix_validation,
             allow_no_tests=is_flaky_check or is_targeted_check or is_selected_tests_run,
         )
-
-        if selection_manifest is not None:
-            Path(selection_report).write_text(
-                json.dumps(
-                    configuration_report(
-                        selection_manifest,
-                        tests,
-                        info.job_name,
-                        selection_events,
-                        runner_exit_code,
-                        requested_repetitions=rerun_count,
-                        stop_reason={
-                            GLOBAL_TIME_LIMIT_EXIT_CODE: "time_limit",
-                            MAX_FAILURES_EXIT_CODE: "failure_limit",
-                        }.get(runner_exit_code),
-                    ),
-                    indent=2,
-                )
-                + "\n"
-            )
-            debug_files.extend([selection_events, selection_report])
 
         # Run additional build types for bugfix validation.
         # Exit early on first failure to avoid duplicate test names,

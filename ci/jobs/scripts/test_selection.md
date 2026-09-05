@@ -77,10 +77,8 @@ exempt because those runners disable randomized settings. The selected sanitizer
 configurations are derived from the full-suite definitions. Targeted repetitions preserve each
 configuration's runner, build, environment, timeout, and flavor.
 
-`selection-execution.json` accounts for every base-selected test, including flavor
-and runner filters, starts, completions, outcomes, repetitions by settings
-fingerprint, and early-stop reasons. The entire compatible selection is repeated;
-ordinary selected jobs remain one-shot.
+The entire compatible selection is repeated in targeted jobs; ordinary selected
+jobs remain one-shot.
 
 Validation on 2026-09-05 passed the live production canary with fresh snapshots
 from all eight shards. A pre-PR replay attempt for

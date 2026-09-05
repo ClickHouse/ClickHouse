@@ -10,7 +10,6 @@
 import copy
 import enum
 import glob
-import hashlib
 
 # Not requests, to avoid requiring extra dependency.
 import http.client
@@ -4018,51 +4017,7 @@ class TestCase:
 
         return proc, total_time
 
-    def selection_event(self, args, event, **details):
-        path = getattr(args, "selection_events", None)
-        if not path:
-            return
-        settings = {
-            "settings": self.effective_settings,
-            "merge_tree_settings": self.effective_merge_tree_settings,
-        }
-        fingerprint = hashlib.sha256(
-            json.dumps(settings, sort_keys=True, default=str).encode()
-        ).hexdigest()
-        entry = {
-            "test": self.case,
-            "event": event,
-            "pid": os.getpid(),
-            "time": datetime.now().isoformat(),
-            "settings_fingerprint": fingerprint,
-            **details,
-        }
-        # One append syscall per event keeps concurrent worker records intact.
-        payload = (json.dumps(entry, default=str) + "\n").encode()
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
-        try:
-            if os.write(fd, payload) != len(payload):
-                raise OSError("Incomplete selection event write")
-        finally:
-            os.close(fd)
-
     def run(self, args, suite, client_options):
-        self.selection_started = False
-        result = self.run_with_selection_events(args, suite, client_options)
-        self.selection_event(
-            args,
-            (
-                "filtered"
-                if not self.selection_started and result.status == TestStatus.SKIPPED
-                else "completed"
-            ),
-            status=result.status.value,
-            reason=str(result.reason),
-            duration=result.total_time,
-        )
-        return result
-
-    def run_with_selection_events(self, args, suite, client_options):
         start_time = datetime.now()
 
         try:
@@ -4103,8 +4058,6 @@ class TestCase:
             )
 
             client_options = self.add_effective_settings(client_options)
-            self.selection_event(args, "started")
-            self.selection_started = True
 
             if args.collect_per_test_coverage and BuildFlags.WITH_COVERAGE_DEPTH in args.build_flags:
                 try:
@@ -7270,10 +7223,6 @@ def parse_args():
         action="store_true",
         default=False,
         help="Disable MergeTree settings randomization",
-    )
-    parser.add_argument(
-        "--selection-events",
-        help="Append per-test execution and settings fingerprints to this JSONL file",
     )
     parser.add_argument(
         "--random-settings-diagnostics-dir",
