@@ -69,11 +69,17 @@ SELECT 'thawed', coalesce(max(value), 0) > 0 FROM system.events WHERE event = 'A
 "
 
 # A session in which no thread ever froze has no shared drain table at all, while a learning thread
-# still reaches the baseline path on its own by giving up on freezing. The hot prefix holds every
-# thread below the freeze threshold in keys and the unique tail carries query memory over the
-# external threshold, so the baseline spill decision runs with the shared table absent. The
-# threshold is kept well above the residue scenarios': a threshold the tail crosses too early
-# in a thread's learning lets that thread freeze after all instead of giving up.
+# still reaches the baseline path on its own by giving up on freezing. A thread gives up once it
+# has seen sixteen times the freeze threshold in rows while holding fewer keys than the threshold,
+# and it freezes as soon as a block leaves it at the threshold or above, so the stream must keep
+# every thread under a thousand keys through its first sixteen thousand rows whatever blocks it
+# happens to receive. A hot prefix followed by a unique tail cannot promise that: the blocks are
+# handed out on demand, and a thread that starts late on a loaded machine draws its first block
+# from the tail and freezes on it. Every block here has the same mix instead - one row in
+# thirty-two carries a unique key, the rest the hot one - so a thread holds about five hundred
+# keys when it gives up and could not reach a thousand before then, in any order of the blocks.
+# The unique keys carry query memory over the external threshold early in the scan, and the parts
+# that follow are as small as the blocks: what the scenario asserts is the decision, not their size.
 $CLICKHOUSE_LOCAL --query "
 SET max_threads = 4;
 SET max_block_size = 8192;
@@ -82,13 +88,13 @@ SET adaptive_aggregator_freeze_threshold = 1000;
 SET adaptive_aggregator_freeze_threshold_bytes = 0;
 SET group_by_two_level_threshold = 1000;
 SET group_by_two_level_threshold_bytes = 1000000;
-SET max_bytes_before_external_group_by = 60000000;
+SET max_bytes_before_external_group_by = 5000000;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET collect_hash_table_stats_during_aggregation = 0;
 
 SELECT count() FROM
 (
-    SELECT if(number < 1000000, 'hot', concat(toString(number), repeat('x', 60))) AS k
+    SELECT if(number % 32 = 0, concat(toString(number), repeat('x', 60)), 'hot') AS k
     FROM numbers_mt(2000000)
     GROUP BY k
 );
