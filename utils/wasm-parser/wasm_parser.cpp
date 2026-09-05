@@ -187,29 +187,36 @@ extern "C" int formatBody(void * argument)
     return 1;
 }
 
-extern "C" int formatJSONBody(void * argument)
+/// Every AST JSON document this module reads passes through here, `serializeBody` included: it is
+/// what "the limits of `ch_format_json`" means, in one place, so that the producer can be held to
+/// them by running them rather than by restating them.
+DB::ASTPtr readASTJSON(const char * json, size_t size)
 {
-    const auto & request = *static_cast<const Request *>(argument);
-
     /// `createFromJSON` bounds the AST it builds, but `Poco::JSON::Parser` materializes the whole
     /// document first, so the raw text is bounded up front, as `formatQueryFromJSON` does on the
     /// server with `max_query_size`.
-    if (request.size > MAX_QUERY_SIZE)
-    {
-        result() = "Max query size exceeded";
-        return 0;
-    }
+    if (size > MAX_QUERY_SIZE)
+        throw DB::Exception(DB::ErrorCodes::TOO_BIG_AST, "AST JSON is too big. Maximum: {}", MAX_QUERY_SIZE);
 
     /// Deserialization throws for anything wrong with the document - malformed JSON, an unknown
     /// node type, a field of the wrong shape, a tree past the depth or element limits - and the
     /// boundary turns that into the error message.
-    DB::ASTPtr ast = DB::IAST::createFromJSON(std::string(request.query, request.size), MAX_PARSER_DEPTH, MAX_AST_ELEMENTS);
+    DB::ASTPtr ast = DB::IAST::createFromJSON(std::string(json, size), MAX_PARSER_DEPTH, MAX_AST_ELEMENTS);
 
     /// `createFromJSON` counts what it builds as it goes, but a `readJSON` override can materialize
     /// nodes after that pass, so the assembled tree is measured once more - the same second pass
     /// `formatQueryFromJSON` makes on the server - before anything walks it.
     ast->checkDepth(MAX_PARSER_DEPTH);
     ast->checkSize(MAX_AST_ELEMENTS);
+
+    return ast;
+}
+
+extern "C" int formatJSONBody(void * argument)
+{
+    const auto & request = *static_cast<const Request *>(argument);
+
+    DB::ASTPtr ast = readASTJSON(request.query, request.size);
 
     result() = request.one_line ? ast->formatWithSecretsOneLine() : ast->formatWithSecretsMultiLine();
     return 1;
@@ -248,17 +255,24 @@ extern "C" int serializeBody(void * argument)
 {
     const auto & request = *static_cast<const SerializeRequest *>(argument);
 
-    /// Only an AST that `ch_format_json` will read back is worth reporting, so the producer holds
-    /// itself to the limits of the consumer: the element and depth budgets of `createFromJSON`, and
-    /// the bound on the raw document. A tree that parsed but does not fit them answers a null "ast"
-    /// with the reason, the same way one with no JSON representation at all does.
+    /// Only an AST that `ch_format_json` will read back is worth reporting. The node and depth
+    /// budgets are checked here first, so a tree that cannot fit is turned away before it is
+    /// serialized at all.
     request.ast->checkDepth(MAX_PARSER_DEPTH);
     request.ast->checkSize(MAX_AST_ELEMENTS);
 
     *request.json = DB::serializeASTToJSON(*request.ast);
 
-    if (request.json->size() > MAX_QUERY_SIZE)
-        throw DB::Exception(DB::ErrorCodes::TOO_BIG_AST, "AST JSON is too big to be read back. Maximum: {}", MAX_QUERY_SIZE);
+    /// They are not the whole of what the consumer requires, though: its element budget counts more
+    /// than AST nodes - every value of a structured `Field` inside a single `ASTLiteral`, the
+    /// elements of a `SET`, the entries of a `RENAME`, and so on - so a tree of 49999 nodes with one
+    /// `[0]` in it fits here and does not fit there. Restating those rules on this side would be a
+    /// second implementation of them, free to drift; the document is read back instead, exactly as
+    /// `ch_format_json` reads it. The tree it builds is discarded - that it builds at all is the
+    /// answer - and one more pass over at most 1 MiB is what the guarantee costs. A tree that
+    /// parsed but does not survive the round trip answers a null "ast" with the reason, the same way
+    /// one with no JSON representation at all does.
+    readASTJSON(request.json->data(), request.json->size());
 
     return 1;
 }

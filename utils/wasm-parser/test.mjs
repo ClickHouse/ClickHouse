@@ -191,19 +191,34 @@ if (hasAstJson) {
     const wideBack = call(JSON.stringify(wideParsed.doc.ast), (ptr, len) => ch_format_json(ptr, len, 1));
     check('ch_format_json reads a wide ast back', wideBack.ok);
 
+    /// Structured literals are where the two sides count differently - `Array`, `Tuple` and nested
+    /// values of them are one `ASTLiteral` each, whatever their width - so the ordinary case is
+    /// pinned as well: they round-trip, the read-back does not turn them away.
+    const structured = "SELECT [1, 2, 3], (4, 'five'), [[1], [2, 3]]";
+    const structuredParsed = parsed(structured);
+    check('a query of structured literals has an ast', structuredParsed.ok && !!structuredParsed.doc?.ast);
+    const structuredBack = call(JSON.stringify(structuredParsed.doc?.ast), (ptr, len) => ch_format_json(ptr, len, 1));
+    check('ch_format_json round-trips structured literals',
+        structuredBack.ok && structuredBack.out === format(structured, 1).out);
+
     /// Past those limits the "ast" is null with a reason - never JSON this module cannot read back.
     /// The first query is over the element budget; the second one fits in the input limit while its
-    /// JSON does not, because every quote in the literal is escaped.
+    /// JSON does not, because every quote in the literal is escaped. The third one is under the
+    /// budget by AST nodes alone (49905 of them) and over it once the reader counts the values of
+    /// the array literal as well, which all live inside a single `ASTLiteral`: only reading the
+    /// document back the way `ch_format_json` does catches that one.
     for (const [name, query] of [
         ['an ast over the element limit', `SELECT ${Array(60000).fill('1').join(', ')}`],
         ['an ast whose JSON is over the input limit', `SELECT '${'"'.repeat(900000)}'`],
+        ['an ast over the element limit only once its literal is counted',
+            `SELECT [${Array(200).fill('1').join(',')}], ${Array(49900).fill('*').join(', ')}`],
     ]) {
         const r = parsed(query);
         const back = r.ok && r.doc?.ast
             ? call(JSON.stringify(r.doc.ast), (ptr, len) => ch_format_json(ptr, len, 1)).ok
             : null;
         check(`${name}: null with a reason, or readable back`,
-            !r.ok || (r.doc?.ast === null ? /too big/i.test(r.doc?.ast_error ?? '') : back === true));
+            !r.ok || (r.doc?.ast === null ? /too big|limit/i.test(r.doc?.ast_error ?? '') : back === true));
     }
 }
 
