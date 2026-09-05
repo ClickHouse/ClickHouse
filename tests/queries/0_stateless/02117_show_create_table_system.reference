@@ -100,6 +100,7 @@ CREATE TABLE system.columns
     `datetime_precision` Nullable(UInt64),
     `serialization_hint` Nullable(String),
     `statistics` String,
+    `is_nullable` UInt8,
     `column` String ALIAS name
 )
 ENGINE = SystemColumns
