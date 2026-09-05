@@ -747,6 +747,12 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple with {} elements, requested type is Tuple with {} elements", node.getNameForLogging(), node.element->num_children, tuple_type_hint->getElements().size());
         }
     }
+
+    /// `num_children` comes directly from untrusted input file, need to sanity-check before doing
+    /// `elements.resize(num_children)`.
+    if (node.element->num_children < 0 || size_t(node.element->num_children) > file_metadata.schema.size() - schema_idx)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet schema element {} declares {} children, but only {} schema elements remain in the file", node.getNameForLogging(), node.element->num_children, file_metadata.schema.size() - schema_idx);
+
     if (!lookup_by_name && node.requested)
         elements.resize(size_t(node.element->num_children), UINT64_MAX);
 
