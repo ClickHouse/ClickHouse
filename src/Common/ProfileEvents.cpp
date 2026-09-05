@@ -848,6 +848,7 @@ The server successfully detected this situation and will download merged part fr
     M(GlobalMemoryLimitExceeded, "Number of times the global memory limit was exceeded.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheck, "Number of times memory has been allocated without checking for memory constraints.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheckBytes, "Amount of bytes that has been allocated without checking for memory constraints.", ValueType::Number) \
+    M(MemoryCredits, "The approximate time integral of memory usage, measured in byte-microseconds: the amount of memory held by a query multiplied by the time it was held, summed over the whole execution. It distinguishes a query with a high but brief memory peak from a query that holds less memory for much longer. It is a query-scoped value: it is accumulated only at the top-level memory tracker of a query (or of a background operation such as a merge), so it does not decompose into the per-thread rows of `system.query_thread_log`, and nested scopes that get their own rows - materialized views in `system.query_views_log`, asynchronous insert flushes running inside another query - do not report it separately; their memory is integrated into the enclosing query instead. The value is approximate: the interval elapsed since the previous update is charged with the amount of memory observed at the end of it, so concurrent allocations in several threads of the same query shift a part of the integral between adjacent intervals.", ValueType::Number) \
     \
     M(AzureGetObject, "Number of Azure API GetObject calls.", ValueType::Number) \
     M(AzureUpload, "Number of Azure blob storage API Upload calls", ValueType::Number) \
@@ -1910,6 +1911,31 @@ void Counters::setUserCounters(Counters * user)
     }
 
     current_val->parent.store(user, std::memory_order_release);
+}
+
+void Counters::incrementAtOutermostProcess(Event event, Count amount)
+{
+    /// Locate the outermost Process counters in this chain (parent is not Process), the same way
+    /// MemoryTracker skips nested Process trackers for MemoryCredits. Starting `increment` there
+    /// charges only Process -> User -> Global and leaves Scope / Thread / nested Process untouched.
+    Counters * current = this;
+    Counters * outermost_process = nullptr;
+
+    while (current != nullptr)
+    {
+        Counters * parent_val = current->parent.load(std::memory_order_relaxed);
+        if (current->level == VariableContext::Process
+            && (!parent_val || parent_val->level != VariableContext::Process))
+            outermost_process = current;
+        current = parent_val;
+    }
+
+    /// No Process node (e.g. CurrentThread is unset and we fell back to global_counters alone).
+    /// Do not charge Thread or Global from here: query-scoped events must stay on a Process group.
+    if (!outermost_process)
+        return;
+
+    outermost_process->increment(event, amount);
 }
 
 void Counters::setTraceAllProfileEvents()

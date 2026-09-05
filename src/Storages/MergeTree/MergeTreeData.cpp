@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <Access/AccessControl.h>
@@ -222,6 +223,7 @@ namespace ProfileEvents
     extern const Event RestorePartsSkippedFiles;
     extern const Event RestorePartsSkippedBytes;
     extern const Event LoadedStatisticsMicroseconds;
+    extern const Event MemoryCredits;
 }
 
 namespace CurrentMetrics
@@ -12313,6 +12315,14 @@ try
         if (profile_counters)
         {
             element.profile_counters = *profile_counters;
+
+            /// MemoryCredits is charged to the merge/mutation Process counters, not the task-local scope.
+            /// Preserve the local events and copy only MemoryCredits into the part-log snapshot. The
+            /// snapshot the caller passed in is left alone: it may be shared with other part-log events.
+            if (merge_entry)
+                element.profile_counters->set(
+                    ProfileEvents::MemoryCredits,
+                    (*merge_entry)->thread_group->performance_counters[ProfileEvents::MemoryCredits]);
         }
 
         element.mutation_ids = mutation_ids;

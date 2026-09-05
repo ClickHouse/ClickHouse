@@ -937,6 +937,15 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         res.memory_usage = thread_group->memory_tracker.get();
         res.peak_memory_usage = thread_group->memory_tracker.getPeak();
 
+        /// Charge the final interval of the memory-usage integral (the time memory was held between the last
+        /// allocation/free and now, e.g. at QueryFinish) into the thread group's counters. This is done
+        /// unconditionally, independently of `get_profile_events` / `log_profile_events`: the per-query
+        /// snapshot below is optional, but the thread group's counters also feed the global
+        /// `system.events['MemoryCredits']`, which must still account the held tail even when profile-event
+        /// logging is disabled for the query. The atomic exchange inside `takeMemoryCreditsDelta` charges
+        /// each elapsed interval exactly once, so this never double-counts with the alloc/free updates.
+        thread_group->memory_tracker.flushMemoryCredits(thread_group->performance_counters);
+
         if (get_thread_list)
         {
             res.thread_ids = thread_group->getInvolvedThreadIds();
