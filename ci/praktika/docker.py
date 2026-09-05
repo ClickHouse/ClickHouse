@@ -183,6 +183,11 @@ _IMAGE_BUILD_JOB_RESERVE_S = 600
 _IMAGE_BUILD_MIN_ATTEMPT_S = 600
 # Backstop only. The deadlines are the real bound.
 _IMAGE_BUILD_ATTEMPTS = 6
+# The docker CLI bounds the registry connect and the TLS handshake, but not the manifest
+# fetch once `/v2/` has answered, and it stays blocked through SIGTERM, so the guard has
+# to escalate. A non-zero exit is already the "build it" branch, never a wrong skip.
+_IMAGE_INSPECT_TIMEOUT_S = 120
+_IMAGE_INSPECT_KILL_GRACE_S = 10
 
 
 def _terminal_error_tail(log_text: str) -> str:
@@ -251,9 +256,10 @@ class Docker:
 
         `job_timeout` and `elapsed` are the leg's own budget and how much of it is gone.
         Given them, every attempt is bounded by what is left, so the retry ladder cannot
-        outlast the job; left at 0 nothing is bounded, which is the behaviour of every
+        outlast the job; left at 0 the ladder is unbounded, which is the behaviour of every
         caller that does not know its budget. The deadline is stamped before the metadata
-        probe below, so that probe is charged against the budget like everything else.
+        probe below, so the probe is charged against the budget and bounded by it; the
+        probe's own cap applies even to a caller that passes no budget.
         """
         from .result import Result
 
@@ -275,8 +281,15 @@ class Docker:
         tag += aarch_suffix
         name = f"build: {config.name}:{tag}"
 
+        # Floored at 1: `timeout 0` runs unbounded, so a spent budget must not reach it as 0.
+        inspect_timeout = _IMAGE_INSPECT_TIMEOUT_S
+        if job_deadline is not None:
+            inspect_timeout = max(
+                1, min(inspect_timeout, int(job_deadline - time.monotonic()))
+            )
         code, out, err = Shell.get_res_stdout_stderr(
-            f"docker manifest inspect {config.name}:{tag}"
+            f"timeout --verbose --kill-after={_IMAGE_INSPECT_KILL_GRACE_S}"
+            f" {inspect_timeout} docker manifest inspect {config.name}:{tag}"
         )
         print(
             f"Docker inspect results for {config.name}:{tag}: exit code [{code}], out [{out}], err [{err}]"
