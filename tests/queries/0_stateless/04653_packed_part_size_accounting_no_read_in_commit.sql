@@ -3,14 +3,18 @@
 -- tests/config/install.sh, which clears EXPORT_S3_STORAGE_POLICIES, so the s3 policies are not
 -- installed there at all.
 
+-- The object-storage policy is kept because that is the configuration the aborting read was observed
+-- in; the counter itself is disk-independent.
+
 -- `MergeTreeData::Transaction::commit` updates the table's per-column and per-secondary-index size
 -- aggregates inside a `NOEXCEPT_SCOPE` whose catch-all terminates the server. For a part whose sizes
 -- are not computed yet, that update called the size getters, which lazily read the part storage, and
--- on packed storage that read resolves the skip-index archive index. Under the default
--- `local_filesystem_read_method = 'pread_threadpool'` it is submitted to a thread pool, which is where
--- the reproduced abort came from (`AsynchronousReadBufferFromFileDescriptor::asyncReadInto` ->
--- `ThreadPoolImpl::scheduleImpl`): a pool that cannot schedule throws `CANNOT_SCHEDULE_TASK`, not a
--- memory-tracker exception, so `LockMemoryExceptionInThread` does not suppress it and it escapes.
+-- when the skip indices are bundled into a packed archive that read resolves the archive's index.
+-- Under the default `local_filesystem_read_method = 'pread_threadpool'` it is submitted to a thread
+-- pool, which is where the reproduced abort came from
+-- (`AsynchronousReadBufferFromFileDescriptor::asyncReadInto` -> `ThreadPoolImpl::scheduleImpl`): a
+-- pool that cannot schedule throws `CANNOT_SCHEDULE_TASK`, not a memory-tracker exception, so
+-- `LockMemoryExceptionInThread` does not suppress it and it escapes.
 --
 -- The commit must therefore read nothing. `PackedSkipIndicesArchiveIndexLoads` counts that read, and
 -- is read per table from the `MutatePart` row of `system.part_log`: `ProfileEventsScope` in
@@ -19,6 +23,8 @@
 
 DROP TABLE IF EXISTS packed_commit_cold SYNC;
 DROP TABLE IF EXISTS packed_commit_warm SYNC;
+DROP TABLE IF EXISTS full_commit_archive SYNC;
+DROP TABLE IF EXISTS full_commit_no_archive SYNC;
 
 -- Cold arm: the mutation's cloned part arrives with its sizes not yet computed.
 CREATE TABLE packed_commit_cold
@@ -55,10 +61,47 @@ SETTINGS storage_policy = 's3_no_fake_transaction',
          min_bytes_for_full_part_storage = 1000000000,
          columns_and_secondary_indices_sizes_lazy_calculation = 0;
 
+-- `Full` part storage keeps the packed skip-indices archive as a standalone file, which a different
+-- reader opens, so it is covered by its own arm. The second table writes the same two indices with
+-- packing disabled, so a 0 there means "no archive to load" rather than "no indices".
+CREATE TABLE full_commit_archive
+(
+    s String,
+    a String,
+    b String,
+    INDEX m_a a TYPE minmax GRANULARITY 1,
+    INDEX m_b b TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY s
+SETTINGS storage_policy = 's3_no_fake_transaction',
+         min_bytes_for_wide_part = 0,
+         packed_skip_index_max_bytes = '1M',
+         index_granularity = 1024,
+         min_bytes_for_full_part_storage = 0,
+         columns_and_secondary_indices_sizes_lazy_calculation = 0;
+
+CREATE TABLE full_commit_no_archive
+(
+    s String,
+    a String,
+    b String,
+    INDEX m_a a TYPE minmax GRANULARITY 1,
+    INDEX m_b b TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY s
+SETTINGS storage_policy = 's3_no_fake_transaction',
+         min_bytes_for_wide_part = 0,
+         packed_skip_index_max_bytes = 0,
+         index_granularity = 1024,
+         min_bytes_for_full_part_storage = 0,
+         columns_and_secondary_indices_sizes_lazy_calculation = 0;
+
 -- String columns on purpose: `loadRowsCount` computes on-disk sizes for numeric columns in debug and
 -- sanitizer builds, which would warm the cloned part and hide the read.
 INSERT INTO packed_commit_cold SELECT toString(number), toString(number * 7), toString(number * 11) FROM numbers(2000);
 INSERT INTO packed_commit_warm SELECT toString(number), toString(number * 7), toString(number * 11) FROM numbers(2000);
+INSERT INTO full_commit_archive SELECT toString(number), toString(number * 7), toString(number * 11) FROM numbers(2000);
+INSERT INTO full_commit_no_archive SELECT toString(number), toString(number * 7), toString(number * 11) FROM numbers(2000);
 
 -- Both parts must be `Packed`, otherwise there is no archive to read and the test is vacuous.
 SELECT 'packed', countDistinct(part_storage_type) = 1, any(part_storage_type)
@@ -93,8 +136,8 @@ FROM system.part_log
 WHERE database = currentDatabase() AND table LIKE 'packed_commit_%' AND event_type = 'MutatePart';
 
 -- The commit must not load the skip-indices archive index at all, so the cold arm's count is 0. The
--- warm control computes the sizes when it loads the cloned part, and a part storage loads that index
--- at most once, so its count is exactly 1.
+-- warm control computes the sizes when it loads the cloned part, and that load is single-threaded and
+-- memoized, so its count is exactly 1.
 SELECT 'cold_no_archive_load',
     maxIf(ProfileEvents['PackedSkipIndicesArchiveIndexLoads'], table = 'packed_commit_cold') = 0
 FROM system.part_log
@@ -104,6 +147,45 @@ SELECT 'warm_one_archive_load',
     maxIf(ProfileEvents['PackedSkipIndicesArchiveIndexLoads'], table = 'packed_commit_warm') = 1
 FROM system.part_log
 WHERE database = currentDatabase() AND table LIKE 'packed_commit_%' AND event_type = 'MutatePart';
+
+SELECT 'full_storage', countDistinct(part_storage_type) = 1, any(part_storage_type)
+FROM system.parts
+WHERE database = currentDatabase() AND table LIKE 'full_commit_%' AND active;
+
+SELECT 'full_indices', count() = 2, min(idx_bytes > 0)
+FROM
+(
+    SELECT sum(secondary_indices_compressed_bytes) AS idx_bytes
+    FROM system.parts
+    WHERE database = currentDatabase() AND table LIKE 'full_commit_%' AND active
+    GROUP BY table
+);
+
+ALTER TABLE full_commit_archive UPDATE a = concat(a, 'x') WHERE s = 'no_such_key' SETTINGS mutations_sync = 2;
+ALTER TABLE full_commit_no_archive UPDATE a = concat(a, 'x') WHERE s = 'no_such_key' SETTINGS mutations_sync = 2;
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT 'full_rows', count() = 2
+FROM system.part_log
+WHERE database = currentDatabase() AND table LIKE 'full_commit_%' AND event_type = 'MutatePart';
+
+-- Both rows have to exist, otherwise `maxIf` over an empty set would satisfy the `= 0` row below.
+SELECT 'full_untouched',
+    minIf(ProfileEvents['MutationUntouchedParts'], table = 'full_commit_archive') > 0
+  AND minIf(ProfileEvents['MutationUntouchedParts'], table = 'full_commit_no_archive') > 0
+FROM system.part_log
+WHERE database = currentDatabase() AND table LIKE 'full_commit_%' AND event_type = 'MutatePart';
+
+SELECT 'full_one_archive_load',
+    maxIf(ProfileEvents['PackedSkipIndicesArchiveIndexLoads'], table = 'full_commit_archive') = 1
+FROM system.part_log
+WHERE database = currentDatabase() AND table LIKE 'full_commit_%' AND event_type = 'MutatePart';
+
+SELECT 'full_no_archive_zero_load',
+    maxIf(ProfileEvents['PackedSkipIndicesArchiveIndexLoads'], table = 'full_commit_no_archive') = 0
+FROM system.part_log
+WHERE database = currentDatabase() AND table LIKE 'full_commit_%' AND event_type = 'MutatePart';
 
 -- The aggregates must stay correct: dropping them and rebuilding on the next read has to give the
 -- same answer the incremental update gave. The warm control is that answer, because it never takes
@@ -176,3 +258,5 @@ SELECT 'rows_intact', count() FROM packed_commit_cold;
 
 DROP TABLE packed_commit_cold SYNC;
 DROP TABLE packed_commit_warm SYNC;
+DROP TABLE full_commit_archive SYNC;
+DROP TABLE full_commit_no_archive SYNC;
