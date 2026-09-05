@@ -152,6 +152,22 @@ When adding a new test, use `./tests/queries/0_stateless/add-test <name>` for `.
 
 When writing C++ code, always use Allman-style braces (opening brace on a new line). This is enforced by the style check in CI.
 
+Run the style check locally before you push, and never hand over a change that you have not style-checked. It is the cheapest CI job to reproduce and by far the most common reason an otherwise finished pull request comes back red, which costs a full CI round-trip to learn something a local command answers in a second.
+
+```bash
+mkdir -p ci/tmp  # praktika keeps its local state here, the job fails without it
+
+# A single sub-check - run the ones matching what you changed
+PYTHONPATH=./ci:. python3 ci/jobs/check_style.py --test ruff
+
+# The whole job
+PYTHONPATH=./ci:. python3 ci/jobs/check_style.py
+```
+
+`--test` takes a case-insensitive substring, so `--test yaml` runs `yamllint`. The sub-check names are `whitespace_check`, `yamllint`, `xmllint`, `functional_tests_check`, `server_data_manipulation_in_stateless_tests`, `test_numbers_check`, `symlinks`, `catch_all`, `compose_images_from_dockerhub`, `clickhouse_spelling`, `settings_changes_history`, `cpp`, `various`, `embedded_doc_snippets` and `ruff`. Python changes need `ruff`, C++ changes need `cpp`, and `catch_all`, `various` and `whitespace_check` are cheap and cover cross-cutting rules. Some sub-checks shell out to tools that may not be installed (`shellcheck`, `clang-format`, `typos`, `yamllint`, `actionlint`); a sub-check that genuinely cannot run locally is the only case where CI is the first thing to see the problem.
+
+Two things worth knowing about the Python checks. `ruff` does not count `# type:` comments as usage, so a `typing` import referenced only from a type comment is reported as an unused import (F401) - write a real annotation, `x: Dict[str, int] = {}`, instead. And `black` is configured in `pyproject.toml` but is not enforced by any CI job, so running it is optional and a `black` diff is not a style-check failure.
+
 Never use sleep in C++ code to fix race conditions - this is stupid and not acceptable!
 
 Avoid fallback paths. When an operation fails, prefer letting the error propagate over silently substituting a default value or alternate behavior. Fallbacks hide bugs and make incidents harder to diagnose. If a fallback is genuinely needed, follow the fail-close principle: never perform a destructive, expensive, or otherwise consequential action on the fallback path. Skip the operation and surface the error instead — for example, when label-attribution data is unavailable, do not assume "human-added" and create backports anyway; let the run fail and retry once the data is available.
