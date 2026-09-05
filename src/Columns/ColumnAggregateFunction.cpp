@@ -81,8 +81,9 @@ ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & fu
 {
 }
 
-ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_)
-    : foreign_arenas(arenas_), func(func_), type_string(getTypeString(func))
+ColumnAggregateFunction::ColumnAggregateFunction(
+    const AggregateFunctionPtr & func_, const ConstArenas & arenas_, std::optional<size_t> version_)
+    : foreign_arenas(arenas_), func(func_), type_string(getTypeString(func, version_)), version(version_)
 {
 
 }
@@ -813,7 +814,7 @@ void ColumnAggregateFunction::getExtremes(Field & min, Field & max, size_t /*sta
 
 ColumnAggregateFunction::MutablePtr ColumnAggregateFunction::createView() const
 {
-    auto res = create(func, concatArenas(foreign_arenas, my_arena));
+    auto res = create(func, concatArenas(foreign_arenas, my_arena), version);
     res->src = getPtr();
     return res;
 }
@@ -821,7 +822,8 @@ ColumnAggregateFunction::MutablePtr ColumnAggregateFunction::createView() const
 ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction & src_)
     : COWHelper<IColumnHelper<ColumnAggregateFunction>, ColumnAggregateFunction>(src_),
     foreign_arenas(concatArenas(src_.foreign_arenas, src_.my_arena)),
-    func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
+    func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end()),
+    type_string(src_.type_string), version(src_.version)
 {
 }
 

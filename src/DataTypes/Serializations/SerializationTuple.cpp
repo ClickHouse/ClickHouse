@@ -890,12 +890,16 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
             column_tuple.getColumn(i), limit, settings, tuple_state->states[i], cache);
     }
 
-    /// Verify that all Tuple elements have the same size.
-    size_t expected_size = column_tuple.getColumn(0).size();
+    /// Verify that all Tuple elements have the same size. Use the const overload via `std::as_const`
+    /// to avoid `chassert(use_count() == 1)` in `assumeMutableRef` — after the recursive deserialize,
+    /// the substream cache may hold references to the inner subcolumns, so non-const `getColumn(i)`
+    /// would trip the assertion.
+    const auto & const_column_tuple = std::as_const(column_tuple);
+    size_t expected_size = const_column_tuple.getColumn(0).size();
     for (size_t i = 1; i < elems.size(); ++i)
     {
-        if (column_tuple.getColumn(i).size() != expected_size)
-            throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of tuple element {}: {}. Expected size: {}", i, column_tuple.getColumn(i).size(), expected_size);
+        if (const_column_tuple.getColumn(i).size() != expected_size)
+            throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of tuple element {}: {}. Expected size: {}", i, const_column_tuple.getColumn(i).size(), expected_size);
     }
 
     column_tuple.addSize(column_tuple.getColumn(0).size());

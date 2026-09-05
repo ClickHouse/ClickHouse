@@ -595,7 +595,9 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     if (variant_limits.empty())
     {
         variant_limits.resize(variant_serializations.size(), 0);
-        auto & discriminators_data = col.getLocalDiscriminators();
+        /// Read-only access — use the const overload to avoid `chassert(use_count() == 1)`
+        /// when the substream cache holds a reference to `local_discriminators`.
+        const auto & discriminators_data = std::as_const(col).getLocalDiscriminators();
 
         for (size_t i = discriminators_offset ; i != discriminators_data.size(); ++i)
         {

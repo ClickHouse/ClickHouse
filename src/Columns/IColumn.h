@@ -832,12 +832,36 @@ public:
         return finalized;
     }
 
-    [[nodiscard]] static MutablePtr mutate(Ptr ptr)
+    /// The rvalue overload leaves the source intact if cloning throws. This is important for
+    /// owning slots: callers can move a slot into `mutate` without publishing a null slot when
+    /// allocation fails.
+    [[nodiscard]] static MutablePtr mutate(Ptr && ptr)
     {
         MutablePtr res = ptr->shallowMutate(); /// Now use_count is 2.
         ptr.reset(); /// Reset use_count to 1.
-        res->forEachMutableSubcolumn([](WrappedPtr & subcolumn) { subcolumn = IColumn::mutate(std::move(subcolumn).detach()); });
+        res->forEachMutableSubcolumn([](WrappedPtr & subcolumn)
+        {
+            subcolumn = IColumn::mutate(std::move(subcolumn).detach());
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+            chassert(subcolumn->use_count() == 1);
+            /// Verify sub-columns are also use_count=1. Use the recursive callback that takes
+            /// `const IColumn &` directly: passing a `WrappedPtr` to a callback for columns that
+            /// store children as `ColumnPtr` (e.g. `ColumnFunction::captured_columns`) would
+            /// construct a temporary `WrappedPtr` that itself holds a reference, making the
+            /// `use_count() == 1` check over-count by one.
+            subcolumn->forEachSubcolumnRecursively([](const IColumn & sub)
+            {
+                chassert(sub.use_count() == 1);
+            });
+#endif
+        });
         return res;
+    }
+
+    [[nodiscard]] static MutablePtr mutate(const Ptr & ptr)
+    {
+        Ptr copy = ptr;
+        return mutate(std::move(copy));
     }
 
     /// Checks if column has dynamic internal structure (like JSON or Dynamic).
