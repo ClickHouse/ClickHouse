@@ -604,6 +604,17 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
         .related = {"set", "tokenbf_v1"}});
     registerValidator("bloom_filter", bloomFilterIndexValidator);
 
+    registerCreator(
+        "jsonbf_v1",
+        jsonBloomFilterIndexCreator,
+        Documentation{
+            .description = "A path-aware Bloom filter over scalar values in a JSON column.",
+            .syntax =
+                "INDEX name json TYPE jsonbf_v1([false_positive_rate = p, include_paths = [...], include_paths_regexp = [...], "
+                "skip_paths = [...], skip_paths_regexp = [...]]) GRANULARITY g",
+            .related = {"bloom_filter"}});
+    registerValidator("jsonbf_v1", jsonBloomFilterIndexValidator);
+
 #if USE_USEARCH
     registerCreator("vector_similarity", vectorSimilarityIndexCreator, Documentation{
         .description = "An approximate nearest-neighbour index over a vector column (built using HNSW), for speeding up `ORDER BY <distance_function>(vector, reference) LIMIT n` queries.",

@@ -1,0 +1,28 @@
+<test>
+    <settings>
+        <max_insert_threads>1</max_insert_threads>
+    </settings>
+
+    <create_query>CREATE TABLE json_bf_source_sparse (j JSON(max_dynamic_paths = 0, p00 UInt64, p01 UInt64, p02 UInt64, p03 UInt64, p04 UInt64, p05 UInt64, p06 UInt64, p07 UInt64, p08 UInt64, p09 UInt64, p10 UInt64, p11 UInt64, p12 UInt64, p13 UInt64, p14 UInt64, p15 UInt64, p16 UInt64, p17 UInt64, p18 UInt64, p19 UInt64, p20 UInt64, p21 UInt64, p22 UInt64, p23 UInt64, p24 UInt64, p25 UInt64, p26 UInt64, p27 UInt64, p28 UInt64, p29 UInt64, p30 UInt64, p31 UInt64)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE json_bf_target_sparse AS json_bf_source_sparse ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query do_not_check_in_pr="113022">ALTER TABLE json_bf_target_sparse ADD INDEX idx j TYPE jsonbf_v1() GRANULARITY 1</create_query>
+
+    <create_query>CREATE TABLE json_bf_source_dynamic (j JSON(max_dynamic_paths = 64)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE json_bf_target_dynamic AS json_bf_source_dynamic ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>ALTER TABLE json_bf_target_dynamic ADD INDEX idx j TYPE jsonbf_v1() GRANULARITY 1</create_query>
+    <create_query>CREATE TABLE json_bf_target_regex AS json_bf_source_dynamic ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>ALTER TABLE json_bf_target_regex ADD INDEX idx j TYPE jsonbf_v1(include_paths_regexp = ['(?:^|\\.)id$', '(?:^|\\.)tenant_id$', '(?:^|\\.)request_id$', '(?:^|\\.)(?:created|updated)_at$', '^resource\\.(?:name|type)$']) GRANULARITY 1</create_query>
+
+    <fill_query>INSERT INTO json_bf_source_sparse SELECT ('{{"p00":' || toString(number) || ',"p31":' || toString(number + 1) || '}}')::JSON(max_dynamic_paths = 0, p00 UInt64, p01 UInt64, p02 UInt64, p03 UInt64, p04 UInt64, p05 UInt64, p06 UInt64, p07 UInt64, p08 UInt64, p09 UInt64, p10 UInt64, p11 UInt64, p12 UInt64, p13 UInt64, p14 UInt64, p15 UInt64, p16 UInt64, p17 UInt64, p18 UInt64, p19 UInt64, p20 UInt64, p21 UInt64, p22 UInt64, p23 UInt64, p24 UInt64, p25 UInt64, p26 UInt64, p27 UInt64, p28 UInt64, p29 UInt64, p30 UInt64, p31 UInt64) FROM numbers(200000)</fill_query>
+    <fill_query>INSERT INTO json_bf_source_dynamic SELECT ('{{"id":' || toString(number) || ',"tenant_id":"tenant-' || toString(number % 100) || '","request_id":"request-' || toString(number) || '","created_at":"2026-09-03","updated_at":"2026-09-03","resource":{{"name":"resource-' || toString(number % 1000) || '","type":"host"}},"payload":"value","ignored":' || toString(number + 1) || '}}')::JSON(max_dynamic_paths = 64) FROM numbers(200000)</fill_query>
+
+    <query>INSERT INTO json_bf_target_sparse SELECT * FROM json_bf_source_sparse</query>
+    <query>INSERT INTO json_bf_target_dynamic SELECT * FROM json_bf_source_dynamic</query>
+    <query>INSERT INTO json_bf_target_regex SELECT * FROM json_bf_source_dynamic</query>
+
+    <drop_query>DROP TABLE IF EXISTS json_bf_target_regex</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_bf_target_dynamic</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_bf_source_dynamic</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_bf_target_sparse</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_bf_source_sparse</drop_query>
+</test>

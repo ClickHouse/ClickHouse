@@ -309,7 +309,10 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(const RPNBuilderTreeNode &
 
 MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_, size_t hash_functions_)
-    : WithContext(context_), header(header_), hash_functions(hash_functions_)
+    : WithContext(context_)
+    , header(header_)
+    , hash_functions(hash_functions_)
+    , comparison_format_settings(getJSONComparisonFormatSettings(context_))
 {
     if (!predicate)
     {
@@ -1100,7 +1103,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             return false;
 
         auto key_type = key_node.getDAGNode()->result_type;
-        if (!isJSONPathFilterSafe(key_type, value_field))
+        if (!isJSONPathFilterSafe(key_type, value_field, comparison_format_settings))
             return false;
 
         out.function = RPNElement::FUNCTION_EQUALS;

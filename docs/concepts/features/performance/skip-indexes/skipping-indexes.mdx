@@ -150,9 +150,24 @@ A *Bloom filter* is a data structure that allows space-efficient testing of set 
 
 Because Bloom filters can more efficiently handle testing for a large number of discrete values, they can be appropriate for conditional expressions that produce more values to test. In particular, a Bloom filter index can be applied to arrays, where every value of the array is tested, and to maps, by converting either the keys or values to an array using the mapKeys or mapValues function.
 
-There are three Data Skipping Index types based on Bloom filters:
+Data skipping index types based on Bloom filters include:
 
 * The basic **bloom_filter** which takes a single optional parameter of the allowed "false positive" rate between 0 and 1 (if unspecified, .025 is used).
+
+* The specialized **`jsonbf_v1`** indexes scalar leaves of one direct `JSON` column. Paths, container roles, runtime types, and values are hashed separately, so values at different paths do not match each other. Arrays are indexed by element, typed `Map` values by key, and `Tuple` values by field. Whole containers are not stringified.
+
+  ```sql
+  INDEX json_values data TYPE jsonbf_v1(
+      false_positive_rate = 0.025,
+      include_paths = ['tenant'],
+      include_paths_regexp = ['(?:^|\\.)(?:.*_id|.*_at)$'],
+      skip_paths = ['debug.request_id'],
+      skip_paths_regexp = ['^private\\.']) GRANULARITY 1
+  ```
+
+  `include_paths` includes exact paths and their nested paths. `include_paths_regexp` includes paths using partial regular-expression matches. Array elements do not add a path segment, so a field below `items Array(JSON)` has a path such as `items.item_id`. When neither include option is specified, all paths are included. The skip options use the same exact-subtree and partial-match rules and take precedence over the include options. Queries on paths that are not included or are skipped do not use the index.
+
+  Runtime `Dynamic` types that cannot be represented by `jsonbf_v1` make predicates on that path conservative. Predicates on other paths can still prune the granule. Complex runtime values add a path-qualified presence token so incompatible predicates on the same path cannot hide an exception.
 
 * The specialized **tokenbf_v1** *(Deprecated)*). It takes three parameters, all related to tuning the bloom filter used:  (1) the size of the filter in bytes (larger filters have fewer false positives, at some cost in storage), (2) number of hash functions applied (again, more hash filters reduce false positives), and (3) the seed for the bloom filter hash functions.  See the calculator [here](https://hur.st/bloomfilter/) for more detail on how these parameters affect bloom filter functionality.
 This index works only with String, FixedString, and Map datatypes. The input expression is split into character sequences separated by non-alphanumeric characters. For example, a column value of `This is a candidate for a "full text" search` will contain the tokens `This` `is` `a` `candidate` `for` `full` `text` `search`.  It is intended for use in LIKE, EQUALS, IN, hasToken() and similar searches for words and other values within longer strings.  For example, one possible use might be searching for a small number of class names or line numbers in a column of free form application log lines.

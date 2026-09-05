@@ -5,6 +5,7 @@
 #include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
@@ -17,7 +18,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class MergeTreeIndexGranuleBloomFilter final : public IMergeTreeIndexGranule
+class MergeTreeIndexGranuleBloomFilter : public IMergeTreeIndexGranule
 {
 public:
     MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t index_columns_);
@@ -91,6 +92,7 @@ public:
 private:
     const Block & header;
     const size_t hash_functions;
+    const FormatSettings comparison_format_settings;
     std::vector<RPNElement> rpn;
 
     bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const;

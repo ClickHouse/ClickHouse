@@ -129,6 +129,7 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     }
 
     version = index_format.version;
+    part_metadata = index->deserializePartMetadata(streams);
 }
 
 void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule, const MarkRanges * readable_ranges)
@@ -144,7 +145,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
         }
 
         if (!res)
-            res = index->createIndexGranule();
+            res = index->createIndexGranule(part_metadata);
 
         MergeTreeIndexDeserializationState state
         {

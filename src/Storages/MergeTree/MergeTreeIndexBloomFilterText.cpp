@@ -161,6 +161,7 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     , params(params_)
     , owned_tokenizer(token_extactor_ && token_extactor_->isStateful() ? token_extactor_->clone() : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : token_extactor_)
+    , comparison_format_settings(getJSONComparisonFormatSettings(context))
 {
     if (!predicate)
     {
@@ -502,7 +503,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         if (auto json_info = tryMatchNodeToJSONIndex(key_node, index_columns, "JSONAllPaths"))
         {
             auto key_type = key_node.getDAGNode()->result_type;
-            if (!isJSONPathFilterSafe(key_type, value_field))
+            if (!isJSONPathFilterSafe(key_type, value_field, comparison_format_settings))
                 return false;
 
             out.key_column = json_info->header_position;

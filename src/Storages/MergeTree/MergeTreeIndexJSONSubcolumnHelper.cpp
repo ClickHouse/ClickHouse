@@ -1,12 +1,27 @@
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
+#include <Formats/FormatFactory.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
+}
+
+FormatSettings getJSONComparisonFormatSettings(const ContextPtr & context)
+{
+    auto format_settings = getFormatSettings(context);
+    format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
+    return format_settings;
+}
 
 /// Extract the JSON path from a subcolumn name, stripping any `.:\`Type\`` suffix.
 /// For example:
@@ -130,7 +145,9 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
 
 bool isJSONPathFilterSafe(
     const DataTypePtr & key_expression_type,
-    const Field & value_field)
+    const Field & value_field,
+    const FormatSettings & format_settings,
+    bool indexes_missing_values)
 {
     /// Types that can contain NULL (Dynamic, Nullable, LowCardinality(Nullable), Variant)
     /// store NULL for missing paths — always safe to skip.
@@ -138,10 +155,10 @@ bool isJSONPathFilterSafe(
         return true;
 
     /// Non-nullable type: missing path produces the type's default value.
-    /// If comparing to the default, we cannot safely skip the granule.
+    /// If missing values are not indexed, comparing to the default cannot safely skip the granule.
     /// Convert value_field to the key expression type before comparing.
-    auto converted = convertFieldToType(value_field, *key_expression_type);
-    if (converted == key_expression_type->getDefault())
+    auto converted = convertFieldToType(value_field, *key_expression_type, nullptr, format_settings);
+    if (!indexes_missing_values && converted == key_expression_type->getDefault())
         return false;
 
     return true;
