@@ -168,7 +168,7 @@ std::vector<std::vector<size_t>> IIcebergSchemaTransform::traverseAllPaths(const
                         current_path.pop_back();
                         continue;
                     }
-                    auto next_val = std::get<Map>(current_value)[i].safeGet<Tuple>()[1];
+                    auto next_val = std::get<Map>(current_value)[i];
 
                     Tuple tmp_node_tuple;
                     Array tmp_node_array;
@@ -679,8 +679,7 @@ void ExecutableEvolutionFunction::pushNewNode(
         auto old_subfields = old_node->getObject("type")->getObject("element");
 
         if (current_path)
-            current_path->push_back(
-                {old_node->getValue<std::string>("name"), new_node->getValue<std::string>("name"), TransformType::STRUCT});
+            current_path->push_back({"", "", TransformType::ARRAY});
 
         walk_stack.push(
             {makeArrayFromObject(old_subfields),
@@ -695,8 +694,7 @@ void ExecutableEvolutionFunction::pushNewNode(
         auto subfields = new_node->getObject("type")->getObject("value");
         auto old_subfields = old_node->getObject("type")->getObject("value");
         if (current_path)
-            current_path->push_back(
-                {old_node->getValue<std::string>("name"), new_node->getValue<std::string>("name"), TransformType::STRUCT});
+            current_path->push_back({"", "", TransformType::MAP});
 
         walk_stack.push(
             {makeArrayFromObject(old_subfields),
@@ -708,7 +706,7 @@ void ExecutableEvolutionFunction::pushNewNode(
     }
 }
 
-static std::shared_ptr<ReorderingTransform> makeReorderingTransform(
+std::shared_ptr<ReorderingTransform> makeReorderingTransform(
     const std::vector<IcebergChangeSchemaOperation::Edge> & current_path,
     const std::vector<size_t> & initial_permutation,
     DataTypePtr old_type)
@@ -718,7 +716,7 @@ static std::shared_ptr<ReorderingTransform> makeReorderingTransform(
     return transform;
 }
 
-static std::shared_ptr<DeletingTransform> makeDeletingTransform(
+std::shared_ptr<DeletingTransform> makeDeletingTransform(
     const std::vector<IcebergChangeSchemaOperation::Edge> & current_path,
     const std::vector<size_t> & initial_permutation,
     DataTypePtr old_type,
@@ -730,7 +728,7 @@ static std::shared_ptr<DeletingTransform> makeDeletingTransform(
 }
 
 
-static std::shared_ptr<AddingTransform> makeAddingTransform(
+std::shared_ptr<AddingTransform> makeAddingTransform(
     const std::vector<IcebergChangeSchemaOperation::Edge> & current_path,
     DataTypePtr type,
     DataTypePtr old_type,

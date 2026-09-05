@@ -12,7 +12,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-UInt128 hash128depths(const VectorWithMemoryTracking<size_t> & indices, const ColumnRawPtrs & key_columns)
+UInt128 hash128depths(const std::vector<size_t> & indices, const ColumnRawPtrs & key_columns)
 {
     SipHash hash;
     for (size_t j = 0, keys_size = key_columns.size(); j < keys_size; ++j)

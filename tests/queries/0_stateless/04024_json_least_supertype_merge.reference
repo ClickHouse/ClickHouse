@@ -22,3 +22,4 @@ regexp: merged type
 json	JSON(SKIP REGEXP \'internal_.*\')
 old analyzer
 0
+0

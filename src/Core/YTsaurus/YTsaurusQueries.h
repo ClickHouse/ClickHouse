@@ -2,10 +2,10 @@
 
 #if USE_YTSAURUS
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Types.h>
 #include <fmt/format.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Core/ColumnsWithTypeAndName.h>
 
 namespace DB
 {
@@ -16,7 +16,7 @@ struct QueryParameter
     String name;
     String value;
 };
-using QueryParameters = VectorWithMemoryTracking<QueryParameter>;
+using QueryParameters = std::vector<QueryParameter>;
 
 
 struct IYTsaurusQuery

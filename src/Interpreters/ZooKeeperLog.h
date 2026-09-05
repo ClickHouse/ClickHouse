@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/SystemLog.h>
 #include <Storages/ColumnsDescription.h>
 #include <Common/ZooKeeper/IKeeper.h>

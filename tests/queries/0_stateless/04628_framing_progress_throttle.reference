@@ -1,4 +1,0 @@
---- one hour interactive_delay: exactly one (final) progress packet for a many-block stream
-1
---- the final progress packet is the last packet of the stream
-"packet":"progress"

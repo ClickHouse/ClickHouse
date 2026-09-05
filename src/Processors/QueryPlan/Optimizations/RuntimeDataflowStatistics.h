@@ -4,14 +4,11 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <Processors/Chunk.h>
 #include <Processors/ISimpleTransform.h>
-#include <Compression/ICompressionCodec.h>
 #include <Storages/ColumnSize.h>
 #include <Common/CacheBase.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <cstddef>
 #include <memory>
@@ -63,9 +60,6 @@ private:
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();
 
-/// Only columns whose `CODEC` overrides the part's default; resolved once per read task.
-using ColumnCodecByName = UnorderedMapWithMemoryTracking<String, CompressionCodecPtr>;
-
 class RuntimeDataflowStatisticsCacheUpdater
 {
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
@@ -101,42 +95,21 @@ public:
 
     void recordAggregationKeySizes(const Chunk & chunk, const ColumnNumbers & keys_positions, const DataTypes & key_types);
 
-    /// For a conversion that materialized only some of the groups (the bucket Top-K):
-    /// `full_key_bytes` is the byte size all keys would occupy materialized, measured on the
-    /// hash table, and the chunk provides the compression-ratio sample only. The statistics
-    /// must describe the untruncated output because they price the parallel-replicas plan,
-    /// whose partial aggregation materializes every group.
-    void recordAggregationKeySizes(
-        const Chunk & chunk, const ColumnNumbers & keys_positions, const DataTypes & key_types, size_t full_key_bytes);
-
-    /// Estimates compressed size of aggregate state columns in the output chunk.
-    /// Mirrors the logic of Aggregator::estimateSizeOfCompressedState but works on ColumnAggregateFunction columns
-    /// rather than a hash table. Used by in-order aggregation where states are already materialized into columns (single-stream case).
-    void recordAggregationStateColumnSizes(const Chunk & chunk, const ColumnNumbers & keys_positions, const Block & header);
-
     /// Updates should_continue_sampling to true if the current read block is chosen for sampling.
     /// It is needed because in general we read each block in multiple steps because of prewhere.
     /// If the first part of the block was chosen for sampling, we want to record statistics for the whole block in later steps,
     /// so should_continue_sampling remains true for subsequent calls for the same logical block.
     void recordInputColumns(
         const ColumnsWithTypeAndName & input_columns,
-        const NameSet & partially_read_columns,
         const NamesAndTypesList & part_columns,
         const ColumnSizeByName & column_sizes,
-        const ColumnCodecByName & column_codecs,
-        const CompressionCodecPtr & default_codec,
         size_t read_bytes,
         std::optional<bool> & should_continue_sampling);
 
     void markUnsupportedCase() { unsupported_case.store(true, std::memory_order_relaxed); }
 
 private:
-    static bool shouldSampleBlock(Statistics & statistics, size_t block_rows);
-
-    /// `full_bytes` overrides the byte count taken from the columns, for callers whose columns
-    /// are only a sample of the dataflow being accounted.
-    static void
-    recordColumns(Statistics & statistics, size_t num_rows, const ColumnsWithTypeAndName & cols, std::optional<size_t> full_bytes = {});
+    bool shouldSampleBlock(Statistics & statistics, size_t block_rows) const;
 
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;

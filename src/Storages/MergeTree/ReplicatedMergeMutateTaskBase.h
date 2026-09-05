@@ -51,11 +51,6 @@ protected:
         bool prepared_successfully;
         bool need_to_check_missing_part_in_fetch;
         PartLogWriter part_log_writer;
-        /// Set it when the entry is intentionally not executed now because we are waiting for another
-        /// replica to produce the part, and no exception will be thrown. Without an exception the queue
-        /// cannot apply its exponential backoff (it is armed by `updateLastExeption`), so ask the
-        /// background assignee to postpone the next attempt instead of triggering it immediately.
-        bool postpone_next_attempt = false;
     };
 
     virtual PrepareResult prepare() = 0;
@@ -103,7 +98,6 @@ private:
 
     PartLogWriter part_log_writer{};
     State state{State::NEED_PREPARE};
-    bool postpone_next_attempt = false;
     IExecutableTask::TaskResultCallback task_result_callback;
     bool print_exception = true;
     pcg64 rng;

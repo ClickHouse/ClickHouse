@@ -15,7 +15,6 @@ StreamInQueryResultCacheTransform::StreamInQueryResultCacheTransform(
 
 void StreamInQueryResultCacheTransform::transform(Chunk & chunk)
 {
-    compactReplicatedColumns(chunk);
     query_result_cache_writer->buffer(chunk.clone(), chunk_type);
 }
 

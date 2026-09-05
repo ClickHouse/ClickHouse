@@ -60,7 +60,7 @@ MERGE_TREE_SETTINGS_PREFIX = "merge_tree_"
 MERGE_TREE_PRODUCTION_SETTING = "max_avg_part_size_for_too_many_parts"
 MERGE_TREE_EXPERIMENTAL_SETTING = "allow_experimental_replacing_merge_with_cleanup"
 # Set by configs/merge_tree_experimental_setting.xml
-MERGE_TREE_EXPERIMENTAL_SETTING_IN_CONFIG = "allow_commit_order_projection"
+MERGE_TREE_EXPERIMENTAL_SETTING_IN_CONFIG = "notify_newest_block_number"
 MERGE_TREE_ALIASED_SETTING = "allow_experimental_block_number_column"
 MERGE_TREE_ALIASED_SETTING_CANONICAL = "enable_block_number_column"
 
@@ -132,25 +132,10 @@ def test_allow_feature_tier_in_general_settings(start_cluster):
     assert error == ""
     assert "1" == output.strip()
 
-    # Disable experimental and private preview settings. Beta settings are still allowed.
+    # Disable experimental and beta settings
     instance.replace_in_config(feature_tier_path, "1", "2")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "2" == get_current_tier_value(instance)
-
-    output, error = instance.query_and_get_answer_with_error(
-        query_with_experimental_setting
-    )
-    assert output == ""
-    assert EXPERIMENTAL_BLOCKED in error
-
-    output, error = instance.query_and_get_answer_with_error(query_with_beta_setting)
-    assert error == ""
-    assert "1" == output.strip()
-
-    # Disable experimental, private preview and beta settings
-    instance.replace_in_config(feature_tier_path, "2", "3")
-    instance.query("SYSTEM RELOAD CONFIG")
-    assert "3" == get_current_tier_value(instance)
 
     output, error = instance.query_and_get_answer_with_error(
         query_with_experimental_setting
@@ -163,7 +148,7 @@ def test_allow_feature_tier_in_general_settings(start_cluster):
     assert BETA_BLOCKED in error
 
     # Leave the server as it was
-    instance.replace_in_config(feature_tier_path, "3", "0")
+    instance.replace_in_config(feature_tier_path, "2", "0")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "0" == get_current_tier_value(instance)
 
@@ -676,12 +661,11 @@ def test_alter_preserves_aliased_merge_tree_setting(start_cluster):
     assert output == ""
     assert error == ""
 
-    # `enable_block_number_column` must still read as enabled: this setting throws otherwise
-    output, error = instance.query_and_get_answer_with_error(
-        "ALTER TABLE test_alias_preserved MODIFY SETTING part_minmax_index_columns = 'with_block_number_offset'"
+    # The setting must still be in the definition, under the name that wrote it
+    output = instance.query(
+        "SELECT engine_full FROM system.tables WHERE name = 'test_alias_preserved'"
     )
-    assert output == ""
-    assert error == ""
+    assert MERGE_TREE_ALIASED_SETTING in output, output
 
     instance.query("DROP TABLE IF EXISTS test_alias_preserved")
 
@@ -733,7 +717,7 @@ def test_custom_settings_belong_to_no_tier(start_cluster):
     assert "0" == get_current_tier_value(instance)
     instance.query("DROP USER IF EXISTS user_with_custom_setting")
 
-    for tier in ["0", "1", "2", "3"]:
+    for tier in ["0", "1", "2"]:
         if tier != "0":
             instance.replace_in_config(feature_tier_path, str(int(tier) - 1), tier)
             instance.query("SYSTEM RELOAD CONFIG")
@@ -752,7 +736,7 @@ def test_custom_settings_belong_to_no_tier(start_cluster):
         assert output == ""
         assert error == ""
 
-    instance.replace_in_config(feature_tier_path, "3", "0")
+    instance.replace_in_config(feature_tier_path, "2", "0")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "0" == get_current_tier_value(instance)
     instance.query("DROP USER IF EXISTS user_with_custom_setting")
@@ -1031,40 +1015,3 @@ def test_old_syntax_index_granularity_cannot_escape_its_constraint(start_cluster
     assert error == "", error
 
     node.query("DROP TABLE IF EXISTS test_old_syntax_granularity")
-
-
-def test_projection_settings_of_a_freshly_attached_table_are_checked(start_cluster):
-    # A projection's `WITH SETTINGS` is part of the definition, so a full-definition `ATTACH` cannot
-    # carry settings that `CREATE` would refuse
-    node = instance_with_merge_tree_constraint
-    node.query("DROP TABLE IF EXISTS test_projection_settings")
-
-    definition = (
-        "(a UInt64, PROJECTION p (SELECT a ORDER BY a) WITH SETTINGS (index_granularity = 1024)) "
-        "ENGINE = MergeTree ORDER BY a"
-    )
-
-    output, error = node.query_and_get_answer_with_error(
-        f"CREATE TABLE test_projection_settings {definition}"
-    )
-    assert output == ""
-    assert "shouldn't be less than" in error, error
-
-    output, error = node.query_and_get_answer_with_error(
-        "ATTACH TABLE test_projection_settings "
-        f"UUID '5b5c1c0e-0e1d-4f0a-9d7f-6b7a4a2f1c22' {definition}"
-    )
-    assert output == ""
-    assert "shouldn't be less than" in error, error
-
-    # A setting a projection does not accept at all is refused the same way
-    output, error = node.query_and_get_answer_with_error(
-        "ATTACH TABLE test_projection_settings "
-        "UUID '5b5c1c0e-0e1d-4f0a-9d7f-6b7a4a2f1c23' "
-        "(a UInt64, PROJECTION p (SELECT a ORDER BY a) WITH SETTINGS (merge_max_block_size = 1024)) "
-        "ENGINE = MergeTree ORDER BY a"
-    )
-    assert output == ""
-    assert "is not allowed for projections" in error, error
-
-    node.query("DROP TABLE IF EXISTS test_projection_settings")
