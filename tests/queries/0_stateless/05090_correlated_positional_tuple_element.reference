@@ -1,0 +1,16 @@
+a positional element of the outer column
+2
+2
+by name, which always worked
+2
+a correlated scalar subquery
+2
+the same element on both sides
+1
+2
+the IN to join rewrite of a positional element
+x
+y
+x
+the optimization still applies outside a correlated subquery
+1
