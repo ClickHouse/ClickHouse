@@ -84,12 +84,6 @@ DistinctLowCardinalityFilter::DistinctLowCardinalityFilter()
 
 DistinctLowCardinalityFilter::~DistinctLowCardinalityFilter() = default;
 
-void DistinctLowCardinalityFilter::clear()
-{
-    dictionaries_state->lc_dict_states.clear();
-    total_byte_count = 0;
-}
-
 std::optional<IColumn::Filter> DistinctLowCardinalityFilter::buildMaskIfApplicable(const IColumn & column, size_t num_rows)
 {
     if (!lc_optimization_controller.isEnabled())
@@ -304,19 +298,16 @@ DistinctSetFilter::DistinctSetFilter(
 
 size_t DistinctSetFilter::getTotalRowCount() const
 {
-    chassert(data);
     return data->getTotalRowCount();
 }
 
 size_t DistinctSetFilter::getTotalByteCount() const
 {
-    chassert(data);
     return data->getTotalByteCount() + lc_filter.getTotalByteCount();
 }
 
 bool DistinctSetFilter::supportsKeyExtraction() const
 {
-    chassert(data);
     /// In the skip_null_keys mode the set stores the nested (non-nullable) key representations, which
     /// do not match the (nullable) key column types, so the keys cannot be materialized back.
     return !skip_null_keys && data->type != SetVariants::Type::EMPTY && data->type != SetVariants::Type::hashed;
@@ -432,15 +423,8 @@ std::vector<MutableColumns> DistinctSetFilter::extractKeyColumns(size_t max_batc
     return batches;
 }
 
-void DistinctSetFilter::clear()
-{
-    data.reset();
-    lc_filter.clear();
-}
-
 Chunk DistinctSetFilter::filter(Chunk chunk)
 {
-    chassert(data);
     chassert(!key_columns_pos.empty());
 
     /// Convert to full columns, because SetVariants for sparse and const columns is not implemented.

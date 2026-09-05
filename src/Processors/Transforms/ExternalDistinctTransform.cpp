@@ -1,7 +1,6 @@
 #include <Processors/Transforms/ExternalDistinctTransform.h>
 
 #include <algorithm>
-#include <iterator>
 
 #include <Interpreters/sortBlock.h>
 #include <Processors/ISimpleTransform.h>
@@ -25,7 +24,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
@@ -75,20 +73,21 @@ ExternalDistinctTransform::ExternalDistinctTransform(
     size_t max_block_size_rows_,
     bool preserve_input_order_)
     : IProcessor({header_}, {header_})
-    , distinct_set(*header_, columns_, set_size_limits_, /*skip_null_keys_=*/ false, /*require_extractable_keys_=*/ true)
+    , distinct_set(
+          std::in_place, *header_, columns_, set_size_limits_, /*skip_null_keys_=*/ false, /*require_extractable_keys_=*/ true)
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits_)
     , max_bytes_before_external_distinct(max_bytes_before_external_distinct_)
     , tmp_data(std::move(tmp_data_))
     , min_free_disk_space(min_free_disk_space_)
     , max_block_size_rows(max_block_size_rows_)
-    , spill_layout(header_, distinct_set.getKeyColumnsPositions(), preserve_input_order_)
+    , spill_layout(header_, distinct_set->getKeyColumnsPositions(), preserve_input_order_)
     , run_dedup(
           spill_layout.getKeyColumnsPositions(), spill_layout.getKeySortDescription(), spill_layout.getFlagColumnPosition())
 {
     chassert(max_bytes_before_external_distinct > 0);
     /// `DistinctStep` selects this transform only when the distinct key has non-constant columns.
-    chassert(distinct_set.hasKeyColumns());
+    chassert(distinct_set->hasKeyColumns());
 }
 
 ExternalDistinctTransform::~ExternalDistinctTransform() = default;
@@ -113,8 +112,6 @@ Chunk ExternalDistinctTransform::sortSpillChunk(Chunk chunk, bool already_emitte
 
 void ExternalDistinctTransform::startFirstSpill()
 {
-    spilled = true;
-
     LOG_TRACE(log, "Switching DISTINCT to the external mode (query memory: {}, limit: {})",
         formatReadableSizeWithBinarySuffix(getCurrentQueryMemoryUsage()),
         formatReadableSizeWithBinarySuffix(max_bytes_before_external_distinct));
@@ -123,8 +120,8 @@ void ExternalDistinctTransform::startFirstSpill()
     size_t run_bytes = 0;
     /// Suppression rows need only the extracted keys. Release the set before sorting, so the transient
     /// peak contains the set and raw keys without also retaining their sorted copies.
-    auto key_batches = distinct_set.extractKeyColumns(max_block_size_rows);
-    distinct_set.clear();
+    auto key_batches = distinct_set->extractKeyColumns(max_block_size_rows);
+    distinct_set.reset();
 
     for (auto & key_columns : key_batches)
     {
@@ -140,11 +137,6 @@ void ExternalDistinctTransform::startFirstSpill()
 void ExternalDistinctTransform::startSpillRun(Chunks run_chunks, size_t run_bytes, bool is_first_run)
 {
     const auto & spill_header = spill_layout.getSpillHeader();
-    const auto & merged_header = spill_layout.getMergedHeader();
-    const auto & description = spill_layout.getKeySortDescription();
-
-    if (!tmp_data)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryDataOnDisk is not set for ExternalDistinctTransform");
     ++temporary_files_num;
 
     LOG_TRACE(log, "Will dump distinct run ({} chunks, {}) to disk (query memory: {}, limit: {})",
@@ -153,7 +145,7 @@ void ExternalDistinctTransform::startSpillRun(Chunks run_chunks, size_t run_byte
         formatReadableSizeWithBinarySuffix(getCurrentQueryMemoryUsage()),
         formatReadableSizeWithBinarySuffix(max_bytes_before_external_distinct));
 
-    /// If there's less free disk space than reserve_size, an exception will be thrown.
+    /// Reserving the run's space also preserves the configured amount of free disk space.
     const size_t reserve_size = run_bytes + min_free_disk_space;
     TemporaryBlockStreamHolder tmp_stream(spill_header, tmp_data, reserve_size);
 
@@ -161,116 +153,141 @@ void ExternalDistinctTransform::startSpillRun(Chunks run_chunks, size_t run_byte
     if (!current_run_is_deduplicated)
         run_dedup.reset();
 
-    /// The limit hint cannot be applied inside the sort or the merge: rows are suppressed by the
-    /// deduplication after them, so cutting the streams at `limit_hint` rows could lose distinct values.
-    merge_sorter = std::make_unique<MergeSorter>(spill_header, std::move(run_chunks), description, max_block_size_rows, /*limit=*/ 0);
+    /// Deduplication follows sorting, so applying the hint inside the sort could lose distinct values.
+    merge_sorter = std::make_unique<MergeSorter>(
+        spill_header, std::move(run_chunks), spill_layout.getKeySortDescription(), max_block_size_rows, /*limit=*/ 0);
 
     auto sink = std::make_shared<BufferingToFileSink>(spill_header, std::move(tmp_stream), log);
     auto source = std::make_shared<BufferingFromFileSource>(spill_header, sink->getHolder(), log);
+    PendingPipelineUpdate update{
+        .kind = external_merging_sorted ? PipelineUpdateKind::AddRun : PipelineUpdateKind::InitializeMergeAndAddRun,
+        .sink = sink,
+        .source = source,
+        .merged_stream = {},
+        .processors = {source, sink},
+    };
 
-    processors.emplace_back(source);
-    processors.emplace_back(sink);
+    if (update.kind == PipelineUpdateKind::InitializeMergeAndAddRun)
+        createMergedStream(update);
 
-    if (!external_merging_sorted)
-    {
-        external_merging_sorted = std::make_shared<MergingSortedTransform>(
-            spill_header,
-            /*num_inputs=*/ 0,
-            description,
-            max_block_size_rows,
-            /*max_block_size_bytes=*/ 0,
-            /*max_dynamic_subcolumns=*/ std::nullopt,
-            SortingQueueStrategy::Batch,
-            /*limit_=*/ 0,
-            /*always_read_till_end_=*/ false,
-            /*out_row_sources_buf_=*/ nullptr,
-            /*filter_column_name_=*/ std::nullopt,
-            /*use_average_block_sizes=*/ false,
-            /*apply_virtual_row_conversions=*/ false,
-            /*virtual_row_prefetch_window=*/ 0,
-            /*have_all_inputs_=*/ false);
-        processors.emplace_back(external_merging_sorted);
-
-        merged_stream_processors.emplace_back(std::make_shared<MergedRunsDistinctTransform>(
-            spill_header, merged_header, spill_layout.getKeyColumnsPositions(), description, spill_layout.getFlagColumnPosition()));
-
-        if (spill_layout.preservesInputOrder())
-        {
-            const auto & arrival_number_description = spill_layout.getArrivalNumberSortDescription();
-
-            /// The merge returns the rows in DISTINCT-key order; sort them back by their arrival numbers:
-            /// each chunk on its own first, then a merge of the sorted chunks, which spills under the same
-            /// conditions as the runs are written. The limit hint bounds the sort: the rows it cuts off
-            /// would not be emitted anyway.
-            merged_stream_processors.emplace_back(
-                std::make_shared<PartialSortingTransform>(merged_header, arrival_number_description, limit_hint));
-            merged_stream_processors.emplace_back(std::make_shared<MergeSortingTransform>(
-                merged_header,
-                arrival_number_description,
-                max_block_size_rows,
-                /*max_block_bytes=*/ 0,
-                limit_hint,
-                /*increase_sort_description_compile_attempts=*/ false,
-                /*max_bytes_before_remerge_=*/ 0,
-                /*remerge_lowered_memory_bytes_ratio_=*/ 0.,
-                minBytesInRun(),
-                max_bytes_before_external_distinct,
-                tmp_data,
-                min_free_disk_space));
-        }
-
-        for (const auto & processor : merged_stream_processors)
-            processors.emplace_back(processor);
-    }
-
+    pending_pipeline_update = std::move(update);
     stage = Stage::Serialize;
     sum_bytes_in_chunks = 0;
 }
 
-IProcessor::PipelineUpdate ExternalDistinctTransform::updatePipeline()
+void ExternalDistinctTransform::createMergedStream(PendingPipelineUpdate & update)
 {
-    if (processors.size() > 2)
-    {
-        /// The first spill: the merged stream of the runs passes through its stages (see
-        /// merged_stream_processors) and comes back through a new input port.
-        auto * output = &external_merging_sorted->getOutputs().front();
-        for (const auto & processor : merged_stream_processors)
-        {
-            connect(*output, processor->getInputs().front());
-            output = &processor->getOutputs().front();
-        }
+    const auto & spill_header = spill_layout.getSpillHeader();
+    const auto & merged_header = spill_layout.getMergedHeader();
+    const auto & description = spill_layout.getKeySortDescription();
 
-        inputs.emplace_back(*spill_layout.getMergedHeader(), this);
-        connect(*output, inputs.back());
+    /// The merger cannot consume its inputs until the final in-memory tail has been registered.
+    external_merging_sorted = std::make_shared<MergingSortedTransform>(
+        spill_header,
+        /*num_inputs=*/ 0,
+        description,
+        max_block_size_rows,
+        /*max_block_size_bytes=*/ 0,
+        /*max_dynamic_subcolumns=*/ std::nullopt,
+        SortingQueueStrategy::Batch,
+        /*limit_=*/ 0,
+        /*always_read_till_end_=*/ false,
+        /*out_row_sources_buf_=*/ nullptr,
+        /*filter_column_name_=*/ std::nullopt,
+        /*use_average_block_sizes=*/ false,
+        /*apply_virtual_row_conversions=*/ false,
+        /*virtual_row_prefetch_window=*/ 0,
+        /*have_all_inputs_=*/ false);
+    update.processors.emplace_back(external_merging_sorted);
+
+    update.merged_stream.emplace_back(std::make_shared<MergedRunsDistinctTransform>(
+        spill_header, merged_header, spill_layout.getKeyColumnsPositions(), description, spill_layout.getFlagColumnPosition()));
+
+    if (spill_layout.preservesInputOrder())
+    {
+        const auto & arrival_number_description = spill_layout.getArrivalNumberSortDescription();
+
+        /// Restore arrival order after deduplication, spilling under the same memory policy as the runs.
+        /// These rows are distinct, so the limit hint can bound the sort that restores their order.
+        update.merged_stream.emplace_back(
+            std::make_shared<PartialSortingTransform>(merged_header, arrival_number_description, limit_hint));
+        update.merged_stream.emplace_back(std::make_shared<MergeSortingTransform>(
+            merged_header,
+            arrival_number_description,
+            max_block_size_rows,
+            /*max_block_bytes=*/ 0,
+            limit_hint,
+            /*increase_sort_description_compile_attempts=*/ false,
+            /*max_bytes_before_remerge_=*/ 0,
+            /*remerge_lowered_memory_bytes_ratio_=*/ 0.,
+            minBytesInRun(),
+            max_bytes_before_external_distinct,
+            tmp_data,
+            min_free_disk_space));
     }
 
-    auto & source = processors.front();
+    for (const auto & processor : update.merged_stream)
+        update.processors.emplace_back(processor);
+}
 
-    static_cast<MergingSortedTransform &>(*external_merging_sorted).addInput();
+void ExternalDistinctTransform::connectMergedStream(const Processors & merged_stream)
+{
+    auto * output = &external_merging_sorted->getOutputs().front();
+    for (const auto & processor : merged_stream)
+    {
+        connect(*output, processor->getInputs().front());
+        output = &processor->getOutputs().front();
+    }
+
+    inputs.emplace_back(*spill_layout.getMergedHeader(), this);
+    connect(*output, inputs.back());
+}
+
+void ExternalDistinctTransform::attachSpilledRun(const ProcessorPtr & source, const ProcessorPtr & sink)
+{
+    external_merging_sorted->addInput();
     connect(source->getOutputs().back(), external_merging_sorted->getInputs().back());
 
-    if (processors.size() > 1)
+    outputs.emplace_back(*spill_layout.getSpillHeader(), this);
+    /// The completion dependency prevents the source from reading a run before its sink finishes it.
+    connect(sink->getOutputs().front(), source->getInputs().front());
+    connect(outputs.back(), sink->getInputs().back());
+}
+
+void ExternalDistinctTransform::attachInMemoryTail(const ProcessorPtr & source)
+{
+    external_merging_sorted->addInput();
+    connect(source->getOutputs().back(), external_merging_sorted->getInputs().back());
+    external_merging_sorted->setHaveAllInputs();
+    merge_inputs_finalized = true;
+}
+
+IProcessor::PipelineUpdate ExternalDistinctTransform::updatePipeline()
+{
+    auto update = std::move(*pending_pipeline_update);
+    pending_pipeline_update.reset();
+
+    switch (update.kind)
     {
-        auto & sink = *std::next(processors.begin());
-        /// Serialize: the run flows out through a new output port into the sink.
-        outputs.emplace_back(*spill_layout.getSpillHeader(), this);
-        connect(sink->getOutputs().front(), source->getInputs().front());
-        connect(getOutputs().back(), sink->getInputs().back());
-    }
-    else
-    {
-        /// Generate: the leftover in-memory chunks were added as the last input of the merge.
-        static_cast<MergingSortedTransform &>(*external_merging_sorted).setHaveAllInputs();
+        case PipelineUpdateKind::InitializeMergeAndAddRun:
+            connectMergedStream(update.merged_stream);
+            [[fallthrough]];
+        case PipelineUpdateKind::AddRun:
+            attachSpilledRun(update.source, update.sink);
+            break;
+        case PipelineUpdateKind::AddInMemoryTail:
+            attachInMemoryTail(update.source);
+            break;
     }
 
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+    return PipelineUpdate{.to_add = std::move(update.processors), .to_remove = {}};
 }
 
 IProcessor::Status ExternalDistinctTransform::prepare()
 {
     if (stage == Stage::Serialize)
     {
-        if (!processors.empty())
+        if (pending_pipeline_update)
             return Status::UpdatePipeline;
 
         auto status = prepareSerialize();
@@ -289,13 +306,11 @@ IProcessor::Status ExternalDistinctTransform::prepare()
         stage = Stage::Generate;
     }
 
-    /// stage == Stage::Generate
-
-    if (!generated_prefix)
-        return Status::Ready;
-
-    if (!processors.empty())
+    if (pending_pipeline_update)
         return Status::UpdatePipeline;
+
+    if (external_merging_sorted && !merge_inputs_finalized)
+        return Status::Ready;
 
     return prepareGenerate();
 }
@@ -304,8 +319,6 @@ IProcessor::Status ExternalDistinctTransform::prepareConsume()
 {
     auto & input = inputs.front();
     auto & output = outputs.front();
-
-    /// Check can output.
 
     if (output.isFinished())
     {
@@ -319,6 +332,7 @@ IProcessor::Status ExternalDistinctTransform::prepareConsume()
         return Status::PortFull;
     }
 
+    /// A pending chunk from the hashing phase precedes any output from the merged runs.
     if (generated_chunk)
         output.push(std::move(generated_chunk));
 
@@ -329,7 +343,6 @@ IProcessor::Status ExternalDistinctTransform::prepareConsume()
         return Status::Finished;
     }
 
-    /// Check can input.
     if (!current_chunk)
     {
         if (input.isFinished())
@@ -344,7 +357,6 @@ IProcessor::Status ExternalDistinctTransform::prepareConsume()
         current_chunk = input.pull(true);
     }
 
-    /// Now consume.
     return Status::Ready;
 }
 
@@ -386,8 +398,8 @@ IProcessor::Status ExternalDistinctTransform::prepareGenerate()
     if (generated_chunk)
         output.push(std::move(generated_chunk));
 
-    /// Nothing was spilled - everything was already streamed downstream during the Consume stage.
-    if (temporary_files_num == 0)
+    /// Without an external merger, all distinct rows were already emitted while consuming input.
+    if (!external_merging_sorted)
     {
         output.finish();
         return Status::Finished;
@@ -402,7 +414,7 @@ IProcessor::Status ExternalDistinctTransform::prepareGenerate()
         return Status::Finished;
     }
 
-    /// The port through which the merged stream of the spilled runs comes back.
+    /// The extra input carries the merged and deduplicated spill output.
     auto & input = inputs.back();
 
     if (input.isFinished())
@@ -416,7 +428,7 @@ IProcessor::Status ExternalDistinctTransform::prepareGenerate()
         return Status::NeedData;
 
     current_chunk = input.pull(true);
-    /// The deduplication of the merged chunk is real work, so it belongs to work().
+    /// Restoring the output representation belongs to `work`.
     return Status::Ready;
 }
 
@@ -440,9 +452,9 @@ void ExternalDistinctTransform::consume(Chunk chunk)
     const UInt64 first_arrival_number = consumed_rows;
     consumed_rows += chunk.getNumRows();
 
-    if (!spilled)
+    if (distinct_set)
     {
-        Chunk filtered = distinct_set.filter(std::move(chunk));
+        Chunk filtered = distinct_set->filter(std::move(chunk));
         if (filtered.hasRows())
         {
             emitted_rows += filtered.getNumRows();
@@ -457,13 +469,13 @@ void ExternalDistinctTransform::consume(Chunk chunk)
 
         /// A size limit with the 'break' overflow mode was reached: the partial chunk above is still
         /// emitted, and no further input can produce output.
-        if (distinct_set.isLimitReached())
+        if (distinct_set->isLimitReached())
         {
             read_stopped = true;
             return;
         }
 
-        if (distinct_set.getTotalRowCount() > 0 && getCurrentQueryMemoryUsage() > static_cast<Int64>(max_bytes_before_external_distinct))
+        if (distinct_set->getTotalRowCount() > 0 && getCurrentQueryMemoryUsage() > static_cast<Int64>(max_bytes_before_external_distinct))
             startFirstSpill();
     }
     else
@@ -499,7 +511,7 @@ void ExternalDistinctTransform::serialize()
         if (current_run_is_deduplicated)
             return;
 
-        /// Local deduplication of the run. Pushing an empty chunk would end the temporary file stream
+        /// Deduplicate the run locally. Pushing an empty chunk would end the temporary file stream
         /// prematurely, so fully filtered out chunks are skipped.
         current_chunk = run_dedup.filter(std::move(current_chunk), /*strip_flag=*/ false);
         if (current_chunk.hasRows())
@@ -511,23 +523,23 @@ void ExternalDistinctTransform::serialize()
 
 void ExternalDistinctTransform::generate()
 {
-    if (!generated_prefix)
+    if (!merge_inputs_finalized)
     {
-        generated_prefix = true;
+        ProfileEvents::increment(ProfileEvents::ExternalDistinctMerge);
+        LOG_INFO(log, "There are {} temporary distinct runs to merge", temporary_files_num);
 
-        if (temporary_files_num > 0)
-        {
-            ProfileEvents::increment(ProfileEvents::ExternalDistinctMerge);
-            LOG_INFO(log, "There are {} temporary distinct runs to merge", temporary_files_num);
-
-            /// The leftover in-memory chunks are the last input of the merge. They are not locally
-            /// deduplicated: the merge-phase deduplication collapses binary-equal rows within one input
-            /// just as well.
-            processors.emplace_back(std::make_shared<MergeSorterSource>(
-                spill_layout.getSpillHeader(), std::move(chunks), spill_layout.getKeySortDescription(),
-                max_block_size_rows, /*limit=*/ 0));
-        }
-
+        /// Register the final input even when the tail is empty, then close merge-input registration.
+        /// The merged-stream filter also handles duplicates within this last input.
+        auto source = std::make_shared<MergeSorterSource>(
+            spill_layout.getSpillHeader(), std::move(chunks), spill_layout.getKeySortDescription(),
+            max_block_size_rows, /*limit=*/ 0);
+        pending_pipeline_update.emplace(PendingPipelineUpdate{
+            .kind = PipelineUpdateKind::AddInMemoryTail,
+            .sink = {},
+            .source = source,
+            .merged_stream = {},
+            .processors = {source},
+        });
         return;
     }
 

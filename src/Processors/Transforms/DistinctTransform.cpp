@@ -14,20 +14,17 @@ namespace ProfileEvents
 namespace DB
 {
 
-void DeduplicationAbandonController::update(size_t num_rows, size_t num_unique_rows, size_t set_bytes)
+bool DeduplicationAbandonController::update(size_t num_rows, size_t num_unique_rows, size_t set_bytes)
 {
-    if (abandoned)
-        return;
-
     ++chunks_observed;
     rows_observed += num_rows;
     unique_rows_observed += num_unique_rows;
 
     if (chunks_observed < OBSERVATION_CHUNK_COUNT && set_bytes < MAX_OBSERVATION_SET_BYTES)
-        return;
+        return false;
 
     double unique_rate = static_cast<double>(unique_rows_observed) / static_cast<double>(rows_observed);
-    abandoned = unique_rate >= UNIQUE_RATE_THRESHOLD;
+    return unique_rate >= UNIQUE_RATE_THRESHOLD;
 }
 
 DistinctTransform::DistinctTransform(
@@ -39,7 +36,7 @@ DistinctTransform::DistinctTransform(
     bool skip_null_keys_,
     const UInt64 max_bytes_before_pass_through_)
     : ISimpleTransform(header_, header_, true)
-    , distinct_set(*header_, columns_, set_size_limits_, skip_null_keys_)
+    , distinct_set(std::in_place, *header_, columns_, set_size_limits_, skip_null_keys_)
     , limit_hint(limit_hint_)
     , max_bytes_before_pass_through(max_bytes_before_pass_through_)
 {
@@ -52,14 +49,13 @@ void DistinctTransform::transform(Chunk & chunk)
     if (unlikely(!chunk.hasRows()))
         return;
 
-    /// The set was dropped: under memory pressure (pass_through) or because the deduplication was not
-    /// removing enough rows (abandoned); the chunk flows through unchanged.
-    if (pass_through || (abandon_controller && abandon_controller->isAbandoned()))
+    /// Releasing the filter permanently switches subsequent chunks to pass-through.
+    if (!distinct_set)
         return;
 
     /// A constant NULL key component makes every key contain a NULL, so a consumer that skips NULL
     /// keys drops all rows; emit nothing and stop the input.
-    if (distinct_set.hasConstNullKey())
+    if (distinct_set->hasConstNullKey())
     {
         chunk.setColumns(chunk.cloneEmptyColumns(), 0);
         stopReading();
@@ -67,7 +63,7 @@ void DistinctTransform::transform(Chunk & chunk)
     }
 
     /// Special case - only const columns, return single row.
-    if (unlikely(!distinct_set.hasKeyColumns()))
+    if (unlikely(!distinct_set->hasKeyColumns()))
     {
         removeSpecialColumnRepresentations(chunk);
         convertToFullIfConst(chunk);
@@ -82,10 +78,10 @@ void DistinctTransform::transform(Chunk & chunk)
     }
 
     const size_t num_rows = chunk.getNumRows();
-    chunk = distinct_set.filter(std::move(chunk));
+    chunk = distinct_set->filter(std::move(chunk));
 
     /// Return the current chunk and stop before releasing the set if a size limit or the hint is reached.
-    if (distinct_set.isLimitReached() || (limit_hint && distinct_set.getTotalRowCount() >= limit_hint))
+    if (distinct_set->isLimitReached() || (limit_hint && distinct_set->getTotalRowCount() >= limit_hint))
     {
         stopReading();
         return;
@@ -97,12 +93,11 @@ void DistinctTransform::transform(Chunk & chunk)
         /// (in the skip_null_keys mode, inside the filter) count as removed by the deduplication, so a
         /// stream that mostly consists of NULL keys keeps the transform even when the non-NULL part is
         /// unique - dropping the NULL rows is exactly the reduction the consumer benefits from.
-        abandon_controller->update(num_rows, chunk.getNumRows(), distinct_set.getTotalByteCount());
-        if (abandon_controller->isAbandoned())
+        if (abandon_controller->update(num_rows, chunk.getNumRows(), distinct_set->getTotalByteCount()))
         {
             /// The new rows of the current chunk are still emitted (the following chunks flow
             /// through unfiltered).
-            distinct_set.clear();
+            distinct_set.reset();
             ProfileEvents::increment(ProfileEvents::DistinctTransformsAbandonedDeduplication);
             return;
         }
@@ -118,8 +113,7 @@ void DistinctTransform::transform(Chunk & chunk)
             "Query memory usage exceeded the threshold ({}), preliminary DISTINCT switches to pass-through",
             formatReadableSizeWithBinarySuffix(max_bytes_before_pass_through));
 
-        distinct_set.clear();
-        pass_through = true;
+        distinct_set.reset();
         ProfileEvents::increment(ProfileEvents::DistinctTransformsSwitchedToPassThrough);
         return;
     }

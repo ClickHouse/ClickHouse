@@ -8,10 +8,13 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/logger_useful.h>
 
+#include <optional>
+
 namespace DB
 {
 
 class MergeSorter;
+class MergingSortedTransform;
 
 /// The final hash-based `DISTINCT` streams first occurrences until tracked query memory exceeds its
 /// external-memory threshold. Its set retains extractable keys, including serialized keys when needed.
@@ -58,6 +61,22 @@ private:
         Serialize,
     };
 
+    enum class PipelineUpdateKind : uint8_t
+    {
+        InitializeMergeAndAddRun,
+        AddRun,
+        AddInMemoryTail,
+    };
+
+    struct PendingPipelineUpdate
+    {
+        PipelineUpdateKind kind;
+        ProcessorPtr sink;
+        ProcessorPtr source;
+        Processors merged_stream;
+        Processors processors;
+    };
+
     Status prepareConsume();
     Status prepareSerialize();
     Status prepareGenerate();
@@ -71,11 +90,15 @@ private:
 
     void startFirstSpill();
     void startSpillRun(Chunks run_chunks, size_t run_bytes, bool is_first_run);
+    void createMergedStream(PendingPipelineUpdate & update);
+    void connectMergedStream(const Processors & merged_stream);
+    void attachSpilledRun(const ProcessorPtr & source, const ProcessorPtr & sink);
+    void attachInMemoryTail(const ProcessorPtr & source);
     /// Returns the minimum run size, also used by the sort that restores input order.
     size_t minBytesInRun() const;
 
-    /// Deduplicates input before spilling and releases its state at the first spill.
-    DistinctSetFilter distinct_set;
+    /// Owns hashing state until the first spill. Resetting it permanently ends the hashing phase.
+    std::optional<DistinctSetFilter> distinct_set;
     const UInt64 limit_hint;
     const SizeLimits set_size_limits;
 
@@ -98,16 +121,12 @@ private:
     /// deduplicated by `sortSpillChunk`, so single-chunk runs and suppression rows bypass this filter.
     DistinctSortedFilter run_dedup;
     bool current_run_is_deduplicated = false;
-    ProcessorPtr external_merging_sorted;
-    /// Stores the stages the merged stream passes through before returning to this transform:
-    /// the deduplication (see `DistinctSortedFilter`) and, when the input order is preserved, the sort by
-    /// the arrival numbers.
-    Processors merged_stream_processors;
-    Processors processors;
+    std::shared_ptr<MergingSortedTransform> external_merging_sorted;
+    std::optional<PendingPipelineUpdate> pending_pipeline_update;
 
     Stage stage = Stage::Consume;
-    bool spilled = false;
-    bool generated_prefix = false;
+    /// The in-memory tail closes merge-input registration exactly once, even when it contains no rows.
+    bool merge_inputs_finalized = false;
     /// No more output is needed: the limit hint or a size limit (with the 'break' overflow mode) was
     /// reached. The counterpart of `ISimpleTransform::stopReading`.
     bool read_stopped = false;

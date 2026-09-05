@@ -21,9 +21,8 @@ namespace DB
 class DeduplicationAbandonController
 {
 public:
-    bool isAbandoned() const { return abandoned; }
-
-    void update(size_t num_rows, size_t num_unique_rows, size_t set_bytes);
+    /// Updates the observations and returns whether the caller should abandon deduplication.
+    bool update(size_t num_rows, size_t num_unique_rows, size_t set_bytes);
 
 private:
     /// Number of chunks to observe before the rate is checked.
@@ -40,7 +39,6 @@ private:
     /// small to help the consumer, while the hash table keeps growing with the unique rows.
     static constexpr double UNIQUE_RATE_THRESHOLD = 0.9;
 
-    bool abandoned = false;
     size_t chunks_observed = 0;
     size_t rows_observed = 0;
     size_t unique_rows_observed = 0;
@@ -75,13 +73,13 @@ protected:
     void transform(Chunk & chunk) override;
 
 private:
-    DistinctSetFilter distinct_set;
+    /// An absent filter means subsequent chunks pass through without deduplication.
+    std::optional<DistinctSetFilter> distinct_set;
     const UInt64 limit_hint;
 
     std::optional<DeduplicationAbandonController> abandon_controller;
 
     const UInt64 max_bytes_before_pass_through;
-    bool pass_through = false;
 };
 
 }

@@ -71,9 +71,6 @@ public:
     /// LowCardinality column, or the optimization has disabled itself).
     std::optional<IColumn::Filter> buildMaskIfApplicable(const IColumn & column, size_t num_rows);
 
-    /// Frees the accumulated per-dictionary state.
-    void clear();
-
     /// The memory occupied by the per-dictionary bitmaps of the seen indices. A bitmap is as large as its
     /// dictionary, whatever the number of rows seen, so it can dominate the memory of a DISTINCT over a
     /// few rows of a large dictionary.
@@ -157,15 +154,12 @@ public:
     /// set, so the caller should stop reading and return the partial result.
     bool isLimitReached() const { return limit_reached; }
 
-    /// Frees the set and the LowCardinality state. The filter must not be used afterwards.
-    void clear();
-
 private:
     const ColumnNumbers key_columns_pos;
     /// Types of the key columns (following key_columns_pos), for the key extraction.
     DataTypes key_types;
 
-    /// Behind a pointer so that it can be freed by clear() (SetVariants is not movable).
+    /// Owns the hash table and its arena for the lifetime of the filter.
     std::unique_ptr<SetVariants> data;
     Sizes key_sizes;
     /// The context of the hashing state of the set method; only the serialized method needs one.
