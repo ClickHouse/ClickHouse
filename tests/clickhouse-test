@@ -1665,6 +1665,12 @@ class SettingsRandomizer:
         "read_from_filesystem_cache_if_exists_otherwise_bypass_cache": lambda: random.randint(
             0, 1
         ),
+        # Mostly 0 so that most runs keep the common no-budget path.
+        # The non-zero values are above what any test query writes, so nothing is ever skipped and
+        # cached contents do not change - only the per-query accounting is exercised.
+        "filesystem_cache_query_limit_bytes": lambda: random.choice(
+            [0, 0, 0, 10 * 1024**3, 100 * 1024**3]
+        ),
         "throw_on_error_from_cache_on_write_operations": lambda: random.randint(0, 1),
         "remote_filesystem_read_prefetch": lambda: random.randint(0, 1),
         "distributed_cache_discard_connection_if_unread_data": lambda: random.randint(

@@ -236,12 +236,6 @@ SELECT description FROM system.documentation WHERE type = 'MergeTree Setting' AN
 SELECT description FROM system.documentation WHERE type = 'Setting' AND name = 'distributed_cache_alignment';
 
 -- When the history recorded under the old name cannot be recovered at all — the old name of
--- `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` has no record of its own — the version of
--- the rename is not claimed as the introducing one either: the setting demonstrably existed before it.
-SELECT position(description, '**Introduced in:**') = 0,
-       position(description, '\n- **24.11** — the default value remained `1`. Rename of setting') > 0
-FROM system.documentation WHERE type = 'Setting' AND name = 'filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit';
-
 -- The rename can also be recorded under the old name ("Obsolete setting, renamed to ..."), and the two records of
 -- one rename are listed once: `use_projection_index_in_read_pools` became `use_indexes_refiner_in_read_pools` in
 -- 26.8, the version in which it appeared, and the new name lists that version once, as its introduction.

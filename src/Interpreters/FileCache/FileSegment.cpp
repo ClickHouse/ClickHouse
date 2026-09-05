@@ -24,6 +24,7 @@ namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
+    extern const Event FilesystemCacheFailToReserveSpaceBecauseOfQueryLimit;
     extern const Event FileSegmentWaitMicroseconds;
     extern const Event FileSegmentWaitTimeouts;
     extern const Event FileSegmentCompleteMicroseconds;
@@ -414,6 +415,12 @@ void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
     download.remote_file_reader = remote_file_reader_;
 }
 
+FileCacheQueryBudgetPtr FileSegment::getQueryBudget() const
+{
+    auto lk = lock();
+    return download_data ? download_data->query_budget : nullptr;
+}
+
 void FileSegment::write(char * from, size_t size, size_t offset_in_file)
 {
     /// Keeps the segment in DOWNLOADING state, for testing the concurrent download wait timeout.
@@ -667,6 +674,7 @@ bool FileSegment::reserve(
     size_t size_to_reserve,
     size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason,
+    const FileCacheQueryBudgetPtr & query_budget,
     FileCacheReserveStat * reserve_stat,
     size_t reserve_hint)
 {
@@ -743,13 +751,31 @@ bool FileSegment::reserve(
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
 
-    bool reserved = cache->tryReserve(
-        *this, size_to_reserve, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);
+    if (query_budget && !query_budget->tryChargeBytes(size_to_reserve))
+    {
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfQueryLimit);
+        failure_reason = "query limit exceeded";
+        setDownloadFailedUnlocked(lock());
+        return false;
+    }
+
+    bool reserved = false;
+    SCOPE_EXIT({
+        if (query_budget && !reserved)
+            query_budget->unchargeBytes(size_to_reserve);
+    });
+
+    reserved = cache->tryReserve(
+        *this, size_to_reserve, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds,
+        failure_reason);
 
     if (!reserved)
+    {
         setDownloadFailedUnlocked(lock());
+        return false;
+    }
 
-    return reserved;
+    return true;
 }
 
 void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock & lock)
@@ -945,15 +971,11 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     chassert(result_size <= range().size());
     chassert(result_size >= downloaded_size);
 
-    /// Return the reserve-ahead surplus (reserved but not downloaded, see `FileSegment::reserve`)
-    /// to the cache: the segment is complete, nothing will fill the rest, so the surplus must not
-    /// stay charged against the quota. Done before the `result_size == range().size()` early return
-    /// below, since with `reserve_granularity == boundary_alignment` a tiny read rounds up to the
-    /// whole range and would otherwise keep a full granule charged.
     chassert(reserved_size >= downloaded_size);
     if (reserved_size > downloaded_size)
     {
-        queue_iterator->decrementSize(reserved_size - downloaded_size);
+        const size_t reserved_but_not_written = reserved_size - downloaded_size;
+        queue_iterator->decrementSize(reserved_but_not_written);
         reserved_size = downloaded_size.load();
     }
 
@@ -1106,10 +1128,14 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
             {
                 bool added_to_download_queue = false;
                 size_t background_download_size = allow_background_download ? getSizeForBackgroundDownloadUnlocked(segment_lock) : 0;
+
                 if (background_download_size)
                 {
                     ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundDownloadQueuePush);
                     added_to_download_queue = locked_key->addToDownloadQueue(offset(), segment_lock); /// Finish download in background.
+
+                    if (added_to_download_queue && download_data)
+                        download_data->query_budget = cache->getQueryBudgetIfExists();
                 }
 
                 if (!added_to_download_queue)

@@ -78,6 +78,7 @@
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
+#include <Interpreters/FileCache/QueryLimit.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -318,7 +319,7 @@ namespace Setting
     extern const SettingsBool enable_filesystem_read_prefetches_log;
     extern const SettingsBool enable_blob_storage_log;
     extern const SettingsBool enable_blob_storage_log_for_read_operations;
-    extern const SettingsUInt64 filesystem_cache_max_download_size;
+    extern const SettingsUInt64 filesystem_cache_query_limit_bytes;
     extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_wait_for_concurrent_download_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_segments_batch_size;
@@ -371,7 +372,6 @@ namespace Setting
     extern const SettingsUInt64 remote_fs_read_backoff_max_tries;
     extern const SettingsUInt64 remote_read_min_bytes_for_seek;
     extern const SettingsBool throw_on_error_from_cache_on_write_operations;
-    extern const SettingsBool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit;
     extern const SettingsBool s3_allow_parallel_part_upload;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
     extern const SettingsBool use_reader_executor;
@@ -3906,6 +3906,22 @@ MultiVersion<Macros>::Version Context::getMacros() const
 void Context::setMacros(std::unique_ptr<Macros> && macros)
 {
     shared->macros.set(std::move(macros));
+}
+
+FileCacheQueryBudgetPtr Context::getFilesystemCacheQueryBudget(const FileCache & cache, size_t size_limit) const
+{
+    std::lock_guard lock(filesystem_cache_query_budgets_mutex);
+    auto & budget = filesystem_cache_query_budgets[&cache];
+    if (!budget)
+        budget = std::make_shared<FileCacheQueryBudget>(size_limit);
+    return budget;
+}
+
+FileCacheQueryBudgetPtr Context::tryGetFilesystemCacheQueryBudget(const FileCache & cache) const
+{
+    std::lock_guard lock(filesystem_cache_query_budgets_mutex);
+    auto it = filesystem_cache_query_budgets.find(&cache);
+    return it == filesystem_cache_query_budgets.end() ? nullptr : it->second;
 }
 
 ContextMutablePtr Context::getQueryContext() const
@@ -8771,9 +8787,7 @@ ReadSettings Context::getReadSettings() const
         = settings_ref[Setting::filesystem_cache_enable_background_download_during_fetch];
     res.filesystem_cache_settings.prefer_bigger_buffer_size = settings_ref[Setting::filesystem_cache_prefer_bigger_buffer_size];
 
-    res.filesystem_cache_settings.max_download_size_per_query = settings_ref[Setting::filesystem_cache_max_download_size];
-    res.filesystem_cache_settings.skip_download_if_exceeds_per_query_cache_write_limit
-        = settings_ref[Setting::filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit];
+    res.filesystem_cache_settings.query_limit_bytes = settings_ref[Setting::filesystem_cache_query_limit_bytes];
 
     res.page_cache_settings.cache = getPageCache();
     res.use_page_cache_for_disks_without_file_cache = settings_ref[Setting::use_page_cache_for_disks_without_file_cache];
@@ -8851,6 +8865,7 @@ WriteSettings Context::getWriteSettings() const
     res.throw_on_error_from_cache = settings_ref[Setting::throw_on_error_from_cache_on_write_operations];
     res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds
         = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
+    res.filesystem_cache_query_limit_bytes = settings_ref[Setting::filesystem_cache_query_limit_bytes];
 
     res.s3_allow_parallel_part_upload = settings_ref[Setting::s3_allow_parallel_part_upload];
     res.azure_allow_parallel_part_upload = settings_ref[Setting::azure_allow_parallel_part_upload];

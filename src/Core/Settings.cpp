@@ -7279,12 +7279,13 @@ Emit `TEST`-level log messages for every filesystem cache buffer refill (state o
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(
 Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit, true, R"(
-Skip download from remote filesystem if exceeds query cache size
-)", 0, skip_download_if_exceeds_query_cache) \
-    DECLARE(UInt64, filesystem_cache_max_download_size, (128UL * 1024 * 1024 * 1024), R"(
-Max remote filesystem cache size that can be downloaded by a single query
-)", 0) \
+    DECLARE_WITH_ALIAS(UInt64, filesystem_cache_query_limit_bytes, 0, R"(
+How much data a single query may write into one filesystem cache. `0` disables the limit.
+Counts the space the query reserves itself: data another query cached and this one only reads is
+not counted, and eviction of what it wrote does not give the limit back. When the limit is
+reached, the query stops caching and continues without it. Has no effect if the cache is
+configured with `enable_filesystem_query_cache_limit = 0`.
+)", 0, filesystem_cache_max_download_size) \
     DECLARE(Bool, throw_on_error_from_cache_on_write_operations, false, R"(
 Ignore error from cache when caching on write operations (INSERT, merges)
 )", 0) \
@@ -9245,6 +9246,7 @@ Enable experimental table function `eval`.
     /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
     MAKE_OBSOLETE(M, Bool, enable_sharding_aggregator, false) \
     MAKE_OBSOLETE(M, Bool, distributed_cache_use_clients_cache_for_write, false) \
+    ALIAS(Bool, filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit, true, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE, skip_download_if_exceeds_query_cache) \
     MAKE_OBSOLETE(M, String, function_implementation, "") \
     MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_ai_functions, false) \

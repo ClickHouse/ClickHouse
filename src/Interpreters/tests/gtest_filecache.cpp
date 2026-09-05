@@ -123,6 +123,8 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_user;
     extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
     extern const FileCacheSettingsUInt64 bypass_cache_threshold;
+    extern const FileCacheSettingsBool enable_filesystem_query_cache_limit;
+    extern const FileCacheSettingsUInt64 reserve_granularity;
 }
 
 void printRanges(const auto & segments)
@@ -337,7 +339,7 @@ static void download(FileSegmentPtr file_segment, bool complete = true)
     ASSERT_EQ(file_segment->getDownloadedSize(), 0);
 
     std::string failure_reason;
-    ASSERT_TRUE(file_segment->reserve(file_segment->range().size(), 1000, failure_reason));
+    ASSERT_TRUE(file_segment->reserve(file_segment->range().size(), 1000, failure_reason, /* query_budget */nullptr));
     download(cache_base_path, *file_segment);
     ASSERT_EQ(file_segment->state(), State::DOWNLOADING);
 
@@ -353,7 +355,7 @@ static void assertDownloadFails(FileSegmentPtr file_segment)
     ASSERT_EQ(file_segment->getOrSetDownloader(), FileSegment::getCallerId());
     ASSERT_EQ(file_segment->getDownloadedSize(), 0);
     std::string failure_reason;
-    ASSERT_FALSE(file_segment->reserve(file_segment->range().size(), 1000, failure_reason));
+    ASSERT_FALSE(file_segment->reserve(file_segment->range().size(), 1000, failure_reason, /* query_budget */nullptr));
     FileSegment::complete(FileSegmentPtr(file_segment), /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
 }
 
@@ -1062,7 +1064,7 @@ try
         for (auto & segment : *some_data_holder)
         {
             ASSERT_TRUE(segment->getOrSetDownloader() == DB::FileSegment::getCallerId());
-            ASSERT_TRUE(segment->reserve(segment->range().size(), 1000, failure_reason));
+            ASSERT_TRUE(segment->reserve(segment->range().size(), 1000, failure_reason, /* query_budget */nullptr));
             download(segment);
         }
     }
@@ -2224,7 +2226,7 @@ TEST_F(FileCacheTest, DynamicResizeConcurrentWithReservations)
                         && segment->getOrSetDownloader() == FileSegment::getCallerId())
                     {
                         std::string failure_reason;
-                        if (segment->reserve(segment->range().size(), 1000, failure_reason))
+                        if (segment->reserve(segment->range().size(), 1000, failure_reason, /* query_budget */nullptr))
                             download(cache_path, *segment);
                         FileSegment::complete(
                             FileSegmentPtr(segment),
@@ -2777,7 +2779,7 @@ TEST_F(FileCacheTest, PartiallyDownloadedDynamicResizeAssertion)
         ASSERT_EQ(seg->state(), State::DOWNLOADING);
 
         std::string failure_reason;
-        ASSERT_TRUE(seg->reserve(/*size_to_reserve=*/8, /*lock_wait_timeout_milliseconds=*/1000, failure_reason));
+        ASSERT_TRUE(seg->reserve(/*size_to_reserve=*/8, /*lock_wait_timeout_milliseconds=*/1000, failure_reason, /* query_budget */nullptr));
 
         /// `seg->write` expects the key directory to exist, as in `download`.
         auto key_str = key.toString();
@@ -2878,7 +2880,7 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
         auto seg = *holder->begin();
         ASSERT_EQ(seg->getOrSetDownloader(), FileSegment::getCallerId());
         std::string failure_reason;
-        ASSERT_TRUE(seg->reserve(/*size_to_reserve=*/8, /*lock_wait_timeout_milliseconds=*/1000, failure_reason));
+        ASSERT_TRUE(seg->reserve(/*size_to_reserve=*/8, /*lock_wait_timeout_milliseconds=*/1000, failure_reason, /* query_budget */nullptr));
 
         auto key_str = key.toString();
         auto subdir = fs::path(cache_base_path) / key_str.substr(0, 3) / key_str;
@@ -3870,114 +3872,6 @@ TEST_F(FileCacheTest, RenameToIncludeSizeInNameFailureKeepsSegmentConsistent)
     ASSERT_EQ((*reloaded_holder->begin())->state(), State::DOWNLOADED);
 }
 
-TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
-{
-    /// Regression test: while one holder for a query_id releases its query context,
-    /// another holder for the same query_id must keep it alive, and a later release must not fail
-    /// with "Attempt to release query context that does not exist".
-
-    FileCacheQueryLimit query_limit;
-
-    const std::string query_id = "query_id_revive";
-    FilesystemCacheSettings cache_settings;
-    cache_settings.max_download_size_per_query = 1024;
-
-    FileCacheQueryLimit::QueryContextPtr context1;
-    FileCacheQueryLimit::QueryContextPtr context2;
-    {
-        auto lock = query_limit.lock();
-        /// Take the context for the first time; `query_map` and `context1` reference it.
-        context1 = query_limit.getOrSetQueryContext(query_id, cache_settings, lock);
-        ASSERT_TRUE(context1 != nullptr);
-        /// A second holder revives the same context: `getOrSetQueryContext` returns the existing entry.
-        context2 = query_limit.getOrSetQueryContext(query_id, cache_settings, lock);
-    }
-    ASSERT_EQ(context1.get(), context2.get());
-    ASSERT_EQ(context1.use_count(), 3);
-    const auto * context_raw = context1.get();
-
-    /// `~QueryContextHolder` does not use its `cache` member, so tests pass nullptr; the holders
-    /// and `query_map` hold the only references once the local copies are dropped.
-    auto holder1 = std::make_unique<FileCacheQueryLimit::QueryContextHolder>(
-        query_id, /* cache */ nullptr, &query_limit, context1);
-    auto holder2 = std::make_unique<FileCacheQueryLimit::QueryContextHolder>(
-        query_id, /* cache */ nullptr, &query_limit, context2);
-    context1.reset();
-    context2.reset();
-
-    /// The first holder releases. Another holder is still alive, so the entry must be kept (no erase,
-    /// no throw) and enforcement preserved: the context is still discoverable.
-    ASSERT_NO_THROW(holder1.reset());
-    {
-        DB::ThreadStatus thread_status;
-        auto query_context = DB::Context::createCopy(getContext().context);
-        query_context->makeQueryContext();
-        query_context->setCurrentQueryId(query_id);
-        auto query_scope_holder = DB::QueryScope::create(query_context);
-
-        ASSERT_EQ(query_limit.tryGetQueryContext().get(), context_raw);
-    }
-
-    /// The second holder is now the last one; releasing it removes the entry, once, without throwing.
-    ASSERT_NO_THROW(holder2.reset());
-    {
-        DB::ThreadStatus thread_status;
-        auto query_context = DB::Context::createCopy(getContext().context);
-        query_context->makeQueryContext();
-        query_context->setCurrentQueryId(query_id);
-        auto query_scope_holder = DB::QueryScope::create(query_context);
-
-        ASSERT_EQ(query_limit.tryGetQueryContext().get(), nullptr);
-    }
-}
-
-TEST_F(FileCacheTest, QueryLimitConcurrentReleaseNoLeak)
-{
-    /// Regression for #109508: parallel read streams create several holders for one query_id.
-    /// `~QueryContextHolder` drops its own reference under `query_limit->lock()` before checking
-    /// `use_count`, so two holders releasing concurrently cannot both skip the erase and orphan
-    /// `query_map[query_id]`. This test releases sequentially and only pins the single-erase,
-    /// no-throw outcome; the concurrent case is not reproduced here.
-
-    FileCacheQueryLimit query_limit;
-
-    const std::string query_id = "query_id_concurrent_release";
-    FilesystemCacheSettings cache_settings;
-    cache_settings.max_download_size_per_query = 1024;
-
-    /// Two holders take the same context; query_map + both holders reference it (use_count == 3).
-    FileCacheQueryLimit::QueryContextPtr context1;
-    FileCacheQueryLimit::QueryContextPtr context2;
-    {
-        auto lock = query_limit.lock();
-        context1 = query_limit.getOrSetQueryContext(query_id, cache_settings, lock);
-        context2 = query_limit.getOrSetQueryContext(query_id, cache_settings, lock);
-    }
-    ASSERT_EQ(context1.get(), context2.get());
-    ASSERT_EQ(context1.use_count(), 3);
-
-    {
-        /// `~QueryContextHolder` does not use its `cache` member, so tests pass nullptr.
-        FileCacheQueryLimit::QueryContextHolder holder1(query_id, /* cache */ nullptr, &query_limit, context1);
-        FileCacheQueryLimit::QueryContextHolder holder2(query_id, /* cache */ nullptr, &query_limit, context2);
-        context1.reset();
-        context2.reset();
-        /// At scope end holder2 releases first (another holder still alive, entry kept), then holder1
-        /// releases and erases the entry once. Neither throws.
-    }
-
-    /// The entry must be gone: a leaked entry (both releases skipping the erase, as described in
-    /// the comment at the top of this test) would still be found by `tryGetQueryContext`.
-    {
-        DB::ThreadStatus thread_status;
-        auto query_context = DB::Context::createCopy(getContext().context);
-        query_context->makeQueryContext();
-        query_context->setCurrentQueryId(query_id);
-        auto query_scope_holder = DB::QueryScope::create(query_context);
-
-        ASSERT_EQ(query_limit.tryGetQueryContext().get(), nullptr);
-    }
-}
 
 /// Concurrent readBigAt calls on AsynchronousBoundedReadBuffer over a cached buffer, with a
 /// prefetch in flight: the callers must not race on consuming it.

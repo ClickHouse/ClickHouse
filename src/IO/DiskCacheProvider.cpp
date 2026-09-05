@@ -209,8 +209,10 @@ DiskCacheWriter::DiskCacheWriter(
     size_t object_file_offset_,
     const FilesystemCacheSettings & cache_settings_,
     FileSegmentsHolderSharedPtr segment_holder_,
-    ByteRange aligned_range_in_file)
+    ByteRange aligned_range_in_file,
+    FileCacheQueryBudgetPtr query_budget_)
     : cache(std::move(cache_))
+    , query_budget(std::move(query_budget_))
     , object_file_offset(object_file_offset_)
     , cache_settings(cache_settings_)
     , segment_holder(std::move(segment_holder_))
@@ -283,7 +285,8 @@ size_t DiskCacheWriter::write(ChainedBuffers data, const Claim & claim)
     const bool reserved = seg.reserve(
         contiguous,
         cache_settings.reserve_space_wait_lock_timeout_milliseconds,
-        failure_reason);
+        failure_reason,
+        query_budget);
     if (!reserved)
     {
         LOG_TRACE(log, "DiskCacheWriter::write: reserve failed for [{}, {}]: {}",
@@ -502,7 +505,7 @@ DiskCacheReader::~DiskCacheReader()
 DiskCacheProvider::DiskCacheProvider(
     FileCachePtr cache_,
     const FilesystemCacheSettings & cache_settings_,
-    const String & query_id_,
+    const String &, /// the budget comes from the query itself now
     ThrottlerPtr local_throttler_,
     std::optional<FileCacheKey> custom_cache_key_,
     std::optional<FileCacheOriginInfo> custom_origin_)
@@ -515,9 +518,9 @@ DiskCacheProvider::DiskCacheProvider(
     /// byte cap an entry count.
     , reader_anchors(CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes=*/16)
 {
-    /// Register a per-query context; null when no download budget is configured
-    /// (`filesystem_cache_max_download_size == 0` / no query limit), the unbounded path.
-    query_context_holder = cache->getQueryContextHolder(query_id_, cache_settings);
+    /// Created here, in the query's thread, so that the writes below find it. Null when the query
+    /// sets no limit.
+    query_budget = cache->getQueryBudget(cache_settings.query_limit_bytes);
 }
 
 /// The disk tier's residency walk. One `resolve` = one cache transaction, no per-call state (shared
@@ -630,7 +633,7 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
         miss.range = ByteRange{seg_left + object_file_offset, seg_end - seg_left};
         miss.writer = std::make_unique<DiskCacheWriter>(
             cache, object_file_offset, cache_settings,
-            seg_holder, miss.range);
+            seg_holder, miss.range, query_budget);
         out.push_back(std::move(miss));
     };
 

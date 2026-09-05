@@ -5,6 +5,8 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Interpreters/FileCache/FileCacheSettings.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/CacheUsage.h>
@@ -444,8 +446,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
         LOG_WARNING(log, "idle_client_ttl_sec is set but the cache policy does not track "
                          "per-client usage; idle-client eviction is disabled");
 
-    if (settings[FileCacheSetting::enable_filesystem_query_cache_limit])
-        query_limit = std::make_unique<FileCacheQueryLimit>();
+    query_limit_allowed = settings[FileCacheSetting::enable_filesystem_query_cache_limit];
 
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSizeLimit, settings[FileCacheSetting::max_size]);
 }
@@ -505,6 +506,37 @@ String FileCache::getFileSegmentPath(const Key & key, size_t offset, FileSegment
 String FileCache::getKeyPath(const Key & key, const OriginInfo & origin) const
 {
     return metadata.getKeyPath(key, origin);
+}
+
+namespace
+{
+ContextPtr getCurrentQueryContext()
+{
+    if (!CurrentThread::isInitialized() || CurrentThread::getQueryId().empty())
+        return nullptr;
+    return CurrentThread::get().tryGetQueryContext();
+}
+}
+
+FileCacheQueryBudgetPtr FileCache::getQueryBudget(size_t query_limit_bytes) const
+{
+    if (!query_limit_allowed || query_limit_bytes == 0)
+        return nullptr;
+
+    auto query_context = getCurrentQueryContext();
+    if (!query_context)
+        return nullptr;
+
+    return query_context->getFilesystemCacheQueryBudget(*this, query_limit_bytes);
+}
+
+FileCacheQueryBudgetPtr FileCache::getQueryBudgetIfExists() const
+{
+    if (!query_limit_allowed)
+        return nullptr;
+
+    auto query_context = getCurrentQueryContext();
+    return query_context ? query_context->tryGetFilesystemCacheQueryBudget(*this) : nullptr;
 }
 
 void FileCache::assertInitialized() const
@@ -1350,14 +1382,7 @@ bool FileCache::doTryReserve(
         chassert(file_segment.getReservedSize() == 0);
 #endif
 
-    /// In case of per query cache limit (by default disabled),
-    /// we add/remove entries from both (main_priority and query_priority) priority queues,
-    /// but iterate entries in order of query_priority, while checking the limits in both.
-    Priority * query_priority = nullptr;
-    FileCacheQueryLimit::QueryContextPtr query_context;
-
-    std::unique_ptr<EvictionInfo> main_eviction_info; /// Server scoped cache limits eviction info.
-    std::unique_ptr<EvictionInfo> query_eviction_info; /// Query scoped cache limits eviction info.
+    std::unique_ptr<EvictionInfo> main_eviction_info;
 
     /// First collect "eviction info" under cache state lock, which will tell us
     /// how much do we need to evict in order to make sure we have enough space in cache.
@@ -1374,34 +1399,6 @@ bool FileCache::doTryReserve(
             failure_reason = "cache contention";
             return false;
         }
-        /// Check per-query cache limits.
-        if (query_limit)
-        {
-            query_context = query_limit->tryGetQueryContext();
-            if (query_context)
-            {
-                query_priority = &query_context->getPriority();
-                if (!query_priority->canFit(size, required_elements_num, lock, /* reservee */nullptr, origin_info)
-                    && !query_context->recacheOnFileCacheQueryLimitExceeded())
-                {
-                    LOG_TEST(
-                        log, "Query limit exceeded, space reservation failed, "
-                        "recache_on_query_limit_exceeded is disabled (while reserving for {}:{} with size {}): {}",
-                        file_segment.key(), file_segment.offset(), size, query_priority->getStateInfoForLog(lock));
-
-                    failure_reason = "query limit exceeded";
-                    return false;
-                }
-                query_eviction_info = query_priority->collectEvictionInfo(
-                    size,
-                    required_elements_num,
-                    main_priority_iterator.get(),
-                    /* is_total_space_cleanup */false,
-                    origin_info,
-                    lock);
-            }
-        }
-
         /// Check server-wide cache limits.
         main_eviction_info = main_priority->collectEvictionInfo(
             size,
@@ -1412,8 +1409,7 @@ bool FileCache::doTryReserve(
             lock);
 
         /// Can we already just increment size for the queue entry and quit?
-        /// TODO: allow to quit here if query_context != nullptr.
-        if (main_priority_iterator && !main_eviction_info->requiresEviction() && !query_context)
+        if (main_priority_iterator && !main_eviction_info->requiresEviction())
         {
             main_eviction_info->releaseHoldSpace(lock);
             main_priority_iterator->incrementSize(size, lock);
@@ -1431,16 +1427,14 @@ bool FileCache::doTryReserve(
     /// Collect candidates for eviction and
     /// evict them from in-memory state and from filesystem.
     if (!doEviction(
-        *main_eviction_info, query_eviction_info.get(), file_segment, origin_info,
-        main_priority_iterator, reserve_stat, eviction_candidates,
-        query_priority, failure_reason))
+        *main_eviction_info, origin_info,
+        main_priority_iterator, reserve_stat, eviction_candidates, failure_reason))
     {
         chassert(!failure_reason.empty());
         return false;
     }
 
     bool added_new_main_entry = !main_priority_iterator;
-    Priority::IteratorPtr query_priority_iterator;
 
     if (!main_priority_iterator || eviction_candidates.requiresAfterEvictWrite())
     {
@@ -1461,32 +1455,13 @@ bool FileCache::doTryReserve(
 
     try
     {
-        /// Mirror the new main-priority entry into the query context only when a new main entry
-        /// was created: nothing here decreases the per-query counters, so mirroring every
-        /// reservation would make them grow without bound. The full per-query accounting is
-        /// fixed separately in https://github.com/ClickHouse/ClickHouse/pull/114165.
-        /// Inside the `try` on purpose: if `add` throws, the size-0 main entry must be invalidated.
-        if (query_context && added_new_main_entry)
-        {
-            auto query_lock = query_limit->lock();
-            query_priority_iterator = query_context->tryGet(file_segment.key(), file_segment.offset(), query_lock);
-            if (!query_priority_iterator)
-                query_context->add(file_segment.getKeyMetadata(), file_segment.offset(), /* size */0, query_lock);
-        }
-
         /// Blocking, unlike the timed `tryLockFor` taken before eviction: eviction has already
         /// deleted files from disk, so giving up now would throw that work away and still fail.
         auto lock = cache_state_guard.lock();
         main_eviction_info->releaseHoldSpace(lock);
-        if (query_eviction_info)
-            query_eviction_info->releaseHoldSpace(lock);
-
         eviction_candidates.afterEvictState(lock);
         main_priority_iterator->incrementSize(size, lock);
         main_size_incremented = true;
-
-        if (query_priority_iterator)
-            query_priority_iterator->incrementSize(size, lock);
     }
     catch (...)
     {
@@ -1527,21 +1502,14 @@ bool FileCache::doTryReserve(
 
 bool FileCache::doEviction(
     EvictionInfo & main_eviction_info,
-    EvictionInfo * query_eviction_info,
-    FileSegment & file_segment,
     const OriginInfo & origin_info,
     const IFileCachePriority::IteratorPtr & main_priority_iterator,
     FileCacheReserveStat & reserve_stat,
     EvictionCandidates & eviction_candidates,
-    Priority * query_priority,
     std::string & failure_reason)
 {
     LOG_TEST(log, "Main eviction info {}", main_eviction_info.toString());
-    if (query_priority)
-        LOG_TEST(log, "Query eviction info {}", query_eviction_info->toString());
-
-    if (!main_eviction_info.requiresEviction()
-        && (!query_eviction_info || !query_eviction_info->requiresEviction()))
+    if (!main_eviction_info.requiresEviction())
         return true;
 
     /// If there is at least something we need to evict,
@@ -1570,28 +1538,6 @@ bool FileCache::doEviction(
             : IFileCachePriority::EvictionCursor::FromHead;
         if (!resume_reserve_cursor)
             main_priority->resetEvictionPos(IFileCachePriority::EvictionCursor::Reserve);
-
-        if (query_eviction_info && query_eviction_info->requiresEviction())
-        {
-            chassert(query_priority);
-            if (!query_priority->collectCandidatesForEviction(
-                    *query_eviction_info,
-                    reserve_stat,
-                    eviction_candidates,
-                    /* reservee */{},
-                    eviction_cursor,
-                    /* max_candidates_size */0,
-                    /* is_total_space_cleanup */false,
-                    origin_info,
-                    cache_state_guard))
-            {
-                failure_reason = on_cannot_evict_enough_space_message(*query_priority);
-                return false;
-            }
-
-            LOG_TEST(log, "Query limits satisfied (while reserving for {}:{})",
-                     file_segment.key(), file_segment.offset());
-        }
 
         if (!main_priority->collectCandidatesForEviction(
                 main_eviction_info,
@@ -3247,16 +3193,6 @@ bool FileCache::doDynamicResizeImpl(
     return false;
 }
 
-FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
-    const String & query_id, const FilesystemCacheSettings & cache_settings)
-{
-    if (!query_limit || cache_settings.max_download_size_per_query == 0)
-        return {};
-
-    auto lock = query_limit->lock();
-    auto context = query_limit->getOrSetQueryContext(query_id, cache_settings, lock);
-    return std::make_unique<QueryContextHolder>(query_id, this, query_limit.get(), std::move(context));
-}
 
 std::vector<FileSegment::Info> FileCache::sync()
 {

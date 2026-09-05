@@ -14,6 +14,7 @@
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
+#include <Interpreters/FileCache/QueryLimit.h>
 
 
 namespace Poco { class Logger; }
@@ -217,12 +218,20 @@ public:
     /// `reserve_hint`, if non-zero, bounds the reserve-ahead to the bytes left to read from the
     /// current download offset (e.g. up to read_until_position), so the segment is never reserved
     /// ahead past what the read will consume.
+    /// `query_budget` is what the caller's query may still write into this cache; null when the
+    /// query set no limit. No default on purpose: every caller must decide whose budget the write
+    /// belongs to.
     bool reserve(
         size_t size_to_reserve,
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason,
+        const FileCacheQueryBudgetPtr & query_budget,
         FileCacheReserveStat * reserve_stat = nullptr,
         size_t reserve_hint = 0);
+
+    /// The budget of the query which last reserved with a limit. A background download passes it
+    /// back to `reserve`, so its reservations stay charged to that query.
+    FileCacheQueryBudgetPtr getQueryBudget() const;
 
     /// Write data into reserved space.
     void write(char * from, size_t size, size_t offset_in_file);
@@ -309,7 +318,6 @@ private:
     /// downloaded_size should always be less or equal to reserved_size
     std::atomic<size_t> downloaded_size = 0;
     std::atomic<size_t> reserved_size = 0;
-
     /// State needed only while a segment is being downloaded. Created lazily when a downloader
     /// is assigned and freed once the segment reaches a terminal state (DOWNLOADED/DETACHED),
     /// so an already-cached file segment (the common case) does not pay for it.
@@ -317,6 +325,9 @@ private:
     struct DownloadState
     {
         DownloaderId downloader_id; /// The one who prepares the download.
+        /// The budget of the query which queued the background download, charged by its
+        /// continuation.
+        FileCacheQueryBudgetPtr query_budget;
         RemoteFileReaderPtr remote_file_reader;
         LocalCacheWriterPtr cache_writer;
         /// Only used for an assertion in assertCorrectnessUnlocked() in debug/sanitizer builds.
