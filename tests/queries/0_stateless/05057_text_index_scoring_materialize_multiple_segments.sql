@@ -13,23 +13,26 @@ SET mutations_sync = 2;
 DROP TABLE IF EXISTS tab_mat_scoring;
 DROP TABLE IF EXISTS tab_mat_scoring_ref;
 
--- Only a wide part materializes the index in temporary segments (a compact part is rewritten as a whole).
--- `index_granularity` is pinned: the mutation reads the part granule by granule and a segment
--- is flushed only between granules, so the materialization must see several small blocks.
+-- Only a wide part in full storage materializes the index in temporary segments: a compact or a packed part is
+-- rewritten as a whole and the writer then builds the index inline, so `min_bytes_for_full_part_storage` is pinned
+-- (CI randomizes it). `index_granularity` is pinned because the mutation reads the part in granule-aligned blocks
+-- and a segment is flushed only between blocks, so the materialization must see several small blocks.
 CREATE TABLE tab_mat_scoring
 (
     id UInt64,
     s String
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 1024,
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, index_granularity = 1024,
          text_index_posting_list_codec = 'bitpacking', text_index_max_processed_tokens_before_flush = 10000,
          allow_experimental_text_index_scoring = 1;
 
 -- 'common': every row; 'freq<n>': 200 rows each; 'mid<n>': 8 rows each; 'filler' varies the document lengths.
+-- The trailing run of '-' yields no token, so it changes neither the counts nor the scores below. It only widens
+-- each row so that `preferred_block_size_bytes` splits the mutation's read into many blocks for any row layout.
 INSERT INTO tab_mat_scoring SELECT
     number AS id,
-    concat('common freq', toString(id % 100), ' mid', toString(id % 2500), repeat(' filler', id % 7))
+    concat('common freq', toString(id % 100), ' mid', toString(id % 2500), repeat(' filler', id % 7), repeat('-', 300))
 FROM numbers(20000);
 
 -- BM25 statistics are per part: both tables must consist of a single part.
