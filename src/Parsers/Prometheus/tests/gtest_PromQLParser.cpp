@@ -1,3 +1,5 @@
+#include <tuple>
+
 #include <gtest/gtest.h>
 
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
@@ -1571,6 +1573,132 @@ TEST(PromQLParser, DurationUnitOrder)
 
     EXPECT_NO_THROW(PrometheusQueryTree{"up[1y2w3d4h5m6s7ms]"});
     EXPECT_NO_THROW(PrometheusQueryTree{"up[1d2h5ms]"});
+}
+
+
+TEST(PromQLParser, RejectNonPositiveDurationRanges)
+{
+    for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
+             {"up[0]", 3},
+             {"up[0s]", 3},
+             {"up[0ms]", 3},
+             {"up[0m]", 3},
+             {"up[-1s]", 3},
+             {"up[-0.001]", 3},
+             {"up[0m:]", 3},
+             {"up[5m:0s]", 6},
+             {"up[5m:-1s]", 6},
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_pos, expected_error_pos) << query;
+    }
+
+    EXPECT_NO_THROW(PrometheusQueryTree{"up[1ms]"});
+    EXPECT_NO_THROW(PrometheusQueryTree{"up[5m:]"});
+    EXPECT_NO_THROW(PrometheusQueryTree{"up[5m:1ms]"});
+}
+
+
+TEST(PromQLParser, PreservePositiveDurationRangesAtSecondPrecision)
+{
+    for (const auto & [query, expected] : std::initializer_list<std::pair<std::string_view, std::string_view>>{
+             {"up[1ms]", "up[1]"},
+             {"up[999ms]", "up[1]"},
+             {"up[1000ms]", "up[1]"},
+             {"up[1001ms]", "up[2]"},
+             {"up[1999ms]", "up[2]"},
+             {"up[2000ms]", "up[2]"},
+             {"up[0.999]", "up[1]"},
+             {"up[1.000]", "up[1]"},
+             {"up[1.001]", "up[2]"},
+             {"up[9223372036854776s]", "up[9223372036854776]"},
+             {"up[9223372036854776s1ms]", "up[9223372036854777]"},
+             {"up[5m:]", "up[300:]"},
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_TRUE(query_tree.tryParse(query, 0, &error_message, &error_pos)) << query << ": " << error_message;
+        EXPECT_EQ(query_tree.toString(), expected) << query;
+    }
+
+    for (const auto *const query : {"up[0ms]", "up[5m:0ms]"})
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_FALSE(query_tree.tryParse(query, 0, &error_message, &error_pos)) << query;
+    }
+}
+
+
+TEST(PromQLParser, PreservePositiveDecimalRangesAtTimestampPrecision)
+{
+    for (const auto & [query, timestamp_scale, expected] : std::initializer_list<std::tuple<std::string_view, UInt32, std::string_view>>{
+             {"up[1.0001]", 0, "up[2]"},
+             {"up[1.0001e0]", 0, "up[2]"},
+             {"up[1.2301]", 2, "up[1.24]"},
+             {"up[1.2300]", 2, "up[1.23]"},
+             {"up[123e-2]", 2, "up[1.23]"},
+             {"up[123e-3]", 2, "up[0.13]"},
+             {"up[1e-100]", 0, "up[1]"},
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_TRUE(query_tree.tryParse(query, timestamp_scale, &error_message, &error_pos)) << query << ": " << error_message;
+        EXPECT_EQ(query_tree.toString(), expected) << query;
+    }
+}
+
+
+TEST(PromQLParser, RejectUnrepresentableSubqueryStepsAtTimestampPrecision)
+{
+    for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
+             {"up[5m:1ms]", 6},
+             {"up[5m:1001ms]", 6},
+             {"up[5m:1.001]", 6},
+             {"up[5m:1.0001]", 6},
+             {"up[5m:9223372036854776s1ms]", 6},
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_FALSE(query_tree.tryParse(query, 0, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_pos, expected_error_pos) << query;
+    }
+
+    PrometheusQueryTree query_tree;
+    String error_message;
+    size_t error_pos = String::npos;
+    EXPECT_TRUE(query_tree.tryParse("up[5m:1s]", 0, &error_message, &error_pos)) << error_message;
+    EXPECT_TRUE(query_tree.tryParse("up[5m:9223372036854776s]", 0, &error_message, &error_pos)) << error_message;
+
+    EXPECT_TRUE(query_tree.tryParse("up[5m:1.2300]", 2, &error_message, &error_pos)) << error_message;
+    EXPECT_FALSE(query_tree.tryParse("up[5m:1.2301]", 2, &error_message, &error_pos));
+    EXPECT_FALSE(query_tree.tryParse("up[5m:123e-3]", 2, &error_message, &error_pos));
+}
+
+
+TEST(PromQLParser, RejectDurationRangeRoundingOverflow)
+{
+    PrometheusQueryTree query_tree;
+    String error_message;
+    size_t error_pos = String::npos;
+
+    EXPECT_FALSE(query_tree.tryParse("up[9223372036854775807s1ms]", 0, &error_message, &error_pos));
 }
 
 
