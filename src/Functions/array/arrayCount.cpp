@@ -66,7 +66,7 @@ struct ArrayCountImpl
             size_t count = 0;
             for (; pos < offsets[i]; ++pos)
             {
-                if (filter[pos])
+                if (filter[pos] != 0)
                     ++count;
             }
             out_counts[i] = static_cast<UInt32>(count);
