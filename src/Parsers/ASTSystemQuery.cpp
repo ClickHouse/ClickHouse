@@ -325,6 +325,15 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             print_drop_replica();
             break;
         }
+        case Type::DROP_S3QUEUE_FAILED_FILES:
+        {
+            if (table)
+            {
+                ostr << ' ';
+                print_database_table();
+            }
+            break;
+        }
         case Type::RESTORE_DATABASE_REPLICA:
         {
             if (database)

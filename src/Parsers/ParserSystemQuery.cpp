@@ -405,6 +405,12 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::DROP_S3QUEUE_FAILED_FILES:
+        {
+            if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ false))
+                return false;
+            break;
+        }
         case Type::ALLOCATE_MEMORY:
         {
             ASTPtr ast;

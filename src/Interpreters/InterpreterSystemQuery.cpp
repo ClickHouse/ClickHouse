@@ -1050,6 +1050,9 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_DATABASE_REPLICA:
             dropDatabaseReplica(query);
             break;
+        case Type::DROP_S3QUEUE_FAILED_FILES:
+            dropS3QueueFailedFiles(query);
+            break;
         case Type::SYNC_REPLICA:
             syncReplica(query);
             break;
@@ -2585,6 +2588,20 @@ void InterpreterSystemQuery::flushObjectStorageQueue(ASTSystemQuery & query)
     queue->waitForPathToBeProcessed(query.queue_path, context);
 }
 
+void InterpreterSystemQuery::dropS3QueueFailedFiles(ASTSystemQuery & /* query */)
+{
+    auto context = getContext();
+    context->checkAccess(AccessType::SYSTEM_DROP_S3QUEUE_FAILED_FILES, table_id);
+
+    auto table = DatabaseCatalog::instance().getTable(table_id, context);
+    auto * queue = dynamic_cast<StorageObjectStorageQueue *>(table.get());
+    if (!queue)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table {} is not an S3Queue or AzureQueue table", table_id.getNameForLogs());
+
+    queue->dropFailedFiles();
+}
+
 RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
 {
     auto ctx = getContext();
@@ -3071,6 +3088,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_CATALOG_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_REPLICA);
+            break;
+        }
+        case Type::DROP_S3QUEUE_FAILED_FILES:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_DROP_S3QUEUE_FAILED_FILES, query.getDatabase(), query.getTable());
             break;
         }
         case Type::RESTORE_REPLICA:

@@ -55,6 +55,8 @@ namespace ErrorCodes
     extern const int REPLICA_ALREADY_EXISTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int NOT_IMPLEMENTED;
+    extern const int KEEPER_EXCEPTION;
 }
 
 namespace Setting
@@ -122,8 +124,6 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , zookeeper_name(zookeeper_name_)
     , zookeeper_path(zookeeper_path_)
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
-    , cleanup_processed_files(isUnordered(mode) && table_metadata.hasTrackedFilesLimit())
-    , cleanup_failed_files(table_metadata.hasTrackedFilesLimit())
     , cleanup_processing_files(use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
@@ -162,11 +162,10 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
 
     LOG_TRACE(
         log, "Mode: {}, buckets: {}, processing threads: {}, "
-        "result buckets num: {}, use persistent processing nodes: {}, "
-        "cleanup processing files: {}, cleanup processed files: {}, cleanup failed files: {}",
+        "result buckets num: {}, use persistent processing nodes: {}, cleanup processing files: {}",
         table_metadata.mode, table_metadata.buckets.load(),
         table_metadata.processing_threads_num.load(), buckets_num,
-        use_persistent_processing_nodes.load(), cleanup_processing_files, cleanup_processed_files, cleanup_failed_files);
+        use_persistent_processing_nodes.load(), cleanup_processing_files);
 }
 
 ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
@@ -210,7 +209,7 @@ void ObjectStorageQueueMetadata::startup()
          return;
 
     if (!cleanup_task
-        && (cleanup_processed_files || cleanup_failed_files || cleanup_processing_files))
+        && (isUnordered(mode) || cleanup_processing_files))
     {
         cleanup_task = Context::getGlobalContextInstance()->getSchedulePool()->createTask(
             StorageID::createEmpty(), "ObjectStorageQueueCleanupFunc",
@@ -444,6 +443,17 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                 continue;
             }
             new_table_metadata.tracked_files_ttl_sec = value;
+        }
+        else if (change.name == "failed_file_ttl_sec")
+        {
+            const auto value = change.value.safeGet<UInt64>();
+            if (table_metadata.failed_files_ttl_sec == value)
+            {
+                LOG_TRACE(log, "Setting `failed_file_ttl_sec` already equals {}. "
+                        "Will do nothing", value);
+                continue;
+            }
+            new_table_metadata.failed_files_ttl_sec = value;
         }
         else if (change.name == "buckets")
         {
@@ -1265,8 +1275,10 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
 
     /// Create a lock so that with distributed processing
     /// multiple nodes do not execute cleanup in parallel.
+    /// Store "background_cleanup" in the lock value to distinguish from manual dropFailedFiles.
+    static constexpr const char * LOCK_OPERATION_BACKGROUND = "background_cleanup";
     auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(
-        zookeeper_cleanup_lock_path, *zk_client->getKeeper(), toString(getCurrentTime()));
+        zookeeper_cleanup_lock_path, *zk_client->getKeeper(), LOCK_OPERATION_BACKGROUND);
 
     if (!ephemeral_node)
     {
@@ -1279,13 +1291,19 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     if (cleanup_processing_files && persistent_processing_node_ttl_seconds)
         cleanupPersistentProcessingNodes();
 
-    if (table_metadata.hasTrackedFilesLimit())
+    const bool cleanup_processed_files = isUnordered(mode) && table_metadata.hasTrackedFilesLimit();
+    const bool cleanup_failed_files = isUnordered(mode) && table_metadata.failed_files_ttl_sec;
+
+    if (cleanup_processed_files || cleanup_failed_files)
     {
         if (cleanup_processed_files)
-            cleanupTrackedNodes(zookeeper_path / "processed", "processed");
+            cleanupTrackedNodes(zookeeper_path / "processed", "processed", table_metadata.tracked_files_ttl_sec, table_metadata.tracked_files_limit);
 
         if (cleanup_failed_files)
-            cleanupTrackedNodes(zookeeper_path / "failed", "failed");
+        {
+            cleanupTrackedNodes(zookeeper_path / "failed", "failed", table_metadata.failed_files_ttl_sec, 0);
+            reconcileFailedFilesCache();
+        }
     }
 
     LOG_TRACE(log, "Node limits check finished");
@@ -1293,7 +1311,9 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
 
 void ObjectStorageQueueMetadata::cleanupTrackedNodes(
     const std::string & nodes_path,
-    std::string_view description)
+    std::string_view description,
+    UInt64 ttl_seconds,
+    UInt64 nodes_limit)
 {
     LOG_TEST(log, "Checking {} nodes for tracking limits", description);
 
@@ -1320,14 +1340,14 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
         return;
     }
 
-    const bool check_nodes_limit = table_metadata.tracked_files_limit > 0;
-    const bool check_nodes_ttl = table_metadata.tracked_files_ttl_sec > 0;
+    const bool check_nodes_limit = nodes_limit > 0;
+    const bool check_nodes_ttl = ttl_seconds > 0;
     chassert(check_nodes_limit || check_nodes_ttl);
 
-    const bool nodes_limit_exceeded = nodes.size() > table_metadata.tracked_files_limit;
+    const bool nodes_limit_exceeded = nodes.size() > nodes_limit;
     if ((!nodes_limit_exceeded || !check_nodes_limit) && !check_nodes_ttl)
     {
-        LOG_TEST(log, "No limit exceeded (nodes: {}/{})", nodes.size(), table_metadata.tracked_files_limit.load());
+        LOG_TEST(log, "No limit exceeded (nodes: {}/{})", nodes.size(), nodes_limit);
         return;
     }
 
@@ -1377,6 +1397,13 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
     std::filesystem::path nodes_fs_path(nodes_path);
     for (const auto & node : nodes)
     {
+        /// Skip retry-state nodes - only clean up terminal failed nodes.
+        /// Retry-state nodes (.retriable suffix) are ephemeral and self-clean
+        /// when files succeed or reach max retries. Deleting them mid-retry
+        /// resets the retry counter, breaking the retry limit invariant.
+        if (node.ends_with(".retriable"))
+            continue;
+
         paths.push_back(nodes_fs_path / node);
         if (paths.size() == keeper_multiread_batch_size)
             get_paths();
@@ -1395,8 +1422,8 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
 
     LOG_TEST(
         log, "Checking node limits (max size: {}, max age: {}) for {}",
-        table_metadata.tracked_files_limit.load(),
-        table_metadata.tracked_files_ttl_sec.load(),
+        nodes_limit,
+        ttl_seconds,
         get_nodes_str());
 
     static constexpr size_t keeper_multi_batch_size = 100;
@@ -1405,8 +1432,24 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
     remove_requests.reserve(keeper_multi_batch_size);
     remove_responses.reserve(keeper_multi_batch_size);
 
+    /// Track file paths corresponding to remove requests for success-based cache invalidation.
+    /// Parallel to remove_requests: batch_file_paths[i] is the file_path for remove_requests[i].
+    std::vector<std::string> batch_file_paths;
+    batch_file_paths.reserve(keeper_multi_batch_size);
+
+    /// Snapshot generations before starting Keeper deletes
+    /// to prevent race where file re-fails with new generation before cache removal
+    std::unordered_map<std::string, uint64_t> generations_snapshot;
+    {
+        auto all_entries = local_file_statuses.dump();
+        for (const auto & entry : all_entries)
+        {
+            generations_snapshot[entry.mapped->path] = entry.mapped->generation.load();
+        }
+    }
+
     size_t nodes_to_remove = check_nodes_limit && nodes_limit_exceeded
-        ? nodes.size() - table_metadata.tracked_files_limit
+        ? nodes.size() - nodes_limit
         : 0;
 
     const auto remove_nodes = [&](bool node_limit)
@@ -1418,15 +1461,52 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
 
         if (code == Coordination::Error::ZOK)
         {
+            /// Full batch succeeded - clear cache for all requests in this batch
+            for (const auto & file_path : batch_file_paths)
+            {
+                using KeyType = UInt128;
+                using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                    [&generations_snapshot, &file_path](const KeyType &, const StatusPtr & status)
+                    {
+                        if (status->path == file_path)
+                        {
+                            auto it = generations_snapshot.find(file_path);
+                            if (it != generations_snapshot.end() && status->generation.load() == it->second)
+                                return true;
+                        }
+                        return false;
+                    }
+                ));
+            }
+
             if (node_limit)
                 nodes_to_remove -= remove_requests.size();
         }
         else
         {
+            /// Partial success: reconcile individual responses.
+            /// Clear cache only for nodes that were successfully deleted.
             for (size_t i = 0; i < remove_requests.size(); ++i)
             {
                 if (remove_responses[i]->error == Coordination::Error::ZOK)
                 {
+                    const auto & file_path = batch_file_paths[i];
+                    using KeyType = UInt128;
+                    using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                    local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                        [&generations_snapshot, &file_path](const KeyType &, const StatusPtr & status)
+                        {
+                            if (status->path == file_path)
+                            {
+                                auto it = generations_snapshot.find(file_path);
+                                if (it != generations_snapshot.end() && status->generation.load() == it->second)
+                                    return true;
+                            }
+                            return false;
+                        }
+                    ));
+
                     if (node_limit)
                         --nodes_to_remove;
                 }
@@ -1439,10 +1519,31 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
                     {
                         code = getZooKeeper()->tryRemove(remove_requests[i]->getPath());
                     });
-                    if (code == Coordination::Error::ZOK)
+                    if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE)
                     {
+                        /// ZOK: retry succeeded. ZNONODE: first attempt already deleted the node
+                        /// before the multi aborted. Either way, the node is gone - clear cache.
+                        const auto & file_path = batch_file_paths[i];
+                        using KeyType = UInt128;
+                        using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                        local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                            [&generations_snapshot, &file_path](const KeyType &, const StatusPtr & status)
+                            {
+                                if (status->path == file_path)
+                                {
+                                    auto it = generations_snapshot.find(file_path);
+                                    if (it != generations_snapshot.end() && status->generation.load() == it->second)
+                                        return true;
+                                }
+                                return false;
+                            }
+                        ));
+
                         if (node_limit)
                             --nodes_to_remove;
+
+                        if (code == Coordination::Error::ZNONODE)
+                            LOG_TRACE(log, "Node `{}` already removed (likely by first attempt before multi aborted)", remove_requests[i]->getPath());
                     }
                     else
                     {
@@ -1457,6 +1558,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
         }
 
         remove_requests.clear();
+        batch_file_paths.clear();
     };
 
     for (const auto & node : sorted_nodes)
@@ -1466,7 +1568,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
             LOG_TRACE(log, "Removing node at path {} ({}) because max files limit is reached",
                      node.metadata.file_path, node.zk_path);
 
-            local_file_statuses.remove(getMetadataCacheKey(node.metadata.file_path));
+            batch_file_paths.push_back(node.metadata.file_path);
             remove_requests.push_back(zkutil::makeRemoveRequest(node.zk_path, -1));
             /// we either reach max multi batch size OR we already added maximum amount of nodes we want to delete based on the node limit
             if (remove_requests.size() == keeper_multi_batch_size || remove_requests.size() == nodes_to_remove)
@@ -1475,12 +1577,12 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
         else if (check_nodes_ttl)
         {
             UInt64 node_age = getCurrentTime() - node.metadata.last_processed_timestamp;
-            if (node_age >= table_metadata.tracked_files_ttl_sec)
+            if (node_age >= ttl_seconds)
             {
                 LOG_TRACE(log, "Removing node at path {} ({}) because file ttl is reached",
                         node.metadata.file_path, node.zk_path);
 
-                local_file_statuses.remove(getMetadataCacheKey(node.metadata.file_path));
+                batch_file_paths.push_back(node.metadata.file_path);
                 remove_requests.push_back(zkutil::makeRemoveRequest(node.zk_path, -1));
                 if (remove_requests.size() == keeper_multi_batch_size)
                     remove_nodes(/*node_limit=*/false);
@@ -1502,6 +1604,782 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
 
     if (!remove_requests.empty())
         remove_nodes(/*node_limit=*/false);
+}
+
+void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
+{
+    /// Reconcile local cache with Keeper state by removing cache entries
+    /// for files that no longer have /failed nodes in Keeper.
+    /// Used by losing replicas in ON CLUSTER execution to achieve cache consistency
+    /// after the winning replica completes the cleanup.
+
+    const std::string failed_path = zookeeper_path / "failed";
+    auto zk_client = getZooKeeper();
+    auto zk_retries = getKeeperRetriesControl(log);
+
+    /// Snapshot cache FIRST to establish consistent baseline before any Keeper checks.
+    /// Any file failing between this snapshot and subsequent Keeper checks will appear
+    /// in Keeper, preventing wrongful eviction based on stale Keeper snapshot.
+    std::unordered_map<std::string, uint64_t> failed_generations;
+    std::vector<std::tuple<std::string, std::string, std::string, uint64_t>> cache_entries;
+    {
+        auto all_entries = local_file_statuses.dump();
+        for (const auto & entry : all_entries)
+        {
+            if (entry.mapped->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+            {
+                failed_generations[entry.mapped->path] = entry.mapped->generation.load();
+
+                /// Also build cache_entries for non-empty branch
+                SipHash path_hash;
+                path_hash.update(entry.mapped->path);
+                auto node_name = toString(path_hash.get64());
+                auto failed_node_path = fs::path(failed_path) / node_name;
+                cache_entries.emplace_back(
+                    entry.mapped->path,
+                    failed_node_path.string(),
+                    failed_node_path.string() + ".retriable",
+                    entry.mapped->generation.load());
+            }
+        }
+    }
+
+    /// Now check Keeper AFTER cache snapshot
+    Strings keeper_failed_nodes;
+    Coordination::Error code = {};
+    zk_retries.retryLoop([&]
+    {
+        code = zk_client->tryGetChildren(failed_path, keeper_failed_nodes);
+    });
+
+    if (code == Coordination::Error::ZNONODE || (code == Coordination::Error::ZOK && keeper_failed_nodes.empty()))
+    {
+        /// No /failed path or empty /failed means all failed files were deleted.
+
+        /// Remove only entries whose generation still matches the snapshot
+        size_t removed = 0;
+        using KeyType = UInt128;
+        using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+        local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+            [&failed_generations, &removed](const KeyType & /* key */, const StatusPtr & status)
+            {
+                if (status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+                {
+                    auto it = failed_generations.find(status->path);
+                    if (it != failed_generations.end() && status->generation.load() == it->second)
+                    {
+                        /// Generation matches snapshot → same entry, safe to remove
+                        ++removed;
+                        return true;
+                    }
+                    /// Generation changed → new entry re-inserted, don't remove
+                    return false;
+                }
+                return false;
+            }
+        ));
+        LOG_INFO(log, "Reconciled cache: removed {} Failed entries (no /failed nodes in Keeper)", removed);
+        return;
+    }
+
+    if (code != Coordination::Error::ZOK)
+    {
+        LOG_WARNING(log, "Failed to list /failed nodes for cache reconciliation: {}", magic_enum::enum_name(code));
+        return;
+    }
+
+    if (cache_entries.empty())
+    {
+        LOG_TRACE(log, "No Failed cache entries to reconcile");
+        return;
+    }
+
+    /// Check existence of both terminal and retriable nodes for each cache entry in batches.
+    /// Only remove cache entries if BOTH nodes are confirmed absent (ZNONODE).
+    /// This preserves actively-retrying files that have only .retriable nodes.
+    std::unordered_set<std::string> paths_to_remove;
+    const size_t batch_size = keeper_multiread_batch_size;
+
+    for (size_t i = 0; i < cache_entries.size(); i += batch_size)
+    {
+        size_t batch_end = std::min(i + batch_size, cache_entries.size());
+        std::vector<std::string> batch_paths;
+        batch_paths.reserve(2 * (batch_end - i));  // 2 paths per cache entry
+
+        for (size_t j = i; j < batch_end; ++j)
+        {
+            batch_paths.push_back(std::get<1>(cache_entries[j]));  // terminal node
+            batch_paths.push_back(std::get<2>(cache_entries[j]));  // retriable node
+        }
+
+        zkutil::ZooKeeper::MultiTryGetResponse response;
+        zk_retries.resetFailures();
+        zk_retries.retryLoop([&]
+        {
+            response = zk_client->tryGet(batch_paths);
+        });
+
+        for (size_t j = 0; j < response.size(); j += 2)
+        {
+            bool terminal_absent = (response[j].error == Coordination::Error::ZNONODE);
+            bool retriable_absent = (response[j + 1].error == Coordination::Error::ZNONODE);
+
+            /// Only mark for removal if BOTH terminal and retriable nodes are confirmed absent
+            if (terminal_absent && retriable_absent)
+            {
+                paths_to_remove.insert(std::get<0>(cache_entries[i + j / 2]));
+            }
+        }
+    }
+
+    /// Remove cache entries confirmed absent in Keeper
+    size_t removed = 0;
+    using KeyType = UInt128;
+    using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+    local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+        [&paths_to_remove, &cache_entries, &removed](const KeyType & /* key */, const StatusPtr & status)
+        {
+            if (status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed
+                && paths_to_remove.contains(status->path))
+            {
+                /// Find the generation we captured for this path at snapshot time
+                auto it = std::find_if(cache_entries.begin(), cache_entries.end(),
+                    [&](const auto & e) { return std::get<0>(e) == status->path; });
+
+                if (it != cache_entries.end() && status->generation.load() == std::get<3>(*it))
+                {
+                    /// Generation matches snapshot → same entry, safe to remove
+                    ++removed;
+                    return true;
+                }
+                /// Generation changed → new entry re-inserted, don't remove
+                return false;
+            }
+            return false;
+        }
+    ));
+
+    LOG_INFO(log, "Reconciled cache: removed {} Failed entries confirmed absent in Keeper", removed);
+}
+
+void ObjectStorageQueueMetadata::dropFailedFiles()
+{
+    if (!isUnordered(mode))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "SYSTEM DROP S3QUEUE FAILED FILES is only supported for unordered mode tables. "
+            "Support for ordered mode will be added in a future release.");
+
+    const fs::path zookeeper_cleanup_lock_path = zookeeper_path / "cleanup_lock";
+    const auto zk_client = getZooKeeper();
+
+    /// Acquire the same distributed lock used by the periodic cleanup sweep
+    /// to prevent concurrent modification of failed files.
+    /// Store "manual_drop_failed" in the lock value so dropFailedFiles invocations
+    /// can distinguish themselves from the generic background cleanup.
+    static constexpr const char * LOCK_OPERATION_DROP_FAILED = "manual_drop_failed";
+    auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(
+        zookeeper_cleanup_lock_path, *zk_client->getKeeper(), LOCK_OPERATION_DROP_FAILED);
+
+    if (!ephemeral_node)
+    {
+        /// Lock is held by another process. Check if it's another dropFailedFiles invocation.
+        /// When invoked via ON CLUSTER, multiple replicas attempt this concurrently;
+        /// if another dropFailedFiles holds the lock, treat it as idempotent success.
+        /// If the generic background cleanup holds the lock, it may not be cleaning failed files,
+        /// so we must fail and let the user retry.
+        try
+        {
+            std::string lock_value = zk_client->get(zookeeper_cleanup_lock_path);
+            if (lock_value == LOCK_OPERATION_DROP_FAILED)
+            {
+                /// Another replica is executing the same operation. Wait for it to complete,
+                /// observing its progress via decreasing /failed node count rather than using
+                /// a fixed wall-clock timeout that could be too short for large backlogs.
+                LOG_INFO(log, "Another replica is executing SYSTEM DROP S3QUEUE FAILED FILES, waiting for completion");
+
+                /// Progress-based wait: poll the lock every 100ms for completion,
+                /// and periodically check /failed node count to detect forward progress.
+                /// If the count is decreasing or changing, the winner is actively working.
+                /// Only timeout if the count is unchanged for an extended period (stall detection).
+                static constexpr size_t POLL_INTERVAL_MS = 100;
+                static constexpr size_t PROGRESS_CHECK_INTERVAL_MS = 10000;  /// Check /failed count every 10s
+                static constexpr size_t STALL_TIMEOUT_MS = 180000;           /// 3 min without any change = stalled
+                static constexpr size_t ABSOLUTE_MAX_WAIT_MS = 1800000;      /// 30 min absolute cap (safety net)
+
+                size_t last_progress_check_iteration = 0;
+                size_t last_failed_node_count = SIZE_MAX;  /// Unknown initially
+                size_t iterations_without_progress = 0;
+                const size_t max_total_iterations = ABSOLUTE_MAX_WAIT_MS / POLL_INTERVAL_MS;
+
+                for (size_t i = 0; i < max_total_iterations; ++i)
+                {
+                    sleepForMilliseconds(POLL_INTERVAL_MS);
+
+                    try
+                    {
+                        /// Poll to see if the lock still exists
+                        zk_client->get(zookeeper_cleanup_lock_path);
+                    }
+                    catch (const Coordination::Exception & poll_e)
+                    {
+                        if (poll_e.code == Coordination::Error::ZNONODE)
+                        {
+                            /// Lock was released. Verify the cleanup actually succeeded by checking
+                            /// that no terminal failed nodes remain (the cleanup only removes terminal
+                            /// nodes, preserving .retriable ones). The winner could have partially
+                            /// failed (e.g., some batches succeeded, later batch threw KEEPER_EXCEPTION),
+                            /// so "lock released" does not guarantee "cleanup succeeded".
+                            LOG_INFO(log, "Cleanup lock was released after {}ms, verifying cleanup succeeded", (i + 1) * 100);
+
+                            const std::string failed_path = zookeeper_path / "failed";
+                            Strings remaining_failed_nodes;
+                            Coordination::Error check_code = zk_client->tryGetChildren(failed_path, remaining_failed_nodes);
+
+                            if (check_code != Coordination::Error::ZOK && check_code != Coordination::Error::ZNONODE)
+                            {
+                                /// Transient Keeper error during verification; safe to treat as unknown state
+                                throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+                                    "Failed to verify cleanup completion (Keeper error: {}). Please retry the command.",
+                                    magic_enum::enum_name(check_code));
+                            }
+
+                            /// Count only terminal failed nodes (exclude .retriable suffix nodes, which are preserved)
+                            size_t terminal_failed_count = 0;
+                            for (const auto & node : remaining_failed_nodes)
+                            {
+                                if (!node.ends_with(".retriable"))
+                                    ++terminal_failed_count;
+                            }
+
+                            if (terminal_failed_count == 0)
+                            {
+                                /// Cleanup succeeded: no terminal failed nodes remain
+                                reconcileFailedFilesCache();
+                                LOG_INFO(log, "Verified cleanup completed successfully");
+                                return;
+                            }
+                            else
+                            {
+                                /// Terminal failed nodes remain. This could mean:
+                                /// (a) the winner genuinely left nodes behind due to partial failure, OR
+                                /// (b) a new unrelated file failed during our wait window.
+                                /// We cannot distinguish these cases without tracking the original node set,
+                                /// so we conservatively throw and ask the caller to retry. This is safe
+                                /// (no false success) even if occasionally overly cautious on case (b),
+                                /// and a retry naturally resolves case (b) by cleaning the new nodes.
+                                throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+                                    "Failed file cleanup verification found {} terminal failed nodes remaining in /failed. "
+                                    "This may indicate partial failure or new concurrent failures. Please retry the command.",
+                                    terminal_failed_count);
+                            }
+                        }
+                        /// Other errors during polling are transient - retry on next iteration
+                    }
+
+                    /// Periodically check if winner is making progress by observing /failed node count
+                    if ((i - last_progress_check_iteration) * POLL_INTERVAL_MS >= PROGRESS_CHECK_INTERVAL_MS)
+                    {
+                        size_t elapsed_iterations = i - last_progress_check_iteration;
+                        last_progress_check_iteration = i;
+
+                        const std::string failed_path = zookeeper_path / "failed";
+                        Strings failed_nodes;
+                        Coordination::Error code = zk_client->tryGetChildren(failed_path, failed_nodes);
+
+                        if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE)
+                        {
+                            size_t terminal_count = 0;
+                            for (const auto & node : failed_nodes)
+                                if (!node.ends_with(".retriable"))
+                                    ++terminal_count;
+
+                            if (last_failed_node_count != SIZE_MAX)
+                            {
+                                if (terminal_count < last_failed_node_count)
+                                {
+                                    /// Progress detected: node count decreased
+                                    LOG_TRACE(log, "Winner making progress: {} -> {} terminal failed nodes",
+                                              last_failed_node_count, terminal_count);
+                                    iterations_without_progress = 0;
+                                }
+                                else if (terminal_count > last_failed_node_count)
+                                {
+                                    /// Count increased: new files failed concurrently while winner is cleaning.
+                                    /// The winner is processing a moving target, but it's definitely still active.
+                                    /// Reset stall timer - a hung winner wouldn't see new failures being added.
+                                    LOG_TRACE(log, "New files failed concurrently: {} -> {} terminal failed nodes. Winner still active.",
+                                              last_failed_node_count, terminal_count);
+                                    iterations_without_progress = 0;
+                                }
+                                else
+                                {
+                                    /// Count unchanged: no definitive progress signal.
+                                    /// Accumulate stall time - if this persists, winner may be hung.
+                                    iterations_without_progress += elapsed_iterations;
+
+                                    if (iterations_without_progress * POLL_INTERVAL_MS >= STALL_TIMEOUT_MS)
+                                    {
+                                        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                                            "Winner replica appears stalled: /failed node count has been {} "
+                                            "for {} seconds with no changes. Please retry the command.",
+                                            terminal_count,
+                                            (iterations_without_progress * POLL_INTERVAL_MS) / 1000);
+                                    }
+                                }
+                            }
+
+                            last_failed_node_count = terminal_count;
+                        }
+                        /// Transient Keeper errors during progress check are ignored - retry on next check
+                    }
+
+                    /// Hit absolute safety-net timeout
+                    if (i == max_total_iterations - 1)
+                    {
+                        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                            "Cleanup did not complete within {} minute safety-net timeout. "
+                            "The winner may be processing an extremely large backlog. Please retry or investigate.",
+                            ABSOLUTE_MAX_WAIT_MS / 60000);
+                    }
+                }
+            }
+        }
+        catch (const Coordination::Exception & e)
+        {
+            if (e.code == Coordination::Error::ZNONODE)
+            {
+                /// The ephemeral lock node disappeared between our tryCreate and get.
+                /// We don't know whose lock it was (manual_drop_failed vs background_cleanup),
+                /// so verify /failed is actually empty before claiming success.
+                LOG_INFO(log, "Cleanup lock was released, verifying cleanup succeeded");
+
+                const std::string failed_path = zookeeper_path / "failed";
+                Strings remaining_failed_nodes;
+                Coordination::Error check_code = zk_client->tryGetChildren(failed_path, remaining_failed_nodes);
+
+                if (check_code != Coordination::Error::ZOK && check_code != Coordination::Error::ZNONODE)
+                {
+                    /// Transient Keeper error during verification
+                    throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+                        "Failed to verify cleanup completion (Keeper error: {}). Please retry the command.",
+                        magic_enum::enum_name(check_code));
+                }
+
+                /// Count only terminal failed nodes (exclude .retriable suffix nodes)
+                size_t terminal_failed_count = 0;
+                for (const auto & node : remaining_failed_nodes)
+                {
+                    if (!node.ends_with(".retriable"))
+                        ++terminal_failed_count;
+                }
+
+                if (terminal_failed_count == 0)
+                {
+                    /// Cleanup succeeded: no terminal failed nodes remain
+                    reconcileFailedFilesCache();
+                    LOG_INFO(log, "Verified cleanup completed successfully");
+                    return;
+                }
+                else
+                {
+                    /// Terminal nodes remain - cannot confirm cleanup succeeded
+                    throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+                        "Failed file cleanup verification found {} terminal failed nodes remaining. "
+                        "Cannot confirm cleanup succeeded. Please retry the command.",
+                        terminal_failed_count);
+                }
+            }
+
+            /// For other errors (connection issues, etc.), treat as a transient error.
+            LOG_WARNING(log, "Failed to read cleanup lock: {}. Will ask user to retry.", e.displayText());
+        }
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Failed file cleanup cannot proceed: another operation is holding the cleanup lock. "
+            "Please retry in a moment.");
+    }
+
+    const std::string failed_path = zookeeper_path / "failed";
+    auto zk_retries = getKeeperRetriesControl(log);
+
+    /// Get list of failed file nodes
+    Strings failed_nodes;
+    Coordination::Error code = {};
+    zk_retries.retryLoop([&]
+    {
+        code = getZooKeeper()->tryGetChildren(failed_path, failed_nodes);
+    });
+
+    if (code == Coordination::Error::ZNONODE)
+    {
+        /// No failed path exists yet - nothing to drop.
+        /// Reconcile cache to clear any stale entries before returning.
+        LOG_TRACE(log, "Failed files path does not exist, nothing to drop");
+        reconcileFailedFilesCache();
+        return;
+    }
+
+    if (code != Coordination::Error::ZOK)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to list failed files: {}", magic_enum::enum_name(code));
+
+    if (failed_nodes.empty())
+    {
+        /// No failed files to drop (or only .retriable nodes remain).
+        /// Reconcile cache to clear any stale entries before returning.
+        LOG_TRACE(log, "No failed files to drop");
+        reconcileFailedFilesCache();
+        return;
+    }
+
+    LOG_TRACE(log, "Dropping {} failed files", failed_nodes.size());
+
+    /// Read metadata and delete only the specific nodes from our snapshot
+    /// to avoid race with concurrent failures
+    std::vector<std::string> file_paths;
+    file_paths.reserve(failed_nodes.size());
+
+    std::filesystem::path failed_fs_path(failed_path);
+
+    /// Process in batches for both reading metadata and deleting nodes
+    const size_t batch_size = keeper_multiread_batch_size;
+    static constexpr size_t keeper_multi_batch_size = 100;
+
+    /// Track failed deletions to report at the end
+    std::vector<std::pair<size_t, Coordination::Error>> failed_batches;
+    /// Track successful deletions for partial success reporting
+    size_t total_deleted = 0;
+
+    /// Snapshot generations of all Failed files before starting Keeper deletes
+    /// to prevent race where file re-fails with new generation before cache removal
+    std::unordered_map<std::string, uint64_t> failed_generations;
+    {
+        auto all_entries = local_file_statuses.dump();
+        for (const auto & entry : all_entries)
+        {
+            if (entry.mapped->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+                failed_generations[entry.mapped->path] = entry.mapped->generation.load();
+        }
+    }
+
+    for (size_t i = 0; i < failed_nodes.size(); i += batch_size)
+    {
+        size_t batch_end = std::min(i + batch_size, failed_nodes.size());
+        std::vector<std::string> batch_paths;
+        batch_paths.reserve(batch_end - i);
+
+        for (size_t j = i; j < batch_end; ++j)
+        {
+            /// Skip retry-state nodes - only drop terminal failed nodes.
+            /// See comment in cleanupTrackedNodes for rationale.
+            if (failed_nodes[j].ends_with(".retriable"))
+                continue;
+
+            batch_paths.push_back(failed_fs_path / failed_nodes[j]);
+        }
+
+        /// Read metadata for this batch
+        zkutil::ZooKeeper::MultiTryGetResponse response;
+        zk_retries.resetFailures();
+        zk_retries.retryLoop([&]
+        {
+            response = getZooKeeper()->tryGet(batch_paths);
+        });
+
+        /// Delete nodes from this batch and collect file paths for immediate cache cleanup
+        Coordination::Requests remove_requests;
+        std::vector<std::string> batch_file_paths;
+        remove_requests.reserve(std::min(batch_paths.size(), keeper_multi_batch_size));
+        batch_file_paths.reserve(batch_paths.size());
+
+        for (size_t j = 0; j < response.size(); ++j)
+        {
+            const auto & zk_path = batch_paths[j];
+
+            if (response[j].error == Coordination::Error::ZNONODE)
+            {
+                LOG_TEST(log, "Failed file node already deleted: {}", zk_path);
+                continue;
+            }
+
+            if (response[j].error != Coordination::Error::ZOK)
+            {
+                LOG_ERROR(log, "Failed to fetch metadata for {}: {}", zk_path, magic_enum::enum_name(response[j].error));
+                continue;
+            }
+
+            auto metadata = ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(response[j].data);
+            batch_file_paths.push_back(metadata.file_path);
+            LOG_TEST(log, "Read metadata for failed file: {}", metadata.file_path);
+
+            remove_requests.push_back(zkutil::makeRemoveRequest(zk_path, -1));
+
+            /// Execute batch removes when we hit the limit
+            if (remove_requests.size() >= keeper_multi_batch_size)
+            {
+                Coordination::Responses remove_responses;
+                zk_retries.resetFailures();
+                zk_retries.retryLoop([&]
+                {
+                    code = getZooKeeper()->tryMulti(remove_requests, remove_responses);
+                });
+
+                if (code == Coordination::Error::ZOK)
+                {
+                    /// Clear cache immediately for successfully deleted znodes
+                    for (size_t k = batch_file_paths.size() - remove_requests.size(); k < batch_file_paths.size(); ++k)
+                    {
+                        const auto & file_path = batch_file_paths[k];
+                        using KeyType = UInt128;
+                        using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                        local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                            [&failed_generations, &file_path](const KeyType &, const StatusPtr & status)
+                            {
+                                if (status->path == file_path && status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+                                {
+                                    auto it = failed_generations.find(file_path);
+                                    if (it != failed_generations.end() && status->generation.load() == it->second)
+                                        return true;
+                                }
+                                return false;
+                            }
+                        ));
+                        file_paths.push_back(file_path);
+                    }
+                    total_deleted += remove_requests.size();
+                }
+                else
+                {
+                    /// Partial success: reconcile individual responses.
+                    /// Some operations may have succeeded even if the multi request returned non-ZOK.
+                    size_t batch_succeeded = 0;
+                    size_t batch_start_idx = batch_file_paths.size() - remove_requests.size();
+
+                    for (size_t k = 0; k < remove_requests.size(); ++k)
+                    {
+                        if (remove_responses[k]->error == Coordination::Error::ZOK)
+                        {
+                            /// This specific remove succeeded - update cache
+                            const auto & file_path = batch_file_paths[batch_start_idx + k];
+                            using KeyType = UInt128;
+                            using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                            local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                                [&failed_generations, &file_path](const KeyType &, const StatusPtr & status)
+                                {
+                                    if (status->path == file_path && status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+                                    {
+                                        auto it = failed_generations.find(file_path);
+                                        if (it != failed_generations.end() && status->generation.load() == it->second)
+                                            return true;
+                                    }
+                                    return false;
+                                }
+                            ));
+                            file_paths.push_back(file_path);
+                            ++batch_succeeded;
+                        }
+                        else if (remove_responses[k]->error == Coordination::Error::ZRUNTIMEINCONSISTENCY)
+                        {
+                            /// Request was not processed because multi was aborted - retry individually
+                            zk_retries.resetFailures();
+                            Coordination::Error retry_code = {};
+                            zk_retries.retryLoop([&]
+                            {
+                                retry_code = getZooKeeper()->tryRemove(remove_requests[k]->getPath());
+                            });
+
+                            if (retry_code == Coordination::Error::ZOK || retry_code == Coordination::Error::ZNONODE)
+                            {
+                                /// ZOK: retry succeeded. ZNONODE: first attempt already deleted the node
+                                /// before the multi aborted. Either way, the node is gone - clear cache.
+                                const auto & file_path = batch_file_paths[batch_start_idx + k];
+                                using KeyType = UInt128;
+                                using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                                local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                                    [&failed_generations, &file_path](const KeyType &, const StatusPtr & status)
+                                    {
+                                        if (status->path == file_path && status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+                                        {
+                                            auto it = failed_generations.find(file_path);
+                                            if (it != failed_generations.end() && status->generation.load() == it->second)
+                                                return true;
+                                        }
+                                        return false;
+                                    }
+                                ));
+                                file_paths.push_back(file_path);
+                                ++batch_succeeded;
+
+                                if (retry_code == Coordination::Error::ZNONODE)
+                                    LOG_TRACE(log, "Node `{}` already removed (likely by first attempt before multi aborted)",
+                                              remove_requests[k]->getPath());
+                            }
+                            else
+                            {
+                                LOG_ERROR(log, "Failed to remove node `{}` after retry (code: {})",
+                                    remove_requests[k]->getPath(), magic_enum::enum_name(retry_code));
+                            }
+                        }
+                        else
+                        {
+                            LOG_ERROR(log, "Failed to remove node `{}` (code: {})",
+                                remove_requests[k]->getPath(), magic_enum::enum_name(remove_responses[k]->error));
+                        }
+                    }
+
+                    total_deleted += batch_succeeded;
+
+                    if (batch_succeeded < remove_requests.size())
+                    {
+                        LOG_WARNING(log, "Batch remove of failed nodes: {}/{} succeeded, overall status: {}",
+                            batch_succeeded, remove_requests.size(), magic_enum::enum_name(code));
+                        failed_batches.emplace_back(i, code);
+                    }
+                }
+
+                remove_requests.clear();
+            }
+        }
+
+        /// Remove any remaining nodes in this batch
+        if (!remove_requests.empty())
+        {
+            Coordination::Responses remove_responses;
+            zk_retries.resetFailures();
+            zk_retries.retryLoop([&]
+            {
+                code = getZooKeeper()->tryMulti(remove_requests, remove_responses);
+            });
+
+            if (code == Coordination::Error::ZOK)
+            {
+                /// Clear cache immediately for successfully deleted znodes
+                for (size_t k = batch_file_paths.size() - remove_requests.size(); k < batch_file_paths.size(); ++k)
+                {
+                    const auto & file_path = batch_file_paths[k];
+                    using KeyType = UInt128;
+                    using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                    local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                        [&failed_generations, &file_path](const KeyType &, const StatusPtr & status)
+                        {
+                            if (status->path == file_path && status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+                            {
+                                auto it = failed_generations.find(file_path);
+                                if (it != failed_generations.end() && status->generation.load() == it->second)
+                                    return true;
+                            }
+                            return false;
+                        }
+                    ));
+                    file_paths.push_back(file_path);
+                }
+                total_deleted += remove_requests.size();
+            }
+            else
+            {
+                /// Partial success: reconcile individual responses.
+                /// Some operations may have succeeded even if the multi request returned non-ZOK.
+                size_t batch_succeeded = 0;
+                size_t batch_start_idx = batch_file_paths.size() - remove_requests.size();
+
+                for (size_t k = 0; k < remove_requests.size(); ++k)
+                {
+                    if (remove_responses[k]->error == Coordination::Error::ZOK)
+                    {
+                        /// This specific remove succeeded - update cache
+                        const auto & file_path = batch_file_paths[batch_start_idx + k];
+                        using KeyType = UInt128;
+                        using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                        local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                            [&failed_generations, &file_path](const KeyType &, const StatusPtr & status)
+                            {
+                                if (status->path == file_path && status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+                                {
+                                    auto it = failed_generations.find(file_path);
+                                    if (it != failed_generations.end() && status->generation.load() == it->second)
+                                        return true;
+                                }
+                                return false;
+                            }
+                        ));
+                        file_paths.push_back(file_path);
+                        ++batch_succeeded;
+                    }
+                    else if (remove_responses[k]->error == Coordination::Error::ZRUNTIMEINCONSISTENCY)
+                    {
+                        /// Request was not processed because multi was aborted - retry individually
+                        zk_retries.resetFailures();
+                        Coordination::Error retry_code = {};
+                        zk_retries.retryLoop([&]
+                        {
+                            retry_code = getZooKeeper()->tryRemove(remove_requests[k]->getPath());
+                        });
+
+                        if (retry_code == Coordination::Error::ZOK || retry_code == Coordination::Error::ZNONODE)
+                        {
+                            /// ZOK: retry succeeded. ZNONODE: first attempt already deleted the node
+                            /// before the multi aborted. Either way, the node is gone - clear cache.
+                            const auto & file_path = batch_file_paths[batch_start_idx + k];
+                            using KeyType = UInt128;
+                            using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                            local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                                [&failed_generations, &file_path](const KeyType &, const StatusPtr & status)
+                                {
+                                    if (status->path == file_path && status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+                                    {
+                                        auto it = failed_generations.find(file_path);
+                                        if (it != failed_generations.end() && status->generation.load() == it->second)
+                                            return true;
+                                    }
+                                    return false;
+                                }
+                            ));
+                            file_paths.push_back(file_path);
+                            ++batch_succeeded;
+
+                            if (retry_code == Coordination::Error::ZNONODE)
+                                LOG_TRACE(log, "Node `{}` already removed (likely by first attempt before multi aborted)",
+                                          remove_requests[k]->getPath());
+                        }
+                        else
+                        {
+                            LOG_ERROR(log, "Failed to remove node `{}` after retry (code: {})",
+                                remove_requests[k]->getPath(), magic_enum::enum_name(retry_code));
+                        }
+                    }
+                    else
+                    {
+                        LOG_ERROR(log, "Failed to remove node `{}` (code: {})",
+                            remove_requests[k]->getPath(), magic_enum::enum_name(remove_responses[k]->error));
+                    }
+                }
+
+                total_deleted += batch_succeeded;
+
+                if (batch_succeeded < remove_requests.size())
+                {
+                    LOG_WARNING(log, "Final batch remove of failed nodes: {}/{} succeeded, overall status: {}",
+                        batch_succeeded, remove_requests.size(), magic_enum::enum_name(code));
+                    failed_batches.emplace_back(i, code);
+                }
+            }
+        }
+    }
+
+    /// Report failures after attempting all batches, but note partial success
+    if (!failed_batches.empty())
+    {
+        String error_msg = fmt::format(
+            "Failed to remove {} batch(es) of failed file nodes ({} nodes successfully deleted before failure):",
+            failed_batches.size(), total_deleted);
+        for (const auto & [batch_idx, err] : failed_batches)
+        {
+            error_msg += fmt::format(" [batch starting at index {} failed with {}]", batch_idx, magic_enum::enum_name(err));
+        }
+        throw Exception(ErrorCodes::KEEPER_EXCEPTION, "{}", error_msg);
+    }
+
+    reconcileFailedFilesCache();
+    LOG_INFO(log, "Successfully dropped {} failed files", file_paths.size());
 }
 
 void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)

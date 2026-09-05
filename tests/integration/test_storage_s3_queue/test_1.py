@@ -358,6 +358,7 @@ def test_max_set_age(started_cluster, mode):
         additional_settings={
             "keeper_path": keeper_path,
             "tracked_file_ttl_sec": max_age,
+            "failed_file_ttl_sec": max_age,  # Explicit opt-in for failed-file cleanup (no longer implicit via tracked_file_ttl_sec)
             "cleanup_interval_min_ms": 100,
             "cleanup_interval_max_ms": 200,
             "polling_max_timeout_ms": 1000,
@@ -372,7 +373,7 @@ def test_max_set_age(started_cluster, mode):
 
     expected_rows = files_to_generate
 
-    node.wait_for_log_line("Checking failed nodes for tracking limits")
+    node.wait_for_log_line("Checking processed nodes for tracking limits")
     node.wait_for_log_line("Node limits check finished")
 
     def get_count():
@@ -460,17 +461,23 @@ def test_max_set_age(started_cluster, mode):
         )
     )
 
-    wait_for_condition(lambda: failed_count + 2 == get_object_storage_failures())
+    ## In ordered mode, once a file fails and successful files after it have been processed,
+    ## the failed file won't be reprocessed even after failed_file_ttl_sec cleanup because
+    ## ordered mode only processes up to max_processed_file marker. The failed file (named with 'z_'
+    ## prefix to be lexicographically last) is now "in the past" relative to successful files
+    ## processed earlier, so TTL cleanup doesn't allow reprocessing in ordered mode.
+    if mode != "ordered":
+        wait_for_condition(lambda: failed_count + 2 == get_object_storage_failures())
 
-    node.query("SYSTEM FLUSH LOGS")
-    assert "Cannot parse input" in node.query(
-        f"SELECT exception FROM system.s3queue_metadata_cache WHERE file_name ilike '%{file_with_error}' ORDER BY processing_end_time DESC LIMIT 1"
-    )
-    assert 1 < int(
-        node.query(
-            f"SELECT count() FROM system.s3queue_log WHERE file_name ilike '%{file_with_error}' AND notEmpty(exception)"
+        node.query("SYSTEM FLUSH LOGS")
+        assert "Cannot parse input" in node.query(
+            f"SELECT exception FROM system.s3queue_metadata_cache WHERE file_name ilike '%{file_with_error}' ORDER BY processing_end_time DESC LIMIT 1"
         )
-    )
+        assert 1 < int(
+            node.query(
+                f"SELECT count() FROM system.s3queue_log WHERE file_name ilike '%{file_with_error}' AND notEmpty(exception)"
+            )
+        )
 
     node.restart_clickhouse()
 

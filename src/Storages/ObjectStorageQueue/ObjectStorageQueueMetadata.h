@@ -122,6 +122,15 @@ public:
     /// of all files stored in FileStatusesCache cache.
     const FileStatusesCache & getFileStatusesCache() const { return local_file_statuses; }
 
+    /// Drop all failed files from Keeper metadata.
+    /// Called by SYSTEM DROP S3QUEUE FAILED FILES.
+    /// Acquires the same cleanup_lock as the periodic cleanup sweep.
+    void dropFailedFiles();
+
+    /// Reconcile local cache with Keeper state after another replica completes cleanup.
+    /// Removes cache entries for files that no longer have /failed nodes in Keeper.
+    void reconcileFailedFilesCache();
+
     /// Get TableMetadata, which is the exact information we store in keeper.
     const ObjectStorageQueueTableMetadata & getTableMetadata() const { return table_metadata; }
     ObjectStorageQueueTableMetadata & getTableMetadata() { return table_metadata; }
@@ -213,7 +222,7 @@ private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
     void cleanupPersistentProcessingNodes();
-    void cleanupTrackedNodes(const std::string & nodes_path, std::string_view description);
+    void cleanupTrackedNodes(const std::string & nodes_path, std::string_view description, UInt64 ttl_seconds, UInt64 nodes_limit);
 
     void migrateToBucketsInKeeper(size_t value);
 
@@ -231,9 +240,6 @@ private:
     const std::string zookeeper_name;
     const fs::path zookeeper_path;
     const size_t keeper_multiread_batch_size;
-
-    const bool cleanup_processed_files = false;
-    const bool cleanup_failed_files = false;
     const bool cleanup_processing_files = false;
 
     std::unique_ptr<ObjectStorageQueueFilenameParser> filename_parser;

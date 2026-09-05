@@ -57,6 +57,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::setGetObjectTime(size_t elapse
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 {
+    ++generation;
     state = FileStatus::State::Processing;
     processing_start_time = now();
     processing_end_time = {};
@@ -67,12 +68,14 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessed()
 {
+    ++generation;
     state = FileStatus::State::Processed;
     chassert(processing_end_time);
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onFailed(const std::string & exception)
 {
+    ++generation;
     state = FileStatus::State::Failed;
     if (!processing_end_time)
         setProcessingEndTime();
@@ -82,6 +85,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onFailed(const std::string & e
 
 void ObjectStorageQueueIFileMetadata::FileStatus::reset()
 {
+    ++generation;
     state = FileStatus::State::None;
     processing_start_time = {};
     processing_end_time = {};
@@ -91,6 +95,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::reset()
 
 void ObjectStorageQueueIFileMetadata::FileStatus::updateState(State state_)
 {
+    ++generation;
     state = state_;
 }
 
@@ -298,15 +303,43 @@ bool ObjectStorageQueueIFileMetadata::checkProcessingOwnership(std::shared_ptr<Z
 bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 {
     auto state = file_status->state.load();
-    if (state == FileStatus::State::Processing
-        || state == FileStatus::State::Processed
-        || (state == FileStatus::State::Failed
-            && file_status->retries
-            && file_status->retries >= max_loading_retries))
+    if (state == FileStatus::State::Processing || state == FileStatus::State::Processed)
     {
-        LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
-                 path, state, file_status->retries.load(), max_loading_retries);
+        LOG_TEST(log, "File {} has non-processable state `{}`",
+                 path, state);
         return false;
+    }
+
+    if (state == FileStatus::State::Failed
+        && file_status->retries
+        && file_status->retries >= max_loading_retries)
+    {
+        /// The cached state shows this file has permanently failed.
+        /// However, another replica may have cleaned it up (via TTL or SYSTEM DROP).
+        /// Re-check Keeper to see if the failed node still exists.
+        std::string failure_message;
+        auto path_state = getPathState(failure_message);
+
+        if (path_state == PathState::Failed)
+        {
+            /// Failure is confirmed in Keeper - stay failed.
+            LOG_TEST(log, "File {} has confirmed failed state in Keeper (retries: {}/{})",
+                     path, file_status->retries.load(), max_loading_retries);
+            return false;
+        }
+        else if (path_state == PathState::Unknown)
+        {
+            /// The failed node was cleaned up - reset cache and allow processing.
+            LOG_TRACE(log, "File {} failed node was cleaned up externally, resetting cache state", path);
+            (*file_status).reset();
+        }
+        else if (path_state == PathState::Processed)
+        {
+            /// File is already processed - update cache and skip.
+            LOG_TEST(log, "File {} is already processed in Keeper, updating cache", path);
+            file_status->updateState(FileStatus::State::Processed);
+            return false;
+        }
     }
 
     /// An optimization for local parallel processing.
@@ -343,19 +376,42 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     }
 
     auto state = file_status->state.load();
-    if (state == FileStatus::State::Processing
-        || state == FileStatus::State::Processed
-        || (state == FileStatus::State::Failed
-            && file_status->retries
-            && file_status->retries >= max_loading_retries))
+    if (state == FileStatus::State::Processing || state == FileStatus::State::Processed)
     {
-        LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
-                path, state, file_status->retries.load(), max_loading_retries);
-
-        /// This is possible in case on the same server
-        /// there are more than one S3(Azure)Queue table processing the same keeper path.
-        LOG_TEST(log, "File {} is being processed on this server by another table on this server", path);
+        LOG_TEST(log, "File {} has non-processable state `{}`", path, state);
         return std::nullopt;
+    }
+
+    if (state == FileStatus::State::Failed
+        && file_status->retries
+        && file_status->retries >= max_loading_retries)
+    {
+        /// The cached state shows this file has permanently failed.
+        /// However, another replica may have cleaned it up (via TTL or SYSTEM DROP).
+        /// Re-check Keeper to see if the failed node still exists.
+        std::string failure_message;
+        auto path_state = getPathState(failure_message);
+
+        if (path_state == PathState::Failed)
+        {
+            /// Failure is confirmed in Keeper - stay failed.
+            LOG_TEST(log, "File {} has confirmed failed state in Keeper (retries: {}/{})",
+                     path, file_status->retries.load(), max_loading_retries);
+            return std::nullopt;
+        }
+        else if (path_state == PathState::Unknown)
+        {
+            /// The failed node was cleaned up - reset cache and allow processing.
+            LOG_TRACE(log, "File {} failed node was cleaned up externally, resetting cache state", path);
+            (*file_status).reset();
+        }
+        else if (path_state == PathState::Processed)
+        {
+            /// File is already processed - update cache and skip.
+            LOG_TEST(log, "File {} is already processed in Keeper, updating cache", path);
+            file_status->updateState(FileStatus::State::Processed);
+            return std::nullopt;
+        }
     }
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
@@ -457,13 +513,14 @@ void ObjectStorageQueueIFileMetadata::prepareResetProcessingRequests(Coordinatio
 }
 
 void ObjectStorageQueueIFileMetadata::prepareProcessedRequests(Coordination::Requests & requests,
-    LastProcessedFileInfoMapPtr created_nodes)
+    LastProcessedFileInfoMapPtr created_nodes,
+    std::optional<int32_t> retriable_node_version)
 {
     LOG_TRACE(log, "Setting file {} as processed (keeper path: {})", path, processed_node_path);
 
     try
     {
-        prepareProcessedRequestsImpl(requests, created_nodes);
+        prepareProcessedRequestsImpl(requests, created_nodes, retriable_node_version);
     }
     catch (...)
     {
@@ -598,6 +655,26 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
 
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+
+        /// Remove stale .retriable node if it exists from prior failures when loading_retries > 0.
+        /// This can happen if loading_retries was reduced to 0 via ALTER after a .retriable node
+        /// was already created. Without this cleanup, the stale .retriable survives TTL/SYSTEM DROP
+        /// (which skip .retriable nodes) and interferes with future processing.
+        auto retriable_failed_node_path = failed_node_path + ".retriable";
+        Coordination::Stat retriable_stat;
+        std::string retriable_data;
+        bool has_retriable_node = false;
+        ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+        {
+            auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
+            has_retriable_node = zk_client->tryGet(retriable_failed_node_path, retriable_data, &retriable_stat);
+        });
+        if (has_retriable_node)
+        {
+            LOG_TEST(log, "Removing stale .retriable node for terminally failed file {}", path);
+            requests.push_back(zkutil::makeRemoveRequest(retriable_failed_node_path, retriable_stat.version));
+        }
+
         /// Create Failed node.
         requests.push_back(zkutil::makeCreateRequest(failed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
         return;
