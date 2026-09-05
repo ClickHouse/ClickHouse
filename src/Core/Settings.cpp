@@ -6729,7 +6729,7 @@ Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enabl
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
 :::
 )", 0) \
-    DECLARE(Bool, query_plan_lower_array_join_function, false, R"(
+    DECLARE(Bool, query_plan_lower_array_join_function, true, R"(
 Toggles a query-plan-level optimization which lowers an `arrayJoin` function inside an expression into a real `ARRAY JOIN` step, so it goes through the same execution machinery as the `ARRAY JOIN` clause (lazy replication and filter fusion).
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
