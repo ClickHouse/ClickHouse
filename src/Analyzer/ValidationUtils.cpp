@@ -17,6 +17,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageProxy.h>
 
 #include <memory>
 #include <ranges>
@@ -593,11 +594,25 @@ static bool readsFromRemoteTable(
     if (!table_id.table_name.empty() && !visited.insert(table_id.getFullTableName()).second)
         return false;
 
+    /// A table in a database with `lazy_load_tables`, and a table created `AS` a table function, is attached
+    /// as a `StorageProxy` around the real storage. A proxy forwards `isRemote` and `readsFromOtherTables`
+    /// but not its type, and the look-throughs below are keyed on the concrete storage - so a lazily loaded
+    /// `Merge` would fall through to the dependency walk, which records nothing for `Merge`. Resolving the
+    /// nested storage costs nothing here: the `isRemote` call above already materialized it.
+    StoragePtr nested_storage = storage;
+    for (size_t i = 0; i < max_dependency_depth; ++i)
+    {
+        const auto * proxy = dynamic_cast<const StorageProxy *>(nested_storage.get());
+        if (!proxy)
+            break;
+        nested_storage = proxy->getNested();
+    }
+
     /// `Merge` matches its source tables by a pattern resolved at read time, so the catalog records no
     /// referential dependency for it. `StorageMerge::isRemote`, checked above, asks every matched source
     /// only about itself, which misses a source that is a view over a `Distributed` table. Walk the
     /// currently matched sources instead.
-    if (const auto * storage_merge = storage->as<StorageMerge>())
+    if (const auto * storage_merge = nested_storage->as<StorageMerge>())
     {
         return storage_merge->hasChildTable([&](const StoragePtr & source)
         {
@@ -605,7 +620,7 @@ static bool readsFromRemoteTable(
         });
     }
 
-    if (!(storage->isView() || storage->readsFromOtherTables()))
+    if (!(nested_storage->isView() || nested_storage->readsFromOtherTables()))
         return false;
 
     /// A table function such as `view(SELECT ...)` also wraps a `StorageView`, but it is not in the catalog,
