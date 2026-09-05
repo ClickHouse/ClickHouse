@@ -4,6 +4,7 @@
 #include <Common/Logger.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -26,6 +27,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_archive_path_syntax;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
 }
@@ -36,6 +38,24 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
+}
+
+namespace
+{
+
+/// The file whose presence decides whether a table name resolves to a table. A name can use the
+/// archive path syntax (`archive.tar.zst::data.native`), which the `file` table function resolves
+/// to a file stored inside the archive; the file that has to exist on the filesystem is then the
+/// archive, not the whole name.
+String getPathToProbe(const String & table_path, const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::allow_archive_path_syntax])
+        return table_path;
+
+    String path_to_archive = splitToArchivePathAndPathInArchive(table_path).first;
+    return path_to_archive.empty() ? table_path : path_to_archive;
+}
+
 }
 
 DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path_, ContextPtr context_)
@@ -82,27 +102,29 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
     bool check_path = context_->getApplicationType() != Context::ApplicationType::LOCAL;
     const auto & user_files_path = context_->getUserFilesPath();
 
+    const String path_to_probe = getPathToProbe(table_path, context_);
+
     /// Check access for file before checking its existence.
-    if (check_path && !fileOrSymlinkPathStartsWith(table_path, user_files_path))
+    if (check_path && !fileOrSymlinkPathStartsWith(path_to_probe, user_files_path))
     {
         /// Access denied is thrown regardless of 'throw_on_error'
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside {}", user_files_path);
     }
 
-    if (!containsGlobs(table_path))
+    if (!containsGlobs(path_to_probe))
     {
         /// Check if the corresponding file exists.
-        if (!fs::exists(table_path))
+        if (!fs::exists(path_to_probe))
         {
             if (throw_on_error)
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", table_path);
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path_to_probe);
             return false;
         }
 
-        if (!fs::is_regular_file(table_path))
+        if (!fs::is_regular_file(path_to_probe))
         {
             if (throw_on_error)
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", table_path);
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", path_to_probe);
             return false;
         }
     }
@@ -110,7 +132,7 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
     return true;
 }
 
-StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name) const
+StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name, const ContextPtr & context_) const
 {
     StoragePtr table = nullptr;
     {
@@ -121,7 +143,7 @@ StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name) co
     }
 
     /// Invalidate cache if file no longer exists.
-    if (table && !fs::exists(getTablePath(name)))
+    if (table && !fs::exists(getPathToProbe(getTablePath(name), context_)))
     {
         std::lock_guard lock(mutex);
         loaded_tables.erase(name);
@@ -133,7 +155,7 @@ StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name) co
 
 bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) const
 {
-    if (tryGetTableFromCache(name))
+    if (tryGetTableFromCache(name, context_))
         return true;
 
     return checkTableFilePath(getTablePath(name), context_, /* throw_on_error */ false);
@@ -142,7 +164,7 @@ bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) 
 StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr context_, bool throw_on_error) const
 {
     /// Check if table exists in loaded tables map.
-    if (auto table = tryGetTableFromCache(name))
+    if (auto table = tryGetTableFromCache(name, context_))
         return table;
 
     auto table_path = getTablePath(name);

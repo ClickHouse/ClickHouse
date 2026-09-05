@@ -4,6 +4,7 @@
 #include <Access/ContextAccess.h>
 #include <Access/Common/AccessFlags.h>
 #include <Core/Settings.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -28,6 +29,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_archive_path_syntax;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
 }
@@ -283,7 +285,18 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     if (classifyURLScheme(url) != URLSchemeTarget::File)
         return true;
 
-    fs::path fs_path(getLocalPathFromFileURL(url));
+    /// A table name can use the archive path syntax (`archive.tar.zst::data.native`), which the
+    /// `file` delegate resolves to a file stored inside the archive. The file that has to exist on
+    /// the filesystem is then the archive, not the whole name: probing the name itself would make
+    /// every table inside an archive unresolvable.
+    String local_path = getLocalPathFromFileURL(url);
+    if (context_->getSettingsRef()[Setting::allow_archive_path_syntax])
+    {
+        if (String path_to_archive = splitToArchivePathAndPathInArchive(local_path).first; !path_to_archive.empty())
+            local_path = std::move(path_to_archive);
+    }
+
+    fs::path fs_path(local_path);
     if (fs_path.is_relative())
         fs_path = fs::path(context_->getUserFilesPath()) / fs_path;
     const String path = fs::absolute(fs_path).lexically_normal().string();

@@ -47,6 +47,32 @@ bool hasSupportedArchiveExtension(std::string_view path)
     return hasSupportedTarExtension(path) || hasSupportedZipExtension(path) || hasSupported7zExtension(path);
 }
 
+std::pair<std::string, std::string> splitToArchivePathAndPathInArchive(const std::string & source)
+{
+    size_t pos = source.find("::");
+    if (pos == std::string::npos)
+        return {{}, source};
+
+    std::string_view path_to_archive_view = std::string_view{source}.substr(0, pos);
+    while (path_to_archive_view.ends_with(' '))
+        path_to_archive_view.remove_suffix(1);
+
+    std::string_view filename_view = std::string_view{source}.substr(pos + 2);
+    while (filename_view.starts_with(' '))
+        filename_view.remove_prefix(1);
+
+    if (filename_view.empty() || path_to_archive_view.empty())
+        return {{}, source};
+
+    /// possible situations when the first part can be archive is only if one of the following is true:
+    /// - it contains supported archive extension
+    /// - it contains characters that could mean glob expression
+    if (!hasSupportedArchiveExtension(path_to_archive_view) && path_to_archive_view.find_first_of("*?{") == std::string_view::npos)
+        return {{}, source};
+
+    return {std::string{path_to_archive_view}, std::string{filename_view}};
+}
+
 std::pair<std::string, std::optional<std::string>> getURIAndArchivePattern(const std::string & source)
 {
     size_t pos = source.find("::");
