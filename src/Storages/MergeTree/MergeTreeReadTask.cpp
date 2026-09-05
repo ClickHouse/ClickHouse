@@ -28,34 +28,32 @@ namespace ErrorCodes
 namespace
 {
 
-/// Resolves the codec to use for estimating the compressed size of a whole column.
+/// Resolves the codecs to use for estimating the compressed size of a whole column.
 ///
 /// The writer applies a column's `CODEC` per substream: it resolves the codec description against the
 /// substream's type and, for structural substreams (`Array` offsets, null map, ...), keeps only the
-/// generic codecs and ignores the type entirely. The estimation this codec feeds serializes the whole
+/// generic codecs and ignores the type entirely. The estimation these codecs feed serializes the whole
 /// column into a single buffer, so a type-specific codec can only be used when the column consists of a
 /// single stream carrying the column type itself, i.e. a plain numeric or date column. For every other
 /// column keep only the generic codecs - they dominate the ratio anyway - exactly as the writer does for
-/// structural substreams. Resolving a type-specific codec against a composite type is not just imprecise,
-/// it throws: `T64` on a `Tuple` or `GCD` on a `Nullable` is rejected by the factory.
-CompressionCodecPtr resolveCodecForWholeColumn(const ColumnDescription & description, const CompressionCodecPtr & default_codec)
+/// structural substreams.
+///
+/// Which of the two applies is not decided here - the metadata does not describe the sample on its own,
+/// so `estimateCompressedColumnSize` picks between them per block. Only the type-specific resolution has
+/// to happen here, because it can throw: `T64` on a `Tuple` or `GCD` on a `Nullable` is rejected by the
+/// factory, so it is attempted only for a type whose default serialization is a single stream of it.
+ColumnCodecs resolveCodecsForWholeColumn(const ColumnDescription & description, const CompressionCodecPtr & default_codec)
 {
-    size_t num_streams = 0;
-    bool stream_is_column_itself = false;
-    description.type->getDefaultSerialization()->enumerateStreams(
-        [&](const auto & substream_path)
-        {
-            ++num_streams;
-            const auto & substream_type = substream_path.back().data.type;
-            stream_is_column_itself = ISerialization::isSpecialCompressionAllowed(substream_path) && substream_type
-                && substream_type->equals(*description.type);
-        },
-        description.type);
-
     auto & factory = CompressionCodecFactory::instance();
-    if (num_streams == 1 && stream_is_column_itself)
-        return factory.get(description.codec, description.type.get(), default_codec);
-    return factory.get(description.codec, nullptr, default_codec, /*only_generic=*/true);
+    auto generic = factory.get(description.codec, nullptr, default_codec, /*only_generic=*/true);
+
+    if (!isSerializedAsSingleStreamOfColumnType(*description.type->getDefaultSerialization(), description.type))
+        return {.generic = std::move(generic)};
+
+    return {
+        .type_specific = factory.get(description.codec, description.type.get(), default_codec),
+        .type_specific_for = description.type,
+        .generic = std::move(generic)};
 }
 
 }
@@ -147,7 +145,7 @@ MergeTreeReadTask::MergeTreeReadTask(
         {
             const auto * description = metadata_columns.tryGet(name);
             if (description && description->codec)
-                resolved_codecs.emplace(name, resolveCodecForWholeColumn(*description, default_codec));
+                resolved_codecs.emplace(name, resolveCodecsForWholeColumn(*description, default_codec));
         }
 
         dataflow_cache_update_cb = [this, default_codec, column_codecs = std::move(resolved_codecs)](const ColumnsWithTypeAndName & columns,
