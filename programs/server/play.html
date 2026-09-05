@@ -2002,8 +2002,8 @@ class QueryProgressElement extends HTMLElement
                     background-color: var(--button-color);
                 }
 
-                /* Keep the two toggles close together, tightening the :host row gap between them. */
-                #logs-toggle + #metrics-toggle { margin-left: -0.75rem; }
+                /* Keep the toggles close together, tightening the :host row gap between them. */
+                #logs-toggle + #metrics-toggle, #metrics-toggle + #flame-toggle { margin-left: -0.75rem; }
 
                 #hourglass
                 {
@@ -2118,6 +2118,7 @@ class QueryProgressElement extends HTMLElement
             <span id="check-mark">&#10004;</span>
             <span id="logs-toggle" class="progress-toggle">Logs</span>
             <span id="metrics-toggle" class="progress-toggle">Metrics</span>
+            <span id="flame-toggle" class="progress-toggle">Flame</span>
             <div id="progress"><span id="progress-text"></span><span id="stats"></span></div>
         `;
         this._hourglass = this.shadowRoot.getElementById('hourglass');
@@ -2127,26 +2128,39 @@ class QueryProgressElement extends HTMLElement
         this._progressText = this.shadowRoot.getElementById('progress-text');
         this._stats = this.shadowRoot.getElementById('stats');
 
-        /// The Logs and Metrics toggles switch the result view between the query result and one of
-        /// the streamed extras (server logs, or the extended profile-event metrics). The progress
-        /// element only tracks which view is selected and announces changes via a `set-view` event;
-        /// the page listener applies the view to the result element(s).
+        /// The Logs, Metrics and Flame toggles switch the result view between the query result and
+        /// one of the extras: the streamed server logs, the extended profile-event metrics, or the
+        /// flame graph built from the query's `system.trace_log` samples. The progress element only
+        /// tracks which view is selected and announces changes via a `set-view` event; the page
+        /// listener applies the view to the result element(s).
         this._logsToggle = this.shadowRoot.getElementById('logs-toggle');
         this._metricsToggle = this.shadowRoot.getElementById('metrics-toggle');
+        this._flameToggle = this.shadowRoot.getElementById('flame-toggle');
         this._view = 'result';
         this._logsToggle.addEventListener('click', () => this._toggleView('logs'));
         this._metricsToggle.addEventListener('click', () => this._toggleView('metrics'));
+        this._flameToggle.addEventListener('click', () => this._toggleView('flame'));
 
         this.resetResources();
     }
 
-    /// Toggle the given view: activate it (deactivating the other toggle), or return to the result
+    _viewToggles()
+    {
+        return [['logs', this._logsToggle], ['metrics', this._metricsToggle], ['flame', this._flameToggle]];
+    }
+
+    _paintActiveToggle()
+    {
+        for (const [view, toggle] of this._viewToggles())
+            toggle.classList.toggle('active', this._view === view);
+    }
+
+    /// Toggle the given view: activate it (deactivating the other toggles), or return to the result
     /// view if it is already active. Announces the new view via a `set-view` event.
     _toggleView(target)
     {
         this._view = (this._view === target) ? 'result' : target;
-        this._logsToggle.classList.toggle('active', this._view === 'logs');
-        this._metricsToggle.classList.toggle('active', this._view === 'metrics');
+        this._paintActiveToggle();
         this.dispatchEvent(new CustomEvent('set-view', { detail: { view: this._view } }));
     }
 
@@ -2164,11 +2178,18 @@ class QueryProgressElement extends HTMLElement
         this._metricsToggle.style.display = 'inline-block';
     }
 
-    /// Hide both view toggles and return to the result view (used when a new query starts).
+    /// Reveal the Flame toggle. Called once the server has accepted a query whose `query_id` this
+    /// page chose, so its samples in `system.trace_log` can be looked up. Idempotent.
+    showFlameToggle()
+    {
+        this._flameToggle.style.display = 'inline-block';
+    }
+
+    /// Hide all view toggles and return to the result view (used when a new query starts).
     resetViewToggles()
     {
         this._view = 'result';
-        for (const t of [this._logsToggle, this._metricsToggle])
+        for (const [, t] of this._viewToggles())
         {
             t.classList.remove('active');
             t.style.display = 'none';
@@ -2176,16 +2197,17 @@ class QueryProgressElement extends HTMLElement
     }
 
     /// Restore the shared view toggles from a tab's own state (see `syncActiveTabChrome`): reveal
-    /// each toggle only if that tab produced logs / metrics, and mark the tab's selected view active.
-    /// The view and toggle visibility are tab-owned, so switching tabs does not carry one tab's
-    /// selection or toggle visibility onto another (see the `set-view` handler and `_markLogsAvailable`).
-    setViewState(view, logsAvailable, metricsAvailable)
+    /// each toggle only if that tab produced logs / metrics / a profilable query, and mark the tab's
+    /// selected view active. The view and toggle visibility are tab-owned, so switching tabs does not
+    /// carry one tab's selection or toggle visibility onto another (see the `set-view` handler and
+    /// `_markLogsAvailable`).
+    setViewState(view, logsAvailable, metricsAvailable, flameAvailable)
     {
         this._view = view;
         this._logsToggle.style.display = logsAvailable ? 'inline-block' : 'none';
         this._metricsToggle.style.display = metricsAvailable ? 'inline-block' : 'none';
-        this._logsToggle.classList.toggle('active', view === 'logs');
-        this._metricsToggle.classList.toggle('active', view === 'metrics');
+        this._flameToggle.style.display = flameAvailable ? 'inline-block' : 'none';
+        this._paintActiveToggle();
     }
 
     clear()
@@ -3944,6 +3966,76 @@ class QueryResultElement extends HTMLElement
                     filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
                 }
 
+                /* The flame graph of the query's sampling-profiler stacks (the Flame toggle). The
+                   controls line picks the trace type and the profiler period; the graph below is a
+                   classic flame graph (the root at the bottom), with a frame per stack entry. */
+                #flame_div
+                {
+                    display: none;
+                    margin-top: 1rem;
+                    padding: 0.5rem;
+                    background-color: var(--element-background-color);
+                    filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
+                }
+
+                #flame-controls
+                {
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: center;
+                    gap: 0.5rem 1rem;
+                    font-size: 10pt;
+                    color: var(--misc-text-color);
+                    margin-bottom: 0.5rem;
+                }
+
+                #flame-controls select, #flame-controls button
+                {
+                    font-size: 10pt;
+                    color: var(--text-color);
+                    background-color: var(--element-background-color);
+                    border: 1px solid var(--border-color);
+                    padding: 0.1rem 0.3rem;
+                    cursor: pointer;
+                }
+
+                #flame-status
+                {
+                    white-space: pre-wrap;
+                    color: var(--text-color);
+                    font-size: 90%;
+                }
+
+                #flame-graph
+                {
+                    position: relative;
+                    width: 100%;
+                    overflow: hidden;
+                }
+
+                /* Frame geometry is set from JS in percent of the graph width (so the graph follows
+                   the page width) and in pixels of the row height. */
+                .flame-frame
+                {
+                    position: absolute;
+                    box-sizing: border-box;
+                    height: 16px;
+                    line-height: 16px;
+                    font-size: 11px;
+                    padding: 0 2px;
+                    overflow: hidden;
+                    white-space: nowrap;
+                    text-overflow: ellipsis;
+                    color: #000;
+                    border: 1px solid var(--element-background-color);
+                    cursor: pointer;
+                }
+
+                .flame-frame:hover { filter: brightness(1.15); }
+
+                /* Frames outside the zoomed subtree (ancestors of the zoom root) are dimmed. */
+                .flame-frame.dimmed { opacity: 0.35; }
+
                 #metrics-table
                 {
                     border-collapse: collapse;
@@ -4029,6 +4121,24 @@ class QueryResultElement extends HTMLElement
             </div>
             <div id="logs_div"><div id="logs-content" class="monospace"></div></div>
             <div id="metrics_div"><table id="metrics-table" class="monospace"><tbody id="metrics-body"></tbody></table></div>
+            <div id="flame_div">
+                <div id="flame-controls">
+                    <label>Trace <select id="flame-type">
+                        <option value="CPU">CPU</option>
+                        <option value="Real">Real time</option>
+                        <option value="MemorySample">Memory</option>
+                    </select></label>
+                    <label>Profiler period for the next runs <select id="flame-period">
+                        <option value="">server default</option>
+                        <option value="100000000">100 ms</option>
+                        <option value="10000000">10 ms</option>
+                        <option value="1000000">1 ms</option>
+                    </select></label>
+                    <button id="flame-reload">Reload</button>
+                    <span id="flame-status"></span>
+                </div>
+                <div id="flame-graph" class="monospace"></div>
+            </div>
         `;
 
         this._resultGroup = this.shadowRoot.getElementById('result-group');
@@ -4040,6 +4150,22 @@ class QueryResultElement extends HTMLElement
         this._metricsDiv = this.shadowRoot.getElementById('metrics_div');
         this._metricsTable = this.shadowRoot.getElementById('metrics-table');
         this._metricsBody = this.shadowRoot.getElementById('metrics-body');
+        this._flameDiv = this.shadowRoot.getElementById('flame_div');
+        this._flameType = this.shadowRoot.getElementById('flame-type');
+        this._flamePeriod = this.shadowRoot.getElementById('flame-period');
+        this._flameStatus = this.shadowRoot.getElementById('flame-status');
+        this._flameGraph = this.shadowRoot.getElementById('flame-graph');
+        /// Where the flame graph's samples live: the `query_id` this page chose for the query and the
+        /// connection it ran on (set by `setProfileSource` once the server accepted the query). The
+        /// samples are fetched lazily, on the first switch to the Flame view, and cached per trace
+        /// type in `_flame_data` (a map from trace type to the collapsed stacks) until the next run.
+        this._flame_source = null;
+        this._flame_data = new Map();
+        this._flame_request = 0;
+        this._flamePeriod.value = profilerPeriodNs();
+        this._flamePeriod.addEventListener('change', () => selectProfilerPeriod(this, this._flamePeriod.value));
+        this._flameType.addEventListener('change', () => this._showFlameGraph());
+        this.shadowRoot.getElementById('flame-reload').addEventListener('click', () => this._showFlameGraph(true));
         /// The extended profile-event metrics model (the Metrics view). Each metric name maps to
         /// its per-host aggregation; `_metrics_final` switches the rate column from the recent rate
         /// to the query-average once the query finishes. See `updateMetrics`/`renderMetricsTable`.
@@ -4282,6 +4408,12 @@ class QueryResultElement extends HTMLElement
         this._clearElement(this._dataUnparsed);
         this._clearElement(this._error);
         this._clearImage();
+        this._flameGraph.replaceChildren();
+        this._flameGraph.style.height = '';
+        this._flameStatus.textContent = '';
+        this._flame_source = null;
+        this._flame_data = new Map();
+        ++this._flame_request;
 
         this._dataTable.classList.remove('fixed');
         this._dataTable.classList.remove('single-value');
@@ -6479,7 +6611,13 @@ class QueryResultElement extends HTMLElement
 
     renderError(message)
     {
-        this._error.innerText = message ? message : "No response.";
+        let text = message ? message : "No response.";
+        /// A rejected profiler setting most likely comes from the period selected in the Flame view (it
+        /// is applied to every run, in every tab), so point back to it: nothing else in the page or in
+        /// the error would tell the user where the setting came from.
+        if (profilerPeriodNs() && String(message).includes('query_profiler_'))
+            text += '\n\nThe profiler period selected in the Flame view is applied to every run; switch it back to the server default there.';
+        this._error.innerText = text;
         this._error.style.display = 'block';
     }
 
@@ -6520,6 +6658,63 @@ class QueryResultElement extends HTMLElement
             if (tab.id !== activeTabId) return;
         }
         progressEl.showMetricsToggle();
+    }
+
+    _markFlameAvailable()
+    {
+        const tab = this._ownerTab;
+        if (tab)
+        {
+            tab.flameAvailable = true;
+            if (tab.id !== activeTabId) return;
+        }
+        progressEl.showFlameToggle();
+    }
+
+    /// Record where this result's profiler samples can be fetched from (see `postImpl`) and offer the
+    /// Flame toggle. Called once the server accepted the query, so `system.trace_log` gets rows under
+    /// this `query_id` if the profiler sampled it. Samples for a still-running query are partial.
+    setProfileSource(source)
+    {
+        this._flame_source = source;
+        this._flame_data = new Map();
+        this._markFlameAvailable();
+        if (this._view === 'flame')
+            this._showFlameGraph();
+    }
+
+    /// Show the flame graph for the selected trace type: from the cache, or fetched from the server
+    /// (`force` refetches, e.g. after the query produced more samples). See `fetchFlameGraphStacks`.
+    async _showFlameGraph(force = false)
+    {
+        const source = this._flame_source;
+        if (!source) return;
+        const trace_type = this._flameType.value;
+        const request = ++this._flame_request;
+        if (force || !this._flame_data.has(trace_type))
+        {
+            this._flameGraph.replaceChildren();
+            this._flameStatus.textContent = 'Loading…';
+            const fetched = await fetchFlameGraphStacks(source, trace_type);
+            /// A newer request, a rerun or a `clear` superseded this fetch.
+            if (request !== this._flame_request) return;
+            if (fetched.error !== null)
+            {
+                this._flameStatus.textContent = fetched.error;
+                return;
+            }
+            this._flame_data.set(trace_type, fetched);
+        }
+        const data = this._flame_data.get(trace_type);
+        this._flameGraph.replaceChildren();
+        this._flameGraph.style.height = '';
+        if (data.stacks.length === 0)
+        {
+            this._flameStatus.textContent = flameGraphEmptyHint(trace_type, source.query_id) + (data.warning ? '\n' + data.warning : '');
+            return;
+        }
+        this._flameStatus.textContent = data.warning || '';
+        renderFlameGraph(this._flameGraph, data.stacks, trace_type === 'MemorySample' ? 'bytes' : 'samples');
     }
 
     /// Queue a server log entry (from a framing `log` packet) for the logs view. Lines are buffered
@@ -6652,17 +6847,21 @@ class QueryResultElement extends HTMLElement
         return line;
     }
 
-    /// Switch between the query result, the server logs, and the extended metrics table.
+    /// Switch between the query result, the server logs, the extended metrics table and the flame graph.
     showView(view)
     {
         this._view = view;
         this._resultGroup.style.display = view === 'result' ? '' : 'none';
         this._logsDiv.style.display = view === 'logs' ? 'block' : 'none';
         this._metricsDiv.style.display = view === 'metrics' ? 'block' : 'none';
+        this._flameDiv.style.display = view === 'flame' ? 'block' : 'none';
         /// The metrics table is rendered lazily - only while its view is visible, plus once more on
         /// finish - so switching to it must render the current snapshot.
         if (view === 'metrics')
             this.renderMetricsTable();
+        /// The flame graph is fetched lazily too - `system.trace_log` is queried on the first switch.
+        if (view === 'flame')
+            this._showFlameGraph();
         /// If the fixed table layout was deferred because the table was hidden (see
         /// _changeTableLayout), run it now that the result group is visible again.
         if (view === 'result' && this._table_layout_pending)
@@ -7998,6 +8197,206 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
         logoEl.style.display = 'block';
     }
     return await response.json();
+}
+
+/// A fresh `query_id` for a run (see `postImpl`). Random hex from `crypto.getRandomValues`, which,
+/// unlike `crypto.randomUUID`, is also available when the page is served over plain HTTP.
+function randomQueryId()
+{
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return 'play-' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/// The sampling-profiler period the Flame view asked for (a string of nanoseconds, or '' for the
+/// server default), kept in localStorage so it applies to every run in every tab.
+function profilerPeriodNs()
+{
+    return localStorage.getItem('play_profiler_period_ns') || '';
+}
+
+function setProfilerPeriodNs(value)
+{
+    if (value) localStorage.setItem('play_profiler_period_ns', value);
+    else localStorage.removeItem('play_profiler_period_ns');
+    for (const el of document.querySelectorAll('query-result'))
+        el._flamePeriod.value = value;
+}
+
+/// Apply a profiler period chosen in a result element's Flame view. A non-default period is first
+/// probed on the connection (the one that produced the result, or the live one): the setting may be
+/// constrained read-only on the server, and since the period is remembered and applied to every later
+/// run, storing a rejected value would make each of those runs fail with a settings error that names
+/// no cause. A rejected period is not stored; the server's message is shown in the view instead.
+async function selectProfilerPeriod(result_el, value)
+{
+    if (value)
+    {
+        const source = result_el._flame_source;
+        const server_address = source ? source.server_address : url_elem.value;
+        const user = source ? source.user : user_elem.value;
+        const password = source ? source.password : password_elem.value;
+        let error = null;
+        result_el._flameStatus.textContent = 'Checking the profiler settings…';
+        const json = await auxiliaryQuery(server_address, user, password, 'SELECT 1',
+            `&query_profiler_real_time_period_ns=${value}&query_profiler_cpu_time_period_ns=${value}`, true, null, text => { error = String(text); });
+        if (json === false)
+        {
+            result_el._flamePeriod.value = profilerPeriodNs();
+            result_el._flameStatus.textContent = 'The server does not accept this profiler period:\n' + (error ?? 'network error');
+            return;
+        }
+        result_el._flameStatus.textContent = '';
+    }
+    setProfilerPeriodNs(value);
+}
+
+/// Fetch the collapsed stacks ("frame;frame;frame count" lines) of a query's samples of the given
+/// `trace_type` from `system.trace_log` on the connection that ran it, symbolized by the server's
+/// `flameGraph` aggregate function. Logs are flushed first, because the samples are written to the
+/// table asynchronously; a failed flush (e.g. missing privilege) is reported as a warning while the
+/// stacks are still fetched. Returns `{ stacks, warning, error }`; `error` is non-null on failure.
+async function fetchFlameGraphStacks(source, trace_type)
+{
+    const first_line = text => String(text).split('\n')[0];
+    let warning = '';
+    /// Not `auxiliaryQuery`: that parses the response as JSON, and a statement returns an empty body.
+    let flush_url = source.server_address + (source.server_address.indexOf('?') >= 0 ? '&' : '?') + 'add_http_cors_header=1';
+    if (source.user) flush_url += '&user=' + encodeURIComponent(source.user);
+    if (source.password) flush_url += '&password=' + encodeURIComponent(source.password);
+    try
+    {
+        const response = await fetch(flush_url, { method: 'POST', body: 'SYSTEM FLUSH LOGS trace_log', headers: { 'Authorization': 'never' } });
+        if (!response.ok)
+            warning = 'Could not flush the logs, recent samples may be missing: ' + first_line(await response.text());
+    }
+    catch (e)
+    {
+        warning = 'Could not flush the logs, recent samples may be missing: network error';
+    }
+
+    const stack = trace_type === 'MemorySample'
+        ? 'flameGraph(arrayReverse(trace), size)'
+        : 'flameGraph(arrayReverse(trace))';
+    /// For memory, only the allocations: each sampled deallocation is a negative `size` that
+    /// `flameGraph` would subtract, leaving a graph of what was still allocated at the end.
+    const size_filter = trace_type === 'MemorySample' ? ' AND size > 0' : '';
+    /// The table is ordered by `event_date, event_time`, so bound the lookup to the run: the page knows
+    /// when the query started; an hour (and a day on the partition-pruning date column) of slack
+    /// covers the browser and server clocks disagreeing. Without the bound this is a full scan of a
+    /// table that grows quickly on a busy server with profiling enabled.
+    const since = source.started_at_sec - 3600;
+    const time_filter = ` AND event_date >= toDate(toDateTime(${since})) - 1 AND event_time >= toDateTime(${since})`;
+    const query = `SELECT arrayJoin(${stack}) AS stack FROM system.trace_log`
+        + ` WHERE query_id = ${quoteStringLiteral(source.query_id)} AND trace_type = ${quoteStringLiteral(trace_type)}${time_filter}${size_filter}`;
+
+    let error = null;
+    const json = await auxiliaryQuery(source.server_address, source.user, source.password, query,
+        '&allow_introspection_functions=1', true, null, text => { error = String(text); });
+    if (json === false)
+        return { stacks: [], warning, error: error ?? 'Could not fetch the samples.' };
+    return { stacks: json.data.map(row => row.stack), warning, error: null };
+}
+
+function flameGraphEmptyHint(trace_type, query_id)
+{
+    const where = `No ${trace_type} samples for query_id ${query_id} in system.trace_log.`;
+    if (trace_type === 'MemorySample')
+        return where + '\nMemory allocations are sampled only when memory_profiler_sample_probability is set'
+            + ' (it is 0 by default), e.g. SETTINGS memory_profiler_sample_probability = 0.01. Set it and run the query again.';
+    const setting = trace_type === 'CPU' ? 'query_profiler_cpu_time_period_ns' : 'query_profiler_real_time_period_ns';
+    return where + `\nThe profiler takes a sample every ${setting} (1 s by default), so a short query leaves none.`
+        + ' Pick a shorter profiler period above and run the query again.';
+}
+
+function formatFlameValue(value, unit)
+{
+    if (unit !== 'bytes')
+        return value.toLocaleString('en-US') + ' ' + unit;
+    const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+    let i = 0;
+    let v = value;
+    while (v >= 1024 && i + 1 < units.length) { v /= 1024; ++i; }
+    return (i === 0 ? v.toString() : v.toFixed(2)) + ' ' + units[i];
+}
+
+/// Render an interactive flame graph from collapsed stacks into `container`: one frame per stack
+/// entry, the root at the bottom, frame widths proportional to the sample counts. A click zooms
+/// into that frame's subtree (its ancestors stay visible, dimmed, and a click on one zooms back out).
+function renderFlameGraph(container, stacks, unit)
+{
+    const root = { name: 'all', value: 0, children: new Map(), parent: null, depth: 0 };
+    for (const line of stacks)
+    {
+        const sep = line.lastIndexOf(' ');
+        if (sep < 0) continue;
+        const count = Number(line.slice(sep + 1));
+        if (!Number.isFinite(count) || count <= 0) continue;
+        let node = root;
+        node.value += count;
+        for (const name of line.slice(0, sep).split(';'))
+        {
+            let child = node.children.get(name);
+            if (!child)
+            {
+                child = { name, value: 0, children: new Map(), parent: node, depth: node.depth + 1 };
+                node.children.set(name, child);
+            }
+            child.value += count;
+            node = child;
+        }
+    }
+    if (root.value === 0) return;
+
+    const row_height = 17;
+    const min_width_pct = 0.05;
+    let max_depth = 0;
+    const measure = node => { max_depth = Math.max(max_depth, node.depth); for (const c of node.children.values()) measure(c); };
+    measure(root);
+    container.style.height = ((max_depth + 1) * row_height) + 'px';
+
+    const frame_color = name =>
+    {
+        const h = _logHash(name);
+        return `hsl(${h % 55}, ${65 + (h >> 8) % 20}%, ${58 + (h >> 16) % 10}%)`;
+    };
+
+    const draw = zoom =>
+    {
+        container.replaceChildren();
+        const add_frame = (node, left_pct, width_pct, dimmed) =>
+        {
+            const frame = document.createElement('div');
+            frame.className = 'flame-frame' + (dimmed ? ' dimmed' : '');
+            frame.style.left = left_pct + '%';
+            frame.style.width = width_pct + '%';
+            frame.style.bottom = (node.depth * row_height) + 'px';
+            frame.style.backgroundColor = frame_color(node.name);
+            frame.textContent = node.name;
+            const share = (100 * node.value / root.value).toFixed(2);
+            frame.title = `${node.name}\n${formatFlameValue(node.value, unit)} (${share}%)`;
+            frame.addEventListener('click', () => draw(node === zoom && node.parent ? node.parent : node));
+            container.appendChild(frame);
+        };
+        for (let node = zoom.parent; node; node = node.parent)
+            add_frame(node, 0, 100, true);
+        const layout = (node, left_pct) =>
+        {
+            const width_pct = 100 * node.value / zoom.value;
+            if (width_pct < min_width_pct) return;
+            add_frame(node, left_pct, width_pct, false);
+            /// Children in descending order of weight, the heaviest to the left.
+            const children = [...node.children.values()].sort((a, b) => b.value - a.value);
+            let child_left = left_pct;
+            for (const child of children)
+            {
+                layout(child, child_left);
+                child_left += 100 * child.value / zoom.value;
+            }
+        };
+        layout(zoom, 0);
+    };
+    draw(root);
 }
 
 async function getServerStatus(server_address, user, password) {
@@ -10599,6 +10998,15 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     /// We will put the result in the query cache, so it can be used when download is initiated later.
     /// But we don't use cached results, so the results that we get here, are always fresh.
     url += '&use_query_cache=1&enable_reads_from_query_cache=0&enable_writes_to_query_cache=1&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save&query_cache_system_table_handling=ignore';
+    /// A `query_id` chosen here lets the Flame view find this query's sampling-profiler stacks in
+    /// `system.trace_log` (see `setProfileSource`). The profiler period is the one selected in that
+    /// view; unset leaves the server's `query_profiler_*_time_period_ns` defaults in effect.
+    const query_id = randomQueryId();
+    const started_at_sec = Math.floor(Date.now() / 1000);
+    url += '&query_id=' + encodeURIComponent(query_id);
+    const profiler_period_ns = profilerPeriodNs();
+    if (profiler_period_ns)
+        url += `&query_profiler_real_time_period_ns=${profiler_period_ns}&query_profiler_cpu_time_period_ns=${profiler_period_ns}`;
 
     /// If the user selected a database in the panel, use it as the default database.
     if (query_database) url += '&database=' + encodeURIComponent(query_database);
@@ -10792,6 +11200,10 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         }
 
         format = response.headers.get('X-ClickHouse-Format') ?? default_format;
+
+        /// The server has accepted (or already rejected) the query under our `query_id`, so its profiler
+        /// samples can be looked up in `system.trace_log` on the same connection.
+        targetResultEl.setProfileSource({ query_id, server_address, user, password, started_at_sec });
 
         /// An image output format (`PNG`) is detected by the `X-ClickHouse-Format` header as well as
         /// by the `Content-Type`: with a framing format the `Content-Type` is `text/event-stream`, so
@@ -13070,9 +13482,10 @@ function tabRuntimeDefaults() {
         progressPhase: 'idle',  /// 'idle' | 'running' | 'done' | 'error' — drives the shared bar on activation
         finalStats: null,       /// { rowCount, elapsedNs, incomplete } shown when a run finishes
         logoVisible: true,      /// whether the shared logo shows for this tab (hidden by errors / multi)
-        view: 'result',         /// this tab's selected view ('result' | 'logs' | 'metrics'), replayed by syncActiveTabChrome
+        view: 'result',         /// this tab's selected view ('result' | 'logs' | 'metrics' | 'flame'), replayed by syncActiveTabChrome
         logsAvailable: false,   /// this tab produced server logs (its Logs toggle can be offered)
         metricsAvailable: false,/// this tab produced profile-event metrics (its Metrics toggle can be offered)
+        flameAvailable: false,  /// this tab ran a query under a known `query_id` (its Flame toggle can be offered)
         resources: null,        /// tab-owned resource-meter state (see `freshResourceState` / `readEventStream`)
         colorModes: {},         /// per-column color modes for this tab's result (shared with its element)
         pinnedColumns: {},      /// pinned columns for this tab's result (shared with its element)
@@ -13210,6 +13623,7 @@ function clearPanel(tab) {
     tab.view = 'result';
     tab.logsAvailable = false;
     tab.metricsAvailable = false;
+    tab.flameAvailable = false;
     /// Drop the tab-owned resource-meter state too, so a stale meter from a previous run is not
     /// re-adopted by `syncActiveTabChrome`; the next framed run creates a fresh one.
     tab.resources = null;
@@ -13282,7 +13696,7 @@ function syncActiveTabChrome() {
     /// for what this tab produced, and switch its result element(s) to its own view. The view and
     /// toggles are tab-owned (see the `set-view` handler and `_markLogsAvailable`), so opening a tab
     /// never inherits the previously active tab's selection or leaves a result hidden with no toggle.
-    progressEl.setViewState(tab.view || 'result', !!tab.logsAvailable, !!tab.metricsAvailable);
+    progressEl.setViewState(tab.view || 'result', !!tab.logsAvailable, !!tab.metricsAvailable, !!tab.flameAvailable);
     if (tab.panel)
         for (const el of tab.panel.querySelectorAll('query-result'))
             el.showView(tab.view || 'result');
