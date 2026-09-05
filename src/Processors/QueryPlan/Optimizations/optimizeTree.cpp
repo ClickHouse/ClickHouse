@@ -204,7 +204,7 @@ void checkDistributedReadSupported(const QueryPlan::Node & root);
 void checkCascadesSupported(const QueryPlan::Node & root);
 
 /// Returns true if any step of the plan is a security barrier (see `IQueryPlanStep::isSecurityBarrier`).
-bool planHasSecurityBarrier(const QueryPlan::Node & root)
+static bool planHasSecurityBarrier(const QueryPlan::Node & root)
 {
     std::vector<const QueryPlan::Node *> stack = {&root};
     while (!stack.empty())
