@@ -519,13 +519,15 @@ struct ConverterType
     using Type = PType;
 };
 
-/// `unknown_type_error_code` is the code raised for an argument the dispatch cannot read at all.
-/// It defaults to `BAD_ARGUMENTS`, which is what the execute-time dispatch has always raised, and
-/// the analysis-time checks below override it with `ILLEGAL_TYPE_OF_ARGUMENT`: that is the code
-/// `FunctionBaseVariantAdaptor` reads as type incompatibility, so a `Variant` alternative the
-/// function refuses is skipped rather than turned into a hard analysis error.
+/// An argument the dispatch cannot read at all raises `BAD_ARGUMENTS`, which is what the
+/// execute-time dispatch has always raised. Geometry functions no longer reach it: `geoKindOf`
+/// below classifies the same types during analysis, and `checkGeometryArgumentType` rejects the
+/// unreadable ones with `ILLEGAL_TYPE_OF_ARGUMENT` -- the code `FunctionBaseVariantAdaptor` reads
+/// as type incompatibility, so a `Variant` alternative the function refuses is skipped rather than
+/// turned into a hard analysis error. The remaining callers are `MVTEncodeGeom` and the BigQuery
+/// conversions, which dispatch without such a check.
 template <typename Point, typename F>
-static void callOnGeometryDataType(DataTypePtr type, F && f, int unknown_type_error_code = ErrorCodes::BAD_ARGUMENTS)
+static void callOnGeometryDataType(DataTypePtr type, F && f)
 {
     const auto & factory = DataTypeFactory::instance();
 
@@ -556,13 +558,12 @@ static void callOnGeometryDataType(DataTypePtr type, F && f, int unknown_type_er
         return f(ConverterType<ColumnToPolygonsConverter<Point>>());
     if (factory.get("MultiPolygon")->equals(*type))
         return f(ConverterType<ColumnToMultiPolygonsConverter<Point>>());
-    throw Exception(unknown_type_error_code, "Unknown geometry type {}", type->getName());
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geometry type {}", type->getName());
 }
 
 
 template <typename Point, typename F>
-static void callOnTwoGeometryDataTypes(
-    DataTypePtr left_type, DataTypePtr right_type, F && func, int unknown_type_error_code = ErrorCodes::BAD_ARGUMENTS)
+static void callOnTwoGeometryDataTypes(DataTypePtr left_type, DataTypePtr right_type, F && func)
 {
     return callOnGeometryDataType<Point>(left_type, [&](const auto & left_types)
     {
@@ -573,8 +574,8 @@ static void callOnTwoGeometryDataTypes(
             using RightConverterType = std::decay_t<decltype(right_types)>;
 
             return func(LeftConverterType(), RightConverterType());
-        }, unknown_type_error_code);
-    }, unknown_type_error_code);
+        });
+    });
 }
 
 /// The geometry kinds a function refuses, as a bit set. A function's accepted argument domain is
