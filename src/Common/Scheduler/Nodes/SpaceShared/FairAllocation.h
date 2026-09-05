@@ -20,6 +20,7 @@ public:
 
     // ISpaceSharedNode
     ResourceAllocation * selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details) override;
+    ResourceAllocation * selectAllocationToSpill(ResourceCost at_least, String & details) override;
     void approveIncrease() override;
     void approveDecrease() override;
     void propagateUpdate(ISpaceSharedNode & from_child, Update && update) override;
@@ -29,11 +30,13 @@ private:
     bool setIncrease(ISpaceSharedNode & from_child, IncreaseRequest * new_increase, bool detach_child);
     bool setDecrease(ISpaceSharedNode & from_child, DecreaseRequest * new_decrease, bool detach_child);
     void updateKey(ISpaceSharedNode & from_child, IncreaseRequest * new_increase, bool detach_child);
+    void syncReclaimableMembership(ISpaceSharedNode & from_child, bool detach_child);
 
     RunningSetByUsage running_children; /// Children with currently running allocations
     PendingSetByUsage pending_children; /// Children with pending allocation increase request
     IncreasingSetByUsage increasing_children; /// Children with running allocation increase request
     DecreasingList decreasing_children; /// Children with decrease request
+    ReclaimableSetByUsage reclaimable_children; /// Children with `reclaimable > 0`, ordered by usage (spill victim = highest usage)
     size_t tie_breaker = 0; /// Unique id generator for tie breaking in ordering
 
     ISpaceSharedNode * increase_child = nullptr; /// Child that requested the current `increase`

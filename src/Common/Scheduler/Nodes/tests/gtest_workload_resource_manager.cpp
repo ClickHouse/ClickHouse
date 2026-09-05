@@ -2082,12 +2082,45 @@ public:
         ASSERT_EQ(increase_enqueued, true);
     }
 
+    /// Reports the absolute reclaimable total to the scheduler (advisory). Called outside `mutex` to
+    /// respect lock ordering with AllocationQueue::mutex.
+    void reportReclaimable(ResourceCost total)
+    {
+        queue.setReclaimable(*this, total);
+    }
+
+    void waitSpilled(size_t n = 1)
+    {
+        std::unique_lock lock(mutex);
+        cv.wait(lock, [&] { return spills >= n; });
+    }
+
+    size_t spillCount()
+    {
+        std::unique_lock lock(mutex);
+        return spills;
+    }
+
+    ResourceCost lastSpillAtLeast()
+    {
+        std::unique_lock lock(mutex);
+        return last_spill_at_least;
+    }
+
 private: // interaction with the scheduler thread
     void killAllocation(const std::exception_ptr & reason) override
     {
         std::unique_lock lock(mutex);
         DBG_PRINT("{}: Kill allocation at size = {}", id, allocated_size);
         kill_reason = reason;
+        cv.notify_all();
+    }
+
+    void spillAllocation(ResourceCost at_least_bytes) override
+    {
+        std::unique_lock lock(mutex);
+        ++spills;
+        last_spill_at_least = at_least_bytes;
         cv.notify_all();
     }
 
@@ -2138,6 +2171,8 @@ private: // interaction with the scheduler thread
     bool increase_enqueued = false;
     bool decrease_enqueued = false;
     bool removed = false;
+    size_t spills = 0; // number of spillAllocation() signals received
+    ResourceCost last_spill_at_least = 0; // argument of the last spillAllocation() signal
     ResourceCost allocated_size = 0; // equals ResourceAllocation::allocated, which is private and controlled by the scheduler
     ResourceCost real_size = 0; // real size of the resource used by the allocation
 };
@@ -2441,6 +2476,95 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationSelfKilled)
             ASSERT_NE(e.displayText().find("to satisfy its own increase"), std::string::npos);
         }
     }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillOnSoftLimit)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    // Hard limit 200, soft (spill) limit 100.
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 200, max_memory_before_spill = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "spiller", 50);
+    a.setSize(150); // above the soft limit (100), below the hard limit (200)
+    a.waitSync();
+    EXPECT_EQ(a.spillCount(), 0); // nothing reclaimable reported yet -> fail-close, no spill
+
+    a.reportReclaimable(120); // now the scheduler can ask it to spill
+    a.waitSpilled();
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 50); // need = allocated(150) - soft(100)
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillRatioSetting)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    // Soft limit derived as a fraction of the hard limit: 0.5 * 200 = 100.
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 200, max_memory_to_spill_ratio = 0.5");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "spiller", 50);
+    a.setSize(160); // above soft (100), below hard (200)
+    a.waitSync();
+    a.reportReclaimable(100);
+    a.waitSpilled();
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 60); // need = allocated(160) - soft(100)
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillSmallerSettingWins)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    // Both soft-limit settings set: the smaller resulting threshold wins.
+    // Effective soft limit = min(max_memory_before_spill = 150, 0.5 * max_memory = 100) = 100.
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 200, max_memory_before_spill = 150, max_memory_to_spill_ratio = 0.5");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "spiller", 50);
+    a.setSize(120); // above the smaller threshold (100), below the larger one (150)
+    a.waitSync();
+    a.reportReclaimable(100);
+    a.waitSpilled();
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 20); // need = allocated(120) - min(150, 100)
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillOnSoftLimitEnableTransition)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all"); // no limits: the workload has no `AllocationLimit` node at all
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "spiller", 150);
+    a.waitSync();
+    a.reportReclaimable(120); // reported before any soft limit exists — nothing can spill yet
+    EXPECT_EQ(a.spillCount(), 0);
+
+    // Enable transition: this inserts a fresh soft-only `AllocationLimit` above the existing branch
+    // (the Add path of `updateSchedulingSettings`, not the Update path taken when a limit already
+    // exists). The subtree is already over the new threshold with reclaimable memory, so the spill
+    // must fire right away — no later resize or `setReclaimable` happens in this test to trigger it.
+    t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory_before_spill = 100");
+
+    a.waitSpilled();
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 50); // need = allocated(150) - soft(100)
 }
 
 TEST(SchedulerWorkloadResourceManager, MemoryReservationKillsOther)

@@ -211,6 +211,12 @@ void MemoryReservation::killAllocation(const std::exception_ptr & reason)
     cv.notify_all(); // notify syncWithMemoryTracker
 }
 
+void MemoryReservation::spillAllocation(ResourceCost /*at_least_bytes*/)
+{
+    // No-op for now. Reporting reclaimable memory and reacting to spill signals is done on the query
+    // side (in the pipeline executor) and will be wired up in a separate change.
+}
+
 void MemoryReservation::increaseApproved(const IncreaseRequest & increase)
 {
     std::unique_lock lock(mutex);

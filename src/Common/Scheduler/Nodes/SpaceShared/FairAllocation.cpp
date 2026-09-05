@@ -137,6 +137,12 @@ void FairAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && up
         else
             update.resetDecrease();
     }
+    // Membership in `reclaimable_children` follows `from_child.reclaimable`. Re-keying of an
+    // existing member on a usage-key change is handled inside `updateKey`; this only adds/removes members
+    // (including a pure `reclaimable_delta` update, which does not touch `increase`/`decrease` and so does
+    // not reach `updateKey`). `from_child.reclaimable` is already final here (the child applied its delta
+    // before propagating). The usage key is valid because `reclaimable > 0` implies a running child.
+    syncReclaimableMembership(from_child, update.detached == &from_child);
     if (parent && update)
         propagate(std::move(update));
 }
@@ -208,6 +214,12 @@ void FairAllocation::updateKey(ISpaceSharedNode & from_child, IncreaseRequest * 
             pending_children.erase(pending_children.iterator_to(from_child));
         if (from_child.isRunning())
             running_children.erase(running_children.iterator_to(from_child));
+        // Re-key an existing reclaimable member in lockstep. Membership changes (0<->>0)
+        // are handled separately by `syncReclaimableMembership`; here we only preserve ordering for a
+        // child that is already listed.
+        bool reclaimable_member = from_child.isReclaimable();
+        if (reclaimable_member)
+            reclaimable_children.erase(reclaimable_children.iterator_to(from_child));
 
         from_child.setUsageKey(new_key, ++tie_breaker);
 
@@ -221,6 +233,8 @@ void FairAllocation::updateKey(ISpaceSharedNode & from_child, IncreaseRequest * 
         }
         if (from_child.allocations > 0)
             running_children.insert(from_child);
+        if (reclaimable_member)
+            reclaimable_children.insert(from_child);
     }
     else // The key has not been changed - do less work if possible (this is the common case on approve)
     {
@@ -248,6 +262,24 @@ void FairAllocation::updateKey(ISpaceSharedNode & from_child, IncreaseRequest * 
         else if (from_child.allocations == 0)
             running_children.erase(running_children.iterator_to(from_child));
     }
+}
+
+void FairAllocation::syncReclaimableMembership(ISpaceSharedNode & from_child, bool detach_child)
+{
+    bool should_be_member = !detach_child && from_child.reclaimable > 0;
+    bool is_member = from_child.isReclaimable();
+    if (should_be_member && !is_member)
+        reclaimable_children.insert(from_child); // Uses the child's current (valid) usage key
+    else if (!should_be_member && is_member)
+        reclaimable_children.erase(reclaimable_children.iterator_to(from_child));
+}
+
+ResourceAllocation * FairAllocation::selectAllocationToSpill(ResourceCost at_least, String & details)
+{
+    if (reclaimable_children.empty())
+        return nullptr; // No reclaimable child in this subtree — fail-close.
+    // Descend into the highest-usage reclaimable child (the tail), matching the kill order.
+    return reclaimable_children.rbegin()->selectAllocationToSpill(at_least, details);
 }
 
 void FairAllocation::updateMinMaxAllocated(ResourceCost new_value)
