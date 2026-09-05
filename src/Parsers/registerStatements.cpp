@@ -23,6 +23,7 @@ void registerStatements()
     registerStatementExists(factory);
     registerStatementExplain(factory);
     registerStatementHypotheticalIndex(factory);
+    registerStatementHypotheticalProjection(factory);
     registerStatementIn(factory);
     registerStatementInsert(factory);
     registerStatementKillQuery(factory);
