@@ -1,6 +1,9 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -12,6 +15,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/scope_guard_safe.h>
 
+#include <limits>
 #include <thread>
 
 #include <gtest/gtest.h>
@@ -32,6 +36,79 @@ ColumnArray::MutablePtr createArray(std::vector<UInt64> data_values, std::vector
         offsets->getData().push_back(offset);
 
     return ColumnArray::create(std::move(data), std::move(offsets));
+}
+
+ColumnArray::MutablePtr createDynamicArrayWithEmptyFirstRow()
+{
+    auto data = ColumnDynamic::create();
+    data->insert(Field(UInt64(1) << 40));
+
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    offsets->insertValue(0);
+    offsets->insertValue(1);
+
+    return ColumnArray::create(std::move(data), std::move(offsets));
+}
+
+ColumnArray::MutablePtr createTupleArray(size_t array_size, size_t fixed_string_size, UInt64 first_number, char first_character)
+{
+    auto numbers = ColumnUInt64::create();
+    auto strings = ColumnFixedString::create(fixed_string_size);
+
+    for (size_t i = 0; i < array_size; ++i)
+    {
+        numbers->insertValue(first_number + i);
+        strings->insertData(&first_character, 1);
+    }
+
+    MutableColumns tuple_elements;
+    tuple_elements.push_back(std::move(numbers));
+    tuple_elements.push_back(std::move(strings));
+    auto data = ColumnTuple::create(std::move(tuple_elements));
+
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    offsets->insertValue(array_size);
+
+    return ColumnArray::create(std::move(data), std::move(offsets));
+}
+
+void expectTupleArrayState(const ColumnArray & column, UInt64 first_number, char first_character)
+{
+    ASSERT_EQ(column.size(), 1);
+    ASSERT_EQ(column.getOffsets().back(), 1);
+
+    const auto & tuple = assert_cast<const ColumnTuple &>(column.getData());
+    ASSERT_EQ(tuple.size(), 1);
+    ASSERT_EQ(tuple.getColumn(0).size(), 1);
+    ASSERT_EQ(tuple.getColumn(0).getUInt(0), first_number);
+
+    const auto & strings = assert_cast<const ColumnFixedString &>(tuple.getColumn(1));
+    ASSERT_EQ(strings.size(), 1);
+    ASSERT_EQ(strings.getDataAt(0)[0], first_character);
+}
+
+void expectInsertManyFromRollback(size_t source_array_size, size_t repetitions)
+{
+    static constexpr size_t fixed_string_size = 1 << 20;
+
+    auto source = createTupleArray(source_array_size, fixed_string_size, 100, 's');
+    auto destination = createTupleArray(1, fixed_string_size, 7, 'd');
+
+    /// Keep the offsets and the first tuple element out of the clamped allocation.
+    destination->getOffsets().reserve(1 + repetitions);
+    auto & destination_tuple = assert_cast<ColumnTuple &>(destination->getData());
+    destination_tuple.getColumn(0).reserve(1 + source_array_size * repetitions);
+
+    {
+        CurrentThread::flushUntrackedMemory();
+        const Int64 previous_hard_limit = total_memory_tracker.getHardLimit();
+        SCOPE_EXIT_SAFE(total_memory_tracker.setHardLimit(previous_hard_limit));
+        total_memory_tracker.setHardLimit(total_memory_tracker.get() + 1024);
+
+        ASSERT_THROW(destination->insertManyFrom(*source, 0, repetitions), Exception);
+    }
+
+    expectTupleArrayState(*destination, 7, 'd');
 }
 
 /// The part of the column that appending empty values must leave alone.
@@ -123,6 +200,129 @@ TEST(ColumnArray, OffsetsConsistentWithNestedColumn)
     EXPECT_EQ(column->getSize(0), 2);
     EXPECT_EQ(column->getSize(1), 0);
     EXPECT_EQ(column->getSize(2), 1);
+}
+
+TEST(ColumnArray, InsertManyFromRepeatedSmallArrays)
+{
+    auto source = createArray({42, 10, 20}, {0, 1, 3});
+    auto destination = createArray({7}, {1});
+
+    /// Repeating an empty array only appends the current offset.
+    destination->insertManyFrom(*source, 0, 3);
+    ASSERT_EQ(destination->size(), 4);
+    EXPECT_EQ(destination->getData().size(), 1);
+    EXPECT_EQ(destination->getSize(1), 0);
+    EXPECT_EQ(destination->getSize(2), 0);
+    EXPECT_EQ(destination->getSize(3), 0);
+
+    /// A single-element array uses the nested column's bulk insertion path.
+    destination->insertManyFrom(*source, 1, 3);
+    ASSERT_EQ(destination->size(), 7);
+    ASSERT_EQ(destination->getData().size(), 4);
+    EXPECT_EQ(destination->getSize(4), 1);
+    EXPECT_EQ(destination->getSize(5), 1);
+    EXPECT_EQ(destination->getSize(6), 1);
+    EXPECT_EQ(destination->getData().getUInt(1), 42);
+    EXPECT_EQ(destination->getData().getUInt(2), 42);
+    EXPECT_EQ(destination->getData().getUInt(3), 42);
+
+    /// Arrays with multiple elements keep nested values interleaved.
+    destination->insertManyFrom(*source, 2, 2);
+    ASSERT_EQ(destination->size(), 9);
+    ASSERT_EQ(destination->getData().size(), 8);
+    EXPECT_EQ(destination->getSize(7), 2);
+    EXPECT_EQ(destination->getSize(8), 2);
+    EXPECT_EQ(destination->getData().getUInt(4), 10);
+    EXPECT_EQ(destination->getData().getUInt(5), 20);
+    EXPECT_EQ(destination->getData().getUInt(6), 10);
+    EXPECT_EQ(destination->getData().getUInt(7), 20);
+
+    /// Zero length remains a no-op even when the source position is invalid.
+    destination->insertManyFrom(*source, 100, 0);
+    EXPECT_EQ(destination->size(), 9);
+    EXPECT_EQ(destination->getData().size(), 8);
+}
+
+TEST(ColumnArray, InsertManyFromRejectsRowCountOverflow)
+{
+    auto source = createArray({}, {0});
+    auto destination = createArray({}, {0});
+
+    EXPECT_THROW(destination->insertManyFrom(*source, 0, std::numeric_limits<size_t>::max()), Exception);
+    EXPECT_EQ(destination->size(), 1);
+    EXPECT_EQ(destination->getData().size(), 0);
+}
+
+TEST(ColumnArray, InsertManyFromSelfString)
+{
+    auto data = ColumnString::create();
+    const String value(1 << 20, 'x');
+    data->insert(value);
+
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    offsets->getData().push_back(data->size());
+    auto column = ColumnArray::create(std::move(data), std::move(offsets));
+
+    column->insertManyFrom(*column, 0, 2);
+
+    ASSERT_EQ(column->size(), 3);
+    ASSERT_EQ(column->getData().size(), 3);
+    for (size_t i = 0; i < column->size(); ++i)
+        EXPECT_EQ(column->getData().getDataAt(i), std::string_view(value));
+}
+
+TEST(ColumnArray, InsertManyFromEmptyDynamicPreservesStructure)
+{
+    auto source = createDynamicArrayWithEmptyFirstRow();
+
+    auto repeated = ColumnArray::create(ColumnDynamic::create());
+    repeated->insertFrom(*source, 0);
+    repeated->insertFrom(*source, 0);
+
+    const auto & repeated_data = assert_cast<const ColumnDynamic &>(repeated->getData());
+    ASSERT_TRUE(repeated_data.getVariantInfo().variant_name_to_discriminator.contains("UInt64"));
+
+    auto bulk = ColumnArray::create(ColumnDynamic::create());
+    bulk->insertManyFrom(*source, 0, 2);
+
+    ASSERT_EQ((*bulk)[0], Field(Array{}));
+    ASSERT_EQ((*bulk)[1], Field(Array{}));
+    EXPECT_TRUE(repeated->dynamicStructureEquals(*bulk));
+}
+
+TEST(ColumnArray, InsertManyFromSingletonDynamicNull)
+{
+    auto source_data = ColumnDynamic::create(1);
+    source_data->insert(Field(UInt64(1) << 40));
+    source_data->insertDefault();
+
+    auto source_offsets = ColumnArray::ColumnOffsets::create();
+    source_offsets->insertValue(1);
+    source_offsets->insertValue(2);
+    auto source = ColumnArray::create(std::move(source_data), std::move(source_offsets));
+
+    auto destination_data = ColumnDynamic::create(1);
+    destination_data->insert(Field("str"));
+
+    auto destination_offsets = ColumnArray::ColumnOffsets::create();
+    destination_offsets->insertValue(1);
+    auto destination = ColumnArray::create(std::move(destination_data), std::move(destination_offsets));
+
+    destination->insertManyFrom(*source, 1, 3);
+
+    ASSERT_EQ(destination->size(), 4);
+    ASSERT_EQ(destination->getData().size(), destination->getOffsets().back());
+    for (size_t i = 1; i != destination->size(); ++i)
+        EXPECT_EQ((*destination)[i], Field(Array({Field(Null())})));
+}
+
+TEST(ColumnArray, InsertManyFromRollsBackNestedFailure)
+{
+    /// Singleton source arrays exercise nested insertManyFrom.
+    expectInsertManyFromRollback(/*source_array_size=*/1, /*repetitions=*/16);
+
+    /// Multi-element source arrays exercise the repeated nested insertRangeFrom path.
+    expectInsertManyFromRollback(/*source_array_size=*/2, /*repetitions=*/4);
 }
 
 TEST(ColumnArray, CutPreservesSharedLowCardinalityDictionary)
