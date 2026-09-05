@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_PARSE_DATE;
+}
+
 UInt128 SerializationDate32::getHash(const DateLUTImpl & time_zone_)
 {
     SipHash hash;
@@ -37,26 +42,26 @@ void SerializationDate32::deserializeWholeText(IColumn & column, ReadBuffer & is
         throwUnexpectedDataAfterParsedValue(column, istr, settings, "Date32");
 }
 
-bool SerializationDate32::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+bool SerializationDate32::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     ExtendedDayNum x;
-    if (!tryReadDateText(x, istr, time_zone) || !istr.eof())
+    if (!tryReadDateText(x, istr, time_zone, nullptr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw) || !istr.eof())
         return false;
     assert_cast<ColumnInt32 &>(column).getData().push_back(x);
     return true;
 }
 
-void SerializationDate32::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationDate32::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     ExtendedDayNum x;
-    readDateText(x, istr, time_zone);
+    readDateText(x, istr, time_zone, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
     assert_cast<ColumnInt32 &>(column).getData().push_back(x);
 }
 
-bool SerializationDate32::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+bool SerializationDate32::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     ExtendedDayNum x;
-    if (!tryReadDateText(x, istr, time_zone))
+    if (!tryReadDateText(x, istr, time_zone, nullptr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw))
         return false;
     assert_cast<ColumnInt32 &>(column).getData().push_back(x);
     return true;
@@ -74,19 +79,19 @@ void SerializationDate32::serializeTextQuoted(const IColumn & column, size_t row
     writeChar('\'', ostr);
 }
 
-void SerializationDate32::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationDate32::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     ExtendedDayNum x;
     assertChar('\'', istr);
-    readDateText(x, istr, time_zone);
+    readDateText(x, istr, time_zone, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
     assertChar('\'', istr);
     assert_cast<ColumnInt32 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
 
-bool SerializationDate32::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+bool SerializationDate32::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     ExtendedDayNum x;
-    if (!checkChar('\'', istr) || !tryReadDateText(x, istr, time_zone) || !checkChar('\'', istr))
+    if (!checkChar('\'', istr) || !tryReadDateText(x, istr, time_zone, nullptr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw) || !checkChar('\'', istr))
         return false;
     assert_cast<ColumnInt32 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
     return true;
@@ -107,7 +112,7 @@ void SerializationDate32::deserializeTextJSON(IColumn & column, ReadBuffer & ist
         return;
     }
     ExtendedDayNum x;
-    readDateText(x, istr, time_zone);
+    readDateText(x, istr, time_zone, format_settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
     assertChar('"', istr);
     assert_cast<ColumnInt32 &>(column).getData().push_back(x);
 }
@@ -118,7 +123,7 @@ bool SerializationDate32::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
         return SerializationNumber<Int32>::tryDeserializeTextJSON(column, istr, format_settings);
 
     ExtendedDayNum x;
-    if (!tryReadDateText(x, istr, time_zone) || !checkChar('"', istr))
+    if (!tryReadDateText(x, istr, time_zone, nullptr, format_settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw) || !checkChar('"', istr))
         return false;
     assert_cast<ColumnInt32 &>(column).getData().push_back(x);
     return true;
@@ -131,17 +136,24 @@ void SerializationDate32::serializeTextCSV(const IColumn & column, size_t row_nu
     writeChar('"', ostr);
 }
 
-void SerializationDate32::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationDate32::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     LocalDate value;
     readCSV(value, istr);
+    /// This one goes through `LocalDate`, which accepts a calendar-invalid date and resolves it to a default
+    if (settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw
+        && !tryToMakeDayNum(time_zone, value.year(), value.month(), value.day()))
+        throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Cannot parse date");
     assert_cast<ColumnInt32 &>(column).getData().push_back(value.getExtenedDayNum());
 }
 
-bool SerializationDate32::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+bool SerializationDate32::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     LocalDate value;
     if (!tryReadCSV(value, istr))
+        return false;
+    if (settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw
+        && !tryToMakeDayNum(time_zone, value.year(), value.month(), value.day()))
         return false;
     assert_cast<ColumnInt32 &>(column).getData().push_back(value.getExtenedDayNum());
     return true;

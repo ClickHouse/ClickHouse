@@ -179,11 +179,11 @@ void SerializationDateTime64::deserializeTextQuoted(IColumn & column, ReadBuffer
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
     {
-        readDateTime64AsRawValue(x, istr);
+        readDateTime64AsRawValue(x, scale, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
     }
     else /// Just 1504193808 or 1703363853.035 (a Unix timestamp, possibly with sub-second precision)
     {
-        readDateTime64AsNumber(x, scale, istr);
+        readDateTime64AsNumber(x, scale, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
@@ -198,12 +198,12 @@ bool SerializationDateTime64::tryDeserializeTextQuoted(IColumn & column, ReadBuf
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
     {
-        if (!tryReadDateTime64AsRawValue(x, istr))
+        if (!tryReadDateTime64AsRawValue(x, scale, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw))
             return false;
     }
     else /// Just 1504193808 or 1703363853.035 (a Unix timestamp, possibly with sub-second precision)
     {
-        if (!tryReadDateTime64AsNumber(x, scale, istr))
+        if (!tryReadDateTime64AsNumber(x, scale, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw))
             return false;
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
@@ -227,11 +227,11 @@ void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer &
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
     {
-        readDateTime64AsRawValue(x, istr);
+        readDateTime64AsRawValue(x, scale, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
     }
     else
     {
-        readDateTime64AsNumber(x, scale, istr);
+        readDateTime64AsNumber(x, scale, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
@@ -246,12 +246,12 @@ bool SerializationDateTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffe
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
     {
-        if (!tryReadDateTime64AsRawValue(x, istr))
+        if (!tryReadDateTime64AsRawValue(x, scale, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw))
             return false;
     }
     else
     {
-        if (!tryReadDateTime64AsNumber(x, scale, istr))
+        if (!tryReadDateTime64AsNumber(x, scale, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw))
             return false;
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);

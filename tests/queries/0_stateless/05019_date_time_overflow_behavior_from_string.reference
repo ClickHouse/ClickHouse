@@ -1,0 +1,30 @@
+saturate
+2149-06-06	1970-01-01	2106-02-07 06:28:15	1970-01-01 00:00:00
+2149-06-06	2149-06-06	2149-06-06
+2149-06-06	2149-06-06
+ignore
+2149-06-06	1970-01-01	2106-02-07 06:28:15	1970-01-01 00:00:00
+throw
+throw, in range
+2149-06-06	1970-01-01	2106-02-07 06:28:15	1970-01-01 00:00:00
+2299-12-31	1900-01-01	2299-12-31 23:59:59.999
+throw, OrNull and OrZero still fall back
+\N	1970-01-01	\N	1970-01-01 00:00:00
+throw, input formats
+2149-06-06
+2106-02-07 06:28:15
+throw, tentative parsers must not accept a clamped value
+2150-12-31	\N	2150-12-31
+2149-06-06
+throw, a digit-only timestamp is text too
+2106-02-07 06:28:15	2023-11-14 22:13:20	\N	1970-01-01 00:00:00
+throw, Date32 rejects what it cannot represent instead of substituting a default
+\N	2299-12-31	1900-01-01
+2000-13-01
+throw, an unquoted numeric token is checked too
+2023-11-14 22:13:20
+2106-02-07 06:28:15
+2023-12-23 20:37:33
+throw, a DateTime64 numeric token is checked against the calendar range
+9999-12-31 23:59:59.000
+2023-11-14 22:13:20.000
