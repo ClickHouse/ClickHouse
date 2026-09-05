@@ -1,0 +1,21 @@
+a class whose first member is a literal ]
+1	1
+1	0
+1	0
+X	ab
+a class containing a literal [ next to an alternation
+1	1
+1	1
+zX	Xx
+the same over a table, where the prefilter is used
+3
+3
+5
+5
+a pattern with a non-constant needle takes the same path
+3
+ordinary classes still prefilter the same way
+2
+2
+2
+1
