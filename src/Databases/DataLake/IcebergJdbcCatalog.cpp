@@ -2,7 +2,7 @@
 
 #include "config.h"
 
-#if USE_LIBPQXX
+#if USE_LIBPQXX && USE_AVRO && USE_AWS_S3
 
 #include <Core/PostgreSQL/PoolWithFailover.h>
 #include <Core/Settings.h>
@@ -15,6 +15,7 @@
 #include <Databases/DataLake/StaticStorageCredentials.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -40,6 +41,8 @@ namespace DB
 namespace DatabaseDataLakeSetting
 {
 extern const DatabaseDataLakeSettingsString storage_endpoint;
+extern const DatabaseDataLakeSettingsS3UriStyle storage_uri_style;
+extern const DatabaseDataLakeSettingsBool force_add_bucket;
 }
 }
 
@@ -78,6 +81,9 @@ IcebergJdbcCatalog::IcebergJdbcCatalog(
 {
     if (params.host.empty() || params.database.empty())
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "JDBC catalog requires host and database settings");
+
+    /// Check before opening the pool, including after a lazy `ATTACH`.
+    context_->getRemoteHostFilter().checkHostAndPort(params.host, std::to_string(params.port));
 
     DB::StoragePostgreSQL::Configuration pg_configuration;
     pg_configuration.host = params.host;
@@ -226,14 +232,17 @@ bool IcebergJdbcCatalog::existsTable(const std::string & namespace_name, const s
 bool IcebergJdbcCatalog::tryGetTableMetadata(
     const std::string & namespace_name, const std::string & table_name, TableMetadata & result) const
 {
-    auto holder = pool->get();
-    pqxx::nontransaction txn(holder->get());
-    pqxx::result rows = txn.exec_params(
-        "SELECT metadata_location FROM " + qualified("iceberg_tables")
-            + " WHERE catalog_name = $1 AND table_namespace = $2 AND table_name = $3" + tableTypePredicate(),
-        warehouse,
-        namespace_name,
-        table_name);
+    pqxx::result rows;
+    {
+        auto holder = pool->get();
+        pqxx::nontransaction txn(holder->get());
+        rows = txn.exec_params(
+            "SELECT metadata_location FROM " + qualified("iceberg_tables")
+                + " WHERE catalog_name = $1 AND table_namespace = $2 AND table_name = $3" + tableTypePredicate(),
+            warehouse,
+            namespace_name,
+            table_name);
+    }
 
     if (rows.empty() || rows[0]["metadata_location"].is_null())
         return false;
@@ -294,18 +303,7 @@ Poco::JSON::Object::Ptr IcebergJdbcCatalog::getMetadataJSON(const String & metad
     if (auto cached = metadata_objects.get(metadata_location))
         return *cached;
 
-    /// `metadata_location` is always a URI in real deployments, but a
-    /// malformed value must mark the table unreadable, not throw out of
-    /// every listing that touches it.
-    bool is_s3 = false;
-    try
-    {
-        is_s3 = DataLake::parseStorageTypeFromLocation(metadata_location) == StorageType::S3;
-    }
-    catch (const DB::Exception &)
-    {
-    }
-    if (!is_s3)
+    if (!metadata_location.starts_with("s3://") && !metadata_location.starts_with("s3a://"))
     {
         result.setTableIsNotReadable(fmt::format(
             "Cannot read table metadata at '{}': JDBC catalog reads metadata files only from S3-family storage",
@@ -313,7 +311,7 @@ Poco::JSON::Object::Ptr IcebergJdbcCatalog::getMetadataJSON(const String & metad
         return nullptr;
     }
 
-    auto [object_storage, bucket_name, metadata_path] = createObjectStorageForMetadataAccess(metadata_location);
+    auto [object_storage, metadata_path] = createObjectStorageForMetadataAccess(metadata_location);
     auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(metadata_location);
     auto metadata_object = DB::Iceberg::getMetadataJSONObject(
         metadata_path, object_storage, nullptr, getContext(), log, compression_method, std::nullopt);
@@ -327,43 +325,16 @@ IcebergJdbcCatalog::createObjectStorageForMetadataAccess(const String & metadata
     DB::ASTStorage * storage = table_engine_definition->as<DB::ASTStorage>();
     DB::ASTs args = storage->engine->arguments->children;
 
-    /// Split `s3://bucket/path/to/metadata.json` into bucket and key; the
-    /// client endpoint is the configured `storage_endpoint`, falling back to
-    /// the bucket root for plain AWS URLs.
-    String key = metadata_location;
-    if (key.starts_with("s3://"))
-        key = key.substr(5);
-    else if (key.starts_with("s3a://"))
-        key = key.substr(6);
-    else if (key.starts_with("s3:/"))
-        key = key.substr(4);
-
-    String bucket_name;
-    if (auto pos = key.find('/'); pos != std::string::npos)
-    {
-        bucket_name = key.substr(0, pos);
-        key = key.substr(pos + 1);
-    }
-
+    auto location = TableMetadata().withLocation();
+    if (database_settings[DB::DatabaseDataLakeSetting::force_add_bucket])
+        location.withForceAddBucket();
+    location.setLocation(metadata_location);
     const String & storage_endpoint = database_settings[DB::DatabaseDataLakeSetting::storage_endpoint].value;
-    String base = storage_endpoint.empty() ? "s3://" + bucket_name : storage_endpoint;
-    while (base.ends_with('/'))
-        base.pop_back();
-    /// The object-storage configuration parses the bucket out of the URL
-    /// (authority for `s3://`, first path segment for path-style, host
-    /// prefix for virtual-hosted) and falls back to `"default"` when the
-    /// URL carries none. Make sure ours is present.
-    const String rest = (base.find("://") == String::npos) ? base : base.substr(base.find("://") + 3);
-    const size_t slash = rest.find('/');
-    const String authority = (slash == String::npos) ? rest : rest.substr(0, slash);
-    const String path = (slash == String::npos) ? "" : rest.substr(slash);
-    bool bucket_present = authority == bucket_name || authority.starts_with(bucket_name + ".");
-    if (!bucket_present && path.size() > 1)
-    {
-        const char after = (path.size() > 1 + bucket_name.size()) ? path[1 + bucket_name.size()] : '\0';
-        bucket_present = path.substr(1, bucket_name.size()) == bucket_name && (after == '/' || after == '\0');
-    }
-    const String endpoint_arg = bucket_present ? base : base + '/' + bucket_name;
+    String endpoint_arg = storage_endpoint.empty() ? metadata_location
+        : location.getLocationWithEndpoint(storage_endpoint, database_settings[DB::DatabaseDataLakeSetting::storage_uri_style]);
+    /// `TableMetadata` constructs a directory URL; here the location is a file.
+    if (endpoint_arg.ends_with('/'))
+        endpoint_arg.pop_back();
     if (args.empty())
         args.emplace_back(DB::make_intrusive<DB::ASTLiteral>(endpoint_arg));
     else
@@ -381,7 +352,7 @@ IcebergJdbcCatalog::createObjectStorageForMetadataAccess(const String & metadata
     auto configuration = std::make_shared<DB::StorageS3IcebergConfiguration>(storage_settings);
     DB::StorageObjectStorageConfiguration::initialize(*configuration, args, getContext(), false);
 
-    return {configuration->createObjectStorage(getContext(), true, {}), bucket_name, key};
+    return {configuration->createObjectStorage(getContext(), true, {}), configuration->getPathForRead().path};
 }
 
 }

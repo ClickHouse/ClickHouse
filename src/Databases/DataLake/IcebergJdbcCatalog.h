@@ -1,7 +1,7 @@
 #pragma once
 #include "config.h"
 
-#if USE_LIBPQXX
+#if USE_LIBPQXX && USE_AVRO && USE_AWS_S3
 
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
@@ -24,20 +24,20 @@ using PoolWithFailoverPtr = std::shared_ptr<PoolWithFailover>;
 namespace DataLake
 {
 
-/// Read-only client for the standard Apache Iceberg JdbcCatalog schema
+/// Read-only client for the Apache Iceberg `JdbcCatalog` V0/V1 schema
 /// (`iceberg_tables` / `iceberg_namespace_properties` in Postgres), instead
 /// of going through an Iceberg REST HTTP API.
 ///
 /// Table pointers resolve with a single indexed `SELECT` on the primary key
-/// `(catalog_name, table_namespace, table_name)`; there are no per-resolution
-/// HTTP round trips. The table schema is parsed from the referenced
+/// `(catalog_name, table_namespace, table_name)` without a REST catalog request.
+/// The table schema is parsed from the referenced
 /// `metadata.json` through the same `parseTableSchema` path the REST catalog
 /// uses, and cached per metadata location.
 ///
-/// This intentionally supports only what ClickHouse needs for reads, against
-/// the stable upstream schema: no version gate is required (V0 and V1, which
-/// adds the `iceberg_type` column, are both accepted). Writes, views and
-/// credential vending are not supported: use static storage credentials.
+/// PostgreSQL backends and S3 metadata locations are supported. V1 adds the
+/// `iceberg_type` column; future schema changes require compatibility testing.
+/// Writes, views and credential vending are not supported. Use read-only
+/// PostgreSQL and object-storage credentials.
 class IcebergJdbcCatalog final : public ICatalog, private DB::WithContext
 {
 public:
@@ -90,7 +90,6 @@ private:
     struct ObjectStorageWithPath
     {
         DB::ObjectStoragePtr object_storage;
-        String bucket_name;
         String metadata_path; /// Path of the metadata file within the bucket
     };
 

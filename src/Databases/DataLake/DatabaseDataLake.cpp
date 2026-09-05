@@ -30,7 +30,7 @@
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Databases/DataLake/PaimonRestCatalog.h>
-#if USE_LIBPQXX
+#if USE_LIBPQXX && USE_AWS_S3
 #include <Databases/DataLake/IcebergJdbcCatalog.h>
 #endif
 #if USE_AWS_S3 && USE_SSL
@@ -308,7 +308,7 @@ void DatabaseDataLake::initialize() const
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_JDBC:
         {
-#if USE_LIBPQXX
+#if USE_LIBPQXX && USE_AWS_S3
             /// Reads the standard Apache Iceberg JdbcCatalog tables directly
             /// from Postgres over the pg wire protocol instead of the Iceberg
             /// REST API. `warehouse` selects the JdbcCatalog `catalog_name`.
@@ -335,7 +335,7 @@ void DatabaseDataLake::initialize() const
                 Context::getGlobalContextInstance());
             break;
 #else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cannot use JDBC catalog: ClickHouse was compiled without libpqxx support");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JDBC catalog requires PostgreSQL and S3 support");
 #endif
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
@@ -1848,12 +1848,13 @@ SELECT count() from database_name.table_name;
     `onelake_client_id`/`onelake_client_secret`. ClickHouse does not refresh the token, so the
     database must be recreated after it expires.
 * JDBC Catalog
-    Reads the standard Apache Iceberg JdbcCatalog tables (`iceberg_tables`,
+    Reads PostgreSQL-backed Apache Iceberg `JdbcCatalog` V0/V1 tables (`iceberg_tables`,
     `iceberg_namespace_properties`) directly from Postgres over the pg wire
     protocol. `warehouse` selects the JdbcCatalog `catalog_name` (default
-    `"jdbc"` in JdbcCatalog deployments). The catalog is read-only and does
-    not vend storage credentials: configure static credentials and a
-    `storage_endpoint` for S3-compatible storage.
+    `"jdbc"` when that is the configured catalog name). Only S3 metadata locations
+    are supported. Use a dedicated PostgreSQL role with `SELECT` access and
+    read-only S3 credentials. This integration has no REST authorization or
+    credential vending: configure a `storage_endpoint` for S3-compatible storage.
 ```sql
 CREATE DATABASE database_name
 ENGINE = DataLakeCatalog
