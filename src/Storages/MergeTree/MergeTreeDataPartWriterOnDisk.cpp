@@ -18,6 +18,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnMaterializationUtils.h>
 #include <Compression/CompressionCodecAdaptive.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/HashingWriteBuffer.h>
@@ -678,6 +679,17 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
     }
 }
 
+void MergeTreeDataPartWriterOnDisk::initEmptyBlockSample()
+{
+    for (const auto & [name, type] : columns_list)
+    {
+        /// A column stored with automatic (non-native) `LowCardinality` serialization must be represented
+        /// by a `ColumnLowCardinality`, otherwise `SerializationLowCardinality` cannot serialize it.
+        const bool low_cardinality = ISerialization::hasKind(getSerialization(name)->getKindStack(), ISerialization::Kind::LOW_CARDINALITY);
+        block_sample.insert(ColumnWithTypeAndName{convertToSerialization(type->createColumn(), *type, low_cardinality), type, name});
+    }
+}
+
 void MergeTreeDataPartWriterOnDisk::initStreamsIfNeeded()
 {
     if (streams_initialized)
@@ -687,10 +699,7 @@ void MergeTreeDataPartWriterOnDisk::initStreamsIfNeeded()
     /// If block sample is empty, it means we didn't write any data, so we need to initialize it
     /// with empty columns.
     if (block_sample.empty())
-    {
-        for (const auto & [name, type] : columns_list)
-            block_sample.insert(ColumnWithTypeAndName{type->createColumn(), type, name});
-    }
+        initEmptyBlockSample();
 
     for (const auto & column : columns_list)
     {
@@ -710,10 +719,7 @@ void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
     /// If block sample is empty, it means we didn't write any data, so we need to initialize it
     /// with empty columns.
     if (block_sample.empty())
-    {
-        for (const auto & [name, type] : columns_list)
-            block_sample.insert(ColumnWithTypeAndName{type->createColumn(), type, name});
-    }
+        initEmptyBlockSample();
 
     NullWriteBuffer buf;
     auto serialize_settings = getSerializationSettings();

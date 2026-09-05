@@ -115,10 +115,29 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
             *result_column,
             SerializationInfoSettings::enableAllSupportedSerializations(
                 client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
+        if (client_revision < DBMS_MIN_REVISION_WITH_AUTOMATIC_LOW_CARDINALITY_SERIALIZATION
+            && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
+        {
+            /// The peer knows custom serializations, but not this kind, so the column is materialized.
+            /// The serialization info has to be recomputed from the materialized column rather than
+            /// dropped: the peer still expects the serialization-kind byte, and the serialization of
+            /// the declared type still depends on the negotiated revision (the `String` size stream).
+            result_column = recursiveRemoveNonNativeLowCardinality(recursiveRemoveSparse(result_column));
+            info = column.type->getSerializationInfo(
+                *result_column,
+                SerializationInfoSettings::enableAllSupportedSerializations(
+                    client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
+        }
         return {column.type->getSerialization(*info), info, result_column};
     }
 
-    return {column.type->getDefaultSerialization(), nullptr, recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated())};
+    /// The client is too old to be told about custom serializations, so every special in-memory
+    /// representation - including a non-native LowCardinality one (automatic LowCardinality
+    /// serialization) - has to be materialized before writing it with the default serialization.
+    return {
+        column.type->getDefaultSerialization(),
+        nullptr,
+        recursiveRemoveNonNativeLowCardinality(recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated()))};
 }
 
 size_t NativeWriter::write(const Block & block)

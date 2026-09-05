@@ -41,6 +41,10 @@ public:
     {
         size_t num_rows = 0;
         size_t num_defaults = 0;
+        /// Number of aggregated infos (e.g. parts) that contribute a LowCardinality kind. Used by the
+        /// per-table serialization hint to stop reporting LowCardinality once the last such part is gone.
+        /// Maintained only when aggregating infos (`SerializationInfo::add`/`remove`); not serialized.
+        size_t num_low_cardinality_parts = 0;
 
         /// True when `num_defaults` was counted exactly rather than sampled. Consumers
         /// that would produce wrong results from a sampled estimate (trivial count
@@ -88,7 +92,7 @@ public:
     void appendToKindStack(ISerialization::Kind kind) { kind_stack.push_back(kind); }
     const SerializationInfoSettings & getSettings() const { return settings; }
     const Data & getData() const { return data; }
-    ISerialization::KindStack getKindStack() const { return kind_stack; }
+    const ISerialization::KindStack & getKindStack() const { return kind_stack; }
 
     static ISerialization::KindStack chooseKindStack(const Data & data, const SerializationInfoSettings & settings);
 

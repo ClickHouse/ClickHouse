@@ -1775,6 +1775,12 @@ protected:
     /// protected by @data_parts_mutex.
     SerializationInfoByName serialization_hints{{}};
 
+    /// Whether any active part stores a column with automatic `LowCardinality` serialization,
+    /// derived from @serialization_hints. Query analysis consults this to avoid the much more
+    /// expensive `getSerializationHints()` (which takes the parts lock and clones the map) on
+    /// the common path where no such column exists.
+    std::atomic<bool> has_automatic_low_cardinality{false};
+
     /// Cached metadata used to read patch parts, by the structure hash from their partition id.
     /// Bounded by the number of distinct structures of patch parts.
     mutable std::mutex patch_parts_metadata_mutex;
@@ -2021,6 +2027,14 @@ protected:
     void updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & lock);
 
     SerializationInfoByName getSerializationHints() const override;
+
+public:
+    bool hasAutomaticLowCardinalitySerialization() const override { return has_automatic_low_cardinality.load(std::memory_order_relaxed); }
+
+protected:
+    /// Recomputes @has_automatic_low_cardinality. Must be called under the parts lock, after
+    /// every change of @serialization_hints.
+    void updateHasAutomaticLowCardinality();
 
     /** A structure that explicitly represents a "merge tree" of parts
      *  which is implicitly presented by min-max block numbers and levels of parts.

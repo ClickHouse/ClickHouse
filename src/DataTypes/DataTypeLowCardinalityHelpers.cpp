@@ -93,7 +93,10 @@ DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
     return type;
 }
 
-ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
+/// When remove_native is true, all LowCardinality columns are converted to full columns.
+/// When false, only non-native LowCardinality columns (automatic LowCardinality serialization) are converted,
+/// leaving genuine LowCardinality(T) columns intact.
+static ColumnPtr recursiveRemoveLowCardinalityImpl(const ColumnPtr & column, bool remove_native)
 {
     ColumnPtr res = column;
 
@@ -101,21 +104,21 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
     if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
     {
         const auto & nested = column_nullable->getNestedColumnPtr();
-        auto nested_no_lc = recursiveRemoveLowCardinality(nested);
+        auto nested_no_lc = recursiveRemoveLowCardinalityImpl(nested, remove_native);
         if (nested.get() != nested_no_lc.get())
             res = ColumnNullable::create(nested_no_lc, column_nullable->getNullMapColumnPtr());
     }
     else if (const auto * column_array = typeid_cast<const ColumnArray *>(column.get()))
     {
         const auto & data = column_array->getDataPtr();
-        auto data_no_lc = recursiveRemoveLowCardinality(data);
+        auto data_no_lc = recursiveRemoveLowCardinalityImpl(data, remove_native);
         if (data.get() != data_no_lc.get())
             res = ColumnArray::create(data_no_lc, column_array->getOffsetsPtr());
     }
     else if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
     {
         const auto & nested = column_const->getDataColumnPtr();
-        auto nested_no_lc = recursiveRemoveLowCardinality(nested);
+        auto nested_no_lc = recursiveRemoveLowCardinalityImpl(nested, remove_native);
         if (nested.get() != nested_no_lc.get())
             res = ColumnConst::create(nested_no_lc, column_const->size());
     }
@@ -126,13 +129,13 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
             return column;
 
         for (auto & element : columns)
-            element = recursiveRemoveLowCardinality(element);
+            element = recursiveRemoveLowCardinalityImpl(element, remove_native);
         res = ColumnTuple::create(columns);
     }
     else if (const auto * column_map = typeid_cast<const ColumnMap *>(column.get()))
     {
         const auto & nested = column_map->getNestedColumnPtr();
-        auto nested_no_lc = recursiveRemoveLowCardinality(nested);
+        auto nested_no_lc = recursiveRemoveLowCardinalityImpl(nested, remove_native);
         if (nested.get() != nested_no_lc.get())
             res = ColumnMap::create(nested_no_lc);
     }
@@ -141,17 +144,24 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
     /// when function will be executed.
     else if (const auto * column_function = typeid_cast<const ColumnFunction *>(column.get()))
     {
-        if (column_function->isShortCircuitArgument())
+        /// Only for the `remove_native` variant: the conversion applies to the future result column
+        /// indiscriminately, so it cannot be restricted to non-native LowCardinality. Leaving it out
+        /// keeps `recursiveRemoveNonNativeLowCardinality` from materializing genuine LowCardinality(T)
+        /// results of short circuit arguments.
+        if (remove_native && column_function->isShortCircuitArgument())
             res = column_function->recursivelyConvertResultToFullColumnIfLowCardinality();
     }
     else if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
     {
-        res = column_low_cardinality->convertToFullColumn();
+        if (remove_native || !column_low_cardinality->isNativeLowCardinality())
+            res = column_low_cardinality->convertToFullColumn();
     }
     else if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.get()))
     {
         const auto & nested = column_replicated->getNestedColumn();
-        auto nested_no_lc = recursiveRemoveLowCardinality(nested);
+        /// The nested column must follow the same rule: materializing the non-native representation
+        /// must not touch a genuine LowCardinality(T) column, or the result stops matching its data type.
+        auto nested_no_lc = recursiveRemoveLowCardinalityImpl(nested, remove_native);
         if (nested.get() != nested_no_lc.get())
             res = ColumnReplicated::create(nested_no_lc, column_replicated->getIndexesColumn());
     }
@@ -171,6 +181,16 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
     }
 
     return res;
+}
+
+ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
+{
+    return recursiveRemoveLowCardinalityImpl(column, /*remove_native=*/true);
+}
+
+ColumnPtr recursiveRemoveNonNativeLowCardinality(const ColumnPtr & column)
+{
+    return recursiveRemoveLowCardinalityImpl(column, /*remove_native=*/false);
 }
 
 ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type)

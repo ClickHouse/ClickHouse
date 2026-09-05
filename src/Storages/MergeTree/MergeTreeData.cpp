@@ -342,6 +342,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 parts_to_throw_insert;
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsUInt64 max_uniq_number_for_low_cardinality;
     extern const MergeTreeSettingsBool remove_empty_parts;
     extern const MergeTreeSettingsBool remove_rolled_back_parts_immediately;
     extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
@@ -13275,12 +13276,31 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
 
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     const auto & storage_columns = metadata_snapshot->getColumns();
+    const auto physical_columns = storage_columns.getAllPhysical();
+    serialization_hints = SerializationInfoByName(physical_columns, settings);
 
-    serialization_hints = SerializationInfoByName(storage_columns.getAllPhysical(), settings);
     auto range = getDataPartsStateRange(DataPartState::Active);
+
+    /// `SerializationInfoByName` creates entries only for columns eligible for sparse serialization.
+    /// Add missing entries only for columns that are already automatically encoded in an active part,
+    /// so a table without the feature enabled does not acquire serialization metadata on rewrite.
+    for (const auto & part : range)
+    {
+        for (const auto & [name, info] : part->getSerializationInfos())
+        {
+            if (!serialization_hints.contains(name)
+                && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
+            {
+                if (const auto column = physical_columns.tryGetByName(name))
+                    serialization_hints.emplace(name, column->type->createSerializationInfo(settings));
+            }
+        }
+    }
 
     for (const auto & part : range)
         updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);
+
+    updateHasAutomaticLowCardinality();
 }
 
 template <typename AddedParts, typename RemovedParts>
@@ -13292,12 +13312,59 @@ void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, con
 
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     const auto & storage_columns = metadata_snapshot->getColumns();
+    const auto physical_columns = storage_columns.getAllPhysical();
+
+    SerializationInfo::Settings settings
+    {
+        static_cast<double>((*getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
+        true,
+        (*getSettings())[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
+        (*getSettings())[MergeTreeSetting::serialization_info_version],
+        (*getSettings())[MergeTreeSetting::string_serialization_version],
+        (*getSettings())[MergeTreeSetting::nullable_serialization_version],
+        (*getSettings())[MergeTreeSetting::map_serialization_version],
+        (*getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
+    };
+
+    /// `SerializationInfoByName` creates entries only for columns eligible for sparse serialization.
+    /// Add missing entries for newly added automatically encoded parts, just as `resetSerializationHints`
+    /// does for the full active-part set. Otherwise the first INSERT leaves no table-level hint, and
+    /// query analysis can rewrite a read to an unsupported subcolumn before a table reload rebuilds it.
+    for (const auto & part : added_parts)
+    {
+        for (const auto & [name, info] : part->getSerializationInfos())
+        {
+            if (!serialization_hints.contains(name)
+                && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
+            {
+                if (const auto column = physical_columns.tryGetByName(name))
+                    serialization_hints.emplace(name, column->type->createSerializationInfo(settings));
+            }
+        }
+    }
 
     for (const auto & part : added_parts)
         updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);
 
     for (const auto & part : removed_parts)
         updateSerializationHintsForPart(part, storage_columns, serialization_hints, true);
+
+    updateHasAutomaticLowCardinality();
+}
+
+void MergeTreeData::updateHasAutomaticLowCardinality()
+{
+    bool has_low_cardinality = false;
+    for (const auto & [_, info] : serialization_hints)
+    {
+        if (info && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
+        {
+            has_low_cardinality = true;
+            break;
+        }
+    }
+
+    has_automatic_low_cardinality.store(has_low_cardinality, std::memory_order_relaxed);
 }
 
 SerializationInfoByName MergeTreeData::getSerializationHints() const

@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MutateTask.h>
+#include <Storages/MergeTree/AutomaticLowCardinality.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -94,6 +95,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsUInt64 max_uniq_number_for_low_cardinality;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
@@ -904,6 +906,14 @@ getColumnsForNewDataPart(
             MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
     }
 
+    /// Automatic `LowCardinality` serialization does not depend on sparse serialization, so an info that
+    /// carries the `LowCardinality` kind must be kept even when sparse serialization is disabled -
+    /// otherwise a mutation would silently drop the encoding.
+    auto needs_serialization_info = [&](const IDataType & type)
+    {
+        return !settings.isAlwaysDefault() && settings.canUseSparseSerialization(type);
+    };
+
     SerializationInfoByName new_serialization_infos(settings);
     for (const auto & [name, old_info] : serialization_infos)
     {
@@ -936,7 +946,8 @@ getColumnsForNewDataPart(
             if (rewrites_all_columns && storage_column && !storage_column->type->equals(*source_type))
             {
                 const auto & storage_type = storage_column->type;
-                if (settings.isAlwaysDefault() || !settings.canUseSparseSerialization(*storage_type))
+                if (!needs_serialization_info(*storage_type)
+                    && !ISerialization::hasKind(old_info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
                     continue;
 
                 auto rebuilt_info = storage_type->createSerializationInfo(settings);
@@ -954,7 +965,8 @@ getColumnsForNewDataPart(
         auto old_type = part_columns.getPhysical(name).type;
         auto new_type = updated_header.getByName(new_name).type;
 
-        if (settings.isAlwaysDefault() || !settings.canUseSparseSerialization(*new_type))
+        if (!needs_serialization_info(*new_type)
+            && !ISerialization::hasKind(old_info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
             continue;
 
         auto new_info = new_type->createSerializationInfo(settings);
@@ -1005,6 +1017,39 @@ getColumnsForNewDataPart(
                 continue;
 
             new_serialization_infos.emplace(column.name, column.type->createSerializationInfo(settings));
+        }
+    }
+
+    /// Automatic `LowCardinality` serialization: a mutation that rewrites a column also chooses the
+    /// encoding anew from the statistics the source part carries, so that enabling the setting and running
+    /// a rewrite (`ALTER TABLE ... REWRITE PARTS`) upgrades legacy parts. Columns that are only hardlinked
+    /// are not considered: their data files are carried over byte for byte, so the serialization of the
+    /// source part stays in place.
+    const UInt64 max_uniq_number_for_low_cardinality
+        = (*source_part->storage.getSettings())[MergeTreeSetting::max_uniq_number_for_low_cardinality];
+
+    {
+        NamesAndTypesList rewritten_columns;
+        for (const auto & column : storage_columns)
+        {
+            if (updated_header.has(column.name) && !removed_columns.contains(column.name))
+                rewritten_columns.push_back(column);
+        }
+
+        if (max_uniq_number_for_low_cardinality == 0)
+        {
+            /// The feature is disabled: drop the kind inherited from the source part, so that setting the
+            /// threshold back to zero and running `ALTER TABLE ... REWRITE PARTS` rolls the encoding back.
+            removeAutomaticLowCardinalityKind(new_serialization_infos, rewritten_columns);
+        }
+        else
+        {
+            /// The statistics are those of the source part: a mutation that changes the values of the column
+            /// makes them stale, which can only make the choice suboptimal, never incorrect.
+            auto low_cardinality_candidates = chooseColumnsForAutomaticLowCardinality(
+                rewritten_columns, source_part->loadStatistics(), max_uniq_number_for_low_cardinality);
+
+            appendAutomaticLowCardinalityKind(new_serialization_infos, rewritten_columns, low_cardinality_candidates, settings);
         }
     }
 

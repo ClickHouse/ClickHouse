@@ -323,6 +323,11 @@ public:
     /// Same as getSerializationHints() but may return nullopt in some specific engines like Alias
     virtual std::optional<SerializationInfoByName> tryGetSerializationHints() const { return getSerializationHints(); }
 
+    /// Whether any column is stored with automatic (non-native) `LowCardinality` serialization.
+    /// Unlike getSerializationHints() this is cheap, so query analysis can use it to skip
+    /// fetching the hints altogether when there is no such column.
+    virtual bool hasAutomaticLowCardinalitySerialization() const { return false; }
+
     /// Add engine args that were inferred during storage creation to create query to avoid the same
     /// inference on server restart. For example - data format inference in File/URL/S3/etc engines.
     virtual void addInferredEngineArgsToCreateQuery(ASTs & /*args*/, const ContextPtr & /*context*/) const {}

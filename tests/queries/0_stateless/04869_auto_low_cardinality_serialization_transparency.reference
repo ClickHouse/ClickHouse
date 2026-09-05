@@ -1,0 +1,37 @@
+sparse disabled: kind, correctness
+LowCardinality
+2000	10
+sparse disabled: subcolumn rewrite is skipped
+6000
+2000
+sparse disabled after reload: subcolumn rewrite is skipped
+6000
+explicit subcolumn read is rejected
+mixed parts: kinds
+Default
+LowCardinality
+mixed parts: order by encoded column
+a_0
+a_1
+a_10
+b_9
+b_9
+b_9
+mixed parts: partial sorting threshold
+1600	a_0	a_638
+1600	b_2	b_9
+a_0
+a_1
+a_10
+mixed parts: sorting after a read-in-order prefix
+a_0
+a_1
+a_2
+mixed parts: aggregation, distinct, functions
+4000	2010	a_0	b_9	16890
+2010
+mixed parts: join and insert select
+5
+4000	2010
+mixed parts: merged into a single part
+4000	2010	a_0	b_9

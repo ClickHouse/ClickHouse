@@ -3,6 +3,8 @@
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
+#include <Core/Names.h>
+#include <Storages/MergeTree/AutomaticLowCardinality.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeDate.h>
@@ -103,6 +105,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool optimize_row_order;
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsUInt64 max_uniq_number_for_low_cardinality;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsBool skip_empty_columns_on_insert;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
@@ -1021,9 +1024,29 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
     SerializationInfoByName infos(columns, settings);
+
+    /// Automatic LowCardinality serialization: store a String/FixedString column in dictionary-encoded
+    /// form when it has a cardinality statistic (`uniq` or `uniq_v2`) with a low estimate. This uses only
+    /// the existing statistics - it does not change statistics serialization.
+    auto low_cardinality_candidates = chooseColumnsForAutomaticLowCardinality(
+        columns, statistics, (*data_settings)[MergeTreeSetting::max_uniq_number_for_low_cardinality]);
+
+    /// The entries have to exist before the data of the block is accumulated, so that the recorded
+    /// number of defaults is the real one.
+    for (const auto & [column_name, column_type] : columns)
+    {
+        if (low_cardinality_candidates.contains(column_name) && !infos.contains(column_name))
+            infos.emplace(column_name, column_type->createSerializationInfo(settings));
+    }
+
     infos.add(block);
 
     skipEmptyColumnsOnInsert(columns, block, infos, metadata_snapshot, data_settings, new_data_part->info.isPatch());
+
+    /// The decision is made after the sparse one, so a column that qualifies for sparse serialization is
+    /// stored as sparse instead. It also runs after the empty columns have been dropped from `columns`,
+    /// so a column that is not written at all is not encoded either.
+    appendAutomaticLowCardinalityKind(infos, columns, low_cardinality_candidates, settings);
 
     for (const auto & [column_name, _] : columns)
     {

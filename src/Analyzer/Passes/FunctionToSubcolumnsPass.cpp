@@ -11,6 +11,8 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <Storages/IStorage.h>
 
@@ -175,6 +177,25 @@ bool canOptimizeToSubcolumn(QueryTreeNodePtr column_source, const String & subco
     auto storage_snapshot = getStorageSnapshotForColumnSource(column_source);
     if (!storage_snapshot)
         return {};
+
+    /// A column stored with automatic (non-native) LowCardinality serialization is dictionary-encoded
+    /// and does not have the regular subcolumns of its data type available on disk (e.g. the String
+    /// `.size` substream). Reading such a subcolumn would fail, so the optimization must be skipped.
+    /// The cheap flag is checked first, because fetching the hints takes a lock and copies them.
+    auto storage = getStorageForColumnSource(column_source);
+    if (storage && storage->hasAutomaticLowCardinalitySerialization())
+    {
+        if (auto hints = storage->tryGetSerializationHints())
+        {
+            for (const auto & [name, info] : *hints)
+            {
+                if (info
+                    && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY)
+                    && (subcolumn_name == name || subcolumn_name.starts_with(name + ".")))
+                    return false;
+            }
+        }
+    }
 
     auto get_options = GetColumnsOptions(GetColumnsOptions::All);
     if (is_regular_subcolumn)

@@ -1,5 +1,7 @@
 #include <Processors/Transforms/FinishSortingTransform.h>
 
+#include <Processors/Chunk.h>
+
 namespace DB
 {
 
@@ -68,6 +70,11 @@ void FinishSortingTransform::consume(Chunk chunk)
     }
 
     removeConstColumns(chunk);
+
+    /// The tail of the previous chunk is compared against this one, and parts of the same table can be
+    /// stored with and without automatic LowCardinality serialization, so the two can have different
+    /// in-memory representations. Materialize to keep them comparable.
+    convertToFullIfNonNativeLowCardinality(chunk);
 
     /// We don't support sorting by replicated columns because `compareAt` over a full column
     /// does not accept a `ColumnReplicated`.

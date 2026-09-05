@@ -133,6 +133,8 @@ public:
     /// Distributed). Fails closed like supportsPrewhere(): no destination means no rewrite.
     bool supportsOptimizationToSubcolumns() const override;
     bool supportsOptimizationToTupleElementSubcolumns() const override;
+    std::optional<SerializationInfoByName> tryGetSerializationHints() const override;
+    bool hasAutomaticLowCardinalitySerialization() const override;
     bool supportsFinal() const override { return true; }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
