@@ -154,8 +154,6 @@ When writing C++ code, always use Allman-style braces (opening brace on a new li
 
 Run the style check locally before you push, and never hand over a change that you have not style-checked. It is the cheapest CI job to reproduce and by far the most common reason an otherwise finished pull request comes back red, which costs a full CI round-trip to learn something a local command answers in a second.
 
-The job runs the same tools the style-check image installs, so take the prerequisites from there rather than guessing: `ci/docker/style-test/requirements.txt` for the Python ones (`ruff`, `yamllint`, ...) and the `apt-get install` list in `ci/docker/style-test/Dockerfile` for the system ones (`libxml2-utils`, which provides `xmllint`, plus `ripgrep`). A missing tool is reported as a failure of its sub-check, not as a skip, so an incomplete environment looks like a broken change.
-
 ```bash
 pip install -r ci/docker/style-test/requirements.txt
 sudo apt-get install libxml2-utils ripgrep
