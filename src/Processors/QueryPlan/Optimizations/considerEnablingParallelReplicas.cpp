@@ -313,6 +313,76 @@ void considerEnablingParallelReplicas(
         return;
     }
 
+    /// Building the parallel-replicas plan below re-plans the query from scratch, which is expensive.
+    /// Before paying for that, reject queries that read too little data for parallel replicas to be
+    /// worth considering at all. The final check further down applies
+    /// `automatic_parallel_replicas_min_bytes_per_replica` to the compressed bytes of the read that
+    /// ends up being parallelized, which is not known until both plans are built and matched. Bound it
+    /// here by the largest read in the plan: the parallelized read is one of them, so no read in the
+    /// plan clearing the threshold means the parallelized one would not have cleared it either.
+    ///
+    /// The two byte counts are estimates of the same quantity but are not derived the same way: this
+    /// one sums the compressed sizes the parts record for the columns read, while `input_bytes` is
+    /// measured at runtime as in-memory bytes scaled by a sampled compression ratio. They agree
+    /// closely for fixed-width columns and can differ by ~40% for columns of mostly-short strings,
+    /// whose in-memory representation carries a per-row offset that the on-disk one does not. So a
+    /// query just above the threshold can be rejected here - which is the intended trade: the gate
+    /// exists to skip planning work, and the queries it can misjudge are the ones where parallel
+    /// replicas barely pay off anyway.
+    ///
+    /// A read whose size cannot be estimated counts as large enough, so the gate never rejects on
+    /// missing information. Mode 2 of `automatic_parallel_replicas_mode` only collects statistics and
+    /// never switches to parallel replicas, and the threshold does not apply to it, so such queries
+    /// are exempt and keep collecting statistics however little they read.
+    const bool threshold_applies = optimization_settings.automatic_parallel_replicas_mode == 1
+        && optimization_settings.automatic_parallel_replicas_min_bytes_per_replica != 0;
+    if (threshold_applies)
+    {
+        const auto min_bytes_per_replica = optimization_settings.automatic_parallel_replicas_min_bytes_per_replica;
+        const auto num_replicas = std::max<size_t>(optimization_settings.max_parallel_replicas, 1);
+
+        /// The largest read measured so far. It is only read by the log message below, which is
+        /// reached exactly when every read was measured, so it really is the largest read in the plan.
+        size_t max_bytes_to_read = 0;
+        bool found_read_worth_parallelizing = false;
+        traverseQueryPlan(
+            stack,
+            root,
+            [&](auto & frame_node)
+            {
+                /// One qualifying read is enough to keep the plan, and measuring a read runs index
+                /// analysis, so stop measuring as soon as one is found.
+                if (found_read_worth_parallelizing)
+                    return;
+
+                const auto * reading = typeid_cast<const ReadFromMergeTree *>(frame_node.step.get());
+                if (!reading)
+                    return;
+
+                /// A read whose size cannot be measured may be of any size, so it counts as
+                /// qualifying: the gate must never reject a plan on missing information.
+                const auto bytes_to_read = reading->estimateCompressedBytesToRead();
+                if (!bytes_to_read || *bytes_to_read / num_replicas >= min_bytes_per_replica)
+                {
+                    found_read_worth_parallelizing = true;
+                    return;
+                }
+
+                max_bytes_to_read = std::max(max_bytes_to_read, *bytes_to_read);
+            });
+
+        if (!found_read_worth_parallelizing)
+        {
+            LOG_DEBUG(
+                getLogger("optimizeTree"),
+                "Not building the parallel replicas plan because the largest read in the plan gives at most {} bytes per replica, "
+                "less than automatic_parallel_replicas_min_bytes_per_replica {}",
+                max_bytes_to_read / num_replicas,
+                min_bytes_per_replica);
+            return;
+        }
+    }
+
     /// Hand the probe plan the sets this plan has already filled. It is built and optimized purely to
     /// decide whether replicas pay off, and optimizing it would otherwise re-run every `IN` subquery.
     auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
