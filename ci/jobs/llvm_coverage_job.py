@@ -571,6 +571,42 @@ if __name__ == "__main__":
             if diff_res.is_ok():
                 diff_res.info = _diff_msg
 
+        # When the PR changes no coverable C/C++ source file (a tests-only PR
+        # forced with the `ci-coverage` label, or a CI-scripts-only PR touching
+        # the coverage pipeline), the compiled binary is identical to master and
+        # the per-changed-line analysis above has no input. The global comparison
+        # against the master baseline is still meaningful: added tests show up as
+        # newly covered lines. base_llvm_coverage.info is already on disk in this
+        # outcome - the diff script downloads it before classifying the outcome.
+        _global_comparison_ok = False
+        if _diff_outcome == DiffOutcome.NO_CPP_CHANGES:
+            _baseline_info_file = Path(TEMP_DIR) / "base_llvm_coverage.info"
+            _current_info_file = Path(TEMP_DIR) / "llvm_coverage.info"
+            if _baseline_info_file.exists() and _current_info_file.exists():
+                (b_line_cov, b_line_hit, b_line_total), \
+                (b_function_cov, b_func_hit, b_func_total), \
+                (b_branch_cov, b_branch_hit, b_branch_total) = get_lcov_summary(
+                    str(_baseline_info_file)
+                )
+                (c_line_cov, c_line_hit, c_line_total), \
+                (c_function_cov, c_func_hit, c_func_total), \
+                (c_branch_cov, c_branch_hit, c_branch_total) = get_lcov_summary(
+                    str(_current_info_file)
+                )
+                delta = c_line_cov - b_line_cov
+                print(f"Baseline coverage : {b_line_cov:.2f}%")
+                print(f"Current coverage  : {c_line_cov:.2f}%")
+                print(f"Delta             : {delta:+.2f}%")
+                # No degradation gate here: the binary is unchanged, so a drop
+                # can only be baseline noise (flaky tests, async code), never a
+                # regression this PR could have introduced.
+                _global_comparison_ok = True
+            else:
+                print(
+                    "NOTE: baseline or current tracefile is missing, "
+                    "skipping the global coverage comparison"
+                )
+
         results.append(diff_res)
 
         # Generate report for changed blocks only
@@ -624,6 +660,50 @@ if __name__ == "__main__":
             print_res.files.append(_print_log)
         results.append(print_res)
 
+        # Line-level transitions vs the master baseline, the tests-only PR
+        # counterpart of the uncovered-code analysis above. Runs only in the
+        # NO_CPP_CHANGES outcome with both tracefiles present.
+        _newly_covered_stats = None
+        _newly_covered_log = (
+            f"{TEMP_DIR}{Utils.normalize_string('Newly Covered Lines')}.log"
+        )
+        if _global_comparison_ok:
+            from ci.jobs.scripts.newly_covered_lines import generate_report
+
+            _sw = Utils.Stopwatch()
+            try:
+                _newly_covered_stats = generate_report(
+                    current_info=str(_current_info_file),
+                    baseline_info=str(_baseline_info_file),
+                    output_path=_newly_covered_log,
+                )
+                _newly_info = (
+                    f"{_newly_covered_stats['newly_covered']} newly covered lines in "
+                    f"{_newly_covered_stats['newly_covered_files']} files, "
+                    f"{_newly_covered_stats['lost_coverage']} lines lost coverage"
+                )
+                print(f"Newly covered lines analysis: {_newly_info}")
+                newly_res = Result.create_from(
+                    name="Newly Covered Lines",
+                    status=Result.Status.OK,
+                    info=_newly_info,
+                    stopwatch=_sw,
+                )
+                newly_res.files.append(_newly_covered_log)
+            except Exception as e:
+                # A tooling failure reddens the job, same as a Print Uncovered
+                # Code failure would; the comment JSON below simply omits the
+                # newly-covered numbers.
+                print(f"ERROR: newly covered lines analysis failed: {e}")
+                _newly_covered_stats = None
+                newly_res = Result.create_from(
+                    name="Newly Covered Lines",
+                    status=Result.Status.FAIL,
+                    info=f"analysis failed: {e}",
+                    stopwatch=_sw,
+                )
+            results.append(newly_res)
+
         if not is_local_run:
             # Construct S3 artifact URLs from the known upload path structure:
             #   HTML files/assets → https://<endpoint>/<s3_prefix>/<normalize(job)>/<normalize(sub_result)>/<rel_path>
@@ -638,12 +718,12 @@ if __name__ == "__main__":
             _changed_lines_covered = print_res.ext.get("changed_lines_covered", 0)
             _changed_lines_cov = print_res.ext.get("changed_lines_cov", 0.0)
 
-            # Only write the full coverage numbers when the diff HTML report was
-            # generated; there are no numbers to report in any other outcome.
-            # Tests-only PRs never reach this job at all - the coverage family is
-            # auto-skipped for them (see filter_job.py) since the compiled binary,
-            # and therefore coverage, cannot have moved.
-            _has_coverage_data = _diff_ran
+            # Full coverage numbers exist in two outcomes: the diff HTML report
+            # was generated (C++ changed), or the global comparison ran (the
+            # NO_CPP_CHANGES outcome: a tests-only PR forced with `ci-coverage`,
+            # or a CI-scripts-only PR touching the coverage pipeline - see
+            # filter_job.py). The other outcomes have no numbers to report.
+            _has_coverage_data = _diff_ran or _global_comparison_ok
             if not _has_coverage_data:
                 print(coverage_comment_message(_diff_outcome))
                 # The hook renders this marker as a stale-numbers warning in the
@@ -657,6 +737,19 @@ if __name__ == "__main__":
                         f,
                     )
             else:
+                _newly_covered_info = ""
+                _newly_covered_url = ""
+                if _newly_covered_stats is not None:
+                    _newly_covered_info = (
+                        f"+{_newly_covered_stats['newly_covered']} lines in "
+                        f"{_newly_covered_stats['newly_covered_files']} files "
+                        f"(-{_newly_covered_stats['lost_coverage']} lines lost coverage)"
+                    )
+                    _newly_covered_url = (
+                        f"{_s3_base}/llvm_coverage/"
+                        f"{Utils.normalize_string('Newly Covered Lines')}/"
+                        f"{Path(_newly_covered_log).name}"
+                    )
                 _comment_data = {
                     # GitHub comment fields
                     "b_line_cov": b_line_cov,
@@ -686,6 +779,10 @@ if __name__ == "__main__":
                     # actually ran (i.e. C/C++ source files changed). For tests-only PRs
                     # the log doesn't exist on S3, so don't surface a 404 link.
                     "uncovered_code_url": uncovered_code_url if _diff_inputs_exist else "",
+                    # Filled only in the NO_CPP_CHANGES outcome, the counterpart
+                    # of the changed-lines fields above.
+                    "newly_covered_info": _newly_covered_info,
+                    "newly_covered_url": _newly_covered_url,
                     # CIDB fields
                     "check_start_time": datetime.now(timezone.utc).strftime(
                         "%Y-%m-%d %H:%M:%S"
