@@ -32,8 +32,8 @@
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ExtractColumnsStep.h>
@@ -144,6 +144,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsUInt64 max_uniq_number_for_low_cardinality;
+    extern const MergeTreeSettingsBool share_nested_offsets;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_bytes_to_activate;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_columns_to_activate;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_rows_to_activate;
@@ -242,23 +243,16 @@ private:
     std::shared_ptr<BuildStatisticsTransform> transform;
 };
 
-/// `PullingPipelineExecutor::pull` returns `false` both on a genuine end-of-stream and when the
-/// pipeline is cancelled (query kill or a soft `max_execution_time` with `timeout_overflow_mode = 'break'`).
-/// A merge that ran with the user query's limits (e.g. `OPTIMIZE ... DRY RUN`, which executes the merge
-/// synchronously in the query) can therefore be silently truncated. If we treat that as a normal finish,
-/// the merge finalizes a partial part and the row-count invariants in the merge stages fire a LOGICAL_ERROR.
-/// Detect the cancellation here and throw the proper error instead.
-static void throwIfMergePipelineCancelled(const PullingPipelineExecutor & executor)
+static void throwIfPipelineCancelled(const QueryPipeline & pipeline)
 {
-    switch (executor.getExecutionStatus())
-    {
-        case PipelineExecutor::ExecutionStatus::CancelledByTimeout:
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while merging parts");
-        case PipelineExecutor::ExecutionStatus::CancelledByUser:
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while merging parts");
-        default:
-            break;
-    }
+    const auto process_list_element = pipeline.getProcessListElement();
+    if (!process_list_element || process_list_element->checkTimeLimitSoft())
+        return;
+
+    if (process_list_element->isKilled() && process_list_element->getCancelReason() != CancelReason::TIMEOUT)
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
+    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded");
 }
 
 /// Manages the "rows_sources" temporary file that is used during vertical merge.
@@ -922,12 +916,22 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         }
     }
 
+    MergeTreeSerializationInfoVersion output_serialization_version
+        = (*merge_tree_settings)[MergeTreeSetting::serialization_info_version];
+    if (std::ranges::any_of(global_ctx->future_part->parts, [](const auto & part)
+        { return !part->getSerializationInfos().getMissingColumns().empty(); }))
+    {
+        output_serialization_version = std::max(
+            output_serialization_version,
+            MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
+    }
+
     SerializationInfo::Settings info_settings
     {
         static_cast<double>((*merge_tree_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         true,
         (*merge_tree_settings)[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
-        (*merge_tree_settings)[MergeTreeSetting::serialization_info_version],
+        output_serialization_version,
         (*merge_tree_settings)[MergeTreeSetting::string_serialization_version],
         (*merge_tree_settings)[MergeTreeSetting::nullable_serialization_version],
         (*merge_tree_settings)[MergeTreeSetting::map_serialization_version],
@@ -941,6 +945,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
 
+    /// A source marker prevents the column from expiring during a normal merge,
+    /// so carrying its union reproduces the same lazy type-default materialization.
+    NameSet source_missing_column_names;
+    /// Resolve marker names to the merged schema.
+    std::map<String, SerializationInfoByName::MissingColumnInfo> source_missing_map;
     for (const auto & part : global_ctx->future_part->parts)
     {
         auto part_infos = part->getSerializationInfos();
@@ -962,20 +971,74 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             }
         }
 
-        addMissedColumnsToSerializationInfos(
-            part->rows_count,
-            part->getColumns().getNames(),
-            global_ctx->metadata_snapshot->getColumns(),
-            info_settings,
-            part_infos);
+        /// Automatic `LowCardinality` serialization does not depend on sparse serialization, so the
+        /// source infos still have to be merged in when the feature is on: `SerializationInfo::add` is
+        /// what carries the kind of an already encoded source part into `infos`. With the feature off
+        /// this is only the sparse bookkeeping, which has nothing to do when sparse serialization is
+        /// disabled, because `infos` is then empty.
+        if (!info_settings.isAlwaysDefault() || max_uniq_number_for_low_cardinality != 0)
+        {
+            addMissedColumnsToSerializationInfos(
+                part->rows_count,
+                part->getColumns().getNames(),
+                global_ctx->metadata_snapshot->getColumns(),
+                info_settings,
+                part_infos);
 
-        infos.add(part_infos);
+            infos.add(part_infos);
+        }
 
-        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context
+        auto part_alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context
 #if CLICKHOUSE_CLOUD
             , nullptr
 #endif
-            ));
+            );
+
+        for (const auto & mc : part->getSerializationInfos().getMissingColumns())
+        {
+            String current_name = mc.name;
+            if (part_alter_conversions->columnHasNewName(mc.name))
+                current_name = part_alter_conversions->getColumnNewName(mc.name);
+
+            /// Pending DROP/CLEAR invalidates either spelling of the marker.
+            bool share_nested = (*merge_tree_settings)[MergeTreeSetting::share_nested_offsets];
+            if (part_alter_conversions->isColumnDropped(mc.name, share_nested)
+                || part_alter_conversions->isColumnDropped(current_name, share_nested))
+                continue;
+
+            source_missing_column_names.insert(current_name);
+            if (!source_missing_map.contains(current_name))
+            {
+                auto entry = mc;
+                entry.name = current_name;
+                source_missing_map.emplace(current_name, std::move(entry));
+            }
+        }
+
+        global_ctx->alter_conversions.push_back(std::move(part_alter_conversions));
+    }
+
+    if (!source_missing_column_names.empty())
+    {
+        NameSet final_columns;
+        for (const auto & column : global_ctx->storage_columns)
+            final_columns.insert(column.name);
+
+        SerializationInfoByName::MissingColumns merged_missing;
+        for (const auto & name : source_missing_column_names)
+        {
+            if (!final_columns.contains(name))
+            {
+                auto it = source_missing_map.find(name);
+                if (it != source_missing_map.end())
+                    merged_missing.push_back(it->second);
+            }
+        }
+
+        if (!merged_missing.empty())
+        {
+            infos.setMissingColumns(std::move(merged_missing));
+        }
     }
 
     /// Automatic `LowCardinality` serialization: besides preserving the kind of an already encoded source
@@ -1783,7 +1846,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
             if (cancelled)
                 global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
             else
-                throwIfMergePipelineCancelled(*global_ctx->merging_executor);
+                throwIfPipelineCancelled(global_ctx->merged_pipeline);
             finalize();
             return false;
         }
@@ -2161,7 +2224,7 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
             if (cancelled)
                 global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
             else
-                throwIfMergePipelineCancelled(*ctx->executor);
+                throwIfPipelineCancelled(ctx->column_parts_pipeline);
             return false;
         }
 
