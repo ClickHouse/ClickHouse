@@ -51,6 +51,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/prepareReadingFromFormat.h>
 #include <boost/operators.hpp>
 #include <Common/FailPoint.h>
 #include <Poco/String.h>
@@ -1296,6 +1297,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         Block initial_header = read_from_format_info.format_header;
         bool schema_changed = false;
+        /// Columns physically present in this object when a per-file schema is known
+        /// (Iceberg / Delta via getInitialSchemaByPath). Empty means "unknown".
+        NameSet columns_present_in_this_file;
 
         if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info))
         {
@@ -1303,6 +1307,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             for (const auto & [name, type] : *initial_schema)
             {
                 sample_header.insert({type->createColumn(), type, name});
+                columns_present_in_this_file.insert(name);
             }
             initial_header = sample_header;
             schema_changed = true;
@@ -1334,8 +1339,34 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             /// may not match the individual file's format capabilities.
             /// See https://github.com/ClickHouse/ClickHouse/issues/96829
             const auto actual_format = object_info->getFileFormat().value_or(configuration->format);
-            const bool format_supports_prewhere =
+            bool format_supports_prewhere =
                 FormatFactory::instance().checkIfFormatSupportsPrewhere(actual_format, context_, format_settings);
+
+            /// Do not push filters that need DEFAULT columns into the format reader when this
+            /// file omits the column (so AddingDefaults must compute it first). If the file
+            /// schema shows the column is on disk, keep reader-side PREWHERE / row-group pruning.
+            auto filter_requires_missing_defaulted_column = [&](const NamesAndTypesList & required_columns) -> bool
+            {
+                for (const auto & column : required_columns)
+                {
+                    if (!columnOrStorageParentHasDefault(read_from_format_info.columns_description, column.name))
+                        continue;
+                    const auto storage_name = storageColumnNameForDefaults(
+                        read_from_format_info.columns_description, column.name);
+                    if (!columns_present_in_this_file.empty() && columns_present_in_this_file.contains(storage_name))
+                        continue;
+                    return true;
+                }
+                return false;
+            };
+            if (format_supports_prewhere && read_from_format_info.columns_description.hasDefaults())
+            {
+                if ((format_filter_info->row_level_filter
+                     && filter_requires_missing_defaulted_column(format_filter_info->row_level_filter->actions.getRequiredColumns()))
+                    || (format_filter_info->prewhere_info
+                        && filter_requires_missing_defaulted_column(format_filter_info->prewhere_info->prewhere_actions.getRequiredColumns())))
+                    format_supports_prewhere = false;
+            }
 
             /// Save filters for fallback FilterTransform when format doesn't support PREWHERE.
             if (!format_supports_prewhere)
@@ -1468,11 +1499,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             auto add_filter_inputs = [&](const ActionsDAG & dag)
             {
-                for (const auto & required : dag.getRequiredColumns())
-                {
-                    if (!initial_header.has(required.name))
-                        initial_header.insert({required.type, required.name});
-                }
+                appendDeferredFilterInputs(initial_header, dag, read_from_format_info.columns_description);
             };
             if (stripped_row_level_filter)
                 add_filter_inputs(stripped_row_level_filter->actions);
@@ -1580,10 +1607,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             /// because it is an iceberg case where transformer contains columns ids (just increasing numbers)
             /// which do not match requested_columns (while here requested_columns were adjusted to match physical columns).
             Names needed_names = read_from_format_info.requested_columns.getNames();
-            auto add_filter_required_names = [&needed_names](const ActionsDAG & dag)
+            auto add_filter_required_names = [&](const ActionsDAG & dag)
             {
                 for (const auto & required : dag.getRequiredColumns())
+                {
                     needed_names.push_back(required.name);
+                    /// A subcolumn is read through its parent (see `appendDeferredFilterInputs`), so
+                    /// the transform must keep the parent as well, not only the subcolumn name.
+                    needed_names.push_back(
+                        storageColumnNameForDefaults(read_from_format_info.columns_description, required.name));
+                }
             };
             if (stripped_row_level_filter)
                 add_filter_required_names(stripped_row_level_filter->actions);
@@ -1610,6 +1643,25 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
+            });
+        }
+
+        /// Defaults before fallback filters so policies/PREWHERE see real DEFAULT values.
+        if (read_from_format_info.columns_description.hasDefaults())
+        {
+            builder.addSimpleTransform(
+                [&](const SharedHeader & header)
+                {
+                    return std::make_shared<AddingDefaultsTransform>(header, read_from_format_info.columns_description, *input_format, context_);
+                });
+        }
+
+        if (auto extraction = tryCreateFilterSubcolumnExtractionActions(
+                builder.getHeader(), stripped_row_level_filter, stripped_prewhere_info, context_))
+        {
+            builder.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<ExpressionTransform>(header, *extraction);
             });
         }
 
@@ -1675,15 +1727,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
                     /*update_row_numbers_info=*/true);
             });
-        }
-
-        if (read_from_format_info.columns_description.hasDefaults())
-        {
-            builder.addSimpleTransform(
-                [&](const SharedHeader & header)
-                {
-                    return std::make_shared<AddingDefaultsTransform>(header, read_from_format_info.columns_description, *input_format, context_);
-                });
         }
 
         source = input_format;

@@ -1,8 +1,10 @@
 #pragma once
+#include <optional>
 #include <Core/Block.h>
 #include <Storages/StorageSnapshot.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/Serialization.h>
 
 namespace DB
@@ -94,6 +96,28 @@ namespace DB
 
     /// Returns columns_to_read from file.
     Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns);
+
+    /// Storage-level name of `name`, or of its parent when `name` is a subcolumn such as `t.x`.
+    String storageColumnNameForDefaults(const ColumnsDescription & columns, const String & name);
+
+    /// A subcolumn has no DEFAULT of its own: it inherits the one of its storage parent.
+    bool columnOrStorageParentHasDefault(const ColumnsDescription & columns, const String & name);
+
+    /// Add filter inputs back to the format reader header, requesting a subcolumn of a DEFAULT
+    /// column as its parent (the file may not store it at all).
+    void appendDeferredFilterInputs(
+        Block & reader_header,
+        const ActionsDAG & dag,
+        const ColumnsDescription & columns_description);
+
+    /// Actions extracting the filter inputs that are missing from `header` but reachable through
+    /// their parent, e.g. `t.x` after `AddingDefaultsTransform` computed `t`. Nullopt if there is
+    /// nothing to extract.
+    std::optional<ExpressionActionsPtr> tryCreateFilterSubcolumnExtractionActions(
+        const Block & header,
+        const FilterDAGInfoPtr & row_level_filter,
+        const PrewhereInfoPtr & prewhere_info,
+        const ContextPtr & context);
 
     ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info);
 

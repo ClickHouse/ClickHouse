@@ -1,0 +1,27 @@
+-- query_plan_optimize_lazy_materialization_for_file = 1
+-- row policy on missing DEFAULT; lazily read s after filtering
+1	val_1
+2	val_2
+3	val_3
+Lazily read columns: s
+-- WHERE on missing DEFAULT; lazily read s
+2	val_2
+3	val_3
+4	val_4
+-- values of the defaulted filter column after deferred filter
+1	2
+2	4
+3	6
+-- query_plan_optimize_lazy_materialization_for_file = 0
+-- row policy on missing DEFAULT; lazily read s after filtering
+1	val_1
+2	val_2
+3	val_3
+-- WHERE on missing DEFAULT; lazily read s
+2	val_2
+3	val_3
+4	val_4
+-- values of the defaulted filter column after deferred filter
+1	2
+2	4
+3	6
