@@ -1,0 +1,16 @@
+A stored view using a double-quoted string keeps SQLite semantics:
+hello
+A user query using a double-quoted string keeps SQLite semantics:
+hello
+The same view works through the table engine:
+hello
+Strict backquotes round-trip special identifier bytes through a table-backed source:
+one	two	three
+Strict backquotes round-trip special identifier bytes through a query-backed source:
+one	two	three
+The SQLite format reader also preserves stored-view DQS semantics:
+hello
+A missing table column still fails closed:
+no such column: missing
+A missing query-result column still fails closed:
+no such column: missing

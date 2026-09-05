@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Storages/SelectQueryInfo.h>
@@ -24,6 +25,16 @@ class IAST;
   *
   * If limit is passed additionally apply LIMIT in result query.
   *
+  * Functions listed in `unsupported_functions` are kept for local filtering even if they are otherwise
+  * compatible. This lets a caller exclude operators whose semantics differ in its external database.
+  *
+  * Columns listed in `local_only_columns` belong to this source but their predicates must be evaluated
+  * locally. This includes external columns whose comparison semantics differ and plan-time virtual columns
+  * that do not exist in the external database. Their conditions are removed from the remote filter; because
+  * removing a disjunct would narrow the remote filter instead of widening it, a disjunction with a branch
+  * over such a column is kept local as a whole. Under `external_table_strict_query` this throws
+  * `INCORRECT_QUERY`, like any other condition that cannot be pushed down.
+  *
   * Compatible expressions are comparisons of identifiers, constants, and logical operations on them.
   *
   * Throws INCORRECT_QUERY if external_table_strict_query (from context settings)
@@ -37,8 +48,11 @@ String transformQueryForExternalDatabase(
     LiteralEscapingStyle literal_escaping_style,
     const String & database,
     const String & table,
+    const StorageID & source_storage_id,
     ContextPtr context,
-    std::optional<size_t> limit = {});
+    std::optional<size_t> limit = {},
+    const NameSet & unsupported_functions = {},
+    const NameSet & local_only_columns = {});
 
 /** When the data source of an external database integration is a user-provided query (passed to the external
   * database as is), the query is not rewritten by `transformQueryForExternalDatabase` and no outer predicate can
@@ -47,7 +61,12 @@ String transformQueryForExternalDatabase(
   * INCORRECT_QUERY when strict mode is enabled and the outer query has a filter on the source; otherwise it does
   * nothing (the filter is applied locally, as usual).
   */
-void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo & query_info, const ContextPtr & context);
+void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
+    const SelectQueryInfo & query_info,
+    const NamesAndTypesList & available_columns,
+    const ContextPtr & context,
+    const StorageID & source_storage_id,
+    const NameSet & local_only_columns = {});
 
 /** Recursively normalize `node` so that it re-serializes into SQL the external database can parse. Used for
   * user-provided `(SELECT ...)` subqueries that are formatted from the raw AST and therefore bypass the

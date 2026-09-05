@@ -56,10 +56,12 @@ When you explicitly specify ClickHouse column types in the table definition, the
 - [Enum8, Enum16](/reference/data-types/enum)
 - [Decimal32, Decimal64, Decimal128, Decimal256](/reference/data-types/decimal)
 - [FixedString](/reference/data-types/fixedstring)
-- All integer types ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/reference/data-types/int-uint))
+- All integer types ([UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256](/reference/data-types/int-uint))
 - [Float32, Float64](/reference/data-types/float)
 
 See [SQLite database engine](/reference/engines/database-engines/sqlite#data_types-support) for the default type mapping.
+
+A SQLite `NULL` read into an explicitly non-`Nullable` ClickHouse column raises the `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` exception. Declare the column [Nullable](/reference/data-types/nullable) to read `NULL` values. An inferred schema follows the SQLite metadata: a column is `Nullable` unless it is declared `NOT NULL`.
 
 ## Usage example {#usage-example}
 
@@ -72,7 +74,7 @@ SHOW CREATE TABLE sqlite_db.table2;
 ```text
 CREATE TABLE SQLite.table2
 (
-    `col1` Nullable(Int32),
+    `col1` Nullable(Int64),
     `col2` Nullable(String)
 )
 ENGINE = SQLite('sqlite.db','table2');

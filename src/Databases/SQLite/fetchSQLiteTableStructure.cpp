@@ -2,7 +2,6 @@
 
 #if USE_SQLITE
 
-#include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -11,12 +10,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Processors/Formats/Impl/SQLiteCommon.h>
 #include <Poco/String.h>
 
-#include <string_view>
-
-
-using namespace std::literals;
 
 namespace DB
 {
@@ -47,57 +43,76 @@ DataTypePtr convertSQLiteDataType(String type)
 }
 
 
-std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(sqlite3 * connection, const String & sqlite_table_name)
+std::optional<ColumnsDescription> fetchSQLiteTableStructure(sqlite3 * connection, const String & sqlite_table_name)
 {
-    auto columns = NamesAndTypesList();
-    auto query = fmt::format("pragma table_info({});", quoteStringSQLite(sqlite_table_name));
+    ColumnsDescription columns;
 
-    auto callback_get_data = [](void * res, int col_num, char ** data_by_col, char ** col_names) -> int
-    {
-        NameAndTypePair name_and_type;
-        bool is_nullable = false;
+    /// Use `table_xinfo` rather than `table_info` so that generated columns (which `SELECT *` returns) are
+    /// included; `table_info` omits them, which would silently drop visible columns from the table structure.
+    ///
+    /// The table name is passed as a bound parameter of the `pragma_table_xinfo` table-valued function
+    /// instead of being re-serialized into the SQL text. SQLite string literals have no escape sequences
+    /// (only an embedded quote is doubled, a backslash or a control character stays literal), so any
+    /// backslash-style textual escaping of the name would make the lookup miss a table whose name contains
+    /// e.g. a newline or a tab; a bound parameter with an explicit length hands the name over byte-faithfully.
+    static const String query = R"(SELECT "name", "type", "notnull", "hidden" FROM pragma_table_xinfo(?))";
 
-        for (int i = 0; i < col_num; ++i)
-        {
-            if (col_names[i] == "name"sv)
-            {
-                name_and_type.name = data_by_col[i];
-            }
-            else if (col_names[i] == "type"sv)
-            {
-                name_and_type.type = convertSQLiteDataType(data_by_col[i]);
-            }
-            else if (col_names[i] == "notnull"sv)
-            {
-                is_nullable = (data_by_col[i][0] == '0');
-            }
-        }
+    /// Preparing and stepping need a shared lock on the database; retry instead of failing while a
+    /// concurrent writer holds an exclusive lock, like the scan paths do.
+    auto statement = SQLiteFormatImpl::prepareSQLiteStatementRetryOnBusy(connection, query);
+    sqlite3_stmt * compiled_stmt = statement.get();
 
-        if (is_nullable)
-            name_and_type.type = std::make_shared<DataTypeNullable>(name_and_type.type);
-
-        static_cast<NamesAndTypesList *>(res)->push_back(name_and_type);
-
-        return 0;
-    };
-
-    char * err_message = nullptr;
-    int status = sqlite3_exec(connection, query.c_str(), callback_get_data, &columns, &err_message);
-
+    int status = sqlite3_bind_text64(compiled_stmt, 1, sqlite_table_name.data(), sqlite_table_name.size(), SQLITE_STATIC, SQLITE_UTF8);
     if (status != SQLITE_OK)
-    {
-        String err_msg(err_message ? err_message : "unknown error");
-        sqlite3_free(err_message);
-
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
-                        "Failed to fetch SQLite data. Status: {}. Message: {}",
-                        status, err_msg);
+                        "Failed to bind the table name for the SQLite table structure query. Status: {}. Message: {}",
+                        status, sqlite3_errmsg(connection));
+
+    while (true)
+    {
+        status = SQLiteFormatImpl::stepSQLiteStatementRetryOnBusy(compiled_stmt);
+        if (status == SQLITE_DONE)
+            break;
+
+        if (status != SQLITE_ROW)
+            throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
+                            "Failed to fetch SQLite data. Status: {}. Message: {}",
+                            status, sqlite3_errmsg(connection));
+
+        const auto * name_data = reinterpret_cast<const char *>(sqlite3_column_text(compiled_stmt, 0));
+        String name = name_data ? String(name_data, sqlite3_column_bytes(compiled_stmt, 0)) : String{};
+
+        const auto * type_data = reinterpret_cast<const char *>(sqlite3_column_text(compiled_stmt, 1));
+        String type_name = type_data ? String(type_data, sqlite3_column_bytes(compiled_stmt, 1)) : String{};
+
+        bool is_nullable = sqlite3_column_int(compiled_stmt, 2) == 0;
+        int hidden = sqlite3_column_int(compiled_stmt, 3);
+
+        /// `table_xinfo` reports hidden = 1 for columns that `SELECT *` does not return (e.g. the hidden
+        /// columns of virtual tables); skip them. Generated columns use hidden = 2 (VIRTUAL) or 3 (STORED)
+        /// and are returned by `SELECT *`, so they stay in the structure to keep them readable.
+        if (hidden == 1)
+            continue;
+
+        DataTypePtr type = convertSQLiteDataType(type_name);
+        if (is_nullable)
+            type = std::make_shared<DataTypeNullable>(type);
+
+        ColumnDescription column(std::move(name), std::move(type));
+
+        /// SQLite computes generated columns itself and rejects explicit writes into them. Mark them
+        /// `MATERIALIZED` so ClickHouse keeps them readable but non-insertable: an explicit insert into a
+        /// generated column is rejected, and an insert without a column list targets only the base columns.
+        if (hidden == 2 || hidden == 3)
+            column.default_desc.kind = ColumnDefaultKind::Materialized;
+
+        columns.add(std::move(column));
     }
 
     if (columns.empty())
-        return nullptr;
+        return std::nullopt;
 
-    return std::make_shared<NamesAndTypesList>(columns);
+    return columns;
 }
 
 }

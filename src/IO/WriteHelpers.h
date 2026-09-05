@@ -652,6 +652,21 @@ inline void writeDoubleQuotedString(std::string_view s, WriteBuffer & buf)
     writeAnyQuotedString<'"'>(s, buf);
 }
 
+/// Outputs a string in double quotes with standard SQL identifier escaping: an embedded double quote
+/// is doubled, every other character (including a backslash) stays literal - the rules of SQLite and
+/// PostgreSQL, where a quoted identifier has no escape sequences at all.
+inline void writeDoubleQuotedStringStandard(std::string_view s, WriteBuffer & buf)
+{
+    writeChar('"', buf);
+    for (char c : s)
+    {
+        if (c == '"')
+            writeChar('"', buf);
+        writeChar(c, buf);
+    }
+    writeChar('"', buf);
+}
+
 /// Outputs a string in backquotes.
 inline void writeBackQuotedString(std::string_view s, WriteBuffer & buf)
 {
@@ -666,11 +681,27 @@ inline void writeBackQuotedStringMySQL(std::string_view s, WriteBuffer & buf)
     writeChar('`', buf);
 }
 
+/// Outputs a string in backquotes with SQLite identifier escaping. Unlike MySQL-style formatting, control
+/// characters and backslashes stay literal; only an embedded backquote is escaped by doubling it.
+inline void writeBackQuotedStringSQLite(std::string_view s, WriteBuffer & buf)
+{
+    writeChar('`', buf);
+    for (char c : s)
+    {
+        if (c == '`')
+            writeChar('`', buf);
+        writeChar(c, buf);
+    }
+    writeChar('`', buf);
+}
+
 
 /// Write quoted if the string doesn't look like and identifier.
 void writeProbablyBackQuotedString(std::string_view s, WriteBuffer & buf);
 void writeProbablyDoubleQuotedString(std::string_view s, WriteBuffer & buf);
 void writeProbablyBackQuotedStringMySQL(std::string_view s, WriteBuffer & buf);
+void writeProbablyDoubleQuotedStringStandard(std::string_view s, WriteBuffer & buf);
+void writeProbablyBackQuotedStringSQLite(std::string_view s, WriteBuffer & buf);
 
 
 /** Outputs the string in for the CSV format.

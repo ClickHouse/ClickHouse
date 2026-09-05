@@ -117,6 +117,45 @@ public:
             nested->flushAndPrepareForShutdown();
     }
 
+    void updateExternalDynamicMetadataIfExists(ContextPtr context) override
+    {
+        auto storage = getNested();
+        storage->updateExternalDynamicMetadataIfExists(context);
+
+        /// Keep the cached schema contract of the proxy, but propagate generated-column classification that the
+        /// nested storage could only discover later. Copying the complete nested structure would make external
+        /// schema drift silently change the columns persisted by `CREATE TABLE ... AS table_function(...)`.
+        auto proxy_metadata = getInMemoryMetadataPtr(context, false);
+        const auto nested_metadata = storage->getInMemoryMetadataPtr(context, false);
+        auto proxy_columns = proxy_metadata->getColumns();
+        bool changed = false;
+
+        for (const auto & nested_column : nested_metadata->getColumns())
+        {
+            if (nested_column.default_desc.kind != ColumnDefaultKind::Materialized)
+                continue;
+
+            const auto * proxy_column = proxy_columns.tryGet(nested_column.name);
+            if (!proxy_column || !proxy_column->type->equals(*nested_column.type)
+                || proxy_column->default_desc.kind != ColumnDefaultKind::Default)
+                continue;
+
+            auto copy_default = [&](ColumnDescription & column)
+            {
+                column.default_desc = nested_column.default_desc;
+                changed = true;
+            };
+            proxy_columns.modify(nested_column.name, copy_default);
+        }
+
+        if (changed)
+        {
+            StorageInMemoryMetadata updated_metadata = *proxy_metadata;
+            updated_metadata.setColumns(std::move(proxy_columns));
+            setInMemoryMetadata(updated_metadata);
+        }
+    }
+
     void drop() override
     {
         std::lock_guard lock{nested_mutex};

@@ -451,10 +451,9 @@ bool StorageObjectStorage::supportsDelete() const
 
 bool StorageObjectStorage::supportsParallelInsert() const
 {
-    /// `InsertDependenciesBuilder` calls this for every non-view sink while building the
-    /// INSERT pipeline. Only the root insert table is pre-initialised by
-    /// `updateExternalDynamicMetadataIfExists`, so a data lake table reached via an MV
-    /// target can arrive here with `current_metadata == nullptr` and hit `assertInitialized`.
+    /// Defense in depth. `InsertDependenciesBuilder` refreshes every dependency before calling this method,
+    /// so a data lake table reached through a materialized view is normally initialized already. Keep the
+    /// lazy initialization to protect any other caller that reaches this method without the metadata hook.
     if (configuration->isDataLakeConfiguration())
         configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
     return configuration->supportsParallelInsert();

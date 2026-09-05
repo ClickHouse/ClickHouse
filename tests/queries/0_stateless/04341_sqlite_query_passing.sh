@@ -56,9 +56,11 @@ SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) SETTINGS e
 SELECT '-- INSERT into a query-backed table function is rejected before schema inference';
 INSERT INTO TABLE FUNCTION sqlite('${DB}', query('SELECT id FROM nonexistent_table')) VALUES (1); -- { serverError INCORRECT_QUERY }
 
-SELECT '-- projection-count mismatch: an explicit structure with more columns than the query pads with defaults';
+SELECT '-- projection-count mismatch: an explicit structure with more columns than the query fails closed';
 CREATE TABLE count_mismatch (id Int64, name String, extra Int32) ENGINE = SQLite('${DB}', query('SELECT id, name FROM t1'));
-SELECT * FROM count_mismatch ORDER BY id;
+-- ClickHouse quotes its generated outer projection with strict SQLite backquotes, so the column that the query
+-- does not produce is an error instead of being silently read as a double-quoted string literal.
+SELECT * FROM count_mismatch ORDER BY id; -- { serverError SQLITE_ENGINE_ERROR }
 DROP TABLE count_mismatch;
 
 SELECT '-- type mismatch: a text value read into a declared Date is a query error, not a crash';

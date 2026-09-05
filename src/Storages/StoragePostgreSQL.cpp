@@ -167,13 +167,14 @@ public:
         size_t max_block_size_,
         String remote_table_schema_,
         TableNameOrQuery remote_table_or_query_,
-        postgres::PoolWithFailoverPtr pool_
-    )
+        NameSet local_only_columns_,
+        postgres::PoolWithFailoverPtr pool_)
         : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
         , logger(getLogger("ReadFromPostgreSQL"))
         , max_block_size(max_block_size_)
         , remote_table_schema(remote_table_schema_)
         , remote_table_or_query(remote_table_or_query_)
+        , local_only_columns(std::move(local_only_columns_))
         , pool(std::move(pool_))
     {
     }
@@ -191,6 +192,7 @@ public:
             max_block_size,
             remote_table_schema,
             remote_table_or_query,
+            local_only_columns,
             pool);
     }
 
@@ -202,9 +204,14 @@ public:
             /// The user-provided query is passed to PostgreSQL as is, wrapped into a subquery to project
             /// only the required columns. Predicate and LIMIT pushdown are not applied in this case, so
             /// reject any outer filter under external_table_strict_query.
-            rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, context);
+            rejectOuterFilterForQueryBackedExternalSourceIfStrict(
+                query_info,
+                storage_snapshot->metadata->getColumns().getAllPhysical(),
+                context,
+                storage_snapshot->storage.getStorageID(),
+                local_only_columns);
             query = buildQueryForExternalDatabaseSubquery(
-                remote_table_or_query.getQuery(), required_source_columns, IdentifierQuotingStyle::DoubleQuotes);
+                remote_table_or_query.getQuery(), required_source_columns, IdentifierQuotingStyle::DoubleQuotesStandard);
         }
         else
         {
@@ -218,12 +225,15 @@ public:
                 query_info,
                 required_source_columns,
                 storage_snapshot->metadata->getColumns().getOrdinary(),
-                IdentifierQuotingStyle::DoubleQuotes,
+                IdentifierQuotingStyle::DoubleQuotesStandard,
                 LiteralEscapingStyle::PostgreSQL,
                 remote_table_schema,
                 remote_table_or_query.getTableName(),
+                storage_snapshot->storage.getStorageID(),
                 context,
-                transform_query_limit);
+                transform_query_limit,
+                {},
+                local_only_columns);
         }
         LOG_TRACE(logger, "Query: {}", query);
 
@@ -234,6 +244,7 @@ public:
     size_t max_block_size;
     String remote_table_schema;
     TableNameOrQuery remote_table_or_query;
+    NameSet local_only_columns;
     postgres::PoolWithFailoverPtr pool;
 };
 
@@ -270,6 +281,7 @@ void StoragePostgreSQL::readImpl(
         max_block_size,
         remote_table_schema,
         remote_table_or_query,
+        getPlanVirtualColumnNames(storage_snapshot->metadata),
         pool);
     query_plan.addStep(std::move(reading));
 }
@@ -537,7 +549,7 @@ private:
             , statement_name("insert_" + getHexUIntLowercase(thread_local_rng()))
         {
             WriteBufferFromOwnString buf;
-            buf << getInsertQuery(schema, table, columns, IdentifierQuotingStyle::DoubleQuotes);
+            buf << getInsertQuery(schema, table, columns, IdentifierQuotingStyle::DoubleQuotesStandard);
             buf << " (";
             for (size_t i = 1; i <= columns.size(); ++i)
             {
@@ -832,8 +844,12 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
         }
 
         /// The 3rd argument is either a table name, or a query passed to PostgreSQL as is - `(SELECT ...)` or `query('SELECT ...')`.
+        /// Identifiers are quoted only when they need to be: PostgreSQL folds an unquoted identifier to
+        /// lower case, while a quoted one is matched case-sensitively, so force-quoting every identifier
+        /// would make `(SELECT Foo FROM t)` look for the column `Foo` instead of `foo` and break queries
+        /// that rely on the ordinary unquoted name resolution.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL);
+            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::PostgreSQL);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 2 && maybe_query)

@@ -11,6 +11,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/Context.h>
@@ -19,6 +20,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
 
+#include <cmath>
 #include <queue>
 
 
@@ -173,6 +175,36 @@ bool fieldHasStringWithNulByte(const Field & field)
         case Field::Types::Map:
             for (const auto & element : field.safeGet<Map>())
                 if (fieldHasStringWithNulByte(element))
+                    return true;
+            return false;
+        default:
+            return false;
+    }
+}
+
+/// SQLite parses ClickHouse's unquoted `inf` and `nan` spellings as identifiers rather than
+/// numeric literals. Keep predicates containing non-finite floating-point values local.
+bool fieldHasNonFiniteFloatingPointValue(const Field & field)
+{
+    checkStackSize();
+
+    switch (field.getType())
+    {
+        case Field::Types::Float64:
+            return !std::isfinite(field.safeGet<Float64>());
+        case Field::Types::Tuple:
+            for (const auto & element : field.safeGet<Tuple>())
+                if (fieldHasNonFiniteFloatingPointValue(element))
+                    return true;
+            return false;
+        case Field::Types::Array:
+            for (const auto & element : field.safeGet<Array>())
+                if (fieldHasNonFiniteFloatingPointValue(element))
+                    return true;
+            return false;
+        case Field::Types::Map:
+            for (const auto & element : field.safeGet<Map>())
+                if (fieldHasNonFiniteFloatingPointValue(element))
                     return true;
             return false;
         default:
@@ -399,7 +431,12 @@ RowValueContext argumentRowValueContext(const String & function_name, size_t ind
     return RowValueContext::Disallowed;
 }
 
-bool isCompatible(ASTPtr & node, LiteralEscapingStyle literal_escaping_style, const NamesAndTypesList & available_columns, RowValueContext row_value_context)
+bool isCompatible(
+    ASTPtr & node,
+    LiteralEscapingStyle literal_escaping_style,
+    const NamesAndTypesList & available_columns,
+    RowValueContext row_value_context,
+    const NameSet & unsupported_functions)
 {
     /// The AST comes from a user query, so its depth is unbounded - fail with `TOO_DEEP_RECURSION`
     /// instead of exhausting the stack.
@@ -414,6 +451,9 @@ bool isCompatible(ASTPtr & node, LiteralEscapingStyle literal_escaping_style, co
             throw Exception(ErrorCodes::LOGICAL_ERROR, "function->arguments is not set");
 
         String name = function->name;
+
+        if (unsupported_functions.contains(name))
+            return false;
 
         if (!(name == "and"
             || name == "or"
@@ -471,7 +511,7 @@ bool isCompatible(ASTPtr & node, LiteralEscapingStyle literal_escaping_style, co
         auto & arguments = function->arguments->children;
         for (size_t i = 0; i < arguments.size(); ++i)
             if (!isCompatible(arguments[i], literal_escaping_style, available_columns,
-                              argumentRowValueContext(name, i, row_value_context)))
+                              argumentRowValueContext(name, i, row_value_context), unsupported_functions))
                 return false;
 
         /// Normalize a single-row multi-column IN set so it does not collapse to scalars when
@@ -489,6 +529,9 @@ bool isCompatible(ASTPtr & node, LiteralEscapingStyle literal_escaping_style, co
         /// SQLite cannot represent NUL bytes in string literals, and PostgreSQL cannot store NUL
         /// bytes in string values, so do not push such predicates down.
         if (literal_escaping_style != LiteralEscapingStyle::Regular && fieldHasStringWithNulByte(literal->value))
+            return false;
+
+        if (literal_escaping_style == LiteralEscapingStyle::SQLite && fieldHasNonFiniteFloatingPointValue(literal->value))
             return false;
 
         /// Foreign databases often have no support for Array / Map, and ClickHouse would serialize
@@ -519,52 +562,78 @@ bool isCompatible(ASTPtr & node, LiteralEscapingStyle literal_escaping_style, co
     return node->as<ASTIdentifier>();
 }
 
-bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names);
+struct RemoveUnknownSubexpressionsResult
+{
+    bool keep;
+    bool modified;
+};
 
-void removeUnknownChildren(ASTs & children, const NameSet & known_names)
+using SourceColumnNames = std::unordered_map<String, String>;
+
+RemoveUnknownSubexpressionsResult removeUnknownSubexpressions(ASTPtr & node, const SourceColumnNames & known_names);
+
+bool removeUnknownChildren(ASTs & children, const SourceColumnNames & known_names)
 {
 
     ASTs new_children;
+    bool modified = false;
     for (auto & child : children)
     {
-        bool leave_child = removeUnknownSubexpressions(child, known_names);
-        if (leave_child)
+        auto result = removeUnknownSubexpressions(child, known_names);
+        modified |= result.modified;
+        if (result.keep)
             new_children.push_back(child);
     }
     children = std::move(new_children);
+    return modified;
 }
 
 /// return `true` if we should leave node in tree
-bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names)
+RemoveUnknownSubexpressionsResult removeUnknownSubexpressions(ASTPtr & node, const SourceColumnNames & known_names)
 {
-    if (const auto * ident = node->as<ASTIdentifier>())
-        return known_names.contains(ident->name());
+    if (auto * ident = node->as<ASTIdentifier>())
+    {
+        auto it = known_names.find(ident->name());
+        if (it == known_names.end())
+            return {false, true};
+
+        ident->setShortName(it->second);
+        return {true, false};
+    }
 
     if (node->as<ASTLiteral>() != nullptr)
-        return true;
+        return {true, false};
 
     auto * func = node->as<ASTFunction>();
     if (func && (func->name == "and" || func->name == "or"))
     {
-        removeUnknownChildren(func->arguments->children, known_names);
+        bool modified = removeUnknownChildren(func->arguments->children, known_names);
         /// all children removed, current node can be removed too
+        if (func->arguments->children.empty())
+            return {false, true};
+
+        /// Removing a disjunct would narrow the remote filter. Keep the whole disjunction local.
+        if (func->name == "or" && modified)
+            return {false, true};
+
         if (func->arguments->children.size() == 1)
         {
             /// if only one child left, pull it on top level
             node = func->arguments->children[0];
-            return true;
+            return {true, true};
         }
-        return !func->arguments->children.empty();
+        return {true, modified};
     }
 
-    bool leave_child = true;
     for (auto & child : node->children)
     {
-        leave_child = leave_child && removeUnknownSubexpressions(child, known_names);
-        if (!leave_child)
-            break;
+        auto result = removeUnknownSubexpressions(child, known_names);
+        /// A modified child below a non-boolean node, for example `not`, may invert a widened
+        /// predicate into a narrower one. Keep the whole expression local in that case.
+        if (!result.keep || result.modified)
+            return {false, true};
     }
-    return leave_child;
+    return {true, false};
 }
 
 // When a query references an external table such as table from MySQL database,
@@ -572,22 +641,101 @@ bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names)
 // send the query to the storage as AST. Before that, we have to remove the conditions
 // that reference other tables from `WHERE`, so that the external engine is not confused
 // by the unknown columns.
-bool removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList & available_columns)
+SourceColumnNames getSourceColumnNames(
+    const ASTSelectQuery & select,
+    const NamesAndTypesList & available_columns,
+    const StorageID & source_storage_id,
+    const NameSet & local_only_columns = {})
+{
+    NameSet source_table_names{source_storage_id.table_name, source_storage_id.getFullNameNotQuoted()};
+
+    /// Collect the qualifiers under which this storage can be referenced in the query: the table name, the
+    /// fully qualified name and the alias given in `FROM`. A qualifier is only usable when the query joins
+    /// this storage exactly once - a self-join such as `ext AS a JOIN ext AS b` reaches this function twice
+    /// with the same `StorageID`, and there is no way to tell which of the two instances is being read. In
+    /// that case every qualified reference has to stay unrecognized, so that a predicate of the other side
+    /// is dropped as foreign (and re-applied locally) instead of being pushed down to the wrong instance.
+    std::vector<String> qualifiers;
+    size_t source_table_expressions = 0;
+    if (const auto & tables_ast = select.tables())
+    {
+        if (const auto * tables = tables_ast->as<ASTTablesInSelectQuery>())
+        {
+            for (const auto & child : tables->children)
+            {
+                const auto * tables_element = child->as<ASTTablesInSelectQueryElement>();
+                const auto * table_expression = tables_element && tables_element->table_expression
+                    ? tables_element->table_expression->as<ASTTableExpression>()
+                    : nullptr;
+                const auto * table_identifier = table_expression && table_expression->database_and_table_name
+                    ? table_expression->database_and_table_name->as<ASTIdentifier>()
+                    : nullptr;
+                if (table_identifier && source_table_names.contains(table_identifier->name()))
+                {
+                    ++source_table_expressions;
+                    qualifiers.push_back(table_identifier->tryGetAlias());
+                    qualifiers.push_back(table_identifier->shortName());
+                }
+            }
+        }
+    }
+
+    if (source_table_expressions > 1)
+        source_table_names.clear();
+    else
+        source_table_names.insert(qualifiers.begin(), qualifiers.end());
+
+    SourceColumnNames source_columns;
+    auto add_source_column = [&](const String & column_name)
+    {
+        source_columns.emplace(column_name, column_name);
+        for (const auto & source_table_name : source_table_names)
+            if (!source_table_name.empty())
+                source_columns.emplace(source_table_name + "." + column_name, column_name);
+    };
+
+    for (const auto & column : available_columns)
+        add_source_column(column.name);
+    for (const auto & column_name : local_only_columns)
+        add_source_column(column_name);
+
+    return source_columns;
+}
+
+RemoveUnknownSubexpressionsResult removeUnknownSubexpressionsFromWhere(ASTPtr & node, const SourceColumnNames & known_names)
 {
     if (!node)
-        return false;
-
-    NameSet known_names;
-    for (const auto & col : available_columns)
-        known_names.insert(col.name);
+        return {false, false};
 
     if (auto * expr_list = node->as<ASTExpressionList>(); expr_list && !expr_list->children.empty())
     {
         /// traverse expression list on top level
-        removeUnknownChildren(expr_list->children, known_names);
-        return !expr_list->children.empty();
+        bool modified = removeUnknownChildren(expr_list->children, known_names);
+        return {!expr_list->children.empty(), modified};
     }
     return removeUnknownSubexpressions(node, known_names);
+}
+
+bool containsSourceColumn(const ASTPtr & node, const SourceColumnNames & source_columns)
+{
+    if (!node)
+        return false;
+
+    if (const auto * ident = node->as<ASTIdentifier>(); ident && source_columns.contains(ident->name()))
+        return true;
+
+    for (const auto & child : node->children)
+        if (containsSourceColumn(child, source_columns))
+            return true;
+
+    return false;
+}
+
+bool isTruePredicate(const ASTPtr & node)
+{
+    const auto * literal = node ? node->as<ASTLiteral>() : nullptr;
+    UInt64 value = 0;
+    return literal && literal->value.tryGet<UInt64>(value) && value == 1;
 }
 
 String transformQueryForExternalDatabaseImpl(
@@ -598,8 +746,11 @@ String transformQueryForExternalDatabaseImpl(
     LiteralEscapingStyle literal_escaping_style,
     const String & database,
     const String & table,
+    const StorageID & source_storage_id,
     ContextPtr context,
-    std::optional<size_t> limit)
+    std::optional<size_t> limit,
+    const NameSet & unsupported_functions,
+    const NameSet & local_only_columns)
 {
     bool strict = context->getSettingsRef()[Setting::external_table_strict_query];
 
@@ -619,10 +770,37 @@ String transformQueryForExternalDatabaseImpl(
       * copy only compatible parts of it.
       */
 
-    ASTPtr original_where = clone_query->as<ASTSelectQuery &>().where();
-    bool where_has_known_columns = removeUnknownSubexpressionsFromWhere(original_where, available_columns);
+    const auto & original_select = clone_query->as<ASTSelectQuery &>();
+    ASTPtr original_where = original_select.where();
+    if (const auto & original_prewhere = original_select.prewhere())
+        original_where = original_where ? makeASTOperator("and", original_where, original_prewhere) : original_prewhere;
 
-    if (original_where && where_has_known_columns)
+    const auto source_columns = getSourceColumnNames(original_select, available_columns, source_storage_id, local_only_columns);
+    const bool where_contains_source_column = containsSourceColumn(original_where, source_columns);
+
+    /// First remove predicates belonging to other sources. Such predicates are evaluated by the
+    /// outer query and must not make strict mode reject a valid remote filter.
+    auto foreign_where_result = removeUnknownSubexpressionsFromWhere(original_where, source_columns);
+    if (!foreign_where_result.keep)
+    {
+        if (strict && where_contains_source_column)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Query contains expressions that cannot be pushed down (and external_table_strict_query=true)");
+        original_where.reset();
+    }
+
+    NamesAndTypesList pushdown_columns;
+    for (const auto & column : available_columns)
+        if (!local_only_columns.contains(column.name))
+            pushdown_columns.push_back(column);
+    auto pushdown_source_columns = getSourceColumnNames(original_select, pushdown_columns, source_storage_id);
+    auto where_result = removeUnknownSubexpressionsFromWhere(original_where, pushdown_source_columns);
+
+    if (strict && where_result.modified)
+    {
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Query contains expressions that cannot be pushed down (and external_table_strict_query=true)");
+    }
+
+    if (original_where && where_result.keep)
     {
         replaceConstantExpressions(original_where, context, available_columns);
 
@@ -630,7 +808,7 @@ String transformQueryForExternalDatabaseImpl(
         ReplaceLiteralToExprVisitor::Data replace_literal_to_expr_data;
         ReplaceLiteralToExprVisitor(replace_literal_to_expr_data).visit(original_where);
 
-        if (isCompatible(original_where, literal_escaping_style, available_columns, RowValueContext::BooleanPredicate))
+        if (isCompatible(original_where, literal_escaping_style, pushdown_columns, RowValueContext::BooleanPredicate, unsupported_functions))
         {
             select->setExpression(ASTSelectQuery::Expression::WHERE, ASTPtr(original_where));
         }
@@ -653,7 +831,7 @@ String transformQueryForExternalDatabaseImpl(
 
                     for (auto & elem : func->arguments->children)
                     {
-                        if (isCompatible(elem, literal_escaping_style, available_columns, RowValueContext::BooleanPredicate))
+                        if (isCompatible(elem, literal_escaping_style, pushdown_columns, RowValueContext::BooleanPredicate, unsupported_functions))
                             new_function_and->arguments->children.push_back(elem);
                         else if (const auto * child = elem->as<ASTFunction>(); child && (child->name == "and" || child->name == "tuple"))
                             predicates.push(child);
@@ -714,8 +892,11 @@ String transformQueryForExternalDatabase(
     LiteralEscapingStyle literal_escaping_style,
     const String & database,
     const String & table,
+    const StorageID & source_storage_id,
     ContextPtr context,
-    std::optional<size_t> limit)
+    std::optional<size_t> limit,
+    const NameSet & unsupported_functions,
+    const NameSet & local_only_columns)
 {
     if (!query_info.syntax_analyzer_result)
     {
@@ -740,8 +921,11 @@ String transformQueryForExternalDatabase(
             literal_escaping_style,
             database,
             table,
+            source_storage_id,
             context,
-            limit);
+            limit,
+            unsupported_functions,
+            local_only_columns);
     }
 
     auto clone_query = query_info.query->clone();
@@ -753,11 +937,19 @@ String transformQueryForExternalDatabase(
         literal_escaping_style,
         database,
         table,
+        source_storage_id,
         context,
-        limit);
+        limit,
+        unsupported_functions,
+        local_only_columns);
 }
 
-void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo & query_info, const ContextPtr & context)
+void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
+    const SelectQueryInfo & query_info,
+    const NamesAndTypesList & available_columns,
+    const ContextPtr & context,
+    const StorageID & source_storage_id,
+    const NameSet & local_only_columns)
 {
     if (!context->getSettingsRef()[Setting::external_table_strict_query])
         return;
@@ -777,12 +969,35 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo
     else if (query_info.query)
     {
         clone_query = query_info.query->clone();
+
+        /// The old analyzer leaves the complete outer query in `query`. Prune predicates belonging to other
+        /// joined sources exactly as `transformQueryForExternalDatabase` does before checking whether a filter
+        /// remains for this source. A filter on a different table is evaluated outside this source and must not
+        /// make a query-backed external table fail under `external_table_strict_query`.
+        auto & select = clone_query->as<ASTSelectQuery &>();
+        if (select.where())
+        {
+            auto & where = select.refWhere();
+            auto where_result = removeUnknownSubexpressionsFromWhere(
+                where, getSourceColumnNames(select, available_columns, source_storage_id, local_only_columns));
+            if (!where_result.keep)
+                where.reset();
+        }
+
+        if (select.prewhere())
+        {
+            auto & prewhere = select.refPrewhere();
+            auto prewhere_result = removeUnknownSubexpressionsFromWhere(
+                prewhere, getSourceColumnNames(select, available_columns, source_storage_id, local_only_columns));
+            if (!prewhere_result.keep)
+                prewhere.reset();
+        }
     }
     else
         return;
 
     const auto * select = clone_query->as<ASTSelectQuery>();
-    if (select && (select->where() || select->prewhere()))
+    if (select && ((select->where() && !isTruePredicate(select->where())) || (select->prewhere() && !isTruePredicate(select->prewhere()))))
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
             "The query contains a filter that cannot be pushed down to the external database, because the data "
@@ -918,6 +1133,13 @@ static void normalizeSubqueryForExternalDatabaseImpl(ASTPtr & node, LiteralEscap
     }
     else if (const auto * literal = node->as<ASTLiteral>())
     {
+        /// SQLite parses ClickHouse's unquoted `inf` and `nan` spellings as identifiers rather
+        /// than numeric literals. Query-backed external sources are sent to SQLite as is, so
+        /// reject these values instead of generating SQL that SQLite cannot execute.
+        if (literal_escaping_style == LiteralEscapingStyle::SQLite && fieldHasNonFiniteFloatingPointValue(literal->value))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot format a non-finite floating-point literal for SQLite. Rewrite the query passed to the external database without it");
+
         /// The literal carrier of a row value (the parser folds `(1, 'x')` into a single
         /// `ASTLiteral` holding a `Tuple` field) is subject to the same restriction as the
         /// `tuple` function above: outside a row-value position its parenthesized text form

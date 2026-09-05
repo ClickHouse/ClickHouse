@@ -1158,15 +1158,56 @@ def test_postgres_query_passing(started_cluster):
     # With ClickHouse-style backtick quoting (the previous behaviour) PostgreSQL would reject the query.
     quoted_name = "test_query_passing_quoted"
     cursor.execute(f'DROP TABLE IF EXISTS {quoted_name}')
-    cursor.execute(f'CREATE TABLE {quoted_name} (id integer, "weird name" text)')
-    cursor.execute(f"INSERT INTO {quoted_name} VALUES (1, 'quoted_value')")
+    cursor.execute(
+        fr'CREATE TABLE {quoted_name} (id integer, "weird name" text, "a\b" text, "a""b" text)'
+    )
+    cursor.execute(
+        f"INSERT INTO {quoted_name} VALUES (1, 'quoted_value', 'backslash_value', 'quote_value')"
+    )
     started_cluster.postgres_conn.commit()
     q_quoted = (
         f'postgresql(\'{host}\', \'postgres\', '
-        f'(SELECT id, "weird name" FROM {quoted_name}), \'postgres\', \'{pg_pass}\')'
+        f'(SELECT id, "weird name", `a\\\\b`, `a"b` FROM {quoted_name}), \'postgres\', \'{pg_pass}\')'
     )
-    assert node1.query(f'SELECT "weird name" FROM {q_quoted} ORDER BY id').rstrip() == "quoted_value"
+    assert node1.query(f"SELECT * FROM {q_quoted} ORDER BY id").rstrip() == (
+        "1\tquoted_value\tbackslash_value\tquote_value"
+    )
+
+    # Table-backed projection and predicate pushdown use the same standard PostgreSQL quoting rules.
+    q_quoted_table = f"postgresql('{host}', 'postgres', '{quoted_name}', 'postgres', '{pg_pass}')"
+    assert node1.query(
+        f"SELECT `a\\\\b`, `a\"b` FROM {q_quoted_table} WHERE `a\\\\b` = 'backslash_value'"
+    ).rstrip() == "backslash_value\tquote_value"
+
+    # `ON CONFLICT` selects the prepared-insert path, whose generated column list must use the same escaping.
+    node1.query("DROP TABLE IF EXISTS pg_quoted_identifiers")
+    node1.query(
+        f"CREATE TABLE pg_quoted_identifiers ENGINE = PostgreSQL("
+        f"'{host}', 'postgres', '{quoted_name}', 'postgres', '{pg_pass}', '', 'ON CONFLICT DO NOTHING')"
+    )
+    node1.query(
+        "INSERT INTO pg_quoted_identifiers VALUES (2, 'quoted_value_2', 'backslash_value_2', 'quote_value_2')"
+    )
+    assert node1.query("SELECT * FROM pg_quoted_identifiers WHERE id = 2").rstrip() == (
+        "2\tquoted_value_2\tbackslash_value_2\tquote_value_2"
+    )
+    node1.query("DROP TABLE pg_quoted_identifiers")
     cursor.execute(f"DROP TABLE {quoted_name}")
+
+    # An identifier that does not need quoting is emitted unquoted, so PostgreSQL keeps applying its
+    # ordinary lower-case folding and `Foo` resolves to the column `foo`. Force-quoting every identifier
+    # would make PostgreSQL look for a case-sensitive `Foo` and fail with `column "Foo" does not exist`.
+    folded_name = "test_query_passing_folded"
+    cursor.execute(f"DROP TABLE IF EXISTS {folded_name}")
+    cursor.execute(f"CREATE TABLE {folded_name} (id integer, foo text)")
+    cursor.execute(f"INSERT INTO {folded_name} VALUES (1, 'folded_value')")
+    started_cluster.postgres_conn.commit()
+    q_folded = (
+        f"postgresql('{host}', 'postgres', "
+        f"(SELECT Id, Foo FROM {folded_name}), 'postgres', '{pg_pass}')"
+    )
+    assert node1.query(f"SELECT foo FROM {q_folded} ORDER BY id").rstrip() == "folded_value"
+    cursor.execute(f"DROP TABLE {folded_name}")
 
     # external_table_strict_query: an outer filter that cannot be pushed down into the passed query is
     # applied locally by default, but rejected with INCORRECT_QUERY under external_table_strict_query = 1.
