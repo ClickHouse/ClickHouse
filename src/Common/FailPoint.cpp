@@ -373,7 +373,9 @@ static struct InitFiu
     ONCE(hash_join_throw_after_data_release) \
     REGULAR(smt_force_takeover_predicate_true) \
     REGULAR(smt_takeover_fake_hardware_error_after_set) \
-    PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas)
+    PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas) \
+    PAUSEABLE_ONCE(intersect_or_except_transform_pause) \
+    PAUSEABLE_ONCE(intersect_or_except_transform_counts_pause)
 
 namespace FailPoints
 {
