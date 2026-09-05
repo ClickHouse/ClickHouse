@@ -274,7 +274,10 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
         hash_state.update(result_name);
 
     if (result_type)
+    {
         hash_state.update(result_type->getName());
+        updateExpressionIdentityHash(*result_type, hash_state);
+    }
 
     if (function_base)
         hash_state.update(function_base->getName());
@@ -1072,6 +1075,7 @@ struct ConstantKeyHash
     {
         SipHash h;
         k.sample->result_type->updateHash(h);
+        updateExpressionIdentityHash(*k.sample->result_type, h);
         k.sample->column->updateHashWithValue(0, h);
         return h.get64();
     }
@@ -1081,7 +1085,7 @@ struct ConstantKeyEqual
 {
     bool operator()(const ConstantKey & a, const ConstantKey & b) const
     {
-        return a.sample->result_type->equals(*b.sample->result_type)
+        return haveSameExpressionIdentity(*a.sample->result_type, *b.sample->result_type)
             && constColumnsEqual(a.sample->column, b.sample->column);
     }
 };
