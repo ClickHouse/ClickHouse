@@ -4882,6 +4882,8 @@ services:
         # will be done it will exit.
         stop_grace_period: 10m
         tmpfs: {tmpfs}
+        # The harness runs at 1000, so at the default 0 a memcg OOM reaps it, not the server.
+        oom_score_adj: 1000
         {mem_limit}
         {cpu_limit}
         {pids_limit}
