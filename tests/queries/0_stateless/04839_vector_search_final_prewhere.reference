@@ -1,0 +1,16 @@
+FINAL, PREWHERE on the vector column, no rescoring: correct result
+0
+FINAL, PREWHERE on the vector column, rescoring: correct result
+0
+FINAL, deferred PREWHERE, no rescoring: correct result
+0
+FINAL, deferred PREWHERE, rescoring: correct result
+0
+FINAL, no PREWHERE, no rescoring: the vector column is replaced (control)
+1
+FINAL, deferred PREWHERE, no rescoring: the vector column is kept
+1
+FINAL, PREWHERE deferred behind a row policy, no rescoring: correct result
+0
+FINAL, PREWHERE deferred behind a row policy, rescoring: correct result
+0
