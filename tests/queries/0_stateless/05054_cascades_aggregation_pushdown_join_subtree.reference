@@ -1,0 +1,91 @@
+-- canary 1: variant A onto the join subtree (case 1\'s query)
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    Sorting
+      Aggregating
+        GatherExchange
+          JoinLogical (Broadcast HashJoin )
+            Aggregating
+              JoinLogical (Broadcast HashJoin )
+                Expression
+                  ReadFromMergeTree (ParallelRead default.t_corr_left)
+                BuildRuntimeFilter (Build runtime join filter on __table2.k)
+                  Expression (Change column names to column identifiers)
+                    ReadFromMergeTree (ReplicatedRead default.t_corr_right_multi)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_corr_right_uniq)
+-- canary 2: variant B onto the subtree cascades into a second variant-A pushdown (case 2\'s query)
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    Sorting
+      JoinLogical (Local HashJoin  swapped)
+        BuildRuntimeFilter (Build runtime join filter on __table3.k)
+          Expression (Change column names to column identifiers)
+            ReadFromMergeTree (default.t_corr_right_uniq)
+        Aggregating
+          JoinLogical (Local HashJoin  swapped)
+            Expression (Apply runtime join filter)
+              BuildRuntimeFilter (Build runtime join filter on __table2.k)
+                Filter
+                  ReadFromMergeTree (default.t_corr_right_multi)
+            GatherExchange
+              Aggregating
+                Expression
+                  ReadFromMergeTree (ParallelRead default.t_corr_left)
+-- canary 3: repeated variant B through two LEFT SEMI joins (case 3\'s query)
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    Sorting
+      JoinLogical (Local HashJoin  swapped)
+        BuildRuntimeFilter (Build runtime join filter on __table3.k)
+          Expression (Change column names to column identifiers)
+            ReadFromMergeTree (default.t_corr_right_multi)
+        JoinLogical (Local HashJoin  swapped)
+          Expression (Apply runtime join filter)
+            BuildRuntimeFilter (Build runtime join filter on __table2.k)
+              Filter
+                ReadFromMergeTree (default.t_corr_right_uniq)
+          MergingAggregated
+            GatherExchange
+              Aggregating
+                Filter
+                  ReadFromMergeTree (ParallelRead default.t_corr_left)
+-- 1. variant A onto the join subtree (INNER below, LEFT above)
+0	10	450
+1	20	920
+2	30	1410
+3	10	480
+4	10	490
+5	10	500
+0	10	450
+1	20	920
+2	30	1410
+3	10	480
+4	10	490
+5	10	500
+-- 2. variant B onto the join subtree (INNER below, LEFT SEMI above)
+0	10	450
+1	20	920
+2	30	1410
+3	10	480
+4	10	490
+5	10	500
+0	10	450
+1	20	920
+2	30	1410
+3	10	480
+4	10	490
+5	10	500
+-- 3. repeated variant B through two LEFT SEMI joins
+0	10
+1	10
+2	10
+3	10
+4	10
+5	10
+0	10
+1	10
+2	10
+3	10
+4	10
+5	10

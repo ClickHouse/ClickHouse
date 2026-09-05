@@ -124,6 +124,7 @@ struct QueryPlanOptimizationSettings
     bool query_plan_join_shard_by_pk_ranges;
 
     bool enable_cascades_optimizer = false;
+    bool cascades_aggregation_pushdown = true;
 
     bool make_distributed_plan = false;
     bool serialize_query_plan = false;
