@@ -33,9 +33,8 @@ public:
 
     MergeTreeDataPartStorageType getType() const override { return MergeTreeDataPartStorageType::Packed; }
 
-    MutableDataPartStoragePtr getProjection(const std::string & name, bool use_parent_transaction = true) override; // NOLINT
-    MutableDataPartStoragePtr getProjectionNoInitialize(const std::string & name, bool use_parent_transaction = true) override; // NOLINT
-    DataPartStoragePtr getProjection(const std::string & name) const override;
+    MutableDataPartStoragePtr getProjectionStorage(const std::string & dir_name, bool use_parent_transaction) override; // NOLINT
+    DataPartStoragePtr getProjectionStorage(const std::string & dir_name) const override;
 
     bool exists() const override;
     bool existsDirectory(const std::string & file_name) const override;
@@ -56,7 +55,7 @@ public:
         bool remove_new_dir_if_exists,
         bool fsync_part_dir) override;
 
-    void createProjection(const std::string & name) override;
+    Projection createProjection(const std::string & dir_name, ProjectionStorageFormat format) override;
 
     void changeRootPath(const std::string & from_root, const std::string & to_root) override;
 
@@ -95,14 +94,6 @@ public:
     bool cloneCopiesWholeArchive(const ClonePartParams & params) const override;
 
     MutableDataPartStoragePtr freeze(
-        const std::string & to,
-        const std::string & dir_path,
-        const ReadSettings & read_settings,
-        const WriteSettings & write_settings,
-        std::function<void(const DiskPtr &)> save_metadata_callback,
-        const ClonePartParams & params) const override;
-
-    MutableDataPartStoragePtr freezeRemote(
         const std::string & to,
         const std::string & dir_path,
         const DiskPtr & dst_disk,

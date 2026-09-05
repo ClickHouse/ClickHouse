@@ -534,6 +534,10 @@ public:
     /// Moves a part to detached/ directory and adds prefix to its name
     void renameToDetached(const String & prefix, bool ignore_error = false);
 
+    /// Re-seed the owned projection set from disk before detaching a part that broke before loadProjections ran; otherwise its FLAT
+    /// siblings are stranded for the orphan GC.
+    void adoptOnDiskProjectionsForDetach();
+
     /// Makes checks and move part to new directory
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
     virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists);
@@ -588,8 +592,16 @@ public:
 
     const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
 
-    MergeTreeDataPartBuilder getProjectionPartBuilder(
-        const String & projection_name, ProjectionDescriptionRawPtr projection, PartDirIntent intent, bool is_temp_projection = false);
+    /// Read/load path (also serves the broken-projection placeholder, whose dir may not exist), so it
+    /// always opens with `PartDirIntent::OpenExisting`; the write path goes through
+    /// `getProjectionPartBuilderForWrite`, whose directory is created fresh by `createProjection`.
+    MergeTreeDataPartBuilder
+    getProjectionPartBuilder(const String & projection_name, ProjectionDescriptionRawPtr projection, bool is_temp_projection = false);
+
+    /// Write path: requires the descriptor produced by createProjection, so building a projection part
+    /// before creating its directory cannot compile away the residue sweep (see getProjectionStorageForWrite).
+    MergeTreeDataPartBuilder
+    getProjectionPartBuilderForWrite(const IDataPartStorage::Projection & placement, ProjectionDescriptionRawPtr projection);
 
     void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part);
 

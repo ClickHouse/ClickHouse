@@ -65,7 +65,17 @@ void MergeTreeDataPartChecksum::checkEqual(const MergeTreeDataPartChecksum & rhs
 
 void MergeTreeDataPartChecksum::checkSize(const IDataPartStorage & storage, const String & name) const
 {
-    // This is a projection, no need to check its size.
+    /// This is a projection, no need to check its size. It may be stored either nested inside the part directory or as a flat sibling of
+    /// it, so existsDirectory is not enough.
+    if (IDataPartStorage::Projection::dirNameType(name) == IDataPartStorage::Projection::Status::Live)
+    {
+        if (storage.hasProjection(name))
+            return;
+
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Projection {} doesn't exist",
+            std::filesystem::path(storage.getRelativePath()) / name);
+    }
+
     if (storage.existsDirectory(name))
         return;
 

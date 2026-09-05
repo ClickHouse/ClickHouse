@@ -356,6 +356,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool prewarm_primary_key_cache;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
     extern const MergeTreeSettingsBool primary_key_lazy_load;
+    extern const MergeTreeSettingsProjectionStorageFormat projection_storage_format;
     extern const MergeTreeSettingsBool apply_patches_on_merge;
     extern const MergeTreeSettingsMergeTreePatchPartsVersion patch_parts_version;
     extern const MergeTreeSettingsBool enforce_index_structure_match_on_partition_manipulation;
@@ -2942,8 +2943,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             auto local_component_guard = Coordination::setCurrentComponent(component_name);
             for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
             {
-                /// Skip temporary directories, file 'format_version.txt' and directory 'detached'.
+                /// Skip temporary directories, projection directories, file 'format_version.txt' and directory 'detached'.
                 if (startsWith(it->name(), "tmp")
+                    || IDataPartStorage::Projection::dirNameType(it->name()) != IDataPartStorage::Projection::Status::None
                     || it->name() == MergeTreeData::FORMAT_VERSION_FILE_NAME
                     || it->name() == DETACHED_DIR_NAME)
                     continue;
@@ -3088,7 +3090,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
     if (!is_static_storage)
         for (auto & part : broken_parts_to_detach)
+        {
+            part->adoptOnDiskProjectionsForDetach();
             part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+        }
 
     /// UNIQUE KEY — SST sweep + per-part validation for parts that landed
     /// without a usable sidecar (restore, freeze taken before UK shipped, or a
@@ -3475,7 +3480,10 @@ try
 
             chassert(load_state.part);
             if (load_state.is_broken)
+            {
+                load_state.part->adoptOnDiskProjectionsForDetach();
                 load_state.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+            }
         }, Priority{});
     }
     runner.waitForAllToFinishAndRethrowFirstError();
@@ -3568,6 +3576,7 @@ try
             if (res.is_broken)
             {
                 forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(res.part->name);
+                res.part->adoptOnDiskProjectionsForDetach();
                 res.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
             }
             else if (res.part->is_duplicate)
@@ -3874,6 +3883,63 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
     return cleared_count;
 }
 
+size_t MergeTreeData::clearOrphanProjectionSiblings(size_t max_age_seconds)
+{
+    size_t cleared_count = 0;
+
+    for (const auto & disk : getDisks())
+    {
+        /// Skip RO/write-once disks like getDetachedParts: removeSharedRecursive would throw and fail table init on startup/attach.
+        if (disk->isBroken() || disk->isReadOnly() || disk->isWriteOnce())
+            continue;
+
+        /// moving/ is deliberately not scanned: clearOldTemporaryDirectories's stale-moving-parts sweep owns it, and an in-flight clone's
+        /// sibling is ownerless there for the whole copy.
+        for (const auto & root : {fs::path(relative_data_path), fs::path(relative_data_path) / DETACHED_DIR_NAME})
+        {
+            if (!disk->existsDirectory(root))
+                continue;
+
+            Strings orphans;
+            for (auto it = disk->iterateDirectory(root); it->isValid(); it->next())
+            {
+                const String entry = it->name();
+                if (IDataPartStorage::Projection::dirNameType(entry) == IDataPartStorage::Projection::Status::None)
+                    continue;
+
+                const String owner = IDataPartStorage::Projection::owner(root, entry);
+                if (owner.empty() || disk->existsDirectory(root / owner))
+                    continue;
+
+                /// The rename commit window legitimately shows a sibling without its owner dir (commit-last); a young orphan may still be
+                /// adopted, so only reap aged ones.
+                if (max_age_seconds && disk->getLastModified(root / entry).epochTime() + time_t(max_age_seconds) > time(nullptr))
+                    continue;
+
+                orphans.push_back(entry);
+            }
+
+            for (const auto & entry : orphans)
+            {
+                LOG_WARNING(log, "Removing orphan projection directory {} whose part directory {} does not exist",
+                    fullPath(disk, root / entry), IDataPartStorage::Projection::owner(root, entry));
+
+                /// Zero-copy replication may share blobs across replicas invisibly to the local refcount.
+                bool keep_shared = false;
+                if (disk->supportZeroCopyReplication() && (*getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
+                {
+                    LOG_WARNING(log, "Since zero-copy replication is enabled we are not going to remove blobs from shared storage for {}", fullPath(disk, root / entry));
+                    keep_shared = true;
+                }
+                disk->removeSharedRecursive(root / entry / "", keep_shared, {});
+                ++cleared_count;
+            }
+        }
+    }
+
+    return cleared_count;
+}
+
 size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
@@ -3919,9 +3985,14 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
                 {
                     ThreadFuzzer::maybeInjectSleep();
 
+                    /// A flat projection sibling is in use whenever its parent part is.
+                    String in_use_name = basename;
+                    if (auto owner = IDataPartStorage::Projection::owner(root_path, basename); !owner.empty())
+                        in_use_name = owner;
+
                     /// Hold the name until the removal below is done, so a concurrent claim waits for it
                     /// instead of recreating the directory under our feet.
-                    auto cleanup_hold = temporary_parts.tryHoldForCleanup(basename);
+                    auto cleanup_hold = temporary_parts.tryHoldForCleanup(in_use_name);
                     if (!cleanup_hold)
                     {
                         /// Actually we don't rely on temporary_directories_lifetime when removing old temporary
@@ -4673,6 +4744,9 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
     {
         auto & part_mutable = const_cast<IMergeTreeDataPart &>(*part);
         part_mutable.getDataPartStorage().changeRootPath(relative_data_path, new_table_path);
+        /// Repoint loaded projection sub-part storages too: they keep their own root_path sharing the table prefix.
+        for (const auto & [_, projection_part] : part_mutable.getProjectionParts())
+            const_cast<IMergeTreeDataPart &>(*projection_part).getDataPartStorage().changeRootPath(relative_data_path, new_table_path);
     }
 
     relative_data_path = new_table_path;
@@ -4775,6 +4849,7 @@ void MergeTreeData::dropAllData()
         try
         {
             bool keep_shared = removeDetachedPart(part.disk, fs::path(relative_data_path) / DETACHED_DIR_NAME / part.dir_name / "", part.dir_name);
+            removeDetachedProjectionSiblings(part.disk, part.dir_name, keep_shared);
             LOG_DEBUG(log, "dropAllData: Dropped detached part {}, keep shared data: {}", part.dir_name, keep_shared);
         }
         catch (...)
@@ -6502,6 +6577,19 @@ void MergeTreeData::PartsTemporaryRename::addPart(const String & part_name, cons
 void MergeTreeData::PartsTemporaryRename::tryRenameAll()
 {
     renamed = true;
+    const auto full_path = fs::path(storage.relative_data_path) / source_dir;
+
+    /// Scan the parts root once per disk and reuse it via detectProjections({.root_listing = ...}).
+    std::map<String, Strings> root_entries_by_disk;
+    auto get_root_entries = [&](const DiskPtr & disk) -> const Strings &
+    {
+        auto [it, inserted] = root_entries_by_disk.try_emplace(disk->getName());
+        if (inserted && disk->existsDirectory(full_path))
+            for (auto dir_it = disk->iterateDirectory(full_path); dir_it->isValid(); dir_it->next())
+                it->second.push_back(dir_it->name());
+        return it->second;
+    };
+
     for (size_t i = 0; i < old_and_new_names.size(); ++i)
     {
         try
@@ -6509,8 +6597,17 @@ void MergeTreeData::PartsTemporaryRename::tryRenameAll()
             const auto & [_, old_dir, new_dir, disk] = old_and_new_names[i];
             if (old_dir.empty() || new_dir.empty())
                 throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Empty part name. Most likely it's a bug.");
-            const auto full_path = fs::path(storage.relative_data_path) / source_dir;
-            disk->moveDirectory(fs::path(full_path) / old_dir, fs::path(full_path) / new_dir);
+
+            /// Rename via part storage so the FLAT projection siblings move with the part (sweeps a stale destination, commits the part dir last).
+            auto part_storage = std::make_shared<DataPartStorageOnDiskFull>(
+                std::make_shared<SingleDiskVolume>("volume_" + old_dir, disk, 0), full_path, old_dir);
+            part_storage->setZeroCopyReplicationEnabled(
+                (*storage.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication]);
+            part_storage->setFlatProjectionStorageInUse(storage.flatProjectionStorageEverUsed());
+            /// The setting seeds the scan for fresh parts. The discovered layout of an existing part must win, because this operation can
+            /// rename a FLAT part after the table was switched back to `legacy_nested`.
+            part_storage->setProjections(part_storage->detectProjections({.root_listing = get_root_entries(disk)}));
+            part_storage->rename(full_path, new_dir, storage.log.load(), /*remove_new_dir_if_exists=*/ false, /*fsync_part_dir=*/ false);
         }
         catch (...)
         {
@@ -6528,6 +6625,18 @@ void MergeTreeData::PartsTemporaryRename::rollBackAll()
         return;
 
     std::exception_ptr first_exception;
+    const String full_path = fs::path(storage.relative_data_path) / source_dir;
+
+    /// Scan the parts root once per disk and reuse it via detectProjections({.root_listing = ...}).
+    std::map<String, Strings> root_entries_by_disk;
+    auto get_root_entries = [&](const DiskPtr & disk) -> const Strings &
+    {
+        auto [it, inserted] = root_entries_by_disk.try_emplace(disk->getName());
+        if (inserted && disk->existsDirectory(full_path))
+            for (auto dir_it = disk->iterateDirectory(full_path); dir_it->isValid(); dir_it->next())
+                it->second.push_back(dir_it->name());
+        return it->second;
+    };
 
     for (const auto & [_, old_dir, new_dir, disk] : old_and_new_names)
     {
@@ -6536,8 +6645,14 @@ void MergeTreeData::PartsTemporaryRename::rollBackAll()
 
         try
         {
-            const String full_path = fs::path(storage.relative_data_path) / source_dir;
-            disk->moveFile(fs::path(full_path) / new_dir, fs::path(full_path) / old_dir);
+            auto part_storage = std::make_shared<DataPartStorageOnDiskFull>(
+                std::make_shared<SingleDiskVolume>("volume_" + new_dir, disk, 0), full_path, new_dir);
+            part_storage->setZeroCopyReplicationEnabled(
+                (*storage.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication]);
+            part_storage->setFlatProjectionStorageInUse(storage.flatProjectionStorageEverUsed());
+            /// Preserve the existing part's detected FLAT layout rather than overwriting it with the current table setting.
+            part_storage->setProjections(part_storage->detectProjections({.root_listing = get_root_entries(disk)}));
+            part_storage->rename(full_path, old_dir, storage.log.load(), /*remove_new_dir_if_exists=*/ false, /*fsync_part_dir=*/ false);
         }
         catch (...)
         {
@@ -8937,19 +9052,22 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
         part->getDataPartStorage().backup(
             part->checksums,
             part->getFileNamesWithoutChecksums(),
-            data_path_in_backup,
+            fs::path{data_path_in_backup} / part->name,
             backup_settings,
             make_temporary_hard_links,
             backup_entries_from_part,
             &temp_dirs,
-            false, false);
+            /*is_projection_part=*/ false,
+            /*allow_backup_broken_projection=*/ false);
 
         auto backup_projection = [&](IDataPartStorage & storage, IMergeTreeDataPart & projection_part)
         {
+            /// A projection backs up under its logical name ("<name>.proj"), so the backup layout is independent of the on-disk projection
+            /// layout.
             storage.backup(
                 projection_part.checksums,
                 projection_part.getFileNamesWithoutChecksums(),
-                fs::path{data_path_in_backup} / part->name,
+                fs::path{data_path_in_backup} / part->name / IDataPartStorage::Projection::dirName(projection_part.name, false),
                 backup_settings,
                 make_temporary_hard_links,
                 backup_entries_from_part,
@@ -8959,7 +9077,6 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
         };
 
         auto projection_parts = part->getProjectionParts();
-        std::string proj_suffix = ".proj";
         std::unordered_set<String> defined_projections;
 
         for (const auto & [projection_name, projection_part] : projection_parts)
@@ -8977,14 +9094,14 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
         for (const auto & [name, _] : part->checksums.files)
         {
             auto projection_name = fs::path(name).stem().string();
-            if (endsWith(name, proj_suffix) && !defined_projections.contains(projection_name))
+            if (IDataPartStorage::Projection::dirNameType(name) == IDataPartStorage::Projection::Status::Live && !defined_projections.contains(projection_name))
             {
-                auto projection_storage = part->getDataPartStorage().getProjection(projection_name + proj_suffix);
+                auto projection_storage = part->getDataPartStorage().getProjectionStorage(IDataPartStorage::Projection::dirName(projection_name, false));
                 if (projection_storage->existsFile("checksums.txt"))
                 {
                     auto projection_part
                         = const_cast<IMergeTreeDataPart &>(*part)
-                              .getProjectionPartBuilder(projection_name, /* projection */ nullptr, PartDirIntent::OpenExisting, /* is_temp_projection */ false)
+                              .getProjectionPartBuilder(projection_name, /* projection */ nullptr, /* is_temp_projection */ false)
                               .withPartFormatFromDisk()
                               .build();
                     backup_projection(projection_part->getDataPartStorage(), *projection_part);
@@ -10195,9 +10312,25 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
         /// Note: we don't care about TOCTOU issue here.
         if (disk->existsDirectory(detached_path))
         {
+            /// FLAT projection siblings are folded into their owner entry instead of being listed as detached parts of their own.
+            std::unordered_map<String, size_t> index_by_dir_name;
+            Strings sibling_names;
             for (auto it = disk->iterateDirectory(detached_path); it->isValid(); it->next())
             {
+                if (IDataPartStorage::Projection::dirNameType(it->name()) != IDataPartStorage::Projection::Status::None)
+                {
+                    sibling_names.push_back(it->name());
+                    continue;
+                }
+                index_by_dir_name[it->name()] = res.size();
                 res.push_back(DetachedPartInfo::parseDetachedPartName(disk, it->name(), format_version));
+            }
+            for (const auto & sibling : sibling_names)
+            {
+                auto owner = index_by_dir_name.find(IDataPartStorage::Projection::owner(detached_path, sibling));
+                /// An orphan sibling (owner gone) stays unlisted; clearOrphanProjectionSiblings reaps it.
+                if (owner != index_by_dir_name.end())
+                    res[owner->second].projection_siblings.push_back(sibling);
             }
         }
     }
@@ -10248,6 +10381,8 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
     for (auto & [_, old_dir, new_dir, disk] : renamed_parts.old_and_new_names)
     {
         bool keep_shared = removeDetachedPart(disk, fs::path(relative_data_path) / DETACHED_DIR_NAME / new_dir / "", old_dir);
+        /// tryRenameAll moved the FLAT siblings to "deleting_<part>.<projection>.proj" together with the parent; drop them with it.
+        removeDetachedProjectionSiblings(disk, new_dir, keep_shared);
         LOG_DEBUG(log, "Dropped detached part {}, keep shared data: {}", old_dir, keep_shared);
         old_dir.clear();
     }
@@ -11798,21 +11933,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     if (params.copy_instead_of_hardlink)
         with_copy = " (copying data)";
 
-    /// `freeze` rejects a non-empty destination, so reclaim the leftover here, once the destination disk
-    /// is known (the claim itself was taken above).
-    std::shared_ptr<IDataPartStorage> dst_part_storage{};
-    if (on_same_disk)
-    {
-        reclaimStaleTemporaryPartDirectory(same_disk, tmp_dst_part_name);
-        dst_part_storage = src_part_storage->freeze(
-            relative_data_path,
-            tmp_dst_part_name,
-            read_settings,
-            write_settings,
-            /* save_metadata_callback= */ {},
-            params);
-    }
-    else
+    /// freeze also copies the part's owned FLAT projection siblings. dst_disk == nullptr means the source's own disk.
+    DiskPtr dst_disk;
+    if (!on_same_disk)
     {
         auto reservation_on_dst_or_error = getStoragePolicy()->reserve(src_part->getBytesOnDisk());
         if (!reservation_on_dst_or_error)
@@ -11820,17 +11943,19 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             const auto & error = reservation_on_dst_or_error.error();
             throw Exception(error.message, error.code);
         }
-        auto dst_disk = (*reservation_on_dst_or_error)->getDisk();
-        reclaimStaleTemporaryPartDirectory(dst_disk, tmp_dst_part_name);
-        dst_part_storage = src_part_storage->freezeRemote(
-            relative_data_path,
-            tmp_dst_part_name,
-            /* dst_disk = */ dst_disk,
-            read_settings,
-            write_settings,
-            /* save_metadata_callback= */ {},
-            params);
+        dst_disk = (*reservation_on_dst_or_error)->getDisk();
     }
+    /// The clone tmp dir name repeats across retries; `freeze` rejects a non-empty destination, so
+    /// reclaim the leftover here, once the destination disk is known (the claim itself was taken above).
+    reclaimStaleTemporaryPartDirectory(on_same_disk ? same_disk : dst_disk, tmp_dst_part_name);
+    std::shared_ptr<IDataPartStorage> dst_part_storage = src_part_storage->freeze(
+        relative_data_path,
+        tmp_dst_part_name,
+        dst_disk,
+        read_settings,
+        write_settings,
+        /* save_metadata_callback= */ {},
+        params);
 
     if (params.metadata_version_to_write.has_value())
     {
@@ -11887,7 +12012,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             const auto & projection_storage = projection_part->getDataPartStorage();
             for (auto it = projection_storage.iterate(); it->isValid(); it->next())
             {
-                auto file_name_with_projection_prefix = fs::path(projection_storage.getPartDirectory()) / it->name();
+                /// The zero-copy keep-list uses the logical projection dir name regardless of the on-disk projection layout.
+                auto file_name_with_projection_prefix = fs::path(IDataPartStorage::Projection::dirName(name, false)) / it->name();
                 if (!params.files_to_copy_instead_of_hardlinks.contains(file_name_with_projection_prefix)
                     && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED
                     && it->name() != VersionMetadata::TXN_VERSION_METADATA_FILE_NAME)
@@ -12119,6 +12245,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
                 auto new_storage = data_part_storage->freeze(
                     backup_part_path,
                     part->getDataPartStorage().getPartDirectory(),
+                    /* dst_disk= */ nullptr,
                     local_context->getReadSettings(),
                     local_context->getWriteSettings(),
                     callback,
@@ -12172,6 +12299,21 @@ bool MergeTreeData::removeDetachedPart(DiskPtr disk, const String & path, const 
     disk->removeRecursive(path);
 
     return false;
+}
+
+void MergeTreeData::removeDetachedProjectionSiblings(const DiskPtr & disk, const String & dir_name, bool keep_shared)
+{
+    fs::path detached_root = fs::path(relative_data_path) / DETACHED_DIR_NAME;
+    Strings siblings;
+    for (auto it = disk->iterateDirectory(detached_root); it->isValid(); it->next())
+        if (IDataPartStorage::Projection::owner(detached_root, it->name()) == dir_name)
+            siblings.push_back(it->name());
+
+    for (const auto & name : siblings)
+    {
+        LOG_DEBUG(log, "Dropping projection sibling {} of detached part {}, keep shared data: {}", name, dir_name, keep_shared);
+        disk->removeSharedRecursive(detached_root / name / "", keep_shared, {});
+    }
 }
 
 PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, ContextPtr local_context)
@@ -13371,6 +13513,25 @@ MergeTreeSettingsPtr MergeTreeData::getSettings(const SettingsChanges * settings
     }
 
     return data_settings;
+}
+
+IDataPartStorage::ProjectionStorageFormat MergeTreeData::getProjectionStorageFormat() const
+{
+    if ((*getSettings())[MergeTreeSetting::projection_storage_format] == ProjectionStorageFormat::FLAT)
+    {
+        /// Every operation that can produce FLAT on-disk state consults the format here, so latching at this
+        /// choke point makes the ever-used flag cover all in-process FLAT activity, including activity that
+        /// precedes a `flat -> legacy_nested` switch of the setting.
+        latchFlatProjectionStorageEverUsed();
+        return IDataPartStorage::ProjectionStorageFormat::FLAT;
+    }
+    return IDataPartStorage::ProjectionStorageFormat::LEGACY_NESTED;
+}
+
+bool MergeTreeData::flatProjectionStorageEverUsed() const
+{
+    return getProjectionStorageFormat() == IDataPartStorage::ProjectionStorageFormat::FLAT
+        || flat_projection_storage_ever_used.load(std::memory_order_relaxed);
 }
 
 StorageMetadataHandle MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const

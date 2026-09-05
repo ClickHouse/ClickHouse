@@ -1201,7 +1201,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     MergeTreeData::reserveSpace(expected_size, parent_part->getDataPartStorage());
     part_type = data.choosePartFormat(expected_size, block.rows(), parent_part->info.level, &projection).part_type;
 
-    auto new_data_part = parent_part->getProjectionPartBuilder(part_name, &projection, PartDirIntent::CreateFresh, is_temp).withPartType(part_type).build();
+    /// createProjection sweeps any stale same-named leftover and registers the dir; only its descriptor
+    /// unlocks a writable projection storage, so a packed reader can never seed from stale contents.
+    auto placement = parent_part->getDataPartStorage().createProjection(IDataPartStorage::Projection::dirName(part_name, is_temp), data.getProjectionStorageFormat());
+
+    auto new_data_part = parent_part->getProjectionPartBuilderForWrite(placement, &projection).withPartType(part_type).build();
     auto projection_part_storage = new_data_part->getDataPartStoragePtr();
     auto data_settings = data.getSettings(&projection.settings_changes);
 
@@ -1226,8 +1230,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     infos.add(block);
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
-
-    projection_part_storage->createDirectories();
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())

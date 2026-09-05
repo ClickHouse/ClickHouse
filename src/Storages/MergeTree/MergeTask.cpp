@@ -613,8 +613,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         std::optional<MergeTreeDataPartBuilder> builder;
         if (global_ctx->parent_part)
         {
-            /// Non-initializing, so nothing is seeded from an existing directory.
-            auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjectionNoInitialize(local_tmp_part_basename,  /* use parent transaction */ false);
+            /// createProjection sweeps any stale same-named leftover, so nothing is seeded from an
+            /// existing directory.
+            auto & parent_storage = global_ctx->parent_part->getDataPartStorage();
+            auto placement = parent_storage.createProjection(local_tmp_part_basename, global_ctx->data->getProjectionStorageFormat());
+            auto data_part_storage = parent_storage.getProjectionStorageForWrite(placement, /*use_parent_transaction=*/ false);
             builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage, getReadSettings(), PartDirIntent::CreateFresh);
             builder->withParentPart(global_ctx->parent_part);
         }
@@ -632,10 +635,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
     auto data_part_storage = global_ctx->new_data_part->getDataPartStoragePtr();
 
-    /// Top-level merges are covered by the claim above. A projection merge writes into a directory this
-    /// same operation just created, so finding one means a logic bug.
-    if (global_ctx->parent_part && data_part_storage->exists())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection merge directory {} already exists", data_part_storage->getFullPath());
+    /// Top-level merges are covered by the claim above. A projection merge writes into a directory
+    /// createProjection above just made (sweeping any stale leftover), so it legitimately exists by now.
 
     data_part_storage->beginTransaction();
 
@@ -2311,7 +2312,7 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
             projection,
             global_ctx->new_data_part.get(),
             projection->with_parent_part_offset ? global_ctx->merged_part_offsets : nullptr,
-            ".proj",
+            IDataPartStorage::Projection::ext(),
             NO_TRANSACTION_PTR,
             global_ctx->data,
             global_ctx->mutator,
