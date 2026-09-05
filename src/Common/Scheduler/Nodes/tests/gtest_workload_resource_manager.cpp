@@ -3714,6 +3714,23 @@ TEST(SchedulerWorkloadResourceManager, ConfigLoadValidatesWorkloadSettings)
         EXPECT_NO_THROW(
             t.storage.loadFromString("CREATE WORKLOAD all SETTINGS some_future_setting = 5"));
     }
+    {
+        ResourceTest t;
+        // A `FOR <resource>` clause must target an existing RESOURCE, not a workload (parity with
+        // storeEntity's forEachReference check).
+        EXPECT_THROW(
+            t.storage.loadFromString(
+                "CREATE WORKLOAD all;\n"
+                "CREATE WORKLOAD bad IN all SETTINGS scheduler = 'fair' FOR all"),
+            DB::Exception);
+    }
+    {
+        ResourceTest t;
+        // A `FOR <resource>` clause targeting a missing entity is rejected.
+        EXPECT_THROW(
+            t.storage.loadFromString("CREATE WORKLOAD all SETTINGS scheduler = 'fair' FOR missing_resource"),
+            DB::Exception);
+    }
 }
 
 // Unit-test coverage for the lazy-allocation path in CPULeaseAllocation

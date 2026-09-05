@@ -801,6 +801,20 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
             {
                 if (!setting_change.resource.empty() && validated_resources.insert(setting_change.resource).second)
                 {
+                    // A `... FOR <resource>` clause must reference an existing resource (not a
+                    // workload, not a missing entity) — the same contract storeEntity enforces via
+                    // forEachReference. validateSchedulerResourceTargets() below only checks the
+                    // referenced resource's unit and silently skips a missing or non-resource target,
+                    // so the existence/type check has to happen here too.
+                    auto ref = merged_new_entities.find(setting_change.resource);
+                    if (ref == merged_new_entities.end())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Workload entity '{}' references another workload entity '{}' that doesn't exist",
+                            workload->getWorkloadName(), setting_change.resource);
+                    if (typeid_cast<ASTCreateResourceQuery *>(ref->second.get()) == nullptr)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Workload settings should reference resource in FOR clause, not '{}'.",
+                            setting_change.resource);
                     WorkloadSettings resource_validator;
                     resource_validator.initFromChanges(workload->changes, setting_change.resource, /*throw_on_unknown_setting=*/false);
                 }
