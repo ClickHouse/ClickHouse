@@ -2440,7 +2440,7 @@ bool Aggregator::executeOnBlock(Columns columns,
             {
                 if (adaptive->isLearning())
                     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureStandDowns);
-                adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::TooFewDistinctKeys);
+                adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::MemoryPressure);
             }
 
             if (!adaptive->isBaseline())

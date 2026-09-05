@@ -36,6 +36,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event ExternalAggregationMerge;
+    extern const Event AdaptiveAggregationPressureStandDowns;
 }
 
 namespace DB
@@ -1298,7 +1299,6 @@ ProcessorMemoryStats AggregatingTransform::getMemoryStats() const
         return {};
     if (!variants.isTwoLevel() && !variants.isConvertibleToTwoLevel())
         return {};
-
     ProcessorMemoryStats res;
     res.spillable_memory_bytes = variants.memoryUsage();
     res.need_reserved_memory_bytes = variants.isTwoLevel() ? /* negligible */ 0 : res.spillable_memory_bytes;
@@ -1309,6 +1309,15 @@ size_t AggregatingTransform::spill(size_t /*at_least_bytes*/)
 {
     if (!getMemoryStats().spillable_memory_bytes)
         return 0;
+
+    /// Only the baseline path flushes: a learning or frozen table leaves the adaptive path for good,
+    /// the records it staged so far stay published and are drained by the merge (same as the thaw).
+    if (adaptive_context && !adaptive_context->isBaseline())
+    {
+        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureStandDowns);
+        adaptive_context->standDown(AdaptiveAggregationProducer::BaselineState::Reason::MemoryPressure);
+    }
+
     return params->aggregator.spill(variants);
 }
 

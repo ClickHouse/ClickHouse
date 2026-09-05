@@ -430,6 +430,8 @@ struct AdaptiveAggregationProducer
             /// The global thaw: the session-wide staged-key sample proved the whole stream
             /// repeat-dominated (see `publishDelayedRecords`).
             RepeatedStagedKeys,
+            /// The local table has to be flushed to disk, which only the baseline path can do.
+            MemoryPressure,
         };
         Reason reason;
     };

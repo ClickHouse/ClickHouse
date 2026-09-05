@@ -17,6 +17,7 @@ function cleanup()
 trap cleanup EXIT
 
 # The per-operator thresholds are disabled, so the only spill trigger is the workload soft limit.
+# The adaptive aggregation stays enabled: its tables must leave the adaptive path to be flushed.
 settings=(
   --workload "$workload"
   --max_bytes_before_external_group_by 0
@@ -24,15 +25,16 @@ settings=(
   --max_threads 4
   --log_comment "$CLICKHOUSE_TEST_UNIQUE_NAME"
 )
-$CLICKHOUSE_CLIENT -nm "${settings[@]}" -q "
+$CLICKHOUSE_CLIENT --enable_adaptive_aggregator 1 -nm "${settings[@]}" -q "
 CREATE OR REPLACE RESOURCE memory (MEMORY RESERVATION);
 CREATE OR REPLACE WORKLOAD $workload IN $parent_workload SETTINGS max_memory = '4Gi', max_memory_before_spill = '200Mi';
-SELECT count(), sum(c) FROM (SELECT number AS k, count() AS c FROM numbers_mt(20e6) GROUP BY k);
+SELECT count(), sum(c) FROM (SELECT number AS k, count() AS c FROM numbers_mt(20e6) GROUP BY k) SETTINGS enable_adaptive_aggregator=1;
+SELECT count(), sum(c) FROM (SELECT number AS k, count() AS c FROM numbers_mt(20e6) GROUP BY k) SETTINGS enable_adaptive_aggregator=0;
 "
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
-SELECT ProfileEvents['MemoryReservationSpilledBytes'] > 0
+SELECT ProfileEvents['MemoryReservationSpilledBytes'] > 0, ProfileEvents['AdaptiveAggregationPressureStandDowns'] > 0, Settings['enable_adaptive_aggregator']
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND event_date >= yesterday()
