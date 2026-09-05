@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 
 #include <fmt/format.h>
@@ -1559,6 +1560,7 @@ TEST(PromQLParser, DurationUnitOrder)
              {"up[1m1d]", 6},
              {"up[1h2h]", 6},
              {"up offset 1ms1s", 14},
+             {"up offset (   1m2h )", 17},
          })
     {
         PrometheusQueryTree query_tree;
@@ -1571,6 +1573,47 @@ TEST(PromQLParser, DurationUnitOrder)
 
     EXPECT_NO_THROW(PrometheusQueryTree{"up[1y2w3d4h5m6s7ms]"});
     EXPECT_NO_THROW(PrometheusQueryTree{"up[1d2h5ms]"});
+}
+
+
+TEST(PromQLParser, GenericDurationParsingRemainsStrict)
+{
+    PrometheusQueryParsingUtil::DurationType result;
+    EXPECT_FALSE(PrometheusQueryParsingUtil::tryParseDuration("(30m)", 3, result));
+    EXPECT_TRUE(PrometheusQueryParsingUtil::tryParseDuration("30m", 3, result));
+}
+
+
+TEST(PromQLParser, ParenthesizedDurations)
+{
+    for (const auto & [query, expected] : std::initializer_list<std::pair<std::string_view, std::string_view>>{
+             {"up[(5m)]", "up[300]"},
+             {"up[( 5m )]", "up[300]"},
+             {"up[(5m):(1m)]", "up[300:60]"},
+             {"up[5m:(1m)]", "up[300:60]"},
+             {"up[(5m):1m]", "up[300:60]"},
+             {"up offset (5m)", "up offset 300"},
+             {"up offset (-5m)", "up offset -300"},
+             {"up offset ( -5m )", "up offset -300"},
+             {"up offset -(5m)", "up offset -300"},
+             {"up offset +(5m)", "up offset 300"},
+         })
+    {
+        EXPECT_EQ(PrometheusQueryTree{query}.toString(), expected) << query;
+    }
+}
+
+
+TEST(PromQLParser, ParenthesizedDurationExpressionsRemainUnsupported)
+{
+    for (const auto * const query : {"up[(5m * 2)]", "up offset (5m * 2)"})
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_FALSE(error_message.empty()) << query;
+    }
 }
 
 

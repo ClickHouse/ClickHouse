@@ -51,6 +51,7 @@ struct PrometheusQueryParsingUtil
     /// Parses a timestamp which can be either an integer or floating-point number of seconds,
     /// or a hexadecimal number of seconds, or a duration with time units.
     /// Also underscores (_) can be used in between decimal or hexadecimal digits and they don't mean anything.
+    /// Parenthesized duration literals are handled by the PromQL parser and are not accepted here.
     static bool tryParseDuration(std::string_view input,
                                  UInt32 timestamp_scale,
                                  DurationType & res_duration,
