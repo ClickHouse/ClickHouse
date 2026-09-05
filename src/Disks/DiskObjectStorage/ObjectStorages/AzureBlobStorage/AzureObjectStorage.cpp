@@ -640,7 +640,6 @@ void AzureObjectStorage::copyObject( /// NOLINT
         client_ptr,
         connection_params.getContainer(),
         object_from.remote_path,
-        0,
         object_metadata.size_bytes,
         connection_params.getContainer(),
         object_to.remote_path,
