@@ -12110,7 +12110,8 @@ void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & rest
             RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
     }
 
-    restorePartsFromBackup(restorer, data_path_in_backup, partitions);
+    /// `leader_election` is rejected for replicated tables, so the epoch is always 0 here.
+    restorePartsFromBackup(restorer, data_path_in_backup, partitions, currentLeadershipEpoch());
 }
 
 void StorageReplicatedMergeTree::attachRestoredParts(

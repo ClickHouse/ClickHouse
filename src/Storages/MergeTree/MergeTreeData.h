@@ -1354,8 +1354,14 @@ public:
         ContextPtr context,
         TableLockHolder & table_lock_holder);
 
-    /// Extract data from the backup and put it to the storage.
-    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    /// Extract data from the backup and put it to the storage. `admission_epoch` is the leadership
+    /// epoch (see `currentLeadershipEpoch`) the caller sampled together with its admission check,
+    /// BEFORE this method reads any backup metadata: every later stage of the restore - the
+    /// non-empty-table check, each part copy, the detaching of broken parts and the final publish -
+    /// is fenced to it, so a lease lost and reacquired at any point after admission fails closed
+    /// instead of restoring into a table an interim leader may have changed meanwhile. The
+    /// `restoreDataFromBackup` override of each concrete storage samples it; nothing here does.
+    void restoreDataFromBackupAtEpoch(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions, UInt64 admission_epoch);
 
     /// Returns true if the storage supports backup/restore for specific partitions.
     bool supportsBackupPartition() const override { return true; }
@@ -2217,8 +2223,10 @@ protected:
 
     class RestoredPartsHolder;
 
-    /// Restores the parts of this table from backup.
-    void restorePartsFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
+    /// Restores the parts of this table from backup. `admission_epoch` is carried into
+    /// `RestoredPartsHolder` and fences every restore task and the final publish; see
+    /// `restoreDataFromBackupAtEpoch`.
+    void restorePartsFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions, UInt64 admission_epoch);
     void restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> restored_parts_holder, const MergeTreePartInfo & part_info, const String & part_path_in_backup, bool detach_if_broken) const;
     MutableDataPartPtr loadPartRestoredFromBackup(
         const String & part_name,

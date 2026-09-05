@@ -4900,14 +4900,25 @@ BackupEntries StorageMergeTree::backupMutations(UInt64 version, const String & d
 
 void StorageMergeTree::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
+    /// Capture the leadership epoch BEFORE the admission gate, like `write` does: sampled after
+    /// the gate, a `RESTORE` admitted under one lease that survives a lose-and-reacquire window
+    /// and only then samples the epoch would inherit the new epoch without ever passing the new
+    /// epoch's writable-leader check. Captured first, any leadership change after the gate makes
+    /// every later fence of the restore fail closed.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
+
     /// Fail closed at admission: `restorePartFromBackup` streams every file of the backup into
     /// `tmp_restore_<part>-…` directories under the table's data path — which is the SHARED
-    /// object storage prefix under `leader_election` — and only `attachRestoredParts` below is
-    /// fenced. Without this check a follower could write the whole backup into another node's
-    /// shared prefix and be rejected only at the final publish.
+    /// object storage prefix under `leader_election` — long before `attachRestoredParts`
+    /// publishes anything. Without this check a follower could write the whole backup into
+    /// another node's shared prefix and be rejected only at the final publish.
     assertNotReadonly();
 
-    MergeTreeData::restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+    /// The epoch is fixed here and threaded through every stage (`RestoredPartsHolder`): the
+    /// backup metadata reads and the non-empty-table check in `restoreDataFromBackupAtEpoch`
+    /// run after admission, so a lease lost and reacquired during them must be rejected too —
+    /// an interim leader may have written into this table in that window.
+    restoreDataFromBackupAtEpoch(restorer, data_path_in_backup, partitions, admission_epoch);
 }
 
 void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> &, UInt64 admission_epoch)

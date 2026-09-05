@@ -463,6 +463,10 @@ namespace FailPoints
     /// newer epoch) after a restored part was copied, right before the `RESTORE` renames it into
     /// the shared `detached/` namespace as `broken-from-backup_*`.
     extern const char merge_tree_leader_election_stale_lease_before_restore_detach_broken[];
+    /// Pauses a `RESTORE` right after its admission (and the capture of the admission epoch by the
+    /// storage's `restoreDataFromBackup`), before the first read of the backup's metadata, so a
+    /// test can lose and reacquire the lease in exactly the window the epoch fence has to cover.
+    extern const char merge_tree_leader_election_pause_after_restore_admission[];
 
     /// Makes the load of a part restored from a backup fail with a non-retryable error, so the
     /// `restore_broken_parts_as_detached = 1` branch is taken without needing a corrupted backup.
@@ -9460,8 +9464,13 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
     return res;
 }
 
-void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+void MergeTreeData::restoreDataFromBackupAtEpoch(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions, UInt64 admission_epoch)
 {
+    /// Test hook: hold the restore between its admission and the first backup metadata read.
+    /// Under `leader_election` the epoch has already been captured at this point, so a lease lost
+    /// and reacquired while paused here must make every later stage of the restore fail closed.
+    FailPointInjection::pauseFailPoint(FailPoints::merge_tree_leader_election_pause_after_restore_admission);
+
     auto backup = restorer.getBackup();
     if (!backup->hasFiles(data_path_in_backup))
         return;
@@ -9478,7 +9487,7 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     if (!restorer.isNonEmptyTableAllowed() && getTotalActiveSizeInBytes() && backup->hasFiles(data_path_in_backup))
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
-    restorePartsFromBackup(restorer, data_path_in_backup, partitions);
+    restorePartsFromBackup(restorer, data_path_in_backup, partitions, admission_epoch);
 }
 
 class MergeTreeData::RestoredPartsHolder
@@ -9565,7 +9574,7 @@ private:
     mutable std::mutex mutex;
 };
 
-void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions, UInt64 admission_epoch)
 {
     std::optional<std::unordered_set<String>> partition_ids;
     if (partitions)
@@ -9578,11 +9587,13 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
     bool restore_broken_parts_as_detached = restorer.getRestoreSettings().restore_broken_parts_as_detached;
 
     /// Under `leader_election` the whole restore — every part copy and the final publish — is
-    /// fenced to the leadership epoch that admitted the command: a lease lost during the restore
-    /// must fail closed even if this node reacquires leadership meanwhile, because the interim
-    /// leader may have written its own data the restored parts were never reconciled with.
-    const UInt64 admission_epoch = currentLeadershipEpoch();
-
+    /// fenced to `admission_epoch`, the leadership epoch the storage sampled together with the
+    /// admission check of the command, before any backup metadata was read (see
+    /// `restoreDataFromBackupAtEpoch`): a lease lost after admission must fail closed even if this
+    /// node reacquires leadership meanwhile, because the interim leader may have written its own
+    /// data the restored parts — and the non-empty-table check above — were never reconciled with.
+    /// Sampling the epoch here instead would let a lose-and-reacquire in that earlier window go
+    /// unnoticed.
     auto restored_parts_holder = std::make_shared<RestoredPartsHolder>(
         std::static_pointer_cast<MergeTreeData>(shared_from_this()), backup, restorer.getZooKeeperRetriesInfo(), admission_epoch);
 
