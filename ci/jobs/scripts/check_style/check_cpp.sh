@@ -14,7 +14,7 @@
 
 LC_ALL="en_US.UTF-8"
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h|utils/wasm-parser/shim/'
+EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h|src/Storages/System/StorageSystemChangelog\.generated\.cpp|utils/wasm-parser/shim/'
 # Heuristic style checks must skip the verbatim Markdown documentation embedded into
 # the format source files as R"DOCS_MD( ... )DOCS_MD" raw-string literals (literal tabs
 # in TabSeparated/TSV examples, Pretty result tables indented by one to three spaces,
@@ -51,6 +51,7 @@ rg $@ -n --glob '*.h' --glob '*.cpp' \
     --glob '!**/AvroSchema.h' \
     --glob '!**/*Settings.cpp' --glob '!**/FormatFactorySettings.h' \
     --glob '!**/StorageSystemDashboards.cpp' \
+    --glob '!**/StorageSystemChangelog.generated.cpp' \
     --glob '!**/wasm-parser/shim/**' \
     '((\b(class|struct|namespace|enum|if|for|while|else|throw|switch)\b.*|\)(\s*const)?(\s*noexcept)?(\s*override)?\s*))\{$|^ {1,3}[^\* ]\S|^\s*\b(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\b\(|\( [^\s\\]|\S \)' \
     $ROOT_PATH/{src,base,programs,utils} |
@@ -389,13 +390,15 @@ xargs < "$STYLE_TMPDIR/nobase_all" rg --line-number '(dynamic|typeid)_cast<[^>]+
 # 12b: Punctuation, std::regex, and Cyrillic checks on nobase_all
 {
 # Check for bad punctuation: whitespace before comma.
-xargs < "$STYLE_TMPDIR/nobase_all" rg -H --line-number '\w ,' | grep -v 'bad punctuation is ok here' | $FILTER_DOCS && echo "^ There is bad punctuation: whitespace before comma. You should write it like this: 'Hello, world!'"
+grep -v StorageSystemChangelog.generated.cpp "$STYLE_TMPDIR/nobase_all" | \
+    xargs rg -H --line-number '\w ,' | grep -v 'bad punctuation is ok here' | $FILTER_DOCS && echo "^ There is bad punctuation: whitespace before comma. You should write it like this: 'Hello, world!'"
 
 # Check usage of std::regex which is too bloated and slow.
-xargs < "$STYLE_TMPDIR/nobase_all" grep -F --line-number 'std::regex' | grep . && echo "^ Please use re2 instead of std::regex"
+grep -v StorageSystemChangelog.generated.cpp "$STYLE_TMPDIR/nobase_all" | \
+    xargs grep -F --line-number 'std::regex' | grep . && echo "^ Please use re2 instead of std::regex"
 
 # Cyrillic characters hiding inside Latin.
-grep -v StorageSystemContributors.generated.cpp "$STYLE_TMPDIR/nobase_all" | \
+grep -v -e StorageSystemContributors.generated.cpp -e StorageSystemChangelog.generated.cpp "$STYLE_TMPDIR/nobase_all" | \
     xargs rg --line-number '[a-zA-Z][а-яА-ЯёЁ]|[а-яА-ЯёЁ][a-zA-Z]' && echo "^ Cyrillic characters found in unexpected place."
 } > "$O.12b" 2>&1 &
 
