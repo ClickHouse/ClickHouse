@@ -5,6 +5,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Interpreters/Context_fwd.h>
+#include <Storages/MergeTree/StreamBaseManifest.h>
 
 namespace DB
 {
@@ -154,6 +155,10 @@ struct MergeTreeWriterSettings
     /// per-column `MergedColumnOnlyOutputStream`, which shares the horizontal
     /// `MergedBlockOutputStream`'s archive.
     PackedFilesWriter * external_packed_skip_indices_writer = nullptr;
+    /// Shared by every producer writing into one part directory, so that a column stream and a
+    /// skip index substream cannot claim the same base name (and hence the same marks file).
+    /// Null means no coordination is requested.
+    StreamBaseManifestPtr stream_base_manifest;
     bool use_adaptive_write_buffer_for_dynamic_subcolumns{};
     size_t min_columns_to_activate_adaptive_write_buffer{};
     size_t adaptive_write_buffer_initial_size{};

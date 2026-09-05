@@ -3,6 +3,7 @@
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Storages/MergeTree/StreamBaseManifest.h>
 
 namespace DB
 {
@@ -29,6 +30,12 @@ struct SizeAdaptivePacking
     String data_name;
     String marks_name;
     size_t spill_threshold = 0;
+    /// Claims @on_disk_base on an actual spill, i.e. the directory entry the spill creates. The
+    /// archive key is claimed by the caller instead, since the two names differ under
+    /// `replace_long_file_name_to_hash`.
+    StreamBaseManifestPtr stream_base_manifest;
+    String on_disk_base;
+    String owner_index_name;
 };
 
 /// Helper class, which holds chain of buffers to write data file with marks.

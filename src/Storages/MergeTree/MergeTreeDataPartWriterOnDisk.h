@@ -174,6 +174,10 @@ protected:
 
     bool streams_initialized = false;
 
+    /// Cleared before the finalize path initializes streams: that path runs only when no block was
+    /// ever written, and such a part has no marks for a column to share with a skip index.
+    bool claim_column_stream_bases = true;
+
     /// List of substreams for each column in order of serialization.
     ColumnsSubstreams columns_substreams;
 

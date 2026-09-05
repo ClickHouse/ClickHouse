@@ -1,0 +1,31 @@
+plain	0
+packed-hashed-legal	10	45
+minimality-pin	10	45
+compact-legal	10	45
+t_vert_merge	1	0
+t_vert_merge-check	20	90
+escape-drop-index	20	90	1
+1
+text-legal	20	1
+1
+projection-cross-directory-legal	10
+1
+t_carry	1
+empty-part-legal	5
+ttl-merge-legal	0
+ttl-merge-vertical-legal	0
+empty-mutation-legal	0	0
+t_carry_copy	1
+t_carry_full	1
+t_rename	1
+rename-legal	10	45
+mutation-legal	10	50
+1
+mutation-legal-copy	10	50
+1
+projection-carry-legal	10	50
+1
+statistics-drop-legal	10	45
+1
+nested-multi-rename-legal	10	10	30
+t_carry_col	1

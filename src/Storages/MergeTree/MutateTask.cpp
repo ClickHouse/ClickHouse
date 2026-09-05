@@ -1361,6 +1361,73 @@ static NameSet collectFilesToSkip(
     return files_to_skip;
 }
 
+/// Claim the root-directory stream bases of one index whose files the mutation carries over
+/// (hardlink, copy or rename) instead of rewriting them. Called before any bytes move, so it is
+/// agnostic to how they move.
+static void registerCarriedSkipIndexBases(
+    const StreamBaseManifestPtr & manifest,
+    const MergeTreeIndexPtr & index,
+    const MergeTreeData::DataPartPtr & source_part)
+{
+    if (!manifest)
+        return;
+
+    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&source_part->getDataPartStorage());
+    const String index_file_name = index->getFileName();
+
+    for (const auto & substream : index->getAllSubstreamsInPart(
+             source_part->checksums, index_file_name, &source_part->getDataPartStorage()))
+    {
+        const String stream_name = index_file_name + substream.suffix;
+
+        /// A substream with no checksums entry is either a packed member, claimed under the archive
+        /// key a read resolves, or a standalone orphan this mutation deliberately drops. Claiming an
+        /// orphan would reject its own cleanup mutation.
+        if (auto resolved
+            = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, source_part->checksums))
+            manifest->registerStreamBase(*resolved, {StreamBaseManifest::Kind::SkipIndex, index->index.name});
+        else if (disk_storage && disk_storage->isFileInPackedSkipIndicesArchive(stream_name + substream.extension))
+            manifest->registerStreamBase(stream_name, {StreamBaseManifest::Kind::SkipIndex, index->index.name});
+    }
+}
+
+/// Claim the stream bases of the columns a some-columns mutation carries over (hardlink or copy)
+/// instead of rewriting. The writer only sees the updated columns, so a recalculated index landing
+/// on a carried column's base would otherwise share its marks file with nothing detecting it.
+static void registerCarriedColumnBases(
+    const StreamBaseManifestPtr & manifest,
+    const MergeTreeData::DataPartPtr & source_part,
+    const MergeTreeData::DataPartPtr & new_part,
+    const Block & updated_header,
+    const NameSet & files_to_skip,
+    const NameToNameVector & files_to_rename)
+{
+    if (!manifest || !isWidePart(source_part))
+        return;
+
+    for (const auto & column : new_part->getColumns())
+    {
+        if (updated_header.has(column.name))
+            continue;
+
+        for (const auto & [stream_name, _] : getStreamCounts(new_part, source_part->checksums, Names{column.name}))
+        {
+            const String data_file = stream_name + ".bin";
+            const bool renamed = std::any_of(
+                files_to_rename.begin(),
+                files_to_rename.end(),
+                [&data_file](const auto & pair) { return pair.first == data_file; });
+
+            /// A skipped or renamed file is not carried, so its base is free in the new part; the
+            /// rename site claims the destination with the typed knowledge this loop lacks.
+            if (files_to_skip.contains(data_file) || renamed)
+                continue;
+
+            manifest->registerStreamBase(stream_name, {StreamBaseManifest::Kind::Column, column.name});
+        }
+    }
+}
+
 /// Apply commands to source_part i.e. remove and rename some columns in
 /// source_part and return set of files, that have to be removed or renamed
 /// from filesystem and in-memory checksums. Ordered result is important,
@@ -1371,7 +1438,8 @@ static NameToNameVector collectFilesForRenames(
     MergeTreeData::DataPartPtr new_part,
     const MutationCommands & commands_for_renames,
     const NameSet & updated_columns_in_patches,
-    const String & mrk_extension)
+    const String & mrk_extension,
+    const StreamBaseManifestPtr & stream_base_manifest)
 {
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     auto stream_counts = getStreamCounts(source_part, source_part->checksums, source_part->getColumns().getNames());
@@ -1509,6 +1577,12 @@ static NameToNameVector collectFilesForRenames(
                         String stream_to = replaceFileNameToHashIfNeeded(
                             renamed, *storage_settings, &new_part->getDataPartStorage());
 
+                        /// Claimed here, where the destination name is known with full typed knowledge:
+                        /// `files_to_rename` is an untyped from -> to map that also carries drops.
+                        if (stream_base_manifest)
+                            stream_base_manifest->registerStreamBase(
+                                stream_to, {StreamBaseManifest::Kind::Column, command.rename_to});
+
                         if (*stream_from != stream_to)
                         {
                             add_rename(*stream_from + ".bin", stream_to + ".bin");
@@ -1536,6 +1610,12 @@ static NameToNameVector collectFilesForRenames(
                             return;
 
                         String stream_to = replaceFileNameToHashIfNeeded(full_stream_to, *storage_settings, &new_part->getDataPartStorage());
+
+                        /// Claimed here, where the destination name is known with full typed knowledge:
+                        /// `files_to_rename` is an untyped from -> to map that also carries drops.
+                        if (stream_base_manifest)
+                            stream_base_manifest->registerStreamBase(
+                                stream_to, {StreamBaseManifest::Kind::Column, command.rename_to});
 
                         if (*stream_from != stream_to)
                         {
@@ -1907,6 +1987,9 @@ struct MutationContext
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<MergeTreeIndexPtr> text_indices_to_recalc;
     std::set<MergeTreeIndexPtr> indices_to_drop;
+    /// One per mutation, i.e. per root part directory: shared by the writer(s), the carried-index
+    /// registration and MergeTextIndexesTask. Projections get their own instances.
+    StreamBaseManifestPtr stream_base_manifest{std::make_shared<StreamBaseManifest>()};
     /// True iff at least one index that currently lives inside the source part's skp_idx.packed
     /// is being recomputed or dropped. When set, the mutation rebuilds the archive (writer side)
     /// and stops hardlinking the source's archive (see collectFilesToSkip).
@@ -2650,6 +2733,10 @@ private:
             }
             else
             {
+                /// This index survives the rewrite, so its existing bases stay occupied.
+                MutationHelpers::registerCarriedSkipIndexBases(
+                    ctx->stream_base_manifest, index_ptr, ctx->source_part);
+
                 /// Hardlink the source index files and copy their checksum entries explicitly (the
                 /// writer does not rewrite them, else `CHECK TABLE` fails). Walk what the source
                 /// actually holds so an upgraded legacy part keeps its data file, and
@@ -2851,7 +2938,8 @@ private:
             /*blocks_are_granules_size=*/ false,
             ctx->context->getWriteSettings(),
             static_cast<WrittenOffsetSubstreams *>(nullptr),
-            /*try_adaptive_codec=*/ !is_explicit_recompression);
+            /*try_adaptive_codec=*/ !is_explicit_recompression,
+            ctx->stream_base_manifest);
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -3216,7 +3304,9 @@ private:
                 ctx->source_part->index_granularity,
                 ctx->source_part->getBytesUncompressedOnDisk(),
                 static_cast<WrittenOffsetSubstreams *>(nullptr),
-                /*try_adaptive_codec=*/ !is_explicit_recompression);
+                /*try_adaptive_codec=*/ !is_explicit_recompression,
+                /*external_packed_skip_indices_writer=*/ nullptr,
+                ctx->stream_base_manifest);
 
             /// Carry surviving in-archive entries that aren't being recomputed into the writer's
             /// PackedFilesWriter before any block lands. Without this, the new archive would
@@ -3897,6 +3987,12 @@ bool MutateTask::prepare()
 
     ctx->num_mutations = std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::PartMutation);
 
+    /// A mutation never adds rows, so an empty source part yields an empty one with no marks to
+    /// share. A null manifest disables every claim site of this mutation at once, including the
+    /// ones that run before the writer.
+    if (ctx->source_part->isEmpty())
+        ctx->stream_base_manifest = nullptr;
+
     auto max_partition_blocks = std::make_shared<PartitionIdToMaxBlock>();
     max_partition_blocks->emplace(ctx->future_part->part_info.getPartitionId(), ctx->future_part->part_info.getMutationVersion());
 
@@ -4232,6 +4328,27 @@ bool MutateTask::prepare()
         auto all_indices_to_recalc = ctx->indices_to_recalc;
         all_indices_to_recalc.insert(ctx->text_indices_to_recalc.begin(), ctx->text_indices_to_recalc.end());
 
+        /// The carried indices are the COMPLEMENT of what collectFilesToSkip excludes: everything
+        /// neither recalculated nor dropped keeps its existing files, so its bases stay occupied.
+        {
+            NameSet rewritten_index_names = ctx->indices_to_drop_names;
+            for (const auto & index : all_indices_to_recalc)
+                rewritten_index_names.insert(index->index.name);
+            for (const auto & index : ctx->indices_to_drop)
+                rewritten_index_names.insert(index->index.name);
+
+            const auto & index_factory = MergeTreeIndexFactory::instance();
+            for (const auto & index : ctx->metadata_snapshot->getSecondaryIndices())
+            {
+                if (rewritten_index_names.contains(index.name))
+                    continue;
+                auto index_ptr = index_factory.get(ctx->metadata_snapshot, index, *ctx->data->getSettings());
+                if (index_ptr->isInert())
+                    continue;
+                MutationHelpers::registerCarriedSkipIndexBases(ctx->stream_base_manifest, index_ptr, ctx->source_part);
+            }
+        }
+
         ctx->files_to_skip = MutationHelpers::collectFilesToSkip(
             ctx->source_part,
             ctx->new_data_part,
@@ -4253,7 +4370,16 @@ bool MutateTask::prepare()
             ctx->new_data_part,
             ctx->for_file_renames,
             updated_columns_in_patches,
-            ctx->mrk_extension);
+            ctx->mrk_extension,
+            ctx->stream_base_manifest);
+
+        MutationHelpers::registerCarriedColumnBases(
+            ctx->stream_base_manifest,
+            ctx->source_part,
+            ctx->new_data_part,
+            ctx->updated_header,
+            ctx->files_to_skip,
+            ctx->files_to_rename);
 
         /// In case of replicated merge tree with zero copy replication
         /// Here ClickHouse has to follow the common procedure when deleting new part in temporary state
