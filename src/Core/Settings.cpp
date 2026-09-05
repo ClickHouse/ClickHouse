@@ -27,6 +27,8 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 
+#include <array>
+#include <bit>
 #include <cstring>
 
 namespace
@@ -9425,7 +9427,7 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     void dumpToMapColumn(IColumn * column, bool changed_only = true);
 
     /// The changed settings as an owning name -> value-string map (same values as dumpToMapColumn).
-    std::map<String, String> changedToMap() const;
+    FlatStringMap changedToFlatMap() const;
 
     /// Check that there is no user-level settings at the top level in config.
     /// This is a common source of mistake (user don't know where to write user-level setting).
@@ -9435,13 +9437,48 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
 
     void set(std::string_view name, const Field & value) override;
 
-    bool hasSettingsChangedByCompatibility() const { return !settings_changed_by_compatibility_setting.empty(); }
+    bool hasSettingsChangedByCompatibility() const { return num_settings_changed_by_compatibility_setting != 0; }
     void resetSettingsChangedByCompatibility();
 
 private:
     void applyCompatibilitySetting(const String & compatibility);
 
-    UnorderedSetWithMemoryTracking<std::string_view> settings_changed_by_compatibility_setting;
+    /// Which settings the compatibility setting changed, as a bitmap over setting indexes. An old
+    /// `compatibility` value marks hundreds of them on every query that sets it, so a hash set of names
+    /// meant a lookup per setting and an allocated node per setting, on top of copying them all whenever
+    /// the settings are copied. The number of settings is known at compile time, so the bitmap lives in
+    /// the settings themselves and never allocates.
+    static constexpr size_t num_setting_bitmap_words
+        = (static_cast<size_t>(SettingsTraits::SettingID_::NUM_SETTINGS) + 63) / 64;
+    std::array<UInt64, num_setting_bitmap_words> settings_changed_by_compatibility_setting = {};
+    size_t num_settings_changed_by_compatibility_setting = 0;
+
+    bool isChangedByCompatibility(size_t index) const
+    {
+        return (settings_changed_by_compatibility_setting[index / 64] & (1ULL << (index % 64))) != 0;
+    }
+
+    void markChangedByCompatibility(size_t index)
+    {
+        UInt64 & word = settings_changed_by_compatibility_setting[index / 64];
+        const UInt64 bit = 1ULL << (index % 64);
+        if (!(word & bit))
+        {
+            word |= bit;
+            ++num_settings_changed_by_compatibility_setting;
+        }
+    }
+
+    void unmarkChangedByCompatibility(size_t index)
+    {
+        UInt64 & word = settings_changed_by_compatibility_setting[index / 64];
+        const UInt64 bit = 1ULL << (index % 64);
+        if (word & bit)
+        {
+            word &= ~bit;
+            --num_settings_changed_by_compatibility_setting;
+        }
+    }
 };
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
@@ -9527,18 +9564,29 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
     offsets.push_back(offsets.back() + size);
 }
 
-std::map<String, String> SettingsImpl::changedToMap() const
+FlatStringMap SettingsImpl::changedToFlatMap() const
 {
-    std::map<String, String> result;
+    FlatStringMap result;
+
+    /// What makes this dump large is an old `compatibility` value, and how many settings that changed
+    /// is already known, so the buffer can be sized up front instead of growing a dozen times. A name
+    /// and its value take 38 bytes on average.
+    const size_t expected_entries = num_settings_changed_by_compatibility_setting + 32;
+    result.reserve(expected_entries, expected_entries * 48);
 
     const auto & accessor = Traits::Accessor::instance();
-    for (size_t i = 0; i < accessor.size(); ++i)
+    const size_t num_settings = accessor.size();
+    for (size_t i = 0; i < num_settings; ++i)
+    {
         if (accessor.isValueChanged(*this, i))
-            result.emplace(accessor.getName(i), accessor.getValueString(*this, i));
+            result.add(accessor.getName(i), accessor.getValueString(*this, i));
+    }
 
     for (const auto & custom : custom_settings_map)
+    {
         if (custom.second.changed)
-            result.emplace(custom.first, custom.second.toString());
+            result.add(custom.first, custom.second.toString());
+    }
 
     return result;
 }
@@ -9591,18 +9639,89 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     /// otherwise the next time we will change compatibility setting
     /// this setting will be changed too (and we don't want it).
     /// Resolve aliases so the lookup matches the canonical names stored in the set.
-    else if (auto final_name = SettingsTraits::resolveName(name); settings_changed_by_compatibility_setting.contains(final_name))
-        settings_changed_by_compatibility_setting.erase(final_name);
+    else if (num_settings_changed_by_compatibility_setting != 0)
+    {
+        const auto & accessor = Traits::Accessor::instance();
+        if (size_t index = accessor.find(SettingsTraits::resolveName(name)); index != static_cast<size_t>(-1))
+            unmarkChangedByCompatibility(index);
+    }
 
     BaseSettings::set(name, value);
 }
 
 void SettingsImpl::resetSettingsChangedByCompatibility()
 {
-    for (const auto & setting_name : settings_changed_by_compatibility_setting)
-        resetToDefault(setting_name);
+    if (num_settings_changed_by_compatibility_setting == 0)
+        return;
 
-    settings_changed_by_compatibility_setting.clear();
+    const auto & accessor = Traits::Accessor::instance();
+    for (size_t word = 0; word < num_setting_bitmap_words; ++word)
+    {
+        UInt64 bits = std::exchange(settings_changed_by_compatibility_setting[word], 0);
+        while (bits)
+        {
+            accessor.resetValueToDefault(*this, word * 64 + std::countr_zero(bits));
+            bits &= bits - 1;
+        }
+    }
+
+    num_settings_changed_by_compatibility_setting = 0;
+}
+
+namespace
+{
+
+/// A change from the settings changes history with its name already resolved to a setting index.
+/// Applying a `compatibility` value walks the whole history - thousands of changes for an old value,
+/// on every query that sets it - so the names are resolved once and the obsolete settings, which the
+/// walk always skips, are left out. `previous_value` points into the history, which is immutable and
+/// lives until the process ends.
+struct ResolvedCompatibilityChange
+{
+    size_t index;
+    const Field * previous_value;
+    /// Whether `previous_value` is what the setting holds when nothing changed it.
+    bool previous_value_is_default;
+};
+
+using ResolvedCompatibilityHistory = std::vector<std::pair<ClickHouseVersion, std::vector<ResolvedCompatibilityChange>>>;
+
+const ResolvedCompatibilityHistory & getResolvedCompatibilityHistory()
+{
+    static const ResolvedCompatibilityHistory resolved_history = []
+    {
+        const auto & accessor = SettingsTraits::Accessor::instance();
+        const SettingsImpl default_settings;
+        ResolvedCompatibilityHistory result;
+        for (const auto & [version, changes] : getSettingsChangesHistory())
+        {
+            std::vector<ResolvedCompatibilityChange> resolved_changes;
+            resolved_changes.reserve(changes.size());
+            for (const auto & change : changes)
+            {
+                /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
+                const size_t index = accessor.find(SettingsTraits::resolveName(change.name));
+                if (index == static_cast<size_t>(-1))
+                    BaseSettingsHelpers::throwSettingNotFound(change.name);
+
+                if (accessor.getTier(index) == SettingsTierType::OBSOLETE)
+                    continue;
+
+                /// `default_settings` holds every setting as it is with nothing changed, which is what
+                /// a setting the walk has not touched yet holds too.
+                const bool previous_value_is_default
+                    = accessor.getValue(default_settings, index) == change.previous_value;
+
+                resolved_changes.push_back({index, &change.previous_value, previous_value_is_default});
+            }
+            result.emplace_back(version, std::move(resolved_changes));
+        }
+        return result;
+    }();
+
+    return resolved_history;
+}
+
 }
 
 void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
@@ -9615,10 +9734,11 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
         return;
 
     ClickHouseVersion version(compatibility_value);
-    const auto & settings_changes_history = getSettingsChangesHistory();
+    const auto & accessor = Traits::Accessor::instance();
+    const auto & resolved_history = getResolvedCompatibilityHistory();
     /// Iterate through ClickHouse version in descending order and apply reversed
     /// changes for each version that is higher that version from compatibility setting
-    for (auto it = settings_changes_history.rbegin(); it != settings_changes_history.rend(); ++it)
+    for (auto it = resolved_history.rbegin(); it != resolved_history.rend(); ++it)
     {
         if (version >= it->first)
             break;
@@ -9626,22 +9746,24 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
         /// Apply reversed changes from this version.
         for (const auto & change : it->second)
         {
-            /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
-            auto final_name = SettingsTraits::resolveName(change.name);
-
-            if (getTier(final_name) == SettingsTierType::OBSOLETE)
-                continue;
+            const bool changed_by_compatibility = isChangedByCompatibility(change.index);
 
             /// If this setting was changed manually, we don't change it
-            if (isChanged(final_name) && !settings_changed_by_compatibility_setting.contains(final_name))
+            if (!changed_by_compatibility && accessor.isValueChanged(*this, change.index))
                 continue;
 
-            /// Don't mark as changed if the value isn't really changed
-            if (get(final_name) == change.previous_value)
+            /// Don't mark as changed if the value isn't really changed. Only a setting a newer change
+            /// already moved has to be read to know that; an untouched one still holds its default, and
+            /// whether that is the previous value is known from the history alone.
+            const bool already_has_previous_value = changed_by_compatibility
+                ? accessor.getValue(*this, change.index) == *change.previous_value
+                : change.previous_value_is_default;
+
+            if (already_has_previous_value)
                 continue;
 
-            BaseSettings::set(final_name, change.previous_value);
-            settings_changed_by_compatibility_setting.insert(final_name);
+            accessor.setValue(*this, change.index, *change.previous_value);
+            markChangedByCompatibility(change.index);
         }
     }
 }
@@ -9882,9 +10004,9 @@ void Settings::dumpToMapColumn(IColumn * column, bool changed_only) const
     impl->dumpToMapColumn(column, changed_only);
 }
 
-std::map<String, String> Settings::changedToMap() const
+FlatStringMap Settings::changedToFlatMap() const
 {
-    return impl->changedToMap();
+    return impl->changedToFlatMap();
 }
 
 void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out)
