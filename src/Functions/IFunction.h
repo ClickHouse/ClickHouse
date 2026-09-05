@@ -211,6 +211,13 @@ public:
       */
     virtual bool isVolumeReducing() const { return false; }
 
+    /** Returns true if the function costs far more than reading its arguments, e.g. one network
+      * request per row. `MergeTreeWhereOptimizer` does not move such a condition to `PREWHERE`,
+      * where it would be evaluated on every row read rather than only on the rows that survive
+      * the cheaper conditions.
+      */
+    virtual bool isExpensive() const { return false; }
+
     /** Returns true if this is a spatial predicate for which bbox-disjoint pruning is safe.
       * Specifically: if the bounding boxes of the geometry arguments are disjoint,
       * the function is guaranteed to return 0/false for all such rows.
@@ -649,6 +656,8 @@ public:
     virtual bool isStateful() const { return false; }
     /// See `IFunctionBase::isVolumeReducing`.
     virtual bool isVolumeReducing() const { return false; }
+    /// See `IFunctionBase::isExpensive`.
+    virtual bool isExpensive() const { return false; }
     virtual bool isSpatialPredicate() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
