@@ -160,6 +160,17 @@ const ActionsDAG * getLambdaBody(const IFunctionBase & function)
     return nullptr;
 }
 
+/// The `ColumnFunction` a `COLUMN` node holds, if it holds one. A lambda that captures nothing but
+/// constants is folded into a constant, and then the lambda exists only as this column value.
+const ColumnFunction * tryGetColumnFunction(const IColumn & column)
+{
+    const IColumn * unwrapped = &column;
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(unwrapped))
+        unwrapped = &column_const->getDataColumn();
+
+    return typeid_cast<const ColumnFunction *>(unwrapped);
+}
+
 /// Whether the subtree rooted at `node` contains a function that can give different results for two
 /// rows with equal inputs. Such a conjunct has to stay in the filter: the join condition is evaluated
 /// once per join input row rather than once per output row, and with `enable_join_runtime_filters`
@@ -168,47 +179,76 @@ const ActionsDAG * getLambdaBody(const IFunctionBase & function)
 /// reason.
 bool subtreeContainsNonDeterministicFunction(const ActionsDAG::Node * node)
 {
-    std::vector<const ActionsDAG::Node *> stack{node};
-    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::vector<const ActionsDAG::Node *> nodes{node};
+    std::unordered_set<const ActionsDAG::Node *> visited_nodes;
 
-    while (!stack.empty())
+    /// The columns captured by a folded lambda are not nodes of any `ActionsDAG`, so they need a
+    /// worklist of their own.
+    std::vector<const IColumn *> columns;
+    std::unordered_set<const IColumn *> visited_columns;
+
+    /// Whether `function` itself is non-deterministic; the nodes of its lambda body, if it has one,
+    /// are queued for the walk.
+    auto is_non_deterministic = [&](const IFunctionBase & function)
     {
-        const auto * current = stack.back();
-        stack.pop_back();
+        if (!function.isDeterministicInScopeOfQuery())
+            return true;
 
-        if (!visited.insert(current).second)
+        if (const auto * body = getLambdaBody(function))
+            for (const auto & inner : body->getNodes())
+                nodes.push_back(&inner);
+
+        return false;
+    };
+
+    while (!nodes.empty() || !columns.empty())
+    {
+        if (!nodes.empty())
+        {
+            const auto * current = nodes.back();
+            nodes.pop_back();
+
+            if (!visited_nodes.insert(current).second)
+                continue;
+
+            if (current->type == ActionsDAG::ActionType::FUNCTION && current->function_base)
+            {
+                if (is_non_deterministic(*current->function_base))
+                    return true;
+            }
+            else if (current->type == ActionsDAG::ActionType::COLUMN && current->column)
+            {
+                /// A lambda that captures nothing takes no arguments, so it is folded into a `COLUMN`
+                /// node holding a `ColumnFunction` and the `FUNCTION` branch above never sees it.
+                columns.push_back(current->column.get());
+            }
+
+            for (const auto * child : current->children)
+                nodes.push_back(child);
+
+            continue;
+        }
+
+        const auto * current = columns.back();
+        columns.pop_back();
+
+        if (!visited_columns.insert(current).second)
             continue;
 
-        const IFunctionBase * function = nullptr;
+        const auto * column_function = tryGetColumnFunction(*current);
+        if (!column_function)
+            continue;
 
-        if (current->type == ActionsDAG::ActionType::FUNCTION)
-        {
-            function = current->function_base.get();
-        }
-        else if (current->type == ActionsDAG::ActionType::COLUMN && current->column)
-        {
-            /// A lambda that captures nothing takes no arguments, so it is folded into a `COLUMN`
-            /// node holding a `ColumnFunction` and the `FUNCTION` branch above never sees it.
-            const IColumn * column = current->column.get();
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
-                column = &column_const->getDataColumn();
+        if (is_non_deterministic(*column_function->getFunction()))
+            return true;
 
-            if (const auto * column_function = typeid_cast<const ColumnFunction *>(column))
-                function = column_function->getFunction().get();
-        }
-
-        if (function)
-        {
-            if (!function->isDeterministicInScopeOfQuery())
-                return true;
-
-            if (const auto * body = getLambdaBody(*function))
-                for (const auto & inner : body->getNodes())
-                    stack.push_back(&inner);
-        }
-
-        for (const auto * child : current->children)
-            stack.push_back(child);
+        /// A lambda that captures nothing is hoisted to the outermost level by the planner, so an
+        /// enclosing lambda *captures* it. When that enclosing lambda is folded into a constant in
+        /// turn, its own child edges are gone from the DAG and the nested lambda is reachable only
+        /// through the captured columns.
+        for (const auto & captured : column_function->getCapturedColumns())
+            if (captured.column)
+                columns.push_back(captured.column.get());
     }
 
     return false;
