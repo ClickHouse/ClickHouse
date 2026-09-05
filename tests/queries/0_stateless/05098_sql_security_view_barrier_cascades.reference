@@ -1,0 +1,6 @@
+v05098_invoker: different plan with and without Cascades
+v05098_invoker result: 999	4498	999
+v05098_definer: same plan with and without Cascades
+v05098_definer result: 999	4498	999
+v05098_none: same plan with and without Cascades
+v05098_none result: 999	4498	999
