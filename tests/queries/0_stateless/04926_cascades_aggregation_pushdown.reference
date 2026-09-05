@@ -1,0 +1,433 @@
+-- 1. huge left side, few distinct keys: partial aggregation is pushed below the LEFT JOIN
+Expression ((Project names + Projection))
+  Aggregating
+    GatherExchange
+      JoinLogical (Broadcast HashJoin )
+        Aggregating
+          Expression (Change column names to column identifiers)
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (ReplicatedRead default.t_push_dims)
+-- 1b. same query under compatibility = 26.8: classic shape (behavioral compatibility contract)
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_push_facts)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_push_dims)
+-- 2. same with INNER JOIN
+Expression ((Project names + Projection))
+  Aggregating
+    JoinLogical (Local HashJoin  swapped)
+      BuildRuntimeFilter (Build runtime join filter on __table2.key)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.t_push_dims)
+      GatherExchange
+        Aggregating
+          Filter
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+-- 2b. negative: non-deterministic join condition function (`rand`) blocks the pushdown, classic shape
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_push_facts)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_push_dims)
+-- 3. near-unique keys: pushdown does not pay off, classic shape
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_push_facts)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_push_dims)
+-- 3a. negative: missing NDV for the pushed join key (cardinality gate), classic shape
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_push_facts)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_push_dims)
+-- 3b. negative: no guaranteed reduction from the composite key NDV (cardinality gate), classic shape
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    Sorting
+      MergingAggregated
+        GatherExchange
+          Aggregating
+            Expression (Before GROUP BY)
+              JoinLogical (Broadcast HashJoin )
+                Expression
+                  ReadFromMergeTree (ParallelRead default.t_push_facts)
+                BuildRuntimeFilter (Build runtime join filter on __table2.key)
+                  Expression (Change column names to column identifiers)
+                    ReadFromMergeTree (ReplicatedRead default.t_push_dims_multi)
+-- 4. disabled by the setting: classic shape
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_push_facts)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_push_dims)
+-- 5a. aggregate with an argument: sum is pushed
+Expression ((Project names + Projection))
+  Aggregating
+    GatherExchange
+      JoinLogical (Broadcast HashJoin )
+        Aggregating
+          Expression (Change column names to column identifiers)
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (ReplicatedRead default.t_push_dims)
+-- 5b. additional GROUP BY key from the right side: still pushed
+Expression ((Project names + Projection))
+  Aggregating
+    JoinLogical (Local HashJoin )
+      GatherExchange
+        Aggregating
+          Expression (Change column names to column identifiers)
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+      Expression (Change column names to column identifiers)
+        ReadFromMergeTree (default.t_push_dims)
+-- 6. execution: count() per key over LEFT JOIN (keys 0-7 match, 8 and 9 do not)
+0	100
+1	100
+2	100
+3	100
+4	100
+5	100
+6	100
+7	100
+8	100
+9	100
+-- 6b. execution: count() per key over INNER JOIN (keys 8 and 9 drop out)
+0	100
+1	100
+2	100
+3	100
+4	100
+5	100
+6	100
+7	100
+-- 7. execution: sum(t1.value) per (t1.key, t2.name) over LEFT JOIN
+0	name_0	49500
+1	name_1	49600
+2	name_2	49700
+3	name_3	49800
+4	name_4	49900
+5	name_5	50000
+6	name_6	50100
+7	name_7	50200
+8		50300
+9		50400
+-- 8. the same executions without the distributed planner must match
+0	100
+1	100
+2	100
+3	100
+4	100
+5	100
+6	100
+7	100
+8	100
+9	100
+0	100
+1	100
+2	100
+3	100
+4	100
+5	100
+6	100
+7	100
+0	name_0	49500
+1	name_1	49600
+2	name_2	49700
+3	name_3	49800
+4	name_4	49900
+5	name_5	50000
+6	name_6	50100
+7	name_7	50200
+8		50300
+9		50400
+-- 9. duplicate right-side keys: each pushed group is duplicated by the join and merged m times
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    Sorting
+      Aggregating
+        JoinLogical (Local HashJoin )
+          GatherExchange
+            Aggregating
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (ParallelRead default.t_push_facts)
+          Expression (Change column names to column identifiers)
+            ReadFromMergeTree (default.t_push_dims_multi)
+0	300	148500
+1	300	148800
+2	300	149100
+3	100	49800
+4	100	49900
+5	100	50000
+6	100	50100
+7	100	50200
+8	100	50300
+9	100	50400
+-- 10. mixed condition (equi + non-equi): the pushed side groups by (key, value)
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    Sorting
+      Aggregating
+        JoinLogical (Local HashJoin  swapped swapped)
+          GatherExchange
+            Aggregating
+              Expression
+                ReadFromMergeTree (ParallelRead default.t_push_facts)
+          BuildRuntimeFilter (Build runtime join filter on __table2.key)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.t_push_dims_multi)
+0	237
+1	240
+2	240
+3	50
+4	50
+5	50
+-- 11. the same executions without the distributed planner must match
+0	300	148500
+1	300	148800
+2	300	149100
+3	100	49800
+4	100	49900
+5	100	50000
+6	100	50100
+7	100	50200
+8	100	50300
+9	100	50400
+0	237
+1	240
+2	240
+3	50
+4	50
+5	50
+-- 12. push-right: RIGHT JOIN with a huge right side
+Expression ((Project names + Projection))
+  Aggregating
+    GatherExchange
+      JoinLogical (Broadcast HashJoin )
+        Aggregating
+          Expression (Change column names to column identifiers)
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (ReplicatedRead default.t_push_dims)
+-- 13. push-right: INNER JOIN, cost pushes the huge right side
+Expression ((Project names + Projection))
+  Aggregating
+    JoinLogical (Local HashJoin  swapped)
+      BuildRuntimeFilter (Build runtime join filter on __table1.key)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.t_push_dims)
+      GatherExchange
+        Aggregating
+          Filter
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+-- 14. variant B: LEFT SEMI with join keys subset of GROUP BY keys, no merge step above the join
+Expression ((Project names + Projection))
+  JoinLogical (Local HashJoin  swapped)
+    BuildRuntimeFilter (Build runtime join filter on __table2.key)
+      Expression (Change column names to column identifiers)
+        ReadFromMergeTree (default.t_push_dims)
+    MergingAggregated
+      GatherExchange
+        Aggregating
+          Filter
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+-- 15. variant B: LEFT ANTI
+Expression ((Project names + Projection))
+  JoinLogical (Local HashJoin  swapped)
+    BuildRuntimeFilter (Build runtime join filter on __table2.key)
+      Expression (Change column names to column identifiers)
+        ReadFromMergeTree (default.t_push_dims)
+    MergingAggregated
+      GatherExchange
+        Aggregating
+          Filter
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+-- 16. variant B: LEFT ANY
+Expression ((Project names + Projection))
+  JoinLogical (Local HashJoin  swapped)
+    Expression (Change column names to column identifiers)
+      ReadFromMergeTree (default.t_push_dims)
+    MergingAggregated
+      GatherExchange
+        Aggregating
+          Expression (Change column names to column identifiers)
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+-- 17. variant B: RIGHT ANY, push-right
+Expression ((Project names + Projection))
+  JoinLogical (Local HashJoin  swapped)
+    Expression (Change column names to column identifiers)
+      ReadFromMergeTree (default.t_push_dims)
+    MergingAggregated
+      GatherExchange
+        Aggregating
+          Expression (Change column names to column identifiers)
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+-- 18. B-dominance negative: a GROUP BY key from the other side falls back to variant A
+Expression ((Project names + Projection))
+  Aggregating
+    JoinLogical (Local HashJoin  swapped)
+      Expression (Change column names to column identifiers)
+        ReadFromMergeTree (default.t_push_dims)
+      GatherExchange
+        Aggregating
+          Expression (Change column names to column identifiers)
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+-- 19. variant A for LEFT SEMI: the join key is not a GROUP BY key
+Expression ((Project names + Projection))
+  Aggregating
+    GatherExchange
+      JoinLogical (Broadcast HashJoin  swapped swapped)
+        Aggregating
+          Expression
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+        BuildRuntimeFilter (Build runtime join filter on __table2.key)
+          Expression (Change column names to column identifiers)
+            ReadFromMergeTree (ReplicatedRead default.t_push_dims)
+-- 20. variant A for LEFT ANTI: a GROUP BY key from the other side falls back to variant A
+Expression ((Project names + Projection))
+  Aggregating
+    JoinLogical (Local HashJoin  swapped)
+      BuildRuntimeFilter (Build runtime join filter on __table2.key)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.t_push_dims)
+      GatherExchange
+        Aggregating
+          Filter
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+-- 21. variant A for RIGHT SEMI, push-right: a GROUP BY key from the other side falls back to variant A
+Expression ((Project names + Projection))
+  Aggregating
+    JoinLogical (Local HashJoin  swapped)
+      BuildRuntimeFilter (Build runtime join filter on __table1.key)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.t_push_dims)
+      GatherExchange
+        Aggregating
+          Filter
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+-- 22. variant A for RIGHT ANTI, push-right: a GROUP BY key from the other side falls back to variant A
+Expression ((Project names + Projection))
+  Aggregating
+    JoinLogical (Local HashJoin  swapped)
+      BuildRuntimeFilter (Build runtime join filter on __table1.key)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.t_push_dims)
+      GatherExchange
+        Aggregating
+          Filter
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+-- 23. negative: INNER ANY emits at most one row per key, never pushed
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Filter
+              ReadFromMergeTree (ParallelRead default.t_push_facts)
+            BuildRuntimeFilter (Build runtime join filter on __table2.key)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (ReplicatedRead default.t_push_dims)
+-- 24. negative: FULL JOIN never pushes
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin )
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.t_push_facts)
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.t_push_dims)
+-- 25. negative: ASOF JOIN never pushes
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_push_facts)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_push_dims_multi)
+-- 26. task-budget sanity: 3 joins under an aggregation must not exhaust the task limit
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            JoinLogical (Broadcast HashJoin )
+              JoinLogical (Broadcast HashJoin )
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (ParallelRead default.t_push_facts)
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (ReplicatedRead default.t_push_dims)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (ReplicatedRead default.t_push_dims_multi)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_push_dims)
+-- 27. nested aggregation over a variant-B pushdown: outer aggregation reuses the pushed join as-is (no further cascade, see comment above)
+Expression ((Project names + Projection))
+  Aggregating
+    Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+      JoinLogical (Local HashJoin  swapped)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.t_push_dims)
+        MergingAggregated
+          GatherExchange
+            Aggregating
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (ParallelRead default.t_push_facts)
+-- 28. force-shuffle: variant B still fires under distributed_plan_force_shuffle_aggregation
+GatherExchange
+  Expression ((Project names + Projection))
+    JoinLogical (Shuffle HashJoin  swapped)
+      BuildRuntimeFilter (Build runtime join filter on __table2.key)
+        Expression (Change column names to column identifiers)
+          ShuffleExchange
+            ReadFromMergeTree (ParallelRead default.t_push_dims)
+      Aggregating
+        Filter
+          ShuffleExchange
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+-- 29. force-shuffle: an A-shaped query (case 1\'s) is not pushed, classic shuffle shape
+GatherExchange
+  Expression ((Project names + Projection))
+    Aggregating
+      Expression (Before GROUP BY)
+        ShuffleExchange
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_push_facts)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_push_dims)

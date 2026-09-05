@@ -62,11 +62,10 @@ Strings extractConstTagNamesFromArgument(std::string_view function_name, const C
 Strings extractConstStringsFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
 
 /// Checks the type of a function argument containing an identifier of time series.
-const std::type_info & checkArgumentTypeForID(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index, bool allow_nullable = false);
-
-/// Extracts an identifier of time series from a function argument.
-template <typename IDType>
-VectorWithMemoryTracking<IDType> extractIDFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
+/// Identifiers can be of any comparable non-Nullable type.
+/// If `allow_nullable` is set, the argument can also be wrapped in Nullable:
+/// NULL means a row without an identifier (`timeSeriesStoreTags` skips such rows), not a nullable identifier.
+void checkArgumentTypeForID(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index, bool allow_nullable = false);
 
 /// Converts a vector of groups to a column.
 ColumnPtr makeColumnForGroup(const VectorWithMemoryTracking<Group> & groups);

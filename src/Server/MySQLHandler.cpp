@@ -1,5 +1,7 @@
 #include <Server/MySQLHandler.h>
 
+#include <algorithm>
+#include <array>
 #include <optional>
 #include <Access/Common/AccessFlags.h>
 #include <Core/MySQL/Authentication.h>
@@ -8,6 +10,7 @@
 #include <Core/MySQL/PacketsPreparedStatements.h>
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <IO/LimitReadBuffer.h>
@@ -21,9 +24,12 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
 #include <Server/TCPServer.h>
@@ -34,10 +40,13 @@
 #include <Common/QueryScope.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/SettingSource.h>
+#include <Common/SettingsChanges.h>
 #include <Common/StringUtils.h>
 #include <Common/config_version.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Poco/String.h>
 #include <Common/re2.h>
 #include <Common/setThreadName.h>
 
@@ -56,6 +65,11 @@ namespace Setting
     extern const SettingsSeconds send_timeout;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_session_user;
+}
+
 using namespace MySQLProtocol;
 using namespace MySQLProtocol::Generic;
 using namespace MySQLProtocol::ProtocolText;
@@ -69,6 +83,7 @@ using Poco::Net::SSLManager;
 
 namespace ErrorCodes
 {
+    extern const int AUTHENTICATION_FAILED;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int NOT_IMPLEMENTED;
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
@@ -76,10 +91,20 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int OPENSSL_ERROR;
     extern const int SYNTAX_ERROR;
+    extern const int UNKNOWN_PACKET_FROM_CLIENT;
 }
 
 static const size_t PACKET_HEADER_SIZE = 4;
 static const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
+
+/** The handshake response is read before the client is authenticated, so its size has to be bounded.
+  * The fields it carries are a user name, a database name, an authentication plugin name and an
+  * authentication response, so this is generous: a real client sends a few hundred bytes.
+  * Without a bound, a peer can make the server grow memory while sending a response that never ends:
+  * `MySQLPacketPayloadReadBuffer` follows a chain of maximum-size (16 MiB) packets as one logical
+  * message, and the fields inside the response are read up to a terminator.
+  */
+static const size_t MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE = 64 * 1024;
 
 static bool checkShouldReplaceQuery(const String & query, const String & prefix)
 {
@@ -142,7 +167,9 @@ static std::optional<String> tryParseSingleStringLiteral(const String & text)
     return ast->as<ASTLiteral &>().value.safeGet<String>();
 }
 
-/// Replace "SHOW TABLE STATUS LIKE 'xx'" into "SELECT ... FROM system.tables WHERE name LIKE 'xx'".
+/// Replace "SHOW TABLE STATUS LIKE 'xx'" into a SELECT from INFORMATION_SCHEMA.TABLES.
+/// Both statements describe the same MySQL metadata family, so they must share one mapping:
+/// a client mixing the two introspection paths has to see identical values for one object.
 static String showTableStatusReplacementQuery(const String & query)
 {
     const String prefix = "SHOW TABLE STATUS LIKE ";
@@ -161,26 +188,32 @@ static String showTableStatusReplacementQuery(const String & query)
     }
     return (
         "SELECT"
-        " name AS Name,"
+        " table_name AS Name,"
         " engine AS Engine,"
-        " '10' AS Version,"
-        " 'Dynamic' AS Row_format,"
-        " 0 AS Rows,"
-        " 0 AS Avg_row_length,"
-        " 0 AS Data_length,"
-        " 0 AS Max_data_length,"
-        " 0 AS Index_length,"
-        " 0 AS Data_free,"
-        " 'NULL' AS Auto_increment,"
-        " metadata_modification_time AS Create_time,"
-        " metadata_modification_time AS Update_time,"
-        " metadata_modification_time AS Check_time,"
-        " 'utf8_bin' AS Collation,"
-        " 'NULL' AS Checksum,"
-        " '' AS Create_options,"
-        " '' AS Comment"
-        " FROM system.tables"
-        " WHERE name LIKE "
+        " version AS Version,"
+        " row_format AS Row_format,"
+        " table_rows AS Rows,"
+        " avg_row_length AS Avg_row_length,"
+        " data_length AS Data_length,"
+        " max_data_length AS Max_data_length,"
+        " index_length AS Index_length,"
+        " data_free AS Data_free,"
+        " auto_increment AS Auto_increment,"
+        " create_time AS Create_time,"
+        " update_time AS Update_time,"
+        " check_time AS Check_time,"
+        " table_collation AS Collation,"
+        " checksum AS Checksum,"
+        " create_options AS Create_options,"
+        " table_comment AS Comment"
+        " FROM INFORMATION_SCHEMA.TABLES"
+        /// MySQL scopes SHOW TABLE STATUS to the session's default database, so the translation
+        /// must constrain table_schema too, or a lookup would also return same-named tables from
+        /// other databases. The replacement is executed with the session's query context, so
+        /// currentDatabase() resolves to that session database (it also tracks later USE
+        /// statements). MySQL's "No database selected" state cannot arise here: a ClickHouse
+        /// session always has a current database (the server default when the client sent none).
+        " WHERE table_schema = currentDatabase() AND table_name LIKE "
         + quoteString(pattern));
 }
 
@@ -259,10 +292,197 @@ static String killConnectionIdReplacementQuery(const String & query)
     return query;
 }
 
-/// Replace "SHOW COLLATIONS" into empty response.
-static String showCollationsReplacementQuery(const String & /*query*/)
+/// Lowercase every string literal reachable through this node (a plain literal, a literal
+/// tuple/array, or a tuple/array function of literals, as on the right side of IN).
+/// Returns whether at least one string was lowercased.
+static bool lowercaseStringLiterals(ASTPtr & node)
 {
-    return "SELECT 1 LIMIT 0";
+    if (auto * literal = node->as<ASTLiteral>())
+    {
+        if (literal->value.getType() == Field::Types::String)
+        {
+            literal->value = Poco::toLower(literal->value.safeGet<String>());
+            return true;
+        }
+        if (literal->value.getType() == Field::Types::Tuple || literal->value.getType() == Field::Types::Array)
+        {
+            bool lowered = false;
+            auto lower_elements = [&](auto & elements)
+            {
+                for (auto & element : elements)
+                {
+                    if (element.getType() == Field::Types::String)
+                    {
+                        element = Poco::toLower(element.template safeGet<String>());
+                        lowered = true;
+                    }
+                }
+            };
+            if (literal->value.getType() == Field::Types::Tuple)
+            {
+                auto elements = literal->value.safeGet<Tuple>();
+                lower_elements(elements);
+                literal->value = std::move(elements);
+            }
+            else
+            {
+                auto elements = literal->value.safeGet<Array>();
+                lower_elements(elements);
+                literal->value = std::move(elements);
+            }
+            return lowered;
+        }
+        return false;
+    }
+
+    if (const auto * function = node->as<ASTFunction>();
+        function && (function->name == "tuple" || function->name == "array") && function->arguments)
+    {
+        bool lowered = false;
+        for (auto & argument : function->arguments->children)
+            lowered |= lowercaseStringLiterals(argument);
+        return lowered;
+    }
+
+    return false;
+}
+
+/// Whether this column of the synthetic SHOW COLLATION result set is string-valued.
+/// Only these participate in case-insensitive matching: wrapping a numeric column
+/// (`Id`, `Sortlen`) in `lower` would throw instead of comparing.
+static bool isStringValuedCollationColumn(const String & name)
+{
+    static constexpr std::array string_columns{"Collation", "Charset", "Default", "Compiled", "Pad_attribute"};
+    return std::any_of(string_columns.begin(), string_columns.end(), [&](const auto * column) { return name == column; });
+}
+
+/// MySQL matches collation and charset names case-insensitively and resolves column names in the
+/// WHERE clause of SHOW statements case-insensitively, while ClickHouse compares strings bytewise
+/// and resolves identifiers case-sensitively. Rewrite the parsed "SHOW COLLATION WHERE ..." filter
+/// so that the comparison forms MySQL clients use keep their MySQL semantics: canonicalize
+/// identifiers to the column names of the synthetic result set, and for "=", "!=", "LIKE" and "IN"
+/// comparisons of a string-valued column against string literals, lowercase both sides (every
+/// string value in the synthetic set has a single known spelling, so this is lossless). Numeric
+/// columns are left untouched: ClickHouse already coerces string literals to numbers there.
+static void makeShowCollationsFilterCaseInsensitive(ASTPtr & node)
+{
+    if (auto * identifier = node->as<ASTIdentifier>())
+    {
+        static constexpr std::array canonical_columns{"Collation", "Charset", "Id", "Default", "Compiled", "Sortlen", "Pad_attribute"};
+        for (const auto * column : canonical_columns)
+        {
+            if (Poco::icompare(identifier->name(), column) == 0)
+            {
+                node = make_intrusive<ASTIdentifier>(String(column));
+                break;
+            }
+        }
+        return;
+    }
+
+    if (auto * function = node->as<ASTFunction>();
+        function && function->arguments && function->arguments->children.size() == 2
+        && (function->name == "equals" || function->name == "notEquals" || function->name == "like"
+            || function->name == "notLike" || function->name == "ilike" || function->name == "notILike"
+            || function->name == "in" || function->name == "notIn"))
+    {
+        /// Canonicalize identifiers first, then decide by the canonical name whether this
+        /// comparison targets a string-valued column.
+        for (auto & argument : function->arguments->children)
+            makeShowCollationsFilterCaseInsensitive(argument);
+
+        bool string_column = false;
+        for (const auto & argument : function->arguments->children)
+            if (const auto * argument_identifier = argument->as<ASTIdentifier>();
+                argument_identifier && isStringValuedCollationColumn(argument_identifier->name()))
+                string_column = true;
+
+        if (string_column)
+        {
+            bool lowered_literal = false;
+            for (auto & argument : function->arguments->children)
+                lowered_literal |= lowercaseStringLiterals(argument);
+            if (lowered_literal)
+                for (auto & argument : function->arguments->children)
+                    if (argument->as<ASTIdentifier>())
+                        argument = makeASTFunction("lower", argument);
+        }
+        return;
+    }
+
+    for (auto & child : node->children)
+        makeShowCollationsFilterCaseInsensitive(child);
+}
+
+/// Replace "SHOW COLLATION [LIKE 'pattern' | WHERE <expr>]" with a response enumerating every
+/// collation the server actually puts on the wire, in the shape MySQL uses for this statement:
+/// `utf8mb4_0900_ai_ci` (advertised in the handshake and stamped on string columns in result-set
+/// metadata) and `binary` (stamped on numeric and other non-string columns). The set must be
+/// complete: MySQL Connector/NET builds its charset-id dictionary from this result and fails on
+/// any `ColumnDefinition41.character_set` id missing from it (an empty result makes it skip the
+/// lookup, a partial one makes it throw).
+static String showCollationsReplacementQuery(const String & query)
+{
+    static constexpr auto collations = "SELECT"
+        " 'utf8mb4_0900_ai_ci' AS `Collation`,"
+        " 'utf8mb4' AS `Charset`,"
+        " 255 AS `Id`,"
+        " 'Yes' AS `Default`,"
+        " 'Yes' AS `Compiled`,"
+        " 0 AS `Sortlen`,"
+        " 'NO PAD' AS `Pad_attribute`"
+        " UNION ALL SELECT"
+        " 'binary' AS `Collation`,"
+        " 'binary' AS `Charset`,"
+        " 63 AS `Id`,"
+        " 'Yes' AS `Default`,"
+        " 'Yes' AS `Compiled`,"
+        " 1 AS `Sortlen`,"
+        " 'NO PAD' AS `Pad_attribute`";
+
+    const String prefix = "SHOW COLLATION";
+    const String tail = query.size() > prefix.size() ? String(query.data() + prefix.size()) : String();
+
+    /// The dispatcher is only a byte-prefix check; a word character right after the prefix means
+    /// a different statement (e.g. "SHOW COLLATIONX"), so leave it untranslated to error naturally.
+    if (!tail.empty() && isWordCharASCII(tail[0]))
+        return query;
+
+    /// The dispatcher routes every prefix match here, so the filtered forms of the statement
+    /// ("SHOW COLLATION LIKE 'pattern'", "SHOW COLLATION WHERE <expr>") also land in this
+    /// function and their filter must be honored, not dropped. Parse the tail and re-serialize
+    /// the filter instead of concatenating the raw client suffix (which would allow SQL injection
+    /// over the MySQL wire). Any malformed tail is left untranslated so the client gets a syntax
+    /// error rather than a silently unfiltered result.
+    Tokens tokens(tail.data(), tail.data() + tail.size(), DBMS_DEFAULT_MAX_QUERY_SIZE);
+    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    Expected expected;
+
+    String filter;
+    if (ParserKeyword(Keyword::LIKE).ignore(pos, expected))
+    {
+        ASTPtr ast;
+        if (!ParserStringLiteral().parse(pos, ast, expected))
+            return query;
+        /// MySQL matches collation names case-insensitively, so use ILIKE.
+        filter = " WHERE `Collation` ILIKE " + quoteString(ast->as<ASTLiteral &>().value.safeGet<String>());
+    }
+    else if (ParserKeyword(Keyword::WHERE).ignore(pos, expected))
+    {
+        ASTPtr ast;
+        if (!ParserExpression().parse(pos, ast, expected))
+            return query;
+        makeShowCollationsFilterCaseInsensitive(ast);
+        filter = " WHERE " + ast->formatWithSecretsOneLine();
+    }
+
+    /// Accept one optional trailing ';' then end-of-stream (executeQuery treats ';' as
+    /// end-of-query). Anything else is a tail this translation does not understand.
+    ParserToken(TokenType::Semicolon).ignore(pos, expected);
+    if (!pos->isEnd())
+        return query;
+
+    return "SELECT * FROM (" + String(collations) + ")" + filter;
 }
 
 
@@ -295,6 +515,7 @@ MySQLHandler::MySQLHandler(
     const Poco::Net::StreamSocket & socket_,
     bool ssl_enabled, bool secure_required_,
      uint32_t connection_id_,
+    std::optional<String> default_session_user_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
@@ -303,6 +524,7 @@ MySQLHandler::MySQLHandler(
     , log(getLogger("MySQLHandler"))
     , secure_required(secure_required_)
     , connection_id(connection_id_)
+    , default_session_user(std::move(default_session_user_))
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
     , read_event(read_event_)
     , write_event(write_event_)
@@ -344,7 +566,7 @@ void MySQLHandler::run()
     try
     {
         Handshake handshake(server_capabilities, connection_id, VERSION_STRING + String("-") + VERSION_NAME,
-            auth_plugin->getName(), auth_plugin->getAuthPluginData(), CharacterSet::utf8_general_ci);
+            auth_plugin->getName(), auth_plugin->getAuthPluginData(), CharacterSet::utf8mb4_0900_ai_ci);
         packet_endpoint->sendPacket<Handshake>(handshake);
 
         LOG_TRACE(log, "Sent handshake");
@@ -367,8 +589,28 @@ void MySQLHandler::run()
         if (!(client_capabilities & CLIENT_PROTOCOL_41))
             throw Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES, "Required capability: CLIENT_PROTOCOL_41.");
 
-        if (secure_required && !(client_capabilities & CLIENT_SSL))
+        /// Check the actual state of the transport, not the capability bit advertised by the client:
+        /// a client can set `CLIENT_SSL` in a plaintext `HandshakeResponse` without ever sending an
+        /// `SSLRequest`, and then the connection stays unencrypted.
+        if (secure_required && !secure_connection)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "SSL connection required.");
+
+        /// An empty user name means the default session user: the `default_session_user`
+        /// server setting, possibly overridden for this listener in the `protocols` section.
+        /// If the resolved name is empty too (explicitly configured to prohibit connections
+        /// without a user name), authentication fails on the empty user name below.
+        if (handshake_response.username.empty())
+            handshake_response.username = default_session_user
+                ? *default_session_user
+                : String(server.context()->getServerSettings()[ServerSetting::default_session_user]);
+
+        if (handshake_response.username.empty())
+        {
+            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Got an empty user name from MySQL handshake");
+            session->onAuthenticationFailure(handshake_response.username, socket().peerAddress(), exception);
+            packet_endpoint->sendPacket(ERRPacket(exception.code(), mysql_error_code, exception.message()));
+            return;
+        }
 
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
 
@@ -377,7 +619,15 @@ void MySQLHandler::run()
             session->makeSessionContext();
             session->sessionContext()->setDefaultFormat("MySQLWire");
             if (!handshake_response.database.empty())
+            {
+                /// `database` is a real setting, so enforce its constraints on the handshake database
+                /// too, consistently with `USE`, `SET database = ...` and the HTTP `?database=...`
+                /// parameter.
+                SettingsChanges database_change;
+                database_change.setSetting("database", handshake_response.database);
+                session->sessionContext()->checkSettingsConstraints(database_change, SettingSource::QUERY);
                 session->sessionContext()->setCurrentDatabase(handshake_response.database);
+            }
         }
         catch (const Exception & exc)
         {
@@ -492,6 +742,11 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     }
     else
     {
+        if (payload_size > MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                "Handshake response declares a payload of {} bytes, while it must be at most {} bytes",
+                payload_size, MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE);
+
         /// Reading rest of HandshakeResponse.
         packet_size = PACKET_HEADER_SIZE + payload_size;
         WriteBufferFromOwnString buf_for_handshake_response;
@@ -539,6 +794,10 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
     LOG_DEBUG(log, "Setting current database to {}", database);
     /// Mirror the access check of the SQL `USE database` statement (InterpreterUseQuery).
     session->sessionContext()->checkAccess(AccessType::SHOW_DATABASES, database);
+    /// ... and its settings-constraint check on the `database` setting.
+    SettingsChanges database_change;
+    database_change.setSetting("database", database);
+    session->sessionContext()->checkSettingsConstraints(database_change, SettingSource::QUERY);
     session->sessionContext()->setCurrentDatabase(database);
     packet_endpoint->sendPacket(OKPacket(0, client_capabilities, 0, 0, 1));
 }
@@ -556,8 +815,15 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr(session_context, false);
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
+        /// Report the same type, charset and flags as result-set metadata (`getColumnDefinition`) does
+        /// for this column, so `COM_FIELD_LIST` and a plain `SELECT` describe the column identically:
+        /// string columns as `utf8mb4_0900_ai_ci` strings (matching the handshake collation),
+        /// numeric and other non-string columns as `binary` with their native wire types.
+        ColumnDefinition type_definition = getColumnDefinition(column.name, column.type);
         ColumnDefinition column_definition(
-            database, packet.table, packet.table, column.name, column.name, CharacterSet::binary, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0, true
+            database, packet.table, packet.table, column.name, column.name,
+            type_definition.character_set, type_definition.column_length, type_definition.column_type,
+            type_definition.flags, type_definition.decimals, true
         );
         packet_endpoint->sendPacket(column_definition);
     }
@@ -574,7 +840,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
     String query = String(payload.position(), payload.buffer().end());
 
     // This is a workaround in order to support adding ClickHouse to MySQL using federated server.
-    // As Clickhouse doesn't support these statements, we just send OK packet in response.
+    // As ClickHouse doesn't support these statements, we just send OK packet in response.
     if (isFederatedServerSetupSetCommand(query))
     {
         packet_endpoint->sendPacket(OKPacket(0x00, client_capabilities, 0, 0, 0));
@@ -774,10 +1040,11 @@ MySQLHandlerSSL::MySQLHandlerSSL(
     bool ssl_enabled,
     bool secure_required_,
     uint32_t connection_id_,
+    std::optional<String> default_session_user_,
     KeyPair & private_key_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
-    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, secure_required_, connection_id_, read_event_, write_event_)
+    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, secure_required_, connection_id_, std::move(default_session_user_), read_event_, write_event_)
     , private_key(private_key_)
 {}
 
@@ -807,7 +1074,33 @@ void MySQLHandlerSSL::finishHandshakeSSL(
     out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(*ss);
     sequence_id = 2;
     packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
-    packet_endpoint->receivePacket(packet); /// Reading HandshakeResponse from secure socket.
+
+    /// Reading HandshakeResponse from the secure socket, bounded the same way as on the plaintext
+    /// path: read the packet header, reject an oversized declared payload before reading it, and
+    /// then read exactly as many bytes as it declares. The bound has to be applied to the logical
+    /// MySQL payload rather than to the underlying stream: `MySQLPacketPayloadReadBuffer` reports
+    /// end of file as soon as the stream under it ends, so a stream cut off at the limit would make
+    /// a truncated packet look like a complete one.
+    char header[PACKET_HEADER_SIZE];
+    in->readStrict(header, PACKET_HEADER_SIZE);
+
+    size_t payload_size = unalignedLoad<uint32_t>(header) & 0xFFFFFFu;
+    if (payload_size > MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE)
+        throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+            "Handshake response declares a payload of {} bytes, while it must be at most {} bytes",
+            payload_size, MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE);
+
+    size_t packet_sequence_id = static_cast<uint8_t>(header[3]);
+    if (packet_sequence_id != sequence_id)
+        throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+            "Received packet with wrong sequence-id: {}. Expected: {}.",
+            packet_sequence_id, static_cast<unsigned int>(sequence_id));
+
+    WriteBufferFromOwnString buf_for_handshake_response;
+    copyData(*in, buf_for_handshake_response, payload_size);
+    ReadBufferFromString handshake_response_payload(buf_for_handshake_response.str());
+    packet.readPayloadWithUnpacked(handshake_response_payload);
+    packet_endpoint->sequence_id++;
 }
 
 #endif

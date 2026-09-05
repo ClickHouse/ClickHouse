@@ -6,15 +6,12 @@ tags: ['Security and Authentication', 'Managing Cloud']
 keywords: ['AWS PrivateLink', 'Private RDS', 'ClickPipes']
 ---
 
-{frontMatter.description}
-{/* truncate */}
-
 ## AWS PrivateLink setup to expose private RDS for ClickPipes {#aws-privatelink-setup-to-expose-private-rds-for-clickpipes}
 Setup steps to expose a private RDS via AWS PrivateLink to ClickPipes, also supporting cross-region access.
 
 <Info>
 This uses AWS Endpoint Service and is mainly suitable for Cross-Region Access. If you require same-region access,
-[creating a VPC Resource](/integrations/clickpipes/aws-privatelink#vpc-resource) is
+[creating a VPC Resource](/integrations/clickpipes/networking/aws-privatelink#vpc-resource) is
 recommended instead.
 </Info>
 
@@ -58,7 +55,7 @@ RDS instances that require endpoint services (OR you may have different listener
 7. **Optional**: Enable Cross-region support in case your database region is different from the ClickPipes region
     - Under `Endpoint Services` in the VPC console, select your endpoint service.
     - Click on the `Actions` button and select `Modify supported Regions`.
-    - Add the regions where you want to allow access to the endpoint service, [refer here](/integrations/clickpipes/home#list-of-static-ips) for the list of ClickPipes regions.
+    - Add the regions where you want to allow access to the endpoint service, [refer here](/integrations/clickpipes/networking/static-ips) for the list of ClickPipes regions.
 
 8. **Recommended For MySQL**
     - If you are using MySQL, it is recommended to set `skip_name_resolve=1` as a parameter in the source database.
@@ -67,7 +64,7 @@ RDS instances that require endpoint services (OR you may have different listener
      reboot.
 
 ## Initiating connection {#initiating-connection}
-When it's done you can follow the guide to [initiate the connection](/integrations/clickpipes/aws-privatelink#creating-clickpipe)
+When it's done you can follow the guide to [initiate the connection](/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe)
 
 Once the status shows `Ready` on console, you can follow the next section to create your ClickPipe.
 

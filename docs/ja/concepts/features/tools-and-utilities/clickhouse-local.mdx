@@ -72,6 +72,13 @@ ClickHouse は、ファイル名の拡張子から、そのファイルがタブ
   ```
 </Tip>
 
+データはローカルに存在する必要はありません。ファイル名の代わりに URL を使用でき、URL スキームに応じて対応するテーブルエンジンが選択されます (`http://` と `https://` は [url](/ja/reference/functions/table-functions/url) 関数のように読み取られ、`s3://` は [s3](/ja/reference/functions/table-functions/s3) 関数のように、`file://` は [file](/ja/reference/functions/table-functions/file) 関数のように読み取られます) ：
+
+```bash
+./clickhouse local -q "SELECT * FROM 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv' LIMIT 3"
+./clickhouse local -q "SELECT count() FROM 's3://clickhouse-public-datasets/hits_compatible/athena_partitioned/hits_1.parquet'"
+```
+
 ```response
 marketplace    Nullable(String)
 customer_id    Nullable(Int64)
@@ -90,7 +97,7 @@ review_body    Nullable(String)
 review_date    Nullable(Date)
 ```
 
-最も評価の高い製品を見つけてみましょう：
+評価が最も高い製品を見つけてみましょう：
 
 ```bash
 ./clickhouse local -q "SELECT
@@ -233,15 +240,15 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 * `--queries-file` - 実行するクエリが含まれたファイルのパス。`--queries-file` は複数回指定できます。例: `--query queries1.sql --query queries2.sql`。`--query` と同時には使用できません。
 * `--multiquery, -n` – 指定すると、`--query` オプションの後にセミコロン区切りで複数のクエリを指定できます。利便性のため、`--query` を省略して `--multiquery` の後にクエリを直接渡すこともできます。
 * `-N`, `--table` — 出力データの格納先となるテーブル名。デフォルトは `table` です。
-* `-f`, `--format`, `--output-format` — 出力フォーマット。デフォルトは `TSV` です。
+* `--f`, `--format`, `--output-format` — 出力フォーマット。デフォルトは `TSV` です。
 * `-d`, `--database` — デフォルトのデータベース。デフォルトは `_local` です。
 * `--stacktrace` — 例外発生時にデバッグ出力をダンプするかどうか。
 * `--echo [ <bool> ]` — 実行前に各クエリを表示します。省略可能なブール値を取ります。対話型モードではデフォルトで有効、バッチモードでは無効です。注意: `--echo` は省略可能な値を取るようになったため、値を指定しない `--echo` の直後に置かれた位置引数のクエリはその値として解釈されます。代わりに `--echo --query "..."`、`--echo -q "..."`、`--echo=false`、またはパイプされた `stdin` を使用してください。
 * `--echo-formatted [ <bool> ]` — 表示するクエリをフォーマットします。省略可能なブール値を取ります。対話型モードではデフォルトで有効、バッチモードでは無効です。
 * `--echo-query-id [ <bool> ]` — 実行前に `query_id` を表示します。省略可能なブール値を取ります。対話型モードではデフォルトで有効、バッチモードでは無効です。
 * `--echo-query-separator <string>` — フォーマット済みで表示されるクエリの前にこの区切り文字を表示します (`--echo-formatted` が必要)。これにより、入力したクエリと整形後に表示されるクエリを区別しやすくなります。デフォルトは空 (無効) です。
-* `--highlight`, `--hilite` `<bool>` — コマンドプロンプトと表示されるクエリのシンタックスハイライトを切り替えます。デフォルトで有効です。ハイライトはターミナルへの出力時にのみ適用されます。
-* `--hints <bool>` — カーソルが入力末尾にあるとき、最もよく一致する候補について、入力に応じた自動補完ヒント (インラインの &quot;ghost&quot; テキスト) を表示します。Up/Down (または Ctrl-Up/Ctrl-Down) でヒントを移動し、Tab または Right でインラインヒントを受け入れます。`Enter` はヒントが明示的に選択されている場合にのみそのヒントを受け入れ、それ以外の場合はクエリを実行します。`Tab` は従来の補完リストも開きます。`--highlight` (ヒントの表示に色が必要) と候補提示機能が必要です (そのため `--disable_suggestion` を指定するとヒントも無効になります) 。デフォルトで有効です。
+* `--highlight`, `--hilite` `<bool>` — コマンドプロンプトと表示されるクエリのシンタックスハイライトを切り替えます。デフォルトで有効です。ハイライトは端末への出力時にのみ適用されます。
+* `--hints <bool>` — カーソルが入力末尾にあるとき、最もよく一致する候補について、入力に応じた自動補完ヒント (インラインの &quot;ghost&quot; テキスト) を表示します。Up/Down (または Ctrl-Up/Ctrl-Down) でヒントを移動し、Tab または Right でインラインヒントを受け入れます。`Enter` はヒントが明示的に選択されている場合にのみそのヒントを受け入れ、それ以外の場合はクエリを実行します。`Tab` は従来の補完リストも開きます。`--highlight` が必要です (ヒントの表示に色が必要) 。候補ヒントには候補提示機能も必要なため、`--disable_suggestion` を指定するとそれらは無効になります。クライアントの [`/` コマンド](/ja/interfaces/client#slash-commands) は静的なリストであり、`--hints` と `--highlight` が有効である限りヒントとして表示されます。ヒントが無効でも、`Tab` で `/` コマンドを補完できます。デフォルトで有効です。
 * `--verbose` — クエリ実行の詳細を表示します。
 * `--logger.console` — コンソールにログを出力します。
 * `--logger.log` — ログファイル名。
@@ -398,10 +405,14 @@ clickhouse-local \
 
 `--listen_host`、`--tcp_port`、`--http_port` オプションは、バインド先のアドレスとポートを設定します。デフォルトのポートは、TCP が `9000`、HTTP が `8123` です。
 
+HTTP リスナーは、デフォルトの `clickhouse-server` 設定と同じ許容的なヘッダーで CORS プリフライトリクエストに応答するため、Web アプリケーションはブラウザーからそのままクエリを実行できます。これには、オリジンが `null` である `file://` URL から開かれた Web UI も含まれます。これを制限するには、`--config-file` で渡す設定ファイルで独自の `http_options_response` セクションを定義します。この設定はデフォルトを完全に置き換えます。
+
 <Warning>
   **セキュリティ**
 
   デフォルトでは、`clickhouse-local` は一時ユーザー設定で実行されるため、開かれたリスナーはいずれも認証されません。`users_config` 設定でカスタムの `users.xml` を指定して (たとえば `--config-file` を使用して) ユーザーとアクセス制御を明示的に設定している場合を除き、ループバックアドレス (`127.0.0.1` または `::1`) にバインドしてください。認証なしで非ループバックアドレスで待ち受けると、選択したポートに到達できるすべての相手に、ローカルインスタンスのデータが公開されます。
+
+  ループバックアドレスにもブラウザーから到達できることに注意してください。HTTP リスナーが開いている間は、アクセスしたあらゆる Web ページがローカルインスタンスにクエリを実行でき、デフォルトの CORS ヘッダーにより結果を読み取ることもできます。
 </Warning>
 
 <div id="related-content-1">

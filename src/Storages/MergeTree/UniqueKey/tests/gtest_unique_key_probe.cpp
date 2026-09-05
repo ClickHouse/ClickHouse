@@ -69,7 +69,7 @@ namespace
         auto col = ColumnUInt64::create();
         col->insertValue(k);
         Columns cols{std::move(col)};
-        std::vector<String> out;
+        VectorWithMemoryTracking<String> out;
         UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, MAX_ENC, out);
         return out.at(0);
     }
@@ -385,7 +385,8 @@ TEST_F(UniqueKeyProbeTest, DecodedRowOutOfPartBoundsThrows)
     const String part_dir = "bounds_part";
     std::filesystem::create_directories(base / part_dir);
     constexpr UInt32 PART_ROWS = 3;
-    auto part = MergeTreeDataPartBuilder(*storage, "all_1_1_0", volume, "", part_dir, context->getReadSettings())
+    /// The directory is pre-created above, so `OpenExisting` matches what this test was written against.
+    auto part = MergeTreeDataPartBuilder(*storage, "all_1_1_0", volume, "", part_dir, context->getReadSettings(), PartDirIntent::OpenExisting)
                     .withBytesAndRows(0, PART_ROWS, 0)
                     .build();
     part->rows_count = PART_ROWS;

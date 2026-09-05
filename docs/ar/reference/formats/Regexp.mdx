@@ -23,13 +23,13 @@ doc_type: 'reference'
 
 **الاستخدام**
 
-يُطبَّق التعبير النمطي من إعداد [format&#95;regexp](/ar/reference/settings/formats#format_regexp) على كل سطر من البيانات المستوردة. ويجب أن يساوي عدد الأنماط الفرعية في التعبير النمطي عدد الأعمدة في مجموعة البيانات المستوردة.
+يُطبَّق التعبير النمطي من إعداد [format&#95;regexp](/ar/reference/settings/formats/format-regexp#format_regexp) على كل سطر من البيانات المستوردة. ويجب أن يساوي عدد الأنماط الفرعية في التعبير النمطي عدد الأعمدة في مجموعة البيانات المستوردة.
 
 يجب أن تكون أسطر البيانات المستوردة مفصولة بمحرف سطر جديد `'\n'` أو بمحرف سطر جديد بنمط DOS `"\r\n"`.
 
-يُحلَّل محتوى كل نمط فرعي مطابق باستخدام طريقة التحليل الخاصة بنوع البيانات المقابل، وفقًا لإعداد [format&#95;regexp&#95;escaping&#95;rule](/ar/reference/settings/formats#format_regexp_escaping_rule).
+يُحلَّل محتوى كل نمط فرعي مطابق باستخدام طريقة التحليل الخاصة بنوع البيانات المقابل، وفقًا لإعداد [format&#95;regexp&#95;escaping&#95;rule](/ar/reference/settings/formats/format-regexp#format_regexp_escaping_rule).
 
-إذا لم يطابق التعبير النمطي السطر وكان [format&#95;regexp&#95;skip&#95;unmatched](/ar/reference/settings/formats#format_regexp_escaping_rule) مضبوطًا على 1، فسيتم تخطي السطر بصمت. وإلا، يُطرَح استثناء.
+إذا لم يطابق التعبير النمطي السطر وكان [format&#95;regexp&#95;skip&#95;unmatched](/ar/reference/settings/formats/format-regexp#format_regexp_skip_unmatched) مضبوطًا على 1، فسيتم تخطي السطر بصمت. وإلا، يُطرَح استثناء.
 
 <div id="example-usage">
   ## مثال للاستخدام

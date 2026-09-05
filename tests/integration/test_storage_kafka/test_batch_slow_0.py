@@ -63,9 +63,7 @@ def kafka_setup_teardown():
 def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator):
     # data was dumped from clickhouse itself in a following manner
     # clickhouse-client --format=Native --query='SELECT toInt64(number) as id, toUInt16( intDiv( id, 65536 ) ) as blockNo, reinterpretAsString(19777) as val1, toFloat32(0.5) as val2, toUInt8(1) as val3 from numbers(100) ORDER BY id' | xxd -ps | tr -d '\n' | sed 's/\(..\)/\\x\1/g'
-    admin_client = k.KafkaAdminClient(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
-    )
+    admin_client = k.get_admin_client(kafka_cluster)
 
     all_formats = {
         ## Text formats ##
@@ -288,7 +286,6 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
             data_prefix = data_prefix + [""]
         if format_opts.get("printable", False) == False:
             raw_message = "hex(_raw_message)"
-        k.kafka_produce(kafka_cluster, topic_name, data_prefix + data_sample)
         create_query = create_query_generator(
             f"kafka_{format_name}",
             "id Int64, blockNo UInt16, val1 String, val2 Float32, val3 UInt8",
@@ -300,6 +297,10 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
                 "kafka_flush_interval_ms": 1000,
             },
         )
+        # Create both materialized views, then detach/re-attach the Kafka table,
+        # before producing any message. Creating the first view starts the
+        # streaming loop, so producing earlier lets the loop consume and commit
+        # the broken message before the errors view is attached, leaving it empty.
         instance.query(
             f"""
             DROP TABLE IF EXISTS test.kafka_{format_name};
@@ -315,8 +316,12 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
             CREATE MATERIALIZED VIEW test.kafka_errors_{format_name}_mv ENGINE=MergeTree ORDER BY tuple() AS
                 SELECT {raw_message} as raw_message, _error as error, _topic as topic, _partition as partition, _offset as offset FROM test.kafka_{format_name}
                 WHERE length(_error) > 0;
+
+            DETACH TABLE test.kafka_{format_name};
+            ATTACH TABLE test.kafka_{format_name};
             """
         )
+        k.kafka_produce(kafka_cluster, topic_name, data_prefix + data_sample)
 
     raw_expected = """\
 0	0	AM	0.5	1	{topic_name}	0	{offset_0}

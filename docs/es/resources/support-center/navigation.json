@@ -1,10 +1,11 @@
 {
   "groups": [
     {
-      "group": "Base de conocimientos",
+      "group": "Knowledgebase",
       "pages": [
+        "es/resources/support-center/home",
         {
-          "group": "Rendimiento y optimización",
+          "group": "Performance & optimization",
           "pages": [
             "es/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning",
             "es/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
@@ -39,7 +40,7 @@
           ]
         },
         {
-          "group": "Importación y exportación de datos",
+          "group": "Data import & export",
           "pages": [
             "es/resources/support-center/knowledge-base/data-import-export/achieving-atomic-inserts",
             "es/resources/support-center/knowledge-base/data-import-export/cannot-append-data-to-parquet-format",
@@ -59,19 +60,18 @@
           ]
         },
         {
-          "group": "Configuración y ajustes",
+          "group": "Configuration & settings",
           "pages": [
             "es/resources/support-center/knowledge-base/configuration-settings/about-quotas-and-query-complexity",
             "es/resources/support-center/knowledge-base/configuration-settings/alter-user-settings-exception",
             "es/resources/support-center/knowledge-base/configuration-settings/change-the-prompt-in-clickhouse-client",
             "es/resources/support-center/knowledge-base/configuration-settings/configure-a-user-setting",
-            "es/resources/support-center/knowledge-base/configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
             "es/resources/support-center/knowledge-base/configuration-settings/ignoring-incorrect-settings",
             "es/resources/support-center/knowledge-base/configuration-settings/maximum-number-of-tables-and-databases"
           ]
         },
         {
-          "group": "Integraciones y bibliotecas cliente",
+          "group": "Integrations & client libraries",
           "pages": [
             "es/resources/support-center/knowledge-base/integrations/node-js-example",
             "es/resources/support-center/knowledge-base/integrations/ODBC-authentication-failed-error-using-PowerBI-CH-connector",
@@ -83,8 +83,9 @@
           ]
         },
         {
-          "group": "Solución de problemas y errores",
+          "group": "Troubleshooting & errors",
           "pages": [
+            "es/resources/support-center/troubleshooting/index",
             "es/resources/support-center/troubleshooting/troubleshooting",
             "es/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
             "es/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
@@ -95,11 +96,10 @@
             "es/resources/support-center/knowledge-base/troubleshooting/part-intersects-previous-part",
             "es/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot",
             "es/resources/support-center/knowledge-base/troubleshooting/restore-replica-after-storage-failure"
-          ],
-          "root": "es/resources/support-center/troubleshooting/index"
+          ]
         },
         {
-          "group": "Tablas y esquema",
+          "group": "Tables & schema",
           "pages": [
             "es/resources/support-center/knowledge-base/tables-schema/add-column",
             "es/resources/support-center/knowledge-base/tables-schema/delete-old-data",
@@ -112,7 +112,7 @@
           ]
         },
         {
-          "group": "Consultas y SQL",
+          "group": "Queries & SQL",
           "pages": [
             "es/resources/support-center/knowledge-base/queries-sql/calculate-pi-using-sql",
             "es/resources/support-center/knowledge-base/queries-sql/compare-resultsets",
@@ -126,7 +126,7 @@
           ]
         },
         {
-          "group": "Vistas materializadas y proyecciones",
+          "group": "Materialized views & projections",
           "pages": [
             "es/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
             "es/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
@@ -135,7 +135,7 @@
           ]
         },
         {
-          "group": "Monitorización y depuración",
+          "group": "Monitoring & debugging",
           "pages": [
             "es/resources/support-center/knowledge-base/monitoring-debugging/check-query-cache-in-use",
             "es/resources/support-center/knowledge-base/monitoring-debugging/collect-and-draw-traces",
@@ -150,17 +150,18 @@
           ]
         },
         {
-          "group": "Seguridad y control de acceso",
+          "group": "Security & access control",
           "pages": [
             "es/resources/support-center/knowledge-base/security/check-users-roles",
             "es/resources/support-center/knowledge-base/security/common-rbac-queries",
             "es/resources/support-center/knowledge-base/security/remove-default-user",
             "es/resources/support-center/knowledge-base/security/row-column-policy",
+            "es/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console",
             "es/resources/support-center/knowledge-base/security/windows-active-directory-to-ch-roles"
           ]
         },
         {
-          "group": "Gestión de datos",
+          "group": "Data management",
           "pages": [
             "es/resources/support-center/knowledge-base/data-management/backing-up-a-specific-partition",
             "es/resources/support-center/knowledge-base/data-management/calculate-ratio-of-zero-sparse-serialization",
@@ -172,22 +173,25 @@
           ]
         },
         {
-          "group": "Configuración e instalación",
+          "group": "Setup & installation",
           "pages": [
             "es/resources/support-center/knowledge-base/setup-installation/difference-between-official-builds-and-3rd-party",
             "es/resources/support-center/knowledge-base/setup-installation/enabling-ssl-with-lets-encrypt",
             "es/resources/support-center/knowledge-base/setup-installation/how-to-increase-thread-pool-size",
             "es/resources/support-center/knowledge-base/setup-installation/install-clickhouse-windows10",
             "es/resources/support-center/knowledge-base/setup-installation/llvm-clang-up-to-date",
-            "es/resources/support-center/knowledge-base/setup-installation/production"
+            "es/resources/support-center/knowledge-base/setup-installation/production",
+            "es/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server"
           ]
         },
         {
-          "group": "General y preguntas frecuentes",
+          "group": "General & FAQs",
           "pages": [
+            "es/resources/support-center/knowledge-base/general-faqs/faq-index",
             {
               "group": "General",
               "pages": [
+                "es/resources/support-center/knowledge-base/general-faqs/index",
                 "es/resources/support-center/knowledge-base/general-faqs/columnar-database",
                 "es/resources/support-center/knowledge-base/general-faqs/concurrency",
                 "es/resources/support-center/knowledge-base/general-faqs/cost-based",
@@ -204,42 +208,40 @@
                 "es/resources/support-center/knowledge-base/general-faqs/updates",
                 "es/resources/support-center/knowledge-base/general-faqs/who-is-using-clickhouse",
                 "es/resources/support-center/knowledge-base/general-faqs/why-recommend-clickhouse-keeper-over-zookeeper"
-              ],
-              "root": "es/resources/support-center/knowledge-base/general-faqs/index"
+              ]
             },
             {
-              "group": "Casos de uso",
+              "group": "Use cases",
               "pages": [
+                "es/resources/support-center/knowledge-base/general-faqs/use-cases-index",
                 "es/resources/support-center/knowledge-base/general-faqs/key-value",
                 "es/resources/support-center/knowledge-base/general-faqs/time-series",
                 "es/resources/support-center/knowledge-base/general-faqs/use-clickhouse-for-log-analytics",
                 "es/resources/support-center/knowledge-base/general-faqs/vector-search"
-              ],
-              "root": "es/resources/support-center/knowledge-base/general-faqs/use-cases-index"
+              ]
             },
             {
-              "group": "Integración",
+              "group": "Integration",
               "pages": [
+                "es/resources/support-center/knowledge-base/integrations/index",
                 "es/resources/support-center/knowledge-base/data-import-export/json-import",
                 "es/resources/support-center/knowledge-base/integrations/oracle-odbc"
-              ],
-              "root": "es/resources/support-center/knowledge-base/integrations/index"
+              ]
             },
             {
-              "group": "Operaciones",
+              "group": "Operations",
               "pages": [
+                "es/resources/support-center/knowledge-base/general-faqs/operations-index",
                 "es/resources/support-center/knowledge-base/tables-schema/delete-old-data",
                 "es/resources/support-center/knowledge-base/cloud-services/multi-region-replication",
                 "es/resources/support-center/knowledge-base/setup-installation/production",
                 "es/resources/support-center/knowledge-base/general-faqs/separate-storage"
-              ],
-              "root": "es/resources/support-center/knowledge-base/general-faqs/operations-index"
+              ]
             }
-          ],
-          "root": "es/resources/support-center/knowledge-base/general-faqs/faq-index"
+          ]
         },
         {
-          "group": "Consejos y trucos",
+          "group": "Tips & tricks",
           "pages": [
             "es/resources/support-center/tips-and-tricks/community-wisdom",
             "es/resources/support-center/tips-and-tricks/cost-optimization",
@@ -250,10 +252,9 @@
             "es/resources/support-center/tips-and-tricks/too-many-parts"
           ]
         }
-      ],
-      "root": "es/resources/support-center/home"
+      ]
     }
   ],
   "icon": "/images/icons/icon-support-center.svg",
-  "item": "Centro de soporte"
+  "item": "Support center"
 }

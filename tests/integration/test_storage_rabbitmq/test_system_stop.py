@@ -17,6 +17,21 @@ instance = cluster.add_instance(
     with_rabbitmq=True,
     stay_alive=True,
 )
+# A node with a single message-broker worker, used to deterministically reproduce the REFRESH
+# pool-starvation path: with one worker, a streaming cycle that parks for the first delivery cannot
+# depend on another worker running the AMQP looping task.
+single_worker_instance = cluster.add_instance(
+    "single_worker_instance",
+    main_configs=[
+        "configs/rabbitmq.xml",
+        "configs/macros.xml",
+        "configs/single_message_broker_worker.xml",
+    ],
+    # parallel_view_processing=0 so the per-consumer sources share one pipeline thread and run serially.
+    user_configs=["configs/users_serial_views.xml"],
+    with_rabbitmq=True,
+    stay_alive=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -30,7 +45,8 @@ def rabbitmq_cluster():
 
 @pytest.fixture(autouse=True)
 def setup_teardown():
-    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
+    for node in (instance, single_worker_instance):
+        node.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
     yield
 
 
@@ -61,8 +77,10 @@ def publish_raw(rabbitmq_cluster, exchange, body):
     connection.close()
 
 
-def setup_consuming_table(table, exchange):
-    instance.query(
+def setup_consuming_table(
+    table, exchange, node=instance, flush_interval_ms=500, num_consumers=1
+):
+    node.query(
         f"""
         CREATE TABLE test.{table} (key UInt64, value UInt64)
             ENGINE = RabbitMQ
@@ -70,7 +88,8 @@ def setup_consuming_table(table, exchange):
                      rabbitmq_exchange_name = '{exchange}',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_queue_base = '{exchange}',
-                     rabbitmq_flush_interval_ms = 500,
+                     rabbitmq_num_consumers = {num_consumers},
+                     rabbitmq_flush_interval_ms = {flush_interval_ms},
                      rabbitmq_row_delimiter = '\\n';
 
         CREATE TABLE test.{table}_dst (key UInt64, value UInt64)
@@ -80,11 +99,11 @@ def setup_consuming_table(table, exchange):
             SELECT key, value FROM test.{table};
         """
     )
-    instance.wait_for_log_line("Started streaming to 1 attached views")
+    node.wait_for_log_line("Started streaming to .* attached views")
 
 
-def wait_dst_count(table, expected):
-    result = instance.query_with_retry(
+def wait_dst_count(table, expected, node=instance):
+    result = node.query_with_retry(
         f"SELECT count() FROM test.{table}_dst",
         check_callback=lambda res: int(res) == expected,
         retry_count=120,
@@ -93,12 +112,12 @@ def wait_dst_count(table, expected):
     assert int(result) == expected, f"expected {expected} rows in {table}_dst, got {result!r}"
 
 
-def assert_dst_count_stable(table, expected, seconds=5):
+def assert_dst_count_stable(table, expected, seconds=5, node=instance):
     """The consumer is expected to be stopped, so the row count must not grow.
     Still-running consumer polls every kafka_flush_interval_ms (500ms here)."""
     deadline = time.time() + seconds
     while time.time() < deadline:
-        assert int(instance.query(f"SELECT count() FROM test.{table}_dst")) == expected
+        assert int(node.query(f"SELECT count() FROM test.{table}_dst")) == expected
         time.sleep(1)
 
 
@@ -750,3 +769,45 @@ def test_refresh_survives_unready_dependencies(rabbitmq_cluster):
     instance.query(f"ATTACH TABLE test.{table}_dst")
     wait_dst_count(table, 6)
     assert_dst_count_stable(table, 6, seconds=5)
+
+
+def test_refresh_drains_backlog_with_single_broker_worker(rabbitmq_cluster):
+    # Regression for the MessageBrokerSchedulePool starvation of the REFRESH first-message wait.
+    # The blocked-REFRESH cycle waits for delivery from the AMQP looping task, which runs in the same
+    # pool; with a single worker it never gets CPU while the streaming task waits, so the source must
+    # drive the loop itself, otherwise the REFRESH permit is spent on a zero-row timeout and the
+    # backlog stays queued. Two consumers exercise the shared-pipeline-thread case: the sources run
+    # serially, so each must get its own drain budget rather than the first exhausting a shared one.
+    node = single_worker_instance
+    table = "rabbitmq_starve"
+    exchange = "starve_exchange"
+
+    # flush_interval_ms=0 means an unlimited cycle: one blocked REFRESH must drain the whole queued
+    # backlog, not cut it off at a fixed wall-clock budget. This is deterministic (no whole-cycle cap
+    # to race) and regresses if the self-driving cycle ever reintroduces a finite whole-cycle deadline
+    # for flush=0 (a paced single-worker drain of a larger backlog would then be truncated mid-cycle).
+    # num_consumers=2 keeps the serial per-source path (each source drives its own backlog).
+    setup_consuming_table(
+        table, exchange, node=node, flush_interval_ms=0, num_consumers=2
+    )
+    # Stop before publishing so the backlog is only ever consumed by the self-driving REFRESH cycle,
+    # never by normal streaming (which cannot make progress with a single worker anyway).
+    node.query(f"SYSTEM STOP test.{table}")
+
+    publish(rabbitmq_cluster, exchange, 0, 20)
+    assert_dst_count_stable(table, 0, seconds=2, node=node)
+
+    node.query(f"SYSTEM REFRESH test.{table}")
+
+    # The single REFRESH must drain the full queued backlog across both consumers.
+    wait_dst_count(table, 20, node=node)
+    # Still stopped: no further consumption without another command.
+    assert_dst_count_stable(table, 20, seconds=3, node=node)
+
+    # A second REFRESH must also run: the self-driving cycle must not leave the AMQP looping task
+    # holding the sole worker, or no later REFRESH could ever be scheduled again.
+    publish(rabbitmq_cluster, exchange, 20, 20)
+    assert_dst_count_stable(table, 20, seconds=2, node=node)
+    node.query(f"SYSTEM REFRESH test.{table}")
+    wait_dst_count(table, 40, node=node)
+    assert_dst_count_stable(table, 40, seconds=3, node=node)

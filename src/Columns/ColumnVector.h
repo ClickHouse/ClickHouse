@@ -107,8 +107,6 @@ public:
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
-    void skipSerializedInArena(ReadBuffer & in) const override;
-
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
@@ -157,36 +155,7 @@ public:
         return CompareHelper<T>::compare(data[n], assert_cast<const Self &>(rhs_).data[m], nan_direction_hint);
     }
 
-    [[nodiscard]] Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const final
-    {
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    #define compareAt doCompareAt
-#endif
-        Int64 res = compareAt(n, m, rhs, nan_direction_hint);
-
-        if (res < 0)
-        {
-            ++n;
-            while (n < size() && (compareAt(n, m, rhs, nan_direction_hint) < 0))
-            {
-                --res;
-                ++n;
-            }
-        }
-        else if (res > 0)
-        {
-            ++m;
-            while (m < assert_cast<const Self &>(rhs).size() && (compareAt(n, m, rhs, nan_direction_hint) > 0))
-            {
-                ++res;
-                ++m;
-            }
-        }
-        return res;
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    #undef compareAt
-#endif
-    }
+    [[nodiscard]] Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -344,6 +313,8 @@ public:
         }
     }
 
+    bool hasOnlyTypeDefaults() const override;
+
     bool structureEquals(const IColumn & rhs) const override
     {
         return typeid(rhs) == typeid(ColumnVector<T>);
@@ -357,6 +328,9 @@ public:
 
     /// Replace elements that match the filter with zeroes. If inverted replaces not matched elements.
     void applyZeroMap(const IColumn::Filter & filt, bool inverted = false);
+
+    void serializeAsComparable(size_t n, String & out) const override;
+    void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const IColumn::Permutation * permutation, const UInt8 * null_map) const override;
 
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container & getData()

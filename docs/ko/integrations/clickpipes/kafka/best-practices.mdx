@@ -25,10 +25,27 @@ Kafka의 메시지 압축에 관해 자세히 알아보려면 먼저 이 [가이
 * 가장 작은 (XS) 레플리카 크기로 실행할 경우, 개별 메시지의 기본 제한 크기는 16MB(비압축)이며 더 큰 레플리카에서는 32MB(비압축)입니다. 이 한도를 초과하는 메시지는 오류와 함께 거부됩니다. 더 큰 메시지가 필요하면 지원팀에 문의하십시오.
 
 <div id="delivery-semantics">
-  ## 전달 보장
+  ## 전송 의미 체계
 </div>
 
-ClickPipes for Kafka는 `at-least-once` 전달 보장(가장 널리 사용되는 방식 중 하나)을 제공합니다. 전달 보장에 관한 피드백은 [문의 양식](https://clickhouse.com/company/contact?loc=clickpipes)을 통해 보내주시면 감사하겠습니다. 정확히 한 번 처리 의미 체계가 필요하다면 공식 [`clickhouse-kafka-connect`](https://clickhouse.com/blog/real-time-event-streaming-with-kafka-connect-confluent-cloud-clickhouse) 싱크를 사용하는 것을 권장합니다.
+ClickPipes for Kafka는 기본적으로 Kafka consumer group offset을 통해 수집 진행 상황을 추적하며 최소 한 번 전송을 보장합니다. 또한 pod 재시작, consumer 리밸런싱, 삽입 실패가 발생하더라도 각 Kafka 레코드가 ClickHouse에 정확히 한 번만 삽입되도록 하는 정확히 한 번 처리 의미 체계를 선택적으로 지원합니다.
+
+정확히 한 번 처리를 구현하기 위해 ClickPipes는 내부 상태 저장소에 각 파티션의 진행 상황을 다음 두 값으로 기록합니다.
+
+* **High-water mark** — 해당 파티션의 모든 레코드가 ClickHouse에 삽입된 것으로 확인된 마지막 offset입니다. 재시작 시 ClickPipes는 이 표시 이하의 모든 레코드를 버리므로 이미 저장된 데이터가 다시 전송되지 않습니다.
+* **Pending ranges** — ClickHouse로 전송되었지만 아직 확인되지 않은 삽입 블록의 offset 범위입니다. 장애 발생 후 ClickPipes는 정확히 이 범위만 재생합니다.
+
+각 삽입 블록은 연속된 offset 범위를 포함하며 `topic:partition:firstOffset-lastOffset` 형식의 결정론적 [중복 제거 토큰](/ko/concepts/features/operations/insert/deduplicating-inserts-on-retries)을 갖습니다. 재생 시 ClickPipes는 동일한 offset 범위와 그에 따른 동일한 토큰을 재현하므로 ClickHouse가 중복을 거부합니다. 토큰은 offset 범위에만 의존하므로 재구성된 블록이 바이트 단위로 완전히 동일하지 않아도 재생 시 중복이 제거됩니다.
+
+<Note>
+  **중복 제거 윈도우**
+
+  토큰 중복 제거는 대상 테이블의 [`replicated_deduplication_window`](/ko/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) (기본적으로 최근 삽입 블록 10,000개) 및 [`replicated_deduplication_window_seconds`](/ko/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) (기본적으로 1시간) 범위 내에서만 적용됩니다. 고처리량 파이프는 블록 수 기준 윈도우를 빠르게 소진할 수 있으므로, 최악의 재생 지연 시간을 감당할 수 있도록 대상 테이블에서 두 설정을 모두 확인하고 필요에 따라 늘리는 것이 좋습니다. 토큰이 윈도우에서 벗어난 후 재생된 데이터는 다시 삽입될 수 있으므로, 이 경우 정확히 한 번 처리가 보장되지 않습니다.
+</Note>
+
+주요 절충점은 파트 크기입니다. 더 큰 삽입 블록은 ClickHouse에서 더 적고 큰 [파트](/ko/concepts/core-concepts/parts)를 생성하므로 머지 오버헤드가 낮게 유지됩니다. ClickPipes는 블록을 생성하는 동안 파티션의 행을 메모리에 유지하므로, 생성 가능한 파트 크기는 파이프에 할당된 메모리에 따라 달라집니다. 메모리가 부족하면 더 작은 블록을 생성하게 되고 테이블에는 더 많은 파트가 누적됩니다. 파이프에 더 많은 메모리를 할당하면 더 큰 블록을 생성할 수 있어 파트 수가 줄어듭니다.
+
+파티션 수가 내부 삽입 &quot;worker&quot; 수와 비슷할 때 파이프가 가장 효율적으로 작동합니다. 이 경우 각 worker는 대략 하나의 파티션을 처리하며 큰 블록을 생성할 수 있는 충분한 메모리 여유를 확보할 수 있습니다. worker 수와 사용 가능한 메모리는 모두 **설정** -&gt; **고급 설정** -&gt; **스케일링**에서 구성하는 레플리카 크기 및 수에 따라 스케일링됩니다.
 
 <div id="authentication">
   ## 인증

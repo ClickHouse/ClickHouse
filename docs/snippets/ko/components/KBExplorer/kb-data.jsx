@@ -93,14 +93,6 @@ export const kbIndex = {
       tags: ["Data Modelling"]
     },
     {
-      id: "tables-schema/schema-migration-tools",
-      title: "Automatic schema migration tools for ClickHouse",
-      description: "Learn about automatic schema migration tools for ClickHouse and how to manage changing database schemas over time.",
-      href: "/ko/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
-      category: "Tables & schema",
-      tags: ["Tools and Utilities"]
-    },
-    {
       id: "cloud-services/aws-privatelink-setup-for-msk-clickpipes",
       title: "AWS PrivateLink setup to expose MSK for ClickPipes",
       description: "Setup steps to expose a private MSK via MSK multi-VPC connectivity to ClickPipes.",
@@ -176,7 +168,7 @@ export const kbIndex = {
     {
       id: "configuration-settings/change-the-prompt-in-clickhouse-client",
       title: "Change the prompt in clickhouse-client",
-      description: "This article explains how to change the prompt in your Clickhouse client and clickhouse-local terminal window from :) to a prefix followed by :)",
+      description: "이 문서에서는 ClickHouse 클라이언트와 clickhouse-local 터미널 창의 프롬프트를 :)에서 접두사 뒤에 :)가 오는 형식으로 변경하는 방법을 설명합니다.",
       href: "/ko/resources/support-center/knowledge-base/configuration-settings/change-the-prompt-in-clickhouse-client",
       category: "Configuration & settings",
       tags: ["Settings", "Native Clients and Interfaces"]
@@ -196,14 +188,6 @@ export const kbIndex = {
       href: "/ko/resources/support-center/knowledge-base/queries-sql/comparing-metrics-between-queries",
       category: "Queries & SQL",
       tags: ["Performance and Optimizations"]
-    },
-    {
-      id: "configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
-      title: "Docker에서 CAP_IPC_LOCK 및 CAP_SYS_NICE 기능 구성",
-      description: "컨테이너에서 ClickHouse를 실행할 때 `CAP_IPC_LOCK` 및 `CAP_SYS_NICE`에 대한 Docker 기능 경고를 해결하는 방법을 알아보세요.",
-      href: "/ko/resources/support-center/knowledge-base/configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
-      category: "Configuration & settings",
-      tags: ["Errors and Exceptions"]
     },
     {
       id: "troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
@@ -739,7 +723,7 @@ export const kbIndex = {
     },
     {
       id: "performance-optimization/finding-expensive-queries-by-memory-usage",
-      title: "Identifying Expensive Queries by Memory Usage in ClickHouse",
+      title: "ClickHouse에서 메모리 사용량을 기준으로 비용이 많이 드는 쿼리 식별하기",
       description: "Learn how to use the `system.query_log` table to find the most memory-intensive queries in ClickHouse, with examples for clustered and standalone setups.",
       href: "/ko/resources/support-center/knowledge-base/performance-optimization/finding-expensive-queries-by-memory-usage",
       category: "Performance & optimization",
@@ -874,20 +858,20 @@ export const kbIndex = {
       tags: ["Errors and Exceptions", "Data Formats"]
     },
     {
-      id: "troubleshooting/exception-too-many-parts",
-      title: 'ClickHouse에서 "파트 수 초과(Too Many Parts)" 오류 해결하기',
-      description: '삽입 속도 최적화, MergeTree 설정 구성, 파티션 효과적 관리를 통해 ClickHouse의 "Too many parts" 오류를 해결하는 방법을 알아보세요.',
-      href: "/ko/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts",
-      category: "Troubleshooting & errors",
-      tags: ["Errors and Exceptions"]
-    },
-    {
       id: "troubleshooting/certificate-verify-failed-error",
-      title: "Resolving SSL Certificate Verify Error in ClickHouse",
+      title: "ClickHouse에서 SSL 인증서 검증 오류 해결하기",
       description: "Learn how to resolve the SSL Exception CERTIFICATE_VERIFY_FAILED error.",
       href: "/ko/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
       category: "Troubleshooting & errors",
       tags: ["Security and Authentication", "Errors and Exceptions"]
+    },
+    {
+      id: "troubleshooting/exception-too-many-parts",
+      title: 'ClickHouse에서 "Too many parts" 예외 해결',
+      description: '삽입을 배칭하고, 비동기 삽입을 사용하며, 적절한 파티셔닝 키를 선택해 "Too many parts" 예외를 진단하고 해결하는 방법을 알아보십시오.',
+      href: "/ko/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts",
+      category: "Troubleshooting & errors",
+      tags: ["Errors and Exceptions"]
     },
     {
       id: "troubleshooting/connection-timeout-remote-remoteSecure",
@@ -906,12 +890,28 @@ export const kbIndex = {
       tags: ["Runbooks", "Data Modelling"]
     },
     {
+      id: "tables-schema/schema-migration-tools",
+      title: "ClickHouse용 스키마 마이그레이션 도구",
+      description: "ClickHouse용 스키마 마이그레이션 도구와 시간이 지남에 따라 변경되는 데이터베이스 스키마를 관리하는 방법을 알아봅니다.",
+      href: "/ko/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
+      category: "Tables & schema",
+      tags: ["Tools and Utilities"]
+    },
+    {
       id: "tables-schema/search-across-node-for-tables-with-a-wildcard",
       title: "Searching across nodes for tables with a wildcard",
       description: "Learn how to search across nodes for tables with a wildcard.",
       href: "/ko/resources/support-center/knowledge-base/tables-schema/search-across-node-for-tables-with-a-wildcard",
       category: "Tables & schema",
       tags: ["Deployments and Scaling"]
+    },
+    {
+      id: "setup-installation/set-up-clickhouse-documentation-mcp-server",
+      title: "ClickHouse 문서 MCP 서버 설정",
+      description: "Model Context Protocol을 통해 AI 도구를 ClickHouse 문서에 연결합니다.",
+      href: "/ko/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server",
+      category: "Setup & installation",
+      tags: ["Tools and Utilities"]
     },
     {
       id: "performance-optimization/query-max-execution-time",
@@ -1004,7 +1004,7 @@ export const kbIndex = {
     },
     {
       id: "general-faqs/ne-tormozit",
-      title: '"не тормозит"는 무슨 의미입니까?',
+      title: "“не тормозит”는 무슨 의미입니까?",
       description: '"Не тормозит"가 무슨 의미인지 설명하는 페이지입니다.',
       href: "/ko/resources/support-center/knowledge-base/general-faqs/ne-tormozit",
       category: "General & FAQs",
@@ -1074,6 +1074,14 @@ export const kbIndex = {
       href: "/ko/resources/support-center/knowledge-base/general-faqs/who-is-using-clickhouse",
       category: "General & FAQs",
       tags: []
+    },
+    {
+      id: "security/set-role-not-persisting-in-sql-console",
+      title: "ClickHouse Cloud SQL 콘솔에서 `SET ROLE` 설정이 유지되지 않는 이유",
+      description: "ClickHouse Cloud SQL 콘솔에서 `SET ROLE` 설정이 유지되지 않는 이유와 사용자별 영구 권한을 할당하는 방법을 알아봅니다.",
+      href: "/ko/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console",
+      category: "Security & access control",
+      tags: ["Security and Authentication", "Managing Cloud", "Troubleshooting"]
     },
     {
       id: "data-management/dictionaries-consistent-state",

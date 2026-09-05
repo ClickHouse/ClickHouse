@@ -1,0 +1,7 @@
+CREATE TABLE t (`x` Int) ENGINE = Memory
+ATTACH TABLE t FROM \'/p\' (`x` Int) ENGINE = Memory
+CREATE TABLE t UUID \'a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5\' (`x` Int) ENGINE = Memory
+SYSTEM STOP LISTEN TCP
+SYSTEM STOP LISTEN QUERIES ALL EXCEPT TCP
+SELECT {x:Identifier}
+SELECT 1 FROM {tbl:Identifier}

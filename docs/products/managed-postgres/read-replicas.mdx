@@ -7,12 +7,12 @@ keywords: ['read replicas', 'scalability', 'read scaling', 'postgres replicas', 
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
-Read replicas allow you to create one or more copies of your primary Managed Postgres database. These replicas continuously follow your primary database using PostgreSQL's native replication to stay up to date with changes.
+Read replicas allow you to create one or more copies of your primary ClickHouse Managed Postgres database. These replicas continuously follow your primary database using PostgreSQL's native replication to stay up to date with changes.
 
 To manage read replicas, click the edit icon on your warehouse:
 
@@ -52,7 +52,7 @@ Read replicas can play a critical role in disaster recovery. If your primary dat
 
 ## How read replicas work {#how-read-replicas-work}
 
-Read replicas in Managed Postgres use a WAL shipping architecture rather than streaming replication. This design choice prioritizes minimizing impact on your primary database.
+Read replicas in ClickHouse Managed Postgres use a WAL shipping architecture rather than streaming replication. This design choice prioritizes minimizing impact on your primary database.
 
 ### WAL shipping from object storage {#wal-shipping-from-object-storage}
 

@@ -145,7 +145,7 @@ public:
             context = Context::getGlobalContextInstance();
         read_settings = context->getReadSettings();
         write_settings = context->getWriteSettings();
-        timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context->getSettingsRef());
+        timeouts = ConnectionTimeouts::getDistributedCacheTimeouts(context->getSettingsRef());
         receive_throttler = context->getDistributedCacheReadThrottler();
         send_throttler = context->getDistributedCacheWriteThrottler();
         distributed_cache_log = context->getDistributedCacheLog();
@@ -162,7 +162,11 @@ public:
         try
         {
             if (cache_client)
+            {
                 cache_client->makeDropCacheRequest(file_key, /*connection_info_hash=*/0, /*is_temporary_data=*/true);
+                /// The hold is released — the connection can be reused by someone else.
+                cache_client->setForbidReconnect(false);
+            }
         }
         catch (...)
         {

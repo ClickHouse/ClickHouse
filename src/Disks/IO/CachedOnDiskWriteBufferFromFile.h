@@ -41,8 +41,10 @@ public:
     * it until it is full and then allocate next file segment.
     * On a `false` return, `failure_reason` is set to a human-readable reason why write-through
     * caching was stopped (e.g. cache capacity reached, or covering segment being evicted).
+    * `bytes_written_to_cache` is set to the number of bytes actually written to file segments, which
+    * can be less than `size` when some bytes are skipped because they are already present in cache.
     */
-    bool write(char * data, size_t size, size_t offset, FileSegmentKind segment_kind, std::string & failure_reason);
+    bool write(char * data, size_t size, size_t offset, FileSegmentKind segment_kind, std::string & failure_reason, size_t & bytes_written_to_cache);
 
     void finalize();
 

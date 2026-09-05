@@ -239,7 +239,9 @@ public:
 
     /// Returns true if the client was fully purged; false if any key kept
     /// non-releasable (held) segments and survived — retry on a later sweep.
-    bool removeAllKeys(const UserID & user_id);
+    /// If `pool` is given, metadata buckets are processed in parallel on it
+    /// (the calling thread participates as well).
+    bool removeAllKeys(const UserID & user_id, ThreadPool * pool = nullptr);
 
     void shutdown();
 

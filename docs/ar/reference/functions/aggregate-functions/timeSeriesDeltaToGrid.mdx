@@ -16,8 +16,10 @@ doc_type: 'reference'
 دالة تجميع تأخذ بيانات السلاسل الزمنية على هيئة أزواج من الطوابع الزمنية والقيم، وتحسب [دلتا بأسلوب مشابه لـ PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#delta) من هذه البيانات على شبكة زمنية منتظمة يحددها الطابع الزمني للبداية، والطابع الزمني للنهاية، والخطوة.
 وبالنسبة إلى كل نقطة على الشبكة، تُؤخذ العينات المستخدمة في حساب `delta` ضمن النافذة الزمنية المحددة.
 
+إذا كانت عدة عينات تحمل الطابع الزمني نفسه، فلا تُستخدم إلا واحدة منها: العينة ذات القيمة الأكبر. تخسر قيمة NaN أمام أي قيمة أخرى، لذا لا تُستخدم قيمة NaN إلا إذا كانت جميع العينات عند هذا الطابع الزمني NaN.
+
 <Warning>
-  هذه الدالة تجريبية. فعِّلها عبر ضبط `allow_experimental_ts_to_grid_aggregate_function=true`.
+  هذه الدالة تجريبية. فعِّلها عبر ضبط `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>
 
 **الصياغة**
@@ -28,10 +30,10 @@ timeSeriesDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(time
 
 **المعلمات**
 
-* `start_timestamp` — يحدّد بداية الشبكة. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime)
-* `end_timestamp` — يحدّد نهاية الشبكة. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime)
-* `grid_step` — يحدّد خطوة الشبكة بالثواني. [`UInt32`](/ar/reference/data-types/int-uint)
-* `staleness` — يحدّد الحد الأقصى للتقادم، بالثواني، للعينات التي تؤخذ في الحسبان. نافذة التقادم هي فترة مفتوحة من اليسار ومغلقة من اليمين. [`UInt32`](/ar/reference/data-types/int-uint)
+* `start_timestamp` — يحدّد بداية الشبكة. مع وسيطة طابع زمني من نوع `DateTime64`، يمكن أن يكون أيضًا رقمًا كسريًا، أو سلسلة تحتوي على رقم أو نص تاريخ ووقت. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
+* `end_timestamp` — يحدّد نهاية الشبكة. مع وسيطة طابع زمني من نوع `DateTime64`، يمكن أن يكون أيضًا رقمًا كسريًا، أو سلسلة تحتوي على رقم أو نص تاريخ ووقت. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
+* `grid_step` — يحدّد خطوة الشبكة بالثواني. مع وسيطة طابع زمني من نوع `DateTime64`، يمكن أن يكون أيضًا رقمًا كسريًا، أو سلسلة تحتوي على رقم أو مدة مثل &#39;15s&#39; أو &#39;1m&#39;. [`UInt32`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
+* `staleness` — يحدّد الحد الأقصى للتقادم، بالثواني، للعينات التي تؤخذ في الحسبان. نافذة التقادم هي فترة مفتوحة من اليسار ومغلقة من اليمين. مع وسيطة طابع زمني من نوع `DateTime64`، يمكن أن يكون أيضًا رقمًا كسريًا، أو سلسلة تحتوي على رقم أو مدة مثل &#39;15s&#39; أو &#39;1m&#39;. [`UInt32`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
 
 **الوسيطات**
 
@@ -69,11 +71,11 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,3,4.5,3.75,NULL,NULL,3.75]                                                 │
+│ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                  │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**استخدام وسيطات من نوع Array**
+**استخدام وسيطات من نوع مصفوفة**
 
 ```sql title=Query
 SET allow_experimental_time_series_aggregate_functions = 1;
@@ -90,7 +92,7 @@ SELECT timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
 
 ```response title=Response
 ┌─timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,3,4.5,3.75,NULL,NULL,3.75]                                                   │
+│ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                    │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

@@ -24,8 +24,8 @@ Part types determine how column data is organized within a data part.
 
 The part type is controlled by the following table settings:
 
-- [`min_bytes_for_wide_part`](/reference/settings/merge-tree-settings#min_bytes_for_wide_part): Minimum bytes for a part to use Wide format
-- [`min_rows_for_wide_part`](/reference/settings/merge-tree-settings#min_rows_for_wide_part): Minimum rows for a part to use Wide format
+- [`min_bytes_for_wide_part`](/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part): Minimum bytes for a part to use Wide format
+- [`min_rows_for_wide_part`](/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part): Minimum rows for a part to use Wide format
 
 If either the number of bytes or rows in a data part is less than the corresponding setting value, the part is stored in `Compact` format; otherwise, it uses `Wide` format.
 
@@ -61,7 +61,7 @@ Storage formats determine how a part's files are physically stored on disk.
 | Format | Description | Availability |
 |--------|-------------|--------------|
 | **Full** | Each file is stored individually in the part directory | Open source and Cloud |
-| **Packed** | All files are bundled into a single archive file | Open source and Cloud |
+| **Packed** | Most part files are bundled into a single archive file (projections and a few service files are written separately) | Open source and Cloud |
 
 ### Full storage {#full-storage}
 
@@ -69,7 +69,7 @@ In Full storage, each part consists of multiple separate files stored individual
 
 ### Packed storage {#packed-storage}
 
-In Packed storage, all part files are bundled into a single archive. This significantly reduces the number of file operations, which is critical for remote storage like S3 where each request has associated latency and cost.
+In Packed storage, most part files are bundled into a single archive. Projections and a few service files - `txn_version.txt`, `delete-on-destroy.txt` and `invalidated_system_columns.txt` - are still written separately, because they can be created or rewritten after the part itself has been written. This significantly reduces the number of file operations, which is critical for remote storage like S3 where each request has associated latency and cost.
 
 **Benefits of Packed storage:**
 - Fewer S3/object storage API calls
@@ -81,9 +81,9 @@ In Packed storage, all part files are bundled into a single archive. This signif
 
 A part uses Packed storage if **any** of these conditions are true:
 
-- Uncompressed bytes < [`min_bytes_for_full_part_storage`](/reference/settings/merge-tree-settings#min_bytes_for_full_part_storage)
-- Row count < [`min_rows_for_full_part_storage`](/reference/settings/merge-tree-settings#min_rows_for_full_part_storage)
-- Merge level < [`min_level_for_full_part_storage`](/reference/settings/merge-tree-settings#min_level_for_full_part_storage)
+- Uncompressed bytes < [`min_bytes_for_full_part_storage`](/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_full_part_storage)
+- Row count < [`min_rows_for_full_part_storage`](/reference/settings/merge-tree-settings/min-rows#min_rows_for_full_part_storage)
+- Merge level < [`min_level_for_full_part_storage`](/reference/settings/merge-tree-settings/min-level#min_level_for_full_part_storage)
 
 Packed storage is opt-in: all three settings default to `0`, so parts use Full storage unless you raise one of them.
 
@@ -127,6 +127,10 @@ These two concepts are orthogonal and you can have any combination:
 ## Querying part information {#querying-part-information}
 
 You can inspect the part type and part storage type of existing parts using the [`system.parts`](/reference/system-tables/parts) table:
+
+<Note>
+In open-source ClickHouse, `part_storage_type` is exposed by `system.parts` starting with version 26.9. In version 26.8 and earlier, omit `part_storage_type` from the query and group and order only by `part_type`.
+</Note>
 
 ```sql
 SELECT

@@ -90,7 +90,7 @@ bool isMdxImport(std::string_view line)
     line = trimView(line);
     if (!line.starts_with("import "))
         return false;
-    return line.find(" from '") != std::string_view::npos || line.find(" from \"") != std::string_view::npos || line.starts_with("import '")
+    return line.contains(" from '") || line.contains(" from \"") || line.starts_with("import '")
         || line.starts_with("import \"");
 }
 
@@ -201,6 +201,11 @@ struct DocSnippet
 };
 
 const DocSnippet DOC_SNIPPETS[] = {
+    {"_snippet_dictionary_in_cloud.mdx", R"DOCS_MD(<Tip>
+If you are using a dictionary with ClickHouse Cloud please use the DDL query option to create your dictionaries, and create your dictionary as user `default`.
+Also, verify the list of supported dictionary sources in the [Cloud Compatibility guide](/products/cloud/guides/cloud-compatibility).
+</Tip>)DOCS_MD"},
+
     {"_when-to-use-json.mdx", R"DOCS_MD(## When to use the `JSON` Type {#when-to-use-json-type}
 
 The `JSON` type is designed for querying, filtering, and aggregating specific fields within JSON objects that have dynamic or unpredictable structures. It achieves this by splitting JSON objects into separate sub-columns, which dramatically reduces data read and speeds up queries on selected fields compared to alternatives like `Map` or parsing strings.
@@ -234,24 +239,24 @@ You can also mix approaches—use standard columns for predictable top-level fie
 
 | Setting                                                                                                                                                                     | Description                                                                                                                                                                                                                                 | Default |
 |-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| [`output_format_pretty_max_rows`](/reference/settings/formats#output_format_pretty_max_rows)                                                          | Row limit for Pretty formats.                                                                                                                                                                                                               | `10000` |
-| [`output_format_pretty_max_column_pad_width`](/reference/settings/formats#output_format_pretty_max_column_pad_width)                                  | Maximum width to pad all values in a column in Pretty formats.                                                                                                                                                                              | `250`   |
-| [`output_format_pretty_max_value_width`](/reference/settings/formats#output_format_pretty_max_value_width)                                            | Maximum width of value to display in Pretty formats. If greater - it will be cut.                                                                                                                                                           | `10000` |                                                                                                                                                 
-| [`output_format_pretty_color`](/reference/settings/formats#output_format_pretty_color)                                                                | Use ANSI escape sequences to paint colors in Pretty formats.                                                                                                                                                                                | `true`  |
-| [`output_format_pretty_grid_charset`](/reference/settings/formats#output_format_pretty_grid_charset)                                                  | Charset for printing grid borders. Available charsets: ASCII, UTF-8.                                                                                                                                                                        | `UTF-8` |                                                                                                                                                           
-| [`output_format_pretty_row_numbers`](/reference/settings/formats#output_format_pretty_row_numbers)                                                    | Add row numbers before each row for pretty output format.                                                                                                                                                                                   | `true`  |                                                                                                                                                                          
-| [`output_format_pretty_display_footer_column_names`](/reference/settings/formats#output_format_pretty_display_footer_column_names)                    | Display column names in the footer if table contains many rows.                                                                                                                                                                             | `true`  |                                                                                                                                                                    
-| [`output_format_pretty_display_footer_column_names_min_rows`](/reference/settings/formats#output_format_pretty_display_footer_column_names_min_rows)  | Sets the minimum number of rows for which a footer will be displayed if [`output_format_pretty_display_footer_column_names`](/reference/settings/formats#output_format_pretty_display_footer_column_names) is enabled.  | `50`    |)DOCS_MD"},
+| [`output_format_pretty_max_rows`](/reference/settings/formats/output-format#output_format_pretty_max_rows)                                                          | Row limit for Pretty formats.                                                                                                                                                                                                               | `10000` |
+| [`output_format_pretty_max_column_pad_width`](/reference/settings/formats/output-format#output_format_pretty_max_column_pad_width)                                  | Maximum width to pad all values in a column in Pretty formats.                                                                                                                                                                              | `250`   |
+| [`output_format_pretty_max_value_width`](/reference/settings/formats/output-format#output_format_pretty_max_value_width)                                            | Maximum width of value to display in Pretty formats. If greater - it will be cut.                                                                                                                                                           | `10000` |
+| [`output_format_pretty_color`](/reference/settings/formats/output-format#output_format_pretty_color)                                                                | Use ANSI escape sequences to paint colors in Pretty formats.                                                                                                                                                                                | `true`  |
+| [`output_format_pretty_grid_charset`](/reference/settings/formats/output-format#output_format_pretty_grid_charset)                                                  | Charset for printing grid borders. Available charsets: ASCII, UTF-8.                                                                                                                                                                        | `UTF-8` |
+| [`output_format_pretty_row_numbers`](/reference/settings/formats/output-format#output_format_pretty_row_numbers)                                                    | Add row numbers before each row for pretty output format.                                                                                                                                                                                   | `true`  |
+| [`output_format_pretty_display_footer_column_names`](/reference/settings/formats/output-format#output_format_pretty_display_footer_column_names)                    | Display column names in the footer if table contains many rows.                                                                                                                                                                             | `true`  |
+| [`output_format_pretty_display_footer_column_names_min_rows`](/reference/settings/formats/output-format#output_format_pretty_display_footer_column_names_min_rows)  | Sets the minimum number of rows for which a footer will be displayed if [`output_format_pretty_display_footer_column_names`](/reference/settings/formats/output-format#output_format_pretty_display_footer_column_names) is enabled.  | `50`    |)DOCS_MD"},
 
     {"common-row-binary-format-settings.mdx", R"DOCS_MD(The following settings are common to all `RowBinary` type formats.
 
 | Setting                                                                                                                                              | Description                                                                                                                                                                                                                                         | Default |
 |------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| [`format_binary_max_string_size`](/reference/settings/formats#format_binary_max_string_size)                                           | The maximum allowed size for String in RowBinary format.                                                                                                                                                                                          | `1GiB`  |
-| [`output_format_binary_encode_types_in_binary_format`](/reference/settings/formats#input_format_binary_decode_types_in_binary_format) | Allows to write types in header using [`binary encoding`](/reference/data-types/data-types-binary-encoding) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](/reference/formats/RowBinary/RowBinaryWithNamesAndTypes) output format.  | `false` |
-| [`input_format_binary_decode_types_in_binary_format`](/reference/settings/formats#input_format_binary_decode_types_in_binary_format)   | Allows to read types in header using [`binary encoding`](/reference/data-types/data-types-binary-encoding) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](/reference/formats/RowBinary/RowBinaryWithNamesAndTypes) input format.    | `false` |
-| [`output_format_binary_write_json_as_string`](/reference/settings/formats#output_format_binary_write_json_as_string)                   | Allows to write values of the [`JSON`](/reference/data-types/newjson) data type as `JSON` [String](/reference/data-types/string) values in [`RowBinary`](/reference/formats/RowBinary/RowBinary) output format.                            | `false` |
-| [`input_format_binary_read_json_as_string`](/reference/settings/formats#input_format_binary_read_json_as_string)                       | Allows to read values of the [`JSON`](/reference/data-types/newjson) data type as `JSON` [String](/reference/data-types/string) values in [`RowBinary`](/reference/formats/RowBinary/RowBinary) input format.                              | `false` |)DOCS_MD"},
+| [`format_binary_max_string_size`](/reference/settings/formats/format-binary#format_binary_max_string_size)                                           | The maximum allowed size for String in RowBinary format.                                                                                                                                                                                          | `1GiB`  |
+| [`output_format_binary_encode_types_in_binary_format`](/reference/settings/formats/output-format#output_format_binary_encode_types_in_binary_format) | Allows to write types in header using [`binary encoding`](/reference/data-types/data-types-binary-encoding) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](/reference/formats/RowBinary/RowBinaryWithNamesAndTypes) output format.  | `false` |
+| [`input_format_binary_decode_types_in_binary_format`](/reference/settings/formats/input-format#input_format_binary_decode_types_in_binary_format)   | Allows to read types in header using [`binary encoding`](/reference/data-types/data-types-binary-encoding) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](/reference/formats/RowBinary/RowBinaryWithNamesAndTypes) input format.    | `false` |
+| [`output_format_binary_write_json_as_string`](/reference/settings/formats/output-format#output_format_binary_write_json_as_string)                   | Allows to write values of the [`JSON`](/reference/data-types/newjson) data type as `JSON` [String](/reference/data-types/string) values in [`RowBinary`](/reference/formats/RowBinary/RowBinary) output format.                            | `false` |
+| [`input_format_binary_read_json_as_string`](/reference/settings/formats/input-format#input_format_binary_read_json_as_string)                       | Allows to read values of the [`JSON`](/reference/data-types/newjson) data type as `JSON` [String](/reference/data-types/string) values in [`RowBinary`](/reference/formats/RowBinary/RowBinary) input format.                              | `false` |)DOCS_MD"},
 
     {"data-types-matching.mdx", R"DOCS_MD(The table below shows all data types supported by the Apache Avro format, and their corresponding ClickHouse [data types](/reference/data-types/index) in `INSERT` and `SELECT` queries.
 
@@ -281,7 +286,7 @@ You can also mix approaches—use standard columns for predictable top-level fie
 | `fixed(32)`                                 | [Int256/UInt256](/reference/data-types/int-uint)                                                               | `fixed(32)`                     |
 | `record`                                    | [Tuple](/reference/data-types/tuple)                                                                           | `record`                        |
 
-\* `bytes` is default, controlled by setting [`output_format_avro_string_column_pattern`](/reference/settings/formats#output_format_avro_string_column_pattern)
+\* `bytes` is default, controlled by setting [`output_format_avro_string_column_pattern`](/reference/settings/formats/output-format#output_format_avro_string_column_pattern)
 
 \**  The [Variant type](/reference/data-types/variant) implicitly accepts `null` as a field value, so for example the Avro `union(T1, T2, null)` will be converted to `Variant(T1, T2)`.
 As a result, when producing Avro from ClickHouse, we have to always include the `null` type to the Avro `union` type set as we don't know if any value is actually `null` during the schema inference.
@@ -1418,12 +1423,12 @@ private:
             }
 
             /// Table: a row of cells followed by a separator row.
-            if (line.find('|') != std::string_view::npos && i + 1 < lines.size() && isTableSeparator(lines[i + 1]))
+            if (line.contains('|') && i + 1 < lines.size() && isTableSeparator(lines[i + 1]))
             {
                 std::vector<std::string_view> rows;
                 rows.push_back(line);
                 i += 2; /// skip the header and the separator
-                while (i < lines.size() && !isBlank(lines[i]) && lines[i].find('|') != std::string_view::npos
+                while (i < lines.size() && !isBlank(lines[i]) && lines[i].contains('|')
                        && !stripCR(lines[i]).substr(leadingSpaces(lines[i])).starts_with("```"))
                 {
                     rows.push_back(stripCR(lines[i]));
@@ -1499,7 +1504,7 @@ private:
                     std::string_view pl = stripCR(lines[i]);
                     if (startsNewBlock(pl))
                         break;
-                    if (pl.find('|') != std::string_view::npos && i + 1 < lines.size() && isTableSeparator(lines[i + 1]))
+                    if (pl.contains('|') && i + 1 < lines.size() && isTableSeparator(lines[i + 1]))
                         break;
                     if (!paragraph.empty())
                         paragraph += ' ';

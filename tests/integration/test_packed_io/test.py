@@ -129,17 +129,23 @@ def pack_part_recursive(part_path, output_dir, file_order_hint):
 
 
 def test_packed_io(started_cluster):
+    # The tables are created with `auto_statistics_types = ''` because `packed-io` does not
+    # convert the statistics representation between full and packed parts: a full part keeps a
+    # single top-level `statistics.packed`, a packed part keeps `statistics_<column>.stats`
+    # members. Comparing a converted part against a natively written one therefore always
+    # differs while statistics are present. See
+    # https://github.com/ClickHouse/ClickHouse/issues/112598
     node.query(
-        "CREATE OR REPLACE TABLE t_packed_local (id UInt64, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '10M'"
+        "CREATE OR REPLACE TABLE t_packed_local (id UInt64, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '10M', auto_statistics_types = ''"
     )
     node.query(
-        "CREATE OR REPLACE TABLE t_full_local (id UInt64, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = 0"
+        "CREATE OR REPLACE TABLE t_full_local (id UInt64, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = 0, auto_statistics_types = ''"
     )
     node.query(
-        "CREATE OR REPLACE TABLE t_full_s3 (id UInt64, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '0', storage_policy = 's3'"
+        "CREATE OR REPLACE TABLE t_full_s3 (id UInt64, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '0', auto_statistics_types = '', storage_policy = 's3'"
     )
     node.query(
-        "CREATE OR REPLACE TABLE t_packed_s3 (id UInt64, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '10M', storage_policy = 's3'"
+        "CREATE OR REPLACE TABLE t_packed_s3 (id UInt64, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '10M', auto_statistics_types = '', storage_policy = 's3'"
     )
     node.query(
         "INSERT INTO t_full_local SELECT number, randomPrintableASCII(10) FROM numbers(100)"
@@ -172,17 +178,19 @@ def test_packed_io(started_cluster):
 
 
 def test_packed_io_projections(started_cluster):
+    # `auto_statistics_types = ''` for the same reason as in `test_packed_io`, see
+    # https://github.com/ClickHouse/ClickHouse/issues/112598
     node.query(
-        "CREATE OR REPLACE TABLE t_packed_local_proj (id UInt64, s String, PROJECTION p (SELECT sum(id), max(s))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '10M'"
+        "CREATE OR REPLACE TABLE t_packed_local_proj (id UInt64, s String, PROJECTION p (SELECT sum(id), max(s))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '10M', auto_statistics_types = ''"
     )
     node.query(
-        "CREATE OR REPLACE TABLE t_full_local_proj (id UInt64, s String, PROJECTION p (SELECT sum(id), max(s))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = 0"
+        "CREATE OR REPLACE TABLE t_full_local_proj (id UInt64, s String, PROJECTION p (SELECT sum(id), max(s))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = 0, auto_statistics_types = ''"
     )
     node.query(
-        "CREATE OR REPLACE TABLE t_full_s3_proj (id UInt64, s String, PROJECTION p (SELECT sum(id), max(s))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '0', storage_policy = 's3'"
+        "CREATE OR REPLACE TABLE t_full_s3_proj (id UInt64, s String, PROJECTION p (SELECT sum(id), max(s))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '0', auto_statistics_types = '', storage_policy = 's3'"
     )
     node.query(
-        "CREATE OR REPLACE TABLE t_packed_s3_proj (id UInt64, s String, PROJECTION p (SELECT sum(id), max(s))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '10M', storage_policy = 's3'"
+        "CREATE OR REPLACE TABLE t_packed_s3_proj (id UInt64, s String, PROJECTION p (SELECT sum(id), max(s))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '10M', auto_statistics_types = '', storage_policy = 's3'"
     )
     node.query(
         "INSERT INTO t_full_local_proj SELECT number, randomPrintableASCII(10) FROM numbers(100)"
@@ -287,6 +295,9 @@ def test_packed_io_file_order(started_cluster):
             min_rows_for_full_part_storage = '100M',
             min_bytes_for_full_part_storage = '100M',
             assign_part_uuids = 1,
+            -- The test asserts exact file positions inside the packed blob; statistics
+            -- materialized on INSERT would insert statistics_<col>.stats files.
+            auto_statistics_types = '',
             storage_policy = 's3'
         """
     )
@@ -385,6 +396,9 @@ def test_packed_io_compact_file_order(started_cluster):
             min_rows_for_full_part_storage = '100M',
             min_bytes_for_full_part_storage = '100M',
             assign_part_uuids = 1,
+            -- The test asserts exact file positions inside the packed blob; statistics
+            -- materialized on INSERT would insert statistics_<col>.stats files.
+            auto_statistics_types = '',
             storage_policy = 's3',
             write_marks_for_substreams_in_compact_parts = 1
         """
@@ -515,3 +529,76 @@ def test_packed_io_create_rejects_output_inside_input(started_cluster):
         nothrow=True,
     )
     assert "nested under the input" in output, f"expected rejection, got: {output}"
+
+
+def test_merge_over_stale_packed_tmp_dir(started_cluster):
+    # A merge must reclaim a leftover tmp_merge_ directory of an interrupted previous attempt
+    # and must not seed any data from it into the new part.
+    # The storage_policy pin encodes a hard precondition: the part directory is copied with plain cp,
+    # which is only valid on a local disk (on object storage it would corrupt blob reference counts).
+    node.query(
+        "CREATE OR REPLACE TABLE t_packed_stale_tmp_dir (a UInt64, v UInt64) ENGINE = MergeTree ORDER BY a "
+        "SETTINGS min_bytes_for_full_part_storage = '1G', storage_policy = 'default'"
+    )
+
+    # Two deterministic parts with distinguishable contents, so contamination would change the sums below.
+    node.query("SYSTEM STOP MERGES t_packed_stale_tmp_dir")
+    node.query(
+        "INSERT INTO t_packed_stale_tmp_dir SELECT number, number FROM numbers(50)"
+    )
+    node.query(
+        "INSERT INTO t_packed_stale_tmp_dir SELECT number + 50, (number + 50) * 100 FROM numbers(50)"
+    )
+
+    # Simulate a leftover of an interrupted merge in tmp_merge_all_1_2_1, filled with the real contents
+    # of an existing packed part, so the merge would produce visibly wrong data if it read anything from it.
+    part_path = get_part_path("t_packed_stale_tmp_dir", "all_1_1_0").rstrip("/")
+    stale_dir = os.path.join(os.path.dirname(part_path), "tmp_merge_all_1_2_1")
+    node.exec_in_container(
+        ["bash", "-c", f"cp -r {part_path} {stale_dir}"],
+        privileged=True,
+    )
+    stale_files = node.exec_in_container(
+        ["bash", "-c", f"ls {stale_dir}"], privileged=True, user="root"
+    )
+    assert "data.packed" in stale_files, f"stale dir is not a packed part: {stale_files}"
+
+    node.query("SYSTEM START MERGES t_packed_stale_tmp_dir")
+    node.query(
+        "OPTIMIZE TABLE t_packed_stale_tmp_dir FINAL SETTINGS optimize_throw_if_noop = 1"
+    )
+
+    # Exactly the inserted data, in one active packed part that passes the consistency check.
+    assert (
+        node.query("SELECT count(), sum(a), sum(v) FROM t_packed_stale_tmp_dir")
+        == "100\t4950\t373725\n"
+    )
+    assert (
+        node.query("SELECT a, v FROM t_packed_stale_tmp_dir ORDER BY a LIMIT 2")
+        == "0\t0\n1\t1\n"
+    )
+    assert (
+        node.query("SELECT a, v FROM t_packed_stale_tmp_dir ORDER BY a DESC LIMIT 2")
+        == "99\t9900\n98\t9800\n"
+    )
+    assert (
+        node.query(
+            "SELECT name, part_storage_type FROM system.parts "
+            "WHERE table = 't_packed_stale_tmp_dir' AND active"
+        )
+        == "all_1_2_1\tPacked\n"
+    )
+    assert (
+        node.query(
+            "CHECK TABLE t_packed_stale_tmp_dir SETTINGS check_query_single_value_result = 1"
+        )
+        == "1\n"
+    )
+
+    # The stale directory was actually reclaimed (it existed at merge time) and is gone now.
+    assert node.contains_in_log(f"Removing stale temporary directory {stale_dir}")
+    node.exec_in_container(
+        ["bash", "-c", f"test ! -e {stale_dir}"], privileged=True, user="root"
+    )
+
+    node.query("DROP TABLE t_packed_stale_tmp_dir SYNC")

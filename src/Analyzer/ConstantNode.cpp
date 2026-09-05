@@ -88,6 +88,24 @@ bool ConstantNode::receivedFromInitiatorServer() const
     auto * cast_function = getSourceExpression()->as<FunctionNode>();
     if (!cast_function || cast_function->getFunctionName() != "_CAST")
         return false;
+    /// A constant genuinely serialized by the initiator arrives as a _CAST over literals. A _CAST
+    /// produced locally by folding a server-context function (e.g. shardNum() -> _CAST(shardNum(),
+    /// ...), which folds to a literal on shards but stays symbolic on the initiator) is different:
+    /// its argument is either still a live function node, or a folded but non-deterministic
+    /// constant that carries that server-context function as its source expression. In that case
+    /// the initiator did not fold it, so the shard must name it via its source expression to match
+    /// the initiator; treating it as received-from-initiator would bake in the folded literal and
+    /// diverge the header (e.g. shard "_CAST(2, ...)" vs initiator "_CAST(shardNum(), ...)").
+    /// Deterministic wrapped literals (tuple(0), NULL, ...) are genuine received constants and must
+    /// keep being named via the cast, so only non-deterministic source-carrying args are excluded.
+    for (const auto & argument : cast_function->getArguments())
+    {
+        auto * constant_arg = argument->as<ConstantNode>();
+        if (!constant_arg)
+            return false;
+        if (constant_arg->hasSourceExpression() && !constant_arg->isDeterministic())
+            return false;
+    }
 
     /// The initiator serializes a folded constant as `_CAST('<value>', '<type>')` with a plain literal inside,
     /// so only that shape means that the constant was received from the initiator. `_CAST(__getScalar('<hash>'), '<type>')`
@@ -197,10 +215,28 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     if (options.use_source_expression_for_constants && source_expression)
         return source_expression->toAST(options);
 
+    const auto & constant_value_type = constant_value.getType();
+
+    /// Decimal constants (including decimals nested in Array/Tuple/Map/Variant/Dynamic) have no exact
+    /// literal syntax: a bare numeric literal is re-parsed as Float64 on the receiving side and rounds.
+    /// Rebuild the literal from the column, upgrading every decimal-backed leaf to an exact
+    /// String -> Decimal cast (reconstructed with its own type), then cast the whole value to the
+    /// final type. This must run even when add_cast_for_constants is false (e.g. the RHS of IN/notIn,
+    /// where casts are suppressed): a bare decimal in the set would be parsed as Float64 on the shard
+    /// and round, so an OR-to-IN rewrite over high-scale Decimal values could filter on rounded
+    /// constants.
+    if (typeMayContainDecimal(*constant_value_type))
+    {
+        auto exact_ast = columnConstantToExactLiteralAST(constant_value.getColumn(), 0, constant_value_type);
+        if (!options.add_cast_for_constants)
+            return exact_ast;
+        /// columnConstantToExactLiteralAST already casts a scalar Decimal/DateTime64/Time64 value to its
+        /// own type, so skip a redundant identity cast to the same type.
+        return makeCastToTypeNameAST(std::move(exact_ast), constant_value_type->getName());
+    }
+
     if (!options.add_cast_for_constants)
         return getCachedAST(from_column);
-
-    const auto & constant_value_type = constant_value.getType();
 
     // Add cast if constant was created as a result of constant folding.
     // Constant folding may lead to type transformation and literal on shard

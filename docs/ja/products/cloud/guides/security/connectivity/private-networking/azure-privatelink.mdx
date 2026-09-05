@@ -8,7 +8,7 @@ doc_type: 'guide'
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
-import ScalePlanFeatureBadge from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="Azure Private Link" />
 
@@ -214,7 +214,7 @@ resource "azurerm_private_endpoint" "example_clickhouse_cloud" {
 
 <Image img="/images/cloud/security/azure-pe-view.webp" size="lg" alt="プライベート エンドポイントの表示" border />
 
-properties の `id` フィールドを見つけて、この値をコピーします。
+最上位レベルの `id` フィールド (`/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>` 形式のプライベート エンドポイントのリソース ID) をコピーします。`properties` オブジェクト内にネストされている `id` フィールドは使用しないでください。
 
 **推奨される方法: リソース ID を使用する**
 
