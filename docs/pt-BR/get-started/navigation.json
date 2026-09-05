@@ -7,7 +7,50 @@
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
         "pt-BR/get-started/index",
-        "pt-BR/get-started/quickstarts/home",
+        {
+          "expandable": true,
+          "expanded": false,
+          "group": "Guias de início rápido",
+          "pages": [
+            "pt-BR/get-started/quickstarts/home",
+            {
+              "expanded": false,
+              "group": "Todos os casos de uso",
+              "pages": [
+                "pt-BR/get-started/setup/cloud",
+                "pt-BR/get-started/quickstarts/obtain-your-cloud-connection-details",
+                "pt-BR/get-started/quickstarts/insert-data-using-clickhouse-client",
+                "pt-BR/get-started/quickstarts/creating-tables",
+                "pt-BR/get-started/quickstarts/writing-queries",
+                "pt-BR/get-started/quickstarts/create-your-first-mergetree-table"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Analytics em tempo real",
+              "pages": [
+                "pt-BR/get-started/quickstarts/create-your-first-materialized-view",
+                "pt-BR/get-started/quickstarts/create-your-first-projection",
+                "pt-BR/get-started/quickstarts/tutorial"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Armazenamento de dados",
+              "pages": [
+                "pt-BR/get-started/quickstarts/connect-your-iceberg-catalog",
+                "pt-BR/get-started/quickstarts/mutations"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Observabilidade",
+              "pages": [
+                "pt-BR/get-started/quickstarts/working-with-the-map-type"
+              ]
+            }
+          ]
+        },
         {
           "expandable": true,
           "expanded": true,

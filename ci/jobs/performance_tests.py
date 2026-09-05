@@ -15,9 +15,11 @@ from threading import Thread
 
 import yaml
 
+from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT
 from ci.jobs.scripts import log_export
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.dataset_download import download_and_extract_datasets
+from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
@@ -1286,23 +1288,43 @@ def parse_args():
     return parser.parse_args()
 
 
-def find_prev_build(info, build_type):
-    commits = info.get_kv_data("master_track_commits_sha") or []
+def master_build_links(sha, build_type):
+    """Links to the build of master commit `sha`, newest layout first.
+
+    Ask praktika where `MasterCI` publishes builds now, so that a later change
+    of the prefix layout is picked up here for free. Commits older than
+    https://github.com/ClickHouse/ClickHouse/pull/110081 (2026-09) published
+    their builds one level up, without the normalized workflow name, and the
+    `release_base` baseline stays pinned to such a commit until the next release
+    branch is cut - keep probing the legacy path until then."""
+    prefix = _Environment.get_s3_prefix_static(
+        pr_number=0, branch="master", sha=sha, workflow_name="MasterCI"
+    )
+    legacy_prefix = f"REFs/master/{sha}"
+    return [
+        f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/{p}/{build_type}/clickhouse"
+        for p in (prefix, legacy_prefix)
+    ]
+
+
+def find_master_build(commits, build_type):
     for sha in commits:
-        link = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{build_type}/clickhouse"
-        if Shell.check(f"curl -sfI {link} > /dev/null"):
-            return link
+        for link in master_build_links(sha, build_type):
+            if Shell.check(f"curl -sfI {link} > /dev/null"):
+                return link
     return None
+
+
+def find_prev_build(info, build_type):
+    return find_master_build(
+        info.get_kv_data("master_track_commits_sha") or [], build_type
+    )
 
 
 def find_base_release_build(info, build_type):
     commits = info.get_kv_data("release_branch_base_sha_with_predecessors") or []
     assert commits, "No commits found to fetch reference build"
-    for sha in commits:
-        link = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{build_type}/clickhouse"
-        if Shell.check(f"curl -sfI {link} > /dev/null"):
-            return link
-    return None
+    return find_master_build(commits, build_type)
 
 
 # The number of distinct "slower" queries that fails the whole performance
@@ -1437,6 +1459,14 @@ MASTER_RUN_INCOMPLETE = "incomplete"
 MASTER_WORKFLOW_RESULT_FILE = "result_masterci.json"
 
 
+def master_report_link(sha, file_name):
+    """Link to a report file published by `MasterCI` at master commit `sha`."""
+    prefix = _Environment.get_s3_prefix_static(
+        pr_number=0, branch="master", sha=sha, workflow_name="MasterCI"
+    )
+    return f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{prefix}/{file_name}"
+
+
 def classify_missing_prev_master_run(job_name, sha):
     """Tell whether this job was ever scheduled at master commit `sha`, given
     that its `result_*.json` is missing there.
@@ -1462,10 +1492,7 @@ def classify_missing_prev_master_run(job_name, sha):
     or parsed. Those all stop the walk, and the caller falls back to the
     absolute gate for this one run - the next master run finds this run's own
     result and gets its delta back."""
-    link = (
-        "https://s3.amazonaws.com/clickhouse-test-reports/REFs/master/"
-        f"{sha}/{MASTER_WORKFLOW_RESULT_FILE}"
-    )
+    link = master_report_link(sha, MASTER_WORKFLOW_RESULT_FILE)
     state, out = fetch_prev_master_result(link)
     if state == FETCH_MISSING:
         print(f"INFO: master commit {sha} has no {MASTER_WORKFLOW_RESULT_FILE}")
@@ -1519,7 +1546,7 @@ def find_prev_master_slower_count(job_name, commits, release_base_sha):
     before reaching the previous run that did measure this job."""
     result_file_name = f"result_{Utils.normalize_string(job_name)}.json"
     for sha in commits:
-        link = f"https://s3.amazonaws.com/clickhouse-test-reports/REFs/master/{sha}/{result_file_name}"
+        link = master_report_link(sha, result_file_name)
         state, out = fetch_prev_master_result(link)
         if state == FETCH_MISSING:
             if classify_missing_prev_master_run(job_name, sha) == MASTER_RUN_INCOMPLETE:
@@ -1768,9 +1795,7 @@ def main():
     if Utils.is_arm():
         if compare_against_master:
             link_for_ref_ch = find_prev_build(info, "build_arm_release")
-            if not link_for_ref_ch:
-                print("WARNING: No build found for master track commits, falling back to latest master build")
-                link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
+            assert link_for_ref_ch, "reference clickhouse build has not been found"
         elif compare_against_release:
             link_for_ref_ch = find_base_release_build(info, "build_arm_release")
             assert link_for_ref_ch, "reference clickhouse build has not been found"
@@ -1779,9 +1804,7 @@ def main():
     elif Utils.is_amd():
         if compare_against_master:
             link_for_ref_ch = find_prev_build(info, "build_amd_release")
-            if not link_for_ref_ch:
-                print("WARNING: No build found for master track commits, falling back to latest master build")
-                link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
+            assert link_for_ref_ch, "reference clickhouse build has not been found"
         elif compare_against_release:
             link_for_ref_ch = find_base_release_build(info, "build_amd_release")
             assert link_for_ref_ch, "reference clickhouse build has not been found"

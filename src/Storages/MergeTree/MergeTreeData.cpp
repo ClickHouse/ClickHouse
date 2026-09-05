@@ -1113,12 +1113,15 @@ void MergeTreeData::checkProperties(
 
     if (!added_key_column_expr_list->children.empty())
     {
-        auto syntax = TreeRewriter(getContext()).analyze(added_key_column_expr_list, new_columns_for_analysis);
-        Names used_columns = syntax->requiredSourceColumns();
-
         NamesAndTypesList deleted_columns;
         NamesAndTypesList added_columns;
         old_columns_for_analysis.getDifference(new_columns_for_analysis, deleted_columns, added_columns);
+
+        /// Only the columns added by this ALTER are accepted right below, so only they may be suggested for a typo.
+        auto syntax = TreeRewriter(getContext())
+                          .setHintColumns(added_columns.getNames())
+                          .analyze(added_key_column_expr_list, new_columns_for_analysis);
+        Names used_columns = syntax->requiredSourceColumns();
 
         for (const String & col : used_columns)
         {
@@ -5026,6 +5029,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Schema-changing ALTER is rejected while a streaming query holds a subscription on this table.");
     }
 
+    checkAlterEligibility(commands, local_context);
+}
+
+void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, ContextPtr local_context) const
+{
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     auto storage_metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
@@ -12124,6 +12132,13 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
         if (canUseAdaptiveGranularity() && !src_part->index_granularity_info.mark_type.adaptive)
             return false;
     }
+
+    /// A non-adaptive part records no per-mark row counts on disk, so its granularity is rebuilt from
+    /// the mark count and this table's `index_granularity`. Under a different value every mark maps to
+    /// the wrong row range.
+    if (!src_part->index_granularity_info.mark_type.adaptive
+        && src_part->index_granularity_info.fixed_index_granularity != (*settings)[MergeTreeSetting::index_granularity])
+        return false;
 
     return true;
 }
