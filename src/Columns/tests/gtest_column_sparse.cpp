@@ -370,6 +370,9 @@ TEST(ColumnSparse, Index)
     /// Exercise the binary-search path with repeated default and non-default rows.
     test_case({4, 4, 2, 2, 0}, 5);
 
+    /// Check that a run continuing past the requested limit is truncated.
+    test_case({4, 4, 4, 1, 0}, 3);
+
     /// Exercise the linear path with repeated and unique rows.
     test_case({4, 4, 4, 1, 0, 6, 6, 2}, 8);
 }

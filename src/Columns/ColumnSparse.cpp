@@ -525,8 +525,9 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
 
     auto get_run_end = [&](size_t start)
     {
+        const auto index = indexes[start];
         size_t end = start + 1;
-        while (end < limit && indexes[end] == indexes[start])
+        while (end < limit && indexes[end] == index)
             ++end;
         return end;
     };
