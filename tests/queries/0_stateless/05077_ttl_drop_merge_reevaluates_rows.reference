@@ -6,6 +6,10 @@
 1
 -- an expired part larger than the byte budget is still dropped
 0
+-- a TTLDrop merge applies a live patch part before deciding nothing survives
+100	1
+TTLDropMerge	1
+1
 -- a GROUP BY TTL whose rows survive stays selectable for a later rollup
 TTLDropMerge	2
 1	20

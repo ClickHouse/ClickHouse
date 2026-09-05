@@ -134,6 +134,43 @@ wait_for_ttl_drop_merge "t_ttl_drop_oversized"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_drop_oversized"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_drop_oversized"
 
+echo "-- a TTLDrop merge applies a live patch part before deciding nothing survives"
+
+# The stored bounds are computed at write time and a lightweight UPDATE lives in a separate patch
+# part, so the part stays fully expired to the selector while no row is. A merge that decides the
+# output is empty without building the read pipeline never reads the patched values, and the acked
+# UPDATE's rows are dropped.
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_drop_patch (id UInt64, ts DateTime)
+    ENGINE = MergeTree ORDER BY id
+    TTL ts + INTERVAL 1 SECOND
+    SETTINGS ttl_only_drop_parts = 1, merge_with_ttl_timeout = 0, min_bytes_for_wide_part = 0,
+             enable_block_number_column = 1, enable_block_offset_column = 1,
+             merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 500;
+
+    SYSTEM STOP MERGES t_ttl_drop_patch;
+    INSERT INTO t_ttl_drop_patch SELECT number, now() - INTERVAL 1 DAY FROM numbers(100);
+    SET enable_lightweight_update = 1;
+    UPDATE t_ttl_drop_patch SET ts = now() + INTERVAL 1 DAY WHERE 1;
+    SYSTEM START MERGES t_ttl_drop_patch;
+"
+
+wait_for_ttl_drop_merge "t_ttl_drop_patch"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count(), max(ts) > now() FROM t_ttl_drop_patch"
+${CLICKHOUSE_CLIENT} -q "
+    SELECT merge_reason, read_rows > 0 FROM system.part_log
+    WHERE database = currentDatabase() AND table = 't_ttl_drop_patch'
+      AND event_type = 'MergeParts' AND merge_reason = 'TTLDropMerge'
+    ORDER BY event_time DESC LIMIT 1"
+# A patch part is a part of its own, carries no TTL info, and is removed asynchronously once it has
+# been applied, so the data partition is named explicitly to keep this a single stable row.
+${CLICKHOUSE_CLIENT} -q "
+    SELECT delete_ttl_info_min > now() FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_ttl_drop_patch' AND active
+      AND partition_id = 'all'"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_drop_patch"
+
 echo "-- a GROUP BY TTL whose rows survive stays selectable for a later rollup"
 
 # A rule marked finished sets `part_min_ttl` to 0 and clears `has_any_non_finished_ttls`, so the
