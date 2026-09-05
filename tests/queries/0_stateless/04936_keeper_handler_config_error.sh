@@ -35,9 +35,40 @@ trap cleanup EXIT
 # here is unique per concurrent copy of this test, so any derived port would be the same in every
 # copy, and probe-then-bind is a race those copies lose against each other. Collisions are detected
 # by binding, which is the only reliable test, so a retry always makes progress.
+#
+# What the retries cannot survive is a window where nearly everything is taken, and the local
+# ephemeral range is exactly that: it is where the kernel puts the source port of every outgoing
+# connection, a runner running the rest of the suite has tens of thousands of those at a time, and
+# each one that ends holds its port for another minute in `TIME_WAIT`. `SO_REUSEADDR` on the
+# listener does not get past them - the socket that opened the connection never set it - and the
+# raft listener binds the wildcard address, so a port taken on any interface is lost. The window is
+# therefore the larger of the two ranges the ephemeral one leaves free.
+read -r EPHEMERAL_LOW EPHEMERAL_HIGH <<< "$(cat /proc/sys/net/ipv4/ip_local_port_range 2>/dev/null)"
+: "${EPHEMERAL_LOW:=32768}" "${EPHEMERAL_HIGH:=60999}"
+
+if [ "$((EPHEMERAL_LOW - 1024))" -ge "$((65535 - EPHEMERAL_HIGH))" ]; then
+    PORT_WINDOW_LOW=1024
+    PORT_WINDOW_HIGH=$((EPHEMERAL_LOW - 1))
+else
+    PORT_WINDOW_LOW=$((EPHEMERAL_HIGH + 1))
+    PORT_WINDOW_HIGH=65535
+fi
+
+# Every slot has to fit all three ports, so the last one starts two below the top of the window.
+PORT_WINDOW_SLOTS=$(((PORT_WINDOW_HIGH - 2 - PORT_WINDOW_LOW) / 4 + 1))
+
+# A range configured to cover everything leaves a window of a single slot, and every retry would
+# then pick the port that has already been refused. Picking from all of the unprivileged ports is
+# no worse than what this replaces, and it still makes progress.
+if [ "$PORT_WINDOW_SLOTS" -lt 256 ]; then
+    PORT_WINDOW_LOW=1024
+    PORT_WINDOW_HIGH=65535
+    PORT_WINDOW_SLOTS=$(((PORT_WINDOW_HIGH - 2 - PORT_WINDOW_LOW) / 4 + 1))
+fi
+
 function pick_ports()
 {
-    PORT_BASE=$((32768 + RANDOM % 8000 * 4))
+    PORT_BASE=$((PORT_WINDOW_LOW + RANDOM % PORT_WINDOW_SLOTS * 4))
     PROM_PORT=$PORT_BASE
     KEEPER_PORT=$((PORT_BASE + 1))
     RAFT_PORT=$((PORT_BASE + 2))
