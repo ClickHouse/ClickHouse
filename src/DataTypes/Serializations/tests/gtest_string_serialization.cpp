@@ -220,7 +220,7 @@ namespace
 /// A deserialization attempt over a hand-crafted (corrupted) sizes stream. The values in the sizes stream
 /// come straight from the data, so nothing bounds them implicitly; the deserialization has to reject the
 /// ones that would overflow the offsets instead of wrapping around.
-void expectSizesStreamRejected(const std::vector<UInt64> & sizes_values, size_t limit)
+void expectSizesStreamRejected(const std::vector<UInt64> & sizes_values, size_t rows_offset, size_t limit)
 {
     WriteBufferFromOwnString sizes_out;
     for (UInt64 size : sizes_values)
@@ -238,10 +238,10 @@ void expectSizesStreamRejected(const std::vector<UInt64> & sizes_values, size_t 
     settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
     serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
 
-    auto result = ColumnString::create();
+    ColumnPtr result = ColumnString::create();
     try
     {
-        serialization->deserializeBinaryBulkWithMultipleStreams(*result, limit, settings, state, nullptr);
+        serialization->deserializeBinaryBulkWithMultipleStreams(result, rows_offset, limit, settings, state, nullptr);
         FAIL() << "deserialize accepted a corrupted sizes stream";
     }
     catch (const DB::Exception & e)
@@ -258,8 +258,17 @@ void expectSizesStreamRejected(const std::vector<UInt64> & sizes_values, size_t 
 TEST(StringSerialization, WithSizeStreamHugeSizeIsRejected)
 {
     MainThreadStatus::getInstance();
-    expectSizesStreamRejected({10, std::numeric_limits<UInt64>::max(), 5}, 3);
+    expectSizesStreamRejected({10, std::numeric_limits<UInt64>::max(), 5}, 0, 3);
     /// A sum that is exactly 2^65 and therefore wraps to zero when accumulated in 64 bits.
-    expectSizesStreamRejected({std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), 2}, 3);
-    expectSizesStreamRejected({(1ULL << 48) + 1}, 1);
+    expectSizesStreamRejected({std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), 2}, 0, 3);
+    expectSizesStreamRejected({(1ULL << 48) + 1}, 0, 1);
+}
+
+/// The sizes of the rows skipped by a seeked read (`rows_offset`) come from the same stream and are
+/// summed up to know how many bytes of the data stream to skip; that sum has to be validated as well.
+TEST(StringSerialization, WithSizeStreamHugeSkippedSizeIsRejected)
+{
+    MainThreadStatus::getInstance();
+    expectSizesStreamRejected({std::numeric_limits<UInt64>::max(), 10, 5}, 1, 2);
+    expectSizesStreamRejected({(1ULL << 48) + 1, 10, 5}, 1, 2);
 }

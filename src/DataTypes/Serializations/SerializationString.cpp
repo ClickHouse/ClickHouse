@@ -866,11 +866,23 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     auto & mutable_string_column = assert_cast<ColumnString &>(*mutable_column);
     auto & offsets = mutable_string_column.getOffsets();
     size_t prev_last_offset = offsets.back();
-    size_t bytes_to_skip = 0;
     const auto & sizes_data = assert_cast<const ColumnUInt64 &>(*string_state->size_column).getData();
     size_t prev_size = sizes_data.size() - num_read_rows;
+
+    /// The skipped prefix comes from the same untrusted sizes stream: an unchecked sum can wrap around
+    /// and skip a wrong number of bytes instead of rejecting the corrupted data.
+    unsigned __int128 bytes_to_skip_total = 0;
     for (size_t i = prev_size; i != prev_size + rows_offset; ++i)
-        bytes_to_skip += sizes_data[i];
+        bytes_to_skip_total += sizes_data[i];
+
+    if (unlikely(bytes_to_skip_total > MAX_TOTAL_STRING_SIZE))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Total size of String column is too large: the sizes stream declares more than {} bytes, "
+            "most likely the data is corrupted",
+            MAX_TOTAL_STRING_SIZE);
+
+    const size_t bytes_to_skip = static_cast<size_t>(bytes_to_skip_total);
 
     appendStringSizesToColumnStringOffsets(mutable_string_column, sizes_data.data(), prev_size + rows_offset, num_read_rows - rows_offset);
     size_t bytes_to_read = offsets.back() - prev_last_offset;
