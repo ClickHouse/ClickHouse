@@ -3371,6 +3371,22 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                                 /*throw_on_mismatch=*/ true);
                         }
                     }
+                    else if (isTableExpressionNodeType(resolved_identifier_node->getNodeType()))
+                    {
+                        /// A table expression that also appears in an enclosing query's join tree must
+                        /// not be shared with this argument: later stages rewrite each argument instance
+                        /// in place (`createUniqueAliasesIfNecessary`, `GLOBAL IN` external tables,
+                        /// `rewrite_in_to_join`), and with a shared node those edits land in the join tree.
+                        for (const auto * scope_to_check = &scope; scope_to_check != nullptr;
+                             scope_to_check = scope_to_check->parent_scope)
+                        {
+                            if (scope_to_check->registered_table_expression_nodes.contains(resolved_identifier_node))
+                            {
+                                resolved_identifier_node = resolved_identifier_node->clone();
+                                break;
+                            }
+                        }
+                    }
                 }
             }
 

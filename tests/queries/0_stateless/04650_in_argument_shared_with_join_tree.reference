@@ -1,0 +1,83 @@
+ground truth (unshared subquery on the right of IN)
+2
+3
+WHERE
+2
+3
+QUALIFY
+2
+3
+ORDER BY
+2
+3
+inside a lambda
+2
+3
+NOT IN (empty result)
+table function source
+0
+1
+2
+GLOBAL IN, subquery alias
+0
+GLOBAL IN, bare one-part table name
+2
+3
+GLOBAL IN, two-part db.table name
+0
+rewrite_in_to_join
+0
+control: CTE (the pre-existing clone path)
+2
+3
+control: IN names the LEFT subquery
+2
+3
+control: bare table alias on the right of IN
+2
+3
+control: union subquery alias
+2
+2
+3
+3
+control: single table expression, no join
+2
+3
+9
+control: GLOBAL IN over an unshared subquery
+0
+control: tuple IN
+2
+3
+control: old analyzer rejects the shape
+control: Set engine on the right of IN
+2
+3
+2
+3
+QUALIFY source, IN the same source
+0
+1
+2
+3
+4
+QUALIFY source, NOT IN the same source
+0
+QUALIFY source, GLOBAL IN the same source
+0
+1
+2
+3
+4
+QUALIFY source, globalNotIn in QUALIFY
+clone fidelity of SortNode::column_name, uncloned spelling
+clone fidelity of SortNode::column_name, CTE clone
+clone fidelity of SortNode::column_name, IN-argument clone
+control: INTERPOLATE a column other than the fill key
+1	10
+2	20
+3	30
+4	40
+clone fidelity of SortNode::column_name, visible in EXPLAIN
+1
