@@ -7,7 +7,13 @@ namespace
 {
 
 struct Exp2Name { static constexpr auto name = "exp2"; };
+
+#if USE_FASTOPS
+void exp2Kernel(const double * src, size_t size, double * dst) { NFastOps::Exp2<true>(src, size, dst); }
+using FunctionExp2 = FunctionMathUnary<VectorizedFloat64Impl<Exp2Name, exp2Kernel>>;
+#else
 using FunctionExp2 = FunctionMathUnary<UnaryFunctionVectorized<Exp2Name, exp2>>;
+#endif
 
 }
 
