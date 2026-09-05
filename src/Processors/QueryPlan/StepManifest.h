@@ -155,8 +155,8 @@ constexpr WireField<Wire, T> field(const char * name, WireFieldClass field_class
 }
 
 /// One value that travels through the settings channel under a plan setting name. The plan version
-/// that added the setting and the receiver's default live in `QueryPlanSerializationSettings`; every
-/// declared entry is written whatever its value, so a reader takes it off the wire.
+/// that added the setting and the receiver's default live in `QueryPlanSerializationSettings`; the
+/// entry is written only when the value differs from that default.
 template <typename Wire_, typename T, typename SettingField>
 struct WireSetting
 {
@@ -713,17 +713,23 @@ typename Manifest::Wire readManifestPayload(const Manifest & manifest, IQueryPla
     return wire;
 }
 
-/// Fills the settings channel: every setting a step declares is written, whatever its value. A
-/// reader takes the value off the wire rather than reconstructing an absent one from its own
-/// default, so a default that differs between two builds cannot change what the reader applies.
-/// These per-step setting lists are small next to the payloads. The frame raises the reader
-/// requirement for a setting a target does not know.
+/// Fills the settings channel: a setting is written only when its value differs from the registered
+/// default, which keeps a setting a receiver does not know off the wire whenever it sits at its
+/// default. This relies on the registered defaults being frozen wire defaults: an absent setting is
+/// reconstructed from the receiver's registered default, so changing a registered default would make
+/// an old writer and a new reader disagree. A new setting gets a new name rather than a changed
+/// default, and `registerManifest` checks that a wire struct's initializer equals the registered
+/// default. The frame raises the reader requirement for a setting a target does not know.
 template <typename Manifest>
 void writeManifestSettings(const Manifest & manifest, const typename Manifest::Wire & wire, QueryPlanSerializationSettings & settings)
 {
+    static const QueryPlanSerializationSettings defaults;
     WireDetail::forEach(manifest.setting_entries, [&](const auto & entry)
     {
-        settings[*entry.setting] = wire.*entry.member;
+        using Value = typename std::remove_cvref_t<decltype(entry)>::Value;
+        const Value & value = wire.*entry.member;
+        if (value != static_cast<Value>(defaults[*entry.setting]))
+            settings[*entry.setting] = value;
     });
 }
 

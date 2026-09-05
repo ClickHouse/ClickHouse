@@ -123,10 +123,10 @@ TEST(PackedStringKeysPlanSetting, EmittedOnlyForSingleStringKeyTowardsOldPeers)
     EXPECT_FALSE(aggregatingStepCarriesSetting(string_key, {"k"}, true, pre_setting_version));
     EXPECT_FALSE(mergingAggregatedStepCarriesSetting(string_key, {"k"}, true, pre_setting_version));
 
-    /// Towards a current peer the framed format sends every declared setting whatever its value, so the name is
-    /// on the wire even at its default. The receiver applies the value it reads rather than a default of its own.
-    EXPECT_TRUE(aggregatingStepCarriesSetting(string_key, {"k"}, true, current_version));
-    EXPECT_TRUE(mergingAggregatedStepCarriesSetting(string_key, {"k"}, true, current_version));
+    /// The default value needs nothing on the wire towards any peer: the framed format omits a setting
+    /// at its default, and the receiver's own default is the packed method already.
+    EXPECT_FALSE(aggregatingStepCarriesSetting(string_key, {"k"}, true, current_version));
+    EXPECT_FALSE(mergingAggregatedStepCarriesSetting(string_key, {"k"}, true, current_version));
 }
 
 TEST(PackedStringKeysPlanSetting, AlwaysEmittedWhenDisabledTowardsCurrentPeers)
