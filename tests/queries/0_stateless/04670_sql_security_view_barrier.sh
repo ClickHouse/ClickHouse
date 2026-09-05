@@ -52,6 +52,7 @@ GRANT SELECT ON $db.projecting_view TO $user;
 GRANT SELECT ON $db.policy_view TO $user;
 GRANT SELECT ON $db.additional_filter_view TO $user;
 GRANT SELECT ON $db.invoker_view TO $user;
+GRANT SELECT ON $db.projecting_view_invoker TO $user;
 GRANT SELECT ON $db.secrets TO $user;
 GRANT CREATE TEMPORARY TABLE ON *.* TO $user;
 

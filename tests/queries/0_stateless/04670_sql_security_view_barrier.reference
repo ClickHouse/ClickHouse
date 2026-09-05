@@ -25,9 +25,9 @@ visible
 2
 2
 ===== a projection-only view stays exactly as optimizable as an INVOKER view =====
+same
 different
-different
-different
+same
 different
 same
 different
