@@ -39,7 +39,7 @@
 
     <!-- Keep the output size roughly constant while changing the length of each repeated index run. -->
     <query>
-        SELECT u64, payload
+        SELECT materialize(u64), materialize(payload)
         FROM (SELECT u64, payload FROM sparse_column_index_runs_{run_length})
         ARRAY JOIN range({run_length}) AS element
         FORMAT Null
