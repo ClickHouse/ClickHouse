@@ -52,6 +52,9 @@ public:
     /// Same as getAuthenticationType, but adds LoginFailure event in case of error.
     std::unordered_set<AuthenticationType> getAuthenticationTypesOrLogInFailure(const String & user_name) const;
 
+    /// Whether any of the user's authentication methods requires a one-time password as a second factor.
+    bool userHasSecondFactor(const String & user_name) const;
+
     /// Sets the current user, checks the credentials and that the specified address is allowed to connect from.
     /// The function throws an exception if there is no such user or password is wrong.
     void authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const std::optional<Poco::Net::SocketAddress> & connection_address = {}, const Strings & external_roles_ = {});

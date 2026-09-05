@@ -362,6 +362,19 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFai
     }
 }
 
+bool Session::userHasSecondFactor(const String & user_name) const
+{
+    const auto user_to_query = global_context->getAccessControl().read<User>(user_name);
+
+    for (const auto & authentication_method : user_to_query->authentication_methods)
+    {
+        if (authentication_method.getOneTimePassword())
+            return true;
+    }
+
+    return false;
+}
+
 void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const std::optional<Poco::Net::SocketAddress> & connection_address, const Strings & external_roles_)
 {
     authenticate(BasicCredentials{user_name, password}, address, connection_address, external_roles_);

@@ -775,6 +775,14 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
             }
         }
 
+        // The Native41 auth response is a hash of the password alone and cannot carry a one-time password,
+        // so for users with a second factor the plugin transmitting the actual password string is required:
+        // the client appends the one-time password to the password, like 'password+123456'.
+        if (session->userHasSecondFactor(user_name))
+        {
+            authPluginSSL();
+        }
+
         std::optional<String> auth_response = auth_plugin_name == auth_plugin->getName() ? std::make_optional<String>(initial_auth_response) : std::nullopt;
         auth_plugin->authenticate(user_name, *session, auth_response, packet_endpoint, secure_connection, socket().peerAddress());
     }
