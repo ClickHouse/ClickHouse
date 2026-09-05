@@ -1898,7 +1898,7 @@ namespace
 {
 
 template <typename Storage>
-void writeInvalidatedSystemColumnsFileImpl(Storage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings)
+void writeInvalidatedSystemColumnsFileImpl(Storage & storage, bool storage_supports_hard_links, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings)
 {
     const std::string path = part_dir / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
 
@@ -1908,12 +1908,22 @@ void writeInvalidatedSystemColumnsFileImpl(Storage & storage, const std::filesys
         return;
     }
 
-    /// Do not remove the file before rewriting it: `WriteMode::Rewrite` already replaces it and retires
-    /// the previous blobs. On metadata storages with deterministic object keys (`plain`,
-    /// `plain_rewritable`) the removal and the write address the very same object, so when both are
-    /// queued in one transaction - as they are when this runs under a part-storage transaction - the
-    /// removal executes after the blob has been uploaded and deletes it, leaving the part with metadata
-    /// that points at a missing object.
+    /// Whether an existing file must be unlinked before it is rewritten depends on the storage.
+    ///
+    /// A part cloned with hardlinks (`REPLACE PARTITION FROM`, `MOVE PARTITION TO TABLE`, `FREEZE`)
+    /// shares the blobs of this file with the source part, and `WriteMode::Rewrite` retires the blobs
+    /// of the file it replaces without regard to other links to them - it would delete the source
+    /// part's copy. Unlinking first lets the hardlink accounting keep the shared blobs alive; on a local
+    /// disk it likewise keeps the rewrite from going into the shared inode.
+    ///
+    /// Metadata storages with deterministic object keys (`plain`, `plain_rewritable`) have no hardlinks,
+    /// and there the removal must NOT be issued: it addresses the very same object as the write, so when
+    /// both are queued in one transaction - as they are under a part-storage transaction - the removal
+    /// executes after the blob has been uploaded and deletes it, leaving the part with metadata that
+    /// points at a missing object. `WriteMode::Rewrite` alone replaces the object there.
+    if (storage_supports_hard_links)
+        storage.removeFileIfExists(path);
+
     auto out = storage.writeFile(path, 4096, WriteMode::Rewrite, settings);
     IMergeTreeDataPart::writeInvalidatedSystemColumns(*out, columns);
     out->finalize();
@@ -1923,17 +1933,17 @@ void writeInvalidatedSystemColumnsFileImpl(Storage & storage, const std::filesys
 
 void IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(IDataPartStorage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings)
 {
-    writeInvalidatedSystemColumnsFileImpl(storage, part_dir, columns, settings);
+    writeInvalidatedSystemColumnsFileImpl(storage, storage.supportsHardLinks(), part_dir, columns, settings);
 }
 
 void IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(IDisk & disk, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings)
 {
-    writeInvalidatedSystemColumnsFileImpl(disk, part_dir, columns, settings);
+    writeInvalidatedSystemColumnsFileImpl(disk, disk.supportsHardLinks(), part_dir, columns, settings);
 }
 
-void IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(IDiskTransaction & transaction, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings)
+void IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(IDiskTransaction & transaction, const IDisk & disk, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings)
 {
-    writeInvalidatedSystemColumnsFileImpl(transaction, part_dir, columns, settings);
+    writeInvalidatedSystemColumnsFileImpl(transaction, disk.supportsHardLinks(), part_dir, columns, settings);
 }
 
 std::optional<String> IMergeTreeDataPart::getDenseIndexBackingPath() const

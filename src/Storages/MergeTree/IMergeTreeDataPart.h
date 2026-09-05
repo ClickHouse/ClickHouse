@@ -476,7 +476,8 @@ public:
     static NameSet readInvalidatedSystemColumns(ReadBuffer & in);
     static void writeInvalidatedSystemColumnsFile(IDataPartStorage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
     static void writeInvalidatedSystemColumnsFile(IDisk & disk, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
-    static void writeInvalidatedSystemColumnsFile(IDiskTransaction & transaction, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
+    /// `disk` is the disk the transaction writes to; only its capabilities are consulted.
+    static void writeInvalidatedSystemColumnsFile(IDiskTransaction & transaction, const IDisk & disk, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
 
     CompressionCodecPtr default_codec;
 
