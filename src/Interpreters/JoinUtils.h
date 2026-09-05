@@ -24,6 +24,13 @@ using UInt8ColumnDataPtr = const ColumnUInt8::Container *;
 namespace JoinCommon
 {
 
+/// Whether one of the algorithms the `join_algorithm` setting enables can execute this kind and
+/// strictness. The sort-merge algorithms implement only a part of them - neither `SEMI` nor `ANTI`,
+/// and `partial_merge` does not do `ANY` beyond `INNER`/`LEFT` - so a plan rewrite that produces such
+/// a join under `join_algorithm = 'full_sorting_merge'` or `'partial_merge'` would turn a query that
+/// runs into `NOT_IMPLEMENTED`.
+bool canBeExecutedByEnabledAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms, JoinKind kind, JoinStrictness strictness);
+
 /// Helper interface to work with mask from JOIN ON section
 class JoinMask
 {
