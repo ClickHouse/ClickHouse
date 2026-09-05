@@ -115,6 +115,30 @@ SET optimize_functions_to_subcolumns = 1;
 SELECT 'mapkey tokenbf absent-key empty LC(Nullable), subcolumn';
 SELECT count() FROM t_map_tokenbf WHERE attrs['missing'] = CAST('', 'LowCardinality(Nullable(String))');
 
+-- A FixedString needle carries NUL padding that string equality ignores but a tokenizer does not,
+-- so a LowCardinality(FixedString) constant must stay wrapped and be declined here rather than
+-- reaching the index condition. Results must be complete whether or not an index is consulted.
+CREATE TABLE t_fixed_ngrambf (id UInt64, s String, INDEX idx s TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8;
+INSERT INTO t_fixed_ngrambf SELECT number, if(number = 500, 'rareword', 'xxxxword') FROM numbers(1024);
+SELECT 'ngrambf equals LC(FixedString)';
+SELECT count(), min(id) FROM t_fixed_ngrambf WHERE s = toLowCardinality(toFixedString('rareword', 12));
+
+CREATE TABLE t_fixed_text (id UInt64, s String, INDEX idx s TYPE text(tokenizer = ngrams(3)) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8;
+INSERT INTO t_fixed_text SELECT number, if(number = 500, 'rareword', 'xxxxword') FROM numbers(1024);
+SELECT 'text equals LC(FixedString)';
+SELECT count(), min(id) FROM t_fixed_text WHERE s = toLowCardinality(toFixedString('rareword', 12));
+
+-- Both absent-key guards must likewise stay unreachable for that needle, in either folding mode.
+SELECT 'mapkey tokenbf absent-key empty LC(FixedString), subcolumn';
+SELECT count() FROM t_map_tokenbf WHERE attrs['missing'] = CAST('', 'LowCardinality(FixedString(3))');
+SET optimize_functions_to_subcolumns = 0;
+SELECT 'mapkey tokenbf absent-key empty LC(FixedString)';
+SELECT count() FROM t_map_tokenbf WHERE attrs['missing'] = CAST('', 'LowCardinality(FixedString(3))');
+
+DROP TABLE t_fixed_ngrambf;
+DROP TABLE t_fixed_text;
 DROP TABLE t_text;
 DROP TABLE t_tokenbf;
 DROP TABLE t_ngrambf;

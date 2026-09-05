@@ -513,9 +513,12 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         }
     }
 
-    auto unwrapped_value_type = removeLowCardinality(value_type);
+    auto stripped_value_type = removeLowCardinality(value_type);
     if (!value_field.isNull())
-        unwrapped_value_type = removeNullable(unwrapped_value_type);
+        stripped_value_type = removeNullable(stripped_value_type);
+    /// Only a String needle is unwrapped. A FixedString one is tokenized together with its NUL
+    /// padding, which string equality ignores, so the index would discard matching granules.
+    auto unwrapped_value_type = WhichDataType(stripped_value_type).isString() ? stripped_value_type : value_type;
 
     auto value_data_type = WhichDataType(unwrapped_value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())

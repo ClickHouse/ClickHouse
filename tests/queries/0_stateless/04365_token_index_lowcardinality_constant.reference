@@ -38,3 +38,11 @@ mapkey tokenbf absent-key empty LC(Nullable)
 1024
 mapkey tokenbf absent-key empty LC(Nullable), subcolumn
 1024
+ngrambf equals LC(FixedString)
+1	500
+text equals LC(FixedString)
+1	500
+mapkey tokenbf absent-key empty LC(FixedString), subcolumn
+1024
+mapkey tokenbf absent-key empty LC(FixedString)
+1024

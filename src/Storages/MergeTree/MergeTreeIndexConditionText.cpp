@@ -1038,9 +1038,13 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
         return false;
 
-    value_type = removeLowCardinality(value_type);
+    auto stripped_value_type = removeLowCardinality(value_type);
     if (!value_field.isNull())
-        value_type = removeNullable(value_type);
+        stripped_value_type = removeNullable(stripped_value_type);
+    /// Only a String needle is unwrapped. A FixedString one is tokenized together with its NUL
+    /// padding, which string equality ignores, so the index would discard matching granules.
+    if (WhichDataType(stripped_value_type).isString())
+        value_type = stripped_value_type;
 
     auto value_data_type = WhichDataType(value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
