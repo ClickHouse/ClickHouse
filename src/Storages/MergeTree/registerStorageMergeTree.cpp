@@ -916,8 +916,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// could slip in through `SETTINGS default_compression_codec = ...`.
         /// For freshly introduced definitions (`is_fresh_definition` above) the merged value (explicit or
         /// inherited from the current `<merge_tree>` config defaults) is checked against
-        /// the codec gate (`validateCodecString` handles the per-tier `enable_<family>_codec` settings and the
-        /// `allow_experimental_codecs` umbrella). For stored definitions values written in the stored
+        /// the codec gate (`validateCodecString` handles the per-family `enable_<family>_codec` settings).
+        /// For stored definitions, values written in the stored
         /// `SETTINGS` clause were already gated when they were introduced and are exempt, so existing tables
         /// remain loadable. Values *not* stored in the definition, however, fall back to the *current*
         /// `<merge_tree>` config defaults, so they are validated even on load — otherwise an operator could
