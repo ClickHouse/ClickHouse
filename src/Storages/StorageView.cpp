@@ -1,6 +1,8 @@
+
 #include <Access/DefinerDependencies.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -24,6 +26,8 @@
 #include <Storages/SelectQueryDescription.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/SipHash.h>
+#include <Common/scope_guard_safe.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -638,6 +642,81 @@ void StorageView::alter(
         instance.addDependency(*new_metadata.definer, table_id);
 
     setInMemoryMetadata(new_metadata);
+}
+
+std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
+    static constexpr size_t max_view_nesting_depth = 32;
+    static thread_local std::unordered_set<const IStorage *> views_being_hashed;
+    if (views_being_hashed.size() >= max_view_nesting_depth)
+        return {};
+    if (!views_being_hashed.insert(this).second)
+        return {};
+    SCOPE_EXIT({ views_being_hashed.erase(this); });
+
+    /// A parameterized view is not readable without its parameters, so it has no stable dependency set.
+    if (is_parameterized_view)
+        return {};
+
+    /// An `Ordinary`-database view has no incarnation-safe identity.
+    if (!getStorageID().hasUUID())
+        return {};
+
+    /// `system.tables.modification_hash` introspection requires only `SELECT` on the row's table, so it
+    /// must not observe, through this view's effective context, the churn of sources the caller cannot
+    /// read. The wrapper engines (`Merge`, the local shard of `Distributed`) reach this view from a row
+    /// whose own storage is not a view, so the fail-close lives here rather than in the caller.
+    if (isModificationHashIntrospection()
+        && storage_snapshot->metadata->sql_security_type
+        && *storage_snapshot->metadata->sql_security_type != SQLSecurityType::INVOKER)
+        return {};
+
+    try
+    {
+        const auto & inner_query = storage_snapshot->metadata->getSelectQuery().inner_query;
+        if (!inner_query)
+            return {};
+
+        /// Hash dependencies under the same context that executes the view query: the SQL-security
+        /// overridden context, normalized exactly like the read path normalizes it (`getViewContext`).
+        /// Hashing the raw overridden context instead would fold in settings the view never runs with.
+        auto effective_context = getViewContext(query_context, storage_snapshot, this);
+        auto referenced_tables_hash = computeQueryReferencedTablesModificationHash(inner_query, effective_context);
+        if (!referenced_tables_hash)
+            return {};
+
+        SipHash hash;
+        hash.update(getStorageID().uuid);
+        hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+        hash.update(getMetadataVersionForModificationHash());
+        /// Canonicalized, so that a semantic no-op such as spelling out the default `SQL SECURITY
+        /// INVOKER` on a legacy view, or a `MODIFY DEFINER` under `INVOKER` / `NONE`, does not move
+        /// the hash: `getSQLSecurityOverriddenContext` reads neither.
+        updateHashWithEffectiveSQLSecurity(hash, *storage_snapshot->metadata);
+        /// The effective reader's settings can change the rows this view returns (for example,
+        /// a definer's read limits), so a settings-profile update must invalidate consistency users.
+        /// Purely operational settings are left out: a definer's profile carries them without
+        /// changing a single row. `changedToMap` is ordered by name, so the hash does not depend on
+        /// the order in which the settings were applied, and settings left at their default value
+        /// are equal everywhere.
+        for (const auto & [name, value] : effective_context->getSettingsRef().changedToMap())
+        {
+            if (!settingCanAffectQueryRows(name))
+                continue;
+            hash.update(name);
+            hash.update(value);
+        }
+        IASTHash view_query_hash = inner_query->getTreeHash(/*ignore_aliases*/ false);
+        hash.update(view_query_hash.low64);
+        hash.update(view_query_hash.high64);
+        hash.update(*referenced_tables_hash);
+        return hash.get128();
+    }
+    catch (...)
+    {
+        /// Ok to fail closed: if a dependency cannot be inspected, cached data must not be reused.
+        return {};
+    }
 }
 
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)

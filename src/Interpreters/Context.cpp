@@ -83,6 +83,7 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/ReverseLookupCache.h>
+#include <Interpreters/QueryConsumedObjectSets.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/WasmModuleManager.h>
@@ -1472,6 +1473,9 @@ ContextData::ContextData(const ContextData &o) :
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
     runtime_filter_lookup(o.runtime_filter_lookup),
     kitchen_sink(o.kitchen_sink),
+    /// Copied so that contexts derived from a temporary SQL-security-overridden view context still reach
+    /// the query's consumed-object-set capture after that context's weak `query_context` has expired.
+    query_consumed_object_sets(o.query_consumed_object_sets),
     query_parameters(o.query_parameters),
     host_context(o.host_context),
     metadata_transaction(o.metadata_transaction),
@@ -7929,6 +7933,27 @@ QueryMetadataCachePtr Context::getQueryMetadataCache() const
 void Context::setQueryMetadataCache(const QueryMetadataCachePtr & query_metadata_cache_)
 {
     query_metadata_cache = query_metadata_cache_;
+}
+
+QueryConsumedObjectSetsPtr Context::getQueryConsumedObjectSets() const
+{
+    /// Prefer the own member: a context copied after the capture was installed carries the shared
+    /// pointer directly. This matters for reads under a `SQL SECURITY DEFINER` / `NONE` view: the
+    /// fresh query context built by `getSQLSecurityOverriddenContext` is temporary and is already
+    /// destroyed by the time the pipeline is built, so the weak `query_context` of the contexts
+    /// copied from it has expired and only the copied member still reaches the capture.
+    if (query_consumed_object_sets)
+        return query_consumed_object_sets;
+    /// May be called outside of a query (e.g. a `system.tables` scan or a background refresh); return
+    /// null there so the caller falls back to listing rather than asserting.
+    if (!hasQueryContext())
+        return nullptr;
+    return getQueryContext()->query_consumed_object_sets;
+}
+
+void Context::setQueryConsumedObjectSets(const QueryConsumedObjectSetsPtr & query_consumed_object_sets_)
+{
+    query_consumed_object_sets = query_consumed_object_sets_;
 }
 
 bool Context::hasQueryParameters() const

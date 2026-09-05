@@ -7,6 +7,7 @@
 #include <Core/Settings.h>
 
 #include <Common/HashTable/HashMap.h>
+#include <Common/SipHash.h>
 #include <Common/HashTable/HashSet.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/NestedUtils.h>
@@ -22,6 +23,8 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/VirtualColumnsDescription.h>
+
+#include <set>
 
 
 namespace DB
@@ -169,6 +172,15 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     /// per query pattern when the pipeline runs under a fresh SQL-security-overridden context (the
     /// `DEFINER`/`NONE` branch starts from the global context, where the hash would otherwise be 0).
     new_context->setNormalizedQueryHash(context->getNormalizedQueryHash());
+    /// Share the outer query's consumed-object-set capture: every context copied from the fresh query
+    /// context created here inherits the member (this context itself is temporary and its weak
+    /// `query_context` expires before the pipeline is built, so the member copy is the only route to the
+    /// capture). Without this, the object-storage reads of a `SQL SECURITY DEFINER` / `NONE` view would
+    /// record nothing and the query result cache consistency check would fall back to re-listing
+    /// (reopening the listing `A -> B -> A` race the capture closes). See `QueryConsumedObjectSets`.
+    /// Not an invoker-identity leak: the capture only accumulates the identities of objects the inner
+    /// query actually reads.
+    new_context->setQueryConsumedObjectSets(context->getQueryConsumedObjectSets());
     /// The analyze mode must reach every join the report walker can reach, including the joins of
     /// this view's inner query.
     new_context->setJoinAnalyzeMode(context->getJoinAnalyzeMode());
@@ -1059,6 +1071,76 @@ StorageMetadataHandle::operator bool() const
 bool StorageMetadataHandle::operator==(std::nullptr_t) const
 {
     return metadata == nullptr;
+}
+
+void updateHashWithEffectiveSQLSecurity(SipHash & hash, const StorageInMemoryMetadata & metadata)
+{
+    /// `getSQLSecurityOverriddenContext` returns a plain copy of the caller's context both when
+    /// `sql_security_type` is not set (a legacy view) and when it is `INVOKER`, so the two states are
+    /// one for the purposes of the hash.
+    const auto security_type = metadata.sql_security_type.value_or(SQLSecurityType::INVOKER);
+    hash.update(static_cast<Int8>(security_type));
+    /// The definer only decides who runs the query under `SQL SECURITY DEFINER`; under `INVOKER` and
+    /// `NONE` it is never read, so folding it in would make `MODIFY DEFINER` look like a data change.
+    if (security_type == SQLSecurityType::DEFINER)
+        hash.update(metadata.definer.value_or(""));
+}
+
+bool settingCanAffectQueryRows(std::string_view setting_name)
+{
+    /// Settings that only drive diagnostics - query and metric logging, profiling, tracing - or the
+    /// shape of the HTTP response, and therefore cannot change the rows a `SELECT` produces.
+    /// `RefreshTask::createRefreshContext` puts the attempt number into `log_comment`, so folding it
+    /// in would make the hash of an unchanged view differ between a first attempt and a retry: a
+    /// `REFRESH ... IF CHANGED APPEND` watermark written by a retry would then be ignored by the next
+    /// attempt, which would append a duplicate copy of unchanged rows. The rest are here because a
+    /// settings profile of a view's definer routinely carries them, and an edit to one of them must
+    /// not invalidate a watermark either.
+    /// The result limits and `extremes` are overwritten by `StorageView`'s `getViewContext` (they
+    /// apply to the outer query, not to the view), and writing them marks them as changed, so they
+    /// have to be left out here as well.
+    static const std::set<std::string_view> settings_not_affecting_rows = {
+        "log_comment",
+        "log_formatted_queries",
+        "log_processors_profiles",
+        "log_profile_events",
+        "log_queries",
+        "log_queries_cut_to_length",
+        "log_queries_min_query_duration_ms",
+        "log_queries_min_type",
+        "log_queries_probability",
+        "log_query_settings",
+        "log_query_threads",
+        "log_query_views",
+        "query_metric_log_interval",
+        "send_logs_level",
+        "send_logs_source_regexp",
+        "send_profile_events",
+        "query_profiler_cpu_time_period_ns",
+        "query_profiler_real_time_period_ns",
+        "memory_profiler_sample_max_allocation_size",
+        "memory_profiler_sample_min_allocation_size",
+        "memory_profiler_sample_probability",
+        "memory_profiler_step",
+        "metrics_perf_events_enabled",
+        "metrics_perf_events_list",
+        "trace_profile_events",
+        "trace_profile_events_list",
+        "opentelemetry_start_keeper_trace_probability",
+        "opentelemetry_start_trace_probability",
+        "opentelemetry_trace_cpu_scheduling",
+        "opentelemetry_trace_processors",
+        "enable_http_compression",
+        "http_headers_progress_interval_ms",
+        "http_response_headers",
+        "http_zlib_compression_level",
+        "send_progress_in_http_headers",
+        "extremes",
+        "max_result_bytes",
+        "max_result_rows",
+    };
+
+    return !settings_not_affecting_rows.contains(setting_name);
 }
 
 }

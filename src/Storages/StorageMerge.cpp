@@ -1,6 +1,8 @@
 #include <cmath>
 #include <functional>
 #include <iterator>
+#include <unordered_set>
+#include <base/scope_guard.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Analyzer/ConstantNode.h>
@@ -18,6 +20,7 @@
 #include <Analyzer/traverseQueryTree.h>
 #include <Common/Logger.h>
 #include <Common/NaNUtils.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Columns/ColumnString.h>
@@ -32,6 +35,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Databases/IDatabase.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
@@ -669,6 +673,20 @@ StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_cont
     auto base_metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
     if (!query_context)
         return base_metadata;
+
+    /// Resolving the source-table virtuals below recurses into the first source's `getInMemoryMetadataPtr`,
+    /// so a cycle of mutually-referencing `Merge` tables - e.g. `m1 = Merge(db, 'm.*')` and
+    /// `m2 = Merge(db, 'm.*')`, each matching the other - would recurse `m1 -> m2 -> m1 -> ...` until
+    /// `checkStackSize` throws `TOO_DEEP_RECURSION` (see `getDatabaseIterators`). That is reached before
+    /// `getModificationHash` even runs, so guard here too (matching the guard in `getModificationHash`):
+    /// track the tables whose metadata is being resolved on this thread and, on re-entry, return the base
+    /// metadata without folding in the source virtuals. Without this, `system.tables` and the consistent
+    /// query-cache / `REFRESH ... IF CHANGED` paths would fail with an exception on such wrapper tables
+    /// instead of failing closed to a `NULL` modification hash.
+    static thread_local std::unordered_set<const IStorage *> tables_resolving_metadata;
+    if (!tables_resolving_metadata.insert(this).second)
+        return base_metadata;
+    SCOPE_EXIT({ tables_resolving_metadata.erase(this); });
 
     auto virtuals = createVirtuals();
     try
@@ -2557,6 +2575,79 @@ std::optional<UInt64> StorageMerge::totalRowsOrBytes(F && func) const
     });
 
     return first_table ? std::nullopt : std::make_optional(total_rows_or_bytes);
+}
+
+std::optional<UInt128> StorageMerge::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
+    /// `getModificationHash` recurses into every source table's `getModificationHash` in-process, so wrapper
+    /// tables can form a cycle - e.g. two `Merge` tables `m1 = Merge(db, 'm.*')` and `m2 = Merge(db, 'm.*')`
+    /// each match the other, so `m1` recurses into `m2` and back into `m1`. `traverseTablesUntil` skips only
+    /// `this`, which stops the direct self-match but not the indirect cycle. Match `StorageDistributed`: track
+    /// the tables currently being hashed on this thread and fail closed (return nullopt) on re-entry, so the
+    /// cycle is detected in O(1) at the first repeat instead of relying on `checkStackSize` throwing
+    /// `TOO_DEEP_RECURSION` deep in the metadata traversal.
+    static thread_local std::unordered_set<const IStorage *> tables_being_hashed;
+    if (!tables_being_hashed.insert(this).second)
+        return {};
+    SCOPE_EXIT({ tables_being_hashed.erase(this); });
+
+    try
+    {
+        std::vector<UInt128> table_hashes;
+
+        /// Stop traversing as soon as any source table cannot report its modification hash.
+        auto unknown_table = traverseTablesUntil([&](const StoragePtr & table) -> bool
+        {
+            if (!table)
+                return false;
+
+            /// Recurse through `computeTableModificationHashForConsistency` rather than probing the child
+            /// storage directly. Besides refreshing lazily applied external metadata and failing closed on
+            /// a row policy, it gates the probe on the current user's `SELECT` access to the child. An
+            /// actual `Merge` read enforces per-child `SELECT` in `getSelectedTables`, while this hash runs
+            /// before any access check - without the gate, a user who lost access to one child could still
+            /// get a cache hit backed by that child's current hash (and, since the query-cache key folds
+            /// only the user and role IDs, keep reading previously cached rows from it), and could probe
+            /// external children (an HTTP request, an object listing) with server credentials. The same
+            /// applies to `system.tables.modification_hash`, which calls into here as well. The helper also
+            /// folds the resolved table identity (database, name, UUID) into the returned hash, so two
+            /// source tables with identical contents do not cancel out and two different tables that happen
+            /// to report the same modification hash (e.g. the same `ETag`) are distinguished.
+            auto table_hash = computeTableModificationHashForConsistency(table->getStorageID(), query_context);
+            if (!table_hash)
+                return true; /// This source cannot tell whether it changed - assume the worst for the whole Merge.
+
+            table_hashes.push_back(*table_hash);
+            return false;
+        });
+
+        if (unknown_table)
+            return {};
+
+        /// Combine in a deterministic, order-independent way (the iteration order over databases and tables
+        /// is not guaranteed to be stable).
+        std::sort(table_hashes.begin(), table_hashes.end());
+
+        SipHash hash;
+        hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+        /// Loop-free metadata version for this Merge table's own column metadata (a reverted metadata-only
+        /// `ALTER` would otherwise repeat the column string above). See
+        /// `IStorage::getMetadataVersionForModificationHash`.
+        hash.update(getMetadataVersionForModificationHash());
+        hash.update(table_hashes.size());
+        for (const auto & table_hash : table_hashes)
+            hash.update(table_hash);
+        return hash.get128();
+    }
+    catch (...)
+    {
+        /// Ok to ignore: resolving the source tables can fail. The common `Merge`-cycle case is already
+        /// handled by the re-entry guard above, but a cycle that runs through a different engine (e.g. a
+        /// `Merge` and a `Distributed` pointing at each other) can still make resolving the source metadata
+        /// recurse until `checkStackSize` throws `TOO_DEEP_RECURSION` (see `getDatabaseIterators`), so keep
+        /// failing closed here as a backstop.
+        return {};
+    }
 }
 
 void registerStorageMerge(StorageFactory & factory);

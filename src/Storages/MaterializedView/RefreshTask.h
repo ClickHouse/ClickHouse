@@ -114,6 +114,23 @@ public:
         /// the dependency's latest last_success_end_time, we should start a refresh.
         AllDependenciesInfo last_success_dependencies;
 
+        /// `REFRESH ... IF CHANGED` watermark: the combined modification hash of the tables the view
+        /// reads from, as of the last refresh that rebuilt the view (or that was skipped because the
+        /// sources were unchanged), together with the hash of the view definition it was produced
+        /// from (the `SELECT` query and the refresh strategy).
+        /// It lives in the coordination state so that the skip decision survives a server restart and
+        /// a handover to another replica. This matters most in `APPEND` mode: there every refresh that
+        /// is not skipped materializes another copy of the source data, so losing the watermark appends
+        /// duplicate rows even though nothing changed.
+        /// `last_success_definition_hash` makes the watermark self-invalidating: after an
+        /// `ALTER ... MODIFY QUERY`, `MODIFY REFRESH`, or `MODIFY SQL SECURITY` it no longer matches
+        /// the current definition, so the stored source hash is ignored on every replica without a
+        /// separate Keeper write.
+        /// nullopt if no refresh remembered a hash yet, or if the sources cannot report their
+        /// modification state.
+        std::optional<UInt128> last_success_source_hash;
+        UInt128 last_success_definition_hash{};
+
         /// Znode version. Not serialized.
         int32_t version = -1;
 
@@ -121,6 +138,20 @@ public:
 
         String toString() const;
         void parse(const String & data, bool running_znode_exists, const LoggerPtr & log_);
+    };
+
+    /// `REFRESH ... IF CHANGED` state handed to a refresh attempt and filled in by it.
+    struct IfChangedWatermark
+    {
+        /// Inputs: the source hash this replica remembers in memory, and the one persisted in the
+        /// coordination state together with the view definition it was produced from.
+        std::optional<UInt128> local_source_hash;
+        std::optional<UInt128> persisted_source_hash;
+        UInt128 persisted_definition_hash{};
+
+        /// Outputs: the source hash the attempt saw, and the hash of the view definition it ran with.
+        std::optional<UInt128> source_hash;
+        UInt128 definition_hash{};
     };
 
     /// Just for observability.
@@ -348,6 +379,25 @@ private:
     /// resumed after the rename so it cannot refresh the target before the replacement is committed.
     const bool start_paused;
 
+    /// `REFRESH ... IF CHANGED`: skip a scheduled refresh if none of the tables the view reads from
+    /// changed since the last refresh that actually rebuilt the view.
+    bool refresh_if_changed = false;
+    /// Combined modification hash of the tables the view reads from, as of the last refresh that
+    /// actually rebuilt the view on this replica. nullopt if no refresh has rebuilt the view yet
+    /// here, or if the source tables cannot report their modification state.
+    /// When it is not set (a fresh server, or a refresh that ran on another replica), the watermark
+    /// persisted in the coordination state is used instead - see
+    /// `CoordinationZnode::last_success_source_hash`.
+    std::optional<UInt128> last_refresh_source_hash;
+    /// Definition hash paired with `last_refresh_source_hash`. A changed SQL-security definer
+    /// settings profile changes the effective refresh settings without changing the view metadata,
+    /// so the in-memory watermark must be invalidated just like the persisted one.
+    UInt128 last_refresh_definition_hash{};
+    /// Bumped by alterRefreshParams. A refresh captures it at the start and, on completion, only stores
+    /// its source hash if the value is unchanged - otherwise an ALTER MODIFY REFRESH raced with the
+    /// in-flight refresh (which may have been built from the old query/flag) and the hash must stay cleared.
+    UInt64 refresh_params_version = 0;
+
     RefreshSet::Handle set_handle;
 
     /// Calls doScheduling() from background thread.
@@ -395,7 +445,7 @@ private:
 
     /// Perform an actual refresh: create new table, run INSERT SELECT, exchange tables, drop old table.
     /// Mutex must be unlocked.
-    std::optional<UUID> executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message);
+    std::optional<UUID> executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message, bool if_changed, bool out_of_schedule, IfChangedWatermark & watermark, bool & out_unchanged);
 
     DependencyRefreshInfo getInfoForDependentViewsLocked(const std::unique_lock<std::mutex> &) const;
 

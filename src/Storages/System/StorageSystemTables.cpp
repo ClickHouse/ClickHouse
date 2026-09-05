@@ -418,6 +418,18 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
             "(the `TO` target, or the implicit `.inner.*` table). Empty for other engines."
         },
         {"definer", std::make_shared<DataTypeString>(), "SQL security definer's name used for the table."},
+        {"modification_hash", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt128>()),
+            "A value that changes whenever the data behind the table changes (similar to an ETag). For engines "
+            "that can provide a loop-free signal (e.g. MergeTree, Memory, Log) it never returns to an earlier "
+            "value across a change-and-change-back; for URL and object storage it is the resource's strong ETag, "
+            "which is best-effort, as it can repeat if the content is rewritten back to an identical state. "
+            "Merge and Distributed combine their underlying tables' values and are likewise best-effort if the "
+            "set of underlying tables changes during a query. It covers the table's regular columns and data "
+            "only, not query-visible virtual columns that expose placement or external metadata (e.g. _disk_name, "
+            "_tags, _headers). "
+            "NULL if the engine cannot tell whether its data has changed. Computing it may be expensive for some "
+            "engines (e.g. Merge, Distributed, URL), so it is only calculated when this column is selected."
+        },
     };
 
     description.setAliases({
@@ -1153,6 +1165,71 @@ protected:
                 {
                     if (metadata_snapshot && metadata_snapshot->sql_security_type == SQLSecurityType::DEFINER)
                         res_columns[res_index++]->insert(*metadata_snapshot->definer);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    std::optional<UInt128> modification_hash;
+                    try
+                    {
+                        /// `getModificationHash` can perform credentialed I/O for external engines (`URL`,
+                        /// object storage, `Distributed`). A `system.tables` row only requires `SHOW TABLES`,
+                        /// so a user who can see the row but has no `SELECT` on the table must not be able to
+                        /// trigger those probes through this column. Require `SELECT` access (table-level, or
+                        /// at least one column - matching `InterpreterSelectQuery` and the query-cache helper);
+                        /// otherwise leave the value NULL.
+                        bool can_read = table && metadata_snapshot
+                            && access->isGranted(AccessType::SELECT, database_name, table_name);
+                        if (!can_read && table && metadata_snapshot)
+                        {
+                            for (const auto & column : metadata_snapshot->getColumns())
+                            {
+                                if (access->isGranted(AccessType::SELECT, database_name, table_name, column.name))
+                                {
+                                    can_read = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (can_read)
+                        {
+                            /// Fail closed for every non-`INVOKER` view this row's hash reaches, including
+                            /// through a wrapper engine (`Merge`, the local shard of `Distributed`), whose
+                            /// own storage is not a view - see `ModificationHashIntrospectionScope`.
+                            ModificationHashIntrospectionScope introspection_scope;
+
+                            /// A `SQL SECURITY DEFINER` / `NONE` view reads its stored SELECT under an
+                            /// effective context rather than the caller's. Its modification hash consequently
+                            /// tracks source tables the caller may not be allowed to read, which would expose
+                            /// source-table churn through `system.tables`. Do not recurse through such a view
+                            /// from this introspection path. Query-cache and refresh consistency still use the
+                            /// effective context because they need to describe the rows that the view actually
+                            /// returns.
+                            if (typeid_cast<const StorageView *>(table.get())
+                                && metadata_snapshot->sql_security_type
+                                && *metadata_snapshot->sql_security_type != SQLSecurityType::INVOKER)
+                            {
+                                res_columns[res_index++]->insertDefault();
+                                continue;
+                            }
+
+                            /// Refresh lazily applied external metadata before hashing, so that the value
+                            /// shown here does not change after the table's first ordinary read merely
+                            /// because that read performed the update (see
+                            /// `getModificationHashWithRefreshedMetadata`).
+                            modification_hash = getModificationHashWithRefreshedMetadata(table, context);
+                        }
+                    }
+                    catch (const Exception &)
+                    {
+                        /// Even if the method throws, it should not prevent querying system.tables.
+                        tryLogCurrentException("StorageSystemTables");
+                    }
+
+                    if (modification_hash)
+                        res_columns[res_index++]->insert(*modification_hash);
                     else
                         res_columns[res_index++]->insertDefault();
                 }

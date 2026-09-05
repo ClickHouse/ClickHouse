@@ -2,6 +2,8 @@
 #include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Settings.h>
+#include <Interpreters/QueryConsumedObjectSets.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/Sources/NullSource.h>
@@ -37,6 +39,57 @@ namespace Setting
 {
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsBool s3_validate_etag_on_read;
+}
+
+namespace
+{
+
+/// Wraps an object iterator to record every object the read consumes into the query's
+/// `QueryConsumedObjectSets`. This lets `StorageObjectStorage::getModificationHash` validate the query
+/// result cache against the exact object set the read used, rather than a fresh listing that could
+/// differ under a concurrent change. See `QueryConsumedObjectSets`.
+class CapturingObjectIterator : public IObjectIterator
+{
+public:
+    CapturingObjectIterator(ObjectIterator inner_, QueryConsumedObjectSetsPtr consumed_object_sets_, UUID table_uuid_)
+        : inner(std::move(inner_)), consumed_object_sets(std::move(consumed_object_sets_)), table_uuid(table_uuid_)
+    {
+    }
+
+    ObjectInfoPtr next(size_t thread_num) override
+    {
+        auto object_info = inner->next(thread_num);
+        if (object_info)
+        {
+            QueryConsumedObjectSets::Object object;
+            object.path = object_info->getPath();
+            if (auto metadata = object_info->getObjectMetadata())
+            {
+                object.etag = metadata->etag;
+                object.size = metadata->size_bytes;
+                object.last_modified = metadata->last_modified.epochTime();
+                object.has_metadata = true;
+            }
+            consumed_object_sets->add(table_uuid, std::move(object));
+        }
+        return object_info;
+    }
+
+    size_t estimatedKeysCount() override { return inner->estimatedKeysCount(); }
+    std::optional<UInt64> getSnapshotVersion() const override { return inner->getSnapshotVersion(); }
+
+    void setEmitProfileEvents(bool value) override
+    {
+        emit_profile_events = value;
+        inner->setEmitProfileEvents(value);
+    }
+
+private:
+    ObjectIterator inner;
+    QueryConsumedObjectSetsPtr consumed_object_sets;
+    UUID table_uuid;
+};
+
 }
 
 
@@ -184,6 +237,41 @@ void ReadFromObjectStorageStep::createIterator()
         configuration, configuration->getQuerySettings(context), object_storage, storage_snapshot->metadata, distributed_processing,
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
         /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
+
+    /// When the query result cache consistency check is active, record the exact object set this read
+    /// consumes so `StorageObjectStorage::getModificationHash` can hash it at finalization instead of
+    /// re-listing (closes a listing `A -> B -> A` race). Only wrapped when there is a capture to fill
+    /// and the table has a UUID to key it by. See `QueryConsumedObjectSets`.
+    if (storage_id.hasUUID())
+    {
+        if (auto consumed_object_sets = context->getQueryConsumedObjectSets())
+        {
+            /// A filter over `_path`/`_file` or Hive-partition columns makes the iterator enumerate
+            /// only a pruned subset of the table's objects (glob listing filter, `_path` value
+            /// extraction). The consumed set is then a subset of the full listing the pre-read hash
+            /// was built from, so the two hashes could never compare equal even for an unchanged
+            /// table. Mark the capture pruned instead of filling it with the subset - the consistency
+            /// check then fails closed for this table rather than comparing incomparable sets.
+            const bool may_prune_object_set = predicate
+                && VirtualColumnUtils::createPathAndFileFilterDAG(
+                       predicate, virtual_columns, context, info.hive_partition_columns_to_read_from_file_path)
+                       .has_value();
+            if (may_prune_object_set)
+            {
+                consumed_object_sets->markPruned(storage_id.uuid);
+            }
+            else
+            {
+                /// Record an empty consumed set before the read starts, so that a read consuming no
+                /// object at all is distinguishable from "this table was never read". Otherwise the
+                /// finalization check would fall back to a fresh listing and could reproduce the
+                /// pre-read hash of an object set the query never read. See `beginCapture`.
+                consumed_object_sets->beginCapture(storage_id.uuid);
+                iterator_wrapper = std::make_shared<CapturingObjectIterator>(
+                    std::move(iterator_wrapper), std::move(consumed_object_sets), storage_id.uuid);
+            }
+        }
+    }
 }
 
 static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & key_description)

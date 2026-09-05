@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/QueryConsumedObjectSets.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
@@ -20,10 +21,13 @@
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageMaterializedView.h>
 #include <base/EnumReflection.h>
+#include <base/hex.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/SipHash.h>
 #include <Common/QueryScope.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
@@ -151,6 +155,41 @@ std::vector<StorageID> parseRefreshDependencies(const ASTRefreshStrategy & strat
     return deps;
 }
 
+/// Hash of the parts of the view definition that decide what a refresh reads and produces: the
+/// `SELECT` query, the refresh strategy (which carries `IF CHANGED`, the schedule and the
+/// dependencies), the effective SQL security, and the settings of the refresh context that can
+/// affect the rows the refresh `SELECT` produces. Used to tell whether a persisted
+/// `REFRESH ... IF CHANGED` source hash was produced by the definition and settings the view has
+/// now, or by an older one that an `ALTER` or a settings-profile update has since replaced.
+UInt128 computeViewDefinitionHash(const StorageInMemoryMetadata & metadata, const ContextPtr & refresh_context)
+{
+    SipHash hash;
+    if (metadata.select.select_query)
+        metadata.select.select_query->updateTreeHash(hash, /*ignore_aliases=*/ false);
+    if (metadata.refresh)
+        metadata.refresh->updateTreeHash(hash, /*ignore_aliases=*/ false);
+    /// Canonicalized, so that a security change the refresh never acts on - spelling out the
+    /// default `INVOKER`, or a `MODIFY DEFINER` under `INVOKER` / `NONE`, which
+    /// `getSQLSecurityOverriddenContext` does not read - does not invalidate the watermark and make
+    /// an `APPEND` view append a duplicate copy of unchanged rows.
+    updateHashWithEffectiveSQLSecurity(hash, metadata);
+    /// Only the settings that can affect the produced rows: per-attempt diagnostics such as
+    /// `log_comment` and a definer profile's operational settings must not move the hash, or a
+    /// watermark written by one attempt would be ignored by the next one.
+    /// `changedToMap` is ordered by name, so the hash does not depend on the order in which the
+    /// settings were applied. Settings left at their default value are equal on every replica and
+    /// attempt, so leaving them out changes nothing: a profile update that resets a setting back to
+    /// its default removes it from the map and still moves the hash.
+    for (const auto & [name, value] : refresh_context->getSettingsRef().changedToMap())
+    {
+        if (!settingCanAffectQueryRows(name))
+            continue;
+        hash.update(name);
+        hash.update(value);
+    }
+    return hash.get128();
+}
+
 }
 
 RefreshTask::RefreshTask(
@@ -162,6 +201,8 @@ RefreshTask::RefreshTask(
     , start_paused(start_paused_)
 {
     createLogger(view->getStorageID());
+
+    refresh_if_changed = strategy.if_changed;
 
     auto component_guard = Coordination::setCurrentComponent("RefreshTask::RefreshTask");
     if (strategy.settings != nullptr)
@@ -476,6 +517,12 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         std::lock_guard guard(mutex);
 
         refresh_schedule = RefreshSchedule(new_strategy);
+        refresh_if_changed = new_strategy.if_changed;
+        /// The remembered source hash refers to the previous refresh's query. After changing the refresh
+        /// params (including toggling IF CHANGED, or changing the query via separate ALTER) it may no longer
+        /// correspond to the target's current contents, so forget it and let the next refresh recompute.
+        last_refresh_source_hash.reset();
+        ++refresh_params_version;
         std::vector<StorageID> deps = parseRefreshDependencies(
             new_strategy, view ? view->getStorageID().database_name : String{});
 
@@ -1231,12 +1278,20 @@ void RefreshTask::executeRefresh()
     }
 
     std::vector<StorageID> deps = set_handle.getDependencies();
+    bool out_of_schedule = execution.out_of_schedule;
+    bool if_changed = refresh_if_changed;
+    IfChangedWatermark watermark;
+    watermark.local_source_hash = last_refresh_source_hash;
+    watermark.persisted_source_hash = execution.znode.last_success_source_hash;
+    watermark.persisted_definition_hash = execution.znode.last_success_definition_hash;
+    UInt64 params_version_at_start = refresh_params_version;
 
     lock.unlock();
+    bool unchanged = false;
     try
     {
         CurrentMetrics::Increment metric_inc(CurrentMetrics::RefreshingViews);
-        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, error_message);
+        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, error_message, if_changed, out_of_schedule, watermark, unchanged);
     }
     catch (...)
     {
@@ -1253,10 +1308,43 @@ void RefreshTask::executeRefresh()
     znode.last_attempt_time = end_time_seconds;
     znode.last_attempt_error = error_message;
     znode.refresh_running = false;
-    if (new_table_uuid.has_value())
+    /// If an `ALTER ... MODIFY REFRESH` or `MODIFY QUERY` raced with this refresh, the run was built
+    /// from the old definition, so its result must not be treated as a refresh of the new definition:
+    /// don't mark the timeslot as completed (leaving `last_completed_timeslot` behind makes the
+    /// scheduler start another refresh right away, under the new params), don't overwrite the
+    /// dependency snapshot with the old definition's dependency set, and don't remember the source
+    /// hash (the ALTER cleared it). The physical results of the run are still recorded below: the
+    /// target table really was exchanged, and coordinated replicas sync to `last_success_table_uuid`
+    /// when `last_success_end_time` advances, so those must reflect reality.
+    bool params_changed_during_refresh = refresh_params_version != params_version_at_start;
+    /// `unchanged` is the `REFRESH ... IF CHANGED` skip: the source data did not change, so we treat
+    /// the timeslot as completed (advancing the schedule and resetting retries) and consume the
+    /// dependency refreshes that triggered this run (`last_success_dependencies` is the scheduler
+    /// watermark for `DEPENDS ON`; without advancing it the same dependency refresh would keep looking
+    /// new and re-trigger an immediate skipped refresh forever), but do NOT touch the published
+    /// last-success output (`last_success_time` / `last_success_table_uuid` / `last_success_end_time`) -
+    /// the view's data is unchanged, so dependent views must not be triggered.
+    if (new_table_uuid.has_value() || unchanged)
     {
         znode.last_attempt_succeeded = true;
-        znode.last_completed_timeslot = refresh_schedule.timeslotForCompletedRefresh(znode.last_completed_timeslot, start_time_seconds, end_time_seconds, execution.out_of_schedule);
+        if (!params_changed_during_refresh)
+        {
+            znode.last_completed_timeslot = refresh_schedule.timeslotForCompletedRefresh(znode.last_completed_timeslot, start_time_seconds, end_time_seconds, execution.out_of_schedule);
+            znode.last_success_dependencies = std::move(execution.dependencies);
+            last_refresh_source_hash = watermark.source_hash;
+            last_refresh_definition_hash = watermark.definition_hash;
+            /// Persist the watermark too, so a restart or a handover to another replica does not lose
+            /// it and re-run a refresh that should have been skipped. In `APPEND` mode such a re-run
+            /// would append another copy of unchanged data.
+            znode.last_success_source_hash = watermark.source_hash;
+            znode.last_success_definition_hash = watermark.definition_hash;
+        }
+        znode.previous_attempt_error = "";
+        znode.attempt_number = 0;
+        znode.randomize();
+    }
+    if (new_table_uuid.has_value())
+    {
         znode.last_success_time = start_time_seconds;
         znode.last_success_duration = std::chrono::milliseconds(stopwatch.elapsedMilliseconds());
         znode.last_success_table_uuid = *new_table_uuid;
@@ -1265,10 +1353,6 @@ void RefreshTask::executeRefresh()
         else
             /// Must monotonically increase, dependencies rely on it.
             znode.last_success_end_time += std::chrono::nanoseconds(1);
-        znode.last_success_dependencies = std::move(execution.dependencies);
-        znode.previous_attempt_error = "";
-        znode.attempt_number = 0;
-        znode.randomize();
     }
     execution.znode = znode;
 
@@ -1278,7 +1362,7 @@ void RefreshTask::executeRefresh()
     scheduling_task->schedule();
 }
 
-std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message)
+std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message, bool if_changed, bool out_of_schedule, IfChangedWatermark & watermark, bool & out_unchanged)
 {
     StorageID view_storage_id = view->getStorageID();
     LOG_DEBUG(getLogger(), "Refreshing view");
@@ -1303,6 +1387,45 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
         refresh_context = view->createRefreshContext(log_comment);
 
         syncDependenciesForRefresh(deps, refresh_context);
+
+        /// `REFRESH ... IF CHANGED`: if none of the tables the view reads from changed since the last
+        /// refresh that rebuilt the view, skip this refresh entirely. An explicit `SYSTEM REFRESH VIEW`
+        /// (out_of_schedule) always rebuilds, ignoring this check.
+        if (if_changed)
+        {
+            auto view_metadata = view->getInMemoryMetadataPtr(refresh_context, false);
+            watermark.definition_hash = computeViewDefinitionHash(*view_metadata, refresh_context);
+            if (auto select_ast = view_metadata->select.select_query)
+                watermark.source_hash = computeQueryReferencedTablesModificationHash(select_ast, refresh_context);
+
+            /// The watermark this replica remembers in memory, or - after a server restart, or when the
+            /// previous refresh ran on another replica - the one persisted in the coordination state.
+            /// The persisted one counts only if the view definition has not changed since it was
+            /// written: an `ALTER ... MODIFY QUERY`, `MODIFY REFRESH`, or `MODIFY SQL SECURITY` makes
+            /// the old source hash meaningless for the new definition, and this way every replica
+            /// ignores it without needing a separate Keeper write.
+            std::optional<UInt128> previous_source_hash;
+            if (last_refresh_definition_hash == watermark.definition_hash)
+                previous_source_hash = watermark.local_source_hash;
+            if (!previous_source_hash.has_value() && watermark.persisted_definition_hash == watermark.definition_hash)
+                previous_source_hash = watermark.persisted_source_hash;
+
+            /// An explicit `SYSTEM REFRESH VIEW` (out_of_schedule) always rebuilds, but we still recompute
+            /// the source hash above so that subsequent scheduled refreshes can be skipped.
+            if (!out_of_schedule && watermark.source_hash.has_value() && previous_source_hash.has_value()
+                && *watermark.source_hash == *previous_source_hash)
+            {
+                LOG_DEBUG(getLogger(), "Skipping refresh because none of the source tables changed (REFRESH ... IF CHANGED)");
+                out_unchanged = true;
+                return std::nullopt;
+            }
+
+            /// Proceeding to rebuild: record the object-storage object set the read below actually
+            /// consumes, so the post-read source hash reflects exactly what was read rather than a fresh
+            /// listing that could differ under a concurrent change (closes a listing `A -> B -> A` race
+            /// for object-storage sources). See `QueryConsumedObjectSets`.
+            refresh_context->setQueryConsumedObjectSets(std::make_shared<QueryConsumedObjectSets>());
+        }
 
         if (!refresh_append)
         {
@@ -1402,6 +1525,30 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
 
                 /// `executor` must be destroyed before `pipeline`!
+            }
+
+            /// Recompute the source hash now that the refresh query has finished reading the source, and only
+            /// remember it for the next IF CHANGED comparison if it is unchanged across the whole read.
+            ///
+            /// `watermark.source_hash` currently holds the pre-read value (sampled above, before the INSERT SELECT).
+            /// If a source insert commits after the read finished but before this recompute, the new table was
+            /// built from the old source state while the hash would already reflect the new one; storing that
+            /// would make the next scheduled IF CHANGED refresh wrongly skip, leaving the view stale. So we
+            /// keep the hash only when the pre-read and post-read values are both present and equal (the source
+            /// was stable across the read); otherwise we clear it, forcing the next refresh to run.
+            if (if_changed)
+            {
+                const std::optional<UInt128> pre_read_source_hash = watermark.source_hash;
+                std::optional<UInt128> post_read_source_hash;
+                auto view_metadata = view->getInMemoryMetadataPtr(refresh_context, false);
+                if (auto select_ast = view_metadata->select.select_query)
+                    post_read_source_hash = computeQueryReferencedTablesModificationHash(select_ast, refresh_context);
+
+                if (pre_read_source_hash.has_value() && post_read_source_hash.has_value()
+                    && *pre_read_source_hash == *post_read_source_hash)
+                    watermark.source_hash = post_read_source_hash;
+                else
+                    watermark.source_hash = std::nullopt;
             }
 
             logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/internal, /*log_as_internal=*/internal);
@@ -2091,6 +2238,12 @@ String RefreshTask::CoordinationZnode::toString() const
     last_success_dependencies.writeText(out);
     out << "\n";
 
+    /// The `REFRESH ... IF CHANGED` watermark. Hashes are written as hex strings; an empty string
+    /// means "not known" (nullopt).
+    out << "last_success_source_hash: " << escape
+        << (last_success_source_hash.has_value() ? getHexUIntLowercase(*last_success_source_hash) : String()) << "\n"
+        << "last_success_definition_hash: " << escape << getHexUIntLowercase(last_success_definition_hash) << "\n";
+
     return out.str();
 }
 
@@ -2180,6 +2333,24 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
 
     optional_field("last_success_end_time_ns", last_success_end_time);
     optional_field("last_success_dependencies", last_success_dependencies);
+
+    /// The `REFRESH ... IF CHANGED` watermark, written as hex; an empty string means "not known".
+    /// A hash of unexpected length is treated as "not known" too: the only effect of losing the
+    /// watermark is one extra refresh, while a garbage value could skip a refresh that is due.
+    auto parse_hash = [&](const char * name, auto && setter)
+    {
+        String hex;
+        if (!optional_field(name, hex) || hex.empty())
+            return;
+        if (hex.size() != sizeof(UInt128) * 2)
+        {
+            LOG_WARNING(log_, "Unexpected length of field '{}' in RMV coordination znode: {}. Ignoring it.", name, hex.size());
+            return;
+        }
+        setter(unhexUInt<UInt128>(hex.data()));
+    };
+    parse_hash("last_success_source_hash", [&](UInt128 v) { last_success_source_hash = v; });
+    parse_hash("last_success_definition_hash", [&](UInt128 v) { last_success_definition_hash = v; });
 
     if (!next_field_name.empty())
     {

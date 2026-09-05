@@ -218,7 +218,10 @@ Pipe ReadFromMemoryStorageStep::makePipe()
             nullptr /* parallel execution index */,
             [my_storage = storage](std::shared_ptr<const Blocks> & data_to_initialize)
             {
-                data_to_initialize = assert_cast<const StorageMemory &>(*my_storage).data.get();
+                /// `data` now bundles the blocks with a version; expose just the blocks via an aliasing
+                /// shared_ptr that keeps the versioned payload alive.
+                auto versioned = assert_cast<const StorageMemory &>(*my_storage).data.get();
+                data_to_initialize = std::shared_ptr<const Blocks>(versioned, &versioned->blocks);
             },
             typeid_cast<StorageMemory *>(storage.get())->getMaterializedCTE()));
     }
