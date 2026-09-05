@@ -56,6 +56,7 @@ namespace TimeSeriesSetting
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
     extern const TimeSeriesSettingsUInt64 tags_index_granularity;
     extern const TimeSeriesSettingsMap tags_to_columns;
+    extern const TimeSeriesSettingsUInt64 version;
 }
 
 namespace Setting
@@ -566,6 +567,13 @@ namespace
             storage.set(storage.settings, settings_ast);
         }
         storage.settings->changes.setSetting(name, value);
+    }
+
+    /// Upgrades a create query written by a server which didn't support versioning yet:
+    /// such tables belong to version 0 (see TimeSeriesVersion.h).
+    void upgradeFromWithoutExplicitVersion(ASTCreateQuery & create_query)
+    {
+        setTimeSeriesSettingVersion(create_query, 0);
     }
 
     /// Detects prealpha version by outer columns: prealpha had outer columns `id`, `timestamp`, `value`,
@@ -1172,13 +1180,22 @@ namespace
             as_create_query = normalized;
         }
 
-        /// Copy settings from the other table.
-        if (as_create_query->storage && as_create_query->storage->settings
-            && (!create_query.storage || !create_query.storage->settings))
+        /// Copy settings from the other table. Settings are merged by name: a setting written in this query wins.
+        if (as_create_query->storage && as_create_query->storage->settings)
         {
             if (!create_query.storage)
                 create_query.set(create_query.storage, make_intrusive<ASTStorage>());
-            create_query.storage->set(create_query.storage->settings, as_create_query->storage->settings->clone());
+
+            auto merged_settings = boost::static_pointer_cast<ASTSetQuery>(as_create_query->storage->settings->clone());
+            if (create_query.storage->settings)
+            {
+                /// A `name = DEFAULT` reset is a mention of the setting too, so the value of the other table
+                /// is not inherited for it. The reset itself is not kept: an absent setting means the default.
+                for (const auto & name : create_query.storage->settings->default_settings)
+                    merged_settings->changes.removeSetting(name);
+                merged_settings->changes.setSettings(create_query.storage->settings->changes);
+            }
+            create_query.storage->set(create_query.storage->settings, merged_settings);
         }
 
         /// Copy outer column from the other table.
@@ -1252,19 +1269,31 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
     /// The initial CREATE query is excluded: it must be written in the current form already.
     bool can_upgrade = (mode != LoadingStrictnessLevel::CREATE) || is_restore_from_backup;
 
-    /// Upgrade the create_query if it was created by the old versions.
-    /// (A new query written in the prealpha form must be rejected, see readTypesFromOuterColumns.)
-    if (can_upgrade && isPrealpha(create_query))
+    /// Upgrade the create_query if it was created before the `version` setting was introduced.
+    if (can_upgrade && !hasExplicitTimeSeriesSettingVersion(create_query))
     {
-        upgradeFromPrealpha(create_query);
-        chassert(!isPrealpha(create_query));
+        upgradeFromWithoutExplicitVersion(create_query);
+        chassert(hasExplicitTimeSeriesSettingVersion(create_query));
     }
 
-    /// Upgrade the create_query if it was created before the recent samples table existed.
-    if (can_upgrade && isVersionWithNoRecentSamplesTTL(create_query))
+    /// The older forms of the definition below were written only by servers which didn't support versioning yet,
+    /// so they can be found only in tables of version 0.
+    if (can_upgrade && (getTimeSeriesSettingVersion(create_query) == 0))
     {
-        upgradeFromVersionWithNoRecentSamplesTTL(create_query);
-        chassert(!isVersionWithNoRecentSamplesTTL(create_query));
+        /// Upgrade the create_query if it was created by the old versions.
+        /// (A new query written in the prealpha form must be rejected, see readTypesFromOuterColumns.)
+        if (isPrealpha(create_query))
+        {
+            upgradeFromPrealpha(create_query);
+            chassert(!isPrealpha(create_query));
+        }
+
+        /// Upgrade the create_query if it was created before the recent samples table existed.
+        if (isVersionWithNoRecentSamplesTTL(create_query))
+        {
+            upgradeFromVersionWithNoRecentSamplesTTL(create_query);
+            chassert(!isVersionWithNoRecentSamplesTTL(create_query));
+        }
     }
 
     /// Whether the query itself declares a RECENT SAMPLES target. This is checked before applyASClause,
@@ -1276,6 +1305,8 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
         || hasTargetTableID(create_query, ViewTarget::RecentSamples);
 
     /// Apply the clause `AS <other_table>` if any.
+    /// This must happen before pinning the version below: the AS clause copies the SETTINGS clause
+    /// of the other table (with its `version`) only if the query has no SETTINGS clause yet.
     if (!create_query.as_table.empty())
         applyASClause(create_query, context);
 
@@ -1289,7 +1320,17 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
         TimeSeriesSettings settings;
         if (create_query.storage)
             settings.loadFromQuery(*create_query.storage);
+
+        /// This also checks that the version is in the range supported by this server.
         checkTimeSeriesSettings(settings);
+
+        /// Pin `version`, so that the table keeps its version if a future server bumps the latest one.
+        /// Upgraded queries have a version at this point (see above), so a missing version here means a fresh CREATE.
+        if (!settings[TimeSeriesSetting::version].isChanged() && create_query.storage)
+        {
+            setEngineSettings(*create_query.storage, "version",
+                Field(settings[TimeSeriesSetting::version].value));
+        }
 
         /// Pin `recent_samples_ttl_seconds`, so that the table keeps its TTL if a future version changes the default.
         if (!settings[TimeSeriesSetting::recent_samples_ttl_seconds].isChanged() && create_query.storage)
