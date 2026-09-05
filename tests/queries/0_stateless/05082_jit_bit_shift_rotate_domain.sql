@@ -3,11 +3,14 @@
 -- negative one raises. Both paths return zero for a count at or past the first argument's bit width.
 
 DROP TABLE IF EXISTS t_jit_bit_shift;
-CREATE TABLE t_jit_bit_shift (c0 UInt8) ENGINE = Memory;
-INSERT INTO t_jit_bit_shift VALUES (7), (127), (230);
+-- `c128` and `c8` are `c0` at the other two widths the arms below need (`230` wraps to `-26` in Int8).
+CREATE TABLE t_jit_bit_shift (c0 UInt8, c128 Int128, c8 Int8) ENGINE = Memory;
+INSERT INTO t_jit_bit_shift VALUES (7, 7, 7), (127, 127, 127), (230, 230, -26);
 
 -- `bitNot` is the compilable child that makes the shape compilable at all: a lone shift over a
 -- table column is never compiled. `materialize` keeps the count out of constant folding.
+-- `bitNot` reads its column directly: a conversion under it would be a compilable pair of its own,
+-- which keeps reporting a compiled function after the outer gate declines.
 
 -- A big-integer shift count, and either big-integer operand of a rotate, are not implemented. A
 -- big-integer first argument of a shift is implemented, and stays compiled: see the shapes below.
@@ -16,11 +19,11 @@ SELECT bitShiftLeft(bitNot(c0), materialize(toUInt128(2))) FROM t_jit_bit_shift
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError NOT_IMPLEMENTED }
 SELECT bitShiftRight(bitNot(c0), materialize(toUInt128(2))) FROM t_jit_bit_shift
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError NOT_IMPLEMENTED }
-SELECT bitRotateLeft(bitNot(toInt128(c0)), materialize(toUInt8(2))) FROM t_jit_bit_shift
+SELECT bitRotateLeft(bitNot(c128), materialize(toUInt8(2))) FROM t_jit_bit_shift
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError NOT_IMPLEMENTED }
-SELECT bitRotateLeft(bitNot(toUInt8(c0)), materialize(toInt128(2))) FROM t_jit_bit_shift
+SELECT bitRotateLeft(bitNot(c0), materialize(toInt128(2))) FROM t_jit_bit_shift
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError NOT_IMPLEMENTED }
-SELECT bitRotateRight(bitNot(toInt128(c0)), materialize(toUInt8(2))) FROM t_jit_bit_shift
+SELECT bitRotateRight(bitNot(c128), materialize(toUInt8(2))) FROM t_jit_bit_shift
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError NOT_IMPLEMENTED }
 SELECT bitRotateRight(bitNot(c0), materialize(toInt128(2))) FROM t_jit_bit_shift
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError NOT_IMPLEMENTED }
@@ -38,13 +41,13 @@ SELECT bitShiftLeft(bitNot(toUInt8(127)), toUInt16(8));
 -- The compiled and the interpreted path agree: at the width of the first argument with a wider
 -- count type, at or past the width of the result type where the shift itself would be poison, and
 -- at an in-range count.
-SELECT (SELECT groupArray(bitShiftLeft(bitNot(toUInt8(c0)), materialize(toUInt16(8)))) FROM t_jit_bit_shift
+SELECT (SELECT groupArray(bitShiftLeft(bitNot(c0), materialize(toUInt16(8)))) FROM t_jit_bit_shift
             SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0)
-     = (SELECT groupArray(bitShiftLeft(bitNot(toUInt8(c0)), materialize(toUInt16(8)))) FROM t_jit_bit_shift
+     = (SELECT groupArray(bitShiftLeft(bitNot(c0), materialize(toUInt16(8)))) FROM t_jit_bit_shift
             SETTINGS compile_expressions = 0);
-SELECT (SELECT groupArray(bitShiftLeft(bitNot(toInt128(c0)), materialize(toUInt8(128)))) FROM t_jit_bit_shift
+SELECT (SELECT groupArray(bitShiftLeft(bitNot(c128), materialize(toUInt8(128)))) FROM t_jit_bit_shift
             SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0)
-     = (SELECT groupArray(bitShiftLeft(bitNot(toInt128(c0)), materialize(toUInt8(128)))) FROM t_jit_bit_shift
+     = (SELECT groupArray(bitShiftLeft(bitNot(c128), materialize(toUInt8(128)))) FROM t_jit_bit_shift
             SETTINGS compile_expressions = 0);
 SELECT (SELECT groupArray(bitShiftLeft(bitNot(c0), materialize(toUInt8(3)))) FROM t_jit_bit_shift
             SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0)
@@ -53,24 +56,24 @@ SELECT (SELECT groupArray(bitShiftLeft(bitNot(c0), materialize(toUInt8(3)))) FRO
 
 -- The same three cases for `bitShiftRight`. Its first argument is signed here, because an unsigned
 -- one is zero-extended into the wider result and then has no bits above the count to disagree on.
-SELECT (SELECT groupArray(bitShiftRight(bitNot(toInt8(c0)), materialize(toUInt16(8)))) FROM t_jit_bit_shift
+SELECT (SELECT groupArray(bitShiftRight(bitNot(c8), materialize(toUInt16(8)))) FROM t_jit_bit_shift
             SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0)
-     = (SELECT groupArray(bitShiftRight(bitNot(toInt8(c0)), materialize(toUInt16(8)))) FROM t_jit_bit_shift
+     = (SELECT groupArray(bitShiftRight(bitNot(c8), materialize(toUInt16(8)))) FROM t_jit_bit_shift
             SETTINGS compile_expressions = 0);
-SELECT (SELECT groupArray(bitShiftRight(bitNot(toInt8(c0)), materialize(toUInt16(20)))) FROM t_jit_bit_shift
+SELECT (SELECT groupArray(bitShiftRight(bitNot(c8), materialize(toUInt16(20)))) FROM t_jit_bit_shift
             SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0)
-     = (SELECT groupArray(bitShiftRight(bitNot(toInt8(c0)), materialize(toUInt16(20)))) FROM t_jit_bit_shift
+     = (SELECT groupArray(bitShiftRight(bitNot(c8), materialize(toUInt16(20)))) FROM t_jit_bit_shift
             SETTINGS compile_expressions = 0);
-SELECT (SELECT groupArray(bitShiftRight(bitNot(toInt8(c0)), materialize(toUInt8(3)))) FROM t_jit_bit_shift
+SELECT (SELECT groupArray(bitShiftRight(bitNot(c8), materialize(toUInt8(3)))) FROM t_jit_bit_shift
             SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0)
-     = (SELECT groupArray(bitShiftRight(bitNot(toInt8(c0)), materialize(toUInt8(3)))) FROM t_jit_bit_shift
+     = (SELECT groupArray(bitShiftRight(bitNot(c8), materialize(toUInt8(3)))) FROM t_jit_bit_shift
             SETTINGS compile_expressions = 0);
 
 -- A rotate takes its count modulo the bit width on both paths, so a negative count agrees there
 -- while it is out of bounds for a shift. This is why only the shift gate refuses a signed count.
-SELECT (SELECT groupArray(bitRotateLeft(bitNot(toUInt8(c0)), materialize(toInt8(-1)))) FROM t_jit_bit_shift
+SELECT (SELECT groupArray(bitRotateLeft(bitNot(c0), materialize(toInt8(-1)))) FROM t_jit_bit_shift
             SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0)
-     = (SELECT groupArray(bitRotateLeft(bitNot(toUInt8(c0)), materialize(toInt8(-1)))) FROM t_jit_bit_shift
+     = (SELECT groupArray(bitRotateLeft(bitNot(c0), materialize(toInt8(-1)))) FROM t_jit_bit_shift
             SETTINGS compile_expressions = 0);
 
 -- A native-width count still compiles for each of the four functions: unsigned for the shifts,
@@ -79,16 +82,16 @@ SELECT (SELECT groupArray(bitRotateLeft(bitNot(toUInt8(c0)), materialize(toInt8(
 SELECT bitShiftLeft(bitNot(c0), materialize(toUInt8(3))) FROM t_jit_bit_shift
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0,
              log_comment = '05082_shl' FORMAT Null;
-SELECT bitShiftLeft(bitNot(toInt128(c0)), materialize(toUInt8(3))) FROM t_jit_bit_shift
+SELECT bitShiftLeft(bitNot(c128), materialize(toUInt8(3))) FROM t_jit_bit_shift
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0,
              log_comment = '05082_shl_big' FORMAT Null;
 SELECT bitShiftRight(bitNot(c0), materialize(toUInt8(3))) FROM t_jit_bit_shift
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0,
              log_comment = '05082_shr' FORMAT Null;
-SELECT bitRotateLeft(bitNot(toUInt8(c0)), materialize(toInt8(3))) FROM t_jit_bit_shift
+SELECT bitRotateLeft(bitNot(c0), materialize(toInt8(3))) FROM t_jit_bit_shift
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0,
              log_comment = '05082_rotl' FORMAT Null;
-SELECT bitRotateRight(bitNot(toUInt8(c0)), materialize(toInt8(3))) FROM t_jit_bit_shift
+SELECT bitRotateRight(bitNot(c0), materialize(toInt8(3))) FROM t_jit_bit_shift
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0,
              log_comment = '05082_rotr' FORMAT Null;
 
