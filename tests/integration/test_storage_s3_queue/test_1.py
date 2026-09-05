@@ -16,7 +16,7 @@ from helpers.s3_queue_common import (
     generate_random_string,
 )
 
-AVAILABLE_MODES = ["unordered", "ordered"]
+AVAILABLE_MODES = ["unordered", "ordered", "exclusive"]
 DEFAULT_AUTH = ["'minio'", f"'{minio_secret_key}'"]
 NO_AUTH = ["NOSIGN"]
 
@@ -157,7 +157,7 @@ def prepare_public_s3_bucket(started_cluster):
 
 
 # TODO: Update the modes for this test to include "ordered" once PR #55795 is finished.
-@pytest.mark.parametrize("mode", ["unordered"])
+@pytest.mark.parametrize("mode", ["unordered", "exclusive"])
 def test_multiple_tables_streaming_sync(started_cluster, mode):
     node = started_cluster.instances["instance"]
     table_name = f"multiple_tables_streaming_sync_{mode}"
@@ -167,24 +167,27 @@ def test_multiple_tables_streaming_sync(started_cluster, mode):
     files_path = f"{table_name}_data"
     files_to_generate = 300
 
+    total_values = []
     for i in range(3):
         table = f"{table_name}_{i + 1}"
         dst_table = f"{dst_table_name}_{i + 1}"
+        files_path_node = f"{files_path}{i}" if mode == "exclusive" else files_path
         create_table(
             started_cluster,
             node,
             table,
             mode,
-            files_path,
+            files_path_node,
             additional_settings={
                 "keeper_path": keeper_path,
             },
         )
         create_mv(node, table, dst_table)
 
-    total_values = generate_random_files(
-        started_cluster, files_path, files_to_generate, row_num=1
-    )
+        chunk = files_to_generate//3
+        total_values += generate_random_files(
+            started_cluster, files_path_node, chunk, row_num=1, start_ind=i*chunk,
+        )
 
     def get_count(table_name):
         return int(run_query(node, f"SELECT count() FROM {table_name}"))
@@ -255,13 +258,14 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     row_num = 10
     total_rows = row_num * files_to_generate
 
-    for instance in [node, node_2]:
+    for i, instance in enumerate([node, node_2]):
+        files_path_node = f"{files_path}{i}" if mode == "exclusive" else files_path
         create_table(
             started_cluster,
             instance,
             table_name,
             mode,
-            files_path,
+            files_path_node,
             additional_settings={
                 "keeper_path": keeper_path,
                 "s3queue_buckets": 2,
@@ -274,9 +278,18 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     for instance in [node, node_2]:
         create_mv(instance, table_name, dst_table_name)
 
-    total_values = generate_random_files(
-        started_cluster, files_path, files_to_generate, row_num=row_num
-    )
+    if mode == "exclusive":
+        total_values = []
+        for i in range(2):
+            files_path_node = f"{files_path}{i}"
+            chunk = files_to_generate//2
+            total_values += generate_random_files(
+                started_cluster, files_path_node, chunk, row_num=row_num, start_ind=i*chunk,
+            )
+    else:
+        total_values = generate_random_files(
+            started_cluster, files_path, files_to_generate, row_num=row_num
+        )
 
     def get_count(node, table_name):
         return int(run_query(node, f"SELECT count() FROM {table_name}"))
@@ -291,7 +304,10 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     count1 = get_count(node, dst_table_name)
     count2 = get_count(node_2, dst_table_name)
     if (count1 + count2) != total_rows:
-        expected_files = [f"{files_path}/test_{x}.csv" for x in range(1000)]
+        expected_files = []
+        for i in range(2):
+            files_path_node = f"{files_path}{i}" if mode == "exclusive" else files_path
+            expected_files += [f"{files_path_node}/test_{x}.csv" for x in range(1000)]
         node.query("SYSTEM FLUSH LOGS")
         node_2.query("SYSTEM FLUSH LOGS")
         processed_files = (
@@ -335,7 +351,7 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     ) == total_rows
 
 
-@pytest.mark.parametrize("mode", ["unordered", "ordered"])
+@pytest.mark.parametrize("mode", ["unordered", "ordered", "exclusive"])
 def test_max_set_age(started_cluster, mode):
     # We use an instance without keeper fault injection,
     # because otherwise we fail to update keeper state within the wait window,
@@ -372,8 +388,9 @@ def test_max_set_age(started_cluster, mode):
 
     expected_rows = files_to_generate
 
-    node.wait_for_log_line("Checking failed nodes for tracking limits")
-    node.wait_for_log_line("Node limits check finished")
+    if mode != "exclusive":
+        node.wait_for_log_line("Checking failed nodes for tracking limits")
+        node.wait_for_log_line("Node limits check finished")
 
     def get_count():
         return int(node.query(f"SELECT count() FROM {dst_table_name}"))
@@ -399,7 +416,7 @@ def test_max_set_age(started_cluster, mode):
     )
 
     # We do not removed processed nodes in ordered mode
-    if mode != "ordered":
+    if mode == "unordered":
         expected_rows *= 2
         wait_for_condition(lambda: get_count() == expected_rows)
         assert files_to_generate == int(
@@ -460,13 +477,17 @@ def test_max_set_age(started_cluster, mode):
         )
     )
 
-    wait_for_condition(lambda: failed_count + 2 == get_object_storage_failures())
+    n_fails = 2 if mode != "exclusive" else 1
+
+    wait_for_condition(
+        lambda: failed_count + n_fails == get_object_storage_failures()
+    )
 
     node.query("SYSTEM FLUSH LOGS")
     assert "Cannot parse input" in node.query(
         f"SELECT exception FROM system.s3queue_metadata_cache WHERE file_name ilike '%{file_with_error}' ORDER BY processing_end_time DESC LIMIT 1"
     )
-    assert 1 < int(
+    assert (n_fails - 1) < int(
         node.query(
             f"SELECT count() FROM system.s3queue_log WHERE file_name ilike '%{file_with_error}' AND notEmpty(exception)"
         )
@@ -475,7 +496,7 @@ def test_max_set_age(started_cluster, mode):
     node.restart_clickhouse()
 
     # We do not removed processed nodes in ordered mode
-    if mode != "ordered":
+    if mode == "unordered":
         expected_rows *= 2
         wait_for_condition(lambda: get_count() == expected_rows)
         assert files_to_generate == int(

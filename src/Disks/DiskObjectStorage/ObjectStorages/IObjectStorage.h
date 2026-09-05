@@ -342,7 +342,9 @@ public:
     virtual void removeObjectIfExists(const StoredObject & object) = 0;
 
     /// Remove objects on path if exists
-    virtual void removeObjectsIfExist(const StoredObjects & object) = 0;
+    virtual void removeObjectsIfExist( /// NOLINT
+        const StoredObjects & object,
+        StoredObjects * successful_objects = nullptr) = 0;
 
     /// Copy object with different attributes if required
     virtual void copyObject( /// NOLINT
@@ -456,7 +458,11 @@ public:
 
 #if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
     /// Assign tag on objects
-    virtual void tagObjects(const StoredObjects &, const std::string &, const std::string &)
+    virtual void tagObjects( /// NOLINT
+        const StoredObjects &,
+        const std::string &,
+        const std::string &,
+        [[ maybe_unused ]] StoredObjects * successful_objects = nullptr)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The method 'tagObjects' is only implemented for S3 and Azure storages");
     }

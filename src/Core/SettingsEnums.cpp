@@ -288,7 +288,8 @@ IMPLEMENT_SETTING_ENUM(ORCCompression, ErrorCodes::BAD_ARGUMENTS,
 
 IMPLEMENT_SETTING_ENUM(ObjectStorageQueueMode, ErrorCodes::BAD_ARGUMENTS,
                        {{"ordered", ObjectStorageQueueMode::ORDERED},
-                        {"unordered", ObjectStorageQueueMode::UNORDERED}})
+                        {"unordered", ObjectStorageQueueMode::UNORDERED},
+                        {"exclusive", ObjectStorageQueueMode::EXCLUSIVE}})
 
 IMPLEMENT_SETTING_ENUM(ObjectStorageQueueAction, ErrorCodes::BAD_ARGUMENTS,
                        {{"keep", ObjectStorageQueueAction::KEEP},

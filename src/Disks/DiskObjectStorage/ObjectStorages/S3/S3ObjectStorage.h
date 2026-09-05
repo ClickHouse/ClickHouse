@@ -107,9 +107,15 @@ public:
 
     /// Uses `DeleteObjectsRequest` if it is allowed by `s3_capabilities`, otherwise `DeleteObjectRequest`.
     /// `DeleteObjectsRequest` does not exist on GCS, see https://issuetracker.google.com/issues/162653700 .
-    void removeObjectsIfExist(const StoredObjects & objects) override;
+    void removeObjectsIfExist( /// NOLINT
+        const StoredObjects & objects,
+        StoredObjects * successful_objects = nullptr) override;
 
-    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override;
+    void tagObjects( /// NOLINT
+        const StoredObjects & objects,
+        const std::string & tag_key,
+        const std::string & tag_value,
+        StoredObjects * successful_objects = nullptr) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
@@ -159,7 +165,7 @@ public:
     S3Settings getS3Settings() const { return *s3_settings.get(); }
 private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
-    void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
+    void removeObjectsImpl(const StoredObjects & objects, bool if_exists, StoredObjects * successful_objects = nullptr);
 
     std::pair<std::string, std::string> splitBucketAndKey(const std::string & remote_path) const;
     std::map<std::string, StoredObjects> groupByBucket(const StoredObjects & objects) const;

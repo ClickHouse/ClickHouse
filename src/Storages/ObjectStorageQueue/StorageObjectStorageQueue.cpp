@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <optional>
 
 #include <Core/BackgroundSchedulePool.h>
@@ -64,6 +65,7 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueUnsuccessfulCommits;
     extern const Event ObjectStorageQueueInsertIterations;
     extern const Event ObjectStorageQueueProcessedRows;
+    extern const Event ObjectStorageQueueRemoveObjectFailures;
     extern const Event ZooKeeperWatchTriggeredObjectStorageQueue;
 }
 
@@ -167,6 +169,7 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_IS_DROPPED;
+    extern const int S3_OBJECTS_WERE_NOT_POST_PROCESSED;
 }
 
 namespace
@@ -177,7 +180,7 @@ namespace
     {
         if (!is_attach && !queue_settings[ObjectStorageQueueSetting::mode].changed)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `mode` (Unordered/Ordered) is not specified, but is required.");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `mode` (Unordered/Ordered/Exclusive) is not specified, but is required.");
         }
         /// In case !is_attach, we leave Ordered mode as default for compatibility.
 
@@ -242,6 +245,14 @@ namespace
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "after_processing action 'tag' requires non-empty after_processing_tag_value");
             }
+        }
+
+        if (!is_attach &&
+            queue_settings[ObjectStorageQueueSetting::mode] == ObjectStorageQueueMode::EXCLUSIVE &&
+            queue_settings[ObjectStorageQueueSetting::commit_on_select].changed)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting `commit_on_select` makes no sense with mode='exclusive'.\n"
+                "Exclusive mode relies on `metadata_cache_size_elements` and `metadata_cache_size_bytes` for tracking file state.");
         }
     }
 
@@ -436,6 +447,12 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         context_,
         is_attach,
         log);
+
+    if (table_metadata.getMode() == ObjectStorageQueueMode::EXCLUSIVE)
+    {
+        // Always track file state in metadata cache.
+        commit_on_select = true;
+    }
 
     ObjectStorageType storage_type = engine_name == "S3Queue" ? ObjectStorageType::S3 : ObjectStorageType::Azure;
 
@@ -1176,6 +1193,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
 void StorageObjectStorageQueue::postProcess(
     const StoredObjects & successful_objects,
+    UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths,
     const ObjectStorageQueueMetadata & metadata) const
 {
     std::optional<ObjectStorageQueuePostProcessor> post_processor;
@@ -1194,7 +1212,7 @@ void StorageObjectStorageQueue::postProcess(
 
     if (post_processor)
     {
-        post_processor->process(successful_objects);
+        post_processor->process(successful_objects, post_processing_failed_paths);
     }
 }
 
@@ -1202,7 +1220,7 @@ void StorageObjectStorageQueue::commit(
     bool insert_succeeded,
     size_t inserted_rows,
     std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-    const ObjectStorageQueueMetadata & metadata,
+    ObjectStorageQueueMetadata & metadata,
     time_t transaction_start_time,
     const std::string & exception_message,
     int error_code) const
@@ -1228,7 +1246,9 @@ void StorageObjectStorageQueue::commit(
     else
         chassert(last_processed_file_per_partition.empty());
 
-    if (requests.empty())
+    const auto mode = metadata.getTableMetadata().getMode();
+
+    if (mode != ObjectStorageQueueMode::EXCLUSIVE && requests.empty())
     {
         LOG_TEST(log, "Nothing to commit");
         return;
@@ -1236,103 +1256,115 @@ void StorageObjectStorageQueue::commit(
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
 
+    UnorderedSetWithMemoryTracking<String> post_processing_failed_paths;
+
     if (!successful_objects.empty()
         && metadata.getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
     {
-        postProcess(successful_objects, metadata);
+        postProcess(successful_objects, post_processing_failed_paths, metadata);
     }
 
-    auto context = getContext();
-    const auto & settings = context->getSettingsRef();
-    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
-
-    std::optional<Coordination::Error> code;
-    Coordination::Responses responses;
-    size_t try_num = 0;
-    try
+    /// In exclusive mode nothing is written to Keeper, but the after_processing action may have
+    /// failed for a subset of the objects: those files must be finalized as failed, not processed.
+    if (mode == ObjectStorageQueueMode::EXCLUSIVE)
     {
-        zk_retry.retryLoop([&]
+        if (!post_processing_failed_paths.empty())
         {
-            if (zk_retry.isRetry())
+            ProfileEvents::increment(
+                ProfileEvents::ObjectStorageQueueRemoveObjectFailures, post_processing_failed_paths.size());
+        }
+    }
+    else
+    {
+        auto context = getContext();
+        const auto & settings = context->getSettingsRef();
+        auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+
+        std::optional<Coordination::Error> code;
+        Coordination::Responses responses;
+        size_t try_num = 0;
+        try
+        {
+            zk_retry.retryLoop([&]
             {
-                LOG_TRACE(
-                    log, "Failed to commit processed files at try {}/{}, will retry",
-                    try_num, toString(settings[Setting::keeper_max_retries].value));
-            }
-            ++try_num;
-            fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
-                throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+                if (zk_retry.isRetry())
+                {
+                    LOG_TRACE(
+                        log, "Failed to commit processed files at try {}/{}, will retry",
+                        try_num, toString(settings[Setting::keeper_max_retries].value));
+                }
+                ++try_num;
+                fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
+                    throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+                });
+                fiu_do_on(FailPoints::object_storage_queue_fail_commit_once, {
+                    throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+                });
+
+                auto zk_client = getZooKeeper();
+                code = zk_client->tryMulti(requests, responses);
+
+                fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
+                    if (code == Coordination::Error::ZOK)
+                        throw zkutil::KeeperException::fromMessage(
+                            Coordination::Error::ZCONNECTIONLOSS,
+                            "Simulated connection loss after successful commit");
+                });
             });
-            fiu_do_on(FailPoints::object_storage_queue_fail_commit_once, {
-                throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
-            });
-
-            auto zk_client = getZooKeeper();
-            code = zk_client->tryMulti(requests, responses);
-
-            fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
-                if (code == Coordination::Error::ZOK)
-                    throw zkutil::KeeperException::fromMessage(
-                        Coordination::Error::ZCONNECTIONLOSS,
-                        "Simulated connection loss after successful commit");
-            });
-        });
-    }
-    catch (const zkutil::KeeperException & e)
-    {
-        /// Retries were exhausted on a hardware error (e.g. ZCONNECTIONLOSS repeatedly):
-        /// `ZooKeeperRetriesControl::canTry()` rethrows the stored exception directly, so
-        /// `code` below is never set and this never reaches the `!code.has_value()` branch
-        /// (previously dead code: that branch could never actually be reached).
-        DimensionalMetrics::add(
-            DimensionalMetrics::ObjectStorageQueueFailures,
-            {getStorageID().getDatabaseName(), getStorageID().getTableName(), "commit", String(magic_enum::enum_name(e.code))});
-
-        /// A tryMulti attempt may have succeeded in Keeper before the connection dropped
-        /// ("failed after operation") - we never received its response, so the commit outcome
-        /// is unknown. Mark all metadata objects so their destructors check ownership before
-        /// removing the processing node, same as the replay-error branch below.
-        for (auto & source : sources)
-            source->setUncertainCommit();
-        throw;
-    }
-
-    if (!code.has_value())
-    {
-        throw Exception(
-            ErrorCodes::KEEPER_EXCEPTION,
-            "Failed to commit files with {} retries, last error message: {}",
-            settings[Setting::keeper_max_retries].value,
-            zk_retry.getLastKeeperErrorMessage());
-    }
-
-    chassert(code.value() == Coordination::Error::ZOK || Coordination::isUserError(code.value()));
-    if (code.value() != Coordination::Error::ZOK)
-    {
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
-        /// If an earlier attempt hit a hardware error (e.g. ZCONNECTIONLOSS) that got retried,
-        /// prefer that stored transport error over `code.value()`: this retry may have applied
-        /// the earlier attempt's operation and be replaying into a synthetic ZNODEEXISTS/ZNONODE,
-        /// which would otherwise hide the actual cause behind that replay error.
-        const auto reported_code = zk_retry.getLastKeeperErrorCode() != Coordination::Error::ZOK
-            ? zk_retry.getLastKeeperErrorCode()
-            : code.value();
-        DimensionalMetrics::add(
-            DimensionalMetrics::ObjectStorageQueueFailures,
-            {getStorageID().getDatabaseName(), getStorageID().getTableName(), "commit", String(magic_enum::enum_name(reported_code))});
-        if (try_num > 1)
+        }
+        catch (const zkutil::KeeperException & e)
         {
-            /// We had at least one hardware error retry, so the first attempt may have succeeded
-            /// ("failed after operation"): the multi-op applied in ZK but the connection was lost
-            /// before we received the response. Mark all metadata objects so their destructors
-            /// check ownership before removing the processing node instead of asserting.
+            /// Retries were exhausted on a hardware error (e.g. ZCONNECTIONLOSS repeatedly):
+            /// `ZooKeeperRetriesControl::canTry()` rethrows the stored exception directly, so
+            /// `code` below is never set and this never reaches the `!code.has_value()` branch
+            /// (previously dead code: that branch could never actually be reached).
+            DimensionalMetrics::add(
+                DimensionalMetrics::ObjectStorageQueueFailures,
+                {getStorageID().getDatabaseName(), getStorageID().getTableName(), "commit", String(magic_enum::enum_name(e.code))});
+
+            /// A tryMulti attempt may have succeeded in Keeper before the connection dropped
+            /// ("failed after operation") - we never received its response, so the commit outcome
+            /// is unknown. Mark all metadata objects so their destructors check ownership before
+            /// removing the processing node, same as the replay-error branch below.
             for (auto & source : sources)
                 source->setUncertainCommit();
+            throw;
         }
-        throw zkutil::KeeperMultiException(code.value(), requests, responses);
-    }
 
-    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueSuccessfulCommits);
+        if (!code.has_value())
+        {
+            throw Exception(
+                ErrorCodes::KEEPER_EXCEPTION,
+                "Failed to commit files with {} retries, last error message: {}",
+                settings[Setting::keeper_max_retries].value,
+                zk_retry.getLastKeeperErrorMessage());
+        }
+        chassert(code.value() == Coordination::Error::ZOK || Coordination::isUserError(code.value()));
+        if (code.value() != Coordination::Error::ZOK)
+        {
+            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
+            /// If an earlier attempt hit a hardware error (e.g. ZCONNECTIONLOSS) that got retried,
+            /// prefer that stored transport error over `code.value()`: this retry may have applied
+            /// the earlier attempt's operation and be replaying into a synthetic ZNODEEXISTS/ZNONODE,
+            /// which would otherwise hide the actual cause behind that replay error.
+            const auto reported_code = zk_retry.getLastKeeperErrorCode() != Coordination::Error::ZOK
+                ? zk_retry.getLastKeeperErrorCode()
+                : code.value();
+            DimensionalMetrics::add(
+                DimensionalMetrics::ObjectStorageQueueFailures,
+                {getStorageID().getDatabaseName(), getStorageID().getTableName(), "commit", String(magic_enum::enum_name(reported_code))});
+            if (try_num > 1)
+            {
+                /// We had at least one hardware error retry, so the first attempt may have succeeded
+                /// ("failed after operation"): the multi-op applied in ZK but the connection was lost
+                /// before we received the response. Mark all metadata objects so their destructors
+                /// check ownership before removing the processing node instead of asserting.
+                for (auto & source : sources)
+                    source->setUncertainCommit();
+            }
+            throw zkutil::KeeperMultiException(code.value(), requests, responses);
+        }
+    }
 
     const auto commit_id = generateCommitID();
     const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -1343,7 +1375,8 @@ void StorageObjectStorageQueue::commit(
         try
         {
             source->finalizeCommit(
-                insert_succeeded, commit_id, commit_time, transaction_start_time, exception_message);
+                insert_succeeded, commit_id, commit_time, transaction_start_time, exception_message,
+                post_processing_failed_paths);
         }
         catch (...)
         {
@@ -1352,8 +1385,17 @@ void StorageObjectStorageQueue::commit(
                 finalize_exception = std::current_exception();
         }
     }
+
     if (finalize_exception)
         std::rethrow_exception(finalize_exception);
+
+    if (mode == ObjectStorageQueueMode::EXCLUSIVE && !post_processing_failed_paths.empty())
+        throw Exception(
+            ErrorCodes::S3_OBJECTS_WERE_NOT_POST_PROCESSED,
+            "The after_processing action did not complete for {} object(s): {}",
+            post_processing_failed_paths.size(), post_processing_failed_paths);
+
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueSuccessfulCommits);
 
     LOG_DEBUG(
         log, "Successfully committed {} files with {} requests for {} sources with commit id {} "
@@ -1441,6 +1483,37 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "metadata_cache_size_elements",
 };
 
+static const std::unordered_set<std::string_view> changeable_settings_exclusive_mode{
+    "processing_threads_num",
+    /// Is not allowed to change on fly:
+    /// "parallel_inserts",
+    "loading_retries",
+    "after_processing",
+    "polling_min_timeout_ms",
+    "polling_max_timeout_ms",
+    "polling_backoff_ms",
+    "max_processed_files_before_commit",
+    "max_processed_rows_before_commit",
+    "max_processed_bytes_before_commit",
+    "max_processing_time_sec_before_commit",
+    "list_objects_batch_size",
+    "min_insert_block_size_rows_for_materialized_views",
+    "min_insert_block_size_bytes_for_materialized_views",
+    "after_processing_retries",
+    "after_processing_move_uri",
+    "after_processing_move_prefix",
+    "after_processing_move_preserve_path",
+    "after_processing_move_access_key_id",
+    "after_processing_move_secret_access_key",
+    "after_processing_move_connection_string",
+    "after_processing_move_container",
+    "after_processing_tag_key",
+    "after_processing_tag_value",
+    "deduplication_v2",
+    "metadata_cache_size_bytes",
+    "metadata_cache_size_elements",
+};
+
 static std::string normalizeSetting(const std::string & name)
 {
     /// We support this prefix for compatibility.
@@ -1461,6 +1534,8 @@ bool StorageObjectStorageQueue::isSettingChangeable(const std::string & name, Ob
 
     if (mode == ObjectStorageQueueMode::UNORDERED)
         return changeable_settings_unordered_mode.contains(name);
+    else if (mode == ObjectStorageQueueMode::EXCLUSIVE)
+        return changeable_settings_exclusive_mode.contains(name);
     else
         return changeable_settings_ordered_mode.contains(name);
 }
@@ -1997,11 +2072,17 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     /// For unordered mode each file gets its own node under processed/ and failed/.
     /// For ordered mode the processed pointer is a shared node whose *data* is updated,
     /// while the failed node is still per-file.
+    ///
+    /// Exclusive mode does not interact with Zookeeper at all; but note that non-system
+    /// errors during processing will leave paths in a perpetual 'Processing' state.
+    /// This is intentional until 'atomic inserts' are implemented. (Issue #57815)
+
     auto metadata = tryGetFilesMetadata();
     if (!metadata)
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
 
     const bool is_ordered = metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
+    const bool is_exclusive = metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::EXCLUSIVE;
 
     auto file_metadata = metadata->getFileMetadata(path);
     const auto & processed_node_path = file_metadata->getProcessedNodePath();
@@ -2059,38 +2140,41 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
                 "Timeout waiting for path '{}' to be processed by {}",
                 path, getStorageID().getNameForLogs());
 
-        /// Register watches before checking state to avoid missing a transition
-        /// that occurs between the state check and watch registration.
-        ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+        if (!is_exclusive)
         {
-            auto zk = metadata->getZooKeeper()->getKeeper();
+            /// Register watches before checking state to avoid missing a transition
+            /// that occurs between the state check and watch registration.
+            ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+            {
+                auto zk = metadata->getZooKeeper()->getKeeper();
 
-            if (is_ordered)
-            {
-                /// The ordered processed pointer may or may not exist yet:
-                /// - Exists   → tryGetWatch registers a data-change watch.
-                /// - Missing  → fall back to existsWatch so we are notified
-                ///              when the node is first created.
-                std::string dummy_data;
-                Coordination::Stat dummy_stat{};
-                Coordination::WatchCallbackPtrOrEventPtr labelled_event{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue};
-                const bool node_exists = zk->tryGetWatch(processed_node_path, dummy_data, &dummy_stat, labelled_event);
-                if (!node_exists)
-                    zk->existsWatch(processed_node_path, nullptr, labelled_event);
-            }
-            else
-            {
-                /// Unordered: each file gets its own processed node; watch for its creation.
+                if (is_ordered)
+                {
+                    /// The ordered processed pointer may or may not exist yet:
+                    /// - Exists   → tryGetWatch registers a data-change watch.
+                    /// - Missing  → fall back to existsWatch so we are notified
+                    ///              when the node is first created.
+                    std::string dummy_data;
+                    Coordination::Stat dummy_stat{};
+                    Coordination::WatchCallbackPtrOrEventPtr labelled_event{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue};
+                    const bool node_exists = zk->tryGetWatch(processed_node_path, dummy_data, &dummy_stat, labelled_event);
+                    if (!node_exists)
+                        zk->existsWatch(processed_node_path, nullptr, labelled_event);
+                }
+                else
+                {
+                    /// Unordered: each file gets its own processed node; watch for its creation.
+                    zk->existsWatch(
+                        processed_node_path, nullptr,
+                        Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue});
+                }
+
+                /// Per-file failed node: watch for creation regardless of mode.
                 zk->existsWatch(
-                    processed_node_path, nullptr,
+                    failed_node_path, nullptr,
                     Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue});
-            }
-
-            /// Per-file failed node: watch for creation regardless of mode.
-            zk->existsWatch(
-                failed_node_path, nullptr,
-                Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue});
-        });
+            });
+        }
 
         std::string failure_message;
         const auto state = file_metadata->getPathState(failure_message);

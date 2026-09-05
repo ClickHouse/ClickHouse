@@ -214,13 +214,16 @@ private:
     /// A subset of logic executed by threadFunc.
     bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch);
     /// Apply after_processing action to successfully processed files.
-    void postProcess(const StoredObjects & successful_objects, const ObjectStorageQueueMetadata & metadata) const;
+    void postProcess(
+        const StoredObjects & successful_objects,
+        UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths,
+        const ObjectStorageQueueMetadata & metadata) const;
     /// Commit processed files to keeper as either successful or unsuccessful.
     void commit(
         bool insert_succeeded,
         size_t inserted_rows,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-        const ObjectStorageQueueMetadata & metadata,
+        ObjectStorageQueueMetadata & metadata,
         time_t transaction_start_time,
         const std::string & exception_message = {},
         int error_code = 0) const;

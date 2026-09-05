@@ -709,11 +709,18 @@ void LocalObjectStorage::removeObjectIfExists(const StoredObject & object)
     });
 }
 
-void LocalObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
+void LocalObjectStorage::removeObjectsIfExist( /// NOLINT
+    const StoredObjects & objects,
+    StoredObjects * successful_objects)
 {
     throwIfReadonly();
     for (const auto & object : objects)
+    {
         removeObjectIfExists(object);
+
+        if (successful_objects)
+            successful_objects->emplace_back(object);
+    }
 }
 
 std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
