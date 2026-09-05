@@ -16,6 +16,7 @@ import os
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DATA_DIR = "/var/lib/clickhouse"
@@ -56,6 +57,35 @@ def declarations_on_disk(table):
     return node.exec_in_container(
         ["bash", "-c", f"grep -c 'PROJECTION ' {os.path.join(DATA_DIR, path)} || true"]
     ).strip()
+
+
+def part_types(table):
+    return node.query(
+        "SELECT DISTINCT part_type FROM system.parts"
+        f" WHERE database = 'dl' AND table = '{table}' AND active"
+    ).strip()
+
+
+def broken_projection_parts(table):
+    return node.query(
+        "SELECT count() FROM system.projection_parts"
+        f" WHERE database = 'dl' AND table = '{table}' AND active AND is_broken"
+    ).strip()
+
+
+def check_table(table):
+    return node.query(
+        f"CHECK TABLE dl.{table}", settings={"check_query_single_value_result": 1}
+    ).strip()
+
+
+def event_value(event):
+    """A ProfileEvent counter, 0 when the event has not fired since this server started."""
+    return int(
+        node.query(
+            f"SELECT sum(value) FROM system.events WHERE event = '{event}'"
+        ).strip()
+    )
 
 
 def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
@@ -100,6 +130,28 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
         "INSERT INTO dl.t3 SELECT number, toString(number), '' FROM numbers(100)"
     )
 
+    # Anti-vacuity for the mutation oracles below: a Compact part, or any full rewrite, drops `pp.proj`
+    # for a reason this PR does not own.
+    assert part_types("t3") == "Wide"
+
+    # `t4` pairs an unanalyzable declaration with an analyzable one, so `DROP PROJECTION qq` is
+    # allowed while `pp` is unavailable. Wide, so that mutation hardlinks what it was not told to skip.
+    node.query(
+        "CREATE TABLE dl.t4 (a UInt64, b String) ENGINE = MergeTree ORDER BY a"
+        " SETTINGS min_bytes_for_wide_part = 0"
+    )
+    node.query(
+        "ALTER TABLE dl.t4 ADD PROJECTION pp (SELECT b, a GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+    # `qq` uses no positional arguments, so it can be analyzed without the setting; the setting is on
+    # here only because this ALTER re-derives `pp` too (`AlterCommands::apply`), as `t2`'s do.
+    node.query(
+        "ALTER TABLE dl.t4 ADD PROJECTION qq (SELECT a, b GROUP BY a, b)",
+        settings=POSITIONAL,
+    )
+    node.query("INSERT INTO dl.t4 SELECT number, toString(number) FROM numbers(100)")
+
     # Armed: every declaration is analyzed and materialized.
     assert projections("t") == "1"
     assert projections("t2") == "2"
@@ -107,6 +159,9 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert active_projection_parts("t") == "1"
     assert active_projection_parts("t2") == "2"
     assert active_projection_parts("t3") == "1"
+    assert projections("t4") == "2"
+    assert active_projection_parts("t4") == "2"
+    assert part_types("t4") == "Wide"
 
     node.restart_clickhouse()
 
@@ -115,11 +170,12 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t") == "0"
     assert projections("t2") == "0"
     assert projections("t3") == "0"
+    assert projections("t4") == "1"  # only `qq` can be analyzed without the setting
     assert node.query("SELECT count() FROM dl.t").strip() == "100"
     assert node.query("SELECT count() FROM dl.t2").strip() == "100"
 
-    # An ALTER would be validated against fewer projections than the table declares and would then
-    # persist that reduced set, so it is refused while a declaration is unanalyzable.
+    # An ALTER is validated against fewer projections than the table declares, so one that invalidated
+    # the unanalyzable declaration would be accepted; it is refused while such a declaration exists.
     error = node.query_and_get_error("ALTER TABLE dl.t MODIFY COMMENT 'x'")
     assert "projection pp is declared but could not be analyzed" in error
     assert "DROP PROJECTION" in error
@@ -129,9 +185,33 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     # A mutation is not a metadata `ALTER`, so it is not refused. Nothing knows whether `pp`'s
     # materialized data still matches the rows it rewrites, so that data must be left out of the new
     # part rather than hardlinked into it and served as current after recovery.
+    some_before, all_before = event_value("MutationSomePartColumns"), event_value(
+        "MutationAllPartColumns"
+    )
     node.query(
         "ALTER TABLE dl.t3 UPDATE b = 'z' WHERE a < 10", settings={"mutations_sync": 2}
     )
+    assert event_value("MutationSomePartColumns") == some_before + 1
+    assert event_value("MutationAllPartColumns") == all_before
+    assert part_types("t3") == "Wide"
+
+    # `DROP PROJECTION` is exempt, and dropping one projection rewrites no rows, so `pp`'s data must be
+    # carried into the new part with its checksum entry intact: an entry whose directory is missing
+    # registers a broken projection part, and one broken projection silences the whole data part's
+    # consistency check on every later load.
+    some_before, all_before = event_value("MutationSomePartColumns"), event_value(
+        "MutationAllPartColumns"
+    )
+    node.query("ALTER TABLE dl.t4 DROP PROJECTION qq", settings={"mutations_sync": 2})
+    assert_eq_with_retry(
+        node,
+        "SELECT count() FROM system.mutations WHERE database = 'dl' AND table = 't4' AND NOT is_done",
+        "0",
+    )
+    assert event_value("MutationSomePartColumns") == some_before + 1
+    assert event_value("MutationAllPartColumns") == all_before
+    assert declarations_on_disk("t4") == "1"
+    assert projections("t4") == "0"
 
     error = node.query_and_get_error(
         "ALTER TABLE dl.t2 ADD PROJECTION rr (SELECT a GROUP BY a)"
@@ -188,9 +268,25 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     # the projection comes back with nothing materialized instead of with pre-mutation rows.
     assert projections("t3") == "1"
     assert active_projection_parts("t3") == "0"
+    assert broken_projection_parts("t3") == "0"
+    assert check_table("t3") == "1"
     assert node.query("SELECT countIf(b = 'z') FROM dl.t3").strip() == "10"
     error = node.query_and_get_error(
         "SELECT countIf(b = 'z') FROM (SELECT b, a FROM dl.t3 GROUP BY b, a)",
         settings={"force_optimize_projection_name": "pp"},
     )
     assert "not used" in error
+
+    # `t4`'s mutation rewrote no rows, so `pp` comes back with the data it already had, and the part it
+    # lives in is still consistent.
+    assert projections("t4") == "1"
+    assert active_projection_parts("t4") == "1"
+    assert broken_projection_parts("t4") == "0"
+    assert check_table("t4") == "1"
+    assert (
+        node.query(
+            "SELECT sum(a) FROM (SELECT b, a FROM dl.t4 GROUP BY b, a)",
+            settings={"force_optimize_projection_name": "pp"},
+        ).strip()
+        == "4950"
+    )
