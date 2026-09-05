@@ -1691,10 +1691,17 @@ static void NO_SANITIZE_UNDEFINED convertFromUInt128toIPv6(ColVecToData & vec_to
         std::is_same_v<DataTypeUInt128::FieldType, DataTypeIPv6::FieldType::UnderlyingType>,
         "IPv6 and UInt128 types must be same");
 
+    /// No need to swap bytes on big-endian platforms because `IPv6` holds its bytes in network
+    /// byte order.
     for (size_t i = 0; i < input_rows_count; i++)
     {
-        vec_to[i].toUnderType().items[1] = std::byteswap(vec_from[i].items[0]);
-        vec_to[i].toUnderType().items[0] = std::byteswap(vec_from[i].items[1]);
+        if constexpr (std::endian::native == std::endian::little)
+        {
+            vec_to[i].toUnderType().items[1] = std::byteswap(vec_from[i].items[0]);
+            vec_to[i].toUnderType().items[0] = std::byteswap(vec_from[i].items[1]);
+        }
+        else
+            vec_to[i].toUnderType() = vec_from[i];
     }
 }
 
@@ -1705,10 +1712,17 @@ static void NO_SANITIZE_UNDEFINED convertFromIPv6ToUInt128(ColVecToData & vec_to
         std::is_same_v<DataTypeUInt128::FieldType, DataTypeIPv6::FieldType::UnderlyingType>,
         "UInt128 and IPv6 types must be same");
 
+    /// No need to swap bytes on big-endian platforms because `IPv6` holds its bytes in network
+    /// byte order.
     for (size_t i = 0; i < input_rows_count; i++)
     {
-        vec_to[i].items[1] = std::byteswap(vec_from[i].toUnderType().items[0]);
-        vec_to[i].items[0] = std::byteswap(vec_from[i].toUnderType().items[1]);
+        if constexpr (std::endian::native == std::endian::little)
+        {
+            vec_to[i].items[1] = std::byteswap(vec_from[i].toUnderType().items[0]);
+            vec_to[i].items[0] = std::byteswap(vec_from[i].toUnderType().items[1]);
+        }
+        else
+            vec_to[i] = vec_from[i].toUnderType();
     }
 }
 
