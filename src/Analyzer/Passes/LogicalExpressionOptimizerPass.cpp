@@ -8,12 +8,17 @@
 #include <Analyzer/Utils.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/NaNUtils.h>
+#include <Common/checkStackSize.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionFactory.h>
 #include <Formats/FormatFactory.h>
@@ -486,6 +491,312 @@ static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant
     return converted;
 }
 
+/// True when a `Variant` is reachable anywhere in `type`. Same shape as the walk in
+/// `validateGroupByKeyType`; a separate walk is needed because `DataTypeVariant::hasDynamicStructure()`
+/// only reports the dynamic structure of its ALTERNATIVES, so a plain `Variant(Float64, UInt64)` is not
+/// "dynamically structured".
+static bool hasVariantTypeRecursively(const DataTypePtr & type)
+{
+    bool result = false;
+    /// `forEachChild` recurses itself and calls back from inside its own frames, so the callback runs
+    /// at the type's nesting depth and the check belongs here.
+    auto check = [&](const IDataType & t)
+    {
+        checkStackSize();
+        result |= isVariant(t);
+    };
+    check(*type);
+    type->forEachChild(check);
+    return result;
+}
+
+/// `tryConvertToColumnType` answers "does this constant convert losslessly?". Its consumers need a
+/// stronger property: "is the converted value a faithful SEMANTIC POINT for `expr_type`, i.e. does
+/// exact equality on it agree with what `equals` computes?". It is not, whenever the string-family
+/// semantics diverge between comparison and conversion:
+///   - a `FixedString` source against a `String` target: `ColumnFixedString::operator[]` yields all N
+///     bytes including the '\0' padding, while `equals` compares zero-padded, so the padded value is
+///     a family (`'ab'`, `'ab\0'`, ...) rather than a point;
+///   - an `Enum` source against a `String`/`FixedString` target: `equals` casts both operands to the
+///     enum's LABEL, while `convertFieldToType` stringifies the enum's raw integer;
+///   - a `Variant`/`Dynamic`/`JSON` source: the `Field` is the bare underlying value with no
+///     discriminator, while `FunctionVariantAdaptor`/`FunctionDynamicAdaptor` compare using the
+///     ACTIVE alternative's real type, which the value cannot express;
+///   - a converted string longer than a `FixedString(M)` target: both operands identify the same
+///     zero-padded value, yet the Fields differ exactly (and inserting one into a `FixedString(M)`
+///     column throws `TOO_LARGE_STRING_SIZE`).
+///
+/// Modelled on the `FixedString` rule in `KeyCondition.cpp` (see `should_keep_original_string_constant`
+/// there), which declines index analysis for the same padding reasons and with the same `M >= N`
+/// exemption.
+static bool convertedConstantIsSemanticPointImpl(const Field & converted_value, const DataTypePtr & from_type, const DataTypePtr & expr_type)
+{
+    const auto source = removeLowCardinalityAndNullable(from_type);
+    const auto target = removeLowCardinalityAndNullable(expr_type);
+
+    if (isStringOrFixedString(target))
+    {
+        if (isFixedString(source) && isString(target))
+            return false;
+        if (isEnum(source))
+            return false;
+        /// A converted string wider than the target `FixedString(M)` cannot map into the key domain
+        /// (and cannot even be inserted into such a column).
+        if (const auto * fixed_target = typeid_cast<const DataTypeFixedString *>(target.get());
+            fixed_target && converted_value.getType() == Field::Types::String
+            && converted_value.safeGet<String>().size() > fixed_target->getN())
+            return false;
+        return true;
+    }
+
+    /// Recurse into composites: the divergence happens while CONSTRUCTING the point, so a nested leaf
+    /// is just as unsound as a top-level one, at any depth.
+    if (const auto * tuple_target = typeid_cast<const DataTypeTuple *>(target.get()))
+    {
+        checkStackSize();
+        const auto * tuple_source = typeid_cast<const DataTypeTuple *>(source.get());
+        if (!tuple_source || converted_value.getType() != Field::Types::Tuple)
+            return false;
+        const auto & elements = converted_value.safeGet<Tuple>();
+        const auto & target_elements = tuple_target->getElements();
+        const auto & source_elements = tuple_source->getElements();
+        if (elements.size() != target_elements.size() || elements.size() != source_elements.size())
+            return false;
+        for (size_t i = 0; i < elements.size(); ++i)
+            if (!convertedConstantIsSemanticPointImpl(elements[i], source_elements[i], target_elements[i]))
+                return false;
+        return true;
+    }
+
+    if (const auto * array_target = typeid_cast<const DataTypeArray *>(target.get()))
+    {
+        checkStackSize();
+        const auto * array_source = typeid_cast<const DataTypeArray *>(source.get());
+        if (!array_source || converted_value.getType() != Field::Types::Array)
+            return false;
+        for (const auto & element : converted_value.safeGet<Array>())
+            if (!convertedConstantIsSemanticPointImpl(element, array_source->getNestedType(), array_target->getNestedType()))
+                return false;
+        return true;
+    }
+
+    if (const auto * map_target = typeid_cast<const DataTypeMap *>(target.get()))
+    {
+        checkStackSize();
+        const auto * map_source = typeid_cast<const DataTypeMap *>(source.get());
+        if (!map_source || converted_value.getType() != Field::Types::Map)
+            return false;
+        for (const auto & entry : converted_value.safeGet<Map>())
+        {
+            /// A `Map` Field is an array of 2-tuples (key, value).
+            if (entry.getType() != Field::Types::Tuple)
+                return false;
+            const auto & key_and_value = entry.safeGet<Tuple>();
+            if (key_and_value.size() != 2)
+                return false;
+            if (!convertedConstantIsSemanticPointImpl(key_and_value[0], map_source->getKeyType(), map_target->getKeyType())
+                || !convertedConstantIsSemanticPointImpl(key_and_value[1], map_source->getValueType(), map_target->getValueType()))
+                return false;
+        }
+        return true;
+    }
+
+    return true;
+}
+
+/// A source that erases its own type behind the value cannot be reasoned about at all. One nested
+/// constant can carry a different active alternative per element, so there is no single alternative to
+/// recover: decline outright. Both predicates walk the whole remaining type tree, so they are checked
+/// ONCE here rather than at every recursion level of the body.
+static bool convertedConstantIsSemanticPoint(const Field & converted_value, const DataTypePtr & from_type, const DataTypePtr & expr_type)
+{
+    const auto source = removeLowCardinalityAndNullable(from_type);
+    if (source->hasDynamicStructure() || hasVariantTypeRecursively(source))
+        return false;
+
+    return convertedConstantIsSemanticPointImpl(converted_value, from_type, expr_type);
+}
+
+/// `equals`/`notEquals` on a string-family operand is accepted at analysis time
+/// (`FunctionsComparison.h`, "Everything can be compared with string by conversion") but is only
+/// EXECUTABLE when the const-string path can cast the constant, which needs the CONSTANT to be the
+/// string side. With a string-family EXPRESSION and a constant outside `{String, FixedString, Enum}`
+/// nothing rescues it and the comparison raises `NO_COMMON_TYPE`, so no converted value may stand in
+/// for it: the rewrite would answer a query that legitimately fails, and a contradiction on an
+/// unrelated expression could drop the throwing operand entirely.
+///
+/// The reverse direction stays rewritable: a string-family CONSTANT against another type is cast by
+/// the const-string path, which is why `Date`/`UUID` expressions with string constants must keep
+/// firing. That asymmetry is why this is gated on the TARGET and is NOT a symmetric supertype test.
+static bool comparisonTypesHaveCommonType(const DataTypePtr & from_type, const DataTypePtr & expr_type)
+{
+    const auto source = removeLowCardinalityAndNullable(from_type);
+    const auto target = removeLowCardinalityAndNullable(expr_type);
+
+    if (isStringOrFixedString(target))
+        return tryGetLeastSupertype(DataTypes{source, target}) != nullptr;
+
+    if (const auto * tuple_target = typeid_cast<const DataTypeTuple *>(target.get()))
+    {
+        checkStackSize();
+        const auto * tuple_source = typeid_cast<const DataTypeTuple *>(source.get());
+        if (!tuple_source)
+            return true;
+        const auto & target_elements = tuple_target->getElements();
+        const auto & source_elements = tuple_source->getElements();
+        if (target_elements.size() != source_elements.size())
+            return true;
+        for (size_t i = 0; i < target_elements.size(); ++i)
+            if (!comparisonTypesHaveCommonType(source_elements[i], target_elements[i]))
+                return false;
+        return true;
+    }
+
+    if (const auto * array_target = typeid_cast<const DataTypeArray *>(target.get()))
+    {
+        checkStackSize();
+        const auto * array_source = typeid_cast<const DataTypeArray *>(source.get());
+        if (!array_source)
+            return true;
+        return comparisonTypesHaveCommonType(array_source->getNestedType(), array_target->getNestedType());
+    }
+
+    if (const auto * map_target = typeid_cast<const DataTypeMap *>(target.get()))
+    {
+        checkStackSize();
+        const auto * map_source = typeid_cast<const DataTypeMap *>(source.get());
+        if (!map_source)
+            return true;
+        return comparisonTypesHaveCommonType(map_source->getKeyType(), map_target->getKeyType())
+            && comparisonTypesHaveCommonType(map_source->getValueType(), map_target->getValueType());
+    }
+
+    return true;
+}
+
+/// SET-SPECIFIC (the `in`/`notIn` builders only). `equals` compares floats with `accurateEquals`
+/// where `+0.0 == -0.0`, while a `Set` is keyed on the exact IEEE value, so a zero constant matches a
+/// class of two values under comparison but only one key in the set. `addComparisonFilter` compares
+/// with `accurateEquals` too, so a zero IS a valid semantic point for the fold and this must NOT be
+/// wired there (doing so would lose a correct fold).
+///
+/// `Float32` and `BFloat16` constants are stored as `Field::Types::Float64` (there is no narrower
+/// float Field), so one Field-level test covers all three widths. The check must run on the CONVERTED
+/// value: a `UInt8` `0` or a `String` `'nan'` constant is invisible to a raw-Field float test yet
+/// converts into the very values that diverge.
+static bool convertedConstantIsSetSafeZeroFree(const Field & converted_value)
+{
+    if (converted_value.getType() == Field::Types::Float64)
+        return converted_value.safeGet<Float64>() != 0.0;
+
+    if (converted_value.getType() == Field::Types::Tuple)
+    {
+        checkStackSize();
+        for (const auto & element : converted_value.safeGet<Tuple>())
+            if (!convertedConstantIsSetSafeZeroFree(element))
+                return false;
+        return true;
+    }
+
+    if (converted_value.getType() == Field::Types::Array)
+    {
+        checkStackSize();
+        for (const auto & element : converted_value.safeGet<Array>())
+            if (!convertedConstantIsSetSafeZeroFree(element))
+                return false;
+        return true;
+    }
+
+    if (converted_value.getType() == Field::Types::Map)
+    {
+        checkStackSize();
+        for (const auto & entry : converted_value.safeGet<Map>())
+            if (!convertedConstantIsSetSafeZeroFree(entry))
+                return false;
+        return true;
+    }
+
+    return true;
+}
+
+/// SHARED, with a per-consumer DEPTH. Under execution's scalar semantics every NaN comparison is
+/// false, while `compareComparisonFilters` orders a NaN through `FieldAccurateComparison` and a `Set`
+/// keys on its raw bytes. `addComparisonFilter` already rejects a TOP-LEVEL NaN Field; this is the
+/// recursive form both it and the builders need.
+///
+/// `stop_at_array_or_map` is `true` for `addComparisonFilter` and `false` for the two `Set` builders,
+/// and the asymmetry follows from WHO consumes the value. The fold compares two Fields with each
+/// other, so below an `Array`/`Map` boundary both sides go through the same `compareAt`, which treats
+/// any two NaNs as equal: matching semantics, nothing to reject. A `Set` instead matches a Field's
+/// HASH against a column's raw bytes, so two DIFFERENT NaN payloads (which `compareAt` calls equal)
+/// disagree there and the deeper check is required.
+static bool convertedConstantHasNoNaN(const Field & converted_value, bool stop_at_array_or_map)
+{
+    if (isNaNField(converted_value))
+        return false;
+
+    if (converted_value.getType() == Field::Types::Tuple)
+    {
+        checkStackSize();
+        for (const auto & element : converted_value.safeGet<Tuple>())
+            if (!convertedConstantHasNoNaN(element, stop_at_array_or_map))
+                return false;
+        return true;
+    }
+
+    if (stop_at_array_or_map)
+        return true;
+
+    if (converted_value.getType() == Field::Types::Array)
+    {
+        checkStackSize();
+        for (const auto & element : converted_value.safeGet<Array>())
+            if (!convertedConstantHasNoNaN(element, stop_at_array_or_map))
+                return false;
+        return true;
+    }
+
+    if (converted_value.getType() == Field::Types::Map)
+    {
+        checkStackSize();
+        for (const auto & entry : converted_value.safeGet<Map>())
+            if (!convertedConstantHasNoNaN(entry, stop_at_array_or_map))
+                return false;
+        return true;
+    }
+
+    return true;
+}
+
+/// SET-SPECIFIC (the `in` builder only). For a `Variant` EXPRESSION, `equals` runs independently per
+/// active alternative while the set holds one discriminator-bearing key, and a constant `Field`
+/// carries no discriminator, so equivalence is not decidable from the constant at all and the
+/// rewrite must be declined.
+///
+/// The recursion STOPS at an `Array`/`Map` boundary, and unlike the rules above that is not a
+/// simplification: below such a boundary comparison goes through `IColumn::compareAt`, and
+/// `ColumnVariant::compareAt` compares discriminators EXACTLY, the same semantics as the set, so
+/// those shapes are already correct and declining them would only forgo a valid rewrite. A top-level
+/// `Tuple` is decomposed into element-wise comparisons instead, so the divergence propagates through
+/// it and the recursion must.
+static bool expressionTypeIsSetSafe(const DataTypePtr & expr_type)
+{
+    const auto type = removeLowCardinalityAndNullable(expr_type);
+
+    if (isVariant(type))
+        return false;
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        checkStackSize();
+        for (const auto & element : tuple_type->getElements())
+            if (!expressionTypeIsSetSafe(element))
+                return false;
+    }
+
+    return true;
+}
+
 enum class BoundaryCheckResult : uint8_t
 {
     ABOVE_MAX,
@@ -912,7 +1223,39 @@ static AddComparisonFilterResult addComparisonFilter(
     const auto & raw_type = expression->getResultType();
     auto expr_type = removeLowCardinality(raw_type);
 
+    /// A dynamic-structure expression has no fixed type to compare against, so a converted constant is
+    /// not a comparable point: folding two such filters can answer a query that legitimately fails
+    /// (`NO_COMMON_TYPE`) when its terms are evaluated. Both `in`/`notIn` builders already decline
+    /// these; do the same here.
+    if (raw_type->hasDynamicStructure())
+    {
+        filter_map[expression].opaque_filters.push_back(std::move(new_filter));
+        return AddComparisonFilterResult::ADDED;
+    }
+
+    /// A comparison whose two types have no common type is not executable, so a converted constant may
+    /// not stand in for it. Parked BEFORE conversion so the filter carries no converted value and the
+    /// global fold veto below can see it.
+    if (!comparisonTypesHaveCommonType(new_filter.constant_node->getResultType(), expr_type))
+    {
+        filter_map[expression].opaque_filters.push_back(std::move(new_filter));
+        return AddComparisonFilterResult::ADDED;
+    }
+
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
+
+    /// The converted value is treated as an exact semantic point by `compareComparisonFilters` and
+    /// `canonicalizeNotEqualsKey`, so it may only be used where exact equality on it agrees with
+    /// `equals`. NaN is rejected too: `is_nan_field` below only sees a TOP-LEVEL NaN, while a nested
+    /// one is equally unorderable under execution's scalar semantics.
+    if (new_filter.converted_value
+        && (!convertedConstantIsSemanticPoint(
+                *new_filter.converted_value, new_filter.constant_node->getResultType(), expr_type)
+            || !convertedConstantHasNoNaN(*new_filter.converted_value, /*stop_at_array_or_map=*/true)))
+    {
+        filter_map[expression].opaque_filters.push_back(std::move(new_filter));
+        return AddComparisonFilterResult::ADDED;
+    }
 
     /// Step 2: for integer columns, try boundary folding / float-literal rewriting.
     if (auto result = tryFoldBoundaryOrRewriteFloatForIntColumn(new_filter, expr_type))
@@ -1095,7 +1438,15 @@ static void convertNotEqualsChainToNotIn(
 
             /// The set converts each element to the expression's type, while the comparison it
             /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
-            if (!tryConvertToColumnType(literal, expr_type))
+            auto converted = tryConvertToColumnType(literal, expr_type);
+            /// A lossless conversion is not enough: the set matches the converted value EXACTLY, so it
+            /// must also be a faithful semantic point, must carry no NaN (which no comparison matches)
+            /// and no float zero (`+0.0`/`-0.0` are one class for `equals` but two set keys).
+            if (!converted
+                || !comparisonTypesHaveCommonType(literal->getResultType(), expr_type)
+                || !convertedConstantIsSemanticPoint(*converted, literal->getResultType(), expr_type)
+                || !convertedConstantHasNoNaN(*converted, /*stop_at_array_or_map=*/false)
+                || !convertedConstantIsSetSafeZeroFree(*converted))
                 all_constants_convert_losslessly = false;
         }
 
@@ -2597,6 +2948,14 @@ private:
                 continue;
             }
 
+            /// A `Variant` expression is compared per active alternative, which a constant cannot
+            /// express, so the set's single discriminator-bearing key cannot be shown equivalent.
+            if (!expressionTypeIsSetSafe(expression.node->getResultType()))
+            {
+                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
+                continue;
+            }
+
             const auto expr_type = removeLowCardinality(expression.node->getResultType());
 
             bool is_any_nullable = false;
@@ -2626,7 +2985,15 @@ private:
                 /// The set converts each element to the expression's type, while the comparison it
                 /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
                 /// A NULL constant is excluded above, so it never reaches this check.
-                if (!tryConvertToColumnType(literal, expr_type))
+                auto converted = tryConvertToColumnType(literal, expr_type);
+                /// A lossless conversion is not enough: the set matches the converted value EXACTLY, so
+                /// it must also be a faithful semantic point, must carry no NaN (which no comparison
+                /// matches) and no float zero (`+0.0`/`-0.0` are one class for `equals` but two keys).
+                if (!converted
+                    || !comparisonTypesHaveCommonType(literal->getResultType(), expr_type)
+                    || !convertedConstantIsSemanticPoint(*converted, literal->getResultType(), expr_type)
+                    || !convertedConstantHasNoNaN(*converted, /*stop_at_array_or_map=*/false)
+                    || !convertedConstantIsSetSafeZeroFree(*converted))
                     all_constants_convert_losslessly = false;
             }
 

@@ -48,8 +48,10 @@ SELECT (j = '{"a":2}'::JSON) OR (j = '{"a":3}'::JSON) OR (j = '{"a":4}'::JSON) F
 -- firing for every type where `in`/`notIn` preserves the result type.
 -- OR -> IN skipped for Variant only while equals is not nullable (setting = 0):
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT (b = '1') OR (b = '2') OR (b = '3') FROM t_var) WHERE explain ILIKE '%function_name: in%';
--- ... and still fires for the same Variant column once equals is nullable too (setting = 1), so the
--- guard must key on the drift and not on the type:
+-- ... and the result-type guard above still keys on the drift and not on the type: with the setting
+-- at 1 the drift is gone, so it no longer skips. The chain is nevertheless declined here, by the
+-- separate converted-constant check: a constant `Field` carries no discriminator, so it cannot be a
+-- semantic point for a Variant expression whatever the alternative count.
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT (b = '1') OR (b = '2') OR (b = '3') FROM t_var
     SETTINGS use_variant_default_implementation_for_comparisons = 1) WHERE explain ILIKE '%function_name: in%';
 -- ... but still fires for plain String:
