@@ -307,7 +307,9 @@ ColumnPtr RecordBatchDecoder::buildNullMap(const Slice & validity, size_t rows, 
     return null_map;
 }
 
-ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path)
+ColumnPtr RecordBatchDecoder::decodeInner(
+    const ArrowField & field, size_t rows, const Slice & validity, Int64 null_count,
+    const DataTypePtr & target_hint, const String & path)
 {
     const ArrowType & type = field.type;
     DataTypePtr inner_type = fieldToCHType(field, settings, /*make_nullable=*/false, /*allow_null_type=*/true);
@@ -481,13 +483,31 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
             }
             else
             {
-                /// date64: milliseconds since the epoch, maps to DateTime (UInt32 seconds).
+                /// date64 (ms since epoch) -> DateTime (UInt32 seconds); out-of-range values throw or
+                /// saturate (date_time_overflow_behavior) instead of silently wrapping mod 2^32.
                 checkBufferSize(values, requiredBytes(rows, sizeof(Int64)), "date64");
                 auto & data = assert_cast<ColumnUInt32 &>(*column).getData();
                 data.resize(rows);
                 const auto * src = reinterpret_cast<const Int64 *>(values.ptr);
+                constexpr Int64 max_seconds = std::numeric_limits<UInt32>::max();
+                const bool saturate = settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate;
                 for (size_t i = 0; i < rows; ++i)
-                    data[i] = static_cast<UInt32>(src[i] / 1000);
+                {
+                    /// Any negative value is before the epoch (its floored second is <= -1), so the
+                    /// range check needs no floor division that could overflow near Int64 minimum.
+                    Int64 seconds = src[i] / 1000;
+                    if (src[i] < 0 || seconds > max_seconds)
+                    {
+                        if (saturate)
+                            seconds = src[i] < 0 ? 0 : max_seconds;
+                        else
+                            throw Exception(
+                                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                                "Arrow IPC date64 value {} ms is out of the allowed DateTime range [0, {}]",
+                                src[i], max_seconds * 1000);
+                    }
+                    data[i] = static_cast<UInt32>(seconds);
+                }
             }
             break;
         }
@@ -689,8 +709,29 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
                     "Arrow IPC fixed-size-list child has {} rows, expected {}", child->size(), expected_child);
             auto offsets_col = ColumnUInt64::create(rows);
             auto & offs = offsets_col->getData();
-            for (size_t i = 0; i < rows; ++i)
-                offs[i] = (i + 1) * list_size;
+            /// A null slot still spans `list_size` child elements Arrow leaves unspecified; emit an empty
+            /// array and drop its child range (CH Array is not Nullable) so that memory is not read as data.
+            if (null_count != 0)
+            {
+                ColumnPtr null_map_col = buildNullMap(validity, rows, null_count);
+                const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_col).getData();
+                IColumn::Filter keep(child->size(), 1);
+                UInt64 kept = 0;
+                for (size_t i = 0; i < rows; ++i)
+                {
+                    if (null_map[i])
+                        std::fill_n(keep.begin() + i * list_size, list_size, 0);
+                    else
+                        kept += list_size;
+                    offs[i] = kept;
+                }
+                child = child->filter(keep, kept);
+            }
+            else
+            {
+                for (size_t i = 0; i < rows; ++i)
+                    offs[i] = (i + 1) * list_size;
+            }
             return ColumnArray::create(child, std::move(offsets_col));
         }
         case TypeKind::Struct:
@@ -909,7 +950,8 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
 
     /// Keys for the LowCardinality dictionary: the decoded Arrow dictionary values plus, for nullable
     /// fields, a trailing NULL that null rows point at (Arrow keeps nulls only in the index validity).
-    DataTypePtr value_type = fieldToCHType(field, settings, field.nullable);
+    /// allow_null_type: a dictionary over the Arrow null type materializes as an all-null plain column.
+    DataTypePtr value_type = fieldToCHType(field, settings, field.nullable, /*allow_null_type=*/true);
     MutableColumnPtr keys = IColumn::mutate(values->cloneResized(dict_size));
     UInt64 null_key_index = dict_size;
     if (field.nullable)
@@ -1003,13 +1045,19 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
 
         if (child.type.kind == TypeKind::Null)
         {
-            nextNode(); /// consume the placeholder node; the null type has no buffers
+            /// A dictionary-encoded null child is an index array (not the zero-buffer placeholder); its
+            /// values are all null anyway. Decode it through the normal dictionary path so its node,
+            /// buffers and indexes get the usual validation, then discard the all-null column.
+            if (child.dictionary)
+                decodeField(child);
+            else
+                nextNode(); /// consume the placeholder node; the null type has no buffers
             type_id_to_local[tid] = -1;
             continue;
         }
 
         ColumnPtr child_column = decodeField(child);
-        DataTypePtr child_type = fieldToCHType(child, settings, /*make_nullable=*/false);
+        DataTypePtr child_type = fieldToCHType(child, settings, /*make_nullable=*/false, /*allow_null_type=*/true);
         /// Variant elements cannot be Nullable; remember the null map, then drop the nullability.
         const NullMap * child_null_map = nullptr;
         if (child_column->isNullable())
@@ -1054,6 +1102,12 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
 
     if (dense)
     {
+        /// Compact each element to the referenced rows: a dense-union child may hold more values than
+        /// referenced (shared/sliced), which would break ColumnVariant's size-per-discriminator invariant.
+        MutableColumns dense_compact;
+        dense_compact.reserve(variant_columns.size());
+        for (const auto & col : variant_columns)
+            dense_compact.push_back(col->cloneEmpty());
         for (size_t row = 0; row < rows; ++row)
         {
             auto local_it = type_id_to_local.find(type_ids[row]);
@@ -1077,10 +1131,11 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
                 continue;
             }
             discr_data[row] = static_cast<ColumnVariant::Discriminator>(local);
-            off_data[row] = static_cast<ColumnVariant::Offset>(off);
+            off_data[row] = static_cast<ColumnVariant::Offset>(dense_compact[local]->size());
+            dense_compact[local]->insertFrom(*variant_columns[local], off);
         }
         return ColumnVariant::create(
-            std::move(local_discriminators), std::move(offsets), Columns(variant_columns), local_to_global);
+            std::move(local_discriminators), std::move(offsets), std::move(dense_compact), local_to_global);
     }
 
     /// Sparse union: every child holds `rows` values; compact each Variant element to only its own rows.
@@ -1201,7 +1256,7 @@ ColumnPtr RecordBatchDecoder::decodeField(
     if (field.dictionary)
         return decodeDictionary(field, rows, validity, node.null_count(), allow_low_cardinality);
 
-    ColumnPtr inner = decodeInner(field, rows, target_hint, path);
+    ColumnPtr inner = decodeInner(field, rows, validity, node.null_count(), target_hint, path);
 
     /// Only wrap in Nullable when the type allows it; Array/Map cannot be inside Nullable in ClickHouse, so
     /// (matching the Apache Arrow library reader) their outer validity is dropped. A Struct (Tuple) is only
@@ -1246,7 +1301,8 @@ void RecordBatchDecoder::skipField(const ArrowField & field)
             nextBuffer();
         for (const ArrowField & child : field.type.children)
         {
-            if (child.type.kind == TypeKind::Null)
+            /// A dictionary-encoded null child is an index array, not the zero-buffer placeholder.
+            if (child.type.kind == TypeKind::Null && !child.dictionary)
                 nextNode();
             else
                 skipField(child);
