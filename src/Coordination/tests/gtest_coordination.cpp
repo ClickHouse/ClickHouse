@@ -12,6 +12,7 @@
 #include <Coordination/KeeperRequestDispatcher.h>
 #include <Coordination/KeeperRequestDispatcherOld.h>
 #include <Coordination/KeeperServer.h>
+#include <Common/ZooKeeper/KeeperOverDispatcher.h>
 #include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStorage.h>
@@ -1402,6 +1403,47 @@ TEST(KeeperMemorySoftLimitAdmission, MultiClassifiedBySumOfDataSizes)
         makeSetRequest("/table/replicas/r1/host", "hostname"),
         makeSetRequest("/table/replicas", ""),
     })));
+}
+
+TEST(KeeperOverDispatcherMulti, CallbackPromotesFailedMultiAggregateError)
+{
+    using namespace Coordination;
+
+    auto error_response = [](Error error)
+    {
+        auto response = std::make_shared<ZooKeeperErrorResponse>();
+        response->error = error;
+        return response;
+    };
+
+    /// Drive the exact callback KeeperOverDispatcher::multi installs, with the response
+    /// shape KeeperStorage builds for a failed multi, and check what the user callback
+    /// receives as the aggregate error. Fails if multi() stops promoting the failing
+    /// subresponse error.
+    auto aggregate_seen_by_callback = [&](std::vector<Error> sub_errors, Error aggregate)
+    {
+        auto response = std::make_shared<ZooKeeperMultiWriteResponse>();
+        response->error = aggregate;
+        for (auto error : sub_errors)
+            response->responses.push_back(error_response(error));
+
+        Error seen = Error::ZOK;
+        auto callback = KeeperOverDispatcher::promotingMultiCallback([&](const MultiResponse & r) { seen = r.error; });
+        callback(response);
+        return seen;
+    };
+
+    /// Failed multi: aggregate ZOK, the failing op carries the real error, the op after
+    /// it carries ZRUNTIMEINCONSISTENCY. The callback must promote the real error.
+    EXPECT_EQ(
+        aggregate_seen_by_callback({Error::ZOK, Error::ZBADVERSION, Error::ZRUNTIMEINCONSISTENCY}, Error::ZOK),
+        Error::ZBADVERSION);
+    /// A fully successful multi stays ZOK.
+    EXPECT_EQ(aggregate_seen_by_callback({Error::ZOK, Error::ZOK}, Error::ZOK), Error::ZOK);
+    /// ZRUNTIMEINCONSISTENCY is never promoted on its own.
+    EXPECT_EQ(aggregate_seen_by_callback({Error::ZRUNTIMEINCONSISTENCY}, Error::ZOK), Error::ZOK);
+    /// An already-set aggregate error is authoritative and left untouched.
+    EXPECT_EQ(aggregate_seen_by_callback({Error::ZBADVERSION}, Error::ZNONODE), Error::ZNONODE);
 }
 
 TEST(KeeperMemorySoftLimitAdmission, ReadsAndRemovesAreNotMemoryIncreasing)

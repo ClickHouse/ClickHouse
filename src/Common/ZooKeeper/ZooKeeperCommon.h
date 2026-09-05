@@ -852,6 +852,14 @@ struct ZooKeeperMultiReadResponse final : public ZooKeeperMultiResponse
     using ZooKeeperMultiResponse::ZooKeeperMultiResponse;
 };
 
+/// Derive a multi transaction's aggregate error from its subresponses: on a failed multi
+/// the aggregate is left ZOK and the real error is carried only in the failing subresponse
+/// (with ZRUNTIMEINCONSISTENCY on the operations after it), so promote the first non-ZOK,
+/// non-ZRUNTIMEINCONSISTENCY subresponse error to the aggregate. Used both when
+/// deserializing a response from the wire (ZooKeeperMultiResponse::readImpl) and for a
+/// response obtained in-process through KeeperOverDispatcher, which skips readImpl.
+void promoteMultiResponseError(MultiResponse & response);
+
 /// Fake internal coordination (keeper) response. Never received from client
 /// and never send to client.
 struct ZooKeeperSessionIDRequest final : ZooKeeperRequest
