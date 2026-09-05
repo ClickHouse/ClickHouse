@@ -1,0 +1,36 @@
+nullable distinct
+2
+2
+2
+2
+nullable group by
+2
+2
+low cardinality nullable
+4
+4
+two nullable arguments
+2
+2
+rollup
+2
+2
+cube
+2
+2
+legacy analyzer
+2
+2
+2
+2
+2
+2
+2
+2
+2
+2
+1
+still optimized
+2
+1
+1
