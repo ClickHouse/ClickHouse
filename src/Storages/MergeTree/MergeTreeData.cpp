@@ -5989,8 +5989,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
             throw Exception(
                 ErrorCodes::ILLEGAL_PROJECTION,
-                "Cannot ALTER table {}: projection {} is declared but could not be analyzed when the table was loaded. "
-                "Restore the object it depends on and restart the server, or run ALTER TABLE ... DROP PROJECTION",
+                "Cannot ALTER table {}: projection {} is declared but could not be analyzed when the table was loaded, "
+                "so this ALTER cannot be validated against it. The server log records why. Removing that cause and "
+                "restarting the server may make the projection usable again; otherwise drop the declaration with "
+                "ALTER TABLE ... DROP PROJECTION",
                 getStorageID().getNameForLogs(),
                 fmt::join(new_metadata.projections.getUnavailableNames(), ", "));
         }

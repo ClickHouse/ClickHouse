@@ -880,7 +880,7 @@ void ProjectionsDescription::add(ProjectionDescription && projection, const Stri
         throw Exception(
             ErrorCodes::ILLEGAL_PROJECTION,
             "Cannot add projection {}: a projection with this name is declared but could not be analyzed when the table "
-            "was loaded. Drop it first, or restore the object it depends on and restart the server",
+            "was loaded. Drop it first, or remove the cause recorded in the server log and restart the server",
             projection.name);
     }
 
