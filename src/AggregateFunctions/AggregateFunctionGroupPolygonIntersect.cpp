@@ -1,0 +1,414 @@
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionGeoUtils.h>
+#include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+
+#include <DataTypes/DataTypeFactory.h>
+
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+
+#include <boost/geometry.hpp>
+
+#include <vector>
+
+
+namespace DB
+{
+
+struct Settings;
+
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int INCORRECT_DATA;
+}
+
+namespace
+{
+
+/// Keep accepting version-1 states emitted by the previous chunked implementation.
+constexpr size_t MAX_SERIALIZED_INTERSECT_CHUNKS = 8;
+
+
+enum class IntersectMode : UInt8
+{
+    Uninitialized = 0,
+    NonEmpty = 1,
+    Empty = 2
+};
+
+
+struct GroupPolygonIntersectData
+{
+    IntersectMode mode = IntersectMode::Uninitialized;
+    std::vector<CartesianMultiPolygon> chunks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    size_t total_points = 0;
+
+    void add(CartesianMultiPolygon && mp, const char * function_name)
+    {
+        if (mode == IntersectMode::Empty)
+            return;
+
+        if (mp.empty())
+        {
+            mode = IntersectMode::Empty;
+            chunks.clear();
+            total_points = 0;
+            return;
+        }
+
+        total_points += countMultiPolygonPoints(mp);
+        chunks.push_back(std::move(mp));
+
+        if (mode == IntersectMode::Uninitialized)
+            mode = IntersectMode::NonEmpty;
+
+        /// Keep `NonEmpty` as a fully reduced running intersection. Besides bounding state, this
+        /// makes `Empty` observable before the next row is resolved or validated, so an absorbing
+        /// result really can skip all subsequent inputs.
+        if (chunks.size() > 1 || total_points > MAX_POINTS_IN_POLYGONAL_STATE)
+            reduce(function_name);
+    }
+
+    void merge(const GroupPolygonIntersectData & other, const char * function_name)
+    {
+        if (mode == IntersectMode::Empty)
+            return;
+
+        if (other.mode == IntersectMode::Empty)
+        {
+            mode = IntersectMode::Empty;
+            chunks.clear();
+            total_points = 0;
+            return;
+        }
+
+        if (other.mode == IntersectMode::Uninitialized)
+            return;
+
+        if (mode == IntersectMode::Uninitialized)
+        {
+            mode = other.mode;
+            chunks = other.chunks;
+            total_points = other.total_points;
+            if (chunks.size() > 1 || total_points > MAX_POINTS_IN_POLYGONAL_STATE)
+                reduce(function_name);
+            return;
+        }
+
+        total_points += other.total_points;
+        chunks.insert(chunks.end(), other.chunks.begin(), other.chunks.end());
+
+        /// A merged state must preserve the same eager running-intersection invariant as `add`.
+        reduce(function_name);
+    }
+
+    /// Balanced pairwise reduction with early-empty short-circuit.
+    void reduce(const char * function_name)
+    {
+        if (chunks.size() <= 1)
+        {
+            recountPoints(function_name);
+            return;
+        }
+
+        while (chunks.size() > 1)
+        {
+            size_t n = chunks.size();
+            size_t out = 0;
+            for (size_t i = 0; i + 1 < n; i += 2)
+            {
+                CartesianMultiPolygon tmp;
+                boost::geometry::intersection(chunks[i], chunks[i + 1], tmp);
+                if (tmp.empty())
+                {
+                    mode = IntersectMode::Empty;
+                    chunks.clear();
+                    total_points = 0;
+                    return;
+                }
+                normalizeAndValidatePolygonalResult(tmp, function_name);
+                chunks[out++] = std::move(tmp);
+            }
+            if (n % 2 == 1)
+                chunks[out++] = std::move(chunks[n - 1]);
+            chunks.resize(out);
+        }
+
+        if (chunks.empty() || chunks[0].empty())
+        {
+            mode = IntersectMode::Empty;
+            chunks.clear();
+            total_points = 0;
+            return;
+        }
+
+        recountPoints(function_name);
+    }
+
+    /// Boost intersection may add intersection vertices, so the post-reduction sum can grow.
+    /// Re-enforce the budget here so post-reduce state never exceeds what deserialize accepts.
+    void recountPoints(const char * function_name)
+    {
+        size_t recomputed = 0;
+        for (const auto & chunk : chunks)
+            recomputed += countMultiPolygonPoints(chunk);
+        if (recomputed > MAX_POINTS_IN_POLYGONAL_STATE)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Aggregate function {} state has too many points after reduction: {} (limit {})",
+                function_name,
+                recomputed,
+                MAX_POINTS_IN_POLYGONAL_STATE);
+        total_points = recomputed;
+    }
+
+    const CartesianMultiPolygon & getResult(const char * function_name)
+    {
+        static const CartesianMultiPolygon empty_result;
+
+        if (mode == IntersectMode::Uninitialized || mode == IntersectMode::Empty)
+            return empty_result;
+
+        reduce(function_name);
+        if (mode == IntersectMode::Empty || chunks.empty())
+            return empty_result;
+
+        return chunks[0];
+    }
+};
+
+
+class AggregateFunctionGroupPolygonIntersect final
+    : public IAggregateFunctionDataHelper<GroupPolygonIntersectData, AggregateFunctionGroupPolygonIntersect>
+{
+private:
+    static constexpr auto name = "groupPolygonIntersection";
+    GeometryColumnType geo_type;
+    bool is_variant = false;
+    VariantTypeMap variant_type_map;
+
+public:
+    AggregateFunctionGroupPolygonIntersect(
+        const DataTypePtr & argument_type, const Array & parameters_, GeometryColumnType geo_type_, bool is_variant_)
+        : IAggregateFunctionDataHelper<GroupPolygonIntersectData, AggregateFunctionGroupPolygonIntersect>(
+              {argument_type}, parameters_, DataTypeFactory::instance().get("MultiPolygon"))
+        , geo_type(geo_type_)
+        , is_variant(is_variant_)
+    {
+        if (is_variant)
+            variant_type_map = buildVariantTypeMap(argument_type);
+    }
+
+    String getName() const override { return name; }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    {
+        auto & state = AggregateFunctionGroupPolygonIntersect::data(place);
+        if (state.mode == IntersectMode::Empty)
+            return;
+
+        const auto value = getGeometryColumnValue(columns[0], row_num, geo_type, is_variant, variant_type_map);
+        auto current_type = value.type;
+        if (is_variant)
+            current_type = normalizePolygonalVariantType(current_type);
+
+        if (current_type == GeometryColumnType::Null)
+            return;
+
+        auto mp = columnToMultiPolygon(*value.column, value.row_num, current_type, name);
+        state.add(std::move(mp), name);
+    }
+
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    {
+        AggregateFunctionGroupPolygonIntersect::data(place).merge(AggregateFunctionGroupPolygonIntersect::data(rhs), name);
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    {
+        writeBinaryLittleEndian(GEO_SERDE_VERSION, buf);
+
+        const auto & data = AggregateFunctionGroupPolygonIntersect::data(place);
+        writeBinaryLittleEndian(static_cast<UInt8>(data.mode), buf);
+
+        if (data.mode == IntersectMode::NonEmpty)
+        {
+            chassert(data.chunks.size() == 1);
+            writeVarUInt(data.chunks.size(), buf);
+            for (const auto & chunk : data.chunks)
+                serializeGeoMultiPolygon(chunk, buf);
+        }
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    {
+        UInt8 version = 0;
+        readBinaryLittleEndian(version, buf);
+        if (version != GEO_SERDE_VERSION)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Unsupported serialization version {} for aggregate function {} (expected {})",
+                static_cast<int>(version),
+                getName(),
+                static_cast<int>(GEO_SERDE_VERSION));
+
+        auto & data = AggregateFunctionGroupPolygonIntersect::data(place);
+        UInt8 mode_val = 0;
+        readBinaryLittleEndian(mode_val, buf);
+        if (mode_val > static_cast<UInt8>(IntersectMode::Empty))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA, "Invalid serialized mode {} for aggregate function {}", static_cast<int>(mode_val), getName());
+
+        data.mode = static_cast<IntersectMode>(mode_val);
+
+        if (data.mode == IntersectMode::NonEmpty)
+        {
+            UInt64 chunk_count = 0;
+            readVarUInt(chunk_count, buf);
+            if (chunk_count == 0)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Corrupted state of aggregate function {}: mode is NonEmpty but chunk count is 0",
+                    getName());
+            /// Version-1 states from the previous chunked implementation could contain up to
+            /// eight chunks. Reject larger shapes before the expensive compatibility reduction.
+            if (chunk_count > MAX_SERIALIZED_INTERSECT_CHUNKS)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Corrupted state of aggregate function {}: {} chunks (limit {})",
+                    getName(),
+                    chunk_count,
+                    MAX_SERIALIZED_INTERSECT_CHUNKS);
+
+            data.chunks.resize(chunk_count);
+            PolygonalStateBudget budget;
+            for (UInt64 i = 0; i < chunk_count; ++i)
+            {
+                data.chunks[i] = deserializeGeoMultiPolygon(buf, name, budget);
+                validateDeserializedMultiPolygon(data.chunks[i], name);
+            }
+            /// `validateDeserializedMultiPolygon` runs `boost::geometry::correct`, which can
+            /// append closing points not charged against `budget.points`. Recount from the
+            /// normalized geometry and re-enforce the cap.
+            data.total_points = recountPolygonalPointsAndCheck(data.chunks, name);
+
+            /// Restore the eager invariant before this state can be merged or serialized again.
+            /// A legacy state whose chunks are already disjoint becomes the absorbing `Empty`
+            /// state here rather than carrying a logically empty `NonEmpty` value forward.
+            if (data.chunks.size() > 1)
+                data.reduce(name);
+        }
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        const auto & result = AggregateFunctionGroupPolygonIntersect::data(place).getResult(name);
+        insertMultiPolygonIntoColumn(result, to);
+    }
+};
+
+
+AggregateFunctionPtr createAggregateFunctionGroupPolygonIntersect(
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+{
+    assertUnary(name, argument_types);
+    assertNoParameters(name, parameters);
+
+    const auto & arg_type = argument_types[0];
+
+    if (arg_type->getName() == "Geometry")
+        return std::make_shared<AggregateFunctionGroupPolygonIntersect>(
+            arg_type, parameters, GeometryColumnType::Polygon /* unused for variant */, true);
+
+    auto geo_type = getUnambiguousGeometryColumnTypeFromDataType(arg_type, name);
+    if (!geo_type)
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Argument of function {} must be a polygonal Geo type (Ring, Polygon, MultiPolygon), got {}",
+            name,
+            arg_type->getName());
+
+    switch (*geo_type)
+    {
+        case GeometryColumnType::Ring:
+        case GeometryColumnType::Polygon:
+        case GeometryColumnType::MultiPolygon: break;
+        case GeometryColumnType::Point:
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must not be Point", name);
+        case GeometryColumnType::MultiPoint:
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must not be MultiPoint", name);
+        case GeometryColumnType::Linestring:
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must not be LineString", name);
+        case GeometryColumnType::MultiLinestring:
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must not be MultiLineString", name);
+        case GeometryColumnType::Null: break;
+    }
+
+    return std::make_shared<AggregateFunctionGroupPolygonIntersect>(arg_type, parameters, *geo_type, false);
+}
+
+}
+
+void registerAggregateFunctionGroupPolygonIntersection(AggregateFunctionFactory & factory);
+void registerAggregateFunctionGroupPolygonIntersection(AggregateFunctionFactory & factory)
+{
+    FunctionDocumentation::Description description = R"(
+Computes the intersection of all polygonal geometries in the group.
+
+Coordinates are interpreted as Cartesian (planar), not spherical, regardless of whether the input values represent longitude/latitude. There is no spherical variant of this function.
+
+For typed columns, accepts `Ring`, `Polygon`, and `MultiPolygon`. Rejects `Point`, `MultiPoint`, `LineString`, and `MultiLineString`.
+
+For `Geometry` (Variant) columns, an active `LineString` is interpreted as a `Ring`, and an active `MultiLineString` as a `Polygon`, because their underlying array shapes match. Other non-polygonal active types are rejected.
+
+Empty geometry inputs are absorbing: once encountered, the result is immediately empty.
+
+The result is a `MultiPolygon`. Returns an empty `MultiPolygon` for empty groups or when the intersection is empty. Invalid polygonal input raises an exception.
+
+The function short-circuits: once the accumulated intersection becomes empty, further inputs are ignored.
+
+The geometric intersection is order-independent, but floating-point overlay operations are not exactly associative and the returned `MultiPolygon` is not canonicalized. Its raw array layout and floating-point coordinates can therefore depend on input and merge order.
+
+`NULL` values inside a `Geometry` (Variant) column are skipped. The polygonal argument types are `Array`-based and cannot be wrapped in `Nullable`; a literal `NULL` argument follows the standard aggregate convention and yields `NULL` (like `sum` and unlike `count`).
+    )";
+    FunctionDocumentation::Syntax syntax = "groupPolygonIntersection(polygon)";
+    FunctionDocumentation::Arguments arguments
+        = {{"polygon",
+            "A polygonal geometry value (`Ring`, `Polygon`, `MultiPolygon`) or a `Geometry` value with a structurally polygonal "
+            "active type.",
+            {"Ring", "Polygon", "MultiPolygon", "Geometry"}}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the intersection as a MultiPolygon.", {"MultiPolygon"}};
+    FunctionDocumentation::Examples examples
+        = {{"Intersection of two overlapping polygons",
+            R"(
+SELECT wkt(groupPolygonIntersection(p)) FROM (
+    SELECT arrayJoin([
+        readWKTPolygon('POLYGON ((0 0, 0 3, 3 3, 3 0, 0 0))'),
+        readWKTPolygon('POLYGON ((1 1, 1 4, 4 4, 4 1, 1 1))')
+    ]) AS p
+)
+            )",
+            R"(
+MULTIPOLYGON(((1 3,3 3,3 1,1 1,1 3)))
+        )"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    /// `returns_default_when_only_null` must stay false: with true, a literal NULL argument is replaced by
+    /// `AggregateFunctionNothingUInt64`, i.e. `groupPolygonIntersection(NULL)` would return `0 :: UInt64` instead of `NULL`.
+    /// The polygonal argument types are `Array`-based and cannot be wrapped in `Nullable`, so a literal NULL
+    /// is the only way the `Null` combinator applies here.
+    /// `is_order_dependent` must stay true: the result is geometrically order-invariant, but `boost::geometry`
+    /// set operations on floating point are not exactly associative and the returned `MultiPolygon` is not
+    /// canonicalized, so the observable array layout may differ across input orders.
+    AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
+    factory.registerFunction("groupPolygonIntersection", {createAggregateFunctionGroupPolygonIntersect, documentation, properties});
+}
+
+}

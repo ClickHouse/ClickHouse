@@ -1,0 +1,25 @@
+square
+POLYGON((0 0,0 10,10 10,10 0,0 0))
+with_interior_point
+POLYGON((0 0,0 10,10 10,10 0,0 0))
+triangle
+POLYGON((0 0,2 3,4 0,0 0))
+single_point
+POLYGON((5 5,5 5,5 5,5 5))
+all_same
+POLYGON((1 1,1 1,1 1,1 1))
+collinear
+POLYGON((0 0,3 3,0 0,0 0))
+empty_group
+POLYGON()
+ring_input
+POLYGON((0 0,0 5,5 5,5 0,0 0))
+polygon_input
+POLYGON((0 0,0 10,10 10,10 0,0 0))
+multipolygon_input
+POLYGON((0 0,0 5,10 15,15 15,15 10,5 0,0 0))
+group_by
+1	POLYGON((0 0,0 1,1 0,0 0))
+2	POLYGON((10 10,15 20,20 10,10 10))
+area_check
+1
