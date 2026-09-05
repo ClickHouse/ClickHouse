@@ -1,0 +1,6 @@
+mt	TableProxy
+rmt	TableProxy
+A_lazy_mergetree blocked=0 rows_after=0
+B_lazy_replicated_mergetree blocked=0 rows_after=0
+C_plain_memory blocked=1 rows_after=300
+D_plain_mergetree blocked=0 rows_after=0
