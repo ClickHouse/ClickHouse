@@ -1298,6 +1298,19 @@ TEST_P(CoordinationTest, TestFeatureFlags)
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT));
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::TRY_REMOVE));
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA));
+    ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS));
+}
+
+TEST(CoordinationFeatureFlags, ShortFeatureStringsDoNotReadPastTheEnd)
+{
+    DB::KeeperFeatureFlags empty_flags("");
+    EXPECT_FALSE(empty_flags.isEnabled(DB::KeeperFeatureFlag::FILTERED_LIST));
+
+    DB::KeeperFeatureFlags one_byte_flags(std::string(1, 0));
+    EXPECT_FALSE(one_byte_flags.isEnabled(DB::KeeperFeatureFlag::CREATE_WITH_STATS));
+
+    DB::KeeperFeatureFlags two_byte_flags(std::string(2, 0));
+    EXPECT_FALSE(two_byte_flags.isEnabled(DB::KeeperFeatureFlag::LIST_WITH_OPTIONS));
 }
 
 TEST(CoordinationRequestSize, WriteRejectsRequestOverInt32)

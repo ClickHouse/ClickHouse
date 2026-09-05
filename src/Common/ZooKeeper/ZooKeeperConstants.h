@@ -55,6 +55,7 @@ enum class OpNum : int32_t
     TryRemove = 505,
     FilteredListWithStatsAndData = 506,
     ListRecursive = 507,
+    ListWithOptions = 508,
 
     SessionID = 997, /// Special internal request
 };

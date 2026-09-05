@@ -6,11 +6,13 @@
 
 #include <algorithm>
 #include <limits>
+#include <ranges>
 #include <shared_mutex>
 
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
 #include <Common/Stopwatch.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/StringUtils.h>
@@ -41,6 +43,7 @@ namespace ProfileEvents
     extern const Event KeeperGetRequest;
     extern const Event KeeperListRequest;
     extern const Event KeeperListRecursiveRequest;
+    extern const Event KeeperListWithOptionsRequest;
     extern const Event KeeperExistsRequest;
     extern const Event KeeperPreprocessElapsedMicroseconds;
     extern const Event KeeperProcessElapsedMicroseconds;
@@ -148,6 +151,8 @@ auto callOnConcreteRequestType(Coordination::ZooKeeperRequest & zk_request, F fu
             return function(static_cast<Coordination::ZooKeeperRemoveRecursiveRequest &>(zk_request));
         case Coordination::OpNum::ListRecursive:
             return function(static_cast<Coordination::ZooKeeperListRecursiveRequest &>(zk_request));
+        case Coordination::OpNum::ListWithOptions:
+            return function(static_cast<Coordination::ZooKeeperListWithOptionsRequest &>(zk_request));
         case Coordination::OpNum::Exists:
             return function(static_cast<Coordination::ZooKeeperExistsRequest &>(zk_request));
         case Coordination::OpNum::Set:
@@ -1196,6 +1201,201 @@ static Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperL
 }
 /// LIST Request ///
 
+static UInt64 listWithOptionsRank(
+    int64_t session_id,
+    Coordination::XID outer_xid,
+    size_t subrequest_index,
+    std::string_view path,
+    std::string_view child_name)
+{
+    SipHash hash(static_cast<UInt64>(session_id), static_cast<UInt64>(outer_xid));
+    hash.update(static_cast<UInt64>(subrequest_index));
+    hash.update(path);
+    hash.update(child_name);
+    return hash.get64();
+}
+
+template <typename Storage>
+static Coordination::ZooKeeperResponsePtr processLocal(
+    const Coordination::ZooKeeperListWithOptionsRequest & zk_request,
+    Storage & storage,
+    int64_t session_id,
+    bool check_acl,
+    Coordination::XID outer_xid,
+    size_t subrequest_index)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperListWithOptionsRequest);
+    auto response = std::static_pointer_cast<Coordination::ZooKeeperListWithOptionsResponse>(zk_request.makeResponse());
+
+    if (zk_request.options_version != Coordination::ListOptionsVersion::V1)
+    {
+        response->error = Coordination::Error::ZUNIMPLEMENTED;
+        return response;
+    }
+
+    if (zk_request.options.recursive && zk_request.has_watch)
+    {
+        response->error = Coordination::Error::ZBADARGUMENTS;
+        return response;
+    }
+
+    const auto root_holder = storage.nodes.getCommittedNode(zk_request.path);
+    const auto * root = root_holder.get();
+    if (root == nullptr)
+    {
+        response->error = Coordination::Error::ZNONODE;
+        return response;
+    }
+    if (check_acl && !storage.checkACL(root->stats.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
+    {
+        response->error = Coordination::Error::ZNOAUTH;
+        return response;
+    }
+    root->stats.setResponseStat(response->stat);
+
+    const size_t relative_path_offset = zk_request.path == "/" ? 1 : zk_request.path.size() + 1;
+    const auto auth_error = [&]() -> Coordination::ZooKeeperResponsePtr
+    {
+        response->names.clear();
+        response->stats.clear();
+        response->data.clear();
+        response->error = Coordination::Error::ZNOAUTH;
+        return response;
+    };
+    const bool materialize_shuffled_subtree = zk_request.options.recursive && zk_request.options.shuffle;
+    std::vector<String> shuffled_subtree_candidates;
+
+    const auto sort_by_rank = [&](auto & candidates)
+    {
+        std::ranges::sort(candidates, [&](const String & lhs, const String & rhs)
+        {
+            const UInt64 lhs_rank = listWithOptionsRank(session_id, outer_xid, subrequest_index, zk_request.path, lhs);
+            const UInt64 rhs_rank = listWithOptionsRank(session_id, outer_xid, subrequest_index, zk_request.path, rhs);
+            return lhs_rank == rhs_rank ? lhs < rhs : lhs_rank < rhs_rank;
+        });
+    };
+
+    const auto append_result = [&](std::string_view relative, const auto * child)
+    {
+        if (zk_request.options.max_results != 0 && response->names.size() >= zk_request.options.max_results)
+        {
+            response->truncated = true;
+            return false;
+        }
+
+        response->names.emplace_back(relative);
+        if (zk_request.options.with_stat)
+        {
+            Coordination::Stat stat;
+            child->stats.setResponseStat(stat);
+            response->stats.emplace_back(stat);
+        }
+        if (zk_request.options.with_data)
+            response->data.emplace_back(child->getData());
+        return true;
+    };
+
+    if (!zk_request.options.recursive && zk_request.options.filter == Coordination::ListRequestType::ALL
+        && !zk_request.options.with_stat && !zk_request.options.with_data)
+    {
+        std::vector<String> children = storage.nodes.listCommittedChildrenNames(zk_request.path);
+        if (zk_request.options.shuffle)
+            sort_by_rank(children);
+
+        if (zk_request.options.max_results != 0 && children.size() > zk_request.options.max_results)
+        {
+            response->names.assign(children.begin(), children.begin() + zk_request.options.max_results);
+            response->truncated = true;
+        }
+        else
+        {
+            response->names = std::move(children);
+        }
+
+        response->error = Coordination::Error::ZOK;
+        return response;
+    }
+
+    std::vector<String> frontier{zk_request.path};
+    for (size_t current = 0; current < frontier.size(); ++current)
+    {
+        const String parent_path = frontier[current];
+        std::vector<String> children = storage.nodes.listCommittedChildrenNames(parent_path);
+        if (zk_request.options.shuffle && !materialize_shuffled_subtree)
+            sort_by_rank(children);
+
+        for (const String & child_name : children)
+        {
+            const String child_path = parent_path == "/" ? "/" + child_name : parent_path + "/" + child_name;
+            const std::string_view relative{child_path.data() + relative_path_offset, child_path.size() - relative_path_offset};
+            const auto child_holder = storage.nodes.getCommittedNode(child_path);
+            const auto * child = child_holder.get();
+            chassert(child != nullptr);
+
+            const bool child_is_inspected = zk_request.options.recursive || zk_request.options.filter != Coordination::ListRequestType::ALL
+                || zk_request.options.with_stat || zk_request.options.with_data;
+            if (child_is_inspected && check_acl && !storage.checkACL(child->stats.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
+            {
+                if (zk_request.options.recursive)
+                    continue;
+                return auth_error();
+            }
+
+            if (zk_request.options.recursive)
+                frontier.emplace_back(child_path);
+
+            bool matches = true;
+            if (zk_request.options.filter == Coordination::ListRequestType::PERSISTENT_ONLY)
+                matches = !child->stats.isEphemeral();
+            else if (zk_request.options.filter == Coordination::ListRequestType::EPHEMERAL_ONLY)
+                matches = child->stats.isEphemeral();
+            if (!matches)
+                continue;
+
+            if (materialize_shuffled_subtree)
+            {
+                shuffled_subtree_candidates.emplace_back(relative);
+                continue;
+            }
+
+            if (!append_result(relative, child))
+            {
+                response->error = Coordination::Error::ZOK;
+                return response;
+            }
+        }
+
+        if (!zk_request.options.recursive)
+            break;
+    }
+
+    if (materialize_shuffled_subtree)
+    {
+        sort_by_rank(shuffled_subtree_candidates);
+
+        for (const String & relative : shuffled_subtree_candidates)
+        {
+            const String child_path = zk_request.path == "/" ? "/" + relative : zk_request.path + "/" + relative;
+            const auto child_holder = storage.nodes.getCommittedNode(child_path);
+            const auto * child = child_holder.get();
+            chassert(child != nullptr);
+            if (!append_result(relative, child))
+                break;
+        }
+    }
+
+    response->error = Coordination::Error::ZOK;
+    return response;
+}
+
+template <typename Storage>
+static Coordination::ZooKeeperResponsePtr
+process(const Coordination::ZooKeeperListWithOptionsRequest & zk_request, Storage & storage, KeeperStorage::DeltaRange deltas, int64_t session_id)
+{
+    chassert(deltas.empty());
+    return processLocal(zk_request, storage, session_id, /*check_acl=*/true, zk_request.xid, /*subrequest_index=*/0);
+}
+
 /// CHECK Request ///
 namespace
 {
@@ -2084,6 +2284,7 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
             case Coordination::OpNum::GetACL:
             case Coordination::OpNum::SimpleList:
             case Coordination::OpNum::List:
+            case Coordination::OpNum::ListWithOptions:
             case Coordination::OpNum::Check:
             case Coordination::OpNum::MultiRead:
             case Coordination::OpNum::FilteredList:
@@ -2110,6 +2311,8 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
     {
         size_t request_idx;
         int64_t session_id;
+        Coordination::XID outer_xid;
+        size_t subrequest_index;
         const Coordination::ZooKeeperRequestPtr * request;
         void * response;
         bool is_base_response_type;
@@ -2165,7 +2368,11 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
                 auto * resp = &response->responses[i];
                 static_assert(std::is_same_v<decltype(resp), Coordination::ResponsePtr *>);
                 tasks.push_back(Task {
-                    .request_idx = request_idx, .session_id = session_id, .request = &subrequest,
+                    .request_idx = request_idx,
+                    .session_id = session_id,
+                    .outer_xid = zk_request->xid,
+                    .subrequest_index = i,
+                    .request = &subrequest,
                     .response = static_cast<void*>(resp), .is_base_response_type = true,
                     .thread_safe = is_request_thread_safe(subrequest->getOpNum())});
             }
@@ -2176,7 +2383,11 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
             auto * resp = &results[request_idx].response;
             static_assert(std::is_same_v<decltype(resp), Coordination::ZooKeeperResponsePtr *>);
             tasks.push_back(Task {
-                .request_idx = request_idx, .session_id = session_id, .request = &zk_request,
+                .request_idx = request_idx,
+                .session_id = session_id,
+                .outer_xid = zk_request->xid,
+                .subrequest_index = 0,
+                .request = &zk_request,
                 .response = static_cast<void*>(resp), .is_base_response_type = false,
                 .thread_safe = is_request_thread_safe(op)});
         }
@@ -2214,7 +2425,10 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
 
         const auto process_request = [&]<std::derived_from<Coordination::ZooKeeperRequest> T>(T & concrete_zk_request)
         {
-            response = processLocal(concrete_zk_request, *this, task.session_id, check_acl);
+            if constexpr (std::same_as<T, Coordination::ZooKeeperListWithOptionsRequest>)
+                response = processLocal(concrete_zk_request, *this, task.session_id, check_acl, task.outer_xid, task.subrequest_index);
+            else
+                response = processLocal(concrete_zk_request, *this, task.session_id, check_acl);
         };
 
         try

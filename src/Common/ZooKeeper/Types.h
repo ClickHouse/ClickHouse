@@ -36,6 +36,10 @@ Coordination::RequestPtr makeSimpleListRequest(const std::string & path, Coordin
 Coordination::RequestPtr makeExistsRequest(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr watch = {});
 Coordination::RequestPtr makeRemoveRecursiveRequest(const std::string & path, uint32_t remove_nodes_limit);
 Coordination::RequestPtr makeListRecursiveRequest(const std::string & path, uint32_t children_nodes_limit = std::numeric_limits<uint32_t>::max());
+Coordination::RequestPtr makeListWithOptionsRequest(
+    const std::string & path,
+    const Coordination::ListOptions & options,
+    Coordination::WatchCallbackPtrOrEventPtr watch = {});
 
 template <class Client>
 Coordination::RequestPtr makeRemoveRecursiveRequest(const Client & client, const std::string & path, uint32_t remove_nodes_limit);

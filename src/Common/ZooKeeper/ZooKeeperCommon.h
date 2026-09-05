@@ -918,6 +918,36 @@ struct ZooKeeperListRecursiveResponse : ListRecursiveResponse, ZooKeeperResponse
 
     size_t bytesSize() const override { return ListRecursiveResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 };
+
+struct ZooKeeperListWithOptionsRequest final : ListWithOptionsRequest, ZooKeeperRequest
+{
+    ZooKeeperListWithOptionsRequest() = default;
+    explicit ZooKeeperListWithOptionsRequest(const ListWithOptionsRequest & base) : ListWithOptionsRequest(base) {}
+
+    OpNum getOpNum() const override { return OpNum::ListWithOptions; }
+    void writeImpl(WriteBuffer & out) const override;
+    void readImpl(ReadBuffer & in) override;
+    std::string toStringImpl(bool short_format) const override;
+    size_t sizeImpl() const override;
+    ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return true; }
+    ZooKeeperRequestPtr cloneForMulti(const ACLs &) const override
+    {
+        return std::make_shared<ZooKeeperListWithOptionsRequest>(*this);
+    }
+
+    size_t bytesSize() const override { return ListWithOptionsRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
+};
+
+struct ZooKeeperListWithOptionsResponse : ListWithOptionsResponse, ZooKeeperResponse
+{
+    void readImpl(ReadBuffer & in) override;
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
+    OpNum getOpNum() const override { return OpNum::ListWithOptions; }
+
+    size_t bytesSize() const override { return ListWithOptionsResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
+};
 class ZooKeeperRequestFactory final : private boost::noncopyable
 {
 

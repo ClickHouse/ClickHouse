@@ -54,6 +54,19 @@ ListResponse list(TestKeeper & keeper, const String & path, ListRequestType list
     return future.get();
 }
 
+ListWithOptionsResponse listWithOptions(TestKeeper & keeper, const String & path, const ListOptions & options)
+{
+    std::promise<ListWithOptionsResponse> sink;
+    std::future<ListWithOptionsResponse> future = sink.get_future();
+    keeper.listWithOptions(
+        path,
+        options,
+        [&](const auto & response) { sink.set_value(response); },
+        WatchCallbackPtrOrEventPtr());
+
+    return future.get();
+}
+
 }
 
 TEST(TestKeeperTest, JustWorks)
@@ -128,4 +141,23 @@ TEST(TestKeeperTest, FilteredListWithoutStatsAndData)
         EXPECT_TRUE(response.data.empty());
         EXPECT_TRUE(response.stats.empty());
     }
+}
+
+TEST(TestKeeperTest, ListWithOptionsShuffleLimitIsTruncated)
+{
+    TestKeeper keeper = makeKeeper();
+
+    create(keeper, "/parent", "", /* is_ephemeral */ false);
+    create(keeper, "/parent/a", "", /* is_ephemeral */ false);
+    create(keeper, "/parent/b", "", /* is_ephemeral */ false);
+    create(keeper, "/parent/c", "", /* is_ephemeral */ false);
+
+    ListOptions options;
+    options.max_results = 1;
+    options.shuffle = true;
+    const auto response = listWithOptions(keeper, "/parent", options);
+
+    EXPECT_EQ(response.error, Error::ZOK);
+    EXPECT_EQ(response.names.size(), 1);
+    EXPECT_TRUE(response.truncated);
 }

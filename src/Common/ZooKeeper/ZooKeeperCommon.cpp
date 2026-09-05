@@ -1153,6 +1153,7 @@ std::optional<ZooKeeperMultiRequest::OperationType> ZooKeeperMultiRequest::getOp
         case OpNum::FilteredList:
         case OpNum::FilteredListWithStatsAndData:
         case OpNum::ListRecursive:
+        case OpNum::ListWithOptions:
             return OperationType::Read;
 
         case OpNum::Close:
@@ -1751,6 +1752,133 @@ void ZooKeeperListRecursiveResponse::writeImpl(WriteBuffer & out) const
     Coordination::write(children, out);
 }
 
+void ZooKeeperListWithOptionsRequest::writeImpl(WriteBuffer & out) const
+{
+    if (options_version != ListOptionsVersion::V1)
+        throw Exception::fromMessage(Error::ZUNIMPLEMENTED, "Unsupported ListWithOptions version");
+
+    options.validate();
+    Coordination::write(static_cast<int32_t>(options_version), out);
+    Coordination::write(path, out);
+    Coordination::write(has_watch, out);
+    Coordination::write(static_cast<uint8_t>(options.filter), out);
+    Coordination::write(options.with_stat, out);
+    Coordination::write(options.with_data, out);
+    Coordination::write(options.recursive, out);
+    Coordination::write(options.max_results, out);
+    Coordination::write(options.shuffle, out);
+}
+
+static bool readListWithOptionsBool(ReadBuffer & in)
+{
+    uint8_t value{};
+    Coordination::read(value, in);
+    if (value > 1)
+        throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Invalid ListWithOptions Boolean value");
+    return value;
+}
+
+void ZooKeeperListWithOptionsRequest::readImpl(ReadBuffer & in)
+{
+    int32_t raw_version{};
+    uint8_t raw_filter{};
+    Coordination::read(raw_version, in);
+    if (raw_version != static_cast<int32_t>(ListOptionsVersion::V1))
+        throw Exception(raw_version > 0 ? Error::ZUNIMPLEMENTED : Error::ZMARSHALLINGERROR, "Unsupported ListWithOptions version {}", raw_version);
+
+    options_version = ListOptionsVersion::V1;
+    Coordination::read(path, in);
+    has_watch = readListWithOptionsBool(in);
+    Coordination::read(raw_filter, in);
+    options.with_stat = readListWithOptionsBool(in);
+    options.with_data = readListWithOptionsBool(in);
+    options.recursive = readListWithOptionsBool(in);
+    Coordination::read(options.max_results, in);
+    options.shuffle = readListWithOptionsBool(in);
+    options.filter = static_cast<ListRequestType>(raw_filter);
+
+    try
+    {
+        options.validate();
+        if (path.empty() || path[0] != '/')
+            throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Invalid ListWithOptions path");
+    }
+    catch (const Exception & e)
+    {
+        if (e.code == Error::ZMARSHALLINGERROR)
+            throw;
+        throw Exception::fromMessage(Error::ZMARSHALLINGERROR, e.message());
+    }
+}
+
+std::string ZooKeeperListWithOptionsRequest::toStringImpl(bool /*short_format*/) const
+{
+    return fmt::format(
+        "options_version = {}\n"
+        "path = {}\n"
+        "has_watch = {}\n"
+        "filter = {}\n"
+        "with_stat = {}\n"
+        "with_data = {}\n"
+        "recursive = {}\n"
+        "max_results = {}\n"
+        "shuffle = {}",
+        static_cast<int32_t>(options_version),
+        path,
+        has_watch,
+        static_cast<uint8_t>(options.filter),
+        options.with_stat,
+        options.with_data,
+        options.recursive,
+        options.max_results,
+        options.shuffle);
+}
+
+size_t ZooKeeperListWithOptionsRequest::sizeImpl() const
+{
+    return Coordination::size(static_cast<int32_t>(options_version)) + Coordination::size(path) + Coordination::size(has_watch)
+        + Coordination::size(static_cast<uint8_t>(options.filter)) + Coordination::size(options.with_stat)
+        + Coordination::size(options.with_data) + Coordination::size(options.recursive) + Coordination::size(options.max_results)
+        + Coordination::size(options.shuffle);
+}
+
+ZooKeeperResponsePtr ZooKeeperListWithOptionsRequest::makeResponse() const
+{
+    auto response = std::make_shared<ZooKeeperListWithOptionsResponse>();
+    response->expected_options_version = options_version;
+    response->expected_with_stat = options.with_stat;
+    response->expected_with_data = options.with_data;
+    return response;
+}
+
+void ZooKeeperListWithOptionsResponse::readImpl(ReadBuffer & in)
+{
+    Coordination::read(names, in);
+    Coordination::read(stat, in);
+    Coordination::read(stats, in);
+    Coordination::read(data, in);
+    truncated = readListWithOptionsBool(in);
+
+    const bool valid_stats = expected_with_stat ? stats.size() == names.size() : stats.empty();
+    const bool valid_data = expected_with_data ? data.size() == names.size() : data.empty();
+    if (!valid_stats || !valid_data)
+        throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Invalid ListWithOptions response vectors");
+}
+
+void ZooKeeperListWithOptionsResponse::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(names, out);
+    Coordination::write(stat, out);
+    Coordination::write(stats, out);
+    Coordination::write(data, out);
+    Coordination::write(truncated, out);
+}
+
+size_t ZooKeeperListWithOptionsResponse::sizeImpl() const
+{
+    return Coordination::size(names) + Coordination::size(stat) + Coordination::size(stats) + Coordination::size(data) + Coordination::size(truncated);
+}
+
 size_t ZooKeeperListRecursiveResponse::sizeImpl() const
 {
     return Coordination::size(children);
@@ -1883,6 +2011,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::FilteredListWithStatsAndData, ZooKeeperListRequest>(*this);
     registerZooKeeperRequest<OpNum::RemoveRecursive, ZooKeeperRemoveRecursiveRequest>(*this);
     registerZooKeeperRequest<OpNum::ListRecursive, ZooKeeperListRecursiveRequest>(*this);
+    registerZooKeeperRequest<OpNum::ListWithOptions, ZooKeeperListWithOptionsRequest>(*this);
     registerZooKeeperRequest<OpNum::AddWatch, ZooKeeperAddWatchRequest>(*this);
     registerZooKeeperRequest<OpNum::CheckWatch, ZooKeeperCheckWatchRequest>(*this);
     registerZooKeeperRequest<OpNum::RemoveWatch, ZooKeeperRemoveWatchRequest>(*this);

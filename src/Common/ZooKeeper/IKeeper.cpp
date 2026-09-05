@@ -141,6 +141,7 @@ void ExistsRequest::addRootPath(const String & root_path) { Coordination::addRoo
 void GetRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void SetRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void ListRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
+void ListWithOptionsRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void CheckRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void SetACLRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void GetACLRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
@@ -152,6 +153,35 @@ void ListRecursiveResponse::removeRootPath(const String & root_path)
 {
     for (auto & child : children)
         Coordination::removeRootPath(child, root_path);
+}
+
+void ListOptions::validate() const
+{
+    switch (filter)
+    {
+        case ListRequestType::ALL:
+        case ListRequestType::PERSISTENT_ONLY:
+        case ListRequestType::EPHEMERAL_ONLY:
+            return;
+    }
+    throw Exception::fromMessage(Error::ZBADARGUMENTS, "Unknown ListWithOptions filter");
+}
+
+ListOptionsVersion requiredListOptionsVersion(const ListOptions & options)
+{
+    options.validate();
+    return ListOptionsVersion::V1;
+}
+
+size_t ListWithOptionsResponse::bytesSize() const
+{
+    size_t size = sizeof(stat) + sizeof(truncated);
+    for (const auto & name : names)
+        size += name.size();
+    size += stats.size() * sizeof(Stat);
+    for (const auto & value : data)
+        size += value.size();
+    return size;
 }
 
 void MultiResponse::removeRootPath(const String & root_path)

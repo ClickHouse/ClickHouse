@@ -1767,6 +1767,38 @@ std::future<Coordination::ListResponse> ZooKeeper::asyncTryGetChildrenNoThrow(
     return future;
 }
 
+std::future<Coordination::ListWithOptionsResponse> ZooKeeper::asyncListWithOptions(
+    const std::string & path,
+    const Coordination::ListOptions & options)
+{
+    auto promise = std::make_shared<std::promise<Coordination::ListWithOptionsResponse>>();
+    auto future = promise->get_future();
+    auto callback = [promise, path](const Coordination::ListWithOptionsResponse & response) mutable
+    {
+        if (response.error != Coordination::Error::ZOK)
+            promise->set_exception(std::make_exception_ptr(KeeperException::fromPath(response.error, path)));
+        else
+            promise->set_value(response);
+    };
+    impl->listWithOptions(path, options, std::move(callback), {});
+    return future;
+}
+
+std::future<Coordination::ListWithOptionsResponse> ZooKeeper::asyncTryListWithOptionsNoThrow(
+    const std::string & path,
+    const Coordination::ListOptions & options,
+    Coordination::WatchCallbackPtrOrEventPtr watch_callback)
+{
+    auto promise = std::make_shared<std::promise<Coordination::ListWithOptionsResponse>>();
+    auto future = promise->get_future();
+    auto callback = [promise](const Coordination::ListWithOptionsResponse & response) mutable
+    {
+        promise->set_value(response);
+    };
+    impl->listWithOptions(path, options, std::move(callback), std::move(watch_callback));
+    return future;
+}
+
 std::future<Coordination::ListResponse>
 ZooKeeper::asyncTryGetChildren(const std::string & path, Coordination::ListRequestType list_request_type, bool with_stat, bool with_data)
 {
@@ -2098,6 +2130,26 @@ Coordination::RequestPtr makeListRecursiveRequest(const std::string & path, uint
     auto request = std::make_shared<Coordination::ZooKeeperListRecursiveRequest>();
     request->path = path;
     request->children_nodes_limit = children_nodes_limit;
+    return request;
+}
+
+Coordination::RequestPtr makeListWithOptionsRequest(
+    const std::string & path,
+    const Coordination::ListOptions & options,
+    Coordination::WatchCallbackPtrOrEventPtr watch)
+{
+    options.validate();
+    if (path.empty() || path[0] != '/')
+        throw Coordination::Exception::fromMessage(Coordination::Error::ZBADARGUMENTS, "Path must begin with /");
+    if (options.recursive && watch)
+        throw Coordination::Exception::fromMessage(Coordination::Error::ZBADARGUMENTS, "ListWithOptions does not support recursive watches");
+
+    auto request = std::make_shared<Coordination::ZooKeeperListWithOptionsRequest>();
+    request->path = path;
+    request->options_version = Coordination::requiredListOptionsVersion(options);
+    request->options = options;
+    request->watch_callback = watch;
+    request->has_watch = static_cast<bool>(watch);
     return request;
 }
 
