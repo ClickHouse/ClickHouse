@@ -23,19 +23,7 @@ public:
         bool cleanup_,
         MergeMutateSelectedEntryPtr merge_mutate_entry_,
         TableLockHolder table_lock_holder_,
-        IExecutableTask::TaskResultCallback & task_result_callback_)
-        : storage(storage_)
-        , metadata_snapshot(std::move(metadata_snapshot_))
-        , deduplicate(deduplicate_)
-        , deduplicate_by_columns(std::move(deduplicate_by_columns_))
-        , cleanup(cleanup_)
-        , merge_mutate_entry(std::move(merge_mutate_entry_))
-        , table_lock_holder(std::move(table_lock_holder_))
-        , task_result_callback(task_result_callback_)
-    {
-        for (auto & item : merge_mutate_entry->future_part->parts)
-            priority.value += item->getBytesOnDisk();
-    }
+        IExecutableTask::TaskResultCallback & task_result_callback_);
 
     bool executeStep() override;
     void onCompleted() override;
@@ -90,9 +78,8 @@ private:
     MergeTreeTransactionHolder txn_holder;
     MergeTreeTransactionPtr txn;
 
-    ProfileEvents::Counters profile_counters;
-
     ContextMutablePtr task_context;
+    ThreadGroupPtr thread_group;
 
     ContextMutablePtr createTaskContext() const;
 };

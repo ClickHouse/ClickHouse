@@ -4,6 +4,7 @@
 /// without pulling in the full CurrentThread.h (which includes ThreadStatus.h).
 
 #include <memory>
+#include <string>
 #include <boost/core/noncopyable.hpp>
 #include <Common/setThreadName.h>
 
@@ -45,10 +46,17 @@ private:
     ThreadStatus * prev_thread = nullptr;
     ThreadGroupPtr prev_thread_group;
     ThreadGroupPtr thread_group;
+    /// The thread may have a query_id that attaching to a group cannot reestablish, e.g.
+    /// `BgSchPool::<uuid>` assigned directly by BackgroundSchedulePool without any group.
+    /// Since detaching clears the thread's query_id, it has to be preserved manually.
+    std::string prev_query_id;
     /// Name of a borrowed thread (allow_existing_group=true), saved before renaming and restored in the
     /// destructor. A separate bool gates the restore because UNKNOWN is a valid saved name, not a sentinel.
     ThreadName prev_thread_name = ThreadName::UNKNOWN;
     bool should_restore_prev_thread_name = false;
+    /// True while this switcher holds an accounting scope open on the thread it borrowed, see
+    /// `ThreadStatus::accounting_scope_depth`.
+    bool entered_accounting_scope = false;
 };
 
 

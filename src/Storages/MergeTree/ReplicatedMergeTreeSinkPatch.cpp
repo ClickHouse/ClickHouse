@@ -1,4 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSinkPatch.h>
+#include <Common/ThreadStatus.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
@@ -46,7 +48,8 @@ void ReplicatedMergeTreeSinkPatch::finishDelayed(const ZooKeeperWithFaultInjecti
 
     for (auto & partition : delayed_parts)
     {
-        ProfileEventsScope scoped_attach(&partition.part_counters);
+        auto group_switcher = ThreadGroupSwitcher(partition.thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
+
         partition.temp_part->finalize();
         partition.temp_part->part->getDataPartStorage().commitTransaction();
 
@@ -62,14 +65,15 @@ void ReplicatedMergeTreeSinkPatch::finishDelayed(const ZooKeeperWithFaultInjecti
             if (!conflicts.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part {} was deduplicated. It's a bug", part->name);
 
-            auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
-            PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), deduplication_blocks_ids, ExecutionStatus(0));
             StorageReplicatedMergeTree::incrementInsertedPartsProfileEvent(part->getType());
+
+            auto counters_snapshot = partition.thread_group->getProfileCountersSnapshot();
+            PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.thread_group->getGroupElapsedNs(), counters_snapshot), deduplication_blocks_ids, ExecutionStatus(0));
         }
         catch (...)
         {
-            auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
-            PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), deduplication_blocks_ids, ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
+            auto counters_snapshot = partition.thread_group->getProfileCountersSnapshot();
+            PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.thread_group->getGroupElapsedNs(), counters_snapshot), deduplication_blocks_ids, ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
             throw;
         }
     }

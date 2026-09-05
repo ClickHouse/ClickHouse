@@ -78,12 +78,9 @@ QueryScope QueryScope::create(ContextMutablePtr query_context, std::function<voi
     return QueryScope(true);
 }
 
-QueryScope QueryScope::createForFlushAsyncInsert(ContextMutablePtr query_context, ThreadGroupPtr parent)
+QueryScope QueryScope::createForFlushAsyncInsertQuery(ContextPtr insert_context, ThreadGroupPtr flush_query_thread_group)
 {
-    if (!query_context->hasQueryContext())
-        query_context->makeQueryContext();
-
-    auto group = ThreadGroup::createForFlushAsyncInsertQueue(query_context, parent);
+    auto group = ThreadGroup::createForFlushAsyncInsertQuery(insert_context, flush_query_thread_group);
     CurrentThread::attachToGroup(group);
     return QueryScope(true);
 }

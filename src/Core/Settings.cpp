@@ -8711,13 +8711,6 @@ Requires CAP_SYS_NICE capability, otherwise no-op.
 
 Possible values: -20 to 19.
 )", 0, os_thread_priority) \
-    DECLARE(Int32, os_threads_nice_value_materialized_view, 0, R"(
-Linux nice value for materialized view threads. Lower values mean higher CPU priority.
-
-Requires CAP_SYS_NICE capability, otherwise no-op.
-
-Possible values: -20 to 19.
-)", 0) \
     DECLARE(Bool, show_processlist_include_internal, 1, R"(
 Show internal auxiliary processes in the `SHOW PROCESSLIST` query output.
 
@@ -9394,6 +9387,7 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, allow_experimental_object_type, false) \
     MAKE_OBSOLETE(M, BoolAuto, insert_select_deduplicate, Field{"auto"}) \
     MAKE_OBSOLETE(M, Bool, use_text_index_dictionary_cache, false) \
+    MAKE_OBSOLETE(M, Int32, os_threads_nice_value_materialized_view, 0) \
     MAKE_OBSOLETE(M, Bool, query_plan_use_logical_join_step, true) \
     MAKE_OBSOLETE(M, Bool, query_plan_use_new_logical_join_step, true) \
     MAKE_OBSOLETE(M, UInt64, cloud_mode_database_engine, 1)

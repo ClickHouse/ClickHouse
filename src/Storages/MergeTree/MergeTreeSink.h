@@ -32,8 +32,7 @@ struct MergeTreeDelayedChunk
 
         DeduplicationInfo::Ptr deduplication_info;
         TemporaryPartPtr temp_part;
-        UInt64 elapsed_ns;
-        ProfileEvents::Counters part_counters;
+        ThreadGroupPtr thread_group;
     };
 
     std::vector<Partition> partitions;

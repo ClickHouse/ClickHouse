@@ -24,7 +24,7 @@ namespace ErrorCodes
 
 const MergeTreePartInfo MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION = {"all", 0, 0, 0};
 
-MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part, const ContextPtr & context)
+MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part, ThreadGroupPtr thread_group_)
     : table_id{table_id_}
     , partition_id{future_part->part_info.getPartitionId()}
     , result_part_name{future_part->name}
@@ -34,6 +34,7 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
     , thread_id{getThreadId()}
     , merge_type{future_part->merge_type}
     , merge_algorithm{MergeAlgorithm::Undecided}
+    , thread_group(std::move(thread_group_))
     , num_parts_metric_increment(CurrentMetrics::MergeParts, num_parts)
 {
     auto format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
@@ -42,6 +43,11 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
 
     /// FIXME why do we need a merge list element for projection parts at all?
     bool is_fake_projection_part = future_part->part_info == FAKE_RESULT_PART_FOR_PROJECTION;
+
+    /// Projection sub-merge elements borrow the parent merge entry's `thread_group` instead of
+    /// owning their own, so they must not run the background-memory-tracker cleanup in the
+    /// destructor (the parent entry does it once for the shared tracker).
+    owns_thread_group = !is_fake_projection_part;
 
     size_t normal_parts_count = 0;
     for (const auto & source_part : future_part->parts)
@@ -74,8 +80,6 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
     if (!is_fake_projection_part && is_mutation && normal_parts_count != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} source parts for mutation {}: {}", future_part->parts.size(),
                         result_part_info.getPartNameV1(), fmt::join(source_part_names, ", "));
-
-    thread_group = ThreadGroup::createForMergeMutate(context);
 }
 
 MergeInfo MergeListElement::getInfo() const
@@ -133,7 +137,11 @@ const MemoryTracker & MergeListElement::getMemoryTracker() const
 
 MergeListElement::~MergeListElement()
 {
-    background_memory_tracker.adjustOnBackgroundTaskEnd(&getMemoryTracker());
+    /// Only the owner of `thread_group` adjusts the shared background-memory tracker.
+    /// Projection sub-merge elements borrow the parent merge entry's `thread_group`, and the
+    /// parent entry runs the cleanup once for it (see `owns_thread_group`).
+    if (owns_thread_group)
+        background_memory_tracker.adjustOnBackgroundTaskEnd(&getMemoryTracker());
 }
 
 }

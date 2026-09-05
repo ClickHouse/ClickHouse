@@ -82,7 +82,7 @@ TEST(ThreadPoolCallbackRunner, UnsafeRunnerCapturesGroupAtEnqueueTime)
 }
 
 /// The use-after-free regression: async work enqueued from a borrowed `ThreadGroup` scope
-/// (materialized views, async-insert flushes, `EXPLAIN ANALYZE`) may outlive the parent query.
+/// (materialized views, nested scopes, `EXPLAIN ANALYZE`) may outlive the parent query.
 /// The capture must keep the accounting chain alive, allocations must still charge the owning
 /// query group, and once the work is done nothing must stay pinned.
 TEST(BorrowedThreadGroupLifetime, AsyncWorkFromBorrowedScopeChargesOwningQueryAccounting)
@@ -96,7 +96,12 @@ TEST(BorrowedThreadGroupLifetime, AsyncWorkFromBorrowedScopeChargesOwningQueryAc
 
         auto root = std::make_shared<ThreadGroup>(context, 0);
         std::weak_ptr<ThreadGroup> root_weak = root;
-        auto borrowed = ThreadGroup::createForFlushAsyncInsertQueue(context, root);
+        /// `EXPLAIN ANALYZE` stands for the whole family of borrowed scopes here (materialized
+        /// views, nested scopes): they chain their accounting to the owning query group.
+        /// Async-insert flush groups are deliberately excluded - an async insert is an
+        /// independent query with its own accounting, rolled up into the flush query only at the
+        /// very end (see `ThreadGroup::rollup_counters`).
+        auto borrowed = ThreadGroup::createForExplainAnalyze(root);
 
         /// The async work is gated so that it allocates only after the test dropped its own
         /// references to both groups - the exact window of the use-after-free.

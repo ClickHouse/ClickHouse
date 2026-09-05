@@ -2220,8 +2220,14 @@ bool Aggregator::executeOnBlock(Columns columns,
 {
     /// When tracking the aggregation memory, the aggregator memory tracker is inserted between the thread
     /// and query memory trackers, and accounts for the aggregation state across all threads.
-    const bool use_own_tracker = memory_tracker && CurrentThread::getMemoryTracker()
-        && CurrentThread::getMemoryTracker()->getParent() == memory_tracker->getParent();
+    /// The aggregator tracker's parent is the query-level tracker (Scope levels are skipped at creation,
+    /// see tryCreateMemoryTrackerUnderCurrentQuery), so skip Scope-level trackers here as well to reach
+    /// the same query tracker when the thread runs under a Scope group (see ThreadGroup::createForScope).
+    MemoryTracker * thread_tracker_parent = CurrentThread::getMemoryTracker() ? CurrentThread::getMemoryTracker()->getParent() : nullptr;
+    while (thread_tracker_parent && thread_tracker_parent->level == VariableContext::Scope)
+        thread_tracker_parent = thread_tracker_parent->getParent();
+    const bool use_own_tracker = memory_tracker && thread_tracker_parent
+        && thread_tracker_parent == memory_tracker->getParent();
     std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
     if (use_own_tracker)
         memory_tracker_switcher.emplace(memory_tracker.get());

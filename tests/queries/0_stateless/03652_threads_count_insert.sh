@@ -26,6 +26,7 @@ for max_threads in 1 7; do
 
         QUERY_ID="${CLICKHOUSE_DATABASE}_03652_${max_threads}_${max_insert_threads}_$($CLICKHOUSE_CLIENT -q 'SELECT lower(hex(generateUUIDv4()))')"
         SETTINGS="--query_id=$QUERY_ID "
+        SETTINGS="$SETTINGS --use_async_executor_for_materialized_views=0 "
         SETTINGS="$SETTINGS --max_threads=$max_threads "
         SETTINGS="$SETTINGS --max_insert_threads=$max_insert_threads "
 

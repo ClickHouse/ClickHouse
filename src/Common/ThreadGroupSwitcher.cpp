@@ -4,6 +4,7 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -36,6 +37,13 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
 
         prev_thread = current_thread;
         prev_thread_group = CurrentThread::getGroup();
+
+        /// The thread may have a query_id which the group being attached cannot reestablish:
+        /// either assigned directly without any group (e.g. `BgSchPool::<uuid>` set by
+        /// BackgroundSchedulePool), or kept alive by an outer switcher in the same way.
+        /// Detaching clears the thread's query_id, so remember it to preserve it manually.
+        prev_query_id = std::string(CurrentThread::getQueryId());
+
         if (prev_thread_group)
         {
             if (prev_thread_group == thread_group)
@@ -52,6 +60,14 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
                 /// setThreadName below renames it, so we can restore it with the group.
                 prev_thread_name = getThreadName();
                 should_restore_prev_thread_name = true;
+                /// Stepping into an accounting scope of the very group being left keeps the thread
+                /// on the same query: its per-query tallies must survive this detach and the attach
+                /// that ends the scope, and neither may write a `system.query_thread_log` row.
+                if (prev_thread && thread_group->isAccountingScopeOf(*prev_thread_group))
+                {
+                    prev_thread->enterAccountingScope();
+                    entered_accounting_scope = true;
+                }
                 CurrentThread::detachFromGroupIfNotDetached();
             }
         }
@@ -71,6 +87,14 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after attachToGroup");
         });
+
+        /// If the new group cannot provide a query_id (e.g. a scope group created on a thread
+        /// without any group: its query context is not owned by anyone and is already expired,
+        /// so attaching did not set any query_id), keep the thread's previous one.
+        if (!prev_query_id.empty() && CurrentThread::getQueryId().empty())
+            prev_thread->setQueryId(std::string(prev_query_id));
+
+        LOG_TEST(getLogger("ThreadGroupSwitcher"), "Attach thread to thread group with master_thread_id {}", thread_group->master_thread_id);
     }
     catch (...)
     {
@@ -89,10 +113,23 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
                 CurrentThread::attachToGroup(prev_thread_group);
             if (should_restore_prev_thread_name)
                 setThreadName(prev_thread_name);
+            /// Restore the query_id as well (mirrors the destructor): the detach above cleared it,
+            /// and reattaching the previous group may not reestablish it (e.g. a direct query_id
+            /// like `BgSchPool::<uuid>` assigned without any group). The destructor early-returns
+            /// on this path, so it must be restored here.
+            if (prev_thread && !prev_query_id.empty() && CurrentThread::getQueryId().empty())
+                prev_thread->setQueryId(std::string(prev_query_id));
         }
         catch (...)
         {
             DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        /// The destructor early-returns on this path (both groups are nulled below), so the scope
+        /// opened above has to be closed here.
+        if (entered_accounting_scope)
+        {
+            prev_thread->leaveAccountingScope();
+            entered_accounting_scope = false;
         }
         thread_group = nullptr;
         prev_thread_group = nullptr;
@@ -125,10 +162,21 @@ ThreadGroupSwitcher::~ThreadGroupSwitcher()
             if (should_restore_prev_thread_name)
                 setThreadName(prev_thread_name);
         }
+
+        /// Restore the query_id if reattaching could not reestablish it (see the constructor).
+        if (!prev_query_id.empty() && CurrentThread::getQueryId().empty())
+            prev_thread->setQueryId(std::move(prev_query_id));
     }
     catch (...)
     {
         DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    /// Closed after the reattach above, so that it too is covered by the scope.
+    if (entered_accounting_scope)
+    {
+        prev_thread->leaveAccountingScope();
+        entered_accounting_scope = false;
     }
 }
 

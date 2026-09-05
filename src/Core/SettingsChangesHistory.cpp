@@ -649,7 +649,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"delta_lake_insert_max_rows_in_data_file", 1000000, 1000000, "New setting."},
             {"promql_evaluation_time", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."},
             {"os_threads_nice_value_query", 0, 0, "New setting."},
-            {"os_threads_nice_value_materialized_view", 0, 0, "New setting."},
+            {"os_threads_nice_value_materialized_view", 0, 0, "Obsolete setting."},
             {"os_thread_priority", 0, 0, "Alias for os_threads_nice_value_query."},
         });
         addSettingsChanges(settings_changes_history, "25.8",

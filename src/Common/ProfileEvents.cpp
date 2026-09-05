@@ -1962,6 +1962,12 @@ Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
     return res;
 }
 
+void Counters::addSnapshotLocally(const Snapshot & snapshot)
+{
+    for (Event i = Event(0); i < num_counters; ++i)
+        fetchAdd(i, snapshot[i], -1);
+}
+
 static const std::array<std::string_view, END> names =
 {
 #define M(NAME, DOCUMENTATION, VALUE_TYPE) #NAME,

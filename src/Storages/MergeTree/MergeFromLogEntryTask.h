@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <utility>
 
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTask.h>
@@ -46,6 +45,8 @@ protected:
     }
 
 private:
+    ContextMutablePtr createTaskContext() const override;
+
     TableLockHolder table_lock_holder{nullptr};
 
     MergeTreeData::DataPartsVector parts;
@@ -53,7 +54,6 @@ private:
     MergeTreeData::TransactionUniquePtr transaction_ptr{nullptr};
     std::optional<ZeroCopyLock> zero_copy_lock;
 
-    StopwatchUniquePtr stopwatch_ptr{nullptr};
     MergeTreeData::MutableDataPartPtr part;
 
     Priority priority;
