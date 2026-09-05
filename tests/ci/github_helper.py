@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 """Helper for GitHub API requests"""
+
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -237,7 +238,9 @@ class GitHub(github.Github):
             closing_issue_numbers=closing_issue_numbers,
         )
 
-    def _graphql(self, query: str, variables: dict) -> dict:
+    def _graphql(
+        self, query: str, variables: dict, *, allow_partial: bool = True
+    ) -> dict:
         # pylint: disable=protected-access
         requester = self._Github__requester  # type: ignore
         url = f"{requester.base_url}/graphql"
@@ -253,9 +256,10 @@ class GitHub(github.Github):
                 # that field plus a NOT_FOUND error, while the other aliases
                 # resolve. Use whatever `data` resolved; only raise when nothing
                 # came back at all (malformed query, auth failure, ...).
+                # Callers making recovery decisions require `allow_partial=False`.
                 payload = data.get("data")
                 errors = data.get("errors")
-                if payload is None:
+                if payload is None or (errors and not allow_partial):
                     raise GithubException(
                         200, errors or "GraphQL query returned no data", None
                     )
@@ -418,14 +422,12 @@ class GitHub(github.Github):
                 f"  repository(owner:$owner, name:$name) {{ {aliases} }}"
                 "}"
             )
-            repository = (
-                self._graphql(gql, {"owner": owner, "name": name})["repository"] or {}
-            )
+            repository = self._graphql(
+                gql, {"owner": owner, "name": name}, allow_partial=False
+            )["repository"]
             for i, head in enumerate(batch):
-                node = repository.get(f"b{i}") or {}
-                result[head] = [
-                    (pr["number"], pr["state"]) for pr in (node.get("nodes") or [])
-                ]
+                node = repository[f"b{i}"]
+                result[head] = [(pr["number"], pr["state"]) for pr in node["nodes"]]
         return result
 
     def sleep_on_rate_limit(self) -> None:
