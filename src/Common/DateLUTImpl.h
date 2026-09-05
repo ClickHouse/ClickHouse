@@ -176,6 +176,12 @@ public:
     /// but they are different types in C++ and this affects function overload resolution).
     using Time = Int64;
 
+    /// `cctz` loads a whole family of names that no time zone can have. Such a name is not a time
+    /// zone, and constructing a `DateLUTImpl` for it throws. Validators that want to reject a time
+    /// zone name early call this in addition to `cctz::load_time_zone`, so that they cannot start
+    /// accepting names that the lookup itself rejects. See the definition for details.
+    static bool isSupportedTimeZoneName(std::string_view time_zone_name);
+
     /// The order of fields matters for alignment and sizeof.
     struct Values
     {
