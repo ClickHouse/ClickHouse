@@ -89,7 +89,8 @@ CREATE TABLE table
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
-                                -- Optional parameters:
+                                            | jsonPathValues[(max_token_bytes)]
+                                -- Optional parameters (not supported by jsonPathValues):
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
@@ -108,7 +109,7 @@ Text indexes can be defined on columns of these types:
 - [String](/reference/data-types/string) and [FixedString](/reference/data-types/fixedstring),
 - [Array(String)](/reference/data-types/array) and [Array(FixedString)](/reference/data-types/array),
 - [Map](/reference/data-types/map) (via [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) and [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) functions), and
-- [JSON](/reference/data-types/newjson) (via [JSONAllPaths](/reference/functions/regular-functions/json-functions#JSONAllPaths) and [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues) functions).
+- [JSON](/reference/data-types/newjson) (directly with the `jsonPathValues` tokenizer, or via [JSONAllPaths](/reference/functions/regular-functions/json-functions#JSONAllPaths) and [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues) functions).
 
 Columns of type [Nullable(T)](/reference/data-types/nullable) and [LowCardinality()](/reference/data-types/lowcardinality) are also supported, including `Array(Nullable(String or FixedString))`.
 
@@ -128,7 +129,8 @@ ALTER TABLE table
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
-                                -- Optional parameters:
+                                            | jsonPathValues[(max_token_bytes)]
+                                -- Optional parameters (not supported by jsonPathValues):
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
@@ -523,21 +525,21 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 
 | Function | Supports a preprocessor | Compatible tokenizers | Supports a postprocessor |
 |---|---|---|---|
-| `=` | yes | all | yes |
-| `IN` | yes | all | yes |
+| `=` | yes⁴ | all | yes⁴ |
+| `IN` | yes⁴ | all | yes⁴ |
 | [hasToken](/reference/functions/regular-functions/string-search-functions#hasToken)                   | yes | all (designed for `splitByNonAlpha`) | yes |
 | [hasAnyTokens(col, str)](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) | yes | all | yes |
 | [hasAllTokens(col, str)](/reference/functions/regular-functions/string-search-functions#hasAllTokens) | yes | all | yes |
 | [hasAnyTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) | no (array elements are tokens as-is) | all | yes |
 | [hasAllTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAllTokens) | no (array elements are tokens as-is) | all | yes |
 | [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `icu` | yes³ |
-| [startsWith](/reference/functions/regular-functions/string-functions#startsWith)                      | yes⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴ | yes⁴ |
-| [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                          | yes⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴ | yes⁴ |
-| [like](/reference/functions/regular-functions/string-search-functions#like)                           | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
-| [match](/reference/functions/regular-functions/string-search-functions#match)                         | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
-| [ilike](/reference/functions/regular-functions/string-search-functions#like)                          | yes² (`lower`/`upper` only) | `splitByNonAlpha`, `array`² | no² |
-| [mapContainsKey](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)               | yes | all | yes |
-| [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)           | yes | all | yes |
+| [startsWith](/reference/functions/regular-functions/string-functions#startsWith)                      | yes⁴⁵ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁵, `jsonPathValues`⁴ | yes⁴⁵ |
+| [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                          | yes⁴⁵ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁵, `jsonPathValues`⁴ | yes⁴⁵ |
+| [like](/reference/functions/regular-functions/string-search-functions#like)                           | yes¹⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹, `jsonPathValues`⁴ | yes¹⁴ |
+| [match](/reference/functions/regular-functions/string-search-functions#match)                         | yes¹⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹, `jsonPathValues`⁴ | yes¹⁴ |
+| [ilike](/reference/functions/regular-functions/string-search-functions#like)                          | yes²⁴ (`lower`/`upper` only) | `splitByNonAlpha`, `array`², `jsonPathValues`⁴ | no²⁴ |
+| [mapContainsKey](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)               | yes⁴ | all | yes⁴ |
+| [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)           | yes⁴ | all except `jsonPathValues` | yes⁴ |
 | [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)       | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
 | [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)   | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
 | [has](/reference/functions/regular-functions/array-functions#has)                                     | yes | `array` | yes |
@@ -554,7 +556,9 @@ The preprocessor, if present, must be `lower` or `upper`; postprocessors are not
 
 ³ `hasPhrase` on a `splitByRegexp` text index does **not** support a postprocessor: the combination is rejected with an exception, because the postprocessor row-level rewrite assumes whitespace-splitting `splitByNonAlpha`-style tokens. Without a postprocessor, `splitByRegexp` is fully supported by `hasPhrase`.
 
-⁴ `startsWith` and `endsWith` search the complete tokens of the needle, and the token at the open end of the needle is incomplete because the value continues there: `startsWith(col, 'ClickHouse is')` searches the token `ClickHouse`, while `startsWith(col, 'ClickHouse')` has no complete token to search.
+⁴ `jsonPathValues` supports the marked functions on direct `JSON` subcolumns, but does not support a preprocessor or postprocessor.
+
+⁵ `startsWith` and `endsWith` search the complete tokens of the needle, and the token at the open end of the needle is incomplete because the value continues there: `startsWith(col, 'ClickHouse is')` searches the token `ClickHouse`, while `startsWith(col, 'ClickHouse')` has no complete token to search.
 The latter is instead evaluated by a dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer, no preprocessor or postprocessor), which is also the path taken by `col LIKE 'ClickHouse%'` because the analyzer pass [optimize_rewrite_like_perfect_affix](/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) rewrites it into `startsWith`.
 See [LIKE/ILIKE queries](#like-ilike-queries-perf).
 
@@ -693,15 +697,17 @@ SELECT * from table WHERE str IN ('Hello', 'World');
 #### `LIKE` and `match` {#functions-example-like-match}
 
 <Note>
-These functions currently use the text index for filtering only if the index tokenizer is either `splitByNonAlpha`, `ngrams` or `sparseGrams`.
+These functions can use extracted tokens with `splitByNonAlpha`, `ngrams`, `sparseGrams`, or `asciiCJK`. The `jsonPathValues` tokenizer also supports them on direct `JSON` subcolumns; see [bounded path/value indexes](#json-indexes-jsonpathvalues).
 </Note>
 
 <Note>
 `NOT LIKE` (`notLike`) is not supported by the text index.
 </Note>
 
-In order to use `LIKE` ([like](/reference/functions/regular-functions/string-search-functions#like)) and the [match](/reference/functions/regular-functions/string-search-functions#match) function with text indexes, ClickHouse must be able to extract complete tokens from the search term.
+When using extracted tokens for `LIKE` ([like](/reference/functions/regular-functions/string-search-functions#like)) and the [match](/reference/functions/regular-functions/string-search-functions#match) function, ClickHouse must be able to extract complete tokens from the search term.
 For the index with `ngrams` tokenizer, this is the case if the length of the searched strings between wildcards is equal or longer than the ngram length.
+
+With `jsonPathValues`, these functions search indexed values instead of extracting complete tokens. Dictionary scans require `use_text_index_like_evaluation_by_dictionary_scan = 1`; prefix searches use ordered dictionary lookups. See [LIKE/ILIKE performance tuning](#like-ilike-queries-perf) for the pattern-length limits.
 
 Example for the text index with `splitByNonAlpha` tokenizer:
 
@@ -729,6 +735,8 @@ See the [LIKE/ILIKE performance tuning section](#like-ilike-queries-perf) for de
 [multiSearchAny](/reference/functions/regular-functions/string-search-functions#multiSearchAny) and its UTF-8 variant [multiSearchAnyUTF8](/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8) test whether any of several literal substrings occurs in the haystack, and [multiMatchAny](/reference/functions/regular-functions/string-search-functions#multiMatchAny) tests whether any of several regular expressions matches.
 These functions use the text index under the same conditions as `LIKE` and `match` (see above): ClickHouse must be able to extract complete tokens from each needle, and the list of needles must be constant.
 A granule is read if any needle may be present in it.
+
+With `jsonPathValues`, `multiSearchAny` and `multiSearchAnyUTF8` instead scan indexed values on direct `JSON` subcolumns when `use_text_index_like_evaluation_by_dictionary_scan = 1`. The needles must be constant and satisfy `text_index_like_min_pattern_length`; they do not need to contain complete tokens. `multiMatchAny` is not supported by `jsonPathValues`.
 
 For `multiMatchAny`, if a single pattern cannot be reduced to a token requirement (for example `.*`, which matches any document), the text index cannot be used and the query falls back to a full scan.
 
@@ -1001,11 +1009,12 @@ SELECT * FROM logs WHERE mapContainsValueLike(attributes, '% error %'); -- fast
 
 ### Indexing JSON columns {#text-index-example-json}
 
-Text indexes can be used with `JSON` columns in three ways:
+Text indexes can be used with `JSON` columns in four ways:
 
 1. **Indexes on specific subcolumns** — create a text index on a known JSON path, just like on a regular column. This indexes the *values* at that path.
 2. **Path-based indexes with [JSONAllPaths](/reference/functions/regular-functions/json-functions#JSONAllPaths)** — indexes *all paths* present in each granule to skip granules that cannot contain the queried path. Similar to `Map` columns.
 3. **Value-based indexes with [JSONAllValues](/reference/functions/regular-functions/json-functions#JSONAllValues)** — indexes *all values* across all JSON paths to accelerate full-text search on any JSON subcolumn with a single index.
+4. **Bounded path/value indexes with the `jsonPathValues` tokenizer** — indexes path-qualified values directly from one `JSON` column while bounding token size.
 
 #### Indexes on specific subcolumns {#json-indexes-on-subcolumns}
 
@@ -1077,7 +1086,7 @@ Example index definition:
 ```sql title="Query"
 CREATE TABLE events
 (
-    data JSON,
+    data JSON(level String),
     INDEX idx JSONAllPaths(data) TYPE text(tokenizer = array)
 )
 ENGINE = MergeTree
@@ -1197,6 +1206,52 @@ SELECT * FROM events WHERE hasAllTokens(data.message::String, 'connection timeou
 SELECT * FROM events WHERE data.status_code::UInt64 = 404;
 SELECT * FROM events WHERE has(data.tags::Array(String), 'bug')
 ```
+
+#### Bounded path/value indexes with `jsonPathValues` {#json-indexes-jsonpathvalues}
+
+The `jsonPathValues` tokenizer creates opaque, path-qualified tokens for exact and fuzzy searches on JSON subcolumns. Nulls and empty strings are omitted. The token-size limit must be between 1 byte and 1 MiB. Specify it in production schemas so the schema does not depend on the default.
+
+Its arguments are:
+
+- `max_token_bytes`: maximum token size, default `1024`.
+- `include_paths`: paths whose values should be indexed. A path also includes its descendants. When neither include option is specified, all paths are included.
+- `include_paths_regexp`: RE2 regular expressions for paths whose values should be indexed. The expressions use partial matching.
+- `skip_paths`: paths whose values should not be indexed. A path also skips its descendants, like `SKIP` in a `JSON` type declaration.
+- `skip_paths_regexp`: RE2 regular expressions for paths whose values should not be indexed. The expressions use partial matching, like the default behavior of `SKIP REGEXP` in a `JSON` type declaration.
+
+The include options are combined, and then the skip options are applied. Therefore, a skipped path is not indexed even when it also matches an include option. Use named arguments when specifying path filters. The positional form `jsonPathValues([max_token_bytes])` remains supported.
+
+In exact path filters, `[]` identifies a scalar descendant of `Array(JSON)`. Escape literal square brackets and backslashes with `\`. Because SQL string literals also use backslash escaping, write `items\\[\\].price` to select a literal JSON path named `items[].price`. Regular expressions match the same unambiguous form: literal square brackets and backslashes in stored path names are backslash-escaped, while structural `[]` is not.
+
+```sql
+CREATE TABLE events
+(
+    id UInt64,
+    data JSON(level String),
+    INDEX json_tokens data TYPE text(tokenizer = jsonPathValues(
+        max_token_bytes = 1024,
+        include_paths = ['message', 'attributes', 'level'],
+        include_paths_regexp = ['(?:^|\\.)(?:title|description)$'],
+        skip_paths = ['attributes.raw'],
+        skip_paths_regexp = ['(?:^|\\.)debug_']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+Queries on paths that are not included or are skipped read the source `JSON` column without using this index. Changing any path filter requires rebuilding or materializing the index for existing data parts.
+
+`startsWith` uses the index when the standard [`text_index_like_min_pattern_length`](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length) setting allows it. Other supported pattern predicates also require [`use_text_index_like_evaluation_by_dictionary_scan`](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan).
+
+The index supports equality, `IN` on String subcolumns, `has` on array subcolumns, `startsWith`, `endsWith`, prefix `LIKE` patterns such as `LIKE 'error%'`, simple substring `LIKE` and `ILIKE` predicates, `match`, `multiSearchAny`, and `multiSearchAnyUTF8`. Elements of concrete arrays are indexed individually on both declared and dynamic paths. Use an explicit array type when querying a dynamic path, for example `has(data.tags.:\`Array(Nullable(String))\`, 'bug')`. Declared paths of type `JSON` are traversed recursively: their leaf paths are indexed, but the whole subdocument is not. Scalar leaves below one level of `Array(JSON)` are also indexed as array elements, so predicates such as `has(data.items[].price, 10)` can use the index. Null leaves, nested arrays, maps, and tuples below `Array(JSON)` are not indexed. Whole-array equality, whole-`JSON`-subdocument equality, and casts such as `CAST(data.tags AS Array(String))` are not optimized.
+
+Declared paths of type `Map(String, String)`, including `LowCardinality(String)` keys or values, are indexed by key and first value. The index accelerates `has`, `mapContains`, and `mapContainsKey` with a constant key, and equality such as `data.attributes['service'] = 'api'` when the compared value is not empty. Missing map keys produce the default empty String, so equality with an empty value is not optimized. Whole-map equality, keyed `IN`, pattern predicates on keyed values, nonconstant keys, dynamic maps, and other map types are not optimized.
+
+Prefixes that fit in the limit use ordered dictionary lookups and can use direct reads. Longer scalar, array-element, and map values store a bounded prefix and hash. Queries that match a hash or truncated token evaluate the original predicate only for the candidate rows, so truncation cannot cause false-negative results. With `dynamic_throw_on_type_mismatch = 0`, untyped `Dynamic` equality uses exact tokens for common scalar conversions and validates rows containing other runtime types. `CAST(Dynamic AS String)` and `toString(Dynamic)` are not optimized. Because the token encoding is an implementation detail, indexes materialized by an older experimental `jsonPathValues` implementation must be rebuilt after upgrading to this version.
+
+Empty scalar and array strings and null array elements are not indexed, so predicates that search for them read the source column. Map entries with an empty value are retained because the entry token also represents key existence; keyed equality with an empty value is still not optimized because missing keys produce the same default empty String.
+
+`jsonPathValues` accepts exactly one direct `JSON` column and does not support a preprocessor, postprocessor, or `support_phrase_search = 1`. Its dictionary tokens are an implementation detail and should not be parsed by queries.
 
 `IN` operator:
 
@@ -1422,7 +1477,8 @@ The fallback mechanism is controlled by two settings:
 - [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 - [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
-This optimization supports only functions `like`, `ilike`, `startsWith`, and `endsWith`.
+For the generic string tokenizers, this optimization supports only functions `like`, `ilike`, `startsWith`, and `endsWith`.
+For `jsonPathValues`, `use_text_index_like_evaluation_by_dictionary_scan` also enables `endsWith`, `match`, `multiSearchAny`, and `multiSearchAnyUTF8`; `startsWith` uses an ordered prefix lookup instead. `text_index_like_min_pattern_length` applies to all of these `jsonPathValues` pattern predicates.
 
 ### Trivial count queries {#count-queries-perf}
 
@@ -1506,6 +1562,7 @@ The text index currently has the following limitations:
 The on-disk format version of text indexes is controlled by the table-level setting [`text_index_serialization_version`](/reference/settings/merge-tree-settings/text-index) (default: `v2_with_positions`).
 The setting is a preference rather than a hard constraint: if the configured version cannot represent an index, a newer version that can represent it is chosen automatically, so writing a text index never fails because of this setting.
 During a rolling upgrade, pin the format with the [`compatibility`](/reference/settings/session-settings/compatibility#compatibility) setting on the already upgraded servers: when it is set to a version older than the one that introduced the corresponding format, `text_index_serialization_version` reverts to an older value automatically and newer servers keep writing the format that older servers can still read.
+`jsonPathValues` indexes are an exception: they always use at least `v3_with_tokenizer_config`, even when `compatibility` or `text_index_serialization_version` selects an older version. Do not create or materialize these indexes until every replica can read `v3_with_tokenizer_config`.
 
 ## Text Indexes vs Bloom-Filter-Based Indexes {#text-index-vs-bloom-filter-indexes}
 

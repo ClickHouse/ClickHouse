@@ -8944,19 +8944,23 @@ Allow to add hint (additional predicate) for filtering built from the inverted t
 Maximal selectivity of the filter to use the hint built from the inverted text index.
 )", 0) \
     DECLARE(Bool, use_text_index_like_evaluation_by_dictionary_scan, true, R"(
-Enable evaluation of LIKE/ILIKE queries by scanning the inverted text index dictionary.
+Enable evaluation of pattern predicates by scanning the inverted text index dictionary.
 
-The accelerated patterns are `%value%`, `value%` and `%value`, as well as the `startsWith` and `endsWith` calls that `optimize_rewrite_like_perfect_affix` rewrites into `value%` and `%value`.
+For generic tokenizers, the accelerated `LIKE` and `ILIKE` patterns are `%value%`, `value%` and `%value`; `startsWith` and `endsWith` calls, including those produced by `optimize_rewrite_like_perfect_affix`, are also supported.
+For `jsonPathValues`, this also enables `LIKE`, `ILIKE`, `endsWith`, `match`, `multiSearchAny`, and `multiSearchAnyUTF8`.
 )", 0) \
     DECLARE(UInt64, text_index_like_min_pattern_length, 4, R"(
-Minimum length of the alphanumeric needle in a LIKE/ILIKE pattern, or of a `startsWith`/`endsWith` needle,
-required to use the text index LIKE evaluation by the dictionary scan.
+Minimum pattern length required to use text index evaluation.
+For generic tokenizers, this is the alphanumeric needle in a `LIKE` or `ILIKE` pattern, or the `startsWith` or `endsWith` needle.
+For `jsonPathValues`, this is the fixed string or required substring in `LIKE`, `ILIKE`, `startsWith`, `endsWith`, `match`, `multiSearchAny`, or `multiSearchAnyUTF8`.
 Patterns shorter than this threshold match too many dictionary tokens and are skipped to avoid expensive scans.
 
-Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
+Dictionary-scanned predicates require `use_text_index_like_evaluation_by_dictionary_scan`; `jsonPathValues` `startsWith` uses an ordered lookup instead.
 )", 0) \
     DECLARE(UInt64, text_index_like_max_postings_to_read, 50, R"(
-Maximum number of large postings to read when text index LIKE evaluation by the dictionary scan is enabled.
+Maximum number of large postings to read when evaluating pattern predicates by scanning the text index dictionary.
+For `jsonPathValues`, this also limits `endsWith`, `match`, `multiSearchAny`, and `multiSearchAnyUTF8`.
+It does not limit `jsonPathValues` `startsWith`, which uses an ordered dictionary lookup.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \

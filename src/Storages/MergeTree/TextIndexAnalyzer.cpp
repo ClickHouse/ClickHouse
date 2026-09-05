@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
+#include <Columns/ColumnString.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <algorithm>
 #include <cmath>
@@ -72,6 +74,7 @@ void TextIndexAnalyzer::QueryBuilder::markFailed()
 {
     is_failed = true;
     postings.reset();
+    dynamic_fallback_postings.reset();
     rows_range.reset();
     num_live_tokens = 0;
 }
@@ -95,7 +98,7 @@ void TextIndexAnalyzer::QueryBuilder::addMissingToken(std::string_view token)
 
     /// `Any` mode fails once none of its declared tokens can contribute.
     /// Pattern queries discover tokens dynamically, so the count applies only to pure-token queries.
-    if (query->getPatterns().empty())
+    if (!query->hasPatternLookup())
     {
         if (num_live_tokens > 0)
             --num_live_tokens;
@@ -136,10 +139,18 @@ void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
     }
 }
 
-void TextIndexAnalyzer::QueryBuilder::addPostings(const PostingList & token_postings)
+void TextIndexAnalyzer::QueryBuilder::addPostings(std::string_view token, const PostingList & token_postings)
 {
     if (is_failed)
         return;
+
+    if (query->getJSONPayload() && query->getJSONPayload()->requiresValidation(token))
+    {
+        if (dynamic_fallback_postings)
+            *dynamic_fallback_postings |= token_postings;
+        else
+            dynamic_fallback_postings = token_postings;
+    }
 
     ++num_read_postings;
 
@@ -156,7 +167,9 @@ void TextIndexAnalyzer::QueryBuilder::addPostings(const PostingList & token_post
         markFailed();
 }
 
-TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text)
+TextIndexAnalyzer::TextIndexAnalyzer(
+    const MergeTreeIndexConditionText & condition_text,
+    const std::optional<JSONPathValues::IndexConfiguration> & part_configuration)
 {
     global_search_mode = condition_text.getGlobalSearchMode();
 
@@ -165,14 +178,46 @@ TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & conditi
         auto & query_builder = query_builders[hash];
         query_builder.query = query;
 
+        if (!condition_text.canUseQueryWithPartConfiguration(*query, part_configuration))
+        {
+            query_builder.is_bypassed = true;
+            query_builder.is_unavailable = true;
+            for (const auto & token : query->getTokens())
+                queries_by_token.try_emplace(token);
+            continue;
+        }
+
         for (const auto & token : query->getTokens())
         {
             if (queries_by_token[token].insert(hash).second)
                 ++query_builder.num_live_tokens;
         }
 
-        for (const auto & pattern : query->getPatterns())
-            queries_by_pattern[&pattern].insert(hash);
+        if (query->getJSONPayload() && query->getJSONPayload()->match_patterns_by_prefix)
+        {
+            for (const auto & prefix : query->getJSONPayload()->pattern_token_prefixes)
+                queries_by_prefix[prefix].insert(hash);
+        }
+        else
+        {
+            for (const auto & pattern : query->getPatterns())
+                queries_by_pattern[&pattern].insert(hash);
+        }
+
+        if (query->getJSONPayload())
+        {
+            for (const auto & prefix : query->getJSONPayload()->validation_pattern_prefixes)
+                queries_by_prefix[prefix].insert(hash);
+        }
+
+        if (query->hasPatternLookup())
+        {
+            if (!query->getJSONPayload() || query->getJSONPayload()->pattern_token_prefixes.empty())
+                has_unrestricted_pattern_query = true;
+            else
+                for (const auto & prefix : query->getJSONPayload()->pattern_token_prefixes)
+                    pattern_prefix_ranges.emplace_back(prefix, firstStringThatIsGreaterThanAllStringsWithPrefix(prefix));
+        }
     }
 }
 
@@ -264,7 +309,7 @@ void TextIndexAnalyzer::addPostings(std::string_view token, const PostingList & 
 
     processTokenOperation(token, [&](QueryBuilder & query_builder)
     {
-        query_builder.addPostings(*postings_ptr);
+        query_builder.addPostings(token, *postings_ptr);
     });
 }
 
@@ -276,22 +321,102 @@ void TextIndexAnalyzer::setReadableRows(std::vector<RowsRange> readable_ranges)
         readable_rows.emplace(std::move(readable_ranges));
 }
 
-bool TextIndexAnalyzer::addTokenToPatterns(std::string_view token)
+std::vector<size_t> TextIndexAnalyzer::addTokensToPatterns(const ColumnString & tokens)
 {
-    bool added = false;
+    std::vector<size_t> matched_indices;
+    const size_t size = tokens.size();
 
-    for (const auto & [pattern, query_hashes] : queries_by_pattern)
+    for (const auto & [prefix, query_hashes] : queries_by_prefix)
     {
-        if (pattern->match(token.data(), token.size()))
+        size_t begin = 0;
+        size_t end = size;
+        while (begin < end)
         {
-            added = true;
+            const size_t middle = begin + (end - begin) / 2;
+            if (std::string_view(tokens.getDataAt(middle)) < prefix)
+                begin = middle + 1;
+            else
+                end = middle;
+        }
 
+        while (begin < size)
+        {
+            const std::string_view token = tokens.getDataAt(begin);
+            if (!token.starts_with(prefix))
+                break;
+
+            bool matched = false;
             for (const auto & query_hash : query_hashes)
-                queries_by_token[token].emplace(query_hash);
+            {
+                const auto & query = query_builders.at(query_hash).query;
+                if (!query->getJSONPayload() || query->getJSONPayload()->matchesPatternToken(token))
+                {
+                    queries_by_token[token].emplace(query_hash);
+                    matched = true;
+                }
+            }
+            if (matched)
+                matched_indices.push_back(begin);
+            ++begin;
         }
     }
 
-    return added;
+    if (!queries_by_pattern.empty())
+    {
+        for (size_t token_index = 0; token_index < size; ++token_index)
+        {
+            const std::string_view token = tokens.getDataAt(token_index);
+            std::optional<std::string_view> decoded_json_value;
+            bool decoded_json_token_initialized = false;
+            for (const auto & [pattern, query_hashes] : queries_by_pattern)
+            {
+                for (const auto & query_hash : query_hashes)
+                {
+                    const auto & query = query_builders.at(query_hash).query;
+                    std::string_view subject = token;
+                    if (const auto & payload = query->getJSONPayload())
+                    {
+                        if (!payload->matchesPatternToken(token))
+                            continue;
+                        if (!decoded_json_token_initialized)
+                        {
+                            decoded_json_value = JSONPathValues::tryGetCompleteScalarValue(token);
+                            decoded_json_token_initialized = true;
+                        }
+                        if (!decoded_json_value)
+                            continue;
+                        subject = *decoded_json_value;
+                    }
+
+                    if (!pattern->match(subject.data(), subject.size()))
+                        continue;
+
+                    matched_indices.push_back(token_index);
+                    queries_by_token[token].emplace(query_hash);
+                }
+            }
+        }
+    }
+
+    std::sort(matched_indices.begin(), matched_indices.end());
+    matched_indices.erase(std::unique(matched_indices.begin(), matched_indices.end()), matched_indices.end());
+    return matched_indices;
+}
+
+bool TextIndexAnalyzer::mayMatchPatternsInRange(std::string_view begin, std::optional<std::string_view> end) const
+{
+    if (has_unrestricted_pattern_query)
+        return true;
+
+    for (const auto & [prefix, prefix_end] : pattern_prefix_ranges)
+    {
+        const bool block_begins_before_prefix_end = prefix_end.empty() || begin < prefix_end;
+        const bool prefix_begins_before_block_end = !end || prefix < *end;
+        if (block_begins_before_prefix_end && prefix_begins_before_block_end)
+            return true;
+    }
+
+    return false;
 }
 
 bool TextIndexAnalyzer::isTokenNeeded(std::string_view token) const
@@ -308,9 +433,9 @@ bool TextIndexAnalyzer::hasReadPostings(std::string_view token) const
 void TextIndexAnalyzer::bypassPatternQueries()
 {
     QueryHashes all_pattern_queries;
-    for (const auto & [_, query_hashes] : queries_by_pattern)
+    for (const auto & [query_hash, query_builder] : query_builders)
     {
-        for (const auto & query_hash : query_hashes)
+        if (query_builder.query->hasPatternLookup())
             all_pattern_queries.insert(query_hash);
     }
 
@@ -392,7 +517,7 @@ double TextIndexAnalyzer::estimateQueryCardinality(const QueryBuilder & query_bu
                 /// sparse index was filtered as too common at build time ⟹ treat it as covering
                 /// all rows, which makes the union saturate at n.
                 double token_cardinality = (it == query_builder.tokens.end())
-                    ? n
+                    ? (query.getJSONPayload() ? 0.0 : n)
                     : static_cast<double>(it->second->cardinality);
 
                 not_in_any *= (1.0 - token_cardinality / n);
@@ -518,6 +643,8 @@ size_t TextIndexAnalyzer::memoryUsageBytes() const
         result += estimateAbslFlatContainerBytes(query_builder.tokens);
         if (query_builder.postings)
             result += query_builder.postings->getSizeInBytes();
+        if (query_builder.dynamic_fallback_postings)
+            result += query_builder.dynamic_fallback_postings->getSizeInBytes();
     }
 
     /// queries_by_token: map<String, QueryHashes>.
@@ -532,6 +659,13 @@ size_t TextIndexAnalyzer::memoryUsageBytes() const
     result += estimateAbslFlatContainerBytes(queries_by_pattern);
     for (const auto & [_, hashes] : queries_by_pattern)
         result += estimateAbslFlatContainerBytes(hashes);
+
+    result += estimateAbslFlatContainerBytes(queries_by_prefix);
+    for (const auto & [prefix, hashes] : queries_by_prefix)
+    {
+        result += prefix.capacity();
+        result += estimateAbslFlatContainerBytes(hashes);
+    }
 
     /// all_token_infos: map<String, TokenPostingsInfoPtr>.
     result += estimateAbslFlatContainerBytes(all_token_infos);

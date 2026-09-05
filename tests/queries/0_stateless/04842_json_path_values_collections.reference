@@ -1,0 +1,93 @@
+typed arrays
+[1]
+[1]
+[1,2]
+[2]
+[2]
+nullable and float arrays
+[1]
+[1,2]
+[1,2]
+[1]
+1
+path isolation and array equality
+[]
+[1]
+shared Dynamic arrays
+[1]
+[1]
+[2]
+[1]
+[1,2]
+[1]
+Dynamic path arrays
+[1]
+[1]
+[2]
+[1]
+[1,2]
+[1]
+direct read plan
+1
+merged arrays
+[1]
+[1]
+[1,2]
+[1,3]
+[2,3,4]
+[1]
+[]
+[1,3]
+[1,3]
+1
+LowCardinality(UInt8)	[1,3]
+[1,3]
+[2]
+[1,3]
+[1,3]
+[1,4,5]
+1
+[1,3]
+[1,3]
+0
+1
+[1]
+[1]
+[1]
+[1]
+[1]
+[]
+[1]
+[4]
+[1]
+[]
+[]
+[1]
+[4]
+[1]
+key existence
+[1,2]
+[1]
+[1]
+[1]
+[1]
+[1]
+keyed equality
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+[]
+[1]
+direct read
+1
+1
+planner rejection
+[1,2,3]
+[1]
+merged
+[1,2]
+[1]

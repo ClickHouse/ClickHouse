@@ -2573,7 +2573,7 @@ bool MergeTask::MergeTextIndexStage::prepare() const
                 if (part->rows_count == 0)
                     continue;
 
-                if (index_ptr->getDeserializedFormat(*part, index_ptr->getFileName()))
+                if (canReuseTextIndexForMerge(index_ptr, *part, reader_settings))
                 {
                     /// If text index exists in the source part, take it as is.
                     segments.emplace_back(part->getDataPartStoragePtr(), index_ptr->getFileName(), part_idx);
@@ -3156,6 +3156,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
     std::vector<MergeTreeIndexPtr> indexes_to_build;
     const auto storage_columns = global_ctx->storage_columns.getNameSet();
     const auto virtual_columns = global_ctx->virtual_columns.getNameSet();
+    auto reader_settings = MergeTreeReaderSettings::createForMergeMutation(global_ctx->context->getReadSettings());
 
     for (const auto & index : global_ctx->text_indexes_to_merge)
     {
@@ -3173,7 +3174,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
 
         /// Rebuild index if merge may reduce rows because we cannot adjust parts offsets in that case.
         /// Build index if it is not materialized in the data part.
-        if (global_ctx->merge_may_reduce_rows || !index_ptr->getDeserializedFormat(data_part, index_ptr->getFileName()))
+        if (global_ctx->merge_may_reduce_rows || !canReuseTextIndexForMerge(index_ptr, data_part, reader_settings))
         {
             description_to_build.push_back(index);
             indexes_to_build.push_back(std::move(index_ptr));

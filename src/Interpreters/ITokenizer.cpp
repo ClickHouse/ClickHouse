@@ -8,6 +8,7 @@
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
+#include <Functions/JSONPathValues.h>
 
 #include <limits>
 
@@ -40,6 +41,54 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_STRING_SIZE;
 #endif
+}
+
+JSONPathValuesTokenizer::JSONPathValuesTokenizer(
+    size_t max_token_bytes_,
+    VectorWithMemoryTracking<String> include_paths,
+    VectorWithMemoryTracking<String> include_path_regexps,
+    VectorWithMemoryTracking<String> skip_paths,
+    VectorWithMemoryTracking<String> skip_path_regexps)
+    : ITokenizerHelper(Type::JSONPathValues)
+    , max_token_bytes(max_token_bytes_)
+    , path_matcher(std::make_shared<JSONPathValues::PathMatcher>(
+        std::move(include_paths),
+        std::move(include_path_regexps),
+        std::move(skip_paths),
+        std::move(skip_path_regexps)))
+{
+}
+
+String JSONPathValuesTokenizer::getDescription() const
+{
+    if (path_matcher->getIncludePaths().empty()
+        && path_matcher->getIncludePathRegexps().empty()
+        && path_matcher->getSkipPaths().empty()
+        && path_matcher->getSkipPathRegexps().empty())
+        return fmt::format("{}({})", getName(), max_token_bytes);
+
+    auto append_array = [](String & result, const auto & values)
+    {
+        bool first = true;
+        for (const auto & value : values)
+        {
+            if (!first)
+                result += ", ";
+            first = false;
+            result += quoteString(value);
+        }
+    };
+
+    String result = fmt::format("{}(max_token_bytes = {}, include_paths = [", getName(), max_token_bytes);
+    append_array(result, path_matcher->getIncludePaths());
+    result += "], include_paths_regexp = [";
+    append_array(result, path_matcher->getIncludePathRegexps());
+    result += "], skip_paths = [";
+    append_array(result, path_matcher->getSkipPaths());
+    result += "], skip_paths_regexp = [";
+    append_array(result, path_matcher->getSkipPathRegexps());
+    result += "])";
+    return result;
 }
 
 bool NgramsTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
@@ -475,6 +524,28 @@ void ArrayTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &,
 void ArrayTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::substringToTokens is not implemented");
+}
+
+bool JSONPathValuesTokenizer::nextInString(
+    const char *, size_t, size_t &, size_t &, size_t &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSONPathValuesTokenizer::nextInString is not implemented");
+}
+
+bool JSONPathValuesTokenizer::nextInStringLike(const char *, size_t, size_t &, String &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSONPathValuesTokenizer::nextInStringLike is not implemented");
+}
+
+void JSONPathValuesTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSONPathValuesTokenizer::substringToBloomFilter is not implemented");
+}
+
+void JSONPathValuesTokenizer::substringToTokens(
+    const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSONPathValuesTokenizer::substringToTokens is not implemented");
 }
 
 SparseGramsTokenizer::SparseGramsTokenizer(size_t min_length, size_t max_length, std::optional<size_t> min_cutoff_length_)

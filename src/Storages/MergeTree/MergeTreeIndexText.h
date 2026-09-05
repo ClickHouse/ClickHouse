@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Functions/JSONPathValues.h>
 #include <Columns/IColumn.h>
 #include <Common/BitPackedStringArray.h>
 #include <Common/BitPackedUInt64Array.h>
@@ -94,6 +95,7 @@ struct MergeTreeIndexTextParams
     ASTPtr preprocessor;
     ASTPtr postprocessor;
     MergeTreeTextIndexSerializationVersion serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
+    std::optional<JSONPathValues::IndexConfiguration> json_path_values_configuration;
 };
 
 using PostingList = roaring::Roaring;
@@ -331,6 +333,7 @@ struct TextIndexHeader
     /// has_positions and positions_codec are persisted for version >= V2_WithPositions.
     bool has_positions = false;
     UInt8 positions_codec = 0;
+    std::optional<JSONPathValues::IndexConfiguration> json_path_values_configuration;
     DictionarySparseIndex sparse_index;
 };
 
@@ -360,7 +363,14 @@ struct TextIndexSerialization
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
     /// Reject a token the reader would refuse (throws `TOO_LARGE_STRING_SIZE`); call before copying a token elsewhere.
     static void checkTokenSize(size_t token_size);
-    static void serializeHeader(MergeTreeTextIndexSerializationVersion version, const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, bool has_positions, UInt8 positions_codec, WriteBuffer & ostr);
+    static void serializeHeader(
+        MergeTreeTextIndexSerializationVersion version,
+        const DictionarySparseIndex & sparse_index,
+        IPostingListCodec::Type posting_list_codec_type,
+        bool has_positions,
+        UInt8 positions_codec,
+        WriteBuffer & ostr,
+        const std::optional<JSONPathValues::IndexConfiguration> & json_path_values_configuration = std::nullopt);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
     /// Reads only the version and posting list codec from the start of the header, without the
@@ -502,11 +512,14 @@ struct MergeTreeIndexTextGranuleBuilder
 
     /// Extracts tokens from the document and adds them to the granule.
     void addDocument(std::string_view document);
-    // Adds a document to the granule. The document is inserted directly as a single token.
-    void addToken(std::string_view token, UInt32 token_position);
+    /// Adds a document to the granule as a single token.
+    void addToken(std::string_view token, UInt32 token_position = 0);
+    void addTokenForRow(std::string_view token, UInt32 row, UInt32 token_position = 0);
 
     void incrementCurrentRow();
+    void advanceRows(size_t rows);
     void setCurrentRow(size_t row) { current_row = row; }
+    UInt64 getCurrentRow() const { return current_row; }
 
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
     bool empty() const { return is_empty; }
