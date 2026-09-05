@@ -1,0 +1,154 @@
+-- match set equals the element-wise `=` oracle
+String	[0,1]	[0,1]
+LowCardinality	[0,1]	[0,1]
+LowCardinality(Nullable)	[0,1]	[0,1]
+Nullable	[0,1]	[0,1]
+indexOf String	[0,1]
+indexOf LowCardinality	[0,1]
+countEqual String	[0,1]
+countEqual LowCardinality	[0,1]
+-- a needle wider than the stored values still matches
+String	[0,1]	[0,1]
+LowCardinality	[0,1]	[0,1]
+-- multiplicity and position with both class members in one row
+String	2	1	2
+LowCardinality	2	1	2
+-- a nullable constant needle behaves like the non-nullable one
+Nullable(FixedString) String	[0,1]	[0,1]
+Nullable(FixedString) LowCardinality	[0,1]	[0,1]
+Nullable(FixedString) Nullable	[0,1]	[0,1]
+Nullable(FixedString) LowCardinality(Nullable)	[0,1]	[0,1]
+Nullable(FixedString) multiplicity and position	2	1	2	1
+Nullable(String) needle	[0]	[0]
+Nullable(FixedString) NULL needle	[]
+-- a nullable non-string needle keeps the supertype comparison
+Nullable(UInt32) needle on Int32	0	0	0	0
+Nullable(Int32) needle on UInt32	0	0	0	0
+Int64 element, Nullable(UInt64) needle oracle	0
+UInt64 element, Nullable(Int64) needle oracle	0
+Array(Nullable(Int64)), Nullable(UInt64) needle oracle	0
+Nullable(Int32) needle present	1	1	1
+Nullable(Date) needle	1	1
+-- constant array, compared as Fields
+1	1	2
+1	1	1
+per row	1	1
+per row	1	1
+per row	1	1
+non-const needle	1	1	2	1	2
+indexOfAssumeSorted	1	1	1
+indexOfAssumeSorted wider needle	1	1	1
+indexOfAssumeSorted String needle	1	2	1	2
+-- Map keys take the same path
+Map	[0,1]
+Map(LowCardinality)	[0,1]
+mapContainsKey	[0,1]	[0,1]
+mapContainsKey LowCardinality	[0,1]	[0,1]
+mapContainsKey no-subcolumns	[0,1]	[0,1]
+mapContainsKey LowCardinality no-subcolumns	[0,1]	[0,1]
+mapContainsValue	[0,1]	[0,1]
+mapContainsValue LowCardinality	[0,1]	[0,1]
+rewrite fires at 1	1	1	0
+rewrite declines at 0	0	0	1
+rewrite fires at 1 LowCardinality	1	1	0
+rewrite declines at 0 LowCardinality	0	0	1
+-- the rewrite of arrayExists to has must preserve results
+FixedString needle	1
+String needle	1
+rewrite declines for a FixedString needle	0	1
+rewrite declines at 0	0	1
+rewrite fires for a String needle	1	0
+String needle declines at 0	0	1
+-- must not regress: a String needle stays exact, FixedString elements keep working
+String needle on String	[0]	[0]
+String needle on LowCardinality	[0]	[0]
+FixedString(4) elements	[0]	[0]
+LowCardinality(FixedString(3))	[0]	[0]
+wider needle on LowCardinality(FixedString(3))	[0]	[0]
+String needle shorter than the element	[0]	[0]
+String needle exactly the element width	[0]	[0]
+String needle wider than the element	[]	[]
+String needle indexOf exactly the width	[0]	[0]
+String needle countEqual exactly the width	[0]	[0]
+String needle mapContainsValue exactly the width	[0]	[0]
+nullable needle on LowCardinality(FixedString(3))	[0]	[0]
+NULL needle on LowCardinality(FixedString(3))	[]	[]
+NULL needle on FixedString(3)	[]
+NULL needle on LowCardinality(String)	[]	[]
+NULL needle on String	[]
+NULL needle indexOf on LowCardinality(FixedString(3))	[]	[]
+NULL needle countEqual on LowCardinality(FixedString(3))	[]	[]
+NULL needle indexOf on LowCardinality(String)	[]	[]
+NULL needle countEqual on LowCardinality(String)	[]	[]
+NULL needle mapContainsValue LowCardinality	[]	[]
+NULL needle mapContainsKey LowCardinality no-subcolumns	[]	[]
+longer non-NUL String needle	0
+NULL needle	[]
+typed NULL needle on LowCardinality(Nullable(String))	[0]	[0]
+typed NULL needle on LowCardinality(Nullable(FixedString(3)))	[0]	[0]
+typed NULL needle position on LowCardinality(Nullable(String))	[0]	[0]
+-- boundary sizes, including needles that cross the 16 byte comparison window
+empty value	[0]	[0]
+one byte	[1,2]	[1,2]
+leading NUL	[3]	[3]
+exactly 16 bytes	[4]	[4]
+padded across 16	[5]	[5]
+padded to 40	[5]	[5]
+empty array	0
+-- the dictionary lookup must not stand in for float equality
+has 0.0	[0,1]	[0,1]	[0,1]
+has -0.0	[0,1]	[0,1]	[0,1]
+has nan	[]	[]	[]
+nan position and count	0	0
+-- a needle of a wider type must not be rounded onto a stored value
+has 1.5	[]	[]
+has 2.5	[]	[]
+has toDecimal64(1.5)	[]
+Float32 element, Float64 needle	[]	[]
+same type needle	[0]	[0]
+has -1 on UInt8	[]	[]	[]
+has 255 on UInt8	[0]	[0]
+has -1 on UInt16	[]	[]
+has -1 on UInt32	[]	[]
+has -1 on UInt64	[]	[]
+has max on UInt16	[0]	[0]	[0]
+has max on UInt32	[0]	[0]	[0]
+has max on UInt64	[0]	[0]	[0]
+Float64 needle exactly representable	[1]	[1]
+Float64 needle indexOf	[1]	[1]
+Float64 needle countEqual	[1]	[1]
+DateTime needle at midnight	[0]	[0]
+DateTime needle not at midnight	[]	[]
+DateTime needle midnight indexOf	[0]	[0]
+DateTime needle midnight count	[0]	[0]
+Date day 1 vs DateTime second 1	[]	[]
+Date day 1 vs DateTime second 1 indexOf	[]	[]
+Date day 1 vs DateTime second 1 count	[]	[]
+DateTime second 1 vs Date day 1	[]	[]
+DateTime second 1 vs Date day 1 indexOf	[]	[]
+DateTime second 1 vs Date day 1 count	[]	[]
+Int64 max vs Float64 2^63	[]	[]
+nan needle	[]	[]	[]
+inf needle	[]	[]	[]
+nan needle indexOf	[]	[]
+nan needle count	[]	[]
+IPv4 element, UInt8 needle	[0]	[0]	[0]
+IPv4 element, UInt8 needle indexOf	[0]	[0]
+IPv4 element, UInt8 needle count	[0]	[0]
+IPv4 element, non-matching needle	[]	[]	[]
+UInt32 element, IPv4 needle	[0]	[0]	[0]
+UInt32 element, IPv4 needle indexOf	[0]	[0]
+UInt32 element, IPv4 needle count	[0]	[0]
+UInt32 element, non-matching IPv4	[]	[]	[]
+mapContainsValue IPv4 element	[0]	[0]
+mapContainsKey IPv4 element	[0]	[0]
+-- a LowCardinality wrapper on the NEEDLE must not change the answer
+String exact width	[0]	[0]
+LowCardinality(String)	[0]	[0]
+LowCardinality(String) indexOf	[0]	[0]
+LowCardinality(String) count	[0]	[0]
+Nullable(String)	[0]	[0]
+LowCardinality(Nullable(String))	[0]	[0]
+LowCardinality(String) shorter	[0]	[0]
+mapContainsValue LowCardinality needle	[0]	[0]
+mapContainsKey LowCardinality needle	[0]	[0]
