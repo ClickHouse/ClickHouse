@@ -7,7 +7,7 @@ sidebarTitle: 'Overview'
 doc_type: 'guide'
 ---
 
-## Why use ClickHouse over Postgres? {#why-use-clickhouse-over-postgres}
+## Why use ClickHouse for Postgres analytics? {#why-use-clickhouse-over-postgres}
 
 TLDR: Because ClickHouse is designed for fast analytics, specifically `GROUP BY` queries, as an OLAP database whereas Postgres is an OLTP database designed for transactional workloads.
 
@@ -18,6 +18,14 @@ OLAP, or online analytical processing databases, are designed to meet those need
 See [here](/get-started/migrate/postgres/appendix#postgres-vs-clickhouse-equivalent-and-different-concepts) for a more in-depth comparison of ClickHouse and PostgreSQL.
 
 To see the potential performance differences between ClickHouse and Postgres on analytical queries, see [Rewriting PostgreSQL Queries in ClickHouse](/get-started/migrate/postgres/migration-guide/migration-guide-part2).
+
+<Tip>
+**Keep Postgres for transactions and add ClickHouse for analytics**
+
+You can move analytical queries to ClickHouse while keeping Postgres as your application's transactional system of record. Replicate committed changes to ClickHouse with CDC, and continue to run application transactions in Postgres.
+
+You can use your existing Postgres deployment or [Postgres managed by ClickHouse](/products/managed-postgres/overview). See [how Postgres and ClickHouse work together](/products/managed-postgres/overview#transactions-and-analytics) for the architecture and replication guarantees.
+</Tip>
 
 ## Migration strategies {#migration-strategies}
 
