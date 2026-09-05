@@ -196,8 +196,12 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         .use_virtual_addressing = url.is_virtual_hosted_style,
         .disable_checksum = auth_settings[S3AuthSetting::disable_checksum],
         .gcs_issue_compose_request = auth_settings[S3AuthSetting::gcs_issue_compose_request],
-        .is_s3express_bucket = is_s3_express_bucket
+        .is_s3express_bucket = is_s3_express_bucket,
+        .is_mrap = url.is_mrap
     };
+
+    if (url.is_mrap && auth_settings[S3AuthSetting::no_sign_request])
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MRAP targets require signed requests");
 
     auto credentials_configuration = S3::CredentialsConfiguration
     {
@@ -295,7 +299,7 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
 
     auto shared_cache = S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(url.endpoint, url.bucket);
 
-    return S3::ClientFactory::instance().create(
+    auto client = S3::ClientFactory::instance().create(
         client_configuration,
         client_settings,
         access_key_id,
@@ -306,6 +310,9 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         credentials_configuration,
         session_token,
         shared_cache);
+    if (url.is_mrap)
+        client->validateMRAPTarget(url);
+    return client;
 }
 
 }

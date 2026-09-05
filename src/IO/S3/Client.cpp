@@ -81,6 +81,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_REDIRECTS;
 }
@@ -279,7 +280,7 @@ Client::Client(
     endpoint_provider->GetBuiltInParameters().GetParameter("Region").GetString(explicit_region);
     endpoint_provider->GetBuiltInParameters().GetParameter("Endpoint").GetString(initial_endpoint);
 
-    provider_type = deduceProviderType(initial_endpoint);
+    provider_type = client_settings.is_mrap ? ProviderType::AWS : deduceProviderType(initial_endpoint);
     LOG_TRACE(log, "Provider type: {}", toString(provider_type));
     LOG_TRACE(log, "Client configured with s3_retry_attempts: {}", client_configuration.retry_strategy.max_retries);
     if (provider_type == ProviderType::GCS)
@@ -303,7 +304,7 @@ Client::Client(
 
     logConfiguration();
 
-    detect_region = provider_type == ProviderType::AWS && explicit_region == Aws::Region::AWS_GLOBAL;
+    detect_region = !client_settings.is_mrap && provider_type == ProviderType::AWS && explicit_region == Aws::Region::AWS_GLOBAL;
 
     if (shared_cache)
         cache = shared_cache;
@@ -357,6 +358,27 @@ Aws::Auth::AWSCredentials Client::getCredentials() const
     return credentials_provider->GetAWSCredentials();
 }
 
+void Client::validateMRAPTarget(const URI & target) const
+{
+    const auto & provider = const_cast<Client &>(*this).accessEndpointProvider();
+    const auto outcome = provider->ResolveEndpoint({{"Bucket", target.bucket}});
+    if (!outcome.IsSuccess())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot resolve MRAP target: {}", outcome.GetError().GetMessage());
+
+    const auto & endpoint = outcome.GetResult();
+    const Poco::URI resolved(endpoint.GetURI().GetURIString());
+    client_configuration.remote_host_filter.checkURL(resolved);
+    if (resolved.getScheme() != "https" || resolved.getAuthority() != target.uri.getAuthority()
+        || (!resolved.getPath().empty() && resolved.getPath() != "/"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 client settings changed the MRAP destination");
+
+    const auto & attributes = endpoint.GetAttributes();
+    if (!attributes || attributes->authScheme.GetName() != "AsymmetricSignatureV4"
+        || !attributes->authScheme.GetSigningName() || *attributes->authScheme.GetSigningName() != "s3"
+        || !attributes->authScheme.GetSigningRegionSet() || *attributes->authScheme.GetSigningRegionSet() != "*")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 client settings do not enable MRAP signing");
+}
+
 bool Client::checkIfCredentialsChanged(const Aws::S3::S3Error & error) const
 {
     return (error.GetExceptionName() == "AuthenticationRequired");
@@ -364,7 +386,7 @@ bool Client::checkIfCredentialsChanged(const Aws::S3::S3Error & error) const
 
 bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const
 {
-    if (detect_region)
+    if (client_settings.is_mrap || detect_region)
         return false;
 
     if (error.GetResponseCode() == Aws::Http::HttpResponseCode::BAD_REQUEST && error.GetExceptionName() == "AuthorizationHeaderMalformed")
@@ -447,7 +469,7 @@ Model::HeadObjectOutcome Client::headObjectInternal(HeadObjectRequest & request)
         request.overrideURI(std::move(*uri));
 
     auto result = HeadObject(static_cast<const Model::HeadObjectRequest&>(request));
-    if (result.IsSuccess())
+    if (result.IsSuccess() || client_settings.is_mrap)
         return result;
 
     const auto & error = result.GetError();
@@ -725,6 +747,9 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
             credentials_provider->SetNeedRefresh();
             continue;
         }
+
+        if (client_settings.is_mrap)
+            return result;
 
         std::string new_region;
         if (checkIfWrongRegionDefined(bucket, error, new_region))
@@ -1007,6 +1032,9 @@ std::string Client::getGCSOAuthToken() const
 
 std::string Client::getRegionForBucket(const std::string & bucket, bool force_detect) const
 {
+    if (client_settings.is_mrap)
+        return {};
+
     std::lock_guard lock(cache->region_cache_mutex);
     if (auto it = cache->region_for_bucket_cache.find(bucket); it != cache->region_for_bucket_cache.end())
         return it->second;
@@ -1089,6 +1117,9 @@ std::optional<Aws::S3::S3Error> Client::updateURIForBucketForHead(const std::str
 
 std::optional<S3::URI> Client::getURIForBucket(const std::string & bucket) const
 {
+    if (client_settings.is_mrap)
+        return std::nullopt;
+
     std::lock_guard lock(cache->uri_cache_mutex);
     if (auto it = cache->uri_for_bucket_cache.find(bucket); it != cache->uri_for_bucket_cache.end())
         return it->second;

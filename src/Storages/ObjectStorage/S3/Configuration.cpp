@@ -89,6 +89,8 @@ static const std::unordered_set<std::string_view> required_configuration_keys =
 
 static const std::unordered_set<std::string_view> optional_configuration_keys =
 {
+    "mrap_arn",
+    "key",
     "format",
     "compression",
     "compression_method",
@@ -151,7 +153,10 @@ void StorageS3Configuration::check(ContextPtr context)
 
 void StorageS3Configuration::validateNamespace(const String & name) const
 {
-    S3::URI::validateBucket(name, {});
+    if (url.is_mrap)
+        S3::URI::validateMRAPArn(name);
+    else
+        S3::URI::validateBucket(name, {});
 }
 
 StorageObjectStorageQuerySettings StorageS3Configuration::getQuerySettings(const ContextPtr & context) const
@@ -208,30 +213,45 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
 void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
-    validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
-
-    /// Resolve relative URLs against the `s3_base` setting. When the setting rewrote the URL,
-    /// record the resolved value so that `StorageObjectStorageConfiguration::initialize`
-    /// materializes it back into the persisted engine args (`url='...'` override), keeping the
-    /// persisted DDL independent of `s3_base` at attach time.
-    const String raw_collection_url = collection.get<String>("url");
-    const String collection_url = StorageURL::resolveURLBase(raw_collection_url, settings[Setting::s3_base].value, "s3_base");
-    if (collection_url != raw_collection_url)
-        url_overridden_by_base_setting = collection_url;
-
-    auto filename = collection.getOrDefault<String>("filename", "");
-    if (!filename.empty())
-        url = S3::URI(
-            std::filesystem::path(collection_url) / filename,
-            settings[Setting::allow_archive_path_syntax],
-            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
-            /*uri_style*/ settings[Setting::s3_uri_style]);
+    if (collection.has("mrap_arn"))
+    {
+        auto optional_keys = optional_configuration_keys;
+        optional_keys.erase("mrap_arn");
+        optional_keys.erase("key");
+        validateNamedCollection(collection, {"mrap_arn", "key"}, optional_keys);
+        if (collection.has("filename"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "MRAP targets use key instead of filename");
+        url = S3::URI::fromMRAPArn(collection.get<String>("mrap_arn"), collection.get<String>("key"));
+    }
     else
-        url = S3::URI(
-            collection_url,
-            settings[Setting::allow_archive_path_syntax],
-            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
-            /*uri_style*/ settings[Setting::s3_uri_style]);
+    {
+        validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
+        if (collection.has("key"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The key argument requires an MRAP ARN");
+
+        /// Resolve relative URLs against the `s3_base` setting. When the setting rewrote the URL,
+        /// record the resolved value so that `StorageObjectStorageConfiguration::initialize`
+        /// materializes it back into the persisted engine args (`url='...'` override), keeping the
+        /// persisted DDL independent of `s3_base` at attach time.
+        const String raw_collection_url = collection.get<String>("url");
+        const String collection_url = StorageURL::resolveURLBase(raw_collection_url, settings[Setting::s3_base].value, "s3_base");
+        if (collection_url != raw_collection_url)
+            url_overridden_by_base_setting = collection_url;
+
+        auto filename = collection.getOrDefault<String>("filename", "");
+        if (!filename.empty())
+            url = S3::URI(
+                std::filesystem::path(collection_url) / filename,
+                settings[Setting::allow_archive_path_syntax],
+                /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
+                /*uri_style*/ settings[Setting::s3_uri_style]);
+        else
+            url = S3::URI(
+                collection_url,
+                settings[Setting::allow_archive_path_syntax],
+                /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
+                /*uri_style*/ settings[Setting::s3_uri_style]);
+    }
 
     const auto & config = context->getConfigRef();
 
@@ -713,24 +733,35 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}, {"partition_strategy", 7}, {"partition_columns_in_data_file", 8}, {"storage_class_name", 9}};
     }
 
-    /// This argument is always the first
-    String url_str = checkAndGetLiteralArgument<String>(args[0], "url");
-
-    /// Resolve relative URLs against the `s3_base` setting, and materialize the resolved URL
-    /// back into the arguments so that the persisted DDL (`SHOW CREATE TABLE`, DETACH/ATTACH,
-    /// server restart) does not depend on the value of `s3_base` at attach time.
-    if (String resolved_url = StorageURL::resolveURLBase(url_str, context->getSettingsRef()[Setting::s3_base].value, "s3_base");
-        resolved_url != url_str)
+    const auto source = checkAndGetLiteralArgument<String>(args[0], "url/MRAP ARN");
+    const auto object_key = getFromPositionOrKeyValue<String>("key", args, {}, key_value_args);
+    if (source.starts_with("arn:"))
     {
-        StorageURL::overrideURLInEngineArgs(args, resolved_url, context, /*skip_userinfo=*/ true);
-        url_str = std::move(resolved_url);
+        if (!object_key)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "An MRAP ARN requires the key argument");
+        url = S3::URI::fromMRAPArn(source, *object_key);
     }
+    else
+    {
+        if (object_key)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The key argument requires an MRAP ARN");
+        String resolved_source = source;
+        /// Resolve relative URLs against the `s3_base` setting, and materialize the resolved URL
+        /// back into the arguments so that the persisted DDL (`SHOW CREATE TABLE`, DETACH/ATTACH,
+        /// server restart) does not depend on the value of `s3_base` at attach time.
+        if (String resolved_url = StorageURL::resolveURLBase(resolved_source, context->getSettingsRef()[Setting::s3_base].value, "s3_base");
+            resolved_url != resolved_source)
+        {
+            StorageURL::overrideURLInEngineArgs(args, resolved_url, context, /*skip_userinfo=*/ true);
+            resolved_source = std::move(resolved_url);
+        }
 
-    url = S3::URI(
-        url_str,
-        context->getSettingsRef()[Setting::allow_archive_path_syntax],
-        /*keep_presigned_query_parameters*/ !context->getSettingsRef()[Setting::compatibility_s3_presigned_url_query_in_path],
-        /*uri_style*/ context->getSettingsRef()[Setting::s3_uri_style]);
+        url = S3::URI(
+            resolved_source,
+            context->getSettingsRef()[Setting::allow_archive_path_syntax],
+            /*keep_presigned_query_parameters*/ !context->getSettingsRef()[Setting::compatibility_s3_presigned_url_query_in_path],
+            /*uri_style*/ context->getSettingsRef()[Setting::s3_uri_style]);
+    }
 
     s3_settings = std::make_unique<S3Settings>();
     s3_settings->loadFromConfigForObjectStorage(

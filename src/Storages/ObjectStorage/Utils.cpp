@@ -171,6 +171,14 @@ std::string relativizePathUnderPrefix(const std::string & prefix, const std::str
 std::string formatObjectPath(
     const StorageObjectStorageConfiguration & configuration, const std::string & path, bool include_connection_info)
 {
+    const auto namespace_name = configuration.getNamespace();
+    if (configuration.getType() == ObjectStorageType::S3 && namespace_name.starts_with("arn:"))
+    {
+        /// ARN targets accept literal keys; filesystem normalization would conflate distinct S3 objects.
+        const auto prefix = include_connection_info ? configuration.getDataSourceDescription() : namespace_name;
+        return prefix + "/" + path;
+    }
+
     if (configuration.supportsFullyQualifiedPaths())
     {
         if (const auto qualified = trySplitFullyQualifiedObjectPath(path))

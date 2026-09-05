@@ -7,6 +7,9 @@
 #include <Common/quoteString.h>
 #include <Common/re2.h>
 #include <IO/Archives/ArchiveUtils.h>
+#include <IO/S3/Client.h>
+#include <aws/s3/S3EndpointProvider.h>
+#include <string_view>
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -32,6 +35,47 @@ namespace ErrorCodes
 
 namespace S3
 {
+
+void URI::validateMRAPArn(const std::string & arn)
+{
+    static const RE2 pattern(R"(arn:aws:s3::[0-9]{12}:accesspoint[/:][a-z0-9][a-z0-9-]*\.mrap)");
+    if (!RE2::FullMatch(arn, pattern))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected an Amazon S3 MRAP ARN in the aws partition, got {}", quoteString(arn));
+}
+
+URI URI::fromMRAPArn(const std::string & arn, const std::string & object_key)
+{
+    validateMRAPArn(arn);
+    if (object_key.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "An MRAP target requires a nonempty key");
+
+    URI result;
+    result.bucket = arn;
+    /// Canonicalize the resource separator so equivalent ARNs share the same identity.
+    result.bucket[result.bucket.find("accesspoint") + std::string_view("accesspoint").size()] = '/';
+    result.key = object_key;
+    result.storage_name = "S3";
+    result.is_mrap = true;
+    result.is_virtual_hosted_style = true;
+
+    /// Initialize the SDK before using its endpoint rule engine. Resolution performs no HTTP requests.
+    ClientFactory::instance();
+    Aws::S3::Endpoint::S3EndpointProvider provider;
+    const auto outcome = provider.ResolveEndpoint({
+        {"Bucket", result.bucket},
+        {"Region", Aws::String("us-east-1")},
+        {"ForcePathStyle", false}});
+    if (!outcome.IsSuccess())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot resolve MRAP ARN: {}", outcome.GetError().GetMessage());
+
+    /// Keep the resolved URL for host checks and endpoint settings, but leave the SDK override empty.
+    result.uri = Poco::URI(outcome.GetResult().GetURI().GetURIString());
+    std::string encoded_path;
+    Poco::URI::encode("/" + object_key, "?#", encoded_path);
+    result.uri.setPath(encoded_path);
+    result.uri_str = result.bucket + "/" + object_key;
+    return result;
+}
 
 URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_presigned_query_parameters, S3UriStyle uri_style)
 {
