@@ -160,6 +160,12 @@ TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & conditi
 {
     global_search_mode = condition_text.getGlobalSearchMode();
 
+    if (condition_text.isScoringEnabled())
+    {
+        auto scoring_tokens = condition_text.getScoringTokens();
+        always_needed_tokens.insert(scoring_tokens.begin(), scoring_tokens.end());
+    }
+
     for (const auto & [hash, query] : condition_text.getAllSearchQueries())
     {
         auto & query_builder = query_builders[hash];
@@ -296,6 +302,9 @@ bool TextIndexAnalyzer::addTokenToPatterns(std::string_view token)
 
 bool TextIndexAnalyzer::isTokenNeeded(std::string_view token) const
 {
+    if (always_needed_tokens.contains(token))
+        return true;
+
     auto it = queries_by_token.find(token);
     return it != queries_by_token.end() && !it->second.empty();
 }
@@ -474,10 +483,17 @@ void TextIndexAnalyzer::markAllQueriesFailed()
 template <typename Operation>
 void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation && operation)
 {
+    /// An always-needed (scoring) token can be re-observed after every query referencing it was
+    /// detached and its entry erased (e.g. its info is re-read for the score fill); no query state
+    /// needs updating then.
+    auto token_queries_it = queries_by_token.find(token);
+    if (token_queries_it == queries_by_token.end())
+        return;
+
     /// Copy the set of query hashes before iterating, because
     /// erasing a failed query from queries_by_token below may
     /// mutate this very set (when query_token == token).
-    auto token_queries = queries_by_token.at(token);
+    auto token_queries = token_queries_it->second;
 
     for (const auto & query_hash : token_queries)
     {
@@ -497,59 +513,6 @@ void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation 
                 markAllQueriesFailed();
         }
     }
-}
-
-/// Estimate memory footprint of an absl::flat_hash_map/set.
-/// absl flat containers use open addressing with one control byte per slot.
-template <typename Container>
-static size_t estimateAbslFlatContainerBytes(const Container & c)
-{
-    return c.empty() ? 0 : c.capacity() * (sizeof(typename Container::value_type) + 1);
-}
-
-size_t TextIndexAnalyzer::memoryUsageBytes() const
-{
-    size_t result = sizeof(*this);
-
-    /// query_builders: map<UInt128, QueryBuilder>, each QueryBuilder has tokens map and optional postings.
-    result += estimateAbslFlatContainerBytes(query_builders);
-    for (const auto & [_, query_builder] : query_builders)
-    {
-        result += estimateAbslFlatContainerBytes(query_builder.tokens);
-        if (query_builder.postings)
-            result += query_builder.postings->getSizeInBytes();
-    }
-
-    /// queries_by_token: map<String, QueryHashes>.
-    result += estimateAbslFlatContainerBytes(queries_by_token);
-    for (const auto & [key, hashes] : queries_by_token)
-    {
-        result += key.capacity();
-        result += estimateAbslFlatContainerBytes(hashes);
-    }
-
-    /// queries_by_pattern: map<ptr, QueryHashes>.
-    result += estimateAbslFlatContainerBytes(queries_by_pattern);
-    for (const auto & [_, hashes] : queries_by_pattern)
-        result += estimateAbslFlatContainerBytes(hashes);
-
-    /// all_token_infos: map<String, TokenPostingsInfoPtr>.
-    result += estimateAbslFlatContainerBytes(all_token_infos);
-    for (const auto & [key, _] : all_token_infos)
-        result += key.capacity();
-
-    /// missing_tokens: set<String>.
-    result += estimateAbslFlatContainerBytes(missing_tokens);
-    for (const auto & token : missing_tokens)
-        result += token.capacity();
-
-    /// tokens_with_postings: set<String>.
-    result += estimateAbslFlatContainerBytes(tokens_with_postings);
-    for (const auto & token : tokens_with_postings)
-        result += token.capacity();
-
-    result += readable_rows.has_value() ? readable_rows->getSizeInBytes() : 0;
-    return result;
 }
 
 }

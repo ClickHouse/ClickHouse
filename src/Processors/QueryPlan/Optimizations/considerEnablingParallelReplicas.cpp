@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Common/Exception.h>
@@ -333,6 +334,20 @@ void considerEnablingParallelReplicas(
     ReadFromMergeTree * source_reading_step = findReadingStep(*corresponding_node_in_single_replica_plan);
     if (!source_reading_step)
         return;
+
+    /// Text index BM25 scoring is not supported with auto parallel replicas.
+    bool reads_score_column = std::ranges::any_of(
+        source_reading_step->getIndexReadTasks(),
+        [](const auto & task) { return task.second.columns.contains(BM25ScoreColumn::name); });
+
+    if (reads_score_column)
+    {
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "The query reads the '{}' column filled by the direct read from a text index. Skipping optimization",
+            BM25ScoreColumn::name);
+        return;
+    }
 
     /// If the matched node is the reading step itself (e.g. a window function over a bare table scan:
     /// replicas would execute only the reading, everything above is computed on the initiator), we cannot

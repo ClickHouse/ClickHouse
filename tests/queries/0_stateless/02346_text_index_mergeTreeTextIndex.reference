@@ -37,7 +37,7 @@ h
 -- 13. Large table: uniqExact tokens
 10003
 -- 14. Large table: aggregation over token (top tokens by cardinality)
-common	100000	2
+common	100000	98
 medium	1000	1
 rare	1	1
 -- 15. Large table: filter on equality

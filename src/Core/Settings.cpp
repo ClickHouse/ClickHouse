@@ -8979,6 +8979,10 @@ Controls how posting lists are applied during text index queries.
 Posting list density threshold that selects the intersection algorithm in lazy posting list apply mode (`text_index_posting_list_apply_mode = 'lazy'`).
 Below the threshold: leapfrog intersection (favors sparse posting lists). At or above: brute-force bitmap intersection (favors dense posting lists).
 )", 0, text_index_density_threshold) \
+    DECLARE(Bool, allow_experimental_bm25_score_column, false, R"(
+Allow reading the `_bm25_score` virtual column: the BM25 relevance score filled by the direct read from a text index created with `enable_scoring = 1`.
+The query must filter by `hasToken`, `hasAnyTokens` or `hasAllTokens` on the indexed column, and the direct read from the text index must be enabled (`query_plan_direct_read_from_text_index`).
+)", EXPERIMENTAL) \
     DECLARE(Bool, stop_refreshable_materialized_views_on_startup, false, R"(
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with `SYSTEM START VIEWS` or `SYSTEM START VIEW <name>` afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
 )", EXPERIMENTAL) \

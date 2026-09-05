@@ -1,0 +1,28 @@
+<test>
+  <settings>
+      <use_skip_indexes_on_data_read>1</use_skip_indexes_on_data_read>
+      <query_plan_direct_read_from_text_index>1</query_plan_direct_read_from_text_index>
+      <allow_experimental_bm25_score_column>1</allow_experimental_bm25_score_column>
+      <force_data_skipping_indices>idx_sp_bm25</force_data_skipping_indices>
+      <mutations_sync>2</mutations_sync>
+  </settings>
+
+  <fill_query>ALTER TABLE hits_10m_single MODIFY SETTING allow_experimental_text_index_scoring = 1</fill_query>
+  <fill_query>ALTER TABLE hits_10m_single ADD INDEX idx_sp_bm25(SearchPhrase) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', enable_scoring = 1)</fill_query>
+  <fill_query>ALTER TABLE hits_10m_single MATERIALIZE INDEX idx_sp_bm25</fill_query>
+
+  <!-- Baselines without the score column: the pure filter cost of the same predicates -->
+  <query tag="filter_only_or">SELECT count() FROM hits_10m_single WHERE hasAnyTokens(SearchPhrase, ['the', 'video', 'world', 'market'])</query>
+  <query tag="filter_only_and">SELECT count() FROM hits_10m_single WHERE hasAllTokens(SearchPhrase, ['the', 'market'])</query>
+
+  <!-- Generic scorer: per-token union walk over the scoring cursors -->
+  <query tag="score_or">SELECT sum(_bm25_score) FROM hits_10m_single WHERE hasAnyTokens(SearchPhrase, ['the', 'video', 'world', 'market'])</query>
+
+  <!-- Conjunction scorer: joint leapfrog over the scoring cursors -->
+  <query tag="score_and">SELECT sum(_bm25_score) FROM hits_10m_single WHERE hasAllTokens(SearchPhrase, ['the', 'market'])</query>
+
+  <!-- The flagship top-k query: plain sort by the score -->
+  <query tag="score_top_k">SELECT WatchID FROM hits_10m_single WHERE hasAnyTokens(SearchPhrase, ['video', 'world', 'market']) ORDER BY _bm25_score DESC, WatchID LIMIT 10</query>
+
+  <drop_query>ALTER TABLE hits_10m_single DROP INDEX idx_sp_bm25</drop_query>
+</test>

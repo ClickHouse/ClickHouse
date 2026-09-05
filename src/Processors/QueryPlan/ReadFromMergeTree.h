@@ -434,6 +434,9 @@ public:
     /// Removes physical text columns that were eliminated by direct read from text index.
     void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
 
+    /// Attaches the `_bm25_score` virtual column to the read task of the scoring text index.
+    void attachTextIndexScoreColumn(const String & index_name);
+
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
     /// Compose statistics over the part set of the given partition/PK analysis result
@@ -445,6 +448,7 @@ public:
         const ActionsDAG * filter_actions_dag_,
         const MergeTreeData & data,
         const RangesInDataParts & parts,
+        const Names & columns_to_read,
         [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
         [[maybe_unused]] std::optional<TopKFilterInfo> top_k_filter_info,
         const ContextPtr & query_context,

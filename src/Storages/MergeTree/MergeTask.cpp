@@ -2516,6 +2516,24 @@ void MergeTask::MergeTextIndexStage::cancel() noexcept
         task->cancel();
 }
 
+/// Whether the source part's copy of the text index exists and contains every substream the merged index
+/// writes. An older copy (e.g. no `.dl` while the index now has `enable_scoring`) is rebuilt from the rows instead.
+static bool canMergeTextIndexFromIndexFiles(const IMergeTreeIndex & index, const IMergeTreeDataPart & part)
+{
+    auto format = index.getDeserializedFormat(part, index.getFileName());
+    if (!format)
+        return false;
+
+    for (const auto & substream : index.getSubstreams())
+    {
+        bool found = std::ranges::any_of(format.substreams, [&](const auto & existing) { return existing.type == substream.type; });
+        if (!found)
+            return false;
+    }
+
+    return true;
+}
+
 std::vector<TextIndexSegment> MergeTask::MergeTextIndexStage::getTextIndexSegments(const String & part_name, const String & index_name, size_t part_idx) const
 {
     auto it = global_ctx->build_text_index_transforms.find(part_name);
@@ -2573,9 +2591,9 @@ bool MergeTask::MergeTextIndexStage::prepare() const
                 if (part->rows_count == 0)
                     continue;
 
-                if (index_ptr->getDeserializedFormat(*part, index_ptr->getFileName()))
+                if (canMergeTextIndexFromIndexFiles(*index_ptr, *part))
                 {
-                    /// If text index exists in the source part, take it as is.
+                    /// If a compatible text index exists in the source part, take it as is.
                     segments.emplace_back(part->getDataPartStoragePtr(), index_ptr->getFileName(), part_idx);
                 }
                 else
@@ -3172,8 +3190,8 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
         auto index_ptr = MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings);
 
         /// Rebuild index if merge may reduce rows because we cannot adjust parts offsets in that case.
-        /// Build index if it is not materialized in the data part.
-        if (global_ctx->merge_may_reduce_rows || !index_ptr->getDeserializedFormat(data_part, index_ptr->getFileName()))
+        /// Build index if it is not materialized in the data part, or is has different structure in the source part.
+        if (global_ctx->merge_may_reduce_rows || !canMergeTextIndexFromIndexFiles(*index_ptr, data_part))
         {
             description_to_build.push_back(index);
             indexes_to_build.push_back(std::move(index_ptr));

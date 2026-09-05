@@ -93,6 +93,7 @@ CREATE TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, enable_scoring = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -132,6 +133,7 @@ ALTER TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, enable_scoring = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -570,6 +572,33 @@ Set `support_phrase_search = 0` (the default) to keep the posting-list-only stor
 <Warning>
 This argument is experimental and should only be used for testing.
 Set MergeTree setting [`allow_experimental_text_index_phrase_search`](/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) to enable storing positions.
+</Warning>
+
+**Experimental: BM25 scoring argument (optional)**.
+
+Experimental parameter `enable_scoring` (default: `0`) controls whether the index stores BM25 scoring data.
+When set to `1`, the index additionally stores the exact per-row term frequencies (embedded into the posting lists) and the per-row document lengths (in a `.dl` file), which enable ranking search results with the [BM25](https://en.wikipedia.org/wiki/Okapi_BM25) relevance score through the `_bm25_score` virtual column.
+Such an index is written in the `v3_with_scoring` format regardless of the configured [`text_index_serialization_version`](/reference/settings/merge-tree-settings/text-index#text_index_serialization_version), because older formats cannot represent the scoring data.
+The argument requires a posting list codec (`posting_list_codec = 'bitpacking'`) and a tokenizer that supports scoring.
+Storing scoring data increases the on-disk size of the index and the write cost, so it is opt-in.
+The on-disk format is not yet stable, so this parameter is experimental and may change in a future release.
+Creating an index with `enable_scoring = 1` therefore requires the MergeTree setting [`allow_experimental_text_index_scoring`](/reference/settings/merge-tree-settings/allow-experimental) to be enabled.
+
+To read the `_bm25_score` virtual column, enable the setting `allow_experimental_bm25_score_column`.
+The query must filter with `hasToken`, `hasAnyTokens` or `hasAllTokens` on the column of exactly one scoring-enabled text index, and the direct read from the text index ([`query_plan_direct_read_from_text_index`](/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index)) must be enabled:
+
+```sql
+SELECT id, _bm25_score
+FROM tab
+WHERE hasAnyTokens(str, ['consensus', 'raft'])
+ORDER BY _bm25_score DESC
+LIMIT 10
+SETTINGS allow_experimental_bm25_score_column = 1;
+```
+
+<Warning>
+This argument is experimental and should only be used for testing.
+Set MergeTree setting [`allow_experimental_text_index_scoring`](/reference/settings/merge-tree-settings/allow-experimental) to enable storing BM25 scoring data.
 </Warning>
 
 <details markdown="1">
@@ -1505,6 +1534,7 @@ The text index currently has the following limitations:
 
 The on-disk format version of text indexes is controlled by the table-level setting [`text_index_serialization_version`](/reference/settings/merge-tree-settings/text-index) (default: `v2_with_positions`).
 The setting is a preference rather than a hard constraint: if the configured version cannot represent an index, a newer version that can represent it is chosen automatically, so writing a text index never fails because of this setting.
+For example, an index created with the experimental `enable_scoring` argument is always written in the `v3_with_scoring` format, because older formats cannot represent the scoring data.
 During a rolling upgrade, pin the format with the [`compatibility`](/reference/settings/session-settings/compatibility#compatibility) setting on the already upgraded servers: when it is set to a version older than the one that introduced the corresponding format, `text_index_serialization_version` reverts to an older value automatically and newer servers keep writing the format that older servers can still read.
 
 ## Text Indexes vs Bloom-Filter-Based Indexes {#text-index-vs-bloom-filter-indexes}

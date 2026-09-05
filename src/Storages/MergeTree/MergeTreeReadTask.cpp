@@ -271,7 +271,8 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
                 new_readers.main.get(),
                 index_read_task->index,
                 pre_columns_per_step,
-                read_info->read_hints.index_granules));
+                read_info->read_hints.index_granules,
+                index_read_task->bm25_score_state));
         }
         else
         {

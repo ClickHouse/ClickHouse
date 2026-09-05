@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/TextIndexSegment.h>
 #include <Core/SortCursor.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Processors/ISimpleTransform.h>
 
 #include <span>
@@ -115,15 +116,77 @@ private:
     void readDictionaryBlock(size_t source_num);
     /// Adjusts the part offset of the given row id according to merged part offsets.
     UInt32 adjustPartOffset(size_t part_index, UInt32 row_id) const;
+    /// Builds the merged per-row document lengths and the per-part BM25 collection statistics once,
+    /// before token iteration. Only called on the scoring path.
+    void buildDocLengthsAndStats();
 
-    /// Unions the given row ids into output_postings_bitmap.
-    void appendPostingsToBitmap(std::span<UInt32> row_ids);
-    /// Appends the already adjusted row ids of one source to output_postings_array or output_postings_bitmap.
-    void appendPostings(size_t source_num, std::span<UInt32> row_ids);
-    /// Reads the postings of one source and appends them to output_postings_bitmap or output_postings_array.
-    void readAndAppendPostings(size_t source_num, TokenPostingsInfo & token_info);
-    /// Reads the positions of one source and appends them to output_positions.
-    void readAndAppendPositions(size_t source_num, TokenPostingsInfo & token_info);
+    /// Adjusts all row ids in place; no-op without merged part offsets.
+    void adjustPartOffsets(std::span<UInt32> row_ids, size_t part_index) const;
+
+    /// One source's posting list metadata for the current token; postings are decoded lazily on flush.
+    struct TokenSource
+    {
+        size_t source_num{};
+        TokenPostingsInfo info;
+    };
+
+    /// Cursor over the single UInt32 row id column with statically dispatched comparisons.
+    using PostingsSortCursor = SpecializedSingleColumnSortCursor<ColumnUInt32>;
+
+    /// Streams the sorted (remapped) row ids of one source, one decoded segment at a time.
+    struct PostingsMergeCursor
+    {
+        const TokenSource * source = nullptr;
+        /// Next entry of info.offsets to decode.
+        size_t next_segment = 0;
+        /// Decoded and remapped row ids of the current segment.
+        /// The sort cursor points at this column once, in the task constructor.
+        ColumnUInt32::MutablePtr column;
+        /// Exact per-row term frequencies of the current segment, parallel to the row ids.
+        /// Empty when the segment carries none (every `tf == 1`) or the merge is not scoring.
+        PaddedPODArray<UInt32> tfs;
+        /// Row ids of the source's postings for the current token in pre-remap order, accumulated
+        /// across segments. Filled only when the token has positions, which are addressed by posting rank.
+        PaddedPODArray<UInt32> token_row_ids;
+        SortCursorImpl impl;
+
+        PaddedPODArray<UInt32> & rowIds() { return column->getData(); }
+        const PaddedPODArray<UInt32> & rowIds() const { return column->getData(); }
+
+        /// Rewinds the sort cursor to the start of the refilled column.
+        void resetToColumnStart()
+        {
+            impl.rows = column->size();
+            impl.getPosRef() = 0;
+        }
+    };
+
+    /// Points the cursor at a source and decodes its first postings.
+    void initCursor(PostingsMergeCursor & cursor, const TokenSource & source);
+    /// Decodes the source's next segment; returns false when the source is exhausted.
+    bool advanceCursorSegment(PostingsMergeCursor & cursor);
+
+    /// Merges the postings of output_sources and passes sorted non-empty
+    /// chunks of row ids to the sink in the globally sorted order.
+    /// Once a source is exhausted, its positions (if any) are appended to output_positions.
+    template <typename Sink>
+    void mergePostings(Sink && sink);
+
+    /// Appends the per-row `(tf - 1)` of one merged chunk to output_tfs_buffer, parallel to the row ids;
+    /// an empty `tfs` span means every `tf` of the chunk is 1.
+    void appendTermFrequencies(std::span<const UInt32> tfs, size_t num_row_ids);
+
+    /// Serializes a merged posting list of up to MAX_CARDINALITY_FOR_RAW_POSTINGS row ids as raw or embedded postings.
+    TokenPostingsInfo flushRawPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality);
+    TokenPostingsInfo flushEncodedPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality);
+
+    /// Appends the pre-remap row ids of the cursor's current segment to its token_row_ids if the token has positions.
+    void captureRowIdsForPositions(PostingsMergeCursor & cursor) const;
+    /// Reads the positions of an exhausted source, pairing them with the row ids captured by its
+    /// cursor, remaps their row ids and appends them to output_positions.
+    void readAndAppendPositions(const PostingsMergeCursor & cursor);
+    /// Sorts and merges output_positions and serializes them to the positions stream.
+    void flushPositions(TokenPostingsInfo & token_info);
 
     void flushPostingList();
     void flushDictionaryBlock();
@@ -157,16 +220,19 @@ private:
     MutableColumnPtr output_tokens;
     /// Tokens infos accumulated for the current dictionary block.
     std::vector<TokenPostingsInfo> output_infos;
-    /// Postings accumulated for the current token when they don't fit into output_postings_array.
-    PostingList output_postings_bitmap;
-    /// Buffer of at most MAX_CARDINALITY_FOR_RAW_POSTINGS postings of the current token.
-    PaddedPODArray<UInt32> output_postings_array;
-    /// Reusable buffer for row ids of one posting list block read from a source.
-    PaddedPODArray<UInt32> row_ids_buffer;
+    /// Sources of the current token's postings, one per input part or segment.
+    std::vector<TokenSource> output_sources;
+    /// Reusable buffer for the merged row ids of the current token.
+    PaddedPODArray<UInt32> output_postings_buffer;
+    /// Merged exact per-row term frequencies of the current token, parallel to
+    /// output_postings_buffer. Filled only on the scoring path.
+    PaddedPODArray<UInt32> output_tfs_buffer;
+    /// Resusable cursors for merging of posting lists.
+    std::vector<PostingsMergeCursor> postings_merge_cursors;
+    /// Min-queue over the postings cursors of the current token; drained by every mergePostings call.
+    SortingQueueBatch<PostingsSortCursor> postings_queue;
     /// Reusable buffer for position entries of one token read from a source.
     PODArray<RoaringishEntry> position_entries_buffer;
-    /// Row ids of the current token in pre-remap order, pairing its positions with their ranks.
-    PaddedPODArray<UInt32> token_row_ids;
     /// Positions accumulated for the current token (phrase query support).
     PaddedPODArray<RoaringishEntry> output_positions;
     /// Reused across tokens to keep position decode allocation-free during merge.
@@ -181,6 +247,12 @@ private:
     std::vector<PostingsSerialization> source_postings_serializations;
 
     bool is_initialized = false;
+
+    /// BM25 scoring state.
+    /// Merged per-row `SmallFloat` document-length bytes, indexed by global merged row id.
+    PaddedPODArray<UInt8> merged_doc_lengths;
+    /// Total sum of the merged per-row document lengths.
+    UInt64 merged_sum_doc_length = 0;
 };
 
 using MergeTextIndexesTaskPtr = std::unique_ptr<MergeTextIndexesTask>;

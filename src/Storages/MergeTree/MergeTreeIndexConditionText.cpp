@@ -138,7 +138,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     TokenizerPtr tokenizer_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
-    bool has_positions_)
+    bool has_positions_,
+    bool scoring_enabled_)
     : WithContext(context_)
     , header(index_sample_block)
     , normalized_index_column_name(normalized_index_column_name_)
@@ -149,6 +150,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , postprocessor(postprocessor_)
     , has_postprocessor(postprocessor && postprocessor->hasActions())
     , has_positions(has_positions_)
+    , scoring_enabled(scoring_enabled_)
 {
     if (!predicate)
     {
@@ -392,6 +394,26 @@ TextSearchQueryPtr MergeTreeIndexConditionText::getSearchQueryForVirtualColumn(c
         throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Virtual column {} not found in MergeTreeIndexConditionText", column_name);
 
     return it->second;
+}
+
+std::vector<String> MergeTreeIndexConditionText::getScoringTokens() const
+{
+    Names tokens;
+    for (const auto & [_, search_query] : all_search_queries)
+    {
+        const auto & function_name = search_query->getFunctionName();
+
+        /// Only tokens from special full-text search functions are considered for scoring.
+        if (function_name != "hasToken" && function_name != "hasAnyTokens" && function_name != "hasAllTokens")
+            continue;
+
+        for (const auto & token : search_query->getTokens())
+            tokens.push_back(token);
+    }
+
+    std::sort(tokens.begin(), tokens.end());
+    tokens.erase(std::unique(tokens.begin(), tokens.end()), tokens.end());
+    return tokens;
 }
 
 bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const

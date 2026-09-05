@@ -1,0 +1,6 @@
+-- the collection statistics are built exactly once per query
+1
+1	1
+-- decode-once fence: the same query without the score reads each postings block the same number of times
+128
+1

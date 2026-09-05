@@ -4,7 +4,9 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Storages/MergeTree/PostingListBlockCodec.h>
+#include <Storages/MergeTree/BM25Kernel.h>
 #include <Formats/MarkInCompressedFile.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
@@ -26,6 +28,7 @@ namespace ProfileEvents
     extern const Event TextIndexLazySegmentsSkippedDense;
     extern const Event TextIndexLazySegmentsSkippedResolved;
     extern const Event TextIndexLazyBlocksSkippedResolved;
+    extern const Event TextScoreRowsScored;
 }
 
 namespace DB
@@ -86,7 +89,7 @@ PostingListCursor::PostingListCursor(MergeTreeReaderStream & stream_, const Toke
 {
 }
 
-PostingListCursor::PostingListCursor(FlatPostingsPtr shared_values_)
+PostingListCursor::PostingListCursor(PaddedPODArrayPtr shared_values_)
     : is_embedded(true)
     , shared_values(std::move(shared_values_))
 {
@@ -195,6 +198,13 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
 
     segment.doc_count = requireUInt32(seg_cardinality, "seg_cardinality");
     segment.first_row_id = requireUInt32(first_row_id, "first_row_id");
+    const bool has_term_frequencies = info->header & PostingsSerialization::Flags::HasTermFrequencies;
+
+    if (has_term_frequencies)
+    {
+        readBinaryLittleEndian(segment.min_dl_byte, *data_buffer);
+        readBinaryLittleEndian(segment.max_tf_minus_one, *data_buffer);
+    }
 
     const auto & segment_range = info->ranges[segment_idx];
 
@@ -221,8 +231,9 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
         block_codec = createPostingListBlockCodec(segment.codec_type);
 
     /// Cap `payload_bytes` before resizing so corrupted metadata can't force a huge allocation.
+    /// When scoring is on, each block additionally carries a term-frequency sub-payload compressed with the same codec.
     const UInt64 max_blocks_count = (static_cast<UInt64>(segment.doc_count) + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    const UInt64 per_block_cap = block_codec->maxBlockBytes();
+    const UInt64 per_block_cap = has_term_frequencies ? 2 * block_codec->maxBlockBytes() : block_codec->maxBlockBytes();
     const UInt64 max_payload_bytes = max_blocks_count * per_block_cap;
 
     if (payload_bytes > max_payload_bytes)
@@ -254,6 +265,14 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Posting list number of blocks is 0 for segment with {} documents",
             segment.doc_count);
+    }
+
+    if (num_blocks != max_blocks_count)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in lazy posting list cursor: number of blocks {} does not match "
+            "the expected {} for segment with {} documents",
+            num_blocks, max_blocks_count, segment.doc_count);
     }
 
     segment.block_last_row_ids.resize(num_blocks);
@@ -297,10 +316,25 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
 
     segment.block_count = num_blocks;
     segment.tail_size = segment.doc_count % BLOCK_SIZE;
+
+    if (has_term_frequencies)
+    {
+        segment.block_min_dl_byte.resize(num_blocks);
+        segment.block_max_tf_minus_one.resize(num_blocks);
+
+        data_buffer->readStrict(reinterpret_cast<char *>(segment.block_min_dl_byte.data()), num_blocks * sizeof(UInt8));
+        data_buffer->readStrict(reinterpret_cast<char *>(segment.block_max_tf_minus_one.data()), num_blocks * sizeof(UInt8));
+    }
+
     return segment;
 }
 
 void PostingListCursor::decodeBlock(size_t block_idx)
+{
+    decodeBlockPostings(block_idx);
+}
+
+size_t PostingListCursor::decodeBlockPostings(size_t block_idx)
 {
     ++counters.blocks_decoded;
 
@@ -357,15 +391,20 @@ void PostingListCursor::decodeBlock(size_t block_idx)
     if (!block_codec || block_codec->type() != segment.codec_type)
         block_codec = createPostingListBlockCodec(segment.codec_type);
 
-    /// The block span comes from the Index Section offsets and must be consumed in full.
     const size_t expected_bytes = block_data.size();
     const size_t consumed_bytes = block_codec->decodeBlock(block_data, count, out_span);
 
-    if (consumed_bytes != expected_bytes)
+    /// Without scoring the deltas must consume the whole Index Section span;
+    /// with scoring a term-frequency sub-payload follows the deltas inside the same span.
+    const bool has_term_frequencies = info && (info->header & PostingsSerialization::Flags::HasTermFrequencies);
+
+    if (!has_term_frequencies && consumed_bytes != expected_bytes)
+    {
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Corrupted data in lazy posting list cursor: block {} consumed {} bytes but its "
             "Index Section span is {} bytes",
             block_idx, consumed_bytes, expected_bytes);
+    }
 
     /// Restore absolute row ids from deltas directly in decoded_values.
     std::inclusive_scan(decoded_values, decoded_values + count, decoded_values, std::plus<uint32_t>{}, last_decoded_doc_id);
@@ -373,6 +412,7 @@ void PostingListCursor::decodeBlock(size_t block_idx)
 
     decoded_count = count;
     index = 0;
+    return consumed_bytes;
 }
 
 /// Lower bound over decoded posting values. The target is usually close to `first`.
@@ -507,6 +547,220 @@ void PostingListCursor::next()
         prepareSegment(next_segment);
         decodeBlock(0);
     }
+}
+
+DocLengthsCursor::DocLengthsCursor(std::unique_ptr<MergeTreeReaderStream> stream_, const ScoringStats & scoring_stats)
+    : stream(std::move(stream_))
+    , num_docs(static_cast<UInt32>(scoring_stats.num_docs))
+    , segment_size(scoring_stats.doc_lengths_segment_size)
+    , segment_offsets(scoring_stats.doc_lengths_segment_offsets)
+{
+    chassert(segment_size > 0);
+}
+
+DocLengthsCursor::DocLengthsCursor(PaddedPODArray<UInt8> bytes_)
+    : num_docs(static_cast<UInt32>(bytes_.size()))
+    , segment_size(std::max<UInt64>(1, bytes_.size()))
+{
+    resident_segments.push_back(DocLengthsSegment{.index = 0, .bytes = std::move(bytes_)});
+}
+
+DocLengthsCursor::~DocLengthsCursor() = default;
+
+void DocLengthsCursor::ensureRange(size_t row_offset, size_t num_rows)
+{
+    if (num_rows == 0)
+        return;
+
+    if (row_offset + num_rows > num_docs)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Rows [{}, {}) are out of range for DocLengthsCursor with {} docs",
+            row_offset, row_offset + num_rows, num_docs);
+    }
+
+    /// Covering segments of the request.
+    const UInt64 first_segment = row_offset / segment_size;
+    const UInt64 last_segment = (row_offset + num_rows - 1) / segment_size;
+
+    if (!resident_segments.empty()
+        && first_segment >= first_resident_segment
+        && last_segment < first_resident_segment + resident_segments.size())
+        return;
+
+    chassert(stream);
+    chassert(last_segment < segment_offsets.size());
+
+    /// Drop the segments that fell behind the request.
+    if (first_segment < first_resident_segment)
+        resident_segments.clear();
+    else
+        std::erase_if(resident_segments, [&](const auto & segment) { return segment.index < first_segment; });
+
+    /// The missing segments are one suffix run: adjacent segments are contiguous in the decompressed stream.
+    const UInt64 first_missing_segment = resident_segments.empty() ? first_segment : resident_segments.back().index + 1;
+    chassert(first_missing_segment <= last_segment);
+
+    /// Real filesystem seek is triggered only if the gap from the previous position is large enough.
+    stream->seekToMark(MarkInCompressedFile{.offset_in_compressed_file = segment_offsets[first_missing_segment], .offset_in_decompressed_block = 0});
+    auto * data_buffer = stream->getDataBuffer();
+
+    for (UInt64 segment_idx = first_missing_segment; segment_idx <= last_segment; ++segment_idx)
+    {
+        auto & segment = resident_segments.emplace_back();
+        segment.index = segment_idx;
+        segment.bytes.resize(std::min<UInt64>(segment_size, num_docs - segment_idx * segment_size));
+        data_buffer->readStrict(reinterpret_cast<char *>(segment.bytes.data()), segment.bytes.size());
+    }
+
+    first_resident_segment = resident_segments.front().index;
+    cached_segment_begin = 0;
+    cached_segment_end = 0;
+}
+
+UInt8 DocLengthsCursor::getByte(UInt32 doc_id) const
+{
+    if (doc_id < cached_segment_begin || doc_id >= cached_segment_end)
+        updateCachedSegment(doc_id);
+
+    return cached_segment_bytes[doc_id - cached_segment_begin];
+}
+
+void DocLengthsCursor::updateCachedSegment(UInt32 doc_id) const
+{
+    const UInt64 segment_index = doc_id / segment_size;
+    chassert(segment_index >= first_resident_segment);
+
+    const size_t segment_pos = segment_index - first_resident_segment;
+    chassert(segment_pos < resident_segments.size());
+
+    const auto & bytes = resident_segments[segment_pos].bytes;
+    chassert(doc_id - segment_index * segment_size < bytes.size());
+
+    cached_segment_begin = static_cast<UInt32>(segment_index * segment_size);
+    cached_segment_end = static_cast<UInt32>(segment_index * segment_size + bytes.size());
+    cached_segment_bytes = bytes.data();
+}
+
+PostingListScoringCursor::PostingListScoringCursor(
+    MergeTreeReaderStream & stream_,
+    const TokenPostingsInfo & info_,
+    const DocLengthsCursor * doc_lengths_,
+    TextIndexPostingsCache * postings_cache_,
+    const String & index_id_for_cache_)
+    : PostingListCursor(stream_, info_, postings_cache_, index_id_for_cache_)
+    , doc_lengths(doc_lengths_)
+{
+    chassert(doc_lengths);
+}
+
+PostingListScoringCursor::PostingListScoringCursor(std::shared_ptr<const ScoringPostings> scoring_postings_, const DocLengthsCursor * doc_lengths_)
+    : PostingListCursor(PaddedPODArrayPtr(scoring_postings_, &scoring_postings_->row_ids))
+    , doc_lengths(doc_lengths_)
+    , embedded_scoring_postings(std::move(scoring_postings_))
+{
+    chassert(doc_lengths);
+    chassert(embedded_scoring_postings->term_frequencies.size() == decoded_count);
+}
+
+UInt32 PostingListScoringCursor::termFrequency() const
+{
+    chassert(index < decoded_count);
+    return is_embedded ? embedded_scoring_postings->term_frequencies[index] : decoded_tfs[index];
+}
+
+UInt8 PostingListScoringCursor::documentLengthByte() const
+{
+    chassert(doc_lengths && value() < doc_lengths->numDocs());
+    return doc_lengths->getByte(value());
+}
+
+void PostingListScoringCursor::seekBlock(uint32_t doc_id)
+{
+    if (is_embedded)
+        return;
+
+    chassert(current_segment);
+
+    /// Binary-search `block_last_row_ids` for the first block whose last row id is >= `doc_id`.
+    const auto & block_last_row_ids = current_segment->block_last_row_ids;
+    const auto * it = std::lower_bound(block_last_row_ids.begin(), block_last_row_ids.end(), doc_id);
+    chassert(it != block_last_row_ids.end());
+    current_block = static_cast<size_t>(it - block_last_row_ids.begin());
+}
+
+void PostingListScoringCursor::decodeBlock(size_t block_idx)
+{
+    const size_t consumed_bytes = decodeBlockPostings(block_idx);
+
+    const auto & segment = *current_segment;
+    const size_t payload_offset = static_cast<size_t>(segment.block_offsets[block_idx]);
+    const size_t tf_offset = payload_offset + consumed_bytes;
+
+    const size_t next_offset = (block_idx + 1 < segment.block_count)
+        ? static_cast<size_t>(segment.block_offsets[block_idx + 1])
+        : segment.payload_buffer.size();
+
+    if (tf_offset >= next_offset)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in scoring posting list cursor: term-frequency sub-payload offset {} is "
+            "outside block bounds [{}, {}) for block {}",
+            tf_offset, payload_offset, next_offset, block_idx);
+    }
+
+    std::span<const std::byte> compressed_tf_data(
+        reinterpret_cast<const std::byte *>(segment.payload_buffer.data() + tf_offset),
+        next_offset - tf_offset);
+
+    std::span<uint32_t> decoded_tfs_span(decoded_tfs, decoded_count);
+    block_codec->decodeBlock(compressed_tf_data, decoded_count, decoded_tfs_span);
+
+    /// Block stores `(tf - 1)`, restore the original term frequencies.
+    for (size_t i = 0; i < decoded_count; ++i)
+        decoded_tfs[i] += 1u;
+}
+
+UInt8 PostingListScoringCursor::minDocumentLengthByte(size_t block_idx) const
+{
+    return is_embedded ? 0 : current_segment->block_min_dl_byte[block_idx];
+}
+
+UInt8 PostingListScoringCursor::maxTermFrequencyMinusOne(size_t block_idx) const
+{
+    return is_embedded
+        ? embedded_scoring_postings->max_tf_minus_one
+        : current_segment->block_max_tf_minus_one[block_idx];
+}
+
+UInt8 PostingListScoringCursor::segmentMinDocumentLengthByte() const
+{
+    return is_embedded ? 0 : current_segment->min_dl_byte;
+}
+
+UInt8 PostingListScoringCursor::segmentMaxTermFrequencyMinusOne() const
+{
+    return is_embedded
+        ? embedded_scoring_postings->max_tf_minus_one
+        : current_segment->max_tf_minus_one;
+}
+
+Float32 PostingListScoringCursor::blockMaxScore(const BM25Weight & w) const
+{
+    /// The embedded cursor has no `current_segment`; its single block carries the precomputed UB pair.
+    chassert(is_embedded || (current_block < current_segment->block_count && !current_segment->block_max_tf_minus_one.empty()));
+    const size_t block_index = currentBlockIndex();
+
+    return maxTermFrequencyMinusOne(block_index) == 255
+        ? w.weight
+        : w.contribution(maxTermFrequencyMinusOne(block_index) + 1, minDocumentLengthByte(block_index));
+}
+
+Float32 PostingListScoringCursor::segmentMaxScore(const BM25Weight & w) const
+{
+    return segmentMaxTermFrequencyMinusOne() == 255
+        ? w.weight
+        : w.contribution(segmentMaxTermFrequencyMinusOne() + 1, segmentMinDocumentLengthByte());
 }
 
 /// Scatter-write into `out` for doc_ids in values[begin..length).
@@ -1158,6 +1412,85 @@ void lazyIntersectPostingLists(
 
     ProfileEvents::increment(ProfileEvents::TextIndexLazyLeapfrogIntersections);
     intersectLeapfrog(out, sorted_cursors, row_offset, end);
+}
+
+void scoreCursorsUnion(
+    Float32 * data,
+    std::vector<ScoreCursor> & cursors,
+    size_t row_offset,
+    size_t num_rows)
+{
+    const size_t window_end = row_offset + num_rows;
+    size_t rows_scored = 0;
+
+    for (auto & entry : cursors)
+    {
+        auto & cursor = *entry.cursor;
+        cursor.advance(static_cast<UInt32>(row_offset));
+
+        while (cursor.valid() && cursor.value() < window_end)
+        {
+            data[cursor.value() - row_offset] += entry.weight->contribution(cursor.termFrequency(), cursor.documentLengthByte());
+            ++rows_scored;
+            cursor.next();
+        }
+    }
+
+    ProfileEvents::increment(ProfileEvents::TextScoreRowsScored, rows_scored);
+}
+
+void scoreCursorsIntersection(
+    Float32 * data,
+    std::vector<ScoreCursor> & cursors,
+    size_t row_offset,
+    size_t num_rows)
+{
+    const size_t window_end = row_offset + num_rows;
+    size_t rows_scored = 0;
+
+    size_t target = row_offset;
+    while (target < window_end)
+    {
+        /// Leapfrog: raise `agreed` until every cursor sits exactly on it (an intersection row) or some cursor is exhausted.
+        bool aligned = false;
+        size_t agreed = target;
+
+        while (!aligned)
+        {
+            aligned = true;
+
+            for (auto & entry : cursors)
+            {
+                auto & cursor = *entry.cursor;
+                cursor.advance(static_cast<UInt32>(agreed));
+
+                if (!cursor.valid())
+                {
+                    ProfileEvents::increment(ProfileEvents::TextScoreRowsScored, rows_scored);
+                    return;
+                }
+
+                if (cursor.value() > agreed)
+                {
+                    agreed = cursor.value();
+                    aligned = false;
+                }
+            }
+        }
+
+        if (agreed >= window_end)
+            break;
+
+        Float32 score = 0;
+        for (const auto & entry : cursors)
+            score += entry.weight->contribution(entry.cursor->termFrequency(), entry.cursor->documentLengthByte());
+
+        data[agreed - row_offset] = score;
+        ++rows_scored;
+        target = agreed + 1;
+    }
+
+    ProfileEvents::increment(ProfileEvents::TextScoreRowsScored, rows_scored);
 }
 
 }

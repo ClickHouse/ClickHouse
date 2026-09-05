@@ -45,6 +45,9 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
+struct BM25State;
+using BM25StatePtr = std::shared_ptr<const BM25State>;
+
 enum class MergeTreeReadType : uint8_t
 {
     /// By default, read will use MergeTreeReadPool and return pipe with num_streams outputs.
@@ -71,6 +74,8 @@ struct IndexReadTask
     NamesAndTypesList columns;
     MergeTreeIndexWithCondition index;
     bool is_final = false;
+    /// Query-global BM25 state for the `_bm25_score` virtual column.
+    BM25StatePtr bm25_score_state;
 };
 
 /// Ordered map to ensure deterministic iteration order.
