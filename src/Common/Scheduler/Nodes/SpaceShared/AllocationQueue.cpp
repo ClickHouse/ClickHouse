@@ -7,6 +7,8 @@
 
 #include <fmt/format.h>
 
+#include <tuple>
+
 namespace DB
 {
 
@@ -293,8 +295,6 @@ void AllocationQueue::approveDecrease()
 
 ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details)
 {
-    UNUSED(limit);
-
     // It is important not to kill allocation due to pending allocation in the same queue
     if (killer.kind == IncreaseRequest::Kind::Pending && &killer.allocation.queue == this)
         return nullptr;
@@ -303,18 +303,64 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     if (running_allocations.empty())
         return nullptr;
 
-    // Kill the largest allocation. It is the last as the set is ordered by size.
-    ResourceAllocation & victim = *running_allocations.rbegin();
+    // If the requester's own reservation already exceeds the workload limit, no eviction of another
+    // allocation can make it admissible; evicting a peer would just lose that query for nothing while the
+    // requester still has to give up. Select the requester itself so a single impossible grow does not
+    // also take a higher-scored peer down with it. `fair_key` is the requester's allocated size plus its
+    // pending increase, so `fair_key > limit` means it cannot fit even with the whole workload freed.
+    // This queue is the least common ancestor of killer and victim (they coincide), so fill in `details`.
+    if (&killer.allocation.queue == this && killer.allocation.fair_key > limit)
+    {
+        details = fmt::format("Evicting allocation of size {} (memory_eviction_score {}) in workload '{}' to satisfy its own increase for {}.",
+            formatReadableCost(killer.allocation.allocated), killer.allocation.memory_eviction_score, getWorkloadName(), formatReadableCost(killer.size));
+        return &killer.allocation;
+    }
+
+    // Choose the eviction victim among the running allocations.
+    //
+    // Skip never-admitted allocations other than the requester itself. A never-admitted allocation
+    // (e.g. `reserve_memory = 0` before its first non-zero sync) frees nothing when killed and is removed
+    // via the local path in `processActivation` that never propagates a decrease to the parent limit, so
+    // picking such a third party would leave the over-limit increase blocked forever. The requester is
+    // exempt so a never-admitted query can still select itself and fail its own increase cleanly (the
+    // self-kill path handled by `AllocationLimit`).
+    //
+    // Rank the remaining candidates by (frees memory, memory_eviction_score, fair_key, unique_id), highest
+    // first. `frees memory` deprioritizes a third party that holds nothing (an admitted allocation shrunk
+    // back to zero): a real holder is evicted first, yet such an allocation stays evictable when it is the
+    // only candidate, so a lower-precedence workload holding only a shrunk allocation cannot block a
+    // higher-precedence one. The requester is always treated as freeing memory — abandoning its own request
+    // relieves the pressure even when it currently holds nothing — so it never sinks below a third-party
+    // holder on the `allocated` component alone. `memory_eviction_score` (the per-query setting, 0 by
+    // default) then decides, falling back to the largest `fair_key`. At the default score the score has no
+    // effect, so the victim is the largest reservation among the candidates that can free memory — a
+    // zero-byte re-grower is not chosen even when its `fair_key` is the largest.
+    auto rankKey = [&killer](const ResourceAllocation & a)
+    {
+        const bool frees_memory = a.allocated > 0 || &a == &killer.allocation;
+        return std::make_tuple(frees_memory, a.memory_eviction_score, a.fair_key, a.unique_id);
+    };
+    ResourceAllocation * victim_ptr = nullptr;
+    for (ResourceAllocation & candidate : running_allocations)
+    {
+        if (!candidate.admitted && &candidate != &killer.allocation)
+            continue;
+        if (!victim_ptr || rankKey(candidate) > rankKey(*victim_ptr))
+            victim_ptr = &candidate;
+    }
+    if (!victim_ptr)
+        return nullptr; // No admitted allocation to reclaim from in this queue.
+    ResourceAllocation & victim = *victim_ptr;
 
     // If this is the least common ancestor of killer and victim - add details
     if (&killer.allocation.queue == this)
     {
         if (&killer.allocation == &victim)
-            details = fmt::format("Evicting the largest allocation of size {} in workload '{}' to satisfy its own increase for {}.",
-                formatReadableCost(victim.allocated), getWorkloadName(), formatReadableCost(killer.size));
+            details = fmt::format("Evicting allocation of size {} (memory_eviction_score {}) in workload '{}' to satisfy its own increase for {}.",
+                formatReadableCost(victim.allocated), victim.memory_eviction_score, getWorkloadName(), formatReadableCost(killer.size));
         else
-            details = fmt::format("Evicting the largest allocation of size {} in workload '{}' to satisfy increase of a smaller allocation.",
-                formatReadableCost(victim.allocated), getWorkloadName());
+            details = fmt::format("Evicting allocation of size {} (memory_eviction_score {}) in workload '{}' to satisfy increase of another allocation.",
+                formatReadableCost(victim.allocated), victim.memory_eviction_score, getWorkloadName());
     }
 
     return &victim;

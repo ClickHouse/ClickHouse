@@ -2471,7 +2471,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationKillsOther)
             ASSERT_EQ(e.code(), ErrorCodes::RESOURCE_LIMIT_EXCEEDED);
             ASSERT_NE(e.displayText().find("all"), std::string::npos);
             ASSERT_NE(e.displayText().find("memory"), std::string::npos);
-            ASSERT_NE(e.displayText().find("to satisfy increase of a smaller allocation"), std::string::npos);
+            ASSERT_NE(e.displayText().find("to satisfy increase of another allocation"), std::string::npos);
         }
         a1.reset(); // Destroy killed allocation to free resources
         a2.waitSync();

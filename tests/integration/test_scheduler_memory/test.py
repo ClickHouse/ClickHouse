@@ -421,3 +421,102 @@ def test_cancel_query_with_memory_reservation():
 
     # If we got here without sanitizer alerts or crashes, the teardown order is correct.
 
+
+def test_memory_eviction_score_evicts_higher_score():
+    """`memory_eviction_score` decides which query is evicted within a workload, overriding the
+    default largest-reservation-first order. `victim` (small reservation, high score) and `big`
+    (large reservation, default score) both run in the lower-precedence `production` workload; a
+    higher-precedence `vip` query then forces an eviction from `production`. The score makes the
+    *smaller* `victim` the one killed — the largest-first policy alone would have killed `big`
+    instead — so the assertion fails on the old behavior and this covers the
+    `Settings` -> `ProcessList` -> `MemoryReservation` path end to end."""
+    node.query(
+        """
+        create resource memory (memory reservation);
+        create workload all settings max_memory='50Mi';
+        create workload production in all settings precedence=2;
+        create workload vip in all settings precedence=-1;
+    """
+    )
+
+    results = {"victim": None, "big": None, "vip": None}
+    errors = {"victim": None, "big": None, "vip": None}
+
+    def run_victim_query():
+        # Smaller reservation but the higher memory_eviction_score, so it must be the one evicted.
+        # `max_block_size=1` makes the kill observable between processor steps.
+        try:
+            node.query(
+                "select sleepEachRow(1) from numbers(60) "
+                "settings max_block_size=1, workload='production', reserve_memory='10Mi', memory_eviction_score=100",
+                query_id="test_mes_victim",
+            )
+            results["victim"] = "success"
+        except QueryRuntimeException as e:
+            errors["victim"] = str(e)
+            results["victim"] = "killed"
+
+    def run_big_query():
+        # Larger reservation, default score. The largest-first policy alone would evict this one,
+        # but the higher-scored `victim` must be chosen instead, so `big` survives.
+        try:
+            node.query(
+                "select sleepEachRow(1) from numbers(60) "
+                "settings max_block_size=1, workload='production', reserve_memory='25Mi', memory_eviction_score=0",
+                query_id="test_mes_big",
+            )
+            results["big"] = "success"
+        except QueryRuntimeException as e:
+            errors["big"] = str(e)
+            results["big"] = "killed"
+
+    def run_vip_query():
+        # Higher precedence. Once both production reservations are admitted (35Mi), its own 20Mi
+        # reservation pushes the workload over its 50Mi limit and forces one eviction from the
+        # lower-precedence production workload; freeing the 10Mi victim is enough to admit it.
+        try:
+            while (
+                int(
+                    node.query(
+                        "select count() from system.processes "
+                        "where query_id in ('test_mes_victim', 'test_mes_big')"
+                    ).strip()
+                )
+                < 2
+            ):
+                # A settled production result means it will never be admitted (refused or finished).
+                if results["victim"] is not None or results["big"] is not None:
+                    return
+                time.sleep(0.1)
+            node.query(
+                "select count(*) from numbers(1000000) "
+                "settings workload='vip', reserve_memory='20Mi'",
+                query_id="test_mes_vip",
+            )
+            results["vip"] = "success"
+        except QueryRuntimeException as e:
+            errors["vip"] = str(e)
+            results["vip"] = "killed"
+
+    threads = [
+        threading.Thread(target=run_victim_query),
+        threading.Thread(target=run_big_query),
+        threading.Thread(target=run_vip_query),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert (
+        results["victim"] == "killed"
+        and results["big"] == "success"
+        and results["vip"] == "success"
+    ), (
+        f"Expected the smaller higher-score victim to be evicted while the larger default-score "
+        f"query survived. Results: {results}, Errors: {errors}"
+    )
+    # The eviction must be a memory-reservation kill specifically, not some unrelated failure.
+    assert "MEMORY_RESERVATION_KILLED" in (errors["victim"] or ""), \
+        f"victim should fail with MEMORY_RESERVATION_KILLED, got: {errors['victim']}"
+

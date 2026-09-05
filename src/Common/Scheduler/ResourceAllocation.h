@@ -24,8 +24,8 @@ class AllocationQueue;
 class ResourceAllocation : public boost::noncopyable
 {
 public:
-    explicit ResourceAllocation(IAllocationQueue & queue_, const String & id_ = {})
-        : queue(queue_), id(id_), increase(*this), decrease(*this)
+    explicit ResourceAllocation(IAllocationQueue & queue_, const String & id_ = {}, Int32 memory_eviction_score_ = 0)
+        : queue(queue_), id(id_), memory_eviction_score(memory_eviction_score_), increase(*this), decrease(*this)
     {}
 
     virtual ~ResourceAllocation();
@@ -46,6 +46,7 @@ public:
 
     IAllocationQueue & queue; /// Queue that manages this allocation.
     String const id; /// ID of this allocation for introspection purposes.
+    Int32 const memory_eviction_score; /// Eviction priority: higher values are evicted first under memory pressure (0 by default). Immutable after construction, so the scheduler thread can read it safely.
 
 private:
     friend class AllocationQueue;
