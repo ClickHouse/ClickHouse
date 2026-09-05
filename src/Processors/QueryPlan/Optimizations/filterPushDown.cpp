@@ -983,7 +983,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             join_filter_push_down_actions.left_stream_filter_removes_filter = true;
         }
 
-        const auto & result_name = join_filter_push_down_actions.left_stream_filter_to_push_down->getOutputs()[0]->result_name;
+        /// Copy the name: the DAG is moved into the new FilterStep below, whose constructor may fold and
+        /// prune the very node this name belongs to, leaving a reference dangling.
+        const String result_name = join_filter_push_down_actions.left_stream_filter_to_push_down->getOutputs()[0]->result_name;
         updated_steps += addNewFilterStepOrThrow(
             parent_node,
             nodes,
@@ -1018,7 +1020,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             join_filter_push_down_actions.right_stream_filter_removes_filter = true;
         }
 
-        const auto & result_name = join_filter_push_down_actions.right_stream_filter_to_push_down->getOutputs()[0]->result_name;
+        /// Copy the name: the DAG is moved into the new FilterStep below, whose constructor may fold and
+        /// prune the very node this name belongs to, leaving a reference dangling.
+        const String result_name = join_filter_push_down_actions.right_stream_filter_to_push_down->getOutputs()[0]->result_name;
         updated_steps += addNewFilterStepOrThrow(
             parent_node,
             nodes,

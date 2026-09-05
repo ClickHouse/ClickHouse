@@ -74,7 +74,9 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         const bool prevent_input_removal = child_expr->isInputRemovalPrevented() || parent_filter->isInputRemovalPrevented();
 
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
-
+        /// merge can drag materialize wrappers from a UNION child into the filter (#78166); folding through
+        /// them is left to the `FilterStep` constructor below, which does it after `deduplicateSubtrees` -
+        /// a fold before dedup could have its masked-secret constant replaced by an equal plain one
         merged.deduplicateSubtrees();
 
         auto filter = std::make_unique<FilterStep>(

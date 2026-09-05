@@ -31,6 +31,7 @@
 #include <stack>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
@@ -979,6 +980,136 @@ bool hasDummyInside(const ColumnConstPtr & col)
     return col && col->getDataColumn().isDummy();
 }
 
+struct FoldResult
+{
+    ColumnConstPtr column;
+    bool deterministic;
+    /// A descendant `materialize` was stripped while producing this const. It must not be
+    /// passed to an argument that the function requires to remain a `ColumnConst` at runtime.
+    bool through_materialize;
+    /// The fold result must render as `[HIDDEN]` when any folded constant is a masked secret,
+    /// so the flag survives into the rebuilt COLUMN node (see `formatConstant`)
+    bool masked_secret;
+};
+
+/// The DAG is deduplicated before folding (`tryMergeExpressions` calls `deduplicateSubtrees`), so a
+/// node can be shared by many parents. Without memoization the walk would cost one visit per
+/// incoming edge, which is exponential for a chain such as `x1 = and(x0, x0)`, `x2 = and(x1, x1)`, ...
+using FoldCache = std::unordered_map<const ActionsDAG::Node *, std::optional<FoldResult>>;
+
+/// These operators depend only on their argument values, rather than whether an argument is a
+/// `ColumnConst` or a full column. Keep this list deliberately narrow: the generic constant-folding
+/// contract does not cover functions that impose their own const-only requirement in `executeImpl`.
+const std::unordered_set<std::string> & foldablePredicateFunctions()
+{
+    static const std::unordered_set<std::string> functions{
+        "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals", "and", "or", "not"};
+    return functions;
+}
+
+/// Fold a predicate: const COLUMN leaves, walk past alias/materialize, evaluate functions
+/// over the folded constant arguments for the value-only predicate operators above.
+///
+/// This is ordinary constant folding, just performed after stripping `materialize`, so the same
+/// contract applies: the function must be deterministic and `isSuitableForConstantFolding`.
+/// If the evaluation throws, the predicate is left unfolded and runtime keeps its exact behavior,
+/// including `short_circuit_function_evaluation` semantics for `and` / `or` arguments.
+std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node, FoldCache & cache);
+
+std::optional<FoldResult> tryFoldPredicateImpl(const ActionsDAG::Node * node, FoldCache & cache)
+{
+    bool through_materialize = false;
+    while (node)
+    {
+        if (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+        {
+            node = node->children.front();
+            continue;
+        }
+        if (node->type == ActionsDAG::ActionType::FUNCTION
+            && node->function_base
+            && node->function_base->getName() == "materialize"
+            && node->children.size() == 1)
+        {
+            node = node->children.front();
+            through_materialize = true;
+            continue;
+        }
+        break;
+    }
+    if (!node)
+        return std::nullopt;
+
+    if (node->type == ActionsDAG::ActionType::COLUMN && node->column && !hasDummyInside(node->column))
+        return FoldResult{node->column, node->is_deterministic_constant, through_materialize, node->is_masked_secret};
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION
+        || !node->function_base
+        || !node->function
+        || !node->function_base->isDeterministic()
+        || !node->function_base->isSuitableForConstantFolding()
+        || !foldablePredicateFunctions().contains(node->function_base->getName()))
+        return std::nullopt;
+
+    try
+    {
+        ColumnsWithTypeAndName args;
+        args.reserve(node->children.size());
+        bool all_det = true;
+        bool any_through_materialize = through_materialize;
+        bool any_masked = false;
+        const auto constant_arguments = node->function->getArgumentsThatAreAlwaysConstant();
+        for (size_t i = 0; i != node->children.size(); ++i)
+        {
+            const auto * child = node->children[i];
+            auto folded = tryFoldPredicate(child, cache);
+            if (!folded)
+                return std::nullopt;
+            if (folded->through_materialize && std::ranges::find(constant_arguments, i) != constant_arguments.end())
+                return std::nullopt;
+            all_det = all_det && folded->deterministic;
+            any_through_materialize = any_through_materialize || folded->through_materialize;
+            any_masked = any_masked || folded->masked_secret;
+
+            ColumnConstPtr col = folded->column;
+            /// DAG consts are size 0, resize to 1 for `execute` (matches `getFunctionArguments`)
+            if (col->empty())
+                col = ColumnConst::create(col->getDataColumnPtr(), 1);
+            args.push_back({col, child->result_type, child->result_name});
+        }
+
+        ColumnPtr result = node->function->execute(args, node->result_type, 1, true);
+        const auto * column_const = result ? typeid_cast<const ColumnConst *>(result.get()) : nullptr;
+        if (!column_const)
+            return std::nullopt;
+
+        /// keep the DAG convention of size-0 consts
+        ColumnConstPtr canonical;
+        if (column_const->empty())
+            canonical = column_const->getPtr();
+        else
+            canonical = ColumnConst::create(column_const->getDataColumnPtr(), 0);
+        return FoldResult{std::move(canonical), all_det, any_through_materialize, any_masked};
+    }
+    catch (...)
+    {
+        /// Swallowing the exception is Ok: the predicate is left unfolded, and evaluating it
+        /// at runtime reproduces the exception (or not, under short-circuit evaluation)
+        /// exactly as the query dictates
+        return std::nullopt;
+    }
+}
+
+std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node, FoldCache & cache)
+{
+    if (auto it = cache.find(node); it != cache.end())
+        return it->second;
+
+    auto result = tryFoldPredicateImpl(node, cache);
+    cache.emplace(node, result);
+    return result;
+}
+
 /// same scalar can show up as different ColumnConst objects after merge
 bool constColumnsEqual(const ColumnConstPtr & a, const ColumnConstPtr & b)
 {
@@ -1073,6 +1204,7 @@ struct ConstantKeyHash
         SipHash h;
         k.sample->result_type->updateHash(h);
         k.sample->column->updateHashWithValue(0, h);
+        h.update(k.sample->is_masked_secret);
         return h.get64();
     }
 };
@@ -1081,7 +1213,10 @@ struct ConstantKeyEqual
 {
     bool operator()(const ConstantKey & a, const ConstantKey & b) const
     {
-        return a.sample->result_type->equals(*b.sample->result_type)
+        /// a masked secret must not be collapsed onto an equal plain constant: the class
+        /// representative would render the value instead of `[HIDDEN]` in plan dumps
+        return a.sample->is_masked_secret == b.sample->is_masked_secret
+            && a.sample->result_type->equals(*b.sample->result_type)
             && constColumnsEqual(a.sample->column, b.sample->column);
     }
 };
@@ -1192,6 +1327,41 @@ EquivalenceClasses buildStructuralEquivalenceClasses(const ActionsDAG & dag)
     return ec;
 }
 
+}
+
+void ActionsDAG::foldFilterPredicateThroughMaterialize(const std::string & filter_column_name)
+{
+    if (filter_column_name.empty())
+        return;
+    const Node * filter_node = tryFindInOutputs(filter_column_name);
+    if (!filter_node)
+        return;
+
+    /// A prior optimizer pass may already have folded this filter. Replacing an
+    /// existing const output with another const output makes the pass report a
+    /// change on every iteration, exhausting the query-plan optimization limit.
+    if (filter_node->type == ActionType::COLUMN && filter_node->column && isColumnConst(*filter_node->column))
+        return;
+
+    FoldCache fold_cache;
+    auto folded = tryFoldPredicate(filter_node, fold_cache);
+    if (!folded || !folded->column)
+        return;
+
+    /// add a fresh const COLUMN and re-route the filter output, leave the original predicate
+    /// subtree intact so other parents that may share parts of it are unaffected -
+    /// `removeUnusedActions` prunes the now-orphan subtree later
+    const Node & new_const = addColumn(
+        std::move(folded->column), filter_node->result_type,
+        std::string(filter_column_name), folded->deterministic, folded->masked_secret);
+    for (auto & out : outputs)
+    {
+        if (out == filter_node)
+        {
+            out = &new_const;
+            break;
+        }
+    }
 }
 
 void ActionsDAG::deduplicateSubtrees()

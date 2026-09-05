@@ -1593,7 +1593,8 @@ std::optional<String> optimizeUseAggregateProjections(
 
         if (candidates.has_filter && best_candidate->has_filter)
         {
-            const auto & result_name = best_candidate->dag.getOutputs().front()->result_name;
+            /// Copy the name: the FilterStep constructor may fold and prune the node it belongs to
+            const String result_name = best_candidate->dag.getOutputs().front()->result_name;
             aggregate_projection_node->step = std::make_unique<FilterStep>(
                 projection_reading_node.step->getOutputHeader(),
                 std::move(best_candidate->dag),
