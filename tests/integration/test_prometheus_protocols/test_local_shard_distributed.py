@@ -51,6 +51,14 @@ RESTRICTED_CALLERS = [
 # What the shard probe says about that table, in the words no denied caller may see.
 SHARD_LOCAL_LEAK = ["shard-local", "not TimeSeries", "UNEXPECTED_TABLE_ENGINE"]
 
+# Fan-out settings a caller may bring, each over a wrapper they would send over the connection;
+# the read pins both the other way.
+CALLER_FAN_OUT = [
+    ("metrics.prom_local", {"prefer_localhost_replica": 0}),
+    ("metrics.prom_two", {"prefer_localhost_replica": 0}),
+    ("metrics.prom_two", {"enable_parallel_replicas": 1, "max_parallel_replicas": 2}),
+]
+
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
@@ -66,6 +74,10 @@ def start_cluster():
         node.query(
             "CREATE TABLE metrics.prom_local AS metrics.ts_local "
             "ENGINE = Distributed(local_shard_dist, '', ts_local)"
+        )
+        node.query(
+            "CREATE TABLE metrics.prom_two AS metrics.ts_local "
+            "ENGINE = Distributed(local_shard_two_replicas, '', ts_local)"
         )
 
         # The same pair the other way round: healthy where the probe used to look, wrong engine
@@ -139,9 +151,9 @@ def test_remote_write_is_refused_when_only_the_probes_database_is_healthy():
     assert int(node.query("SELECT count() FROM timeSeriesTags(default.ts_swap)")) == 0
 
 
-def query_as(endpoint, user):
+def query_as(endpoint, user, settings=None):
     """The error of the instant or range PromQL endpoint for a caller of this name."""
-    params = {"user": user, "password": ""}
+    params = {"user": user, "password": "", **(settings or {})}
     if endpoint == "query":
         return execute_query_via_http_api(
             node.ip_address,
@@ -206,3 +218,36 @@ def test_table_functions_deny_the_local_shard_grants_before_probing(
     # The client prints the server's stack trace after the message; its frames name source files.
     denied = node.query_and_get_error(sql, user=user).split("Stack trace:")[0]
     assert_denied_without_leaking(denied, grant)
+
+
+@pytest.mark.parametrize(
+    "wrapper, settings",
+    CALLER_FAN_OUT,
+    ids=["no_local_replica", "no_local_replica_of_two", "parallel_replicas"],
+)
+def test_reads_keep_the_local_shard_in_process_whatever_the_caller_fans_out(
+    wrapper, settings
+):
+    """Read over the connection, the shard would resolve `ts_local` in the pool's database: the
+    probe and the read must agree, so a shard that is this server is read here regardless.
+    """
+    sql = (
+        f"SELECT count() FROM prometheusQuery({wrapper}, 'local_metric', {START_TIME})"
+    )
+    assert node.query(sql, user="prom_metrics", settings=settings).strip() == "1"
+
+    result = json.loads(
+        execute_query_via_http_api(
+            node.ip_address,
+            9093,
+            "/local_api/query",
+            "local_metric",
+            START_TIME,
+            params={**CALLER_PARAMS, **settings},
+        )
+    )["result"]
+    assert [sample["value"][1] for sample in result] == ["1"]
+
+    # And the grants of that in-process read are still asked for first.
+    denied = query_as("query", NO_SHARD_SELECT_USER, settings)
+    assert_denied_without_leaking(denied, "SELECT ON default.ts_local")

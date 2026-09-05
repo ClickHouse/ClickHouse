@@ -311,6 +311,8 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
         context_->setSetting("async_insert", false);
         /// A shard the sink skipped is a silent drop under a 204: fail the write closed, as the check does.
         context_->setSetting("skip_unavailable_shards", false);
+        /// A shard that is this server itself is always written in-process, as the shard-target check assumes.
+        context_->setSetting("prefer_localhost_replica", true);
     }
 }
 

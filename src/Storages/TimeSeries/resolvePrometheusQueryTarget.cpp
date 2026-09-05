@@ -43,7 +43,6 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
-    extern const SettingsBool prefer_localhost_replica;
 }
 
 namespace DistributedSetting
@@ -139,9 +138,8 @@ namespace
         const auto metadata = storage.getInMemoryMetadataPtr(context, false);
         const auto time_series_type = metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type->getName();
 
-        /// Sent as text over each replica's own connection, so an undeclared remote database resolves to that
-        /// replica's configured default - except where the sink and the rewrite skip the connection and run on
-        /// this context instead (DistributedSink, SelectStreamFactory), which resolves it here.
+        /// Sent over each replica's own connection, so an undeclared database is that replica's default; a replica
+        /// that is this server itself is read and written in-process instead, so the name resolves on this context.
         auto make_probe_query = [&](bool runs_on_the_caller)
         {
             const String database_predicate = !remote_id.database_name.empty()
@@ -168,7 +166,6 @@ namespace
         std::set<String> wrong_types;
         /// Unreachable, or without the table: the sink cannot use them either, and what answers to the name later is unchecked.
         Strings unavailable_replicas;
-        const bool prefer_localhost_replica = context->getSettingsRef()[Setting::prefer_localhost_replica];
         const auto & shards_info = cluster->getShardsInfo();
         const auto & shards_addresses = cluster->getShardsAddresses();
         for (size_t shard_index = 0; shard_index != shards_info.size(); ++shard_index)
@@ -176,7 +173,7 @@ namespace
             {
                 const auto & pool = shards_info[shard_index].per_replica_pools[replica_index];
                 /// A cluster assembled from a subset of another carries no addresses: treat those as remote.
-                const bool runs_on_the_caller = prefer_localhost_replica && shard_index < shards_addresses.size()
+                const bool runs_on_the_caller = shard_index < shards_addresses.size()
                     && replica_index < shards_addresses[shard_index].size() && shards_addresses[shard_index][replica_index].is_local;
                 RemoteQueryExecutor probe(pool, make_probe_query(runs_on_the_caller), probe_header, probe_context);
                 bool answered = false;
