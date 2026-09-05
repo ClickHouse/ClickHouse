@@ -180,9 +180,9 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
     UInt64 codec_type = 0;
     readVarUInt(codec_type, *data_buffer);
 
-    if (codec_type != static_cast<UInt64>(IPostingListCodec::Type::Bitpacking))
+    if (!isValidPostingListBlockCodecType(codec_type))
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupted data in lazy cursor: expected codec type Bitpacking, got {}", codec_type);
+            "Corrupted data in lazy cursor: unknown posting list block codec type {}", codec_type);
 
     segment.codec_type = static_cast<IPostingListCodec::Type>(codec_type);
 

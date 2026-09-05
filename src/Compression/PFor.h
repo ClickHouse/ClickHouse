@@ -15,7 +15,7 @@ using detail::BLOCK;
 
 /// Worst-case compressed byte count for `count` values of type T.
 template <typename T>
-inline size_t maxCompressedBytes(size_t count) noexcept
+inline constexpr size_t maxCompressedBytes(size_t count) noexcept
 {
     return sizeof(T) * count + 2 * (count / BLOCK + 1) + 16;
 }
