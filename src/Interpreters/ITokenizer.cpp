@@ -64,8 +64,13 @@ bool NgramsTokenizer::nextInStringLike(const char * data, size_t length, size_t 
 
     size_t code_points = 0;
     bool escaped = false;
+    /// Byte offset just past the token's first code point, which is where the next n-gram starts. A code
+    /// point of a LIKE pattern can span an escape pair, so it is not derivable from `pos` alone.
+    size_t next_pos = pos;
     for (size_t i = pos; i < length;)
     {
+        const size_t code_points_before = code_points;
+
         if (escaped && (data[i] == '%' || data[i] == '_' || data[i] == '\\'))
         {
             token += data[i];
@@ -98,9 +103,12 @@ bool NgramsTokenizer::nextInStringLike(const char * data, size_t length, size_t 
             escaped = false;
         }
 
+        if (code_points_before == 0 && code_points == 1)
+            next_pos = i;
+
         if (code_points == n)
         {
-            pos += UTF8::seqLength(static_cast<UInt8>(data[pos]));
+            pos = next_pos;
             return true;
         }
     }
