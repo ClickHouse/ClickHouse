@@ -85,21 +85,32 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
         local_distributed_processing = false;
 
+    /// An archive entry is exposed as `<archive path>::<path in archive>` (see `ObjectInfoInArchive::getPath`),
+    /// so the sample path can be synthesized the same way as for a plain object as long as the member name is
+    /// known. A glob in the member name requires opening the archive to enumerate its entries, but the sample
+    /// path is needed only to infer hive partitioning, and `parseHivePartitioningKeysAndValues` looks only at
+    /// the directory part of the path - which is fully contained in the outer archive path. So a globbed member
+    /// name is simply omitted from the sample instead of disabling the fast path.
+    const bool is_archive = configuration->isArchive();
+    const bool member_name_is_known = !is_archive || !configuration->isPathInArchiveWithGlobs();
+    const String archive_suffix = member_name_is_known && is_archive ? "::" + configuration->getPathInArchive() : "";
+
     /// For non-glob paths, return directly without any S3 API calls.
-    if (!configuration->isArchive() && !path.hasGlobs() && !local_distributed_processing)
-        return path.path;
+    /// Besides saving a request, this keeps hive partition inference working for an explicitly
+    /// specified key that does not exist (or is filtered out before reading): the path string
+    /// itself carries the partition columns, so it must not depend on the object being present.
+    if (!path.hasGlobs() && !local_distributed_processing)
+        return path.path + archive_suffix;
 
     /// For pure brace-expansion globs like {a,b,c}.tsv (no wildcards * or ? involved),
     /// we can expand the glob locally and return the first path without making any S3 API calls.
     /// This avoids a redundant HeadObject request that would otherwise be issued by
     /// creating a file iterator just to get a sample path string.
-    /// Archives are excluded because they need the file iterator to return paths from inside
-    /// the archive (e.g. archive.zip::file.csv), not the raw archive path.
-    if (!configuration->isArchive() && containsOnlyEnumGlobs(path.path))
+    if (containsOnlyEnumGlobs(path.path))
     {
         auto expanded = expandSelectionGlob(path.path);
         if (!expanded.empty())
-            return expanded.front();
+            return expanded.front() + archive_suffix;
     }
 
     auto query_settings = configuration->getQuerySettings(context);

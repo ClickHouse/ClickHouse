@@ -65,4 +65,16 @@ bool hasExplicitTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query);
 /// A non-zero result means the query enables the optional "recent samples" target table.
 UInt64 getTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query);
 
+/// Returns the value of `version` from the SETTINGS clause of a CREATE TABLE ... ENGINE=TimeSeries query,
+/// or the latest version if the query doesn't specify it (the normalization pins an explicit version
+/// into every query, so an absent setting means a new table getting the latest version).
+UInt64 getTimeSeriesSettingVersion(const ASTCreateQuery & query);
+
+/// Whether a CREATE TABLE ... ENGINE=TimeSeries query has `version` in its SETTINGS clause.
+bool hasExplicitTimeSeriesSettingVersion(const ASTCreateQuery & query);
+
+/// Sets `version` in the SETTINGS clause of a CREATE TABLE ... ENGINE=TimeSeries query,
+/// creating the SETTINGS clause if the query doesn't have one yet.
+void setTimeSeriesSettingVersion(ASTCreateQuery & query, UInt64 version);
+
 }
