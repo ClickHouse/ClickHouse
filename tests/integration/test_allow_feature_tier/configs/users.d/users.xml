@@ -7,7 +7,7 @@
             -->
             <compatibility>24.10</compatibility>
 
-            <enable_time_series_table>0</enable_time_series_table>
+            <allow_experimental_funnel_functions>0</allow_experimental_funnel_functions>
         </default>
     </profiles>
     <users>
