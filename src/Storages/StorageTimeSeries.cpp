@@ -746,7 +746,7 @@ metric_name2[...] = ...
 :::info
 This is a private preview feature that may change in backwards-incompatible ways in the future releases.
 Enable usage of the TimeSeries table engine
-with [enable_time_series_table](/reference/settings/session-settings#enable_time_series_table) setting.
+with the `enable_time_series_table` setting.
 Input the command `set enable_time_series_table = 1`.
 :::
 

@@ -9148,7 +9148,7 @@ Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optim
     \
     /** timeSeries* aggregate functions (private preview). */ \
     DECLARE_WITH_ALIAS(Bool, enable_time_series_aggregate_functions, false, R"(
-timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
+Enables the `timeSeries*` aggregate functions for Prometheus-like time series resampling, rate, and delta calculation.
 )", PRIVATE_PREVIEW, allow_experimental_time_series_aggregate_functions, allow_experimental_ts_to_grid_aggregate_function) \
     \
     DECLARE(String, promql_database, "", R"(
