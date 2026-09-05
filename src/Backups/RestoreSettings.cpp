@@ -201,14 +201,36 @@ namespace
     M(OptionalString, storage_policy) \
     M(OptionalUUID, restore_uuid)
 
+namespace
+{
+    /// `allow_unresolved_access_dependencies` is the obsolete name of `skip_unresolved_access_dependencies`
+    /// (see `fromRestoreQuery`), so the two spellings must resolve as one setting: defaulting either has to
+    /// drop a change written as the other.
+    std::string_view canonicalRestoreSettingName(std::string_view name)
+    {
+        if (name == "allow_unresolved_access_dependencies")
+            return "skip_unresolved_access_dependencies";
+        return name;
+    }
+
+    /// The canonical names of the restore-specific settings. The obsolete name above is a field of
+    /// `RestoreSettings` handled by its own branch in `fromRestoreQuery` and deliberately kept out of the
+    /// macro, so it is canonicalized rather than listed; a macro-only classifier would call it a core
+    /// setting and try to reset it on the query context instead.
+    constexpr std::string_view RESTORE_SPECIFIC_SETTING_NAMES[] = {
+#define RESTORE_SETTING_NAME(TYPE, NAME) #NAME,
+        LIST_OF_RESTORE_SETTINGS(RESTORE_SETTING_NAME)
+#undef RESTORE_SETTING_NAME
+    };
+}
 
 RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
 {
     RestoreSettings res;
 
-    if (query.settings)
     {
-        const auto & settings = query.settings->as<const ASTSetQuery &>().changes;
+        const auto & settings
+            = resolveDefaultedSettings(query, RESTORE_SPECIFIC_SETTING_NAMES, canonicalRestoreSettingName).changes;
         for (const auto & setting : settings)
         {
 #define GET_RESTORE_SETTINGS_FROM_QUERY(TYPE, NAME) \
@@ -240,36 +262,9 @@ RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
     return res;
 }
 
-SettingsChanges RestoreSettings::extractCoreSettingsFromQuery(const ASTBackupQuery & query)
+CoreSettingsFromQuery RestoreSettings::extractCoreSettingsFromQuery(const ASTBackupQuery & query)
 {
-    SettingsChanges core;
-
-    if (!query.settings)
-        return core;
-
-    const auto & settings = query.settings->as<const ASTSetQuery &>().changes;
-    for (const auto & setting : settings)
-    {
-        /// `allow_unresolved_access_dependencies` is an obsolete name handled
-        /// specially in `fromRestoreQuery`, so it is not part of
-        /// `LIST_OF_RESTORE_SETTINGS` and must be listed explicitly.
-        if (setting.name == "allow_unresolved_access_dependencies")
-            continue;
-
-        bool is_restore_specific = false;
-
-#define CHECK_RESTORE_SETTING_NAME(TYPE, NAME) \
-        if (setting.name == #NAME) \
-            is_restore_specific = true;
-
-        LIST_OF_RESTORE_SETTINGS(CHECK_RESTORE_SETTING_NAME)
-#undef CHECK_RESTORE_SETTING_NAME
-
-        if (!is_restore_specific)
-            core.emplace_back(setting);
-    }
-
-    return core;
+    return extractCoreSettings(query, RESTORE_SPECIFIC_SETTING_NAMES, canonicalRestoreSettingName);
 }
 
 void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
@@ -288,6 +283,13 @@ void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
 
     /// Copy the core settings to the query too.
     query_settings->changes.insert(query_settings->changes.end(), core_settings.begin(), core_settings.end());
+
+    /// A CORE `name = DEFAULT` carries over as an ordinary change holding the declared default, and a
+    /// restore-specific one does not carry over at all, both for the reasons spelled out in
+    /// `BackupSettings::copySettingsToQuery`: the rebuilt clause is re-parsed from text by each receiving
+    /// host, so it must contain no `= DEFAULT`, and `restore_uuid` is generated after parsing and emitted
+    /// above as a change.
+    appendCoreDefaultsAsChanges(query_settings->changes, extractCoreSettingsFromQuery(query).default_names);
 
     if (query_settings->changes.empty())
         query_settings = nullptr;

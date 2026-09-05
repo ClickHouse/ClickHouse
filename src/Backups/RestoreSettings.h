@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/BackupInfo.h>
+#include <Backups/resolveDefaultedSettings.h>
 #include <Common/SettingsChanges.h>
 #include <map>
 #include <optional>
@@ -199,13 +200,14 @@ struct RestoreSettings
     /// Returns the restore-specific settings as a string map for observability (see `system.backups`).
     std::map<String, String> getSerializedSettings() const;
 
-    /// Returns only the non-restore-specific settings from a `RESTORE` query.
+    /// Returns only the non-restore-specific settings from a `RESTORE` query, both the overrides and the
+    /// names to reset (`name = DEFAULT`).
     /// In contrast to `fromRestoreQuery`, this helper does not touch the
     /// `base_backup_name` AST node, so it is safe to call before
     /// `ReplaceQueryParameterVisitor` has substituted query parameters.
     /// Used by `InterpreterSetQuery::applySettingsFromQuery` to apply core
     /// settings (e.g. `max_execution_time`) before `ProcessList::insert`.
-    static SettingsChanges extractCoreSettingsFromQuery(const ASTBackupQuery & query);
+    static CoreSettingsFromQuery extractCoreSettingsFromQuery(const ASTBackupQuery & query);
 };
 
 }

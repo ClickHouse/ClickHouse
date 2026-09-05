@@ -2,14 +2,18 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/FieldFromAST.h>
 #include <Parsers/ParserPartition.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 
 
@@ -231,6 +235,15 @@ namespace
         });
     }
 
+    /// Whether the next item is `<name> = DEFAULT`, matched as the pair parser matches it. `pos` is taken by
+    /// value, so this only looks ahead.
+    bool isDefaultedSetting(IParser::Pos pos, Expected & expected)
+    {
+        ASTPtr name;
+        return ParserCompoundIdentifier{}.parse(pos, name, expected) && ParserToken(TokenType::Equals).ignore(pos, expected)
+            && ParserKeyword(Keyword::DEFAULT).ignore(pos, expected);
+    }
+
     bool parseClusterHostIDs(IParser::Pos & pos, Expected & expected, ASTPtr & cluster_host_ids)
     {
         /// Accept both [...] and array(...) syntax for formatting roundtrip consistency.
@@ -259,6 +272,128 @@ namespace
         });
     }
 
+    /// One parsed SETTINGS clause of a BACKUP/RESTORE query.
+    struct ParsedSettings
+    {
+        SettingsChanges changes;
+        std::vector<String> default_settings;
+        /// A `param_x = value` item. The clause is never accepted with one (see parseSettings).
+        bool has_parameter = false;
+        ASTPtr base_backup_name;
+        ASTPtr cluster_host_ids;
+    };
+
+    /// True if a change carries a `{name:Type}` substitution as its value, which ParserSubstitution wraps
+    /// into a Field the same way `disk(...)` is wrapped.
+    bool hasQueryParameterValue(const SettingsChanges & changes)
+    {
+        for (const auto & change : changes)
+        {
+            CustomType custom;
+            if (!change.value.tryGet<CustomType>(custom) || std::string_view(custom.getTypeName()) != FieldFromASTImpl::name)
+                continue;
+
+            if (dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast->as<ASTQueryParameter>())
+                return true;
+        }
+        return false;
+    }
+
+    /// A comma at `pos` means ParserList stopped in the middle of the list (it rewinds to before a
+    /// separator that is not followed by a parsable item). Nothing that may follow a BACKUP/RESTORE
+    /// SETTINGS clause starts with a comma, so this distinguishes "read the whole clause" from
+    /// "gave up part way through it".
+    bool isAtListSeparator(IParser::Pos pos)
+    {
+        return pos->type == TokenType::Comma;
+    }
+
+    /// `default_aware` selects the pair parser: the plain one, which rejects `name = DEFAULT`, or the one
+    /// that also understands `name = DEFAULT` and `param_x = value`.
+    bool parseSettingsList(IParser::Pos & pos, Expected & expected, ParsedSettings & res, bool default_aware)
+    {
+        auto parse_setting = [&]
+        {
+            /// A backup name may be a bare identifier, `DEFAULT` included. In this grammar such an item is a
+            /// reset, so the sub-setting parsers stand aside and `resolveDefaultedSubSettings` clears the field.
+            const bool defaulted = default_aware && isDefaultedSetting(pos, expected);
+
+            if (!defaulted && !res.base_backup_name && parseBaseBackupSetting(pos, expected, res.base_backup_name))
+                return true;
+
+            if (!defaulted && !res.cluster_host_ids && parseClusterHostIDsSetting(pos, expected, res.cluster_host_ids))
+                return true;
+
+            SettingChange setting;
+
+            if (!default_aware)
+            {
+                if (!ParserSetQuery::parseNameValuePair(setting, pos, expected))
+                    return false;
+
+                res.changes.push_back(std::move(setting));
+                return true;
+            }
+
+            String name_of_default_setting;
+            ParserSetQuery::Parameter parameter;
+            /// Shorthand (`SETTINGS name` standing for `name = true`) stays with the plain grammar: the
+            /// BACKUP grammar never accepted it, and today's fallback handles it.
+            if (!ParserSetQuery::parseNameValuePairWithParameterOrDefault(
+                    setting, name_of_default_setting, parameter, pos, expected, /* enable_shorthand_syntax= */ false))
+                return false;
+
+            if (!parameter.first.empty())
+                res.has_parameter = true;
+            else if (!name_of_default_setting.empty())
+                res.default_settings.push_back(std::move(name_of_default_setting));
+            else
+                res.changes.push_back(std::move(setting));
+
+            return true;
+        };
+
+        return ParserList::parseUtil(pos, expected, parse_setting, false);
+    }
+
+    /// `base_backup` and `cluster_host_ids` are not stored in `changes` but in their own AST fields, so
+    /// their `= DEFAULT` form is resolved here rather than by the Backups layer: the default of both is
+    /// "absent", so clear the field and drop the name.
+    void resolveDefaultedSubSettings(ParsedSettings & res)
+    {
+        /// Both names reach the field through a keyword, which is case-insensitive, so the reset that clears
+        /// it has to be matched the same way or a locator survives the reset naming it.
+        auto is_base_backup = [](const String & name) { return equalsCaseInsensitive(name, "base_backup"); };
+        auto is_cluster_host_ids = [](const String & name) { return equalsCaseInsensitive(name, "cluster_host_ids"); };
+
+        for (const auto & name : res.default_settings)
+        {
+            if (is_base_backup(name))
+                res.base_backup_name = nullptr;
+            else if (is_cluster_host_ids(name))
+                res.cluster_host_ids = nullptr;
+        }
+
+        std::erase_if(res.default_settings, [&](const String & name) { return is_base_backup(name) || is_cluster_host_ids(name); });
+    }
+
+    void moveParsedSettingsOut(ParsedSettings & res, ASTPtr & settings, ASTPtr & base_backup_name, ASTPtr & cluster_host_ids)
+    {
+        ASTPtr res_settings;
+        if (!res.changes.empty() || !res.default_settings.empty())
+        {
+            auto settings_ast = make_intrusive<ASTSetQuery>();
+            settings_ast->changes = std::move(res.changes);
+            settings_ast->default_settings = std::move(res.default_settings);
+            settings_ast->is_standalone = false;
+            res_settings = settings_ast;
+        }
+
+        settings = std::move(res_settings);
+        base_backup_name = std::move(res.base_backup_name);
+        cluster_host_ids = std::move(res.cluster_host_ids);
+    }
+
     bool parseSettings(IParser::Pos & pos, Expected & expected, ASTPtr & settings, ASTPtr & base_backup_name, ASTPtr & cluster_host_ids)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -266,43 +401,42 @@ namespace
             if (!ParserKeyword(Keyword::SETTINGS).ignore(pos, expected))
                 return false;
 
-            SettingsChanges settings_changes;
-            ASTPtr res_base_backup_name;
-            ASTPtr res_cluster_host_ids;
+            const auto list_begin = pos;
 
-            auto parse_setting = [&]
+            /// Which grammar reads the clause is decided by running both, never by predicting which items
+            /// the plain one rejects: `param_x = 1` is an ordinary change to it, a `{name:Type}` value is
+            /// not, and either can appear in any position. The plain grammar wins whenever it reads the
+            /// clause to the end, so every form accepted today keeps its exact current meaning.
+            ParsedSettings plain;
+            const bool plain_ok = parseSettingsList(pos, expected, plain, /* default_aware= */ false);
+            const auto plain_end = pos;
+
+            if (!plain_ok || isAtListSeparator(plain_end))
             {
-                if (!res_base_backup_name && parseBaseBackupSetting(pos, expected, res_base_backup_name))
-                    return true;
+                pos = list_begin;
+                ParsedSettings with_default;
+                const bool with_default_ok = parseSettingsList(pos, expected, with_default, /* default_aware= */ true);
 
-                if (!res_cluster_host_ids && parseClusterHostIDsSetting(pos, expected, res_cluster_host_ids))
-                    return true;
-
-                SettingChange setting;
-                if (ParserSetQuery::parseNameValuePair(setting, pos, expected))
+                /// Accept the DEFAULT-aware reading only if it is strictly better: it must read the clause
+                /// to the end, and it must not have reinterpreted an item the plain grammar reads
+                /// differently (a `param_x` query parameter, or a substitution as a value). Otherwise leave
+                /// the clause to the caller exactly as before, so a later unparsable item is still a syntax
+                /// error and a first unparsable item still falls through to ParserQueryWithOutput.
+                if (with_default_ok && !isAtListSeparator(pos) && !with_default.has_parameter
+                    && !hasQueryParameterValue(with_default.changes))
                 {
-                    settings_changes.push_back(std::move(setting));
+                    resolveDefaultedSubSettings(with_default);
+                    moveParsedSettingsOut(with_default, settings, base_backup_name, cluster_host_ids);
                     return true;
                 }
 
-                return false;
-            };
-
-            if (!ParserList::parseUtil(pos, expected, parse_setting, false))
-                return false;
-
-            ASTPtr res_settings;
-            if (!settings_changes.empty())
-            {
-                auto settings_changes_ast = make_intrusive<ASTSetQuery>();
-                settings_changes_ast->changes = std::move(settings_changes);
-                settings_changes_ast->is_standalone = false;
-                res_settings = settings_changes_ast;
+                pos = plain_end;
             }
 
-            settings = std::move(res_settings);
-            base_backup_name = std::move(res_base_backup_name);
-            cluster_host_ids = std::move(res_cluster_host_ids);
+            if (!plain_ok)
+                return false;
+
+            moveParsedSettingsOut(plain, settings, base_backup_name, cluster_host_ids);
             return true;
         });
     }
@@ -317,17 +451,19 @@ namespace
         else
             return false;
 
-        SettingsChanges changes;
+        auto new_settings = make_intrusive<ASTSetQuery>();
         if (settings)
         {
-            changes = assert_cast<ASTSetQuery *>(settings.get())->changes;
+            const auto & parsed = *assert_cast<ASTSetQuery *>(settings.get());
+            new_settings->changes = parsed.changes;
+            new_settings->default_settings = parsed.default_settings;
         }
 
-        std::erase_if(changes, [](const SettingChange & change) { return change.name == "async"; }); // NOLINT
-        changes.emplace_back("async", async);
+        /// The explicit ASYNC/SYNC keyword wins over an `async` item in the clause, in either carrier.
+        static constexpr std::string_view names_to_strip[] = {"async"};
+        stripNamesFromSetQuery(*new_settings, names_to_strip);
+        new_settings->changes.emplace_back("async", async);
 
-        auto new_settings = make_intrusive<ASTSetQuery>();
-        new_settings->changes = std::move(changes);
         new_settings->is_standalone = false;
         settings = new_settings;
         return true;
