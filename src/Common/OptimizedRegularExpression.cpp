@@ -348,7 +348,10 @@ const char * analyzeImpl(
             {
                 ++pos;
                 if (pos == end)
+                {
+                    is_trivial = false;
                     break;
+                }
 
                 if (isEscapedLiteral(*pos))
                     goto ordinary;
