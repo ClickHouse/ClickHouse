@@ -1,0 +1,5 @@
+1	JSON(max_dynamic_paths=0)	1	10
+2	JSON(max_dynamic_paths=1)	2	20
+0	JSON(max_dynamic_paths=0)	true	1	10
+1	UInt64	false	\N	\N
+2	JSON(max_dynamic_paths=1)	true	2	20

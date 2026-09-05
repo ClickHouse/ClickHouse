@@ -1320,8 +1320,14 @@ std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
 {
     /// Currently don't support prewhere for virtual columns, columns with default expressions,
     /// and columns taken from file path (hive partitioning).
-    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    auto context = CurrentThread::tryGetQueryContext();
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    return getSupportedPrewhereColumnsForFormat(
+        metadata_snapshot,
+        context,
+        format_name,
+        format_settings,
+        /*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName StorageFile::getColumnSizes() const
@@ -1683,6 +1689,11 @@ StorageFileSource::~StorageFileSource()
 bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
 {
     if (!getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
+        return false;
+
+    /// Cached row counts are keyed only by path/format/settings and are valid only for unfiltered
+    /// scans. A filtered read must not reuse a cached unfiltered count (mirrors the write-side guard).
+    if (format_filter_info && format_filter_info->hasFilter())
         return false;
 
     auto num_rows_from_cache = tryGetNumRowsFromCache(current_path, file_stat.st_mtime);
@@ -2297,6 +2308,9 @@ void ReadFromFile::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_valu
 {
     info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
+    /// `optimizePrewhere` can attach the filter after this source step was constructed.
+    /// The count-only format path returns metadata rows without applying `PREWHERE`.
+    need_only_count = false;
     output_header = std::make_shared<const Block>(info.source_header);
 }
 
@@ -2414,10 +2428,14 @@ void StorageFile::read(
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
-    if (query_info.prewhere_info)
+    if (query_info.prewhere_info || query_info.row_level_filter)
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
 
-    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
+    /// A row-level filter or storage `PREWHERE` must disable the count-only shortcut even when
+    /// `optimize_trivial_count` is set: the format's count-only path returns the metadata row count
+    /// without applying the filters.
+    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+        && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter
         && context->getSettingsRef()[Setting::optimize_count_from_files]
         && !query_info.row_level_filter
         && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
@@ -2479,7 +2497,13 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
-    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(
+        filter_actions_dag,
+        ctx,
+        nullptr,
+        query_info.row_level_filter,
+        query_info.prewhere_info,
+        info.format_filter_input_header);
 
     for (size_t i = 0; i < num_streams; ++i)
     {

@@ -48,6 +48,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
+#include <DataTypes/Serializations/SerializationDynamicHelpers.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
@@ -1735,6 +1736,16 @@ public:
         const auto & variant_info = column_dynamic.getVariantInfo();
         const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
 
+        /// The type this element would be inferred as. Computed lazily: the fast path below needs it
+        /// only when it considers an exact-storage variant, so the common case stays inference-free.
+        DataTypePtr inferred_element_type;
+        auto get_inferred_element_type = [&]() -> const DataTypePtr &
+        {
+            if (!inferred_element_type)
+                inferred_element_type = removeNullable(elementToDataType(element, format_settings));
+            return inferred_element_type;
+        };
+
         if (insert_settings.try_existing_variants_in_dynamic_first)
         {
             /// Try to insert element into current variants but with no types conversion.
@@ -1754,6 +1765,19 @@ public:
             {
                 if (i != shared_variant_discr)
                 {
+                    /// `JSON(...)` variants (possibly wrapped in containers) must stay partitioned by
+                    /// exact storage type (see `typeRequiresExactStorageMatch`). Mirror the guard of
+                    /// `ColumnDynamic::insert`: an element whose inferred type requires exact storage
+                    /// may only reuse a storage-compatible variant, else the textual insertion would
+                    /// reroute the value and change `dynamicType`. Elements of other inferred types
+                    /// (e.g. an empty array into `Array(JSON(...))`) keep the merge-compatible reuse.
+                    /// Only exact-storage variants can textually accept such elements, so the inferred
+                    /// type is computed only when one is considered.
+                    if (typeRequiresExactStorageMatch(*variant_types[i])
+                        && typeRequiresExactStorageMatch(*get_inferred_element_type())
+                        && !areDynamicStorageTypesCompatible(variant_types[i], get_inferred_element_type()))
+                        continue;
+
                     auto it = json_extract_nodes_cache.find(variant_info.variant_names[i]);
                     if (it == json_extract_nodes_cache.end())
                         it = json_extract_nodes_cache.emplace(variant_info.variant_names[i], buildJSONExtractTree<JSONParser>(variant_types[i], "Dynamic inference")).first;
@@ -1770,7 +1794,7 @@ public:
 
         /// We couldn't insert element into current variants (or skipped it intentionally),
         /// infer ClickHouse type for this element and add it as a new variant.
-        auto element_type = removeNullable(elementToDataType(element, format_settings));
+        const DataTypePtr & element_type = get_inferred_element_type();
         if (!checkIfTypeIsComplete(element_type))
         {
             error = fmt::format(
@@ -1781,16 +1805,31 @@ public:
         }
 
         auto element_type_name = element_type->getName();
-        if (column_dynamic.addNewVariant(element_type, element_type_name))
+        /// Same exact-storage guard as `ColumnDynamic::insert`: an exact-storage inferred type
+        /// (e.g. a nested-object `JSON(...)` with reduced parameters) may only reuse a
+        /// storage-compatible variant, not any merge-compatible one.
+        auto global_discriminator = column_dynamic.findVariantDiscriminatorForType(
+            element_type, /*require_storage_compatible=*/ typeRequiresExactStorageMatch(*element_type));
+        DataTypePtr variant_type_for_insert;
+        if (global_discriminator)
+            variant_type_for_insert = variant_types[*global_discriminator];
+
+        if (!global_discriminator && column_dynamic.addNewVariant(element_type, element_type_name))
         {
-            auto it = json_extract_nodes_cache.find(element_type_name);
+            global_discriminator = variant_info.variant_name_to_discriminator.at(element_type_name);
+            variant_type_for_insert = element_type;
+        }
+
+        if (global_discriminator)
+        {
+            const auto & variant_type_name = variant_info.variant_names[*global_discriminator];
+            auto it = json_extract_nodes_cache.find(variant_type_name);
             if (it == json_extract_nodes_cache.end())
-                it = json_extract_nodes_cache.emplace(element_type_name, buildJSONExtractTree<JSONParser>(element_type, "Dynamic inference")).first;
-            auto global_discriminator = variant_info.variant_name_to_discriminator.at(element_type_name);
-            auto & variant = variant_column.getVariantByGlobalDiscriminator(global_discriminator);
+                it = json_extract_nodes_cache.emplace(variant_type_name, buildJSONExtractTree<JSONParser>(variant_type_for_insert, "Dynamic inference")).first;
+            auto & variant = variant_column.getVariantByGlobalDiscriminator(*global_discriminator);
             if (!it->second->insertResultToColumn(variant, element, insert_settings, format_settings, error))
                 return false;
-            variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(global_discriminator));
+            variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(*global_discriminator));
             variant_column.getOffsets().push_back(variant.size() - 1);
             return true;
         }

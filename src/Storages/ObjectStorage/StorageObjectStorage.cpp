@@ -427,8 +427,14 @@ bool StorageObjectStorage::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    auto context = CurrentThread::tryGetQueryContext();
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    return getSupportedPrewhereColumnsForFormat(
+        metadata_snapshot,
+        context,
+        configuration->format,
+        format_settings,
+        /*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
@@ -744,10 +750,13 @@ void StorageObjectStorage::read(
     if (query_info.prewhere_info || query_info.row_level_filter)
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
 
+    /// A row-level filter or storage `PREWHERE` must disable the count-only shortcut even when
+    /// `optimize_trivial_count` is set: the format's count-only path returns the metadata row count
+    /// without applying the filters.
     const bool need_only_count = (query_info.optimize_trivial_count
-                                  || (read_from_format_info.requested_columns.empty()
-                                      && !read_from_format_info.prewhere_info
-                                      && !read_from_format_info.row_level_filter))
+                                  || read_from_format_info.requested_columns.empty())
+        && !read_from_format_info.prewhere_info
+        && !read_from_format_info.row_level_filter
         && settings[Setting::optimize_count_from_files]
         && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 

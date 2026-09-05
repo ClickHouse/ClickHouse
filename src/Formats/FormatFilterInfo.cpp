@@ -62,11 +62,13 @@ FormatFilterInfo::FormatFilterInfo(
     const ContextPtr & context_,
     ColumnMapperPtr column_mapper_,
     FilterDAGInfoPtr row_level_filter_,
-    PrewhereInfoPtr prewhere_info_)
+    PrewhereInfoPtr prewhere_info_,
+    Block additional_columns_)
     : filter_actions_dag(filter_actions_dag_)
     , context(context_)
     , row_level_filter(std::move(row_level_filter_))
     , prewhere_info(std::move(prewhere_info_))
+    , additional_columns(std::move(additional_columns_))
     , column_mapper(column_mapper_)
 {
     bool use_query_condition_cache = context_->getSettingsRef()[Setting::use_query_condition_cache];
@@ -83,7 +85,7 @@ FormatFilterInfo::FormatFilterInfo() = default;
 
 bool FormatFilterInfo::hasFilter() const
 {
-    return filter_actions_dag != nullptr;
+    return filter_actions_dag != nullptr || row_level_filter != nullptr || prewhere_info != nullptr;
 }
 
 namespace
@@ -139,7 +141,11 @@ void FormatFilterInfo::initKeyConditionOnce(const Block & keys)
                 if (!ctx)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Context has expired");
 
-                Block all_inputs = buildKeyConditionInputs(keys, prewhere_info, row_level_filter);
+                Block all_inputs = keys;
+                for (const auto & col : additional_columns)
+                    if (!all_inputs.has(col.name))
+                        all_inputs.insert(col);
+                all_inputs = buildKeyConditionInputs(std::move(all_inputs), prewhere_info, row_level_filter);
                 /// `row_level_filter`/`prewhere_info` are usually derived from `filter_actions_dag`
                 /// (the WHERE clause) and so normally reference a superset of its columns, but that's
                 /// not guaranteed - e.g. in the data lake schema-changed path they may be null while
@@ -149,9 +155,12 @@ void FormatFilterInfo::initKeyConditionOnce(const Block & keys)
                 for (const auto & col : filter_actions_dag->getRequiredColumns())
                     if (!isColumnCovered(all_inputs, col.name))
                         all_inputs.insert({col.type->createColumn(), col.type, col.name});
+                /// Publish the derived columns separately: `additional_columns` is read by other
+                /// threads without synchronization (e.g. `StorageObjectStorageSource::createReader`),
+                /// so it must stay immutable after construction.
                 for (const auto & col : all_inputs)
-                    if (!keys.has(col.name))
-                        additional_columns.insert(col);
+                    if (!keys.has(col.name) && !additional_columns.has(col.name))
+                        key_condition_derived_columns.insert(col);
 
                 ColumnsWithTypeAndName columns = all_inputs.getColumnsWithTypeAndName();
                 Names names;

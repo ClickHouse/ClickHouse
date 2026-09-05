@@ -1,4 +1,11 @@
 #include <DataTypes/Serializations/SerializationDynamicHelpers.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -19,6 +26,186 @@ namespace ErrorCodes
 
 namespace
 {
+
+bool areDynamicSubcolumnTypesCompatibleImpl(const IDataType & lhs, const IDataType & rhs, bool for_read);
+bool dynamicStorageTypesHaveCompatibleIdentity(const IDataType & existing_type, const IDataType & inserted_type);
+
+bool areJSONSubcolumnTypesCompatible(const DataTypeObject & lhs, const DataTypeObject & rhs, bool for_read)
+{
+    if (lhs.getSchemaFormat() != rhs.getSchemaFormat())
+        return false;
+
+    /// For nested subcolumn reads the compatibility is path-local: missing or extra declared paths
+    /// don't affect the requested subcolumn. E.g. a request `d.JSON.a` must also see rows stored as
+    /// `JSON(a UInt64)` or `JSON(a UInt64, b String)`; a path missing in the stored value is simply
+    /// read as absent. A path declared by both types must still have compatible types, because the
+    /// stored value is cast to the requested type before the requested subcolumn is extracted.
+    if (for_read)
+    {
+        for (const auto & [path, lhs_type] : lhs.getTypedPaths())
+        {
+            auto it = rhs.getTypedPaths().find(path);
+            if (it != rhs.getTypedPaths().end() && !areDynamicSubcolumnTypesCompatibleImpl(*lhs_type, *it->second, for_read))
+                return false;
+        }
+
+        return true;
+    }
+
+    if (lhs.getTypedPaths().size() != rhs.getTypedPaths().size())
+        return false;
+
+    for (const auto & [path, lhs_type] : lhs.getTypedPaths())
+    {
+        auto it = rhs.getTypedPaths().find(path);
+        if (it == rhs.getTypedPaths().end() || !areDynamicSubcolumnTypesCompatibleImpl(*lhs_type, *it->second, for_read))
+            return false;
+    }
+
+    return lhs.getPathsToSkip() == rhs.getPathsToSkip() && lhs.getPathRegexpsToSkip() == rhs.getPathRegexpsToSkip();
+}
+
+bool areDynamicSubcolumnTypesCompatibleImpl(const IDataType & lhs, const IDataType & rhs, bool for_read)
+{
+    if (lhs.equals(rhs))
+        return true;
+
+    if (const auto * lhs_json = typeid_cast<const DataTypeObject *>(&lhs))
+    {
+        if (const auto * rhs_json = typeid_cast<const DataTypeObject *>(&rhs))
+            return areJSONSubcolumnTypesCompatible(*lhs_json, *rhs_json, for_read);
+    }
+
+    if (const auto * lhs_array = typeid_cast<const DataTypeArray *>(&lhs))
+    {
+        if (const auto * rhs_array = typeid_cast<const DataTypeArray *>(&rhs))
+            return areDynamicSubcolumnTypesCompatibleImpl(*lhs_array->getNestedType(), *rhs_array->getNestedType(), for_read);
+    }
+
+    /// `Map` is stored as `Array(Tuple(key, value))`, so recursing into the nested type also covers
+    /// a `JSON` value type, e.g. `Map(String, JSON)` vs `Map(String, JSON(a UInt64))`.
+    if (const auto * lhs_map = typeid_cast<const DataTypeMap *>(&lhs))
+    {
+        if (const auto * rhs_map = typeid_cast<const DataTypeMap *>(&rhs))
+            return areDynamicSubcolumnTypesCompatibleImpl(*lhs_map->getNestedType(), *rhs_map->getNestedType(), for_read);
+    }
+
+    if (const auto * lhs_nullable = typeid_cast<const DataTypeNullable *>(&lhs))
+    {
+        if (const auto * rhs_nullable = typeid_cast<const DataTypeNullable *>(&rhs))
+            return areDynamicSubcolumnTypesCompatibleImpl(*lhs_nullable->getNestedType(), *rhs_nullable->getNestedType(), for_read);
+    }
+
+    if (const auto * lhs_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&lhs))
+    {
+        if (const auto * rhs_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&rhs))
+            return areDynamicSubcolumnTypesCompatibleImpl(*lhs_low_cardinality->getDictionaryType(), *rhs_low_cardinality->getDictionaryType(), for_read);
+    }
+
+    /// `Dynamic` carries dynamic subcolumns itself, so a request like `Array(Dynamic)` must also see
+    /// rows stored as `Array(Dynamic(max_types=2))`: the two differ only in `max_dynamic_types` and
+    /// are convertible to each other. This is sound only on the read path, where the stored value is
+    /// cast to the requested type before the requested subcolumn is extracted from it. On the
+    /// insert/merge path such types must stay partitioned by their exact storage type (see
+    /// `typeRequiresExactStorageMatch`), because inserting into an existing variant column requires
+    /// an identical layout.
+    ///
+    /// A nested `Variant` carrier is deliberately NOT handled here. `CAST` between two `Variant`
+    /// types is only allowed when the target is an extension of the source, so there is no
+    /// conversion between e.g. `Variant(JSON(a UInt64), Int64)` and `Variant(JSON, Int64)` in either
+    /// direction; declaring them compatible would only replace the current "row reads as absent"
+    /// behaviour with a `CANNOT_CONVERT_TYPE` exception. Supporting it needs a member-wise `Variant`
+    /// to `Variant` conversion in `FunctionCast` first.
+    if (for_read && typeid_cast<const DataTypeDynamic *>(&lhs) && typeid_cast<const DataTypeDynamic *>(&rhs))
+        return true;
+
+    if (const auto * lhs_tuple = typeid_cast<const DataTypeTuple *>(&lhs))
+    {
+        const auto * rhs_tuple = typeid_cast<const DataTypeTuple *>(&rhs);
+        if (!rhs_tuple)
+            return false;
+
+        if (lhs_tuple->getElementNames() != rhs_tuple->getElementNames())
+            return false;
+
+        const auto & lhs_elements = lhs_tuple->getElements();
+        const auto & rhs_elements = rhs_tuple->getElements();
+        if (lhs_elements.size() != rhs_elements.size())
+            return false;
+
+        for (size_t i = 0; i != lhs_elements.size(); ++i)
+        {
+            if (!areDynamicSubcolumnTypesCompatibleImpl(*lhs_elements[i], *rhs_elements[i], for_read))
+                return false;
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
+bool dynamicStorageTypesHaveCompatibleIdentity(const IDataType & existing_type, const IDataType & inserted_type)
+{
+    if ((existing_type.hasCustomName() || inserted_type.hasCustomName()) && existing_type.getName() != inserted_type.getName())
+        return false;
+
+    if (const auto * existing_object = typeid_cast<const DataTypeObject *>(&existing_type))
+    {
+        const auto * inserted_object = typeid_cast<const DataTypeObject *>(&inserted_type);
+        return inserted_object && existing_object->equals(*inserted_object);
+    }
+
+    if (const auto * existing_array = typeid_cast<const DataTypeArray *>(&existing_type))
+    {
+        const auto * inserted_array = typeid_cast<const DataTypeArray *>(&inserted_type);
+        return inserted_array
+            && dynamicStorageTypesHaveCompatibleIdentity(*existing_array->getNestedType(), *inserted_array->getNestedType());
+    }
+
+    if (const auto * existing_map = typeid_cast<const DataTypeMap *>(&existing_type))
+    {
+        const auto * inserted_map = typeid_cast<const DataTypeMap *>(&inserted_type);
+        return inserted_map
+            && dynamicStorageTypesHaveCompatibleIdentity(*existing_map->getNestedType(), *inserted_map->getNestedType());
+    }
+
+    if (const auto * existing_nullable = typeid_cast<const DataTypeNullable *>(&existing_type))
+    {
+        const auto * inserted_nullable = typeid_cast<const DataTypeNullable *>(&inserted_type);
+        return inserted_nullable
+            && dynamicStorageTypesHaveCompatibleIdentity(*existing_nullable->getNestedType(), *inserted_nullable->getNestedType());
+    }
+
+    if (const auto * existing_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&existing_type))
+    {
+        const auto * inserted_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&inserted_type);
+        return inserted_low_cardinality
+            && dynamicStorageTypesHaveCompatibleIdentity(
+                *existing_low_cardinality->getDictionaryType(),
+                *inserted_low_cardinality->getDictionaryType());
+    }
+
+    if (const auto * existing_tuple = typeid_cast<const DataTypeTuple *>(&existing_type))
+    {
+        const auto * inserted_tuple = typeid_cast<const DataTypeTuple *>(&inserted_type);
+        if (!inserted_tuple || existing_tuple->getElementNames() != inserted_tuple->getElementNames())
+            return false;
+
+        const auto & existing_elements = existing_tuple->getElements();
+        const auto & inserted_elements = inserted_tuple->getElements();
+        if (existing_elements.size() != inserted_elements.size())
+            return false;
+
+        for (size_t i = 0; i != existing_elements.size(); ++i)
+        {
+            if (!dynamicStorageTypesHaveCompatibleIdentity(*existing_elements[i], *inserted_elements[i]))
+                return false;
+        }
+    }
+
+    return true;
+}
 
 /// Iterate over rows in Dynamic column and create an indexes column with indexes of each type in the flattened list.
 template <typename IndexesColumn>
@@ -284,6 +471,22 @@ std::vector<size_t> getLimitsForFlattenedDynamicColumn(const IColumn & indexes_c
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column type of indexes in flattened Dynamic column: {}", indexes_column.getName());
     }
+}
+
+bool areDynamicSubcolumnTypesCompatible(const DataTypePtr & lhs, const DataTypePtr & rhs)
+{
+    return areDynamicSubcolumnTypesCompatibleImpl(*lhs, *rhs, /*for_read=*/ false);
+}
+
+bool areDynamicSubcolumnTypesCompatibleForRead(const DataTypePtr & stored_type, const DataTypePtr & requested_type)
+{
+    return areDynamicSubcolumnTypesCompatibleImpl(*stored_type, *requested_type, /*for_read=*/ true);
+}
+
+bool areDynamicStorageTypesCompatible(const DataTypePtr & existing_type, const DataTypePtr & inserted_type)
+{
+    return areDynamicSubcolumnTypesCompatible(existing_type, inserted_type)
+        && dynamicStorageTypesHaveCompatibleIdentity(*existing_type, *inserted_type);
 }
 
 }

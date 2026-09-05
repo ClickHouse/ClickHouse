@@ -227,6 +227,67 @@ static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerP
 #endif
 }
 
+static bool restoreRequestedInputs(ActionsDAG & dag, const NamesAndTypesList & requested_columns)
+{
+    const NameSet requested_names = requested_columns.getNameSet();
+    std::unordered_set<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
+
+    bool added = false;
+    for (const auto * input : dag.getInputs())
+    {
+        if (requested_names.contains(input->result_name) && !outputs.contains(input))
+        {
+            dag.getOutputs().push_back(input);
+            outputs.insert(input);
+            added = true;
+        }
+    }
+
+    return added;
+}
+
+/// Resolve `name` (e.g. `time_struct.a`) as a subcolumn of one of the `header`'s columns.
+/// Returns a `NameAndTypePair` with the storage-name/subcolumn split, or nothing if `name`
+/// is not a subcolumn of any column in `header`.
+static std::optional<NameAndTypePair> resolveSubcolumnFromHeader(const Block & header, const String & name)
+{
+    for (const auto & column : header)
+    {
+        const auto & parent_name = column.name;
+        if (name.size() <= parent_name.size() + 1 || !name.starts_with(parent_name) || name[parent_name.size()] != '.')
+            continue;
+
+        String subcolumn_name = name.substr(parent_name.size() + 1);
+        if (auto subcolumn_type = column.type->tryGetSubcolumnType(subcolumn_name))
+            return NameAndTypePair(parent_name, subcolumn_name, column.type, subcolumn_type);
+    }
+    return std::nullopt;
+}
+
+static FilterDAGInfoPtr prepareFallbackFilter(const FilterDAGInfoPtr & filter, const NamesAndTypesList & requested_columns)
+{
+    if (!filter)
+        return nullptr;
+
+    auto result = std::make_shared<FilterDAGInfo>();
+    result->actions = filter->actions.clone();
+    result->column_name = filter->column_name;
+    result->do_remove_column = filter->do_remove_column && !requested_columns.contains(filter->column_name);
+    restoreRequestedInputs(result->actions, requested_columns);
+    return result;
+}
+
+static PrewhereInfoPtr prepareFallbackPrewhere(const PrewhereInfoPtr & prewhere, const NamesAndTypesList & requested_columns)
+{
+    if (!prewhere)
+        return nullptr;
+
+    auto result = std::make_shared<PrewhereInfo>(prewhere->clone());
+    result->remove_prewhere_column = prewhere->remove_prewhere_column && !requested_columns.contains(prewhere->prewhere_column_name);
+    restoreRequestedInputs(result->prewhere_actions, requested_columns);
+    return result;
+}
+
 /// Whether reading this object goes through row-level delete transformers (Iceberg
 /// position/equality deletes, Delta Lake deletion vectors). The count-from-files cache
 /// is keyed only by the file path and its modification time, but delete files change the
@@ -1050,7 +1111,7 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !format_filter_info->filter_actions_dag
+            && !format_filter_info->hasFilter()
             && !hasAttachedDeletes(*reader.getObjectInfo())
             && !reader.getObjectInfo()->rows_to_read)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
@@ -1240,14 +1301,26 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     /// by path + mtime, both untouched by delete files, so it must not be used either.
     need_only_count = need_only_count && !hasAttachedDeletes(*object_info);
 
+    const auto format_name = object_info->getFileFormat().value_or(configuration->format);
+    const bool format_supports_prewhere = !format_filter_info
+        || FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, context_, format_settings);
+    const bool need_fallback_filters = format_filter_info
+        && !format_supports_prewhere
+        && (format_filter_info->row_level_filter || format_filter_info->prewhere_info);
+    const bool effective_need_only_count = need_only_count && !need_fallback_filters;
+
     /// The count-from-cache shortcut builds a `ConstChunkGenerator` without opening the read buffer, so a
     /// requested `_headers` virtual column (the HTTP response headers of the data `GET`) would have to fall
     /// back to the metadata-probe headers (usually a `HEAD`), which can differ from the actual `GET`
     /// response. Skip the shortcut when `_headers` is requested so the real `GET` headers are used.
     const bool headers_requested = read_from_format_info.requested_virtual_columns.contains("_headers");
 
+    /// Cached row counts are keyed only by path/format/settings and are valid only for unfiltered
+    /// scans. A filtered read must not reuse a cached unfiltered count (mirrors the write-side guard).
+    const bool count_cache_usable = !format_filter_info || !format_filter_info->hasFilter();
     std::optional<size_t> num_rows_from_cache
-        = need_only_count && !headers_requested && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
+        = effective_need_only_count && count_cache_usable && !headers_requested
+            && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
         ? try_get_num_rows_from_cache() : std::nullopt;
 
     if (num_rows_from_cache)
@@ -1267,7 +1340,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     }
     else
     {
-        const auto format_name = object_info->getFileFormat().value_or(configuration->format);
         const bool input_format_does_not_read_file = Poco::toLower(format_name) == "one";
 
         row_lineage_columns = getMaterializedRowLineageColumns(*object_info, read_from_format_info, format_name);
@@ -1328,14 +1400,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             if (!format_filter_info)
                 return nullptr;
-
-            /// Check if the actual file format supports PREWHERE. For mixed-format data lake
-            /// tables (e.g. Iceberg with Parquet + ORC files), table-level PREWHERE support
-            /// may not match the individual file's format capabilities.
-            /// See https://github.com/ClickHouse/ClickHouse/issues/96829
-            const auto actual_format = object_info->getFileFormat().value_or(configuration->format);
-            const bool format_supports_prewhere =
-                FormatFactory::instance().checkIfFormatSupportsPrewhere(actual_format, context_, format_settings);
 
             /// Save filters for fallback FilterTransform when format doesn't support PREWHERE.
             if (!format_supports_prewhere)
@@ -1406,7 +1470,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                         format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
                         mapper,
                         keep_in_reader ? row_level_filter : nullptr,
-                        keep_in_reader ? prewhere_info : nullptr);
+                        keep_in_reader ? prewhere_info : nullptr,
+                        format_filter_info->additional_columns);
                     /// `mapper` is scoped to the schema this specific file was written under, so it
                     /// maps field_id -> the column name *that file* used. Keep the current/query-side
                     /// mapper around too (see `current_schema_column_mapper` doc comment) for readers
@@ -1422,7 +1487,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     format_filter_info->filter_actions_dag,
                     format_filter_info->context.lock(),
                     format_filter_info->column_mapper,
-                    nullptr, nullptr);
+                    nullptr, nullptr,
+                    format_filter_info->additional_columns);
 
             if (filters_substituted)
                 return std::make_shared<FormatFilterInfo>(
@@ -1434,6 +1500,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             return format_filter_info;
         }();
 
+        /// Fallback filters run in the per-file pipeline before the final
+        /// `ExtractColumnsTransform`, so they must not drop columns that
+        /// `read_from_format_info.requested_columns` still exposes from this source.
+        if (stripped_row_level_filter)
+            stripped_row_level_filter = prepareFallbackFilter(stripped_row_level_filter, read_from_format_info.requested_columns);
+        if (stripped_prewhere_info)
+            stripped_prewhere_info = prepareFallbackPrewhere(stripped_prewhere_info, read_from_format_info.requested_columns);
+
         if (object_info->rows_to_read)
         {
             /// Lazy materialization: read only the specified rows of this file. The set of rows
@@ -1443,7 +1517,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 context_,
                 filter_info ? filter_info->column_mapper : nullptr,
                 filter_info ? filter_info->row_level_filter : nullptr,
-                filter_info ? filter_info->prewhere_info : nullptr);
+                filter_info ? filter_info->prewhere_info : nullptr,
+                filter_info ? filter_info->additional_columns : Block{});
             filter_info_with_rows->rows_to_read = object_info->rows_to_read;
             filter_info = filter_info_with_rows;
         }
@@ -1457,6 +1532,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// `FilterTransform`s further down can evaluate `c0 > 10` etc. Re-add any missing
         /// input columns of the stripped DAGs to the reader's sample header.
         ///
+        /// Independently of stripping, also re-add `additional_columns` (filter inputs the
+        /// format reader needs for its own `KeyCondition`) and `format_filter_input_header`
+        /// (filter-only inputs that `updateFormatPrewhereInfo` kept out of `format_header`).
+        ///
         /// Skip this for the schema-changed path: there `initial_header` was set above to
         /// the FULL underlying file schema (`sample_header` from `getInitialSchemaByPath`),
         /// so all file-side columns — including the file-side counterparts of the filter
@@ -1466,13 +1545,25 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// against the same names the query planner produced.
         if (!schema_changed)
         {
+            auto add_column_to_initial_header = [&](const ColumnWithTypeAndName & column)
+            {
+                if (!initial_header.has(column.name))
+                    initial_header.insert({column.type->createColumn(), column.type, column.name});
+            };
+
+            if (format_filter_info)
+            {
+                for (const auto & column : format_filter_info->additional_columns)
+                    add_column_to_initial_header(column);
+            }
+
+            for (const auto & column : read_from_format_info.format_filter_input_header)
+                add_column_to_initial_header(column);
+
             auto add_filter_inputs = [&](const ActionsDAG & dag)
             {
                 for (const auto & required : dag.getRequiredColumns())
-                {
-                    if (!initial_header.has(required.name))
-                        initial_header.insert({required.type, required.name});
-                }
+                    add_column_to_initial_header({required.type->createColumn(), required.type, required.name});
             };
             if (stripped_row_level_filter)
                 add_filter_inputs(stripped_row_level_filter->actions);
@@ -1511,7 +1602,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 filter_info,
                 true /* is_remote_fs */,
                 compression_method,
-                need_only_count,
+                effective_need_only_count,
                 std::nullopt /*min_block_size_bytes*/,
                 std::nullopt /*min_block_size_rows*/,
                 std::nullopt /*max_block_size_bytes*/);
@@ -1529,13 +1620,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             filter_info,
             true /* is_remote_fs */,
             compression_method,
-            need_only_count);
+            effective_need_only_count);
         }
 
         input_format->setBucketsToRead(object_info->file_bucket_info);
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
 
-        if (need_only_count)
+        if (effective_need_only_count)
             input_format->needOnlyCount();
 
         builder.init(Pipe(input_format));
@@ -1565,6 +1656,39 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }
 
         std::optional<ActionsDAG> schema_transform;
+        auto get_schema_transform_needed_names = [&]()
+        {
+            Names needed_names = read_from_format_info.requested_columns.getNames();
+            if (stripped_row_level_filter || stripped_prewhere_info)
+            {
+                auto add_needed_name = [&needed_names](const String & needed_column_name)
+                {
+                    needed_names.push_back(needed_column_name);
+                };
+
+                if (format_filter_info)
+                {
+                    for (const auto & column : format_filter_info->additional_columns)
+                        add_needed_name(column.name);
+                }
+
+                for (const auto & column : read_from_format_info.format_filter_input_header)
+                    add_needed_name(column.name);
+
+                auto add_filter_required_names = [&add_needed_name](const ActionsDAG & dag)
+                {
+                    for (const auto & required : dag.getRequiredColumns())
+                        add_needed_name(required.name);
+                };
+
+                if (stripped_row_level_filter)
+                    add_filter_required_names(stripped_row_level_filter->actions);
+                if (stripped_prewhere_info)
+                    add_filter_required_names(stripped_prewhere_info->prewhere_actions);
+            }
+            return needed_names;
+        };
+
         if (object_info->data_lake_metadata && object_info->data_lake_metadata->schema_transform)
         {
             schema_transform = object_info->data_lake_metadata->schema_transform->clone();
@@ -1575,24 +1699,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             /// in `requested_columns` (which is post-`PREWHERE` and excludes filter
             /// inputs). For non-stripped (Parquet) reads the filter columns aren't
             /// referenced after the format reader so this is a no-op.
-            ///
-            /// FIXME: This is currently not done for the below case (configuration->getSchemaTransformer())
-            /// because it is an iceberg case where transformer contains columns ids (just increasing numbers)
-            /// which do not match requested_columns (while here requested_columns were adjusted to match physical columns).
-            Names needed_names = read_from_format_info.requested_columns.getNames();
-            auto add_filter_required_names = [&needed_names](const ActionsDAG & dag)
-            {
-                for (const auto & required : dag.getRequiredColumns())
-                    needed_names.push_back(required.name);
-            };
-            if (stripped_row_level_filter)
-                add_filter_required_names(stripped_row_level_filter->actions);
-            if (stripped_prewhere_info)
-                add_filter_required_names(stripped_prewhere_info->prewhere_actions);
-            schema_transform->removeUnusedActions(needed_names);
+            schema_transform->removeUnusedActions(get_schema_transform_needed_names());
         }
         if (!schema_transform)
         {
+            /// Do not prune this transform with `removeUnusedActions`: it is the Iceberg
+            /// schema-evolution case, where the query can reference subcolumns (e.g. a filter on
+            /// `time_struct.a`) that are not outputs of the evolution DAG (it outputs the whole
+            /// `time_struct`), so pruning by the needed names throws `UNKNOWN_IDENTIFIER`.
+            /// Keeping all outputs is safe - it is a superset of the needed columns.
             auto transform = configuration->getSchemaTransformer(context_, object_info);
             if (transform)
                 schema_transform = transform->clone();
@@ -1611,6 +1726,49 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             {
                 return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
             });
+        }
+
+        if (stripped_row_level_filter || stripped_prewhere_info)
+        {
+            /// The stripped filters can reference subcolumns (e.g. a `PREWHERE` condition on
+            /// `time_struct.a`, allowed by `getSupportedPrewhereColumnsForFormat`), while the
+            /// block at this point can contain only whole storage columns: the schema-evolution
+            /// transform above outputs full columns (`time_struct`). Extract such subcolumns
+            /// before the fallback `FilterTransform`s, otherwise their header update throws
+            /// `NOT_FOUND_COLUMN_IN_BLOCK`.
+            const Block & current_header = builder.getHeader();
+            NamesAndTypesList columns_with_extracted_subcolumns;
+            for (const auto & column : current_header)
+                columns_with_extracted_subcolumns.emplace_back(column.name, column.type);
+
+            bool need_subcolumn_extraction = false;
+            NameSet seen_filter_inputs;
+            auto add_missing_subcolumn_inputs = [&](const ActionsDAG & dag)
+            {
+                for (const auto & required : dag.getRequiredColumns())
+                {
+                    if (current_header.has(required.name) || !seen_filter_inputs.insert(required.name).second)
+                        continue;
+
+                    if (auto subcolumn = resolveSubcolumnFromHeader(current_header, required.name))
+                    {
+                        columns_with_extracted_subcolumns.push_back(std::move(*subcolumn));
+                        need_subcolumn_extraction = true;
+                    }
+                }
+            };
+            if (stripped_row_level_filter)
+                add_missing_subcolumn_inputs(stripped_row_level_filter->actions);
+            if (stripped_prewhere_info)
+                add_missing_subcolumn_inputs(stripped_prewhere_info->prewhere_actions);
+
+            if (need_subcolumn_extraction)
+            {
+                builder.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<ExtractColumnsTransform>(header, columns_with_extracted_subcolumns);
+                });
+            }
         }
 
         /// Apply row-level security filter and `PREWHERE` as fallback `FilterTransform`s
@@ -1635,7 +1793,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// the engine:
         ///   - `SourceStepWithFilter::applyPrewhereActions`
         ///   - `MergeTreeSelectProcessor::getPrewhereActions`
-        ///   - `Parquet::Reader::initializePrewhere`
+        ///   - `Parquet::Reader::preparePrewhere`
         /// `PREWHERE` actions drop their input columns from the block via `updateHeader`
         /// (the DAG outputs the synthetic filter column plus only what is needed
         /// downstream). If `PREWHERE` ran first, a row-policy expression that references
@@ -1645,7 +1803,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// lets `PREWHERE` drop them as the planner intended.
         ///
         /// The query planner puts row policies into `row_level_filter` when
-        /// `storage->supportsPrewhere()` (`PlannerJoinTree.cpp:1012`), but individual
+        /// `storage->supportsPrewhere()` (see `PlannerJoinTree.cpp`), but individual
         /// files in mixed-format tables may not support it at format level.
         /// `update_row_numbers_info = true`: safe here because every transform between the format
         /// reader (which attaches `ChunkInfoRowNumbers`) and these filters preserves or maintains it.

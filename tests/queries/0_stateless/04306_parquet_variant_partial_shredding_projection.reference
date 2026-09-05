@@ -1,0 +1,6 @@
+residual-only	2
+residual-only	3
+typed-only	1
+typed-only	4
+mixed	1	2
+mixed	4	3

@@ -1,32 +1,59 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Common/FieldAccurateComparison.h>
+#include <Common/Base64.h>
 #include <Common/checkStackSize.h>
+#include <Common/FieldAccurateComparison.h>
+#include <Core/Block.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Formats/SchemaInferenceUtils.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
 #include <IO/CompressionMethod.h>
 #include <IO/Libdeflate.h>
+#include <IO/ReadBufferFromString.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/GeoFilter.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
+#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
+#include <Processors/Formats/Impl/Parquet/VariantReader.h>
+#include <Processors/Formats/Impl/Parquet/VariantUtils.h>
 #include <Storages/SelectQueryInfo.h>
 #include <base/scope_guard.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
 #include <mutex>
 #include <fmt/ranges.h>
 #include <lz4.h>
@@ -375,9 +402,14 @@ bool Reader::spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spa
 
 void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read)
 {
+    defer_prewhere_execution = false;
     extended_sample_block = *sample_block;
     for (const auto & col : format_filter_info->additional_columns)
         extended_sample_block.insert(col);
+    /// Safe to read here: `initKeyConditionOnce` already ran in `initializeIfNeeded`.
+    for (const auto & col : format_filter_info->key_condition_derived_columns)
+        if (!extended_sample_block.has(col.name))
+            extended_sample_block.insert(col);
 
     /// Parse GeoParquet metadata once. Used by both Phase A (covering.bbox column injection)
     /// and SchemaConverter (geo type resolution). Parsing here avoids a redundant second parse
@@ -592,7 +624,40 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     schemer.prepareForReading();
     primitive_columns = std::move(schemer.primitive_columns);
     total_primitive_columns_in_file = schemer.primitive_column_idx;
+    parsed_object_sources = std::move(schemer.parsed_object_sources);
+    variant_sources = std::move(schemer.variant_sources);
+    variant_source_state_slots = schemer.variant_source_state_slots;
+    variant_metadata_state_slots = schemer.variant_metadata_state_slots;
     output_columns = std::move(schemer.output_columns);
+    variant_source_output_counts.assign(variant_source_state_slots, 0);
+    variant_output_indices_by_state_slot.assign(variant_source_state_slots, {});
+    for (const auto & output_info : output_columns)
+    {
+        if (output_info.source_kind != OutputColumnInfo::SourceKind::Variant)
+            continue;
+
+        if (output_info.source_idx >= variant_sources.size())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Invalid `Parquet` `VARIANT` source index {} while initializing output {}",
+                output_info.source_idx,
+                output_info.name);
+        }
+
+        const size_t state_idx = variant_sources[output_info.source_idx].state_slot_idx;
+        if (state_idx >= variant_source_output_counts.size())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Invalid `Parquet` `VARIANT` state slot {} while initializing output {}",
+                state_idx,
+                output_info.name);
+        }
+
+        ++variant_source_output_counts[state_idx];
+        variant_output_indices_by_state_slot[state_idx].push_back(&output_info - output_columns.data());
+    }
 
     /// Precalculate some column index mappings.
 
@@ -858,6 +923,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     }
 
     initializePrefetches();
+    defer_prewhere_execution = shouldDeferPrewhereExecution();
 }
 
 /// Glue to convert thrift types to equivalent arrow types because arrow felt the need to
@@ -1165,10 +1231,36 @@ void Reader::initializePrefetches()
     prefetcher.finalizeRanges();
 }
 
+bool Reader::shouldDeferPrewhereExecution() const
+{
+    const auto & prewhere_info = format_filter_info->prewhere_info;
+    if (!prewhere_info)
+        return false;
+
+    for (const auto & required_column : prewhere_info->prewhere_actions.getRequiredColumns())
+    {
+        auto idx_in_output_block = extended_sample_block.findPositionByName(required_column.name);
+        if (!idx_in_output_block.has_value())
+            continue;
+
+        const auto & output_idx = sample_block_to_output_columns_idx.at(*idx_in_output_block);
+        if (!output_idx.has_value())
+            continue;
+
+        const auto & output_info = output_columns.at(*output_idx);
+        if (output_info.source_kind != OutputColumnInfo::SourceKind::Variant || output_info.source_subcolumn_name.empty())
+            continue;
+
+        return true;
+    }
+
+    return false;
+}
+
 void Reader::preparePrewhere()
 {
     const auto & row_level_filter = format_filter_info->row_level_filter;
-    const auto & prewhere_info = format_filter_info->prewhere_info;
+    const auto & prewhere_info = defer_prewhere_execution ? PrewhereInfoPtr{} : format_filter_info->prewhere_info;
     std::unordered_set<size_t> prewhere_output_column_idxs;
 
     /// TODO [parquet]: We currently run prewhere after reading all prewhere columns of the row
@@ -1199,7 +1291,7 @@ void Reader::preparePrewhere()
                 output_info.step_idx = step_idx + 1;
                 bool only_for_prewhere = idx_in_output_block >= sample_block->columns();
 
-                for (size_t primitive_idx = output_info.primitive_start; primitive_idx < output_info.primitive_end; ++primitive_idx)
+                for (size_t primitive_idx : output_info.primitive_dependencies)
                 {
                     if (primitive_columns[primitive_idx].first_step_to_calculate == 0)
                         primitive_columns[primitive_idx].first_step_to_calculate = steps.size() + 1;
@@ -1287,7 +1379,29 @@ void Reader::preparePrewhere()
             }
         }
 
-        if (success)
+        bool uses_variant_subcolumns = false;
+        for (const auto & required_column : dag.getRequiredColumns())
+        {
+            auto idx_in_output_block = extended_sample_block.findPositionByName(required_column.name);
+            if (!idx_in_output_block.has_value())
+                continue;
+
+            const auto & output_idx = sample_block_to_output_columns_idx.at(*idx_in_output_block);
+            if (!output_idx.has_value())
+                continue;
+
+            const auto & output_info = output_columns.at(*output_idx);
+            if (output_info.source_kind == OutputColumnInfo::SourceKind::Variant && !output_info.source_subcolumn_name.empty())
+            {
+                uses_variant_subcolumns = true;
+                break;
+            }
+        }
+
+        /// Multiple `PREWHERE` read steps reduce later-column work, but for wide shredded `VARIANT`
+        /// filters longer step chains spend too much time cycling row subgroups through reader stages.
+        const bool collapse_to_single_step = uses_variant_subcolumns && prewhere_expr_info.steps.size() > 2;
+        if (success && !collapse_to_single_step)
         {
             /// Add all steps separately.
             for (size_t i = 0; i < prewhere_expr_info.steps.size(); ++i)
@@ -1307,6 +1421,16 @@ void Reader::preparePrewhere()
         add_step(row_level_filter->actions, row_level_filter->column_name, true);
     if (prewhere_info)
         add_step(prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name, prewhere_info->need_filter);
+
+    if (defer_prewhere_execution && format_filter_info->prewhere_info)
+    {
+        for (const auto * node : format_filter_info->prewhere_info->prewhere_actions.getOutputs())
+        {
+            auto idx = extended_sample_block.findPositionByName(node->result_name);
+            if (idx.has_value() && !sample_block_to_output_columns_idx.at(*idx).has_value())
+                prewhere_output_column_idxs.insert(*idx);
+        }
+    }
 
     /// Assert that we found all columns of the sample block, either in the file or in prewhere outputs.
     for (size_t i = 0; i < sample_block_to_output_columns_idx.size(); ++i)
@@ -1450,7 +1574,7 @@ bool Reader::decodeDictionaryPage(
             : size_t(header.uncompressed_page_size);
         reserved_bytes = Dictionary::decodedFootprintUpperBound(
             column.meta->meta_data.codec, header.dictionary_page_header.encoding, column_info.decoder,
-            size_t(header.dictionary_page_header.num_values), page_bytes, *column_info.decoded_type);
+            size_t(header.dictionary_page_header.num_values), page_bytes, *column_info.rawDecodedType());
         if (!reservation.tryReserve(reserved_bytes))
             return false;
     }
@@ -1537,7 +1661,7 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
     /// drive a huge `reserve`/`resize` inside Dictionary::decode.
     if (header.dictionary_page_header.num_values < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of values in dictionary page");
-    column.dictionary.decode(header.dictionary_page_header.encoding, column_info.decoder, size_t(header.dictionary_page_header.num_values), data, *column_info.decoded_type);
+    column.dictionary.decode(header.dictionary_page_header.encoding, column_info.decoder, size_t(header.dictionary_page_header.num_values), data, *column_info.rawDecodedType());
 }
 
 bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes)
@@ -1574,6 +1698,13 @@ bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes
             return true;
     }
     return false;
+}
+
+DataTypePtr Reader::PrimitiveColumnInfo::rawDecodedType() const
+{
+    if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(decoded_type.get()))
+        return removeNullable(lc_type->getDictionaryType());
+    return decoded_type;
 }
 
 bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_meta) const
@@ -1774,7 +1905,7 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
         for (size_t i = 0; i < count; ++i)
             indexes_data[i] = static_cast<UInt32>(i);
 
-        auto values = column_info.decoded_type->createColumn();
+        auto values = column_info.rawDecodedType()->createColumn();
         values->reserve(count);
         column.dictionary.index(*indexes, *values);
         hashes = parquetTryHashColumn(values.get(), &desc);
@@ -2223,13 +2354,18 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
 
             row_subgroup.columns.resize(primitive_columns.size());
             row_subgroup.output = std::vector<OutputColumnState>(extended_sample_block.columns());
+            row_subgroup.formed_output_columns = std::vector<ColumnPtr>(output_columns.size());
+            row_subgroup.formed_parsed_object_source_columns = std::vector<ColumnPtr>(parsed_object_sources.size());
+            row_subgroup.variant_metadata_states = std::vector<std::shared_ptr<VariantReader::MetadataState>>(variant_metadata_state_slots);
+            row_subgroup.variant_source_states = std::vector<std::shared_ptr<VariantReader::SourceState>>(variant_source_state_slots);
+            row_subgroup.variant_outputs_remaining = variant_source_output_counts;
             for (size_t idx = 0; idx < row_subgroup.output.size(); ++idx)
             {
                 const auto & output_idx = sample_block_to_output_columns_idx.at(idx);
                 if (output_idx.has_value())
                 {
                     const auto & info = output_columns.at(*output_idx);
-                    row_subgroup.output[idx].primitive_columns_remaining.store(info.primitive_end - info.primitive_start);
+                    row_subgroup.output[idx].primitive_columns_remaining.store(info.primitive_dependencies.size());
                 }
             }
             if (options.format.defaults_for_omitted_fields)
@@ -2418,6 +2554,70 @@ double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const
 
 void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, RowSubgroup & row_subgroup)
 {
+    auto finalize_subchunk = [&]
+    {
+        if (subchunk.null_map && !column_info.output_nullable && !column_info.group_nullable && !options.format.null_as_default)
+        {
+            const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
+            /// `null_map` uses standard ClickHouse convention: `1` = `NULL`, `0` = not `NULL`.
+            if (memchr(null_map.data(), 1, null_map.size()) != nullptr)
+                throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type for column {}", column_info.name);
+            subchunk.null_map = nullptr;
+        }
+
+        const bool preserve_unexpanded_nullable = subchunk.null_map && column_info.preserve_unexpanded_nullable;
+
+        if (subchunk.null_map && !preserve_unexpanded_nullable)
+        {
+            const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
+            /// Fill defaults at null rows so the column reaches full size. For a `group_nullable` leaf,
+            /// the null map is the group null map: defaults fill the struct-null rows.
+            subchunk.column->expand(null_map, /*inverted*/ true);
+        }
+
+        if (column_info.group_nullable && subchunk.null_map && !preserve_unexpanded_nullable)
+        {
+            /// Leaf of a physically-nullable struct read as Nullable(Tuple(...)): its def-level null map
+            /// is the group null map. Move it aside now, before the output_nullable block below can
+            /// consume `null_map` into a leaf-level ColumnNullable. formOutputColumn reads it from the
+            /// group's first leaf to wrap the assembled ColumnTuple in ColumnNullable. If the leaf is
+            /// itself Nullable, it gets a fresh all-non-null map below (the file leaf is REQUIRED, so it
+            /// has no element-level nulls; the struct nulls are represented by the outer ColumnNullable).
+            subchunk.group_null_map = std::move(subchunk.null_map);
+            subchunk.null_map.reset();
+        }
+
+        if (subchunk.arrays_offsets.empty() && !preserve_unexpanded_nullable && subchunk.column->size() != row_subgroup.filter.rows_pass)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of rows in column subchunk {} {}", subchunk.column->size(), row_subgroup.filter.rows_pass);
+
+        if (column_info.output_nullable && !column_info.output_type->isLowCardinalityNullable() && !preserve_unexpanded_nullable)
+        {
+            if (!subchunk.null_map)
+                subchunk.null_map = ColumnUInt8::create(subchunk.column->size(), false);
+            subchunk.column = ColumnNullable::create(std::move(subchunk.column), std::move(subchunk.null_map));
+            subchunk.null_map.reset();
+        }
+
+        chassert(preserve_unexpanded_nullable || subchunk.column->getDataType() == column_info.output_type->getColumnType());
+
+        if (column_info.dependent_output_idxs_in_block.empty())
+            return;
+
+        for (size_t idx_in_output_block : column_info.dependent_output_idxs_in_block)
+        {
+            OutputColumnState & state = row_subgroup.output.at(idx_in_output_block);
+            chassert(!state.column);
+            size_t prev_count = state.primitive_columns_remaining.fetch_sub(1);
+            chassert(prev_count > 0);
+            if (prev_count == 1)
+            {
+                const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
+                if (output_idx.has_value() && output_columns.at(*output_idx).is_primitive)
+                    state.column = formOutputColumn(row_subgroup, *output_idx, row_subgroup.filter.rows_pass);
+            }
+        }
+    };
+
     /// Allocate columns for values, null map, and array offsets.
 
     size_t output_num_values_estimate = 0;
@@ -2548,58 +2748,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid repetition/definition levels for arrays in column {}", column_info.name);
     }
 
-    if (subchunk.null_map && !column_info.output_nullable && !column_info.group_nullable && !options.format.null_as_default)
-    {
-        const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
-        /// null_map uses standard ClickHouse convention: 1 = NULL, 0 = NOT NULL.
-        /// Check if any values are null — those can't be inserted into a non-Nullable column.
-        if (memchr(null_map.data(), 1, null_map.size()) != nullptr)
-            throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type for column {}", column_info.name);
-        subchunk.null_map = nullptr;
-    }
-
-    if (subchunk.null_map)
-    {
-        const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
-        /// Fill defaults at null rows so the column reaches full size. For a group_nullable leaf,
-        /// the null map is the group null map: defaults fill the struct-null rows.
-        subchunk.column->expand(null_map, /*inverted*/ true);
-    }
-
-    if (column_info.group_nullable && subchunk.null_map)
-    {
-        /// Leaf of a physically-nullable struct read as Nullable(Tuple(...)): its def-level null map
-        /// is the group null map. Move it aside now, before the output_nullable block below can
-        /// consume `null_map` into a leaf-level ColumnNullable. formOutputColumn reads it from the
-        /// group's first leaf to wrap the assembled ColumnTuple in ColumnNullable. If the leaf is
-        /// itself Nullable, it gets a fresh all-non-null map below (the file leaf is REQUIRED, so it
-        /// has no element-level nulls; the struct nulls are represented by the outer ColumnNullable).
-        subchunk.group_null_map = std::move(subchunk.null_map);
-        subchunk.null_map.reset();
-    }
-
-    if (subchunk.arrays_offsets.empty() && subchunk.column->size() != row_subgroup.filter.rows_pass)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of rows in column subchunk {} {}", subchunk.column->size(), row_subgroup.filter.rows_pass);
-
-    if (column_info.output_nullable)
-    {
-        if (!subchunk.null_map)
-            subchunk.null_map = ColumnUInt8::create(subchunk.column->size(), false);
-        subchunk.column = ColumnNullable::create(std::move(subchunk.column), std::move(subchunk.null_map));
-        subchunk.null_map.reset();
-    }
-
-    chassert(subchunk.column->getDataType() == column_info.output_type->getColumnType());
-
-    OutputColumnState & state = row_subgroup.output.at(column_info.idx_in_output_block);
-    chassert(!state.column);
-    size_t prev_count = state.primitive_columns_remaining.fetch_sub(1);
-    chassert(prev_count > 0);
-    if (prev_count == 1)
-    {
-        const auto & output_idx = sample_block_to_output_columns_idx.at(column_info.idx_in_output_block);
-        state.column = formOutputColumn(row_subgroup, output_idx.value(), row_subgroup.filter.rows_pass);
-    }
+    finalize_subchunk();
 }
 
 void Reader::skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
@@ -3188,7 +3337,8 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
     /// See if we can decompress the whole page directly into IColumn's memory.
     /// Skip when filter is set: direct read bypasses decode and would write all values without applying the filter.
     const bool has_filter = row_subgroup && !row_subgroup->filter.filter.empty();
-    if (!has_filter && !page.is_dictionary_encoded && prev_value_idx == 0 && page.value_idx == page.num_values &&
+    if (!has_filter && !page.is_dictionary_encoded && !typeid_cast<ColumnLowCardinality *>(subchunk.column.get()) &&
+        prev_value_idx == 0 && page.value_idx == page.num_values &&
         page.codec != parq::CompressionCodec::UNCOMPRESSED)
     {
         std::span<char> span;
@@ -3218,24 +3368,43 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
 
         if (page.is_dictionary_encoded)
         {
-            chassert(!filter);
+            auto * low_cardinality_column = typeid_cast<ColumnLowCardinality *>(subchunk.column.get());
             /// Fused decode-and-gather; falls back to materializing the indexes as a column when
-            /// the decoder or the dictionary mode does not support the fusion.
-            if (!page.decoder->decodeAndIndex(encoded_values_to_read, column.dictionary, *subchunk.column))
+            /// the decoder or the dictionary mode does not support the fusion. The fusion also
+            /// cannot be used when a filter has to be applied while decoding, or when the output
+            /// column is `LowCardinality` (the indexes are inserted into its own dictionary).
+            if (low_cardinality_column || filter
+                || !page.decoder->decodeAndIndex(encoded_values_to_read, column.dictionary, *subchunk.column))
             {
                 if (!page.indices_column)
                     page.indices_column = ColumnUInt32::create();
                 auto & indices_column_uint32 = assert_cast<ColumnUInt32 &>(*page.indices_column);
                 auto & data = indices_column_uint32.getData();
                 chassert(data.empty());
-                page.decoder->decode(encoded_values_to_read, *page.indices_column, nullptr, 0);
-                column.dictionary.index(indices_column_uint32, *subchunk.column);
+                page.decoder->decode(encoded_values_to_read, *page.indices_column, filter, filter_offset);
+                if (low_cardinality_column)
+                    column.dictionary.insertIndexesIntoLowCardinalityColumn(indices_column_uint32, *low_cardinality_column);
+                else
+                    column.dictionary.index(indices_column_uint32, *subchunk.column);
                 data.clear();
             }
         }
         else
         {
-            page.decoder->decode(encoded_values_to_read, *subchunk.column, filter, filter_offset);
+            if (auto * low_cardinality_column = typeid_cast<ColumnLowCardinality *>(subchunk.column.get()))
+            {
+                if (!column_info.low_cardinality_dictionary_type)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing dictionary type for `LowCardinality` `Parquet` column {}", column_info.name);
+
+                auto full_column = column_info.low_cardinality_dictionary_type->createColumn();
+                full_column->reserve(encoded_values_to_read);
+                page.decoder->decode(encoded_values_to_read, *full_column, filter, filter_offset);
+                low_cardinality_column->insertRangeFromFullColumn(*full_column, 0, full_column->size());
+            }
+            else
+            {
+                page.decoder->decode(encoded_values_to_read, *subchunk.column, filter, filter_offset);
+            }
         }
     }
 
@@ -3253,14 +3422,134 @@ void Reader::decompressPageIfCompressed(PageState & page)
     page.codec = parq::CompressionCodec::UNCOMPRESSED;
 }
 
-MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows)
+void Reader::releaseVariantSourceInputsIfDone(RowSubgroup & row_subgroup, const OutputColumnInfo & output_info)
+{
+    if (output_info.source_kind != OutputColumnInfo::SourceKind::Variant)
+        return;
+    if (output_info.source_idx >= variant_sources.size())
+        return;
+
+    const auto & source_info = variant_sources[output_info.source_idx];
+    const size_t shared_state_idx = source_info.state_slot_idx;
+    if (shared_state_idx >= row_subgroup.variant_outputs_remaining.size())
+        return;
+
+    size_t & remaining_outputs = row_subgroup.variant_outputs_remaining[shared_state_idx];
+    chassert(remaining_outputs > 0);
+    --remaining_outputs;
+    if (remaining_outputs != 0)
+        return;
+
+    if (source_info.value_primitive_idx != UINT64_MAX && source_info.value_primitive_idx < row_subgroup.columns.size())
+    {
+        row_subgroup.columns[source_info.value_primitive_idx].column.reset();
+        row_subgroup.columns[source_info.value_primitive_idx].null_map.reset();
+    }
+
+    if (shared_state_idx < row_subgroup.variant_source_states.size())
+        row_subgroup.variant_source_states[shared_state_idx].reset();
+}
+
+void Reader::cacheOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, const ColumnPtr & column)
+{
+    if (output_column_idx >= row_subgroup.formed_output_columns.size())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Invalid cached output index {} while caching `Parquet` output; only {} cached outputs are available",
+            output_column_idx,
+            row_subgroup.formed_output_columns.size());
+    }
+
+    const OutputColumnInfo & output_info = output_columns.at(output_column_idx);
+    ColumnPtr & cached_output = row_subgroup.formed_output_columns[output_column_idx];
+    if (cached_output)
+        return;
+
+    cached_output = column;
+
+    if (output_info.idx_in_output_block.has_value())
+    {
+        if (*output_info.idx_in_output_block >= row_subgroup.output.size())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Invalid output slot {} while caching `Parquet` output {} of type {}; only {} output slots are available",
+                *output_info.idx_in_output_block,
+                output_info.name,
+                output_info.input_type->getName(),
+                row_subgroup.output.size());
+        }
+
+        OutputColumnState & state = row_subgroup.output[*output_info.idx_in_output_block];
+        if (!state.column)
+            state.column = cached_output;
+    }
+
+    releaseVariantSourceInputsIfDone(row_subgroup, output_info);
+}
+
+MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows, bool skip_cast)
 {
     /// Recurses over the nested output column tree, whose depth is bounded by SchemaConverter's
     /// recursion limit; guard the native stack here too as defense in depth.
     checkStackSize();
 
+    if (output_column_idx >= row_subgroup.formed_output_columns.size())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Invalid cached output index {} while forming `Parquet` output; only {} cached outputs are available",
+            output_column_idx,
+            row_subgroup.formed_output_columns.size());
+    }
+
     const OutputColumnInfo & output_info = output_columns.at(output_column_idx);
+    ColumnPtr & cached_output = row_subgroup.formed_output_columns[output_column_idx];
+    auto reuse_or_cache_output = [&](MutableColumnPtr column) -> MutableColumnPtr
+    {
+        cacheOutputColumn(row_subgroup, output_column_idx, column->getPtr());
+        return column;
+    };
+
+    if (cached_output)
+        return IColumn::mutate(cached_output);
+
+    if (output_info.idx_in_output_block.has_value())
+    {
+        if (*output_info.idx_in_output_block >= row_subgroup.output.size())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Invalid output slot {} while reusing `Parquet` output {} of type {}; only {} output slots are available",
+                *output_info.idx_in_output_block,
+                output_info.name,
+                output_info.input_type->getName(),
+                row_subgroup.output.size());
+        }
+
+        OutputColumnState & state = row_subgroup.output[*output_info.idx_in_output_block];
+        if (state.column)
+        {
+            cached_output = state.column;
+            return IColumn::mutate(cached_output);
+        }
+    }
+
     MutableColumnPtr res;
+    auto check_output_row_count = [&]
+    {
+        if (res && res->size() != num_rows)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Unexpected number of rows in `Parquet` output {} of type {}: {} instead of {}",
+                output_info.name,
+                output_info.output_type->getName(),
+                res->size(),
+                num_rows);
+        }
+    };
 
     if (output_info.is_missing_column)
     {
@@ -3275,7 +3564,82 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
             row_subgroup.block_missing_values.setBits(*output_info.idx_in_output_block, num_rows);
         }
 
-        return res;
+        return reuse_or_cache_output(std::move(res));
+    }
+
+    if (output_info.source_kind == OutputColumnInfo::SourceKind::Variant)
+    {
+        if (output_info.source_idx >= variant_sources.size())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Invalid `Parquet` `VARIANT` source index {} while forming output {}",
+                output_info.source_idx,
+                output_info.name);
+        }
+
+        res = VariantReader::formOutputColumn(*this, row_subgroup, output_info, variant_sources.at(output_info.source_idx), num_rows);
+        check_output_row_count();
+        return reuse_or_cache_output(std::move(res));
+    }
+
+    if (output_info.source_kind == OutputColumnInfo::SourceKind::ParsedObject)
+    {
+        if (output_info.source_idx >= parsed_object_sources.size())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Invalid parsed-object source index {} while forming `Parquet` output {}",
+                output_info.source_idx,
+                output_info.name);
+        }
+
+        const auto & source = parsed_object_sources.at(output_info.source_idx);
+        if (source.primitive_idx >= row_subgroup.columns.size())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Invalid parsed-object primitive index {} while forming `Parquet` output {}",
+                source.primitive_idx,
+                output_info.name);
+        }
+
+        ColumnPtr & cached_parsed_object = row_subgroup.formed_parsed_object_source_columns.at(output_info.source_idx);
+        if (!cached_parsed_object)
+        {
+            ColumnSubchunk & subchunk = row_subgroup.columns.at(source.primitive_idx);
+            cached_parsed_object = castColumn(
+                {std::move(subchunk.column), primitive_columns.at(source.primitive_idx).output_type, source.storage_name},
+                source.parsed_object_type);
+            subchunk.null_map.reset();
+        }
+
+        auto parsed_subcolumn = source.parsed_object_type->tryGetSubcolumn(output_info.source_subcolumn_name, cached_parsed_object);
+        auto parsed_subcolumn_type = source.parsed_object_type->tryGetSubcolumnType(output_info.source_subcolumn_name);
+
+        if (!parsed_subcolumn || !parsed_subcolumn_type)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot extract subcolumn {} from parsed `Parquet` object column {}",
+                output_info.source_subcolumn_name,
+                source.storage_name);
+        }
+
+        auto column = castColumn({parsed_subcolumn, parsed_subcolumn_type, output_info.name}, output_info.output_type);
+        chassert(column->use_count() == 1);
+        res = IColumn::mutate(std::move(column));
+
+        if (output_info.idx_in_output_block.has_value() &&
+            *output_info.idx_in_output_block < row_subgroup.block_missing_values.getNumColumns() &&
+            isColumnNullable(*res))
+        {
+            const auto & null_map = assert_cast<const ColumnNullable &>(*res).getNullMapData();
+            row_subgroup.block_missing_values.setBitsFromNullMap(*output_info.idx_in_output_block, null_map);
+        }
+
+        check_output_row_count();
+        return reuse_or_cache_output(std::move(res));
     }
 
     /// Physically-nullable struct read as Nullable(Tuple(...)). input_type is Nullable(Tuple), but
@@ -3304,7 +3668,27 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         /// Primitive column.
         chassert(output_info.primitive_start + 1 == output_info.primitive_end);
         size_t primitive_idx = output_info.primitive_start;
-        ColumnSubchunk & subchunk = row_subgroup.columns.at(primitive_idx);
+        if (primitive_idx >= row_subgroup.columns.size())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Invalid primitive index {} while forming `Parquet` output {} of type {}; only {} primitive subchunks are available",
+                primitive_idx,
+                output_info.name,
+                output_info.input_type->getName(),
+                row_subgroup.columns.size());
+        }
+
+        ColumnSubchunk & subchunk = row_subgroup.columns[primitive_idx];
+        if (!subchunk.column)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Primitive `Parquet` output {} of type {} was requested before primitive chunk {} was decoded",
+                output_info.name,
+                output_info.input_type->getName(),
+                primitive_idx);
+        }
         res = std::move(subchunk.column);
 
         if (output_info.idx_in_output_block.has_value() &&
@@ -3318,32 +3702,60 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
     }
     else if (kind == TypeIndex::Array)
     {
+        if (output_info.nested_columns.empty())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Unexpected empty nested columns while forming `Parquet` `Array` output {} of type {}",
+                output_info.name,
+                output_info.input_type->getName());
+        }
         chassert(output_info.nested_columns.size() == 1);
+        /// Not every primitive in this range repeats at this level: the `metadata` column of a
+        /// nested shredded `VARIANT` is hoisted to the enclosing row, so it is appended to the
+        /// primitive list while the array's subtree is being built but carries no offsets here.
+        auto repeats_at_this_level = [&](size_t primitive_idx)
+        {
+            return row_subgroup.columns.at(primitive_idx).arrays_offsets.size() >= output_info.rep;
+        };
+
+        size_t offsets_primitive_idx = output_info.primitive_start;
+        while (offsets_primitive_idx < output_info.primitive_end && !repeats_at_this_level(offsets_primitive_idx))
+            ++offsets_primitive_idx;
+
         MutableColumnPtr offsets_column;
-        if (output_info.primitive_start < output_info.primitive_end)
-            offsets_column = std::move(row_subgroup.columns.at(output_info.primitive_start).arrays_offsets.at(output_info.rep - 1));
+        if (offsets_primitive_idx < output_info.primitive_end)
+            offsets_column = std::move(row_subgroup.columns.at(offsets_primitive_idx).arrays_offsets.at(output_info.rep - 1));
         else
             /// All subcolumns inside the Array are missing. E.g. Array(Tuple(nonexistent_column Int64)).
             offsets_column = ColumnUInt64::create(num_rows, 0);
 
         /// If it's an array of tuples, every tuple element should have the same array offsets.
         const auto & offsets = assert_cast<const ColumnUInt64 &>(*offsets_column).getData();
-        for (size_t i = output_info.primitive_start + 1; i < output_info.primitive_end; ++i)
+        for (size_t i = offsets_primitive_idx + 1; i < output_info.primitive_end; ++i)
         {
+            if (!repeats_at_this_level(i))
+                continue;
+
             const auto other_offsets_column = std::move(row_subgroup.columns.at(i).arrays_offsets.at(output_info.rep - 1));
             const auto & other_offsets = assert_cast<const ColumnUInt64 &>(*other_offsets_column).getData();
             if (offsets != other_offsets)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid array of tuples: tuple elements {} and {} have different array lengths", primitive_columns.at(output_info.primitive_start).name, primitive_columns.at(i).name);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid array of tuples: tuple elements {} and {} have different array lengths", primitive_columns.at(offsets_primitive_idx).name, primitive_columns.at(i).name);
         }
 
-        MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0), offsets.back());
+        /// Nested shredded `VARIANT` values inherit the enclosing top-level row's `metadata`
+        /// dictionary; publish this level so VariantReader can map element rows back to it.
+        row_subgroup.nested_array_offsets.push_back(&offsets);
+        SCOPE_EXIT({ row_subgroup.nested_array_offsets.pop_back(); });
+
+        MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0), offsets.back(), skip_cast);
         res = ColumnArray::create(std::move(nested), std::move(offsets_column));
     }
     else if (kind == TypeIndex::Tuple)
     {
         MutableColumns columns;
         for (size_t idx : output_info.nested_columns)
-            columns.push_back(formOutputColumn(row_subgroup, idx, num_rows));
+            columns.push_back(formOutputColumn(row_subgroup, idx, num_rows, skip_cast));
         if (columns.empty())
             res = ColumnTuple::create(num_rows);
         else
@@ -3352,8 +3764,16 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
     else
     {
         chassert(kind == TypeIndex::Map);
+        if (output_info.nested_columns.empty())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Unexpected empty nested columns while forming `Parquet` `Map` output {} of type {}",
+                output_info.name,
+                output_info.input_type->getName());
+        }
         chassert(output_info.nested_columns.size() == 1);
-        MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0), num_rows);
+        MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0), num_rows, skip_cast);
         res = ColumnMap::create(std::move(nested));
     }
 
@@ -3366,7 +3786,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
 
     chassert(res->getDataType() == output_info.input_type->getColumnType());
 
-    if (output_info.needs_cast)
+    if (output_info.needs_cast && !skip_cast)
     {
         auto col = castColumn(
             {std::move(res), output_info.input_type, output_info.name}, output_info.output_type);
@@ -3374,7 +3794,8 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         res = IColumn::mutate(std::move(col));
     }
 
-    return res;
+    check_output_row_count();
+    return reuse_or_cache_output(std::move(res));
 }
 
 ColumnPtr & Reader::getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx_in_output_block)
@@ -3382,15 +3803,29 @@ ColumnPtr & Reader::getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx
     chassert(row_subgroup.filter.rows_pass > 0);
     const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
     OutputColumnState & state = row_subgroup.output.at(idx_in_output_block);
-    chassert(state.primitive_columns_remaining.load() == 0);
+    if (state.primitive_columns_remaining.load() != 0)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "`Parquet` output {} was requested before all primitive dependencies were decoded ({} remaining)",
+            extended_sample_block.getByPosition(idx_in_output_block).name,
+            state.primitive_columns_remaining.load());
+    }
     if (output_idx.has_value())
     {
-        const auto & info = output_columns[*output_idx];
-        /// Normally output column is formed by decodePrimitiveColumn. But if the column is missing
-        /// in the file, and we're returning default values, we form it here, i.e. during prewhere or delivery.
-        chassert(state.column || (info.primitive_start == info.primitive_end));
         if (!state.column)
             state.column = formOutputColumn(row_subgroup, *output_idx, row_subgroup.filter.rows_pass);
+    }
+    else if (!state.column && defer_prewhere_execution)
+    {
+        /// The column is a `PREWHERE` output that is part of the delivered block (e.g. the filter
+        /// column when `remove_prewhere_column` is false), but `PREWHERE` execution is deferred to
+        /// `ParquetV3BlockInputFormat::applyDeferredPrewhere`. It recomputes the expression from
+        /// the delivered input columns and takes its outputs by name in preference to this
+        /// placeholder (`ExpressionActions::execute` puts expression outputs before carried-through
+        /// inputs), so the placeholder values are never observable.
+        const auto & col = extended_sample_block.getByPosition(idx_in_output_block);
+        state.column = col.type->createColumn()->cloneResized(row_subgroup.filter.rows_pass);
     }
     chassert(state.column);
     chassert(state.column->size() == row_subgroup.filter.rows_pass);
@@ -3427,13 +3862,6 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
             state.column = block.getByName(name).column;
         }
 
-        /// If it's the last prewhere step, deallocate the columns that were only needed for prewhere.
-        if (step_idx == steps.size())
-        {
-            while (row_subgroup.output.size() > sample_block->columns())
-                row_subgroup.output.pop_back(); // because OutputColumnState has no move constructor
-        }
-
         if (!step.filter_column_name.has_value())
             return;
 
@@ -3453,6 +3881,55 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         for (auto & state : row_subgroup.output)
             if (state.column)
                 state.column = state.column->filter(filter, /*result_size_hint=*/ rows_pass);
+
+        /// Keep internal cached outputs in sync with the filtered row set.
+        /// Some outputs (for example `VARIANT` typed branches) live only in
+        /// `formed_output_columns` and can be reused later during delivery.
+        /// If they were materialized before PREWHERE reduced the row set, reusing them without
+        /// filtering would return columns sized for the previous `rows_pass`.
+        for (size_t output_idx = 0; output_idx < row_subgroup.formed_output_columns.size(); ++output_idx)
+        {
+            ColumnPtr & cached_output = row_subgroup.formed_output_columns[output_idx];
+            if (!cached_output)
+                continue;
+
+            const auto & output_info = output_columns.at(output_idx);
+            if (output_info.idx_in_output_block.has_value())
+            {
+                ColumnPtr & state_column = row_subgroup.output.at(*output_info.idx_in_output_block).column;
+                if (state_column)
+                {
+                    cached_output = state_column;
+                    continue;
+                }
+            }
+
+            cached_output = cached_output->filter(filter, /*result_size_hint=*/ rows_pass);
+        }
+
+        for (ColumnPtr & cached_source : row_subgroup.formed_parsed_object_source_columns)
+        {
+            if (!cached_source)
+                continue;
+
+            cached_source = cached_source->filter(filter, /*result_size_hint=*/ rows_pass);
+        }
+
+        for (const auto & metadata_state : row_subgroup.variant_metadata_states)
+        {
+            if (!metadata_state)
+                continue;
+
+            VariantReader::filterMetadataState(*metadata_state, filter, /*result_size_hint=*/ rows_pass, options.format);
+        }
+
+        for (const auto & state : row_subgroup.variant_source_states)
+        {
+            if (!state)
+                continue;
+
+            VariantReader::filterSourceState(*state, filter, /*result_size_hint=*/ rows_pass, options.format);
+        }
 
         /// Expand the filter to correspond to all column subchunk rows, rather than only rows that
         /// passed previous filters (previous prewhere steps).

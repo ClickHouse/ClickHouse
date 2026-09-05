@@ -1,0 +1,4 @@
+1	JSON	1	1	\N
+2	JSON(a UInt64)	2	2	\N
+3	JSON(a UInt64, b String)	3	3	x
+4	UInt8	\N	\N	\N

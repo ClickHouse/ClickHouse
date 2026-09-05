@@ -12,6 +12,7 @@ namespace DB::ErrorCodes
 
 namespace DB
 {
+class ColumnLowCardinality;
 class IDataType;
 }
 
@@ -55,6 +56,7 @@ struct Dictionary
     /// decoded `col`), excluding `data` which only points into one of those or into prefetcher memory.
     size_t allocatedBytes() const;
     void index(const ColumnUInt32 & indexes_col, IColumn & out);
+    void insertIndexesIntoLowCardinalityColumn(const ColumnUInt32 & indexes_col, ColumnLowCardinality & out);
     /// Append the values at the given dictionary indexes to `out`. Same as `index`, from a plain
     /// array; `index` delegates here. The indexes must be within bounds.
     void appendIndexes(const UInt32 * indexes, size_t n, IColumn & out);
