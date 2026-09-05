@@ -615,6 +615,14 @@ Possible values:
 + 0 — Disable (throw error on type mismatch).
 + 1 — Enable (skip field on type mismatch).
 )", 0) \
+    DECLARE(Bool, type_json_skip_null_typed_paths, false, R"(
+When enabled, typed paths in JSON columns that have NULL values are treated as absent, matching the behavior of dynamic paths. This affects JSON serialization output, introspection functions like `JSONAllPaths`, `JSONHas`, `JSONExtractRaw`, `has`, and `empty`/`notEmpty` checks.
+
+Possible values:
+
++ 0 — Disable (typed paths are always present, even with NULL values).
++ 1 — Enable (NULL typed paths are treated as absent).
+)", 0) \
     DECLARE(UInt64Auto, max_dynamic_subcolumns_in_json_type_parsing, "auto", R"(
 The maximum number of dynamic subcolumns that can be created in every column during parsing of JSON column.
 It allows to control the number of dynamic subcolumns during parsing regardless of dynamic parameters specified in the data type.
@@ -1364,9 +1372,10 @@ When `format_schema_source` is set to 'query', the following conditions apply:
 - The result of the query is treated as the schema content.
 - This result is cached locally in the `format_schemas` directory.
 - You can clear the local cache using the command: `SYSTEM DROP FORMAT SCHEMA CACHE FOR Files`.
-- Once cached, identical queries are not executed to fetch the schema again until the cache is explicitly cleared
+- Once cached, identical queries from the same user are not executed to fetch the schema again until the cache is explicitly cleared
 - In addition to local cache files, Protobuf messages are also cached in memory. Even after clearing the local cache files, the in-memory cache must be cleared using `SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf]` to fully refresh the schema.
 - Run the query `SYSTEM DROP FORMAT SCHEMA CACHE` to clear the cache for both cache files and Protobuf messages schemas at once.
+- The query is executed on behalf of the user running it, so it is subject to that user's access rights, and its cached result is reused only for the same user. It cannot be executed where there is no user: in a background task, such as a streaming engine consumer, or when `INSERT` data is parsed on the client side. Use `format_schema_source` set to `file` or `string` there.
 )", 0) \
     DECLARE(String, format_schema, "", R"(
 This parameter is useful when you are using formats that require a schema definition, such as [Cap'n Proto](https://capnproto.org/) or [Protobuf](https://developers.google.com/protocol-buffers/). The value depends on the format.
