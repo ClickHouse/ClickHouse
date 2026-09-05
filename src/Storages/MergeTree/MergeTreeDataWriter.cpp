@@ -28,6 +28,7 @@
 #include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Common/ColumnsHashing.h>
+#include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
@@ -1058,7 +1059,20 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     }
 
     if (metadata_snapshot->hasRowsTTL())
-        updateTTL(context, metadata_snapshot->getRowsTTL(), new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
+    {
+        const auto & rows_ttl = metadata_snapshot->getRowsTTL();
+        updateTTL(context, rows_ttl, new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
+        /// Record the rows-TTL expression and the server time zone these timestamps were computed under, so the fast
+        /// `MODIFY TTL` path can later verify the part is not stale (see `MergeTreeDataPartTTLInfos`) -
+        /// unless some row's timestamp is exactly 0 (the epoch), which means "no TTL" to the rest of the
+        /// machinery and is excluded from the stored `min`: with such a row the bounds are not a complete
+        /// summary of the part and must not carry a fingerprint.
+        if (!new_data_part->ttl_infos.table_ttl.has_epoch_timestamps)
+        {
+            new_data_part->ttl_infos.table_ttl_expression = getRowsTTLExpressionFingerprint(rows_ttl);
+            new_data_part->ttl_infos.table_ttl_timezone = getRowsTTLTimeZoneFingerprint(rows_ttl, DateLUT::serverTimezoneInstance());
+        }
+    }
 
     for (const auto & ttl_entry : metadata_snapshot->getGroupByTTLs())
         updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.group_by_ttl[ttl_entry.result_column], block, true);
@@ -1073,7 +1087,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     for (const auto & ttl_entry : recompression_ttl_entries)
         updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.recompression_ttl[ttl_entry.result_column], block, false);
 
-    new_data_part->ttl_infos.update(move_ttl_infos);
+    /// `move_ttl_infos` contains only MOVE TTLs. Do not use the generic `update` here: it also
+    /// merges rows-TTL provenance, and an empty auxiliary accumulator would incorrectly make the
+    /// freshly computed rows-TTL fingerprint unknown.
+    for (const auto & [expression, ttl_info] : move_ttl_infos.moves_ttl)
+        new_data_part->ttl_infos.moves_ttl[expression].update(ttl_info);
 
     /// partition / ttl_infos / minmax (and patch source parts) are built above outside any
     /// dedicated-arena scope, so they were allocated in the default arenas. Re-home them into the

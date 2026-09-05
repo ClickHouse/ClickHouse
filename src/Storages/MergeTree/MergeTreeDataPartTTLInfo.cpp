@@ -18,6 +18,8 @@ void MergeTreeDataPartTTLInfo::update(time_t time)
 {
     if (time && (!min || time < min))
         min = time;
+    else if (!time)
+        has_epoch_timestamps = true;
 
     max = std::max(time, max);
 }
@@ -27,6 +29,7 @@ void MergeTreeDataPartTTLInfo::update(const MergeTreeDataPartTTLInfo & other_inf
     if (other_info.min && (!min || other_info.min < min))
         min = other_info.min;
 
+    has_epoch_timestamps |= other_info.has_epoch_timestamps;
     max = std::max(other_info.max, max);
     if (ttl_finished.has_value())
         ttl_finished = ttl_finished.value() && other_info.finished();
@@ -34,7 +37,7 @@ void MergeTreeDataPartTTLInfo::update(const MergeTreeDataPartTTLInfo & other_inf
         ttl_finished = other_info.finished();
 }
 
-void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_infos)
+void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_infos, bool other_part_has_rows)
 {
     for (const auto & [name, ttl_info] : other_infos.columns_ttl)
     {
@@ -60,6 +63,45 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
 
     for (const auto & [expression, ttl_info] : other_infos.moves_ttl)
         moves_ttl[expression].update(ttl_info);
+
+    /// Propagate the rows-TTL fingerprint (expression and time zone). A source without a fingerprint can
+    /// be an old epoch-only part: before `has_epoch_timestamps` was serialized, such a part had neither a
+    /// table TTL section nor a fingerprint. Preserve that unknown provenance across the rest of the merge
+    /// so a sibling fingerprint cannot make the merged part eligible for the metadata-only fast path.
+    /// A source with no rows is exempt: it describes no row timestamps, so its missing fingerprint says
+    /// nothing about the rows the merged part will contain (an empty part is produced with no fingerprint
+    /// by every `createEmptyPart` caller, e.g. the fully expired fast path of `MutateTask` and the
+    /// `TTLDrop` short circuit of `MergeTask`), and it must not disable the fast path for its live siblings.
+    if (other_part_has_rows)
+    {
+        const bool other_has_known_rows_ttl_provenance =
+            !other_infos.table_ttl_expression.empty() && !other_infos.table_ttl_timezone.empty()
+            && !other_infos.has_unknown_rows_ttl_provenance;
+        if (!other_has_known_rows_ttl_provenance || has_unknown_rows_ttl_provenance)
+        {
+            table_ttl_expression.clear();
+            table_ttl_timezone.clear();
+            has_unknown_rows_ttl_provenance = true;
+        }
+        else if (table_ttl_expression.empty() && table_ttl_timezone.empty())
+        {
+            table_ttl_expression = other_infos.table_ttl_expression;
+            table_ttl_timezone = other_infos.table_ttl_timezone;
+        }
+        else
+        {
+            if (table_ttl_expression != other_infos.table_ttl_expression)
+            {
+                table_ttl_expression.clear();
+                has_unknown_rows_ttl_provenance = true;
+            }
+            if (table_ttl_timezone != other_infos.table_ttl_timezone)
+            {
+                table_ttl_timezone.clear();
+                has_unknown_rows_ttl_provenance = true;
+            }
+        }
+    }
 
     table_ttl.update(other_infos.table_ttl);
     updatePartMinMaxTTL(table_ttl);
@@ -99,6 +141,16 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
 
         if (table.has("finished"))
             table_ttl.ttl_finished = table["finished"].getUInt();
+
+        /// NB the value is a JSON boolean (`true`); `getUInt` would silently parse it as 0.
+        if (table.has("has_epoch_timestamps"))
+            table_ttl.has_epoch_timestamps = table["has_epoch_timestamps"].getBool();
+
+        if (table.has("expression"))
+            table_ttl_expression = table["expression"].getString();
+
+        if (table.has("timezone"))
+            table_ttl_timezone = table["timezone"].getString();
 
         updatePartMinMaxTTL(table_ttl);
     }
@@ -169,7 +221,7 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
         }
         writeString("]", out);
     }
-    if (table_ttl.min)
+    if (table_ttl.min || table_ttl.has_epoch_timestamps)
     {
         if (!columns_ttl.empty())
             writeString(",", out);
@@ -179,6 +231,18 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
         writeIntText(table_ttl.max, out);
         writeString(R"(,"finished":)", out);
         writeIntText(static_cast<uint8_t>(table_ttl.finished()), out);
+        if (table_ttl.has_epoch_timestamps)
+            writeString(R"(,"has_epoch_timestamps":true)", out);
+        if (!table_ttl_expression.empty())
+        {
+            writeString(R"(,"expression":)", out);
+            writeString(doubleQuoteString(table_ttl_expression), out);
+        }
+        if (!table_ttl_timezone.empty())
+        {
+            writeString(R"(,"timezone":)", out);
+            writeString(doubleQuoteString(table_ttl_timezone), out);
+        }
         writeString("}", out);
     }
 
@@ -207,7 +271,7 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
         writeString("]", out);
     };
 
-    bool is_first = columns_ttl.empty() && !table_ttl.min;
+    bool is_first = columns_ttl.empty() && !table_ttl.min && !table_ttl.has_epoch_timestamps;
     if (!moves_ttl.empty())
     {
         write_infos(moves_ttl, "moves", is_first);

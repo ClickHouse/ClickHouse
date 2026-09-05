@@ -647,7 +647,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     ctx->force_ttl = false;
     for (const auto & part : global_ctx->future_part->parts)
     {
-        global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
+        global_ctx->new_data_part->ttl_infos.update(part->ttl_infos, part->rows_count > 0);
 
         if (global_ctx->metadata_snapshot->hasAnyTTL() && !part->checkAllTTLCalculated(global_ctx->metadata_snapshot))
         {

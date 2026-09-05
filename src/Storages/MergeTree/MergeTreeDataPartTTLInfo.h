@@ -28,6 +28,11 @@ struct MergeTreeDataPartTTLInfo
     bool finished() const { return ttl_finished.value_or(false); }
     bool initialized() const { return min != 0 || max != 0; }
 
+    /// Whether `update` saw a timestamp of exactly 0 (the epoch). The TTL machinery treats such a
+    /// timestamp as "no TTL": `ITTLAlgorithm::isTTLExpired` never expires it and `update` excludes it
+    /// from `min`, so a row that computed to it is invisible in the stored bounds.
+    bool has_epoch_timestamps = false;
+
     void update(time_t time);
     void update(const MergeTreeDataPartTTLInfo & other_info);
 };
@@ -40,6 +45,26 @@ struct MergeTreeDataPartTTLInfos
 {
     TTLInfoMap columns_ttl;
     MergeTreeDataPartTTLInfo table_ttl;
+
+    /// The rows-TTL (DELETE) expression under which `table_ttl` was computed, formatted by
+    /// `getRowsTTLExpressionFingerprint`. Empty means unknown: a part written by an older server, a merge
+    /// whose source parts disagree on the expression, or an expression the fast path could never shift
+    /// anyway (only shiftable ones are recorded - see `getRowsTTLExpressionFingerprint`).
+    /// The fast `MATERIALIZE TTL` optimization uses this to verify that a part's stored TTL timestamps really
+    /// correspond to the expression it is shifting from; otherwise it falls back to a full rewrite.
+    String table_ttl_expression;
+
+    /// The time zone the rows-TTL timestamps of `table_ttl` were computed under, as returned by
+    /// `getRowsTTLTimeZoneFingerprint`. Empty means unknown, exactly like `table_ttl_expression`.
+    /// It is a separate part of the fingerprint because the expression text does not pin the time zone
+    /// down: a `DateTime` column can change its zone with a metadata-only `MODIFY COLUMN`, and the
+    /// server time zone can change with a restart.
+    String table_ttl_timezone;
+
+    /// A merge source without a rows-TTL fingerprint may have been written by an older server, including
+    /// an epoch-only part that had no serializable TTL bounds. Do not let a later source fingerprint make
+    /// the merged part eligible for the metadata-only `MATERIALIZE TTL` path.
+    bool has_unknown_rows_ttl_provenance = false;
 
     /// `part_min_ttl` and `part_max_ttl` are TTLs which are used for selecting parts
     /// to merge in order to remove expired rows.
@@ -59,7 +84,10 @@ struct MergeTreeDataPartTTLInfos
 
     void read(ReadBuffer & in);
     void write(WriteBuffer & out) const;
-    void update(const MergeTreeDataPartTTLInfos & other_infos);
+    /// `other_part_has_rows` tells whether the source part these infos come from contains any rows.
+    /// A part with no rows describes no rows-TTL timestamps at all, so it neither carries nor destroys
+    /// the rows-TTL provenance of the other merge sources.
+    void update(const MergeTreeDataPartTTLInfos & other_infos, bool other_part_has_rows = true);
 
     /// Has any TTLs which are not calculated on completely expired parts.
     bool hasAnyNonFinishedTTLs() const;
@@ -78,8 +106,11 @@ struct MergeTreeDataPartTTLInfos
 
     bool empty() const
     {
-        /// part_min_ttl in minimum of rows, rows_where and group_by TTLs
-        return !part_min_ttl && moves_ttl.empty() && recompression_ttl.empty() && columns_ttl.empty() && rows_where_ttl.empty() && group_by_ttl.empty();
+        /// part_min_ttl in minimum of rows, rows_where and group_by TTLs.
+        /// An epoch-only rows TTL leaves all the bounds at zero (the "unset" sentinel), but
+        /// `has_epoch_timestamps` is TTL state that must be persisted in `ttl.txt`: without it the part
+        /// would look TTL-uncalculated after a reload and force a needless TTL recalculation on merge.
+        return !part_min_ttl && !table_ttl.has_epoch_timestamps && moves_ttl.empty() && recompression_ttl.empty() && columns_ttl.empty() && rows_where_ttl.empty() && group_by_ttl.empty();
     }
 };
 

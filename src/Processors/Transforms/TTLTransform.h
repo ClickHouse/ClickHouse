@@ -43,6 +43,7 @@ protected:
 private:
     std::vector<TTLAlgorithmPtr> algorithms;
     const TTLDeleteAlgorithm * delete_algorithm = nullptr;
+    bool rows_ttl_provenance_invalidated = false;
     bool all_data_dropped = false;
 
     PreparedSets::Subqueries subqueries_for_sets;

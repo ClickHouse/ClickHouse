@@ -3282,7 +3282,11 @@ bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metada
     {
         if (isEmpty()) /// All rows were finally deleted and we don't store TTL
             return true;
-        if (ttl_infos.table_ttl.min == 0)
+        /// Empty bounds do not necessarily mean the rows TTL was never calculated: a part whose rows
+        /// TTL legitimately evaluated entirely to the epoch stores no bounds (zero is the "unset"
+        /// sentinel that `MergeTreeDataPartTTLInfo::update` excludes from `min`), but it records
+        /// `has_epoch_timestamps`. Only a part with neither has an uncalculated rows TTL.
+        if (ttl_infos.table_ttl.min == 0 && !ttl_infos.table_ttl.has_epoch_timestamps)
             return false;
     }
 
