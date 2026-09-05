@@ -44,7 +44,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "إعداد جديد للتحكم في الكتابة التلقائية لـ hash joins إلى القرص. تؤدي القيمة غير الصفرية إلى تفعيل ذلك وتحديد عتبة البايتات."}]}]} />
 
-إذا تم تعيينه إلى قيمة غير صفرية وكان `join_algorithm` هو `hash` أو `parallel_hash` أو `default` أو `auto`، فسيتم تلقائيًا تحويل hash join إلى grace hash join لتمكين الكتابة إلى القرص عندما تتجاوز البيانات الموجودة على الجانب الأيمن هذا العدد من البايتات. وعند تعيينه إلى 0 (القيمة الافتراضية)، يتم تعطيل عتبة البايتات المطلقة هذه، ولكن قد تظل الكتابة التلقائية إلى القرص تحدث عبر `max_bytes_ratio_before_external_join` (الذي تبلغ قيمته الافتراضية `0.5`)؛ اضبط كليهما على `0` لتعطيل الكتابة التلقائية إلى القرص بالكامل. إن join الذي قد يكتب إلى القرص يمنع عادةً تحسين القراءة بالترتيب عبر الربط؛ راجع [`query_plan_read_in_order_through_spilling_join`](/ar/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_spilling_join) لمعرفة الحالات التي ينطبق فيها التحسين رغم ذلك ويُثبَّت فيها join في الذاكرة بدلًا من ذلك.
+إذا تم تعيينه إلى قيمة غير صفرية وكان `join_algorithm` هو `hash` أو `parallel_hash` أو `default` أو `auto`، فسيتم تلقائيًا تحويل hash join إلى grace hash join لتمكين الكتابة إلى القرص عندما تتجاوز البيانات الموجودة على الجانب الأيمن هذا العدد من البايتات. وعند تعيينه إلى 0 (القيمة الافتراضية)، يتم تعطيل عتبة البايتات المطلقة هذه، ولكن قد تظل الكتابة التلقائية إلى القرص تحدث عبر `max_bytes_ratio_before_external_join` (الذي تبلغ قيمته الافتراضية `0.5`)؛ اضبط كليهما على `0` لتعطيل الكتابة التلقائية إلى القرص بالكامل. وهو يمنع تحسين القراءة بالترتيب عبر join.
 
 <div id="max_bytes_before_external_sort">
   ## max_bytes_before_external_sort
@@ -150,8 +150,6 @@ throw/break وفقًا لـ [`join_overflow_mode`](/ar/reference/settings/sessio
 إذا جرى تعيين كلٍّ من `max_bytes_before_external_join` و`max_bytes_ratio_before_external_join`، فستُستخدم عتبة النتيجة الأصغر. وإذا كانت النسبة `0`، فلن يُطبَّق إلا الإعداد المطلق.
 
 لا يكون له تأثير إلا عندما تكون `join_algorithm` هي `hash` أو `parallel_hash` أو `default` أو `auto` ويكون قد جرى تهيئة مسار بيانات مؤقت.
-
-يمنع الربط الذي قد يكتب إلى القرص عادةً تحسين القراءة بالترتيب عبر الربط؛ راجع [`query_plan_read_in_order_through_spilling_join`](/ar/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_spilling_join) لمعرفة الحالات التي يُطبَّق فيها التحسين رغم ذلك ويُثبَّت الربط في الذاكرة بدلًا من ذلك، بحيث لا يؤدي بلوغ هذه النسبة إلى تحويله إلى grace hash join.
 
 <div id="max_bytes_ratio_before_external_sort">
   ## max_bytes_ratio_before_external_sort

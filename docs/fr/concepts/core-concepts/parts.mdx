@@ -40,13 +40,23 @@ Une data part est créée chaque fois qu&#39;un ensemble de lignes est inséré 
 
 Lorsqu&#39;un serveur ClickHouse traite l&#39;exemple d&#39;insertion avec 4 lignes (par ex. via une [instruction INSERT INTO](/fr/reference/statements/insert-into)) illustré dans le schéma ci-dessus, il effectue plusieurs étapes :
 
-① **Tri** : Les lignes sont triées selon la clé de tri de la table `(town, street)`, et un [index primaire sparse](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) est généré pour les lignes triées.
+<Steps>
+  <Step title="Tri">
+    Les lignes sont triées selon la clé de tri de la table `(town, street)`, et un [index primaire sparse](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) est généré pour les lignes triées.
+  </Step>
 
-② **Découpage** : Les données triées sont réparties en colonnes.
+  <Step title="Découpage">
+    Les données triées sont réparties en colonnes.
+  </Step>
 
-③ **Compression** : Chaque colonne est [compressée](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
+  <Step title="Compression">
+    Chaque colonne est [compressée](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
+  </Step>
 
-④ **Écriture sur disque** : Les colonnes compressées sont enregistrées sous forme de fichiers binaires de colonnes dans un nouveau répertoire représentant la data part de l&#39;insertion. L&#39;index primaire sparse est également compressé et stocké dans le même répertoire.
+  <Step title="Écriture sur disque">
+    Les colonnes compressées sont enregistrées sous forme de fichiers binaires de colonnes dans un nouveau répertoire représentant la data part de l&#39;insertion. L&#39;index primaire sparse est également compressé et stocké dans le même répertoire.
+  </Step>
+</Steps>
 
 Selon le moteur spécifique de la table, des transformations supplémentaires [peuvent](/fr/reference/settings/session-settings) avoir lieu en parallèle du tri.
 

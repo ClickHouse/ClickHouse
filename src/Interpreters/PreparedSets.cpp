@@ -556,18 +556,19 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// permanently unbuilt and `FunctionIn` throws "Not-ready Set is passed as the second argument"
     /// when the main pipeline runs.
     ///
-    /// So run the pipeline against a clone of `source`, leaving the original intact. Some source steps
-    /// cannot be cloned — most notably `ReadFromPreparedSource`, which wraps an already-materialized,
-    /// single-use `Pipe` (dictionary, many system table, and remote reads go through it), and
-    /// `DelayedCreatingSetsStep`, which a nested `IN` subquery adds to the source plan. The latter is left
-    /// non-clonable on purpose: it holds the inner subqueries by shared pointer, and building it consumes
-    /// each inner `source` (`DelayedCreatingSetsStep::makePlansForSets` calls `FutureSetFromSubquery::build`,
-    /// which moves the inner `source` out). A shallow clone would share those inner subqueries, so a
-    /// speculative pass would consume the inner sources and mutate the canonical inner sets anyway — giving
-    /// no real preservation. A `MATERIALIZED` CTE referenced by a local `IN` subquery is the same kind of
-    /// shape: its source plan contains a `DelayedMaterializingCTEsStep`, which is also non-clonable, so it
-    /// takes the destructive fallback too — again identical to the pre-PR behavior for that shape. For any
-    /// non-clonable source, fall back to the original destructive build so
+    /// So run the pipeline against a clone of `source`, leaving the original intact. Some source plans
+    /// cannot be cloned — most notably one reading through `ReadFromPreparedSource`, which wraps an
+    /// already-materialized, single-use `Pipe` (dictionary, many system table, and remote reads go
+    /// through it), and one holding a `DelayedCreatingSetsStep` with sets, which a nested `IN` subquery
+    /// adds. `QueryPlan::cloneSubplanAndReplace` rejects the latter: the step holds the inner
+    /// subqueries by shared pointer, and building it consumes each inner `source`
+    /// (`DelayedCreatingSetsStep::makePlansForSets` calls `FutureSetFromSubquery::build`, which moves
+    /// the inner `source` out), so a shallow clone would share them and a speculative pass would
+    /// consume the inner sources and mutate the canonical inner sets anyway — giving no real
+    /// preservation. A `MATERIALIZED` CTE referenced by a local `IN` subquery is the same kind of
+    /// shape: its source plan contains a `DelayedMaterializingCTEsStep`, which is also non-clonable, so
+    /// it takes the destructive fallback too — again identical to the pre-PR behavior for that shape.
+    /// For any non-clonable source, fall back to the original destructive build so
     /// primary key analysis is still performed for such subqueries (as it always was); only the rare
     /// silent-failure case stays unrecoverable there, exactly as before this change.
     ///

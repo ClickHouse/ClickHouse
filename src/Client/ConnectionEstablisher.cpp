@@ -32,6 +32,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_FROM_SOCKET;
     extern const int CANNOT_WRITE_TO_SOCKET;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
+    extern const int NO_FREE_CONNECTION;
 }
 
 namespace FailPoints
@@ -171,15 +172,15 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         {
             ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
-            /// All of these mean the connection taken from the pool turned out to be unusable, which
-            /// is expected: the pooled connection is used optimistically, without a preceding ping.
-            /// `UNEXPECTED_PACKET_FROM_SERVER` covers a connection left out of sync by a previous
-            /// query (e.g. a stale `ProfileInfo` read instead of the `TablesStatusResponse` we
-            /// requested). Anything else is a genuine error and is rethrown.
+            /// All of these mean this replica is not usable right now, which is expected: the pooled
+            /// connection is used optimistically, without a preceding ping. `UNEXPECTED_PACKET_FROM_SERVER`
+            /// covers a connection left out of sync by a previous query (e.g. a stale `ProfileInfo` read
+            /// instead of the `TablesStatusResponse` we requested), and `NO_FREE_CONNECTION` an exhausted
+            /// per-replica pool. Anything else is a genuine error and is rethrown.
             if (e.code() != ErrorCodes::NETWORK_ERROR && e.code() != ErrorCodes::SOCKET_TIMEOUT
                 && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF && e.code() != ErrorCodes::DNS_ERROR
                 && e.code() != ErrorCodes::CANNOT_READ_FROM_SOCKET && e.code() != ErrorCodes::CANNOT_WRITE_TO_SOCKET
-                && e.code() != ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER)
+                && e.code() != ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER && e.code() != ErrorCodes::NO_FREE_CONNECTION)
                 throw;
 
             fail_message = getCurrentExceptionMessage(/* with_stacktrace = */ false);

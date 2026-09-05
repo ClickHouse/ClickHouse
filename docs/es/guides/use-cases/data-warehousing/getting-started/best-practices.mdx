@@ -33,7 +33,7 @@ WHERE event_date >= today() - 7
 
 Utiliza la variante S3 para AWS S3 y GCS. Azure y el sistema de archivos local tienen variantes específicas (`icebergAzure`, `icebergLocal` y sus equivalentes para otros formatos). Consulta [consultas directas](/es/guides/use-cases/data-warehousing/getting-started/querying-directly) para ver la lista completa.
 
-[Paimon](/es/reference/functions/table-functions/paimon) solo admite funciones de tabla.
+[Paimon](/es/reference/functions/table-functions/paimon) proporciona funciones de tabla y [motores de tabla experimentales](/es/reference/engines/table-engines/integrations/paimon).
 
 <div id="table-engines">
   ### Motores de tabla
@@ -336,9 +336,9 @@ ORDER BY rows DESC;
   ### Comprobar el volumen de escaneo
 </div>
 
-Compare `read_rows` y `read_bytes` en [system.query&#95;log](/es/reference/system-tables/query_log) antes y después de añadir filtros o ajustar la configuración. ProfileEvents como `ReadBufferFromS3Bytes` y `CachedReadBufferReadFromCacheBytes` muestran cuántos datos provinieron del almacenamiento de objetos frente a la caché local. Consulte [Optimización de consultas](/es/guides/clickhouse/performance-and-monitoring/query-optimization) para obtener una guía completa sobre query&#95;log y EXPLAIN.
+Compare `read_rows` y `read_bytes` en [`system.query_log`](/es/reference/system-tables/query_log) antes y después de añadir filtros o ajustar la configuración. `ProfileEvents` como `ReadBufferFromS3Bytes` y `CachedReadBufferReadFromCacheBytes` muestran cuántos datos provinieron del almacenamiento de objetos frente a la caché local. Consulte [Diagnosticar consultas lentas](/es/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) para obtener una guía completa sobre `query_log` y `EXPLAIN`.
 
-Desactive [enable&#95;filesystem&#95;cache](/es/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache) durante el benchmark para que los aciertos de la caché no oculten los cambios entre ejecuciones.
+Desactive [enable&#95;filesystem&#95;cache](/es/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache) durante el benchmarking para que los aciertos de la caché no oculten los cambios entre ejecuciones.
 
 <div id="debug-metadata-logs">
   ### Registros de metadatos
@@ -378,5 +378,5 @@ Consulta las páginas de referencia de [iceberg&#95;metadata&#95;log](/es/refere
 * [Primeros pasos](/es/guides/use-cases/data-warehousing/getting-started/overview) — Guía completa, desde las consultas directas hasta la escritura de datos
 * [Consultas directas](/es/guides/use-cases/data-warehousing/getting-started/querying-directly) — Funciones de tabla, motores y variantes de clúster para los cuatro formatos
 * [Conexión a catálogos](/es/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — Configuración de `DataLakeCatalog` con Unity Catalog
-* [Escritura en lagos de datos](/es/guides/use-cases/data-warehousing/getting-started/writing-data) — Escriba datos en Iceberg y Delta Lake
+* [Escritura en lagos de datos](/es/guides/use-cases/data-warehousing/getting-started/writing-data) — Escritura de datos en Iceberg y Delta Lake
 * [Matriz de compatibilidad](/es/guides/use-cases/data-warehousing/support-matrix) — Comparación de funcionalidades entre formatos, catálogos y backends de almacenamiento

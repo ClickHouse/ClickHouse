@@ -24,6 +24,22 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Define se todos os arquivos do Iceberg devem ser excluídos ao executar drop.
 
+<div id="iceberg_delete_manifest_decode_concurrency">
+  ## iceberg_delete_manifest_decode_concurrency
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "4"},{"label": "Nova configuração que limita quantos arquivos de manifesto de exclusão do Iceberg são decodificados simultaneamente antes da leitura da primeira linha. Antes da versão 26.8, um manifesto era decodificado por vez, enquanto a busca do próximo já estava em andamento. Portanto, `2` é o equivalente mais próximo do comportamento anterior, que colocava a soma das idas e voltas ao armazenamento de objetos no caminho crítico antes da primeira linha."}]}]} />
+
+Número máximo de arquivos de manifesto de exclusão do Iceberg decodificados simultaneamente durante a execução da consulta, antes da leitura de qualquer arquivo de dados.
+
+Todos os manifestos de exclusão devem ser decodificados antes da leitura de qualquer arquivo de dados; portanto, esse trabalho está no caminho crítico antes do retorno da primeira linha. Decodificar vários de uma vez sobrepõe tanto as idas e voltas ao armazenamento de objetos quanto o trabalho de poda por linha.
+
+Valores mais altos aumentam o pico de memória durante a inicialização da consulta quando o cache de arquivos de metadados do Iceberg está desabilitado ou cheio, pois cada manifesto em andamento mantém seu próprio conteúdo decodificado.
+
+Deve ser maior que zero; `1` decodifica os manifestos um de cada vez.
+
 <div id="iceberg_manifest_min_count_to_compact">
   ## iceberg_manifest_min_count_to_compact
 </div>

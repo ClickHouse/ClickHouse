@@ -163,7 +163,7 @@ O ClickHouse Managed Postgres monitora o uso de disco e ajusta o armazenamento a
 
 * **85% de uso de disco**: Você recebe uma [notificação](/pt-BR/products/managed-postgres/monitoring/notifications) pelo console da Cloud e por e-mail.
 * **90% de uso de disco**: O escalonamento automático é iniciado. O armazenamento é aumentado para o próximo tamanho disponível para a família da sua instância. A CPU e a memória permanecem inalteradas, a menos que o tamanho atual da instância não ofereça suporte a um disco maior. Nesse caso, o tamanho da instância também é aumentado. As [réplicas de leitura](/pt-BR/products/managed-postgres/read-replicas) são escaladas junto com a primária.
-* **95% de uso de disco**: A transição ignora qualquer janela de manutenção configurada e ocorre assim que o novo servidor estiver pronto.
+* **95% de uso de disco**: A transição ocorre assim que o novo servidor estiver pronto, sem aguardar.
 
 Se a sua instância já estiver na maior configuração disponível, o escalonamento automático não poderá ser ampliado. Libere espaço em disco ou entre em contato com o [suporte](https://clickhouse.com/support/program).
 
@@ -171,9 +171,9 @@ Se a sua instância já estiver na maior configuração disponível, o escalonam
   ### Transição e conexões
 </div>
 
-O armazenamento não é redimensionado no local. O escalonamento automático segue o mesmo [processo de scaling](#scaling-process) de uma alteração manual do tipo de instância: um servidor de substituição com mais armazenamento é provisionado, restaurado a partir do backup mais recente, sincroniza o WAL e, em uma transição controlada, é promovido ao novo primário. Instâncias com [alta disponibilidade](/pt-BR/products/managed-postgres/high-availability) recebem standbys de substituição no novo tamanho como parte da mesma operação.
+O armazenamento não é redimensionado no local. O escalonamento automático segue o mesmo [processo de escalonamento](#scaling-process) de uma alteração manual do tipo de instância: um servidor de substituição com mais armazenamento é provisionado, restaurado a partir do backup mais recente, sincroniza o WAL e, em uma transição controlada, é promovido ao novo primário. Instâncias com [alta disponibilidade](/pt-BR/products/managed-postgres/high-availability) recebem standbys de substituição no novo tamanho como parte da mesma operação.
 
-A transição é a única etapa com indisponibilidade, geralmente inferior a um minuto. Se uma [janela de manutenção](/pt-BR/products/managed-postgres/upgrades#maintenance-windows) estiver configurada, a transição aguarda por ela, a menos que o uso do disco atinja 95%. Durante a transição, conexões abertas são encerradas e transações em andamento são revertidas. Sua string de conexão não muda: o DNS é atualizado para apontar para o novo primário, e as aplicações com lógica padrão de reconexão se recuperam automaticamente.
+A transição é a única etapa com indisponibilidade, geralmente inferior a um minuto. Uma [janela de upgrade agendado](/pt-BR/products/managed-postgres/upgrades#scheduled-upgrades) configurada não a atrasa: a janela se aplica à manutenção da plataforma, não ao escalonamento. Durante a transição, conexões abertas são encerradas e transações em andamento são revertidas. Sua string de conexão não muda: o DNS é atualizado para apontar para o novo primário, e as aplicações com lógica padrão de reconexão se recuperam automaticamente.
 
 <div id="autoscaling-read-only">
   ### Modo somente leitura
@@ -197,8 +197,8 @@ As leituras continuam funcionando, enquanto as operações de gravação falham 
 Uma instância com 1024 GB de armazenamento executa uma carga de trabalho com muitas gravações:
 
 1. Ao atingir 870 GB usados (85%), você recebe uma notificação de armazenamento.
-2. Ao atingir 922 GB usados (90%), o escalonamento automático é iniciado. Um servidor substituto com 2048 GB de armazenamento é provisionado e restaurado a partir do backup mais recente, enquanto sua instância continua atendendo ao tráfego.
-3. Quando o substituto estiver atualizado, será feita a transição, dentro da sua janela de manutenção, se houver uma configurada. As conexões são interrompidas por menos de um minuto, sua aplicação se reconecta ao mesmo hostname e o uso volta a cerca de 45%.
+2. Ao atingir 922 GB usados (90%), o escalonamento automático é iniciado. Um servidor de substituição com 2048 GB de armazenamento é provisionado e restaurado a partir do backup mais recente, enquanto sua instância continua atendendo ao tráfego.
+3. Quando o substituto estiver atualizado, será feita a transição. As conexões são interrompidas por menos de um minuto, sua aplicação se reconecta ao mesmo hostname e o uso volta a cerca de 45%.
 4. Se o espaço livre cair abaixo de 2% (cerca de 20 GB) antes da conclusão da transição, a instância ficará no modo somente leitura. As gravações serão retomadas automaticamente assim que a transição para o disco maior for concluída.
 
 <div id="resources">

@@ -14,6 +14,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ja/clickpipes/_changing_tls_settings.mdx';
+import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.mdx';
 
 <BetaBadge />
 
@@ -133,11 +134,13 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 
 6. ソース MySQL データベースからレプリケートするテーブルを選択できます。テーブルの選択時には、宛先の ClickHouse データベースでテーブル名を変更したり、特定のカラムを除外したりすることもできます。
 
+7. <SettingPartitionBy />
+
 <div id="review-permissions-and-start-the-clickpipe">
   ### 権限を確認して ClickPipe を開始する
 </div>
 
-7. 権限のドロップダウンから「Full access」ロールを選択し、「Complete Setup」をクリックします。
+8. 権限のドロップダウンから「Full access」ロールを選択し、「Complete Setup」をクリックします。
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="権限の確認" size="lg" border />
 
