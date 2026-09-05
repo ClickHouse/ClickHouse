@@ -88,22 +88,37 @@ def marks_file_of(removed, stream):
     return matches[0]
 
 
-def assert_names_the_part_state(text, part_name, marks_file):
+def listed_in(text, label):
+    start = text.index(f"{label}: [") + len(f"{label}: [")
+    return [entry.strip() for entry in text[start : text.index("]", start)].split(",")]
+
+
+def assert_names_the_part_state(text, part_name, removed, stream):
     # The point of the diagnostic is the payload, so assert the payload and not just the exception
-    # name: the part, the specific missing marks file, its checksums status, and both listings.
-    # Generic phrases alone would still pass if any of these were dropped. The marks file is
-    # asserted with its `Marks file '...'` prefix because the name also appears in the checksums
-    # listing further down the same message, where it proves nothing about which file was missing.
+    # name: the part, the specific missing marks file, its checksums status, and the contents of
+    # both listings. Generic phrases alone would still pass if any of these were dropped, and a
+    # listing's label alone would still pass if its contents were wrong.
     #
     # A message read back out of `system.text_log` arrives escaped, so undo the quote escaping to
     # let one set of assertions serve both that and a client-side error string.
     text = text.replace("\\'", "'")
+    marks_file = marks_file_of(removed, stream)
+
+    # The marks file is asserted with its `Marks file '...'` prefix: the bare name also appears in
+    # the checksums listing below, where its presence says nothing about which file was reported.
     assert f"Marks file '{marks_file}'" in text, text
     assert f"in part '{part_name}'" in text, text
     assert "The file is listed in the part's checksums" in text, text
     assert "Part columns: [" in text, text
-    assert "Checksums files: [" in text, text
-    assert "Files on disk: [" in text, text
+
+    # The two listings are the diagnostic's answer to "what does the part think it has, and what
+    # does it actually have", so the missing marks file has to appear in exactly one of them. The
+    # surviving data file pins the disk listing to the part's real contents rather than to an
+    # empty or unrelated list.
+    assert marks_file in listed_in(text, "Checksums files"), text
+    on_disk = listed_in(text, "Files on disk")
+    assert marks_file not in on_disk, text
+    assert f"{stream}.bin" in on_disk, text
 
 
 def create_and_fill(table, settings):
@@ -152,7 +167,7 @@ def test_query_read_path(started_cluster):
         # The query reads only b, so the loader is asked for b's marks.
         error = node.query_and_get_error(f"SELECT sum(b) FROM {table}")
         assert "NO_FILE_IN_DATA_PART" in error, error
-        assert_names_the_part_state(error, part_name, marks_file_of(removed, "b"))
+        assert_names_the_part_state(error, part_name, removed, "b")
     finally:
         drop_table(table)
 
@@ -177,9 +192,7 @@ def test_wide_index_granularity_load_path(started_cluster):
             == "broken-on-start\n"
         )
         # a is the first column, so it is the one this path resolves its marks file from.
-        assert_names_the_part_state(
-            logged_diagnostic(table), part_name, marks_file_of(removed, "a")
-        )
+        assert_names_the_part_state(logged_diagnostic(table), part_name, removed, "a")
     finally:
         drop_table(table)
 
@@ -212,7 +225,7 @@ def test_compact_index_granularity_load_path(started_cluster):
         # Asserting on the "data" marks file is what proves the compact path produced this
         # diagnostic: the wide path would have named a per-column marks file instead.
         assert_names_the_part_state(
-            logged_diagnostic(table), part_name, marks_file_of(removed, "data")
+            logged_diagnostic(table), part_name, removed, "data"
         )
     finally:
         drop_table(table)
