@@ -337,18 +337,24 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         {
             if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames(), analyzed_result))
             {
+                auto metadata = reading->getStorageMetadata();
                 auto prewhere_info = reading->getPrewhereInfo();
                 const ActionsDAG::Node * prewhere_node = prewhere_info
                     ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                     : nullptr;
-                auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
-                RelationStats stats {
-                    .estimated_rows = relation_profile.rows,
-                    .column_stats = relation_profile.column_stats,
-                    .table_name = table_display_name,
-                    .source = RowEstimateSource::Statistics};
-                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
-                return stats;
+                const bool can_estimate_filter = !filter || estimator->canEstimateFilter(metadata, filter);
+                const bool can_estimate_prewhere = !prewhere_node || estimator->canEstimateFilter(metadata, prewhere_node);
+                if (can_estimate_filter && can_estimate_prewhere)
+                {
+                    auto relation_profile = estimator->estimateRelationProfile(metadata, filter, prewhere_node);
+                    RelationStats stats {
+                        .estimated_rows = relation_profile.rows,
+                        .column_stats = relation_profile.column_stats,
+                        .table_name = table_display_name,
+                        .source = RowEstimateSource::Statistics};
+                    LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
+                    return stats;
+                }
             }
         }
         if (auto stats_hint = parseTableStatsHint(reading->getContext(), table_display_name); !stats_hint.table_name.empty())

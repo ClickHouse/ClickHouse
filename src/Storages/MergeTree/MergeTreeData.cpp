@@ -953,11 +953,12 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
     for (const auto & part : parts)
     {
+        if (!part.data_part)
+            return nullptr;
+
         auto parts_lock = readLockParts();
         auto stats = part.data_part->loadStatistics(required_columns);
-        estimator_builder.markDataPart(part.data_part);
-        for (const auto & [column_name, stat] : stats)
-            estimator_builder.addStatistics(column_name, stat);
+        estimator_builder.addDataPartStatistics(part.data_part, stats);
     }
 
     return estimator_builder.getEstimator();
@@ -3377,15 +3378,19 @@ try
 {
     auto component_guard = Coordination::setCurrentComponent("MergeTreeData::refreshStatistics");
     DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
-    if (cached_estimator)
     {
-        if (!cached_estimator->isStale(data_parts))
+        std::lock_guard<std::mutex> lock(stats_mutex);
+        if (cached_estimator && !cached_estimator->isStale(data_parts))
         {
             LOG_DEBUG(log, "The parts in this storage does not change, will not refresh statistics");
             if (interval_seconds)
                 refresh_stats_task->scheduleAfter(interval_seconds * 1000);
             return;
         }
+
+        /// Do not serve an estimator for the previous part set while rebuilding.
+        /// In particular, keep it cleared if loading the current statistics fails.
+        cached_estimator.reset();
     }
     LOG_DEBUG(log, "Refreshing statistics");
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
@@ -3393,9 +3398,7 @@ try
     {
         auto parts_lock = readLockParts();
         auto stats = data_part->loadStatistics();
-        estimator_builder.markDataPart(data_part);
-        for (const auto & [column_name, stat] : stats)
-            estimator_builder.addStatistics(column_name, stat);
+        estimator_builder.addDataPartStatistics(data_part, stats);
     }
     std::lock_guard<std::mutex> lock(stats_mutex);
     cached_estimator = estimator_builder.getEstimator();

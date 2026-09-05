@@ -517,7 +517,11 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             cond.viable = true;
             cond.good = group_good;
 
-            if (where_optimizer_context.use_statistics)
+            const bool can_use_statistics = where_optimizer_context.use_statistics
+                && estimator->hasStatisticsFor(storage_metadata, group_columns)
+                && estimator->canEstimateFilter(storage_metadata, cond.nodes);
+
+            if (can_use_statistics)
             {
                 cond.good = true;
                 cond.estimated_row_count = estimator->estimateRelationProfile(storage_metadata, cond.nodes).rows;

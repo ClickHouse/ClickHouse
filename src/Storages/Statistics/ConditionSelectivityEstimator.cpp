@@ -1,7 +1,8 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
-#include <stack>
+#include <algorithm>
 #include <cmath>
+#include <stack>
 
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
@@ -76,19 +77,11 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
     return estimateRelationProfileImpl(rpn, metadata);
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
+std::vector<ConditionSelectivityEstimator::RPNElement> ConditionSelectivityEstimator::buildRPN(
     const StorageMetadataPtr & metadata,
     const std::vector<RPNBuilderTreeNode> & nodes) const
 {
-    if (nodes.empty())
-        return estimateRelationProfile();
-
-    /// Build a combined RPN sequence by concatenating per-node RPNs and inserting an
-    /// FUNCTION_AND token after every node past the first (standard postfix AND for
-    /// left-associative evaluation):
-    ///   1 node  → rpn_0
-    ///   2 nodes → rpn_0 | rpn_1 | AND
-    ///   3 nodes → rpn_0 | rpn_1 | AND | rpn_2 | AND  = (r0 ∧ r1) ∧ r2
+    /// Concatenate per-node RPNs as ((node_0 AND node_1) AND node_2).
     std::vector<RPNElement> combined_rpn;
     for (size_t i = 0; i < nodes.size(); ++i)
     {
@@ -104,6 +97,18 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
             combined_rpn.push_back(and_elem);
         }
     }
+
+    return combined_rpn;
+}
+
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
+    const StorageMetadataPtr & metadata,
+    const std::vector<RPNBuilderTreeNode> & nodes) const
+{
+    if (nodes.empty())
+        return estimateRelationProfile();
+
+    auto combined_rpn = buildRPN(metadata, nodes);
     return estimateRelationProfileImpl(combined_rpn, metadata);
 }
 
@@ -119,6 +124,27 @@ static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const Co
     /// Skip if the column statistics has outdated data type.
     /// It can happen after ALTER MODIFY COLUMN until mutations is not materialized in the data part.
     return column->type->equals(*stats->getDataType());
+}
+
+static std::optional<String> tryGetNullableParentStatisticsColumn(
+    const StorageMetadataPtr & metadata, const String & column_name)
+{
+    static constexpr std::string_view null_suffix = ".null";
+    if (!metadata
+        || metadata->getColumns().tryGet(column_name)
+        || !column_name.ends_with(null_suffix))
+        return std::nullopt;
+
+    String parent_name = column_name.substr(0, column_name.size() - null_suffix.size());
+    const auto * parent_column = metadata->getColumns().tryGet(parent_name);
+    if (!parent_column || !isNullableOrLowCardinalityNullable(parent_column->type))
+        return std::nullopt;
+
+    const auto * nullable_type = typeid_cast<const DataTypeNullable *>(removeLowCardinality(parent_column->type).get());
+    if (nullable_type && !nullable_type->getNestedType()->hasSubcolumn("null"))
+        return parent_name;
+
+    return std::nullopt;
 }
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const
@@ -222,6 +248,90 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
         result.column_stats.emplace(column_name, estimator.estimateCardinality());
     }
     return result;
+}
+
+bool ConditionSelectivityEstimator::hasStatisticsFor(const StorageMetadataPtr & metadata, const NameSet & columns) const
+{
+    return std::all_of(
+        columns.begin(),
+        columns.end(),
+        [&](const auto & column)
+        {
+            String statistics_column = tryGetNullableParentStatisticsColumn(metadata, column).value_or(column);
+            auto it = column_estimators.find(statistics_column);
+            return it != column_estimators.end()
+                && it->second.stats != nullptr
+                && isCompatibleStatistics(metadata, it->second.stats, statistics_column);
+        });
+}
+
+bool ConditionSelectivityEstimator::canEstimateFilter(
+    const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const
+{
+    RPNBuilderTreeContext tree_context(getContext());
+    auto rpn = RPNBuilder<RPNElement>(RPNBuilderTreeNode(node, tree_context), [&](const RPNBuilderTreeNode & node_, RPNElement & out)
+    {
+        return extractAtomFromTree(metadata, node_, out);
+    }).extractRPN();
+
+    return canEstimateRPN(metadata, rpn);
+}
+
+bool ConditionSelectivityEstimator::canEstimateFilter(
+    const StorageMetadataPtr & metadata,
+    const std::vector<RPNBuilderTreeNode> & nodes) const
+{
+    if (nodes.empty())
+        return false;
+
+    return canEstimateRPN(metadata, buildRPN(metadata, nodes));
+}
+
+bool ConditionSelectivityEstimator::canEstimateRPN(
+    const StorageMetadataPtr & metadata,
+    const std::vector<RPNElement> & rpn) const
+{
+    auto get_statistics = [&](const String & column_name) -> const ColumnStatistics *
+    {
+        auto it = column_estimators.find(column_name);
+        if (it == column_estimators.end()
+            || !it->second.stats
+            || !isCompatibleStatistics(metadata, it->second.stats, column_name))
+            return nullptr;
+        return it->second.stats.get();
+    };
+
+    for (const auto & element : rpn)
+    {
+        if (element.function == RPNElement::FUNCTION_UNKNOWN)
+            return false;
+
+        for (const auto * ranges : {&element.column_ranges, &element.column_not_ranges})
+        {
+            for (const auto & [column_name, column_ranges] : *ranges)
+            {
+                const auto * statistics = get_statistics(column_name);
+                if (!statistics
+                    || std::any_of(
+                        column_ranges.ranges.begin(),
+                        column_ranges.ranges.end(),
+                        [&](const auto & range) { return !statistics->estimateRange(range).has_value(); }))
+                    return false;
+            }
+        }
+
+        for (const auto * columns : {&element.null_check_columns, &element.not_null_check_columns})
+        {
+            for (const auto & column_name : *columns)
+            {
+                const auto * statistics = get_statistics(column_name);
+                if (!statistics || !statistics->hasNullCount())
+                    return false;
+            }
+        }
+    }
+
+    return true;
 }
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const
@@ -411,6 +521,32 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
             else
                 return false;
 
+            if (auto parent_name = tryGetNullableParentStatisticsColumn(metadata, column_name);
+                parent_name && (func_name == "equals" || func_name == "notEquals"))
+            {
+                std::optional<bool> null_flag;
+                if (const_value.getType() == Field::Types::UInt64)
+                {
+                    UInt64 value = const_value.safeGet<UInt64>();
+                    if (value <= 1)
+                        null_flag = value == 1;
+                }
+                else if (const_value.getType() == Field::Types::Int64)
+                {
+                    Int64 value = const_value.safeGet<Int64>();
+                    if (value == 0 || value == 1)
+                        null_flag = value == 1;
+                }
+
+                if (null_flag)
+                {
+                    bool checks_null = *null_flag == (func_name == "equals");
+                    out.function = checks_null ? RPNElement::FUNCTION_IS_NULL : RPNElement::FUNCTION_IS_NOT_NULL;
+                    (checks_null ? out.null_check_columns : out.not_null_check_columns).insert(*parent_name);
+                    return true;
+                }
+            }
+
             if (metadata)
             {
                 const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
@@ -547,19 +683,11 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     /// Bare `<col>.null` UInt8 subcolumn reference, e.g. `SELECT … WHERE x.null`. Treat it as `IS NULL`.
     if (!node.isFunction() && !node.isConstant() && metadata)
     {
-        String bare_column_name = node.getColumnName();
-
-        auto dot_pos = bare_column_name.rfind('.');
-        if (dot_pos != std::string::npos && bare_column_name.compare(dot_pos + 1, std::string::npos, "null") == 0)
+        if (auto parent_name = tryGetNullableParentStatisticsColumn(metadata, node.getColumnName()))
         {
-            String parent_name = bare_column_name.substr(0, dot_pos);
-            const ColumnDescription * parent_col = metadata->getColumns().tryGet(parent_name);
-            if (parent_col && isNullableOrLowCardinalityNullable(parent_col->type))
-            {
-                out.function = RPNElement::FUNCTION_IS_NULL;
-                out.null_check_columns.insert(parent_name);
-                return true;
-            }
+            out.function = RPNElement::FUNCTION_IS_NULL;
+            out.null_check_columns.insert(*parent_name);
+            return true;
         }
     }
 
@@ -576,32 +704,83 @@ void ConditionSelectivityEstimatorBuilder::incrementRowCount(UInt64 rows)
     estimator->total_rows += rows;
 }
 
-void ConditionSelectivityEstimatorBuilder::markDataPart(const DataPartPtr & data_part)
+bool ConditionSelectivityEstimatorBuilder::markDataPart(const DataPartPtr & data_part)
 {
+    if (invalid_scope || !data_part || !marked_part_set.insert(data_part.get()).second)
+    {
+        invalid_scope = true;
+        current_part_columns.clear();
+        return false;
+    }
+
     estimator->parts_names.push_back(data_part->name);
     estimator->total_rows += data_part->rows_count;
+    /// Empty recovery parts contribute no rows, so they need no column statistics.
+    if (!data_part->isEmpty())
+        ++marked_parts;
+    current_part_columns.clear();
+    return true;
+}
+
+void ConditionSelectivityEstimatorBuilder::addDataPartStatistics(const DataPartPtr & data_part, const ColumnsStatistics & statistics)
+{
+    if (!markDataPart(data_part) || data_part->isEmpty())
+        return;
+
+    for (const auto & [column_name, column_stats] : statistics)
+        addStatistics(column_name, column_stats);
 }
 
 void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats)
 {
-    if (column_stats != nullptr)
-    {
-        has_data = true;
-        auto & column_estimator = estimator->column_estimators[column_name];
+    if (column_stats == nullptr || incomplete_columns.contains(column_name))
+        return;
 
-        if (column_estimator.stats == nullptr)
-            column_estimator.stats = column_stats;
-        else if (column_estimator.stats->structureEquals(*column_stats))
-            column_estimator.stats->merge(column_stats);
-        /// else: incompatible statistics (e.g. a concurrent ALTER changed the column type,
-        /// shifting the aggregate-function state layout). Skip this part's statistics so the
-        /// estimator still works with the compatible parts instead of crashing.
+    if (marked_parts && !current_part_columns.insert(column_name).second)
+    {
+        incomplete_columns.insert(column_name);
+        return;
     }
+
+    has_data = true;
+    auto & column_estimator = estimator->column_estimators[column_name];
+
+    if (column_estimator.stats == nullptr)
+        column_estimator.stats = column_stats;
+    else if (column_estimator.stats->structureEquals(*column_stats))
+        column_estimator.stats->merge(column_stats);
+    else
+    {
+        /// Incompatible statistics are incomplete for the whole marked scope.
+        /// Do not retain a compatible subset as if it covered every part.
+        incomplete_columns.insert(column_name);
+        return;
+    }
+
+    if (marked_parts)
+        ++column_part_counts[column_name];
 }
 
-ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const
+ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator()
 {
-    return has_data ? estimator : nullptr;
+    if (invalid_scope)
+        return nullptr;
+
+    if (marked_parts)
+    {
+        for (auto it = estimator->column_estimators.begin(); it != estimator->column_estimators.end();)
+        {
+            auto count_it = column_part_counts.find(it->first);
+            if (incomplete_columns.contains(it->first)
+                || count_it == column_part_counts.end()
+                || count_it->second != marked_parts)
+                it = estimator->column_estimators.erase(it);
+            else
+                ++it;
+        }
+    }
+
+    return has_data && !estimator->column_estimators.empty() ? estimator : nullptr;
 }
 
 ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::applyNot() const
