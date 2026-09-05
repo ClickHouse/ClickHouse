@@ -12,7 +12,7 @@ set enable_parallel_replicas = 0; -- join optimization (and table size estimatio
 set enable_analyzer = 1, use_query_condition_cache = 0;
 set query_plan_optimize_join_order_limit = 10; -- CI may inject 0; chooseJoinOrder skipped → join swap never happens → right table stays large → ConcurrentHashJoin chosen instead of HashJoin
 
-set join_algorithm = 'direct,parallel_hash,hash,ie_join'; -- default
+set join_algorithm = 'direct,parallel_hash,hash'; -- default
 set parallel_hash_join_threshold = 100001;
 
 -- Tables should be swapped; the new right table is below the threshold - use HashJoin
@@ -58,7 +58,7 @@ from (
 )
 where explain ilike '%Algorithm%';
 
-set join_algorithm = 'direct,parallel_hash,hash,ie_join'; -- default
+set join_algorithm = 'direct,parallel_hash,hash'; -- default
 
 -- Check estimations obtained from the cache
 

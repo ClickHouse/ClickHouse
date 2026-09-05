@@ -21,7 +21,6 @@ workflow = Workflow.Config(
     name="ReleaseBranchCI",
     event=Workflow.Event.PUSH,
     branches=["2[1-9].[1-9][0-9]", "2[1-9].[1-9]"],
-    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         *builds_for_release_branch,
         *[

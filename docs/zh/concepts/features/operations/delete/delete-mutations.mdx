@@ -1,0 +1,19 @@
+---
+slug: /managing-data/delete_mutations
+sidebarTitle: '删除变更'
+title: '删除变更'
+hide_title: false
+description: '介绍删除变更的页面——通过删除操作修改表数据的 ALTER 查询'
+keywords: ['删除变更', 'ALTER TABLE DELETE', '数据变更', '数据分区片段重写', 'ReplacingMergeTree']
+doc_type: 'reference'
+---
+
+删除变更是指通过删除操作修改表数据的 `ALTER` 查询，最典型的就是 `ALTER TABLE DELETE` 这类查询。执行此类查询会生成数据分区片段的新变更版本。这意味着，对于在该变更之前插入的所有数据，这类语句都会触发整个数据分区片段的重写，从而带来大量写入请求。
+
+<Info>
+  对于删除操作，你可以使用 [ReplacingMergeTree](/zh/concepts/features/operations/update/replacing-merge-tree) 或 [CollapsingMergeTree](/zh/reference/engines/table-engines/mergetree-family/collapsingmergetree) 这类专用表引擎，而不是默认的 MergeTree 表引擎，以避免产生如此大量的写入请求。
+</Info>
+
+import DeleteMutations from '/snippets/zh/delete.mdx';
+
+<DeleteMutations />

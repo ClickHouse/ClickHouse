@@ -13,11 +13,15 @@ import Recommendations from '/snippets/es/recommendations.mdx';
 > ClickHouse está disponible en el repositorio de Nixpkgs y se puede instalar con Nix en **Linux** y **macOS**.
 
 <Steps>
-  <Step title="Revisar las recomendaciones" id="review-recommendations">
+  <Step>
+    ## Revisar las recomendaciones
+
     <Recommendations />
   </Step>
 
-  <Step title="Instalar ClickHouse con Nix" id="install-clickhouse-using-nix">
+  <Step>
+    ## Instalar ClickHouse con Nix
+
     Puedes usar Nix para instalar ClickHouse sin añadirlo de forma permanente a tu sistema:
 
     ```bash
@@ -35,7 +39,9 @@ import Recommendations from '/snippets/es/recommendations.mdx';
     * Ambos paquetes funcionan en Linux y macOS.
   </Step>
 
-  <Step title="Instalación permanente" id="permanent-installation">
+  <Step>
+    ## Instalación permanente
+
     Para instalar ClickHouse de forma permanente en tu sistema:
 
     **Si usas NixOS**, añade esto a tu `configuration.nix`:
@@ -63,7 +69,9 @@ import Recommendations from '/snippets/es/recommendations.mdx';
     ```
   </Step>
 
-  <Step title="Iniciar el servidor de ClickHouse" id="start-clickhouse-server">
+  <Step>
+    ## Iniciar el Client de ClickHouse
+
     Después de la instalación, puedes iniciar el servidor de ClickHouse:
 
     ```bash
@@ -75,7 +83,9 @@ import Recommendations from '/snippets/es/recommendations.mdx';
     Para usarlo en producción en NixOS, puede que quieras configurar ClickHouse como un servicio del sistema. Consulta el [manual de NixOS](https://search.nixos.org/options?query=clickhouse) para ver las opciones de configuración disponibles.
   </Step>
 
-  <Step title="Iniciar el Client de ClickHouse" id="start-clickhouse-client">
+  <Step>
+    ## Iniciar el Client de ClickHouse
+
     Para conectarte al servidor de ClickHouse, abre una nueva terminal y ejecuta:
 
     ```bash

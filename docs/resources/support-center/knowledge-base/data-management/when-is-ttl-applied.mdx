@@ -8,7 +8,7 @@ keywords: ['TTL']
 
 ## TTL Rules and Control
 
-TTL is going to be ***eventually*** applied. What does that mean? The `MergeTree` table setting [`merge_with_ttl_timeout`](/reference/settings/merge-tree-settings/merge-with#merge_with_ttl_timeout) sets the minimum delay in seconds before repeating a merge with delete TTL. The default value is 14400 seconds (4 hours). But that is just the minimum delay, it can take longer until a merge for delete TTL is triggered.
+TTL is going to be ***eventually*** applied. What does that mean? The `MergeTree` table setting [`merge_with_ttl_timeout`](/reference/settings/merge-tree-settings#merge_with_ttl_timeout) sets the minimum delay in seconds before repeating a merge with delete TTL. The default value is 14400 seconds (4 hours). But that is just the minimum delay, it can take longer until a merge for delete TTL is triggered.
 
 You can view all of your current TTL settings (like `merge_with_ttl_timeout`) with this query:
 
@@ -67,7 +67,7 @@ The response looks like:
 └──────────────────────┴───────┴─────────┴─────────────────────────────────┴──────┴──────┴──────────┴────────┴─────────┴───────────┘
 ```
 
-Check the docs for how to modify the [`background_pool_size` setting](/reference/settings/server-settings/settings/background#background_pool_size), which is configured as:
+Check the docs for how to modify the [`background_pool_size` setting](/reference/settings/server-settings/settings#background_pool_size), which is configured as:
 
 ```xml
 <background_pool_size>16</background_pool_size>

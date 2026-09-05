@@ -23,7 +23,7 @@ table or a table on the wrong cluster, and software bugs that result in incorrec
 data processing or data corruption. 
 
 In many cases mistakes like these will affect all replicas. ClickHouse has built-in
-safeguards to prevent some types of mistakes, for example, by [default](/reference/settings/session-settings/max#max_table_size_to_drop)
+safeguards to prevent some types of mistakes, for example, by [default](/reference/settings/session-settings#max_table_size_to_drop) 
 you can't just drop tables with a `MergeTree` family engine containing more than 
 50 Gb of data. However, these safeguards don't cover all possible cases and 
 problems can still occur.

@@ -442,22 +442,6 @@ std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFile(const String & 
 void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                                     DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
 {
-    copyToDiskImpl(path_in_backup, /* offset= */ 0, file_size, file_size, /* is_range= */ false, encrypted_in_backup,
-                   destination_disk, destination_path, write_mode);
-}
-
-void BackupReaderS3::copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, size_t file_size,
-                                         bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
-                                         WriteMode write_mode)
-{
-    copyToDiskImpl(path_in_backup, offset, size, file_size, /* is_range= */ true, encrypted_in_backup,
-                   destination_disk, destination_path, write_mode);
-}
-
-void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset, size_t size, size_t file_size, bool is_range,
-                                    bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
-                                    WriteMode write_mode)
-{
     /// Use the native copy as a more optimal way to copy a file from S3 to S3 if it's possible.
     /// We don't check for `has_throttling` here because the native copy almost doesn't use network.
     auto destination_data_source_description = destination_disk->getDataSourceDescription();
@@ -473,23 +457,23 @@ void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset
                                 "Blob writing function called with unexpected blob_path.size={} or mode={}",
                                 blob_path.size(), mode);
 
-            const auto src_key = fs::path(s3_uri.key) / path_in_backup;
-            auto dest_client = destination_disk->getS3StorageClient();
-            auto runner = threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_READER);
-            auto create_read_buffer = [&, this] { return readFile(path_in_backup); };
+            copyS3File(
+                client,
+                s3_uri.bucket,
+                fs::path(s3_uri.key) / path_in_backup,
+                0,
+                file_size,
+                /* dest_s3_client= */ destination_disk->getS3StorageClient(),
+                /* dest_bucket= */ blob_path[1],
+                /* dest_key= */ blob_path[0],
+                s3_settings.request_settings,
+                read_settings,
+                blob_storage_log,
+                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_READER),
+                [&, this] { return readFile(path_in_backup); },
+                object_attributes);
 
-            if (is_range)
-                copyS3FileRange(
-                    client, s3_uri.bucket, src_key, offset, size, /* src_object_size= */ file_size,
-                    dest_client, /* dest_bucket= */ blob_path[1], /* dest_key= */ blob_path[0],
-                    s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer, object_attributes);
-            else
-                copyS3File(
-                    client, s3_uri.bucket, src_key, size,
-                    dest_client, /* dest_bucket= */ blob_path[1], /* dest_key= */ blob_path[0],
-                    s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer, object_attributes);
-
-            return size;
+            return file_size;
         };
 
         destination_disk->writeFileUsingBlobWritingFunction(destination_path, write_mode, write_blob_function);
@@ -497,10 +481,7 @@ void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset
     }
 
     /// Fallback to copy through buffers.
-    if (is_range)
-        BackupReaderDefault::copyFileRangeToDisk(path_in_backup, offset, size, file_size, encrypted_in_backup, destination_disk, destination_path, write_mode);
-    else
-        BackupReaderDefault::copyFileToDisk(path_in_backup, size, encrypted_in_backup, destination_disk, destination_path, write_mode);
+    BackupReaderDefault::copyFileToDisk(path_in_backup, file_size, encrypted_in_backup, destination_disk, destination_path, write_mode);
 }
 
 BackupWriterS3::BackupWriterS3(
@@ -573,39 +554,28 @@ void BackupWriterS3::copyFileFromDisk(
         if (auto blob_path = src_disk->getBlobPath(src_path); blob_path.size() == 2)
         {
             LOG_TRACE(log, "Copying file {} from disk {} to S3", src_path, src_disk->getName());
+            copyS3File(
+                /* src_s3_client */ disk_client_factory.getOrCreate(src_disk),
+                /* src_bucket */ blob_path[1],
+                /* src_key */ blob_path[0],
+                start_pos,
+                length,
+                /* dest_s3_client */ client,
+                /* dest_bucket */ s3_uri.bucket,
+                /* dest_key */ fs::path(s3_uri.key) / path_in_backup,
+                s3_settings.request_settings,
+                read_settings,
+                blob_storage_log,
+                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_WRITER),
+                [&, this]
+                {
+                    LOG_TRACE(log, "Falling back to copy file {} from disk {} to S3 through buffers", src_path, src_disk->getName());
 
-            auto src_client = disk_client_factory.getOrCreate(src_disk);
-            auto runner = threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_WRITER);
-            auto create_read_buffer = [&, this]
-            {
-                LOG_TRACE(log, "Falling back to copy file {} from disk {} to S3 through buffers", src_path, src_disk->getName());
+                    if (copy_encrypted)
+                        return src_disk->readEncryptedFile(src_path, read_settings);
 
-                if (copy_encrypted)
-                    return src_disk->readEncryptedFile(src_path, read_settings);
-
-                return src_disk->readFile(src_path, read_settings);
-            };
-
-            /// A copy is whole-object only if it covers the entire source; `start_pos != 0` is not a sound
-            /// test, because a prefix [0, length) of a bigger file is a range too. `length` counts the bytes
-            /// actually copied, so an encrypted source must be measured with its encrypted size.
-            const size_t source_size
-                = copy_encrypted ? src_disk->getEncryptedFileSize(src_path) : src_disk->getFileSize(src_path);
-            const bool whole_object = (start_pos == 0) && (length == source_size);
-
-            if (whole_object)
-                copyS3File(
-                    src_client, /* src_bucket */ blob_path[1], /* src_key */ blob_path[0], length,
-                    /* dest_s3_client */ client, /* dest_bucket */ s3_uri.bucket,
-                    /* dest_key */ fs::path(s3_uri.key) / path_in_backup,
-                    s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer);
-            else
-                copyS3FileRange(
-                    src_client, /* src_bucket */ blob_path[1], /* src_key */ blob_path[0], start_pos, length,
-                    /* src_object_size= */ source_size,
-                    /* dest_s3_client */ client, /* dest_bucket */ s3_uri.bucket,
-                    /* dest_key */ fs::path(s3_uri.key) / path_in_backup,
-                    s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer);
+                    return src_disk->readFile(src_path, read_settings);
+                });
             return; /// copied!
         }
     }
@@ -623,6 +593,7 @@ void BackupWriterS3::copyFile(const String & destination, const String & source,
         client,
         /* src_bucket */ s3_uri.bucket,
         /* src_key= */ source_key,
+        0,
         size,
         /* dest_s3_client= */ client,
         /* dest_bucket= */ s3_uri.bucket,
@@ -682,22 +653,6 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
         std::nullopt,
         threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_WRITER),
         write_settings);
-}
-
-std::unique_ptr<WriteBuffer> BackupWriterS3::writeFileIfNotExists(const String & file_name)
-{
-    WriteSettings conditional_write_settings = write_settings;
-    conditional_write_settings.object_storage_write_if_none_match = "*";
-    return std::make_unique<WriteBufferFromS3>(
-        client,
-        s3_uri.bucket,
-        fs::path(s3_uri.key) / file_name,
-        DBMS_DEFAULT_BUFFER_SIZE,
-        s3_settings.request_settings,
-        blob_storage_log,
-        std::nullopt,
-        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_WRITER),
-        conditional_write_settings);
 }
 
 void BackupWriterS3::removeFile(const String & file_name)

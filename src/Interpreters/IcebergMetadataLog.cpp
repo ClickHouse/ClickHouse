@@ -107,9 +107,8 @@ void insertRowToLogTableImpl(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg metadata log table is not configured");
     }
 
-    iceberg_metadata_log->add([&](DB::IcebergMetadataLogElement & element)
-    {
-        element = DB::IcebergMetadataLogElement{
+    iceberg_metadata_log->add(
+        DB::IcebergMetadataLogElement{
             .current_time = spec.tv_sec,
             .query_id = local_context->getCurrentQueryId(),
             .content_type = row_log_level,
@@ -117,7 +116,6 @@ void insertRowToLogTableImpl(
             .file_path = file_path.serialize(),
             .metadata_content = row,
             .row_in_file = row_in_file,
-            .pruning_status = pruning_status};
-    });
+            .pruning_status = pruning_status});
 }
 }

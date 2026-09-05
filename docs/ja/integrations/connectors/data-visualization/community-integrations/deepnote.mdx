@@ -12,7 +12,7 @@ integration:
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
-import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
 
 <CommunityMaintainedBadge />
@@ -43,7 +43,7 @@ Deepnote のデータノートブックから ClickHouse にクエリを実行�
 
 <Image size="md" img="/images/integrations/data-visualization/deepnote_02.webp" alt="ClickHouse の詳細ダイアログ" border />
 
-***注:*** ClickHouse への接続が IP Access List で保護されている場合は、Deepnote の IP アドレスを許可する必要があることがあります。詳細は、[Deepnote のドキュメント](https://deepnote.com/docs/securing-connections)を参照してください。
+***注:*** ClickHouse への接続が IP Access List で保護されている場合は、Deepnote の IP アドレスを許可する必要があることがあります。詳細は、[Deepnote のドキュメント](https://docs.deepnote.com/integrations/authorize-connections-from-deepnote-ip-addresses)を参照してください。
 
 3. これで完了です。Deepnote で ClickHouse を利用できるようになりました。
 
@@ -55,6 +55,6 @@ Deepnote のデータノートブックから ClickHouse にクエリを実行�
 
    <Image size="lg" img="/images/integrations/data-visualization/deepnote_03.webp" alt="ClickHouse の詳細ダイアログ" border />
 
-2. 次に、新しい ClickHouse クエリブロックを作成してデータベースに対してクエリを実行します。クエリ結果は DataFrame として保存され、SQL ブロックで指定した変数に格納されます。
+2. 次に、新しい ClickHouse クエリブロックを作成してデータベースにクエリを実行します。クエリ結果は DataFrame として保存され、SQL ブロックで指定した変数に格納されます。
 
 3. 既存の [SQL ブロック](https://docs.deepnote.com/features/sql-cells) を ClickHouse ブロックに変換することもできます。

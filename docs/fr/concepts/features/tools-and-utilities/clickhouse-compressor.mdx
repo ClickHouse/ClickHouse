@@ -1,23 +1,23 @@
 ---
-description: 'Documentation du compresseur ClickHouse'
+description: 'Documentation de ClickHouse Compressor'
 slug: /operations/utilities/clickhouse-compressor
 title: 'clickhouse-compressor'
-doc_type: 'référence'
+doc_type: 'reference'
 ---
 
-Programme simple de compression et de décompression de données.
+Programme simple de compression et de décompression des données.
 
 <div id="examples">
   ### Exemples
 </div>
 
-Compresser des données avec LZ4 :
+Compressez les données avec LZ4 :
 
 ```bash
 $ ./clickhouse-compressor < input_file > output_file
 ```
 
-Décompressez les données au format LZ4 :
+Décompresser des données au format LZ4 :
 
 ```bash
 $ ./clickhouse-compressor --decompress < input_file > output_file
@@ -29,7 +29,7 @@ Compressez les données avec ZSTD au niveau 5 :
 $ ./clickhouse-compressor --codec 'ZSTD(5)' < input_file > output_file
 ```
 
-Compressez les données avec Delta sur quatre octets et ZSTD au niveau 10.
+Compressez les données avec Delta de quatre octets et ZSTD de niveau 10.
 
 ```bash
 $ ./clickhouse-compressor --codec 'Delta(4)' --codec 'ZSTD(10)' < input_file > output_file

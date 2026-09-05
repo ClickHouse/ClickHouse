@@ -1,0 +1,551 @@
+---
+title: 'Операции ввода-вывода DataStore'
+sidebarTitle: 'Операции ввода-вывода'
+slug: /chdb/datastore/io
+description: 'Чтение и запись данных с помощью DataStore — все поддерживаемые форматы и пункты назначения'
+keywords: ['chdb', 'datastore', 'io', 'read', 'write', 'csv', 'parquet', 'json', 'excel']
+doc_type: 'reference'
+---
+
+DataStore поддерживает чтение из различных форматов файлов и источников данных, а также запись в различные форматы и пункты назначения.
+
+<div id="reading">
+  ## Чтение данных
+</div>
+
+<div id="read-csv">
+  ### CSV-файлы
+</div>
+
+```python
+read_csv(filepath_or_buffer, sep=',', header='infer', names=None, 
+         usecols=None, dtype=None, nrows=None, skiprows=None,
+         compression=None, encoding=None, **kwargs)
+```
+
+**Примеры:**
+
+```python
+from chdb import datastore as pd
+
+# Базовое чтение CSV
+ds = pd.read_csv("data.csv")
+
+# С параметрами
+ds = pd.read_csv(
+    "data.csv",
+    sep=";",                    # Пользовательский разделитель
+    header=0,                   # Индекс строки заголовка
+    names=['a', 'b', 'c'],      # Пользовательские имена столбцов
+    usecols=['a', 'b'],         # Читать только указанные столбцы
+    dtype={'a': 'Int64'},       # Указать типы данных
+    nrows=1000,                 # Читать только первые 1000 строк
+    skiprows=1,                 # Пропустить первую строку
+    compression='gzip',         # Сжатый файл
+    encoding='utf-8'            # Кодировка
+)
+
+# Из URL
+ds = pd.read_csv("https://example.com/data.csv")
+```
+
+<div id="read-parquet">
+  ### Файлы Parquet
+</div>
+
+Рекомендуется для больших датасетов — столбцовый формат с более эффективным сжатием.
+
+```python
+read_parquet(path, columns=None, **kwargs)
+```
+
+**Примеры:**
+
+```python
+# Базовое чтение Parquet
+ds = pd.read_parquet("data.parquet")
+
+# Чтение только указанных столбцов (эффективно — считываются только нужные данные)
+ds = pd.read_parquet("data.parquet", columns=['col1', 'col2', 'col3'])
+
+# Из S3
+ds = pd.read_parquet("s3://bucket/data.parquet")
+```
+
+<div id="read-json">
+  ### JSON‑файлы
+</div>
+
+```python
+read_json(path_or_buf, orient=None, lines=False, **kwargs)
+```
+
+**Примеры:**
+
+```python
+# Стандартный JSON
+ds = pd.read_json("data.json")
+
+# JSON Lines (с разделением переносом строки)
+ds = pd.read_json("data.jsonl", lines=True)
+
+# JSON с заданной ориентацией
+ds = pd.read_json("data.json", orient='records')
+```
+
+<div id="read-excel">
+  ### Файлы Excel
+</div>
+
+```python
+read_excel(io, sheet_name=0, header=0, names=None, **kwargs)
+```
+
+**Примеры:**
+
+```python
+# Чтение первого листа
+ds = pd.read_excel("data.xlsx")
+
+# Чтение конкретного листа
+ds = pd.read_excel("data.xlsx", sheet_name="Sheet1")
+ds = pd.read_excel("data.xlsx", sheet_name=2)  # Третий лист
+
+# Чтение нескольких листов (возвращает dict)
+sheets = pd.read_excel("data.xlsx", sheet_name=['Sheet1', 'Sheet2'])
+```
+
+<div id="read-sql">
+  ### SQL-базы данных
+</div>
+
+```python
+read_sql(sql, con, **kwargs)
+```
+
+**Примеры:**
+
+```python
+# Чтение из SQL-запроса
+ds = pd.read_sql("SELECT * FROM users", connection)
+ds = pd.read_sql("SELECT * FROM orders WHERE date > '2024-01-01'", connection)
+```
+
+<div id="read-other">
+  ### Другие форматы
+</div>
+
+```python
+# Feather (Arrow)
+ds = pd.read_feather("data.feather")
+
+# ORC
+ds = pd.read_orc("data.orc")
+
+# Pickle
+ds = pd.read_pickle("data.pkl")
+
+# Формат с фиксированной шириной полей
+ds = pd.read_fwf("data.txt", widths=[10, 20, 15])
+
+# HTML-таблицы
+ds = pd.read_html("https://example.com/table.html")[0]
+```
+
+***
+
+<div id="writing">
+  ## Запись данных
+</div>
+
+<div id="to-csv">
+  ### to_csv
+</div>
+
+Экспорт в формате CSV.
+
+```python
+to_csv(path_or_buf=None, sep=',', na_rep='', header=True, 
+       index=True, mode='w', compression=None, **kwargs)
+```
+
+**Примеры:**
+
+```python
+ds = pd.read_parquet("data.parquet")
+
+# Базовый экспорт
+ds.to_csv("output.csv")
+
+# С параметрами
+ds.to_csv(
+    "output.csv",
+    sep=";",                    # Произвольный разделитель
+    index=False,                # Не включать индекс
+    header=True,                # Включить заголовок
+    na_rep='NULL',              # Представлять NaN как 'NULL'
+    compression='gzip'          # Сжать вывод
+)
+
+# В строку
+csv_string = ds.to_csv()
+```
+
+<div id="to-parquet">
+  ### to_parquet
+</div>
+
+Экспорт в формате Parquet (рекомендуется для больших объёмов данных).
+
+```python
+to_parquet(path, engine='pyarrow', compression='snappy', **kwargs)
+```
+
+**Примеры:**
+
+```python
+# Базовый экспорт
+ds.to_parquet("output.parquet")
+
+# С параметрами сжатия
+ds.to_parquet("output.parquet", compression='gzip')
+ds.to_parquet("output.parquet", compression='zstd')
+
+# Партиционированный вывод
+ds.to_parquet(
+    "output/",
+    partition_cols=['year', 'month']
+)
+```
+
+<div id="to-json">
+  ### to_json
+</div>
+
+Экспорт в формате JSON.
+
+```python
+to_json(path_or_buf=None, orient='records', lines=False, **kwargs)
+```
+
+**Примеры:**
+
+```python
+# Стандартный JSON (массив записей)
+ds.to_json("output.json", orient='records')
+
+# JSON Lines (один объект JSON на строку)
+ds.to_json("output.jsonl", lines=True)
+
+# Различные ориентации
+ds.to_json("output.json", orient='split')    # {columns, data, index}
+ds.to_json("output.json", orient='records')  # [{col: val}, ...]
+ds.to_json("output.json", orient='columns')  # {col: {idx: val}}
+
+# В строку
+json_string = ds.to_json()
+```
+
+<div id="to-excel">
+  ### to_excel
+</div>
+
+Экспорт в формате Excel.
+
+```python
+to_excel(excel_writer, sheet_name='Sheet1', index=True, **kwargs)
+```
+
+**Примеры:**
+
+```python
+# Один лист
+ds.to_excel("output.xlsx")
+ds.to_excel("output.xlsx", sheet_name="Data", index=False)
+
+# Несколько листов
+with pd.ExcelWriter("output.xlsx") as writer:
+    ds1.to_excel(writer, sheet_name="Sales")
+    ds2.to_excel(writer, sheet_name="Inventory")
+```
+
+<div id="to-sql-method">
+  ### to_sql
+</div>
+
+Экспорт в базу данных SQL или создание SQL-строки.
+
+```python
+to_sql(name=None, con=None, schema=None, if_exists='fail', **kwargs)
+```
+
+**Примеры:**
+
+```python
+# Сгенерировать SQL-запрос (без выполнения)
+sql = ds.to_sql()
+print(sql)
+# SELECT ...
+# FROM ...
+# WHERE ...
+
+# Записать в базу данных
+ds.to_sql("table_name", connection, if_exists='replace')
+```
+
+<div id="to-other">
+  ### Другие способы экспорта
+</div>
+
+```python
+# В pandas DataFrame
+df = ds.to_df()
+df = ds.to_pandas()
+
+# В Arrow Table
+table = ds.to_arrow()
+
+# В массив NumPy
+arr = ds.to_numpy()
+
+# В словарь
+d = ds.to_dict()
+d = ds.to_dict(orient='records')  # Список словарей
+d = ds.to_dict(orient='list')     # Словарь списков
+
+# В записи (список кортежей)
+records = ds.to_records()
+
+# В строку
+s = ds.to_string()
+s = ds.to_string(max_rows=100)
+
+# В Markdown
+md = ds.to_markdown()
+
+# В HTML
+html = ds.to_html()
+
+# В LaTeX
+latex = ds.to_latex()
+
+# В буфер обмена
+ds.to_clipboard()
+
+# В pickle
+ds.to_pickle("output.pkl")
+
+# В feather
+ds.to_feather("output.feather")
+```
+
+***
+
+<div id="format-comparison">
+  ## Сравнение форматов файлов
+</div>
+
+| Формат      | Скорость чтения | Скорость записи | Размер файла | Схема    | Лучше всего подходит для               |
+| ----------- | --------------- | --------------- | ------------ | -------- | -------------------------------------- |
+| **Parquet** | Высокая         | Высокая         | Небольшой    | Да       | Крупных наборов данных, аналитики      |
+| **CSV**     | Средняя         | Высокая         | Большой      | Нет      | Совместимости, простых данных          |
+| **JSON**    | Низкая          | Средняя         | Большой      | Частично | API, вложенных данных                  |
+| **Excel**   | Низкая          | Низкая          | Средний      | Частично | Обмена с нетехническими пользователями |
+| **Feather** | Очень высокая   | Очень высокая   | Средний      | Да       | Межпроцессного обмена, pandas          |
+
+<div id="recommendations">
+  ### Рекомендации
+</div>
+
+1. **Для аналитических рабочих нагрузок:** используйте Parquet
+   * Столбцовый формат позволяет считывать только нужные столбцы
+   * Отличное сжатие
+   * Сохраняет типы данных
+
+2. **Для обмена данными:** используйте CSV или JSON
+   * Универсальная совместимость
+   * Удобочитаемый формат
+
+3. **Для интеграции с pandas:** используйте Feather или Arrow
+   * Самая быстрая сериализация
+   * Сохранение типов
+
+***
+
+<div id="compression">
+  ## Поддержка сжатия
+</div>
+
+<div id="read-compressed">
+  ### Чтение сжатых файлов
+</div>
+
+```python
+# Автоопределение по расширению
+ds = pd.read_csv("data.csv.gz")
+ds = pd.read_csv("data.csv.bz2")
+ds = pd.read_csv("data.csv.xz")
+ds = pd.read_csv("data.csv.zst")
+
+# Явное указание сжатия
+ds = pd.read_csv("data.csv", compression='gzip')
+```
+
+<div id="write-compressed">
+  ### Запись сжатых файлов
+</div>
+
+```python
+# CSV со сжатием
+ds.to_csv("output.csv.gz", compression='gzip')
+ds.to_csv("output.csv.bz2", compression='bz2')
+
+# Parquet (всегда со сжатием)
+ds.to_parquet("output.parquet", compression='snappy')  # По умолчанию
+ds.to_parquet("output.parquet", compression='gzip')
+ds.to_parquet("output.parquet", compression='zstd')    # Лучшая степень сжатия
+ds.to_parquet("output.parquet", compression='lz4')     # Быстрее всего
+```
+
+<div id="compression-options">
+  ### Параметры сжатия
+</div>
+
+| Сжатие   | Скорость      | Степень сжатия | Сценарий использования   |
+| -------- | ------------- | -------------- | ------------------------ |
+| `snappy` | Очень высокая | Низкая         | По умолчанию для Parquet |
+| `lz4`    | Очень высокая | Низкая         | Приоритет — скорость     |
+| `gzip`   | Средняя       | Высокая        | Совместимость            |
+| `zstd`   | Высокая       | Очень высокая  | Оптимальный баланс       |
+| `bz2`    | Низкая        | Очень высокая  | Максимальное сжатие      |
+
+***
+
+<div id="streaming">
+  ## Потоковый ввод-вывод
+</div>
+
+Для очень больших файлов, не помещающихся в память:
+
+<div id="chunked-read">
+  ### Чтение по фрагментам
+</div>
+
+```python
+# Чтение фрагментами
+for chunk in pd.read_csv("large.csv", chunksize=100000):
+    # Обработка каждого фрагмента
+    process(chunk)
+
+# Использование итератора
+reader = pd.read_csv("large.csv", iterator=True)
+chunk = reader.get_chunk(10000)
+```
+
+<div id="clickhouse-streaming">
+  ### Использование стриминга в ClickHouse
+</div>
+
+```python
+from chdb.datastore import DataStore
+
+# Потоковое чтение из файла без загрузки всего содержимого в память
+ds = DataStore.from_file("huge.parquet")
+
+# Операции ленивые — вычисляется только то, что необходимо
+result = ds.filter(ds['amount'] > 1000).head(100)
+```
+
+***
+
+<div id="remote">
+  ## Удалённые источники данных
+</div>
+
+<div id="http">
+  ### HTTP/HTTPS
+</div>
+
+```python
+# Чтение по URL
+ds = pd.read_csv("https://example.com/data.csv")
+ds = pd.read_parquet("https://example.com/data.parquet")
+```
+
+<div id="s3">
+  ### S3
+</div>
+
+```python
+from chdb.datastore import DataStore
+
+# Анонимный доступ
+ds = DataStore.uri("s3://bucket/data.parquet?nosign=true")
+
+# С учётными данными
+ds = DataStore.from_s3(
+    "s3://bucket/data.parquet",
+    access_key_id="KEY",
+    secret_access_key="SECRET"
+)
+```
+
+<div id="cloud">
+  ### GCS, Azure, HDFS
+</div>
+
+См. [Factory Methods](/ru/products/chdb/datastore/factory-methods), чтобы узнать о вариантах облачных хранилищ.
+
+***
+
+<div id="best-practices">
+  ## Рекомендации
+</div>
+
+<div id="use-parquet-for-large-files">
+  ### 1. Используйте формат Parquet для больших файлов
+</div>
+
+```python
+# Конвертируйте CSV в Parquet для повышения производительности
+ds = pd.read_csv("large.csv")
+ds.to_parquet("large.parquet")
+
+# Последующее чтение выполняется значительно быстрее
+ds = pd.read_parquet("large.parquet")
+```
+
+<div id="select-only-needed-columns">
+  ### 2. Выбирайте только нужные столбцы
+</div>
+
+```python
+# Эффективно — считывает только col1 и col2
+ds = pd.read_parquet("data.parquet", columns=['col1', 'col2'])
+
+# Неэффективно — считывает все столбцы, затем фильтрует
+ds = pd.read_parquet("data.parquet")[['col1', 'col2']]
+```
+
+<div id="use-compression">
+  ### 3. Используйте сжатие
+</div>
+
+```python
+# Меньший размер файла, как правило быстрее из-за меньшего объёма операций ввода/вывода
+ds.to_parquet("output.parquet", compression='zstd')
+```
+
+<div id="batch-writes">
+  ### 4. Батч-записи
+</div>
+
+```python
+# Записать один раз, а не в цикле
+result = process_all_data(ds)
+result.to_parquet("output.parquet")
+
+# НЕ так (неэффективно)
+for chunk in chunks:
+    chunk.to_parquet(f"output_{i}.parquet")
+```

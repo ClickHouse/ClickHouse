@@ -27,7 +27,7 @@ Esta tabla registra cada archivo de metadatos y cada entrada leídos de tablas I
   ### Control de la verbosidad del registro
 </div>
 
-Puede controlar qué eventos de metadatos se registran mediante la configuración [`iceberg_metadata_log_level`](/es/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_log_level).
+Puede controlar qué eventos de metadatos se registran mediante la configuración [`iceberg_metadata_log_level`](/es/reference/settings/session-settings#iceberg_metadata_log_level).
 
 Para registrar todos los metadatos utilizados en la consulta actual:
 
@@ -53,7 +53,7 @@ FROM system.iceberg_metadata_log
 WHERE query_id = '{previous_query_id}';
 ```
 
-Consulte la descripción de la configuración [`iceberg_metadata_log_level`](/es/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_log_level) para obtener más información.
+Consulte la descripción de la configuración [`iceberg_metadata_log_level`](/es/reference/settings/session-settings#iceberg_metadata_log_level) para obtener más información.
 
 <div id="good-to-know">
   ### Conviene saberlo

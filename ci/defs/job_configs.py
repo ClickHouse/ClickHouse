@@ -4,83 +4,21 @@ from praktika.utils import Utils
 from ci.defs.defs import (
     LLVM_ARTIFACTS_LIST,
     LLVM_FT_NUM_BATCHES,
-    LLVM_FT_OLD_S3_DB_REPL_NUM_BATCHES,
-    LLVM_FT_OLD_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,
+    LLVM_FT_OLD_S3_DB_REPL_WASM_NUM_BATCHES,
+    LLVM_FT_OLD_S3_DB_REPL_WASM_SEQUENTIAL_NUM_BATCHES,
     LLVM_IT_NUM_BATCHES,
     ArtifactNames,
     BuildTypes,
     JobNames,
     RunnerLabels,
 )
+
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 # Keeper stress spins nested Docker inside the integration-tests-runner container.
 # Using nearly all host RAM for the outer container can starve the host runner
 # and lead to "runner lost communication". Reserve a larger margin on the host
 # by capping Keeper to ~70% of physical memory.
 KEEPER_DIND_MEM = Utils.physical_memory() * 70 // 100
-
-# Integration tests run a nested Docker daemon, so `docker_in_docker.sh` splits the job's
-# `--memory` into capped cgroup leaves. `/init`'s cap is a ceiling rather than a share, so the
-# caps can sum above the job limit.
-
-# Not a leaf: headroom for the pages faulted before delegation, which stay charged to the
-# cgroup root and can be neither migrated nor reclaimed (measured up to ~147 MiB).
-INTEGRATION_DIND_ROOT_RESERVE = 1 * 1024**3
-# Everything not charged to `/docker`: pytest, its xdist workers, the post-teardown steps, and the
-# per-test subprocesses - `helpers/cluster.py` runs each node's `clickhouse-client` and
-# `helpers/iceberg_utils.py` runs Spark's `local` driver on the host, not in a container.
-#
-# A flat floor rather than the third of the job limit this used to take, because the share was
-# claiming memory `/docker` cannot do without. Measured over 58 integration jobs on the 61.78 GiB
-# runner: `/docker` peaks at its cap in every single one, while `/init` peaks at 20.8 GiB
-# (median) against this reserve and `/dockerd` at 18.3 GiB against its 2 GiB one, and the job
-# cgroup never breaches - the two overruns are page cache (the log archiving here, the image
-# layers there) and reclaim gives them back. `/docker` is the opposite: read off a kernel OOM
-# report, its 40.35 GiB charge is anonymous memory against 753664 bytes of cache, so not one page
-# of it is reclaimable and its cap is the only one that binds. Sizing the unreclaimable leaf last
-# is what put `Container memory budget exceeded (/docker)` on nearly every run of the ASan+UBSan
-# shards.
-INTEGRATION_DIND_INIT_RESERVE = 8 * 1024**3
-# Holds dockerd, containerd and one containerd-shim per nested container, so it scales with
-# concurrency rather than staying at the daemon's own footprint. An absolute floor, never a
-# fraction of the job limit: too small and the daemons cannot boot at all.
-INTEGRATION_DIND_DAEMON_RESERVE = 2 * 1024**3
-# What the nested test containers may collectively use. Also bounds xdist worker concurrency, so
-# scheduling and containment agree on one number. Clamped at zero because a negative reads to
-# `docker_in_docker.sh`'s validator as a malformed variable rather than a host too small.
-INTEGRATION_NESTED_BUDGET = max(
-    LIMITED_MEM
-    - INTEGRATION_DIND_ROOT_RESERVE
-    - INTEGRATION_DIND_INIT_RESERVE
-    - INTEGRATION_DIND_DAEMON_RESERVE,
-    0,
-)
-# `/init`'s ceiling, not its share: its peak is one test's host-side client fan-out plus the page
-# cache of the logs it reads and archives, and neither is bounded by the reserve above. It
-# overlaps `/docker`, so this cap alone is within the job limit but the three together are not -
-# which is what lets the reserve shrink without `/init` losing any room it actually uses.
-INTEGRATION_DIND_INIT_LIMIT = max(
-    LIMITED_MEM - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_DAEMON_RESERVE,
-    INTEGRATION_DIND_INIT_RESERVE,
-)
-# `/dockerd`'s ceiling, not its share, for the same reason `/init` has one: an image pull writes
-# every layer through this leaf, so the leaf also holds that page cache, and a dirty page cannot be
-# reclaimed until its writeback completes. The reserve stays the daemons' own anon footprint, which
-# is what the other leaves must leave room for. Overlaps `/docker` exactly as `/init` does.
-INTEGRATION_DIND_DAEMON_LIMIT = max(
-    LIMITED_MEM - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_INIT_RESERVE,
-    INTEGRATION_DIND_DAEMON_RESERVE,
-)
-integration_dind_env = (
-    "+--env=CI_DIND_REQUIRE_CGROUP_CONTAINMENT=1"
-    f"+--env=CI_DIND_JOB_MEM={LIMITED_MEM}"
-    f"+--env=CI_DIND_ROOT_RESERVE={INTEGRATION_DIND_ROOT_RESERVE}"
-    f"+--env=CI_DIND_INIT_RESERVE={INTEGRATION_DIND_INIT_RESERVE}"
-    f"+--env=CI_DIND_INIT_LIMIT={INTEGRATION_DIND_INIT_LIMIT}"
-    f"+--env=CI_DIND_DAEMON_RESERVE={INTEGRATION_DIND_DAEMON_RESERVE}"
-    f"+--env=CI_DIND_DAEMON_LIMIT={INTEGRATION_DIND_DAEMON_LIMIT}"
-    f"+--env=CI_DIND_NESTED_BUDGET={INTEGRATION_NESTED_BUDGET}"
-)
 
 BINARY_DOCKER_COMMAND = (
     "clickhouse/binary-builder+--network=host"
@@ -107,11 +45,6 @@ build_digest_config = Job.CacheDigestConfig(
         "./rust",
         "./ci/jobs/build_clickhouse.py",
         "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
-        "./ci/jobs/scripts/log_cluster.py",
-        "./utils/prepare-time-trace/prepare-time-trace.sh",
-        # The build job also assembles the deb, rpm and tgz packages, so changes to
-        # their definitions and to the packaging script have to schedule a rebuild.
-        "./packages",
         "./utils/list-licenses",
         "./utils/self-extracting-executable",
     ],
@@ -171,17 +104,16 @@ common_ft_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/functional_tests.py",
             "./ci/jobs/scripts/clickhouse_proc.py",
-            "./ci/jobs/scripts/log_cluster.py",
             "./ci/jobs/scripts/server_cleanup.py",
             "./ci/jobs/scripts/functional_tests_results.py",
-            "./ci/jobs/scripts/log_export.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+            "./ci/praktika/cidb.py",
             "./tests/queries",
             "./tests/clickhouse-test",
             "./tests/config",
             "./tests/*.txt",
             "./ci/docker/stateless-test",
-            "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
+            "./ci/jobs/scripts/functional_tests/setup_minio.sh",
         ],
     ),
     result_name_for_cidb="Tests",
@@ -209,22 +141,15 @@ common_stress_job_config = Job.Config(
         include_paths=[
             "./tests/queries/0_stateless/",
             "./ci/jobs/stress_job.py",
-            # stress_runner.sh drives the log export through clickhouse_proc.py
             "./ci/jobs/scripts/clickhouse_proc.py",
-            "./ci/jobs/scripts/log_cluster.py",
-            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./ci/jobs/scripts/stress/stress.py",
             "./tests/clickhouse-test",
             "./tests/config",
             "./tests/*.txt",
             "./tests/docker_scripts/",
             "./ci/docker/stress-test",
+            "./ci/jobs/scripts/clickhouse_proc.py",
             "./ci/jobs/scripts/log_parser.py",
-            # `stress_runner.sh` exports the system logs through
-            # `clickhouse_proc.py logs_export_*`. The `ci_logs_sender` user is
-            # covered by `./tests/config` above.
-            "./ci/jobs/scripts/log_export.py",
-            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
         ],
     ),
     timeout=3600 * 3,
@@ -237,23 +162,17 @@ common_integration_test_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/integration_test_job.py",
             "./ci/jobs/scripts/integration_tests_configs.py",
-            "./ci/jobs/scripts/job_hooks/promql_compliance_upload_hook.py",
+            "./ci/jobs/scripts/job_hooks/promql_compliance_hook.py",
             "./ci/jobs/scripts/job_hooks/promql_compliance_s3.py",
-            "./ci/jobs/promql_compliance_job.py",
-            "./ci/jobs/scripts/job_hooks/promql_compliance_comment_hook.py",
             "./tests/integration/",
             "./ci/docker/integration",
             "./ci/jobs/scripts/docker_in_docker.sh",
-            "./ci/jobs/scripts/prefetch-integration-test-images",
         ],
     ),
-    # Under `--cgroupns=host` the nested daemon parents its containers at the host's `/docker`,
-    # a sibling of this cgroup, so `--memory` bounds only the harness. Explicit because the
-    # daemon default is configurable and `host` would silently restore that leak.
-    run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=private+--ulimit nofile=262144:262144{integration_dind_env}",
+    run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host+--ulimit nofile=262144:262144",
     post_hooks=[
         "python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py",
-        "python3 ci/jobs/scripts/job_hooks/promql_compliance_upload_hook.py",
+        "python3 ci/jobs/scripts/job_hooks/promql_compliance_hook.py",
     ],
 )
 
@@ -261,20 +180,28 @@ common_integration_test_job_config = Job.Config(
 class JobConfigs:
     style_check = Job.Config(
         name=JobNames.STYLE_CHECK,
-        runs_on=RunnerLabels.ARM_TINY,
+        runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="python3 ./ci/jobs/check_style.py",
         run_in_docker="clickhouse/style-test",
         enable_commit_status=True,
     )
     code_review = Job.Config(
         name=JobNames.CODE_REVIEW,
-        runs_on=RunnerLabels.ARM_TINY,
+        runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="python3 ./ci/jobs/copilot_review_job.py --codex",
         allow_failure=True,
-        enable_gh_auth=True,
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
         ],
+    )
+    ci_tests = Job.Config(
+        name=JobNames.CI_TESTS,
+        runs_on=RunnerLabels.ARM_LARGE,
+        command="python3 ./ci/jobs/ci_tests_job.py",
+        timeout=1200,
+        run_in_docker=f"clickhouse/integration-tests-runner+root+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
+        digest_config=Job.CacheDigestConfig(include_paths=["./ci"]),
+        post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
@@ -308,7 +235,7 @@ class JobConfigs:
             # cannot fail the job, and a timed-out job already fails).
             'for i in $(seq 2 16); do sudo ifconfig lo0 -alias 127.0.0.$i 2>/dev/null || true; done',
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
-            "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data /System/Volumes/Data/private/var/db/diagnostics/*",
+            "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data",
         ],
     ).parametrize(
         Job.ParamSet(
@@ -339,13 +266,14 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_DEBUG,
-            provides=[ArtifactNames.CH_AMD_DEBUG],
+            provides=[ArtifactNames.CH_AMD_DEBUG, ArtifactNames.DEB_AMD_DEBUG],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_ASAN_UBSAN,
             provides=[
                 ArtifactNames.CH_AMD_ASAN_UBSAN,
+                ArtifactNames.DEB_AMD_ASAN_UBSAN,
                 ArtifactNames.UNITTEST_AMD_ASAN_UBSAN,
             ],
             runs_on=RunnerLabels.ARM_LARGE,
@@ -354,6 +282,7 @@ class JobConfigs:
             parameter=BuildTypes.AMD_TSAN,
             provides=[
                 ArtifactNames.CH_AMD_TSAN,
+                ArtifactNames.DEB_AMD_TSAN,
                 ArtifactNames.UNITTEST_AMD_TSAN,
             ],
             runs_on=RunnerLabels.ARM_LARGE,
@@ -362,6 +291,7 @@ class JobConfigs:
             parameter=BuildTypes.AMD_MSAN,
             provides=[
                 ArtifactNames.CH_AMD_MSAN,
+                ArtifactNames.DEB_AMD_MSAN,
                 ArtifactNames.UNITTEST_AMD_MSAN,
             ],
             runs_on=RunnerLabels.ARM_LARGE,
@@ -373,22 +303,28 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_DEBUG,
-            provides=[ArtifactNames.CH_ARM_DEBUG],
+            provides=[ArtifactNames.CH_ARM_DEBUG, ArtifactNames.DEB_ARM_DEBUG],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_ASAN_UBSAN,
-            provides=[ArtifactNames.CH_ARM_ASAN_UBSAN],
+            provides=[
+                ArtifactNames.CH_ARM_ASAN_UBSAN,
+                ArtifactNames.DEB_ARM_ASAN_UBSAN,
+            ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_TSAN,
-            provides=[ArtifactNames.CH_ARM_TSAN],
+            provides=[
+                ArtifactNames.CH_ARM_TSAN,
+                ArtifactNames.DEB_ARM_TSAN,
+            ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_MSAN,
-            provides=[ArtifactNames.CH_ARM_MSAN],
+            provides=[ArtifactNames.CH_ARM_MSAN, ArtifactNames.DEB_ARM_MSAN],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
@@ -441,18 +377,10 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
-    release_build_jobs_with_examples = [
-        job.set_command(f"{job.command} --build-examples").set_provides(
-            ArtifactNames.CLICKHOUSE_EXAMPLES
-        )
-        if f"({BuildTypes.ARM_RELEASE})" in job.name
-        else job
-        for job in release_build_jobs
-    ]
     cfi_build_job = common_build_job_config.parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_CFI,
-            provides=[ArtifactNames.CH_AMD_CFI],
+            provides=[ArtifactNames.CH_AMD_CFI, ArtifactNames.DEB_AMD_CFI],
             runs_on=RunnerLabels.ARM_LARGE,
             timeout=4 * 3600,
         ),
@@ -472,39 +400,26 @@ class JobConfigs:
         Job.ParamSet(
             parameter="amd_cfi",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.CH_AMD_CFI],
+            requires=[ArtifactNames.DEB_AMD_CFI],
         ),
     )
     # sccache-warmup builds (MasterCI only): compile amd_release / arm_release
     # with the PR release builds' cmake flags (see PR_CACHE_WARMUP_BUILD_TYPES
     # in build_clickhouse.py) while keeping the shared sccache read-write. This
     # populates the cache so that read-only PR release builds get cache hits.
-    # They provide no artifacts. The build profile hook runs so that the
-    # "Build profile diff" check gets a master baseline built with the PR
-    # flags - the arm warmup's object sizes and compile traces are the only
-    # master data directly comparable to a PR build (official master builds
-    # keep debug symbols, PR builds strip them). The hook uploads only for the
-    # arm variant (see _PROFILED_BUILDS in build_profile_hook.py).
-    sccache_warmup_build_jobs = [
-        job.set_command(f"{job.command} --build-examples")
-        if f"({BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP})" in job.name
-        else job
-        for job in common_build_job_config.set_post_hooks(
-            post_hooks=[
-                "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
-            ],
-        ).parametrize(
-            Job.ParamSet(
-                parameter=BuildTypes.AMD_RELEASE_PR_CACHE_WARMUP,
-                runs_on=RunnerLabels.ARM_LARGE,
-                timeout=3 * 3600,
-            ),
-            Job.ParamSet(
-                parameter=BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP,
-                runs_on=RunnerLabels.ARM_LARGE,
-            ),
-        )
-    ]
+    # They provide no artifacts and run no profile/master-head post hooks - the
+    # only purpose is to warm sccache.
+    sccache_warmup_build_jobs = common_build_job_config.parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_RELEASE_PR_CACHE_WARMUP,
+            runs_on=RunnerLabels.ARM_LARGE,
+            timeout=3 * 3600,
+        ),
+        Job.ParamSet(
+            parameter=BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP,
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+    )
     extra_validation_build_jobs = common_build_job_config.set_post_hooks(
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
@@ -582,50 +497,8 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
-            parameter=BuildTypes.WASM64,
-            provides=[ArtifactNames.CH_WASM64],
-            runs_on=RunnerLabels.ARM_LARGE,
-        ),
-        Job.ParamSet(
             parameter=BuildTypes.ARM_FUZZERS,
             provides=[],
-            runs_on=RunnerLabels.ARM_LARGE,
-        ),
-    )
-    # The standalone WebAssembly build of the SQL parser (utils/wasm-parser). It cross-compiles to
-    # `wasm32-wasip1` with a wasi-sdk toolchain, which cannot be mixed into a tree configured for
-    # the host, so it is a CMake project of its own driven by its own script in its own image -
-    # not a `BuildTypes` entry in the `Build` matrix, which `binary-builder` and
-    # `build_clickhouse.py` serve. The two post hooks the other build jobs carry are left off for
-    # the same reason: neither the master-head binary nor the build profile has a counterpart here.
-    #
-    # Nothing else in CI compiles this module, so this job is also what notices when it stops
-    # compiling - which it did within a day of being merged, twice over.
-    wasm_parser_build_jobs = Job.Config(
-        name=JobNames.BUILD,
-        runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/build_wasm_parser.py",
-        run_in_docker="clickhouse/wasm-builder",
-        timeout=2 * 3600,
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/build_wasm_parser.py",
-                "./utils/wasm-parser",
-                # The closure the project names is the parser and everything it reaches, which
-                # spans most of `src` and `base` and a dozen contrib libraries. Nothing narrower
-                # than the build digest's own source paths bounds it.
-                "./src",
-                "./base",
-                "./contrib/",
-                "./.gitmodules",
-            ],
-            with_git_submodules=True,
-        ),
-        needs_submodules=True,
-    ).parametrize(
-        Job.ParamSet(
-            parameter=BuildTypes.WASM_PARSER,
-            provides=[ArtifactNames.CH_WASM_PARSER],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
@@ -637,19 +510,14 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/install_check.py",
                 "./ci/docker/install",
-                "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
         timeout=900,
-        # Unpacking the packages needs ~4.4 GB, so reclaim another job's leftover
-        # images before installing, not just afterwards. Best-effort: praktika does
-        # not propagate a hook's exit code to the job status.
-        pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
-            runs_on=RunnerLabels.AMD_TINY,
+            runs_on=RunnerLabels.STYLE_CHECK_AMD,
             requires=[
                 ArtifactNames.DEB_AMD_RELEASE,
                 ArtifactNames.CH_AMD_RELEASE,
@@ -659,7 +527,7 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="arm_release",
-            runs_on=RunnerLabels.ARM_TINY,
+            runs_on=RunnerLabels.STYLE_CHECK_ARM,
             requires=[
                 ArtifactNames.DEB_ARM_RELEASE,
                 ArtifactNames.CH_ARM_RELEASE,
@@ -676,17 +544,14 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/install_check.py",
                 "./ci/docker/install",
-                "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
         timeout=900,
-        # See install_check_jobs above.
-        pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
-            runs_on=RunnerLabels.AMD_TINY,
+            runs_on=RunnerLabels.STYLE_CHECK_AMD,
             requires=[
                 ArtifactNames.DEB_AMD_RELEASE,
                 ArtifactNames.RPM_AMD_RELEASE,
@@ -696,7 +561,7 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="arm_release",
-            runs_on=RunnerLabels.ARM_TINY,
+            runs_on=RunnerLabels.STYLE_CHECK_ARM,
             requires=[
                 ArtifactNames.DEB_ARM_RELEASE,
                 ArtifactNames.RPM_ARM_RELEASE,
@@ -727,6 +592,14 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
     )
+    # Merge-queue drift guard: reruns the PR's new/changed stateless tests on
+    # the merge group state (the PR merged with the current `master`), so a PR
+    # whose last CI run predates test-infrastructure changes on `master` (e.g.
+    # a new randomized setting in `tests/clickhouse-test`) is bounced from the
+    # queue instead of breaking `master`. Runs on the `amd_binary` build the
+    # merge queue produces anyway; merge-queue runs use a reduced iteration
+    # count and time budget (see `ci/jobs/functional_tests.py`) to keep queue
+    # latency bounded.
     stateless_tests_flaky_mq_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_binary, flaky check",
@@ -739,58 +612,6 @@ class JobConfigs:
             parameter="arm_asan_ubsan, targeted",
             runs_on=RunnerLabels.ARM_LARGE,
             requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
-        ),
-    )
-    # Most sanitizer flavors of the functional tests for pull requests. They run only
-    # the tests selected for the change (`selected tests`, see
-    # `SELECTED_TESTS_OPTION` in `ci/jobs/functional_tests.py`) and replace the
-    # full-suite sanitizer jobs of `functional_tests_jobs`, which the master
-    # workflow keeps running in every flavor. What is left in a pull request is
-    # the full suite in the debug and plain binary flavors, plus the stress
-    # tests, which run the functional tests under every sanitizer with heavy
-    # concurrency and randomized settings and find more than a plain functional
-    # run does. See ClickHouse/ClickHouse#114725.
-    #
-    # The selection is a few hundred tests, so the batches of the full-suite jobs
-    # are collapsed into a single job per flavor. The runner labels and the
-    # timeout are kept as they are for the corresponding full-suite jobs: the
-    # test runner sizes its worker pool from the CPU count, and a sanitizer
-    # flavor that needs a large-memory runner for the full suite needs it for a
-    # subset as well. If test selection cannot be fetched, the job fails instead
-    # of silently running a weaker unbatched fallback configuration.
-    # The selection is computed from PR-local state (including failed tests
-    # from earlier jobs).
-    selected_ft_job_config = common_ft_job_config.copy()
-    stateless_tests_selected_pr_jobs = selected_ft_job_config.parametrize(
-        Job.ParamSet(
-            parameter="amd_asan_ubsan, distributed plan, parallel, selected tests",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_asan_ubsan, db disk, distributed plan, sequential, selected tests",
-            runs_on=RunnerLabels.AMD_SMALL_MEM,
-            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_tsan, parallel, selected tests",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.CH_AMD_TSAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_tsan, sequential, selected tests",
-            runs_on=RunnerLabels.AMD_SMALL,
-            requires=[ArtifactNames.CH_AMD_TSAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_tsan, s3 storage, parallel, selected tests",
-            runs_on=RunnerLabels.AMD_MEDIUM,
-            requires=[ArtifactNames.CH_AMD_TSAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_tsan, s3 storage, sequential, selected tests",
-            runs_on=RunnerLabels.AMD_SMALL_MEM,
-            requires=[ArtifactNames.CH_AMD_TSAN],
         ),
     )
     # --root/--privileged/--cgroupns=host is required for clickhouse-test --memory-limit
@@ -865,16 +686,16 @@ class JobConfigs:
     functional_tests_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_asan_ubsan, distributed plan, parallel",
-            # `--distributed-plan` fans each query across local parallel replicas,
-            # multiplying the server-side memory of every in-flight query, so the
-            # aggregate RSS of the parallel suite's co-scheduled queries is heavier
-            # than a normal ASan run and overruns the sanitizer memory cap on the
-            # default 64 GiB runner. Use a LARGE runner (same 32 vCPU as MEDIUM_CPU,
-            # but 128 GiB instead of 64 GiB RAM) so the suite keeps full concurrency
-            # and the default timeout instead of cutting workers - which barely
-            # moved peak RSS and only made the job slower.
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
             requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
+            # This variant runs the parallel suite at reduced concurrency (see the
+            # distributed-plan branch in `functional_tests.py`) to keep the
+            # aggregate server RSS under the sanitizer memory cap, which lowers
+            # throughput. Allow more wall-clock than the common 2.5h budget so the
+            # reduced concurrency cannot turn into a job timeout: the job ran ~2h36m
+            # at 8 workers, and the further cut to 7 workers pushes it to ~2h57m, so
+            # 3.5h keeps a comfortable margin.
+            timeout=int(3600 * 3.5),
         ),
         *[
             Job.ParamSet(
@@ -887,28 +708,28 @@ class JobConfigs:
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, parallel, {batch}/{total_batches}",
+                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, WasmEdge, parallel, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
                 provides=[
                     ArtifactNames.LLVM_COVERAGE_FILE
-                    + f"_ft_old_s3_db_repl_parallel_{batch}"
+                    + f"_ft_old_s3_db_repl_wasm_parallel_{batch}"
                 ],
             )
-            for total_batches in (LLVM_FT_OLD_S3_DB_REPL_NUM_BATCHES,)
+            for total_batches in (LLVM_FT_OLD_S3_DB_REPL_WASM_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, sequential, {batch}/{total_batches}",
+                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, WasmEdge, sequential, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_SMALL,
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
                 provides=[
                     ArtifactNames.LLVM_COVERAGE_FILE
-                    + f"_ft_old_s3_db_repl_sequential_{batch}"
+                    + f"_ft_old_s3_db_repl_wasm_sequential_{batch}"
                 ],
             )
-            for total_batches in (LLVM_FT_OLD_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,)
+            for total_batches in (LLVM_FT_OLD_S3_DB_REPL_WASM_SEQUENTIAL_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
         Job.ParamSet(
@@ -961,16 +782,16 @@ class JobConfigs:
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_msan, parallel, {batch}/{total_batches}",
+                parameter=f"amd_msan, WasmEdge, parallel, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_LARGE,
                 requires=[ArtifactNames.CH_AMD_MSAN],
             )
-            for total_batches in (3,)
+            for total_batches in (2,)
             for batch in range(1, total_batches + 1)
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_msan, sequential, {batch}/{total_batches}",
+                parameter=f"amd_msan, WasmEdge, sequential, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_SMALL_MEM,
                 requires=[ArtifactNames.CH_AMD_MSAN],
             )
@@ -1015,45 +836,6 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_SMALL,
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
-    )
-    # MasterCI-only: run the plain (non-sanitizer) full stateless suite against the
-    # optimized release binary instead of the plain `binary` build that PRs use (the
-    # `arm_binary` jobs of `functional_tests_jobs`). On master we want to exercise the
-    # actual release binary (PGO/BOLT). These replace the `arm_binary` jobs in the
-    # master workflow (see `ci/workflows/master.py`); PR/backport/release keep using
-    # `functional_tests_jobs`. The `arm_binary` build itself stays - integration tests
-    # and Keeper stress need it. The arm runner labels mirror the `arm_binary` jobs;
-    # the amd side has no plain full-suite job before this, so it mirrors `amd_debug`
-    # and is split into 2 batches per parallel/sequential flavor.
-    functional_tests_master_release_jobs = common_ft_job_config.parametrize(
-        Job.ParamSet(
-            parameter="arm_release, parallel",
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
-            requires=[ArtifactNames.CH_ARM_RELEASE],
-        ),
-        Job.ParamSet(
-            parameter="arm_release, sequential",
-            runs_on=RunnerLabels.ARM_SMALL,
-            requires=[ArtifactNames.CH_ARM_RELEASE],
-        ),
-        *[
-            Job.ParamSet(
-                parameter=f"amd_release, parallel, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_MEDIUM_CPU,
-                requires=[ArtifactNames.CH_AMD_RELEASE],
-            )
-            for total_batches in (2,)
-            for batch in range(1, total_batches + 1)
-        ],
-        *[
-            Job.ParamSet(
-                parameter=f"amd_release, sequential, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_SMALL,
-                requires=[ArtifactNames.CH_AMD_RELEASE],
-            )
-            for total_batches in (2,)
-            for batch in range(1, total_batches + 1)
-        ],
     )
     functional_tests_jobs_coverage = common_ft_job_config.parametrize(
         *[
@@ -1198,52 +980,52 @@ class JobConfigs:
         Job.ParamSet(
             parameter="amd_debug",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.CH_AMD_DEBUG],
+            requires=[ArtifactNames.DEB_AMD_DEBUG],
         ),
         Job.ParamSet(
             parameter="amd_asan_ubsan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
+            requires=[ArtifactNames.DEB_AMD_ASAN_UBSAN],
         ),
         Job.ParamSet(
             parameter="amd_tsan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.CH_AMD_TSAN],
+            requires=[ArtifactNames.DEB_AMD_TSAN],
         ),
         Job.ParamSet(
             parameter="amd_msan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.CH_AMD_MSAN],
+            requires=[ArtifactNames.DEB_AMD_MSAN],
         ),
         Job.ParamSet(
             parameter="arm_release",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.CH_ARM_RELEASE],
+            requires=[ArtifactNames.DEB_ARM_RELEASE],
         ),
         Job.ParamSet(
             parameter="arm_debug",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.CH_ARM_DEBUG],
+            requires=[ArtifactNames.DEB_ARM_DEBUG],
         ),
         Job.ParamSet(
             parameter="arm_asan_ubsan",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
+            requires=[ArtifactNames.DEB_ARM_ASAN_UBSAN],
         ),
         Job.ParamSet(
             parameter="arm_asan_ubsan, s3",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
+            requires=[ArtifactNames.DEB_ARM_ASAN_UBSAN],
         ),
         Job.ParamSet(
             parameter="arm_tsan",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.CH_ARM_TSAN],
+            requires=[ArtifactNames.DEB_ARM_TSAN],
         ),
         Job.ParamSet(
             parameter="arm_msan",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.CH_ARM_MSAN],
+            requires=[ArtifactNames.DEB_ARM_MSAN],
         ),
     )
     # might be heavy on azure - run only on master
@@ -1251,12 +1033,12 @@ class JobConfigs:
         Job.ParamSet(
             parameter="azure, amd_msan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.CH_AMD_MSAN],
+            requires=[ArtifactNames.DEB_AMD_MSAN],
         ),
         Job.ParamSet(
             parameter="azure, amd_tsan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.CH_AMD_TSAN],
+            requires=[ArtifactNames.DEB_AMD_TSAN],
         ),
     )
     upgrade_test_jobs = Job.Config(
@@ -1271,10 +1053,6 @@ class JobConfigs:
                 "./tests/docker_scripts/",
                 "./ci/docker/stress-test",
                 "./ci/jobs/scripts/log_parser.py",
-                # upgrade_runner.sh symlinks and runs both of these, and ./ci does
-                # not cover ./tests/ci.
-                "./tests/ci/get_previous_release_tag.py",
-                "./tests/ci/download_release_packages.py",
             ]
         ),
         timeout=3600 * 2,
@@ -1285,11 +1063,7 @@ class JobConfigs:
             requires=[ArtifactNames.DEB_AMD_RELEASE],
         ),
     )
-    # Despite the name, only release_branches.py uses these.
-    # Six batches, not four: the whole integration suite is about 110000 test-seconds, which
-    # four batches of three xdist workers cannot fit into the two-hour pytest session timeout
-    # however well they are balanced. At four batches this job timed out on roughly half of
-    # all release-branch runs.
+    # why it's master only?
     integration_test_asan_master_jobs = common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
@@ -1297,7 +1071,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
             )
-            for total_batches in (6,)
+            for total_batches in (4,)
             for batch in range(1, total_batches + 1)
         ]
     )
@@ -1466,37 +1240,29 @@ class JobConfigs:
                 "./ci/jobs/compatibility_check.py",
             ],
         ),
-        # Shares the style-checker runners with Install packages and leaves ~4 GB of docker
-        # residue per run, which is what the next job on that runner inherits.
-        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
-            runs_on=RunnerLabels.AMD_TINY,
+            runs_on=RunnerLabels.STYLE_CHECK_AMD,
             requires=[ArtifactNames.DEB_AMD_RELEASE],
         ),
         Job.ParamSet(
             parameter="arm_release",
-            runs_on=RunnerLabels.ARM_TINY,
+            runs_on=RunnerLabels.STYLE_CHECK_ARM,
             requires=[ArtifactNames.DEB_ARM_RELEASE],
         ),
     )
     ast_fuzzer_jobs = Job.Config(
         name=JobNames.ASTFUZZER,
         runs_on=[],  # from parametrize()
-        command='python3 ./ci/jobs/ast_fuzzer_job.py "{PARAMETER}"',
+        command="python3 ./ci/jobs/ast_fuzzer_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/docker/fuzzer",
                 "./ci/jobs/ast_fuzzer_job.py",
                 "./ci/jobs/scripts/log_parser.py",
-                "./ci/jobs/scripts/log_export.py",
-                "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
-                # Copied into the server config by `run-fuzzer.sh`
-                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/jobs/scripts/fuzzer/",
-                "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -1521,16 +1287,11 @@ class JobConfigs:
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=[ArtifactNames.CH_AMD_MSAN],
         ),
-        Job.ParamSet(
-            parameter="amd_release, oracle",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.CH_AMD_RELEASE],
-        ),
     )
     ast_fuzzer_targeted_pr_jobs = Job.Config(
         name=JobNames.ASTFUZZER,
         runs_on=[],  # from parametrize()
-        command='python3 ./ci/jobs/ast_fuzzer_job.py "{PARAMETER}"',
+        command="python3 ./ci/jobs/ast_fuzzer_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/docker/fuzzer",
@@ -1538,13 +1299,8 @@ class JobConfigs:
                 "./ci/jobs/scripts/find_symbols.py",
                 "./ci/jobs/scripts/find_tests.py",
                 "./ci/jobs/scripts/log_parser.py",
-                "./ci/jobs/scripts/log_export.py",
-                "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
-                # Copied into the server config by `run-fuzzer.sh`
-                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/jobs/scripts/fuzzer/",
-                "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -1571,13 +1327,8 @@ class JobConfigs:
                 "./ci/jobs/buzzhouse_job.py",
                 "./ci/jobs/ast_fuzzer_job.py",
                 "./ci/jobs/scripts/log_parser.py",
-                "./ci/jobs/scripts/log_export.py",
-                "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
-                # Copied into the server config by `run-fuzzer.sh`
-                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/jobs/scripts/fuzzer/",
-                "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -1615,11 +1366,6 @@ class JobConfigs:
                 "./ci/jobs/scripts/perf/",
                 "./ci/jobs/performance_tests.py",
                 "./ci/docker/performance-comparison",
-                # Both servers export their system logs to the CI Logs cluster
-                "./ci/jobs/scripts/log_export.py",
-                "./ci/jobs/scripts/log_cluster.py",
-                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
-                "./tests/config/users.d/ci_logs_sender.yaml",
             ],
         ),
         timeout=2 * 3600,
@@ -1656,11 +1402,6 @@ class JobConfigs:
                 "./ci/jobs/scripts/perf/",
                 "./ci/jobs/performance_tests.py",
                 "./ci/docker/performance-comparison",
-                # Both servers export their system logs to the CI Logs cluster
-                "./ci/jobs/scripts/log_export.py",
-                "./ci/jobs/scripts/log_cluster.py",
-                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
-                "./tests/config/users.d/ci_logs_sender.yaml",
             ],
         ),
         timeout=2 * 3600,
@@ -1687,11 +1428,9 @@ class JobConfigs:
                 # clears leftover processes through `server_cleanup.py`. Track
                 # both so changes to the shared start path reschedule the job.
                 "./ci/jobs/scripts/clickhouse_proc.py",
-                "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/server_cleanup.py",
                 "./ci/jobs/scripts/clickbench/",
                 "./ci/jobs/scripts/clickhouse_service.py",
-                "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/praktika/result.py",
                 "./tests/config/users.d/ci_logs_sender.yaml",
@@ -1710,6 +1449,26 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_RELEASE],
         ),
     )
+    docs_job = Job.Config(
+        name=JobNames.DOCS,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        command="python3 ./ci/jobs/docs_job.py",
+        digest_config=Job.CacheDigestConfig(
+            # Restrict to the legacy Docusaurus content tree so that PRs which
+            # only touch the new Mintlify site (./docs/docs.json, ./docs/*.mdx,
+            # etc.) do not trigger this job.
+            include_paths=[
+                "./docs/en/",
+                "./docs/changelogs/",
+                "./ci/jobs/docs_job.py",
+                "CHANGELOG.md",
+                "./src/Functions",
+            ],
+        ),
+        run_in_docker="clickhouse/docs-builder",
+        requires=[ArtifactNames.CH_ARM_BINARY],
+        run_after=[JobNames.STYLE_CHECK],
+    )
     docs_job_mintlify = Job.Config(
         name=JobNames.DOCS_MINTLIFY,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
@@ -1719,27 +1478,26 @@ class JobConfigs:
                 "./docs",
                 "./ci/jobs/docs_job_mintlify.py",
                 "./ci/jobs/scripts/docs",
-                "./utils/generate-async-metrics-docs",
-                "./utils/generate-system-tables-docs",
-                # The source of truth for the generated Open source changelog
-                # page, so a change to it alone must still run this job.
-                "./CHANGELOG.md",
             ],
-            # These files are internal inputs or contributor documentation, not
-            # pages published by Mintlify.
+            # Exclude everything currently in ./docs so that this job runs only
+            # on files that are NOT part of the legacy docs tree (i.e. the new
+            # Mintlify site files such as ./docs/docs.json and any new Mintlify
+            # content). Add new excludes here if more non-Mintlify content is
+            # introduced under ./docs.
             exclude_paths=[
                 "./docs/README.md",
                 "./docs/_templates/",
                 "./docs/_includes/",
                 "./docs/changelog_entry_guidelines.md",
                 "./docs/changelogs/",
+                "./docs/en/",
             ],
         ),
-        run_in_docker="clickhouse/docs-builder",
+        run_in_docker="clickhouse/docs-builder"
     )
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
-        runs_on=RunnerLabels.AMD_TINY,
+        runs_on=RunnerLabels.STYLE_CHECK_AMD,
         # --apt-mirror-region points apt at the in-region AWS Ubuntu mirror; the
         # runners are in us-east-1, where Canonical's mirrors are often unreachable.
         command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse --apt-mirror-region us-east-1",
@@ -1755,7 +1513,7 @@ class JobConfigs:
     )
     docker_keeper = Job.Config(
         name=JobNames.DOCKER_KEEPER,
-        runs_on=RunnerLabels.AMD_TINY,
+        runs_on=RunnerLabels.STYLE_CHECK_AMD,
         # --apt-mirror-region points apt at the in-region AWS Ubuntu mirror; the
         # runners are in us-east-1, where Canonical's mirrors are often unreachable.
         command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse --apt-mirror-region us-east-1",
@@ -1769,36 +1527,17 @@ class JobConfigs:
         requires=["Build (amd_release)", "Build (arm_release)"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     )
-    # Both fuzzers run against two builds. The release build is the wrong-result
-    # hunt: a sanitizer binary executes SQL 2-3x slower, so most of a 5h budget
-    # would buy sanitizer coverage instead of SQL coverage (measured: 47-80
-    # queries/s at 10 threads on arm_asan_ubsan). The arm_asan_ubsan build is kept
-    # as its own job for what only it can find - memory errors and UB reached
-    # through generated SQL.
-    # `-e SLACK_WEBHOOK_CORE_QA`: the job alerts on new findings (see
-    # ci/jobs/scripts/sqlancer_notify.py); without the secret it is a no-op.
     sqlancer_master_jobs = Job.Config(
         name=JobNames.SQLANCER,
         runs_on=[],  # from parametrize()
         command="./ci/jobs/sqlancer_job.sh",
         digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/sqlancer_job.sh",
-                "./ci/jobs/scripts/sqlancer_failures.py",
-                "./ci/jobs/scripts/sqlancer_notify.py",
-                "./ci/jobs/scripts/sqlancer_server_errors.sh",
-                "./ci/docker/sqlancer-test",
-            ],
+            include_paths=["./ci/jobs/sqlancer_job.sh", "./ci/docker/sqlancer-test"],
         ),
-        run_in_docker="clickhouse/sqlancer-test+-e SLACK_WEBHOOK_CORE_QA",
+        run_in_docker="clickhouse/sqlancer-test",
         # 5h sqlancer run (set in sqlancer_job.sh) plus server start/teardown.
         timeout=3600 * 5 + 1800,
     ).parametrize(
-        Job.ParamSet(
-            parameter="arm_release",
-            runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.CH_ARM_RELEASE],
-        ),
         Job.ParamSet(
             parameter="arm_asan_ubsan",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
@@ -1812,18 +1551,12 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/sqlancer_pp_job.sh",
-                "./ci/jobs/scripts/sqlancer_server_errors.sh",
                 "./ci/docker/sqlancer-test",
             ],
         ),
         run_in_docker="clickhouse/sqlancer-test",
         timeout=3600,
     ).parametrize(
-        Job.ParamSet(
-            parameter="arm_release",
-            runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.CH_ARM_RELEASE],
-        ),
         Job.ParamSet(
             parameter="arm_asan_ubsan",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
@@ -1859,32 +1592,6 @@ class JobConfigs:
         run_in_docker="clickhouse/stateless-test",
         timeout=10800,
     )
-    docs_examples_job = Job.Config(
-        name=JobNames.DOCS_EXAMPLES,
-        runs_on=RunnerLabels.FUNC_TESTER_ARM,
-        command="python3 ./ci/jobs/docs_examples_job.py",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/docs_examples_job.py",
-                "./ci/jobs/scripts/server_cleanup.py",
-                "./tests/docs_examples/",
-                # The server of this job installs `programs/server/config.d` and
-                # `programs/server/users.d` dereferenced, and most of their entries are symlinks
-                # into `tests/config`, so the whole of it is an input of the job.
-                "./tests/config/",
-                "./programs/server/config.xml",
-                "./programs/server/config.d/",
-                "./programs/server/users.xml",
-                "./programs/server/users.d/",
-            ]
-            # The examples are extracted from server source registrations and validate server
-            # behavior, so every change that rebuilds the server must run this job too.
-            + build_digest_config.include_paths,
-        ),
-        requires=[ArtifactNames.CH_ARM_RELEASE],
-        run_in_docker="clickhouse/stateless-test",
-        timeout=3600,
-    )
     sqlstorm_test_job = Job.Config(
         name=JobNames.SQL_STORM_TEST,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
@@ -1892,12 +1599,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/sqlstorm_test.py",
-                "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/server_cleanup.py",
-                "./ci/jobs/scripts/log_export.py",
-                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
-                # Copied into the server config by `create_log_export_config`
-                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./tests/sqlstorm/",
             ],
         ),
@@ -1907,13 +1609,13 @@ class JobConfigs:
     )
     jepsen_keeper = Job.Config(
         name=JobNames.JEPSEN_KEEPER,
-        runs_on=RunnerLabels.AMD_TINY,
+        runs_on=RunnerLabels.STYLE_CHECK_AMD,
         command="python3 ./ci/jobs/jepsen_check.py keeper",
         requires=["Build (amd_binary)"],
     )
     jepsen_server = Job.Config(
         name=JobNames.JEPSEN_SERVER,
-        runs_on=RunnerLabels.AMD_TINY,
+        runs_on=RunnerLabels.STYLE_CHECK_AMD,
         command="python3 ./ci/jobs/jepsen_check.py server",
         requires=["Build (amd_binary)"],
     )
@@ -1921,31 +1623,9 @@ class JobConfigs:
         name=JobNames.LIBFUZZER_TEST,
         runs_on=RunnerLabels.ARM_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
-        # Five hours of fuzzing per target, all targets in parallel, plus
-        # artifact download and corpus upload. Praktika's default is exactly
-        # five hours, which would kill the job mid-run.
-        timeout=5.5 * 3600,
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/libfuzzer_test_check.py",
-                "./tests/fuzz/runner.py",
-            ],
-        ),
-    )
-    libfuzzer_corpus_minimization_job = Job.Config(
-        name=JobNames.LIBFUZZER_CORPUS_MINIMIZATION,
-        runs_on=RunnerLabels.ARM_MEDIUM,
-        command=(
-            "python3 ./ci/jobs/libfuzzer_test_check.py --minimize-only "
-            "'libFuzzer corpus minimization'"
-        ),
-        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/libfuzzer_test_check.py",
-                "./tests/fuzz/runner.py",
-            ],
+            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
         ),
     )
     collect_clickhouse_profiles_jobs = Job.Config(
@@ -1980,20 +1660,6 @@ class JobConfigs:
             ],
         ),
     )
-    parser_memory_check_job = Job.Config(
-        name=JobNames.PARSER_MEMORY_CHECK,
-        runs_on=RunnerLabels.ARM_SMALL,
-        run_in_docker="clickhouse/test-base",
-        command="python3 ./ci/jobs/parser_memory_check.py",
-        requires=[ArtifactNames.CLICKHOUSE_EXAMPLES],
-        result_name_for_cidb="Tests",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/parser_memory_check.py",
-                "./utils/parser-memory-profiler/",
-            ],
-        ),
-    )
     toolchain_build_jobs = Job.Config(
         name=JobNames.BUILD_TOOLCHAIN,
         runs_on=[],  # from parametrize()
@@ -2017,7 +1683,7 @@ class JobConfigs:
     )
     update_toolchain_dockerfile_job = Job.Config(
         name=JobNames.UPDATE_TOOLCHAIN_DOCKERFILE,
-        runs_on=RunnerLabels.AMD_TINY,
+        runs_on=RunnerLabels.STYLE_CHECK_AMD,
         command="python3 ./ci/jobs/update_toolchain_dockerfile.py",
         enable_gh_auth=True,
     )
@@ -2027,25 +1693,6 @@ class JobConfigs:
         run_in_docker="clickhouse/performance-comparison",
         command="python3 ./ci/jobs/vector_search_stress_tests.py",
         timeout=6 * 3600,
-    )
-    # Compares the PR's arm_release build profile (binary and per-object sizes,
-    # per-symbol sizes, compile and link time down to individual functions and
-    # template instantiations) against the latest master build, and posts a PR
-    # comment when the change is significant.
-    build_profile_diff_job = Job.Config(
-        name=JobNames.BUILD_PROFILE_DIFF,
-        runs_on=RunnerLabels.ARM_SMALL,
-        # stateless-test rather than test-base: the job reads the CI logs
-        # cluster credentials from AWS SSM, and stateless-test is the test
-        # image that ships the aws CLI.
-        run_in_docker="clickhouse/stateless-test",
-        requires=["Build (arm_release)"],
-        command="python3 ./ci/jobs/build_profile_diff_job.py",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/build_profile_diff_job.py"],
-        ),
-        timeout=1800,
-        enable_gh_auth=True,
     )
     llvm_coverage_job = Job.Config(
         name=JobNames.LLVM_COVERAGE,
@@ -2062,48 +1709,15 @@ class JobConfigs:
         command="python3 ./ci/jobs/llvm_coverage_job.py",
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py"],
         digest_config=Job.CacheDigestConfig(
-            # llvm_coverage_job.py shells out to all of these; a change to any of
-            # them must mark this job (and, transitively via `requires`, the
-            # coverage build and every FT/IT/UT coverage shard) as affected -
-            # otherwise praktika's changed-files filter drops the job even when
-            # filter_job.py's should_skip_job says it should run.
-            include_paths=[
-                "./ci/jobs/llvm_coverage_job.py",
-                "./ci/jobs/scripts/merge_llvm_coverage.sh",
-                "./ci/jobs/scripts/generate_diff_coverage_report.sh",
-                "./ci/jobs/scripts/print_uncovered_code.py",
-                "./ci/jobs/scripts/dedup_lcov_instantiations.py",
-                "./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
-            ],
+            include_paths=["./ci/jobs/llvm_coverage_job.py"],
         ),
         timeout=3600,
         enable_gh_auth=True,
     )
-    promql_compliance_job = Job.Config(
-        name=JobNames.PROMQL_COMPLIANCE,
-        runs_on=RunnerLabels.ARM_TINY,
-        run_in_docker="clickhouse/test-base",
-        # Wait for integration upload post-hooks, including failed integration jobs.
-        run_after=[
-            j.name
-            for j in (
-                integration_test_jobs_required + integration_test_jobs_non_required
-            )
-        ],
-        command="python3 ./ci/jobs/promql_compliance_job.py",
-        post_hooks=[
-            "python3 ./ci/jobs/scripts/job_hooks/promql_compliance_comment_hook.py",
-        ],
-        # No digest_config: output depends on PR SHA and S3 JSON; script-only cache keys
-        # would skip later labeled PRs after one successful run.
-        timeout=600,
-        enable_gh_auth=True,
-        allow_failure=True,
-    )
 
     sign_macos_binary_jobs = Job.Config(
         name=JobNames.SIGN_MACOS,
-        runs_on=RunnerLabels.RELEASE_RUNNER,
+        runs_on=RunnerLabels.STYLE_CHECK_AMD,
         command="python3 ./ci/jobs/sign_macos_binary.py --build-type {PARAMETER}",
         run_in_docker="clickhouse/utils+--network=host+root",
         timeout=3600,

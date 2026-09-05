@@ -8,13 +8,10 @@ keywords: ['الترقيات', 'إدارة الإصدارات', 'ميزات ال
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
-import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
-import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/ar/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/ar/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-مع ClickHouse Cloud، لن تحتاج أبدًا إلى القلق بشأن تطبيق التصحيحات أو الترقيات. فنحن نطرح ترقيات دورية تتضمن إصلاحات وميزات جديدة وتحسينات في الأداء.
-
-* وللاطلاع على القائمة الكاملة بكل ما هو جديد في ClickHouse، راجع [سجل تغييرات Cloud](/ar/resources/changelogs/cloud/2026)
-* وللاطلاع على مواعيد إصدار النسخ، راجع صفحة [حالة الإصدار](/ar/resources/changelogs/cloud/release-status)
+مع ClickHouse Cloud، لن تحتاج أبدًا إلى القلق بشأن تطبيق التصحيحات أو الترقيات. فنحن نطرح ترقيات دورية تتضمن إصلاحات وميزات جديدة وتحسينات في الأداء. وللاطلاع على القائمة الكاملة بكل ما هو جديد في ClickHouse، راجع [سجل تغييرات Cloud](/ar/resources/changelogs/cloud/2026).
 
 <Note>
   نقدّم آلية ترقية جديدة، وهو مفهوم نطلق عليه اسم &quot;make before break&quot; (أو MBB). في هذا النهج الجديد، نضيف نسخًا متماثلة محدَّثة قبل إزالة النسخ القديمة أثناء عملية الترقية. ويؤدي ذلك إلى ترقيات أكثر سلاسة وأقل تأثيرًا في أعباء العمل قيد التشغيل.
@@ -26,7 +23,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
   ## توافق الإصدار
 </div>
 
-عند إنشاء خدمة، يُضبط إعداد [`compatibility`](/ar/reference/settings/session-settings/compatibility#compatibility) على أحدث إصدار من ClickHouse متاح في ClickHouse Cloud وقت تهيئة خدمتك لأول مرة.
+عند إنشاء خدمة، يُضبط إعداد [`compatibility`](/ar/reference/settings/session-settings#compatibility) على أحدث إصدار من ClickHouse متاح في ClickHouse Cloud وقت تهيئة خدمتك لأول مرة.
 
 يتيح لك إعداد `compatibility` استخدام القيم الافتراضية للإعدادات من الإصدارات السابقة. وعند ترقية خدمتك إلى إصدار جديد، لا يتغير الإصدار المحدد لإعداد `compatibility`. وهذا يعني أن القيم الافتراضية للإعدادات التي كانت موجودة عند إنشاء خدمتك لأول مرة لن تتغير (إلا إذا كنت قد تجاوزت هذه القيم الافتراضية مسبقًا، ففي هذه الحالة ستستمر بعد الترقية).
 

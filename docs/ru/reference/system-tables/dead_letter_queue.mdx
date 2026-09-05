@@ -15,7 +15,7 @@ doc_type: 'reference'
 
 Логирование включается указанием `dead_letter_queue` для специфичного для движка параметра `handle_error_mode`.
 
-Период сброса данных задается параметром `flush_interval_milliseconds` в разделе настроек сервера [dead&#95;letter&#95;queue](/ru/reference/settings/server-settings/settings/other#dead_letter_queue). Чтобы принудительно выполнить сброс, используйте запрос [SYSTEM FLUSH LOGS](/ru/reference/statements/system#flush-logs).
+Период сброса данных задается параметром `flush_interval_milliseconds` в разделе настроек сервера [dead&#95;letter&#95;queue](/ru/reference/settings/server-settings/settings#dead_letter_queue). Чтобы принудительно выполнить сброс, используйте запрос [SYSTEM FLUSH LOGS](/ru/reference/statements/system#flush-logs).
 
 ClickHouse не удаляет данные из таблицы автоматически. Подробнее см. в разделе [Introduction](/ru/reference/system-tables/overview#system-tables-introduction).
 
