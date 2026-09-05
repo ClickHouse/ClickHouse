@@ -301,6 +301,17 @@ BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
                  equals('account_key', 'SEKRIT_AZNCEQ3', 'surplus')); -- { serverError BAD_ARGUMENTS }
 
+-- connection_string and storage_account_url are mutually exclusive, and the destination reads at most
+-- one of them, so an override it never reads holds whatever was written there. The last statement is
+-- the control: a key that carries no credential stays visible however often it is repeated.
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 connection_string = 'http://localhost:11111/acct',
+                 storage_account_url = 'DefaultEndpointsProtocol=https;AccountName=a;AccountKey=SEKRIT_AZNCPAIR==;'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 connection_string = 'http://localhost:11111/acct',
+                 connection_string = 'DefaultEndpointsProtocol=https;AccountName=a;AccountKey=SEKRIT_AZNCDUP==;'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing, container = 'visible_04510_c1', container = 'visible_04510_c2'); -- { serverError BAD_ARGUMENTS }
+
 -- Backup database engine reconstructs the nested S3 destination; extra_credentials must be masked.
 CREATE DATABASE db_04510_ec ENGINE = Backup('', S3('url_dbec', 'ak', 'SEKRIT_SAK',
                  extra_credentials(external_id = 'SEKRIT_EID'))); -- { serverError BAD_ARGUMENTS }

@@ -1475,9 +1475,22 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageBackupSecretArguments()
                 return;
             }
         }
-        /// The collection holds the credentials, so only an override written here can carry one. An
-        /// override this rule cannot read may hold either one, and hiding a connection string replaces
-        /// the whole argument, which cannot be combined with hiding `account_key`: fail closed on both.
+        /// The collection holds the credentials, so only an override written here can carry one. A
+        /// destination reads at most one of the two mutually exclusive connection keys, and rejects a
+        /// second one only after the statement has been formatted, so a surplus one stays as written.
+        size_t connection_overrides = 0;
+        for (const auto & key : {"connection_string", "storage_account_url"})
+            for (ssize_t i = findNamedArgument(nullptr, key, 1); i >= 0;
+                 i = findNamedArgument(nullptr, key, static_cast<size_t>(i) + 1))
+                ++connection_overrides;
+
+        /// An override this rule cannot read may hold either credential, and hiding a connection string
+        /// replaces its whole argument, which cannot be combined with hiding a second one or `account_key`.
+        if (connection_overrides > 1)
+        {
+            maskEveryArgument();
+            return;
+        }
         for (const auto & key : {"connection_string", "storage_account_url"})
         {
             String value;
