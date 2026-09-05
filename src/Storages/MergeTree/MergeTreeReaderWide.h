@@ -119,20 +119,65 @@ private:
     bool read_without_marks = false;
     LoggerPtr log;
 
-    /// State for deferred columns cache writes.
-    /// We defer cache writes until all continuation reads for a contiguous mark range
-    /// are done, so we cache the full range and avoid sharing column pointers with
-    /// in-progress reads.
+    /// State of the deferred columns cache write for the contiguous mark range being read.
+    ///
+    /// The range reader hands out the rows of one range over several `readRows` calls - one per
+    /// output block, plus the calls that skip rows within the range - each into result columns of
+    /// its own, while the cache stores one entry per column for the whole range. The rows read
+    /// from disk are therefore copied into `cache_accumulated_columns`, in order, across the calls
+    /// of the range, and the entries are written once the accumulated rows reach the end of the
+    /// range. Deferring the write until then also keeps the cache from ever sharing column data
+    /// with a read still in progress. A range that is not read to its end (the query was
+    /// cancelled, or stopped early by `LIMIT`) is not cached.
     bool cache_write_pending = false;
     size_t cache_row_begin = 0;
-    size_t cache_range_last_mark = 0;
-    std::vector<size_t> cache_column_sizes_at_task_start;
-    /// Invalidation generation captured when this task's read started.
+    size_t cache_row_end_max = 0;
+    /// One column per result column: the rows read so far; nullptr for columns that are not read.
+    MutableColumns cache_accumulated_columns;
+    /// Invalidation generation captured when the read of the range started.
     /// Passed to ColumnsCache::set so a deferred write is dropped if the table was
     /// invalidated (e.g. RENAME COLUMN), or the whole cache dropped by `SYSTEM DROP
     /// COLUMNS CACHE`, after the read began. See getInvalidationGeneration.
     UInt64 cache_table_generation = 0;
 
+    /// State of a contiguous mark range that is served from the columns cache.
+    ///
+    /// A range is either served from the cache as a whole or read from disk as a whole:
+    /// serving from the cache does not move the file streams, so a range that began from the
+    /// cache could not be continued from disk. The decision is made by the first call of the
+    /// range, which requires cached entries covering the whole range for every column; the
+    /// following calls of the range are served from the columns held here, so the range stays
+    /// consistent even if the entries are evicted from the cache meanwhile.
+    bool cache_serving = false;
+    /// The row the cached entries start at (the same for all columns).
+    size_t cache_serving_cached_row_begin = 0;
+    /// The next row to serve and the end of the range being served.
+    size_t cache_serving_row = 0;
+    size_t cache_serving_row_end = 0;
+    /// One column per result column; nullptr for columns that are not read.
+    Columns cache_serving_columns;
+
+    /// Forget the state of the range being read: called when a new range begins.
+    void resetColumnsCacheState();
+
+    /// Look the whole range [row_begin, row_end) up in the cache for every column. On success,
+    /// arms `cache_serving` for the range and returns true.
+    bool lookupColumnsCache(size_t row_begin, size_t row_end, size_t num_columns);
+
+    /// Serve the next rows of the range from the columns held by `lookupColumnsCache`.
+    size_t serveRowsFromColumnsCache(MutableColumns & res_columns, size_t max_rows_to_read);
+
+    /// Whether the deferred write of the current range may go on: the query-wide budgets may
+    /// have run out while the range was being read, and a range larger than the whole cache
+    /// could never stay resident.
+    bool canContinueColumnsCacheWrite() const;
+
+    /// Copy `rows` rows read from disk, starting at `offset` of `column`, into the accumulator of
+    /// the result column at `pos`.
+    void accumulateRowsForColumnsCache(size_t pos, const IColumn & column, size_t offset, size_t rows);
+
+    /// Write the accumulated columns to the cache if the range has been read to its end.
+    void writeToColumnsCacheIfRangeComplete();
 };
 
 }

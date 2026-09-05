@@ -1,0 +1,59 @@
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+-- A read task is handed out in several output blocks when its rows exceed `max_block_size`
+-- or its bytes exceed `preferred_block_size_bytes`, which is the ordinary case: a task spans
+-- at least `merge_tree_min_rows_for_concurrent_read` rows, several times the default block.
+-- The cache stores one entry per contiguous mark range, so the first read has to carry the
+-- rows of a range across all of its blocks to write the entry, and the repeated read has to
+-- be served from the entry across all of its blocks - whatever its own block limits are.
+
+SET max_threads = 1;
+SET use_columns_cache = 1;
+SET log_queries = 1;
+
+DROP TABLE IF EXISTS t_cc_multi_block;
+
+CREATE TABLE t_cc_multi_block (id UInt64, s String)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192;
+
+-- A single part of 200000 rows: many more than a block, and `s` is 20 MB uncompressed,
+-- many times `preferred_block_size_bytes`.
+INSERT INTO t_cc_multi_block SELECT number, repeat('x', 100) FROM numbers(200000);
+
+SYSTEM DROP COLUMNS CACHE;
+
+-- The first read populates the cache. It really is split into several blocks (checked
+-- through `blockNumber`), so the deferred write has to survive the continuation reads.
+SELECT uniqExact(blockNumber()) > 1, sum(id), uniqExact(s) FROM t_cc_multi_block
+SETTINGS max_block_size = 65536, preferred_block_size_bytes = 1000000;
+
+-- Every read column of the part is cached as a whole.
+SELECT column, min(row_begin), max(row_end), sum(rows), count()
+FROM system.columns_cache
+WHERE database = currentDatabase() AND table = 't_cc_multi_block'
+GROUP BY column
+ORDER BY column;
+
+-- The repeated read with the same block limits is served from the cache.
+SELECT uniqExact(blockNumber()) > 1, sum(id), uniqExact(s) FROM t_cc_multi_block
+SETTINGS max_block_size = 65536, preferred_block_size_bytes = 1000000;
+
+-- So is a read of the same range with other block limits: the entries do not depend on
+-- how the range was split into blocks when it was written.
+SELECT uniqExact(blockNumber()) > 1, sum(id), uniqExact(s) FROM t_cc_multi_block
+SETTINGS max_block_size = 10000, preferred_block_size_bytes = 0;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- The first read misses and the two repeated reads hit, without a single miss.
+SELECT
+    ProfileEvents['ColumnsCacheHits'] > 0 AS has_hits,
+    ProfileEvents['ColumnsCacheMisses'] > 0 AS has_misses
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND type = 'QueryFinish'
+    AND query LIKE '%uniqExact(s) FROM t_cc_multi_block%'
+    AND query NOT LIKE '%query_log%'
+ORDER BY event_time_microseconds;
+
+DROP TABLE t_cc_multi_block;

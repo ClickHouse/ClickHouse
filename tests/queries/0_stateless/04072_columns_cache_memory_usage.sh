@@ -19,14 +19,17 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # did grow in between (otherwise the comparison would be vacuous) and that the data it
 # retains stays within the configured `columns_cache_size`.
 #
-# Both parts assert that the cache was really engaged. A deferred cache write only
-# happens once the whole mark range of a read task has been read, so a query whose
-# blocks are smaller than the task range never populates the cache at all - measuring
-# such a query would silently compare the cache-disabled path against itself. The block
-# limits below are therefore raised on purpose, and `ColumnsCacheHits` is checked.
+# Both parts assert that the cache was really engaged (`ColumnsCacheHits` is checked), so
+# that neither of them can silently compare the cache-disabled path against itself.
+#
+# Part 1 raises the block limits so that the whole read task is one block. The cache stores
+# one entry per mark range of a task, so a cache-populating query holds a copy of the rows
+# of a range until the range has been read to its end, however small its blocks are; with
+# the default block limits the baseline query would hold one block of the range at a time
+# instead, and the comparison would measure the block limits rather than the cache. With the
+# limits raised, both queries hold one range at a time.
 
-# Settings that let a whole read task be read in one block, which is what arms the
-# deferred cache write.
+# Settings that let a whole read task be read in one block.
 BLOCK_SETTINGS="max_threads = 1, max_block_size = 200000, preferred_block_size_bytes = 0"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_cache_memory;"
@@ -166,7 +169,9 @@ done
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP COLUMNS CACHE;"
 
-CACHE_SETTINGS="use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, $BLOCK_SETTINGS"
+# Part 2 keeps the default block limits: every task is read in several blocks here, so the
+# cache is populated and served across continuation reads, which is the ordinary case.
+CACHE_SETTINGS="use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, max_threads = 1"
 
 # Warm the measured table, then measure a warm scan of it while it is the only thing
 # in the cache.

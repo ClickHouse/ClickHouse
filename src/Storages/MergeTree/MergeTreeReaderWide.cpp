@@ -19,6 +19,8 @@
 #include <IO/SharedThreadPools.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 
+#include <optional>
+
 namespace ProfileEvents
 {
     extern const Event ColumnsCacheHits;
@@ -176,39 +178,26 @@ size_t MergeTreeReaderWide::readRows(
         if (num_columns == 0)
             return max_rows_to_read;
 
-        /// Check if we can serve from cache
-        /// Cache requires:
+        /// The columns cache requires:
         /// - columns_cache is available
         /// - table has a valid UUID (Atomic/Replicated databases only)
-        /// - this is not a continuing read (continue_reading == false)
         /// Projection parts share the projection name (e.g. "ailog_rule_count") as their part name,
         /// which is not unique across parent parts. This would cause cache key collisions,
         /// so we disable caching for projection parts.
         const bool cache_possible = columns_cache
             && data_part_info_for_read->getTableUUID() != UUIDHelpers::Nil
             && !data_part_info_for_read->isProjectionPart();
-        const bool cache_enabled = cache_possible && !continue_reading;
 
-        /// New task starting - reset deferred cache write state from previous task.
+        /// The rows of one contiguous mark range come out of several calls: one per output block,
+        /// plus the calls that skip rows within the range. A call with `continue_reading == false`
+        /// begins a new range, or re-enters the current one at another position after rows were
+        /// skipped, and in both cases the range read so far is over: a deferred cache write that
+        /// has not reached the end of its range is dropped, and a range served from the cache is
+        /// finished.
         if (!continue_reading)
-            cache_write_pending = false;
+            resetColumnsCacheState();
 
-        /// Capture the invalidation generation before anything is read, so that any
-        /// invalidation racing with this read is observed. It is passed to `set()` by the
-        /// deferred write below: the write is dropped if the table was invalidated or the
-        /// whole cache dropped after this point. The schema token of the cache keys is not
-        /// taken from here but from the metadata snapshot of the query
-        /// (`settings.columns_cache_schema_identity`), so that it cannot disagree with the
-        /// schema this read actually uses, see `ColumnsCacheKey::schema_identity`.
-        if (cache_enabled && (settings.enable_columns_cache_reads || settings.enable_columns_cache_writes))
-            cache_table_generation = columns_cache->getInvalidationGeneration(data_part_info_for_read->getTableUUID());
-
-        bool serving_from_cache = false;
-        std::vector<std::pair<ColumnsCacheKey, ColumnPtr>> cached_columns;
-
-        /// Compute the row range we're trying to read.
-        const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
-        const size_t row_begin = index_granularity.getMarkStartingRow(from_mark);
+        /// Compute the row range of the contiguous mark range being read.
         /// Cache lookups and writes are bounded by the contiguous mark range being
         /// read, not by the last mark of the whole task: for a multi-range task,
         /// bounding by the task's last mark would require cached blocks to span the
@@ -218,228 +207,46 @@ size_t MergeTreeReaderWide::readRows(
         /// Only computed when the cache is actually usable: the fallback below calls
         /// getRowCount, which some MergeTreeDataPartInfoForReader implementations used
         /// for ad-hoc part reads (outside of any table) do not support.
-        size_t cache_last_mark = 0;
+        size_t row_begin = 0;
         size_t row_end_max = 0;
-        size_t row_end_query = 0;
         if (cache_possible)
         {
-            cache_last_mark = current_range_last_mark ? current_range_last_mark : last_mark_to_read;
+            const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
+            const size_t cache_last_mark = current_range_last_mark ? current_range_last_mark : last_mark_to_read;
+            row_begin = index_granularity.getMarkStartingRow(from_mark);
             row_end_max = (cache_last_mark < index_granularity.getMarksCount())
                 ? index_granularity.getMarkStartingRow(cache_last_mark)
                 : data_part_info_for_read->getRowCount();
-            row_end_query = std::min(row_begin + max_rows_to_read, row_end_max);
         }
 
-        /// When `serving_from_cache` is true, these hold the row range of the cached blocks
-        /// and are guaranteed to be valid (they refer to a non-dropped column's cache key).
-        size_t cached_row_begin = 0;
-        size_t cached_row_end = 0;
-
-        if (cache_enabled && settings.enable_columns_cache_reads)
+        if (cache_possible && !continue_reading)
         {
-            LOG_TEST(log, "Checking cache: row_begin={}, row_end_query={}, max_rows_to_read={}",
-                row_begin, row_end_query, max_rows_to_read);
+            /// Capture the invalidation generation before anything is read, so that any
+            /// invalidation racing with this read is observed. It is passed to `set()` by the
+            /// deferred write below: the write is dropped if the table was invalidated or the
+            /// whole cache dropped after this point. The schema token of the cache keys is not
+            /// taken from here but from the metadata snapshot of the query
+            /// (`settings.columns_cache_schema_identity`), so that it cannot disagree with the
+            /// schema this read actually uses, see `ColumnsCacheKey::schema_identity`.
+            if (settings.enable_columns_cache_reads || settings.enable_columns_cache_writes)
+                cache_table_generation = columns_cache->getInvalidationGeneration(data_part_info_for_read->getTableUUID());
 
-            /// Query cache for intersecting blocks for all columns
-            bool all_columns_have_cache = true;
-            cached_columns.reserve(num_columns);
-
-            for (size_t pos = 0; pos < num_columns; ++pos)
+            /// A range is served from the cache only as a whole, so the lookup asks for the whole
+            /// range [row_begin, row_end_max), whatever the size of the block requested by this
+            /// call: the following calls of the range are then served from the same entries.
+            /// Count hits and misses per range, not per call or per entry.
+            if (settings.enable_columns_cache_reads)
             {
-                /// Columns dropped by pending mutations, and invalidated system columns,
-                /// don't need cache entries: they are not read from the part at all.
-                /// Push a placeholder to keep the vector aligned with column positions.
-                if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
-                {
-                    cached_columns.emplace_back(ColumnsCacheKey{}, nullptr);
-                    continue;
-                }
-
-                const auto & column_name = columns_to_read[pos].name;
-                auto intersecting = columns_cache->getIntersecting(
-                    data_part_info_for_read->getTableUUID(),
-                    data_part_info_for_read->getPartName(),
-                    column_name,
-                    row_begin,
-                    row_end_query,
-                    settings.columns_cache_schema_identity);
-
-                /// We can serve from cache if we find exactly one block that fully contains
-                /// the requested range [row_begin, row_end_query).
-                /// This allows us to serve subset reads: if cached [a, b), we can serve [a', b')
-                /// where a' >= a and b' <= b.
-                if (intersecting.size() == 1
-                    && intersecting[0].first.row_begin <= row_begin
-                    && intersecting[0].first.row_end >= row_end_query)
-                {
-                    cached_columns.emplace_back(intersecting[0].first, intersecting[0].second->column);
-                    LOG_TEST(log, "Found cached block for column {}: cached=[{}, {}), requested=[{}, {})",
-                        column_name, intersecting[0].first.row_begin, intersecting[0].first.row_end, row_begin, row_end_query);
-                }
+                if (lookupColumnsCache(row_begin, row_end_max, num_columns))
+                    ProfileEvents::increment(ProfileEvents::ColumnsCacheHits);
                 else
-                {
-                    all_columns_have_cache = false;
-                    LOG_TEST(log, "No suitable cached block for column {}: intersecting.size()={}, need full containment",
-                        column_name, intersecting.size());
-                    break;
-                }
-            }
-
-            if (all_columns_have_cache)
-            {
-                /// Verify all cached blocks have the same row range.
-                /// Different columns may have been cached by different queries
-                /// with different task boundaries, resulting in different row ranges.
-                /// We must check BOTH row_begin and row_end to ensure the offset
-                /// calculation is correct for all columns.
-                /// Find the first non-dropped column to use as the reference row range.
-                size_t ref_pos = 0;
-                while (ref_pos < num_columns
-                    && (isColumnDroppedByPendingMutation(ref_pos) || isSystemColumnInvalidated(ref_pos)))
-                    ++ref_pos;
-
-                /// If all columns are dropped, there's nothing to serve from cache.
-                bool consistent = (ref_pos < num_columns);
-                size_t cached_row_begin_0 = consistent ? cached_columns[ref_pos].first.row_begin : 0;
-                size_t cached_row_end_0 = consistent ? cached_columns[ref_pos].first.row_end : 0;
-
-                for (size_t i = ref_pos + 1; i < num_columns && consistent; ++i)
-                {
-                    if (isColumnDroppedByPendingMutation(i) || isSystemColumnInvalidated(i))
-                        continue;
-
-                    const auto & key = cached_columns[i].first;
-                    if (key.row_begin != cached_row_begin_0 || key.row_end != cached_row_end_0)
-                    {
-                        consistent = false;
-                        LOG_TEST(log, "Inconsistent cached block range: expected=[{}, {}), got=[{}, {})",
-                            cached_row_begin_0, cached_row_end_0, key.row_begin, key.row_end);
-                    }
-                }
-
-                if (consistent)
-                {
-                    /// Only serve from cache if the cached block covers the ENTIRE task range.
-                    /// When readRows is called with max_rows_to_read < total rows in task,
-                    /// a subsequent continuation read (continue_reading=true) will follow.
-                    /// Since serving from cache does not advance the file stream position,
-                    /// the continuation read would start from the wrong position.
-                    /// To avoid this, only serve from cache when no continuation is needed.
-                    if (row_end_query >= row_end_max)
-                    {
-                        serving_from_cache = true;
-                        cached_row_begin = cached_row_begin_0;
-                        cached_row_end = cached_row_end_0;
-                        LOG_TEST(log, "Serving from cache: all columns have consistent cached blocks");
-                    }
-                    else
-                    {
-                        LOG_TEST(log, "Skipping cache: max_rows_to_read ({}) < task rows ({}), "
-                            "continuation reads would have wrong stream position",
-                            max_rows_to_read, row_end_max - row_begin);
-                    }
-                }
+                    ProfileEvents::increment(ProfileEvents::ColumnsCacheMisses);
             }
         }
 
-        /// Calculate offset within the cached block and how many rows to extract.
-        /// These are only meaningful when `serving_from_cache` is true.
-        const size_t offset_in_cache = serving_from_cache ? (row_begin - cached_row_begin) : 0;
-        const size_t rows_to_serve = serving_from_cache
-            ? std::min(row_end_query - row_begin, cached_row_end - row_begin)
-            : 0;
-
-        if (serving_from_cache)
+        if (cache_serving)
         {
-            /// Validate all cached columns have sufficient data before modifying res_columns.
-            /// The cache key's row range may not match the actual column size
-            /// if columns had different row counts when cached.
-            for (size_t pos = 0; pos < num_columns; ++pos)
-            {
-                if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
-                    continue;
-
-                const auto & cached_col = cached_columns[pos].second;
-                if (offset_in_cache + rows_to_serve > cached_col->size())
-                {
-                    LOG_WARNING(log, "Cache entry size mismatch for column {}: "
-                        "need offset {} + rows {} = {} but cached column has {} rows, "
-                        "falling back to disk read",
-                        columns_to_read[pos].name, offset_in_cache, rows_to_serve,
-                        offset_in_cache + rows_to_serve, cached_col->size());
-                    serving_from_cache = false;
-                    break;
-                }
-            }
-        }
-
-        /// Count cache hits/misses at request level, not per-entry.
-        /// Must happen after validation above, which may flip `serving_from_cache` to false
-        /// on a size mismatch and fall back to a disk read.
-        if (cache_enabled && settings.enable_columns_cache_reads)
-        {
-            if (serving_from_cache)
-                ProfileEvents::increment(ProfileEvents::ColumnsCacheHits);
-            else
-                ProfileEvents::increment(ProfileEvents::ColumnsCacheMisses);
-        }
-
-        if (serving_from_cache)
-        {
-            /// All cached columns validated - serve from cache
-            for (size_t pos = 0; pos < num_columns; ++pos)
-            {
-                /// Column was dropped by a pending mutation or invalidated.
-                /// Don't serve stale data from cache.
-                if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
-                {
-                    res_columns[pos] = nullptr;
-                    continue;
-                }
-
-                const bool append = res_columns[pos] != nullptr;
-
-                /// Extract the needed subset from the cached block.
-                const auto & cached_col = cached_columns[pos].second;
-                auto cut_column = cached_col->cut(offset_in_cache, rows_to_serve);
-
-                /// `ColumnConst` should never appear in the cache; convert defensively.
-                cut_column = cut_column->convertToFullColumnIfConst();
-
-                /// Do NOT convert `ColumnSparse` to a full column unconditionally.
-                /// The disk-read path returns a `ColumnSparse` for parts with sparse
-                /// serialization, so the cache-hit path must do the same to keep
-                /// downstream behavior consistent. Some aggregate functions
-                /// (for example `groupConcat`) have a sparse fast path
-                /// (`addBatchSparseSinglePlace`) that processes non-defaults first
-                /// and all defaults at the end, while the full path preserves the
-                /// natural row order. If one query in a session gets sparse and
-                /// another gets a full equivalent, results may differ.
-
-                if (!append)
-                {
-                    /// `cut` created a fresh copy of the cached range, so mutating it
-                    /// here cannot touch the column stored in the cache.
-                    res_columns[pos] = IColumn::mutate(std::move(cut_column));
-                }
-                else
-                {
-                    /// In the append case, `res_columns[pos]` already holds the concrete
-                    /// type the current serialization produces. If the cached column was
-                    /// written under different settings and has a different concrete type,
-                    /// fall back to a full column so that `insertRangeFrom` is type-compatible.
-                    const bool cut_is_sparse = typeid_cast<const ColumnSparse *>(cut_column.get()) != nullptr;
-                    const bool dst_is_sparse = typeid_cast<const ColumnSparse *>(res_columns[pos].get()) != nullptr;
-                    if (cut_is_sparse && !dst_is_sparse)
-                        cut_column = cut_column->convertToFullColumnIfSparse();
-
-                    res_columns[pos]->insertRangeFrom(*cut_column, 0, cut_column->size());
-                }
-            }
-
-            read_rows = rows_to_serve;
-            LOG_TEST(log, "Served {} rows from cache (offset={}, requested=[{}, {}), cached=[{}, {}))",
-                read_rows, offset_in_cache, row_begin, row_end_query, cached_row_begin, cached_row_end);
+            read_rows = serveRowsFromColumnsCache(res_columns, max_rows_to_read);
         }
         else
         {
@@ -447,16 +254,16 @@ size_t MergeTreeReaderWide::readRows(
             prefetchForAllColumns(Priority{}, num_columns, from_mark, continue_reading, /*deserialize_prefixes=*/ true);
             deserializePrefixForAllColumns(num_columns, from_mark);
 
-            /// On the first read of a task, record column sizes for deferred caching.
-            /// We defer cache writes until all continuation reads are done,
-            /// so we cache the full task range and avoid sharing column pointers
-            /// with in-progress reads (which would corrupt cached data via assumeMutable).
+            /// On the first read of a range, arm the deferred cache write. The rows read by this
+            /// and the following calls of the range are accumulated, and written to the cache once
+            /// the range has been read to its end.
             if (!continue_reading && cache_possible && settings.enable_columns_cache_writes)
             {
                 cache_write_pending = true;
                 cache_row_begin = row_begin;
-                cache_range_last_mark = cache_last_mark;
-                cache_column_sizes_at_task_start.resize(num_columns);
+                cache_row_end_max = row_end_max;
+                cache_accumulated_columns.clear();
+                cache_accumulated_columns.resize(num_columns);
             }
 
             for (size_t pos = 0; pos < num_columns; ++pos)
@@ -478,10 +285,6 @@ size_t MergeTreeReaderWide::readRows(
                     column = column_to_read.type->createColumn(*serializations[pos]);
 
                 size_t column_size_before_reading = column->size();
-
-                /// Record column sizes at task start for deferred caching.
-                if (!continue_reading && cache_write_pending)
-                    cache_column_sizes_at_task_start[pos] = column_size_before_reading;
 
                 try
                 {
@@ -510,116 +313,19 @@ size_t MergeTreeReaderWide::readRows(
                     throw;
                 }
 
+                if (cache_write_pending && column->size() > column_size_before_reading)
+                    accumulateRowsForColumnsCache(pos, *column, column_size_before_reading, column->size() - column_size_before_reading);
+
                 if (column->empty() && max_rows_to_read > 0)
                     res_columns[pos] = nullptr;
             }
 
-            /// The query-wide estimate gate can disable cache writes while reads
-            /// are already in flight: the estimate is accumulated as read
-            /// pools build their tasks, and another pool of the same query may
-            /// exceed the budget after this reader armed its deferred write.
-            /// Consult the shared flag before writing so the estimate budget
-            /// applies to the whole query.
-            if (cache_write_pending
-                && settings.columns_cache_writes_disabled
-                && settings.columns_cache_writes_disabled->load(std::memory_order_relaxed))
-                cache_write_pending = false;
-
-            /// Check if deferred cache write should execute.
-            /// We cache only when the full range has been read (all continuation reads are done).
-            if (cache_write_pending && read_rows > 0)
+            if (cache_write_pending)
             {
-                size_t cache_row_end_max = (cache_range_last_mark < index_granularity.getMarksCount())
-                    ? index_granularity.getMarkStartingRow(cache_range_last_mark)
-                    : data_part_info_for_read->getRowCount();
-
-                /// Compute total rows read across all calls for this task.
-                size_t total_rows_for_task = 0;
-                for (size_t pos = 0; pos < num_columns; ++pos)
-                {
-                    if (res_columns[pos] && !res_columns[pos]->empty()
-                        && res_columns[pos]->size() > cache_column_sizes_at_task_start[pos])
-                    {
-                        total_rows_for_task = std::max(
-                            total_rows_for_task,
-                            res_columns[pos]->size() - cache_column_sizes_at_task_start[pos]);
-                    }
-                }
-
-                if (cache_row_begin + total_rows_for_task >= cache_row_end_max)
-                {
-                    /// All continuation reads are done - cache the full task range.
-                    size_t row_end = cache_row_begin + total_rows_for_task;
-
-                    LOG_TEST(log, "Caching columns (deferred): row_begin={}, row_end={}, rows={}",
-                        cache_row_begin, row_end, total_rows_for_task);
-
-                    /// Per-query runtime cap state. The budget only grows during the
-                    /// query, so once it is exhausted we stop caching the remaining
-                    /// columns of this task entirely instead of skipping one at a time.
-                    const auto & bytes_written = settings.columns_cache_bytes_written_so_far;
-                    const size_t max_bytes = settings.columns_cache_max_bytes_to_write_to_cache;
-
-                    for (size_t pos = 0; pos < num_columns; ++pos)
-                    {
-                        if (res_columns[pos] && !res_columns[pos]->empty()
-                            && !partially_read_columns.contains(columns_to_read[pos].name)
-                            && res_columns[pos]->size() > cache_column_sizes_at_task_start[pos])
-                        {
-                            /// Check the budget BEFORE cut()/entry allocation, so an exhausted
-                            /// budget does not keep paying the copy and allocation cost for
-                            /// writes that will be skipped — exactly the work this cap exists
-                            /// to avoid for large scans. The budget is an advisory soft
-                            /// threshold, not a hard cap: the entry that crosses it (including a
-                            /// single large first entry while the counter is still zero) is
-                            /// stored in full and charged afterwards, so the total written may
-                            /// overshoot by up to one entry (and slightly more under concurrency).
-                            /// This matches columns_cache_max_bytes_to_write_to_cache's docs.
-                            if (max_bytes > 0 && bytes_written && bytes_written->load(std::memory_order_relaxed) >= max_bytes)
-                            {
-                                LOG_TEST(log, "Skipping cache write: per-query budget exhausted ({} >= {})",
-                                    bytes_written->load(std::memory_order_relaxed), max_bytes);
-                                break;
-                            }
-
-                            size_t rows_to_cache = res_columns[pos]->size() - cache_column_sizes_at_task_start[pos];
-
-                            /// Use cut to create an independent copy for the cache.
-                            ColumnPtr column_to_cache = res_columns[pos]->cut(
-                                cache_column_sizes_at_task_start[pos], rows_to_cache);
-
-                            /// Use per-column row_end based on actual rows in this column,
-                            /// not the shared total_rows_for_task which may be larger if
-                            /// other columns had more rows (e.g. for Nested or complex types).
-                            size_t column_row_end = cache_row_begin + rows_to_cache;
-
-                            ColumnsCacheKey cache_key{
-                                data_part_info_for_read->getTableUUID(),
-                                data_part_info_for_read->getPartName(),
-                                columns_to_read[pos].name,
-                                cache_row_begin,
-                                column_row_end,
-                                settings.columns_cache_schema_identity};
-
-                            auto entry = std::make_shared<ColumnsCacheEntry>(
-                                ColumnsCacheEntry{std::move(column_to_cache), rows_to_cache});
-
-                            const size_t entry_weight = ColumnsCacheWeightFunction{}(*entry);
-                            /// Charge the budget only for entries that were actually inserted.
-                            /// `set` is a no-op when an existing wider interval already covers
-                            /// this range; a no-op write must not consume the budget, otherwise
-                            /// a query could exhaust the cap and skip later real inserts even
-                            /// though those bytes were never written to the cache.
-                            if (columns_cache->set(cache_key, entry, cache_table_generation) && bytes_written)
-                                bytes_written->fetch_add(entry_weight, std::memory_order_relaxed);
-
-                            LOG_TEST(log, "Cached column: {}, row_begin={}, row_end={}, rows={}",
-                                columns_to_read[pos].name, cache_row_begin, column_row_end, rows_to_cache);
-                        }
-                    }
-
-                    cache_write_pending = false;
-                }
+                if (canContinueColumnsCacheWrite())
+                    writeToColumnsCacheIfRangeComplete();
+                else
+                    resetColumnsCacheState();
             }
 
             prefetched_streams.clear();
@@ -649,6 +355,295 @@ size_t MergeTreeReaderWide::readRows(
     }
 
     return read_rows;
+}
+
+void MergeTreeReaderWide::resetColumnsCacheState()
+{
+    cache_write_pending = false;
+    cache_accumulated_columns.clear();
+
+    cache_serving = false;
+    cache_serving_columns.clear();
+}
+
+bool MergeTreeReaderWide::lookupColumnsCache(size_t row_begin, size_t row_end, size_t num_columns)
+{
+    LOG_TEST(log, "Checking cache: row_begin={}, row_end={}", row_begin, row_end);
+
+    Columns cached_columns(num_columns);
+    /// The row range of the cached entries. Different columns may have been cached by different
+    /// queries with different range boundaries, resulting in different row ranges; all columns
+    /// must agree on BOTH row_begin and row_end for the offset calculation to be correct.
+    std::optional<std::pair<size_t, size_t>> cached_range;
+
+    for (size_t pos = 0; pos < num_columns; ++pos)
+    {
+        /// Columns dropped by pending mutations, and invalidated system columns,
+        /// don't need cache entries: they are not read from the part at all.
+        if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+            continue;
+
+        const auto & column_name = columns_to_read[pos].name;
+        auto intersecting = columns_cache->getIntersecting(
+            data_part_info_for_read->getTableUUID(),
+            data_part_info_for_read->getPartName(),
+            column_name,
+            row_begin,
+            row_end,
+            settings.columns_cache_schema_identity);
+
+        /// We can serve from cache if we find exactly one block that fully contains
+        /// the whole range [row_begin, row_end).
+        /// This allows us to serve subset reads: if cached [a, b), we can serve [a', b')
+        /// where a' >= a and b' <= b.
+        if (intersecting.size() != 1
+            || intersecting[0].first.row_begin > row_begin
+            || intersecting[0].first.row_end < row_end)
+        {
+            LOG_TEST(log, "No suitable cached block for column {}: intersecting.size()={}, need full containment of [{}, {})",
+                column_name, intersecting.size(), row_begin, row_end);
+            return false;
+        }
+
+        const auto & key = intersecting[0].first;
+        const auto & cached_column = intersecting[0].second->column;
+
+        if (!cached_range)
+        {
+            cached_range.emplace(key.row_begin, key.row_end);
+        }
+        else if (cached_range->first != key.row_begin || cached_range->second != key.row_end)
+        {
+            LOG_TEST(log, "Inconsistent cached block range for column {}: expected=[{}, {}), got=[{}, {})",
+                column_name, cached_range->first, cached_range->second, key.row_begin, key.row_end);
+            return false;
+        }
+
+        /// Validate the cached column has enough rows before anything is served.
+        /// The cache key's row range may not match the actual column size
+        /// if columns had different row counts when cached.
+        if (cached_column->size() < row_end - key.row_begin)
+        {
+            LOG_WARNING(log, "Cache entry size mismatch for column {}: "
+                "need {} rows starting at offset {} but cached column has {} rows, "
+                "falling back to disk read",
+                column_name, row_end - row_begin, row_begin - key.row_begin, cached_column->size());
+            return false;
+        }
+
+        LOG_TEST(log, "Found cached block for column {}: cached=[{}, {}), requested=[{}, {})",
+            column_name, key.row_begin, key.row_end, row_begin, row_end);
+
+        cached_columns[pos] = cached_column;
+    }
+
+    /// If all columns are dropped, there's nothing to serve from cache.
+    if (!cached_range)
+        return false;
+
+    cache_serving = true;
+    cache_serving_columns = std::move(cached_columns);
+    cache_serving_cached_row_begin = cached_range->first;
+    cache_serving_row = row_begin;
+    cache_serving_row_end = row_end;
+
+    LOG_TEST(log, "Serving range [{}, {}) from cache: all columns have consistent cached blocks", row_begin, row_end);
+    return true;
+}
+
+size_t MergeTreeReaderWide::serveRowsFromColumnsCache(MutableColumns & res_columns, size_t max_rows_to_read)
+{
+    if (!cache_serving)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No mark range is being served from the columns cache");
+
+    const size_t rows_left = cache_serving_row_end - cache_serving_row;
+    const size_t rows_to_serve = std::min(max_rows_to_read, rows_left);
+
+    /// The caller reads within one contiguous mark range, whose end bounds the rows that can be
+    /// requested from the range, and the entries cover the whole range. Serving fewer rows than
+    /// asked for would be mistaken for the end of the data.
+    if (rows_to_serve < max_rows_to_read)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot serve {} rows from the columns cache: only {} rows are left in the range [{}, {}) of part {}",
+            max_rows_to_read, rows_left, cache_serving_row, cache_serving_row_end, data_part_info_for_read->getPartName());
+
+    const size_t offset_in_cache = cache_serving_row - cache_serving_cached_row_begin;
+    const size_t num_columns = res_columns.size();
+
+    for (size_t pos = 0; pos < num_columns; ++pos)
+    {
+        /// Column was dropped by a pending mutation or invalidated.
+        /// Don't serve stale data from cache.
+        if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+        {
+            res_columns[pos] = nullptr;
+            continue;
+        }
+
+        const bool append = res_columns[pos] != nullptr;
+
+        /// Extract the needed subset from the cached block.
+        const auto & cached_col = cache_serving_columns[pos];
+        auto cut_column = cached_col->cut(offset_in_cache, rows_to_serve);
+
+        /// `ColumnConst` should never appear in the cache; convert defensively.
+        cut_column = cut_column->convertToFullColumnIfConst();
+
+        /// Do NOT convert `ColumnSparse` to a full column unconditionally.
+        /// The disk-read path returns a `ColumnSparse` for parts with sparse
+        /// serialization, so the cache-hit path must do the same to keep
+        /// downstream behavior consistent. Some aggregate functions
+        /// (for example `groupConcat`) have a sparse fast path
+        /// (`addBatchSparseSinglePlace`) that processes non-defaults first
+        /// and all defaults at the end, while the full path preserves the
+        /// natural row order. If one query in a session gets sparse and
+        /// another gets a full equivalent, results may differ.
+
+        if (!append)
+        {
+            /// `cut` created a fresh copy of the cached range, so mutating it
+            /// here cannot touch the column stored in the cache.
+            res_columns[pos] = IColumn::mutate(std::move(cut_column));
+        }
+        else
+        {
+            /// In the append case, `res_columns[pos]` already holds the concrete
+            /// type the current serialization produces. If the cached column was
+            /// written under different settings and has a different concrete type,
+            /// fall back to a full column so that `insertRangeFrom` is type-compatible.
+            const bool cut_is_sparse = typeid_cast<const ColumnSparse *>(cut_column.get()) != nullptr;
+            const bool dst_is_sparse = typeid_cast<const ColumnSparse *>(res_columns[pos].get()) != nullptr;
+            if (cut_is_sparse && !dst_is_sparse)
+                cut_column = cut_column->convertToFullColumnIfSparse();
+
+            res_columns[pos]->insertRangeFrom(*cut_column, 0, cut_column->size());
+        }
+    }
+
+    LOG_TEST(log, "Served {} rows from cache (rows [{}, {}) of the cached range starting at {})",
+        rows_to_serve, cache_serving_row, cache_serving_row + rows_to_serve, cache_serving_cached_row_begin);
+
+    cache_serving_row += rows_to_serve;
+    return rows_to_serve;
+}
+
+bool MergeTreeReaderWide::canContinueColumnsCacheWrite() const
+{
+    /// The query-wide estimate gate can disable cache writes while reads
+    /// are already in flight: the estimate is accumulated as read
+    /// pools build their tasks, and another pool of the same query may
+    /// exceed the budget after this reader armed its deferred write.
+    /// Consult the shared flag before writing so the estimate budget
+    /// applies to the whole query.
+    if (settings.columns_cache_writes_disabled
+        && settings.columns_cache_writes_disabled->load(std::memory_order_relaxed))
+        return false;
+
+    /// The per-query runtime budget only grows during the query, so once it is exhausted the
+    /// rest of the range is not worth accumulating either.
+    const auto & bytes_written = settings.columns_cache_bytes_written_so_far;
+    const size_t max_bytes = settings.columns_cache_max_bytes_to_write_to_cache;
+    if (max_bytes > 0 && bytes_written && bytes_written->load(std::memory_order_relaxed) >= max_bytes)
+        return false;
+
+    /// A range whose columns together outweigh the whole cache cannot stay resident, so stop
+    /// copying its rows instead of holding them until the end of the range.
+    size_t accumulated_bytes = 0;
+    for (const auto & column : cache_accumulated_columns)
+        if (column)
+            accumulated_bytes += column->byteSize();
+
+    return accumulated_bytes <= columns_cache->maxSizeInBytes();
+}
+
+void MergeTreeReaderWide::accumulateRowsForColumnsCache(size_t pos, const IColumn & column, size_t offset, size_t rows)
+{
+    auto & accumulated = cache_accumulated_columns[pos];
+    if (!accumulated)
+    {
+        accumulated = column.cloneEmpty();
+        accumulated->reserve(cache_row_end_max - cache_row_begin);
+    }
+
+    /// This copy is the one the cache entry is made of: the accumulated column is moved into
+    /// the entry when the range is complete, and the result column stays uniquely owned by the
+    /// read in progress.
+    accumulated->insertRangeFrom(column, offset, rows);
+}
+
+void MergeTreeReaderWide::writeToColumnsCacheIfRangeComplete()
+{
+    /// Rows read so far for the range. Columns may differ in size (e.g. for Nested or complex
+    /// types), so the range is complete once the largest of them reaches its end.
+    size_t total_rows = 0;
+    for (const auto & column : cache_accumulated_columns)
+        if (column)
+            total_rows = std::max(total_rows, column->size());
+
+    if (total_rows == 0 || cache_row_begin + total_rows < cache_row_end_max)
+        return;
+
+    LOG_TEST(log, "Caching columns (deferred): row_begin={}, row_end={}, rows={}",
+        cache_row_begin, cache_row_begin + total_rows, total_rows);
+
+    /// Per-query runtime cap state. The budget only grows during the
+    /// query, so once it is exhausted we stop caching the remaining
+    /// columns of this range entirely instead of skipping one at a time.
+    const auto & bytes_written = settings.columns_cache_bytes_written_so_far;
+    const size_t max_bytes = settings.columns_cache_max_bytes_to_write_to_cache;
+
+    for (size_t pos = 0; pos < cache_accumulated_columns.size(); ++pos)
+    {
+        auto & column = cache_accumulated_columns[pos];
+        if (!column || column->empty() || partially_read_columns.contains(columns_to_read[pos].name))
+            continue;
+
+        /// Check the budget BEFORE the entry allocation, so an exhausted budget does not
+        /// keep paying for writes that will be skipped. The budget is an advisory soft
+        /// threshold, not a hard cap: the entry that crosses it (including a single
+        /// large first entry while the counter is still zero) is stored in full and
+        /// charged afterwards, so the total written may overshoot by up to one entry
+        /// (and slightly more under concurrency).
+        /// This matches columns_cache_max_bytes_to_write_to_cache's docs.
+        if (max_bytes > 0 && bytes_written && bytes_written->load(std::memory_order_relaxed) >= max_bytes)
+        {
+            LOG_TEST(log, "Skipping cache write: per-query budget exhausted ({} >= {})",
+                bytes_written->load(std::memory_order_relaxed), max_bytes);
+            break;
+        }
+
+        /// Use per-column row_end based on actual rows in this column,
+        /// not the shared total_rows which may be larger if
+        /// other columns had more rows (e.g. for Nested or complex types).
+        const size_t rows_to_cache = column->size();
+        const size_t column_row_end = cache_row_begin + rows_to_cache;
+
+        ColumnsCacheKey cache_key{
+            data_part_info_for_read->getTableUUID(),
+            data_part_info_for_read->getPartName(),
+            columns_to_read[pos].name,
+            cache_row_begin,
+            column_row_end,
+            settings.columns_cache_schema_identity};
+
+        /// The accumulated column is an independent copy of the rows read; hand it over to the cache.
+        auto entry = std::make_shared<ColumnsCacheEntry>(ColumnsCacheEntry{std::move(column), rows_to_cache});
+
+        const size_t entry_weight = ColumnsCacheWeightFunction{}(*entry);
+        /// Charge the budget only for entries that were actually inserted.
+        /// `set` is a no-op when an existing wider interval already covers
+        /// this range; a no-op write must not consume the budget, otherwise
+        /// a query could exhaust the cap and skip later real inserts even
+        /// though those bytes were never written to the cache.
+        if (columns_cache->set(cache_key, entry, cache_table_generation) && bytes_written)
+            bytes_written->fetch_add(entry_weight, std::memory_order_relaxed);
+
+        LOG_TEST(log, "Cached column: {}, row_begin={}, row_end={}, rows={}",
+            columns_to_read[pos].name, cache_row_begin, column_row_end, rows_to_cache);
+    }
+
+    cache_write_pending = false;
+    cache_accumulated_columns.clear();
 }
 
 void MergeTreeReaderWide::addStreams(
