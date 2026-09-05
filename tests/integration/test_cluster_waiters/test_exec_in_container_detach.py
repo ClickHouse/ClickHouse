@@ -25,13 +25,14 @@ FUNC_NAME = "exec_in_container"
 
 EXEC_ID = {"Id": "exec-1234"}
 EXIT_CODE = 36
+SENTINEL_OUTPUT = b"detached-output\n"
 
 
 def _function_ast():
     """Extract ClickHouseCluster.exec_in_container, scoped to its class.
 
-    ClickHouseInstance defines a forwarder of the same name, so a bare walk of the module
-    can return that instead and every arm below would then exercise a stub.
+    ClickHouseInstance defines a forwarder of the same name, so the extraction is scoped and
+    asserted unique: an unscoped match would silently hand the arms below the wrong function.
     """
     with open(CLUSTER_PY, encoding="utf-8") as f:
         module = ast.parse(f.read())
@@ -112,6 +113,17 @@ def test_a_detached_exec_is_not_failed_by_its_exit_code():
     )
     assert raised is None, raised
     assert returned is EXEC_ID
+    assert counts["inspects"] == 0
+
+
+def test_a_detached_exec_returns_its_output_without_inspecting():
+    """The other half of the guarded return: a detached caller that did not ask for the exec
+    id gets the output object back, and the exit code is still not fetched."""
+    raised, returned, counts = _run(
+        EXIT_CODE, output=SENTINEL_OUTPUT, detach=True, use_cli=False
+    )
+    assert raised is None, raised
+    assert returned is SENTINEL_OUTPUT
     assert counts["inspects"] == 0
 
 
