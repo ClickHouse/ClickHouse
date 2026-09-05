@@ -1,4 +1,5 @@
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <IO/LimitReadBuffer.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <IO/Operators.h>
 #include <Interpreters/AggregateDescription.h>
@@ -24,9 +25,9 @@ namespace
     /// Caps a resize against a payload that reads from a bounded in-memory frame.
     void checkCountFitsPayload(UInt64 count, const ReadBuffer & in, const char * what)
     {
-        if (count > in.available())
+        if (const size_t frame_remaining = bytesRemainingInFrame(in); count > frame_remaining)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Aggregate descriptions claim {} {} but only {} payload bytes remain", count, what, in.available());
+                "Aggregate descriptions claim {} {} but only {} payload bytes remain", count, what, frame_remaining);
     }
 }
 

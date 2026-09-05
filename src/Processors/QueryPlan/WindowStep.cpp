@@ -274,9 +274,9 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
     readVarUInt(num_functions, in);
     /// Each function takes at least one wire byte, so a count above what is left is malformed;
     /// caps the allocation against a payload that reads from a bounded in-memory frame.
-    if (num_functions > in.available())
+    if (const size_t frame_remaining = bytesRemainingInFrame(in); num_functions > frame_remaining)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "WindowStep claims {} functions but only {} payload bytes remain", num_functions, in.available());
+            "WindowStep claims {} functions but only {} payload bytes remain", num_functions, frame_remaining);
 
     std::vector<WindowFunctionDescription> window_functions(num_functions);
     for (auto & func : window_functions)
@@ -285,10 +285,10 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
 
         UInt64 num_argument_names = 0;
         readVarUInt(num_argument_names, in);
-        if (num_argument_names > in.available())
+        if (const size_t frame_remaining = bytesRemainingInFrame(in); num_argument_names > frame_remaining)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "WindowStep function claims {} argument names but only {} payload bytes remain",
-                num_argument_names, in.available());
+                num_argument_names, frame_remaining);
         func.argument_names.resize(num_argument_names);
         for (auto & argument_name : func.argument_names)
             readStringBinary(argument_name, in);
@@ -314,10 +314,10 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
 
         UInt64 num_parameters = 0;
         readVarUInt(num_parameters, in);
-        if (num_parameters > in.available())
+        if (const size_t frame_remaining = bytesRemainingInFrame(in); num_parameters > frame_remaining)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "WindowStep function claims {} parameters but only {} payload bytes remain",
-                num_parameters, in.available());
+                num_parameters, frame_remaining);
         func.function_parameters.resize(num_parameters);
         for (auto & param : func.function_parameters)
             param = readFieldBinary(in);

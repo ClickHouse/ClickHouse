@@ -1,4 +1,5 @@
 #include <Core/Block.h>
+#include <IO/LimitReadBuffer.h>
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
 #include <IO/Operators.h>
@@ -319,9 +320,9 @@ void deserializeSortDescription(SortDescription & sort_description, ReadBuffer &
     readVarUInt(size, in);
     /// Each column takes at least one wire byte, so a count above what is left is malformed; caps
     /// the resize against a payload that reads from a bounded in-memory frame.
-    if (size > in.available())
+    if (const size_t frame_remaining = bytesRemainingInFrame(in); size > frame_remaining)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Sort description claims {} columns but only {} payload bytes remain", size, in.available());
+            "Sort description claims {} columns but only {} payload bytes remain", size, frame_remaining);
     sort_description.resize(size);
     for (auto & desc : sort_description)
     {

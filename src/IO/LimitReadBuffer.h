@@ -30,6 +30,14 @@ public:
 
     bool poll(size_t timeout_microseconds) override;
 
+    /// The bytes that may still be read before the limit, whatever the underlying buffer has cached so
+    /// far. A reader uses this to reject a count that cannot fit the frame before it drives an allocation;
+    /// unlike `available()`, it does not shrink to the current chunk.
+    size_t bytesUntilLimit() const
+    {
+        return settings.read_no_more > count() ? settings.read_no_more - count() : 0;
+    }
+
 private:
     ReadBuffer * in;
     std::unique_ptr<ReadBuffer> holder;
@@ -41,5 +49,15 @@ private:
     bool nextImpl() override;
     size_t getEffectiveBufferSize() const;
 };
+
+/// The largest number of bytes a reader can still take from the current frame: the bytes before a
+/// `LimitReadBuffer`'s limit, or the bytes already buffered otherwise. A count of fixed-size elements
+/// above this cannot be satisfied and must be refused before it drives an allocation.
+inline size_t bytesRemainingInFrame(const ReadBuffer & in)
+{
+    if (const auto * limited = dynamic_cast<const LimitReadBuffer *>(&in))
+        return limited->bytesUntilLimit();
+    return in.available();
+}
 
 }

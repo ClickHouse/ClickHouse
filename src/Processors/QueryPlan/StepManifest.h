@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/ProtocolDefines.h>
+#include <IO/LimitReadBuffer.h>
 #include <Core/SortDescription.h>
 #include <Core/Types.h>
 #include <IO/Operators.h>
@@ -97,7 +98,7 @@ struct WireCodec<ActionsDAG>
     static void write(const ActionsDAG & value, IQueryPlanStep::Serialization & ctx) { value.serialize(ctx.out, ctx.registry); }
     static void read(ActionsDAG & value, IQueryPlanStep::Deserialization & ctx)
     {
-        value = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, ctx.in.available());
+        value = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, bytesRemainingInFrame(ctx.in));
     }
 };
 
@@ -455,7 +456,7 @@ inline constexpr bool is_pair<std::pair<A, B>> = true;
 /// payloads are read from memory, so what remains is exactly the payload's tail.
 inline void checkFitsRemaining(UInt64 count, ReadBuffer & in, const char * what)
 {
-    if (count > in.available())
+    if (count > bytesRemainingInFrame(in))
         throwCannotParse(what);
 }
 

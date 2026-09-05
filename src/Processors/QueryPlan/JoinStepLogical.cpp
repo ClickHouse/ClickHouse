@@ -2279,9 +2279,9 @@ static ActionsDAG::NodeRawConstPtrs deserializeNodeList(ReadBuffer & in, const A
     readVarUInt(num_nodes, in);
     /// Each node id takes at least one wire byte, so a count above what is left is malformed; caps
     /// the allocation against a payload that reads from a bounded in-memory frame.
-    if (num_nodes > in.available())
+    if (const size_t frame_remaining = bytesRemainingInFrame(in); num_nodes > frame_remaining)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Node list claims {} nodes but only {} payload bytes remain", num_nodes, in.available());
+            "Node list claims {} nodes but only {} payload bytes remain", num_nodes, frame_remaining);
 
     size_t max_node_id = id_to_node.size();
 
@@ -2315,7 +2315,7 @@ struct WireCodec<JoinExpressionsWire>
         if (ctx.input_headers.size() != 2)
             throw Exception(ErrorCodes::INCORRECT_DATA, "JoinStepLogical must have two input streams");
 
-        ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, ctx.in.available());
+        ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, bytesRemainingInFrame(ctx.in));
         auto id_to_node = actions_dag.getIdToNode();
         JoinExpressionActions expression_actions(*ctx.input_headers.front(), *ctx.input_headers.back(), std::move(actions_dag));
 
@@ -2469,7 +2469,7 @@ QueryPlanStepPtr JoinStepLogical::deserializeLegacy(Deserialization & ctx)
         if (num_dags != 1)
             throw Exception(ErrorCodes::INCORRECT_DATA, "JoinStepLogical deserialization expect 3 DAGs, got {}", num_dags);
 
-        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, ctx.in.available());
+        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, bytesRemainingInFrame(ctx.in));
     }
     auto id_to_node = actions_dag.getIdToNode();
 

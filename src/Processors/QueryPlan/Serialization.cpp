@@ -7,7 +7,6 @@
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 
 #include <IO/LimitReadBuffer.h>
-#include <IO/copyData.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -472,7 +471,6 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(
     /// it is building. A parent gets the output headers of the children as they were built, which
     /// is what the older stream did too: headers on the wire drop constants, steps refill them, and
     /// `UnionStep` for one looks at whether a child's header columns are constant.
-    String payload_bytes;
     for (size_t idx = 0; idx < node_count; ++idx)
     {
         const auto & outline_node = outline.nodes[idx];
@@ -494,24 +492,10 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(
         QueryPlanSerializationSettings settings;
         settings.applyEntries(outline_node.settings);
 
-        /// One frame at a time: the buffer is reused, so only the largest payload is ever held.
-        /// The bytes are copied in as they arrive rather than reserving the declared size up front, so
-        /// a stream that ends early costs an allocation of what it actually sent, not of what it claimed.
-        payload_bytes.clear();
-        try
-        {
-            WriteBufferFromString payload_writer(payload_bytes);
-            copyData(in, payload_writer, outline_node.payload_size);
-            payload_writer.finalize();
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(fmt::format("while reading the payload of step '{}' (node #{}, {} bytes)",
-                outline_node.step_name, idx, outline_node.payload_size));
-            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN, "Query plan body is truncated: {}", e.message());
-        }
-
-        ReadBufferFromMemory payload(payload_bytes.data(), payload_bytes.size());
+        /// The payload is read straight from the body, bounded to its own frame: the step cannot read
+        /// past it, and a codec sizes its allocations by the bytes the frame still holds rather than by
+        /// a count it has not yet reached. Nothing is copied.
+        LimitReadBuffer payload(in, {.read_no_more = outline_node.payload_size});
         IQueryPlanStep::Deserialization ctx{
             payload, sets_registry, {}, context, input_headers, output_header, settings,
             max_type_complexity, flags.version, flags.skip_data, outline_node.step_format_version};
@@ -532,11 +516,12 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(
                 "Deserialized step {} has no output stream, but deserialized header is not empty : {}",
                 outline_node.step_name, output_header->dumpStructure());
 
-        /// A tail is only legitimate when the writer used a payload format this binary does not
-        /// know: every change to a payload, an ignorable append included, bumps
-        /// `step_format_version`. At a format we do know, leftover bytes mean a corrupt stream or
-        /// a writer bug, and accepting them would let a malformed plan run.
-        if (!payload.eof())
+        /// The step must consume its whole frame. Bytes it left are only legitimate when the writer
+        /// used a payload format this binary does not know -- an ignorable append -- and then they are
+        /// skipped so the body stays aligned for the next node. At a known format, leftover bytes mean
+        /// a corrupt stream or a writer bug, and accepting them would let a malformed plan run.
+        const size_t leftover = payload.bytesUntilLimit();
+        if (leftover != 0)
         {
             const auto * info = step_registry.getStepSerializationInfo(outline_node.step_name);
             UInt64 known_format_version = info ? info->max_format_version : 1;
@@ -544,8 +529,11 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(
                 throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
                     "Step {} left {} of its {} payload bytes unread at step format version {}, "
                     "which this server knows in full",
-                    outline_node.step_name, payload.available(), outline_node.payload_size,
+                    outline_node.step_name, leftover, outline_node.payload_size,
                     outline_node.step_format_version);
+
+            /// A newer format: skip its trailing bytes so the body is positioned at the next node.
+            payload.ignore(leftover);
         }
 
         auto & node = plan.nodes.emplace_back(std::move(step), std::move(children));

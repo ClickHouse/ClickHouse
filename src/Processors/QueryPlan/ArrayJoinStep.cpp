@@ -265,7 +265,7 @@ QueryPlanStepPtr ArrayJoinStep::deserializeLegacy(Deserialization & ctx)
     {
         String filter_column_name;
         readStringBinary(filter_column_name, ctx.in);
-        ActionsDAG filter_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, ctx.in.available());
+        ActionsDAG filter_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, bytesRemainingInFrame(ctx.in));
         step->setElementFilter(std::move(filter_dag), std::move(filter_column_name), remove_element_filter_column);
     }
 
