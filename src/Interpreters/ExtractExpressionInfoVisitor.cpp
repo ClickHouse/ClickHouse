@@ -24,10 +24,6 @@ void ExpressionInfoMatcher::visit(const ASTFunction & ast_function, const ASTPtr
     {
         data.is_array_join = true;
     }
-    else if (ast_function.name == "untuple")
-    {
-        data.is_untuple = true;
-    }
     // "is_aggregate_function" is used to determine whether we can move a filter
     // (1) from HAVING to WHERE or (2) from WHERE of a parent query to HAVING of
     // a subquery.
@@ -96,10 +92,8 @@ bool hasNonRewritableFunction(const ASTPtr & node, ContextPtr context)
         ExpressionInfoVisitor::Data expression_info{WithContext{context}, tables};
         ExpressionInfoVisitor(expression_info).visit(select_expression);
 
-        /// `untuple` expands at execution build time: its output names are not referenceable here.
         if (expression_info.is_stateful_function
-            || expression_info.is_window_function
-            || expression_info.is_untuple)
+            || expression_info.is_window_function)
         {
             // If an outer query has a WHERE on window function, we can't move
             // it into the subquery, because window functions are not allowed in

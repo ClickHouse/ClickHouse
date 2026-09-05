@@ -22,7 +22,7 @@
 DROP TABLE IF EXISTS t_orfill;
 
 CREATE TABLE t_orfill (k UInt64, k2 UInt64, v UInt64,
-    PROJECTION p (SELECT k, sumOrNull(v), sumOrDefault(v), sumTupleOrNull(tuple(v)), sumOrNullTuple(tuple(v)) GROUP BY k),
+    PROJECTION p (SELECT k, sumOrNull(v), sumOrDefault(v) GROUP BY k),
     PROJECTION p2 (SELECT k, k2, sumOrNull(v) GROUP BY k, k2))
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity_bytes = 0;
 
@@ -48,22 +48,10 @@ SETTINGS optimize_use_projections = 1, max_threads = 1, optimize_aggregation_in_
     max_rows_to_group_by = 10, group_by_overflow_mode = 'any',
     force_optimize_projection_name = 'p';
 
-SELECT 'overflow any OrNull(Tuple)';
-SELECT count(), sum(s.1 IS NULL OR s.1 != k) FROM (SELECT k, sumTupleOrNull(tuple(v)) AS s FROM t_orfill GROUP BY k)
-SETTINGS optimize_use_projections = 1, max_threads = 1, optimize_aggregation_in_order = 0,
-    max_rows_to_group_by = 10, group_by_overflow_mode = 'any',
-    force_optimize_projection_name = 'p';
-
-SELECT 'overflow any Tuple(OrNull)';
-SELECT count(), sum(s.1 IS NULL OR s.1 != k) FROM (SELECT k, sumOrNullTuple(tuple(v)) AS s FROM t_orfill GROUP BY k)
-SETTINGS optimize_use_projections = 1, max_threads = 1, optimize_aggregation_in_order = 0,
-    max_rows_to_group_by = 10, group_by_overflow_mode = 'any',
-    force_optimize_projection_name = 'p';
-
 SELECT 'overflow any two keys';
 -- k2 is a stored column, not an expression over k, so optimize_group_by_function_keys cannot
 -- drop it and the aggregation really uses the fixed-keys (keys128) method.
-SELECT count() > 0 FROM (EXPLAIN SELECT k, k2, sumOrNull(v) FROM t_orfill GROUP BY k, k2)
+SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 1 SELECT k, k2, sumOrNull(v) FROM t_orfill GROUP BY k, k2)
 WHERE explain ILIKE '%Keys: k, k2%';
 SELECT count(), sum(s IS NULL OR s != k) FROM (SELECT k, k2, sumOrNull(v) AS s FROM t_orfill GROUP BY k, k2)
 SETTINGS optimize_use_projections = 1, max_threads = 1, optimize_aggregation_in_order = 0,

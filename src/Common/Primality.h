@@ -1,7 +1,6 @@
 #pragma once
 
 #include <array>
-#include <functional>
 #include <limits>
 #include <numeric>
 
@@ -203,20 +202,15 @@ inline UInt8 isPrime(T num)
     }
 }
 
-/// `rounds` is unused for narrow types - the result is exact regardless. `check_cancellation` is
-/// accepted and ignored so that callers can use one call site for every width; these values cost
-/// well under a microsecond each.
+/// `rounds` is unused for narrow types - the result is exact regardless.
 template <is_native_uint T>
-inline UInt8 isProbablePrime(T num, unsigned /*rounds*/, const std::function<void()> & = {})
+inline UInt8 isProbablePrime(T num, unsigned /*rounds*/)
 {
     return isPrime(num);
 }
 
-/// The Miller-Rabin rounds below cost up to tens of milliseconds per value. `check_cancellation`, when set,
-/// is invoked just before them and is expected to throw if the query was cancelled or ran out of time. The
-/// cheap exits preceding it cost under a microsecond and are deliberately not covered.
 template <is_big_uint T>
-UInt8 isProbablePrime(const T & num, unsigned rounds, const std::function<void()> & check_cancellation = {})
+UInt8 isProbablePrime(const T & num, unsigned rounds)
 {
     /// If the wide value fits in UInt64, use the deterministic UInt64 path.
     if (num <= std::numeric_limits<UInt64>::max())
@@ -229,9 +223,6 @@ UInt8 isProbablePrime(const T & num, unsigned rounds, const std::function<void()
     /// This should cover many composite candidates cheaply before the more expensive Miller-Rabin rounds.
     if (detail::isDivisibleByFirst15Primes(num))
         return 0;
-
-    if (check_cancellation)
-        check_cancellation();
 
     auto boost_num = detail::toBoostInteger(num);
 

@@ -223,23 +223,13 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
     if (!join || child_node->children.size() != 2)
         return 0;
 
-    /// Storage Join expects a particular join kind and cannot build not-matched rows for
-    /// composite keys, so converting its outer join to inner is unsound (issue #106949).
-    /// Earlier passes (filter push-down, runtime-filter build) can insert single-child steps
-    /// between the join and its JoinStepLogicalLookup source, so descend through them.
-    auto isStorageJoin = [](const QueryPlan::Node * side_node)
+    auto isStorageJoin = [](auto & step)
     {
-        for (const auto * node = side_node; node; )
-        {
-            if (auto * lookup_step = typeid_cast<JoinStepLogicalLookup *>(node->step.get()))
-                return lookup_step->getPreparedJoinStorage().storage_join != nullptr;
-            if (node->children.size() != 1)
-                break;
-            node = node->children.front();
-        }
-        return false;
+        auto * lookup_step = typeid_cast<JoinStepLogicalLookup *>(step.get());
+        return lookup_step && lookup_step->getPreparedJoinStorage().storage_join;
     };
-    if (isStorageJoin(child_node->children.back()))
+    /// Storage Join expects particular join kind, so we cannot change it
+    if (isStorageJoin(child_node->children.back()->step))
         return 0;
 
     auto & join_operator = join->getJoinOperator();
@@ -261,14 +251,10 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
     bool right_stream_safe = true;
 
     if (check_left_stream)
-        left_stream_safe = filterResultForNotMatchedRows(
-            filter_dag, filter_column_name, *left_stream_input_header,
-            /*allow_unknown_function_arguments=*/true) == FilterResult::FALSE;
+        left_stream_safe = filter_dag.isFilterAlwaysFalseForDefaultValueInputs(filter_column_name, *left_stream_input_header);
 
     if (check_right_stream)
-        right_stream_safe = filterResultForNotMatchedRows(
-            filter_dag, filter_column_name, *right_stream_input_header,
-            /*allow_unknown_function_arguments=*/true) == FilterResult::FALSE;
+        right_stream_safe = filter_dag.isFilterAlwaysFalseForDefaultValueInputs(filter_column_name, *right_stream_input_header);
 
     if (!left_stream_safe || !right_stream_safe)
     {

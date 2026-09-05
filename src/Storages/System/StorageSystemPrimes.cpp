@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemPrimes.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -50,6 +49,3 @@ void StorageSystemPrimes::readImpl(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemPrimes) }

@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDisks.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnString.h>
@@ -128,6 +127,3 @@ Pipe StorageSystemDisks::read(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDisks) }

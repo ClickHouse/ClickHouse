@@ -58,8 +58,12 @@ INNER JOIN dict_str AS dd ON t.pref = dd.k ORDER BY t.pref, dd.v;
 -- The analyzer casts LowCardinality away before the join; enable_analyzer = 0 keeps the
 -- LowCardinality key so it survives to the dictionary lookup and exercises the stripping in getByKeys.
 SELECT 'LowCardinality(String) key, LEFT';
+SELECT t.pref, dd.v FROM (SELECT arrayJoin(['a', 'x']::Array(LowCardinality(String))) AS pref) AS t
+LEFT JOIN dict_str AS dd ON t.pref = dd.k ORDER BY t.pref, dd.v SETTINGS enable_analyzer = 0;
 
 SELECT 'LowCardinality(Nullable(String)) key, LEFT';
+SELECT t.pref, dd.v FROM (SELECT arrayJoin(['a', 'b', NULL]::Array(LowCardinality(Nullable(String)))) AS pref) AS t
+LEFT JOIN dict_str AS dd ON t.pref = dd.k ORDER BY t.pref NULLS LAST, dd.v SETTINGS enable_analyzer = 0;
 
 SELECT 'NULL key does not match a real empty-string dictionary key';
 SELECT t.pref, dd.v FROM (SELECT arrayJoin(['a', NULL]::Array(Nullable(String))) AS pref) AS t

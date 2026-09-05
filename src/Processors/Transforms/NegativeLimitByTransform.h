@@ -3,7 +3,6 @@
 #include <deque>
 #include <list>
 #include <Columns/IColumn.h>
-#include <Core/SortDescription.h>
 #include <Interpreters/AggregatedDataVariants.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/IInflatingTransform.h>
@@ -72,13 +71,6 @@ private:
     void appendRun(const ChunkSlice::ColumnsPtr & columns_ptr, UInt64 start, UInt64 length, size_t group_idx);
 
     template <typename Method>
-    requires MapAggregationMethod<Method>
-    void consumeImpl(Method & method, const ColumnRawPtrs & key_columns, const ChunkSlice::ColumnsPtr & columns_ptr, UInt64 num_rows);
-
-    /// Keeps a group index in the cell's mapped slot, so a set method cannot be used. This overload exists
-    /// only because the dispatch macro is generated over every `AggregatedDataVariants::Type`.
-    template <typename Method>
-    requires SetAggregationMethod<Method>
     void consumeImpl(Method & method, const ColumnRawPtrs & key_columns, const ChunkSlice::ColumnsPtr & columns_ptr, UInt64 num_rows);
 
     std::vector<size_t> key_positions;
@@ -117,7 +109,7 @@ private:
 class NegativeLimitBySortedStreamTransform final : public IInflatingTransform
 {
 public:
-    NegativeLimitBySortedStreamTransform(SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const SortDescription & sorted_columns_descr);
+    NegativeLimitBySortedStreamTransform(SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const Names & column_names);
 
     String getName() const override { return "NegativeLimitBySortedStreamTransform"; }
 
@@ -134,13 +126,12 @@ private:
     };
 
     bool sameAsPrevChunkKey(const Columns & cols, UInt64 row) const;
+    bool sameAsRowBefore(const Columns & cols, UInt64 row) const;
     void rememberKey(const Columns & cols, UInt64 row);
     void dropExcessRows(GroupWindow & window) const;
     void dropOffsetRows(GroupWindow & window) const;
     void finalizeWindow(GroupWindow & window);
 
-    /// Positions of the non-constant grouping key columns in the chunk header, in physical sort order so
-    /// that every column probed by `getEqualRangeEndAssumeSorted` is contiguous within the range.
     std::vector<size_t> key_positions;
     const UInt64 group_offset;
     const UInt64 group_window_size;

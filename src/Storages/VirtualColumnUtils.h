@@ -1,6 +1,5 @@
 #pragma once
 
-#include <optional>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -50,10 +49,7 @@ ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context);
 void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & block);
 
 /// Builds sets used by ActionsDAG inplace.
-/// Returns false if some set could not be built and is still not ready. Executing the DAG then throws
-/// "Not-ready Set is passed as the second argument", so a caller that executes the DAG right away must
-/// check the result.
-bool buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
+void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
 /// Builds sets used by ActionsDAG inplace, but skips sets that are arguments to
 /// GLOBAL IN functions (globalIn, globalNotIn, globalNullIn, globalNotNullIn).
@@ -113,17 +109,13 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(
 /// Extracts constant values expected for `_path` input from the query filter DAG.
 std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag, ContextPtr context, size_t limit);
 
-/// `file_names`, if provided, must be parallel to `paths` and supplies the `_file` value for each path.
-/// Otherwise `_file` is derived from the path as the substring after the last '/'. It is needed when
-/// the user-visible `_file` differs from the path suffix, e.g. web paths with a query/fragment part.
 ColumnPtr getFilterByPathAndFileIndexes(
     const std::vector<String> & paths,
     const ExpressionActionsPtr & actions,
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
     const ContextPtr & context,
-    const std::optional<FormatSettings> & format_settings = std::nullopt,
-    const std::vector<String> * file_names = nullptr);
+    const std::optional<FormatSettings> & format_settings = std::nullopt);
 
 template <typename T>
 void filterByPathOrFile(
@@ -133,10 +125,9 @@ void filterByPathOrFile(
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
     const ContextPtr & context,
-    const std::optional<FormatSettings> & format_settings = std::nullopt,
-    const std::vector<String> * file_names = nullptr)
+    const std::optional<FormatSettings> & format_settings = std::nullopt)
 {
-    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context, format_settings, file_names);
+    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context, format_settings);
     const auto & indexes = typeid_cast<const ColumnUInt64 &>(*indexes_column).getData();
     if (indexes.size() == sources.size())
         return;
@@ -161,10 +152,6 @@ struct VirtualsForFileLikeStorage
     /// Original file path as stored in Iceberg metadata (before resolution to storage path).
     /// Used by Iceberg position deletes to reference data files in the metadata path format.
     const String * iceberg_metadata_file_path { nullptr };
-    std::optional<UInt64> last_updated_sequence_number = std::nullopt;
-    std::optional<UInt64> first_row_id = std::nullopt;
-    ColumnPtr materialized_row_ids = {};
-    ColumnPtr materialized_last_updated_sequence_numbers = {};
 };
 
 void addRequestedFileLikeStorageVirtualsToChunk(

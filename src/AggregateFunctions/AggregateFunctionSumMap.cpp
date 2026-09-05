@@ -243,7 +243,7 @@ public:
         }
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
         const auto & rhs_maps = this->data(rhs).merged_maps;
@@ -320,11 +320,7 @@ public:
                 break;
             }
             default:
-                /// The version comes from the AggregateFunction data type parameter, which is
-                /// user/data-controlled and not validated at type creation. Throw a catchable
-                /// exception instead of LOGICAL_ERROR (which aborts debug/sanitizer builds).
-                /// Symmetric with deserialize() below.
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected version {} of -Map aggregate function serialization state", *version);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown version {}, of -Map aggregate function serialization state", *version);
         }
 
         for (const auto & elem : merged_maps)
@@ -345,10 +341,6 @@ public:
         readVarUInt(size, buf);
 
         FormatSettings format_settings;
-        /// Bool keys/values must be read as 0/1 int Fields, matching what add() stores from the
-        /// UInt8 column. Otherwise a bool-tagged Field reaches FieldVisitorSum on merge and throws
-        /// "Cannot sum Bools" (and breaks key dedup / zero-compaction). Same as MergeTreePartition::load.
-        format_settings.binary.read_bool_field_as_int = true;
         std::function<void(size_t, Array &)> deserialize;
         switch (*version)
         {
@@ -847,10 +839,10 @@ FROM sum_map
 GROUP BY timeslot;
         )",
         R"(
-┌────────────timeslot─┬─sumMappedArrays(statusMap.status, statusMap.requests)─┬─sumMappedArrays(statusMapTuple)─┐
-│ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])                        │ ([1,2,3,4,5],[10,10,20,10,10])  │
-│ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])                        │ ([4,5,6,7,8],[10,10,20,10,10])  │
-└─────────────────────┴───────────────────────────────────────────────────────┴─────────────────────────────────┘
+┌────────────timeslot─┬─sumMappedArrays(statusMap.status, statusMap.requests)─┬─sumMappedArrays(statusMapTuple)─────────┐
+│ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])                        │ ([1,2,3,4,5],[10,10,20,10,10])          │
+│ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])                        │ ([4,5,6,7,8],[10,10,20,10,10])          │
+└─────────────────────┴───────────────────────────────────────────────────────┴─────────────────────────────────────────┘
         )"
     },
     {
@@ -876,9 +868,14 @@ SELECT
 FROM multi_metrics;
         )",
         R"(
-┌─result─────────────────────────────────────────────────────────────┐
-│ (['Chrome','Edge','Firefox','Safari'],[350,40,180,50],[45,4,18,5]) │
-└────────────────────────────────────────────────────────────────────┘
+┌─result────────────────────────────────────────────────────────────────────────┐
+│ (['Chrome', 'Edge', 'Firefox', 'Safari'], [350, 40, 180, 50], [45, 4, 18, 5]) │
+└───────────────────────────────────────────────────────────────────────────────┘
+-- In this example:
+-- The result tuple contains three arrays
+-- First array: keys (browser names) in sorted order
+-- Second array: total impressions for each browser
+-- Third array: total clicks for each browser
         )"
     }
     };
@@ -919,9 +916,9 @@ SELECT minMappedArrays(a, b)
 FROM VALUES('a Array(Int32), b Array(Int64)', ([1, 2], [2, 2]), ([2, 3], [1, 1]));
         )",
         R"(
-┌─minMappedArrays(a, b)─┐
-│ ([1,2,3],[2,1,1])     │
-└───────────────────────┘
+┌─minMappedArrays(a, b)───────────┐
+│ ([1, 2, 3], [2, 1, 1])          │
+└─────────────────────────────────┘
         )"
     }
     };
@@ -984,7 +981,7 @@ FROM VALUES('a Array(Char), b Array(Int64)', (['x', 'y'], [2, 2]), (['y', 'z'], 
     // break backward compatibility
     FunctionDocumentation::Description sumMapWithOverflow_description = R"(
 Totals a `value` array according to the keys specified in the `key` array. Returns a tuple of two arrays: keys in sorted order, and values summed for the corresponding keys.
-It differs from the [`sumMap`](/reference/functions/aggregate-functions/sumMap) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument data type.
+It differs from the [`sumMap`](/sql-reference/aggregate-functions/reference/summap) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument data type.
 
 :::note
 - Passing a tuple of key and value arrays is identical to passing an array of keys and an array of values.
@@ -1028,10 +1025,10 @@ FROM sum_map
 GROUP BY timeslot;
         )",
         R"(
-┌────────────timeslot─┬─toTypeName(sumMap(statusMap.status, statusMap.requests))─┬─toTypeName(sumMapWithOverflow(statusMap.status, statusMap.requests))─┐
-│ 2000-01-01 00:00:00 │ Tuple(Array(UInt8), Array(UInt64))                       │ Tuple(Array(UInt8), Array(UInt8))                                    │
-│ 2000-01-01 00:01:00 │ Tuple(Array(UInt8), Array(UInt64))                       │ Tuple(Array(UInt8), Array(UInt8))                                    │
-└─────────────────────┴──────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────┘
+┌────────────timeslot─┬─toTypeName(sumMap⋯usMap.requests))─┬─toTypeName(sumMa⋯usMap.requests))─┐
+│ 2000-01-01 00:01:00 │ Tuple(Array(UInt8), Array(UInt64)) │ Tuple(Array(UInt8), Array(UInt8)) │
+│ 2000-01-01 00:00:00 │ Tuple(Array(UInt8), Array(UInt64)) │ Tuple(Array(UInt8), Array(UInt8)) │
+└─────────────────────┴────────────────────────────────────┴───────────────────────────────────┘
         )"
     },
     {
@@ -1045,10 +1042,10 @@ FROM sum_map
 GROUP BY timeslot;
         )",
         R"(
-┌────────────timeslot─┬─toTypeName(sumMap(statusMapTuple))─┬─toTypeName(sumMapWithOverflow(statusMapTuple))─┐
-│ 2000-01-01 00:00:00 │ Tuple(Array(Int8), Array(Int64))   │ Tuple(Array(Int8), Array(Int8))                │
-│ 2000-01-01 00:01:00 │ Tuple(Array(Int8), Array(Int64))   │ Tuple(Array(Int8), Array(Int8))                │
-└─────────────────────┴────────────────────────────────────┴────────────────────────────────────────────────┘
+┌────────────timeslot─┬─toTypeName(sumMap(statusMapTuple))─┬─toTypeName(sumM⋯tatusMapTuple))─┐
+│ 2000-01-01 00:01:00 │ Tuple(Array(Int8), Array(Int64))   │ Tuple(Array(Int8), Array(Int8)) │
+│ 2000-01-01 00:00:00 │ Tuple(Array(Int8), Array(Int64))   │ Tuple(Array(Int8), Array(Int8)) │
+└─────────────────────┴────────────────────────────────────┴─────────────────────────────────┘
         )"
     }
     };
@@ -1070,7 +1067,7 @@ GROUP BY timeslot;
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMapFiltered<false, true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionSumMapFiltered<false, false>>(keys_type, values_types, arguments, params);
-    }, {.description = R"DOC(Like sumMap, but sums the values only for the keys that are present in a given whitelist of keys.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
+    }, {}});
 
     factory.registerFunction("sumMapFilteredWithOverflow", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
@@ -1078,7 +1075,7 @@ GROUP BY timeslot;
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMapFiltered<true, true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionSumMapFiltered<true, false>>(keys_type, values_types, arguments, params);
-    }, {.description = R"DOC(Like sumMapFiltered, but performs the summation without checking for numeric overflow (the result keeps the argument's value type).)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
+    }, {}});
 }
 
 }

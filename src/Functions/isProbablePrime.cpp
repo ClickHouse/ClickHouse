@@ -2,7 +2,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
-#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -83,24 +82,13 @@ public:
         auto result = ColumnUInt8::create(input_rows_count);
         auto & result_data = result->getData();
 
-        /// A whole block's rows run inside this one call, so the pipeline's between-blocks cancellation check
-        /// cannot interrupt them. A wide row reaching the Miller-Rabin rounds costs milliseconds and checks
-        /// directly; a row taking a cheap exit costs under a microsecond and is throttled by the budget.
-        const std::function<void()> check_cancellation = makeCancellationCheck(name);
-        CancellationBudget budget(check_cancellation);
-
         if (!castTypeToEither<ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64, ColumnVector<UInt128>, ColumnVector<UInt256>>(
                 column,
                 [&](const auto & col)
                 {
                     const auto & data = col.getData();
-                    using ValueT = std::decay_t<decltype(data[0])>;
                     for (size_t i = 0; i < input_rows_count; ++i)
-                    {
-                        if constexpr (Primality::is_big_uint<ValueT>)
-                            budget.charge();
-                        result_data[i] = Primality::isProbablePrime(data[i], rounds, check_cancellation);
-                    }
+                        result_data[i] = Primality::isProbablePrime(data[i], rounds);
                     return true;
                 }))
             throw Exception(
@@ -121,7 +109,7 @@ REGISTER_FUNCTION(IsProbablePrime)
 Returns `1` if the argument is probably prime, `0` if it is definitely composite.
 
 For `UInt8`, `UInt16`, `UInt32`, and `UInt64`, the result is exact and matches
-[`isPrime`](/reference/functions/regular-functions/math-functions#isPrime). The `rounds` argument is ignored.
+[`isPrime`](/sql-reference/functions/math-functions#isPrime). The `rounds` argument is ignored.
 
 For `UInt128` and `UInt256`, a return value of `1` is probabilistic. The optional `rounds` argument controls
 how many [Miller-Rabin](https://en.wikipedia.org/wiki/Miller-Rabin_primality_test) rounds are used:
