@@ -45,9 +45,10 @@ class BucketedMetricLog : public PeriodicLog<BucketedMetricLogElement>
     using PeriodicLog<BucketedMetricLogElement>::PeriodicLog;
 
 public:
-    static constexpr auto DESCRIPTION = R"(
-        Contains history of metrics values from tables system.metrics and system.events.
-        Periodically flushed to disk. Stores all metrics in a single Map column with bucketed serialization.)";
+    /// This is the comment of `system.metric_log`, so it is a single line, as for the other system logs.
+    static constexpr auto DESCRIPTION = "Contains history of metrics values from tables system.metrics and system.events, "
+                                        "periodically flushed to disk. All metrics are stored in a single Map column "
+                                        "with bucketed serialization.";
 
     /// Serialize the Map column into a constant number of buckets, so reading a single metric
     /// reads only a small fraction of the data. Parts created by inserts (zero level) use the

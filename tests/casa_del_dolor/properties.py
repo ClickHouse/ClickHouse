@@ -1518,7 +1518,7 @@ class LogTablePropertiesGroup(PropertiesGroup):
         if self.log_table == "trace_log":
             log_table_properties["symbolize"] = true_false_lambda
         if self.log_table == "transposed_metric_log":
-            # Created only with this `schema_type`; the default ("wide") makes the section a no-op
+            # Created only with this `schema_type`; the default ("bucketed") makes the section a no-op
             schema_type_xml = ET.SubElement(property_element, "schema_type")
             schema_type_xml.text = "transposed"
         # Can't use this without the engine parameter?

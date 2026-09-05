@@ -1350,7 +1350,16 @@
         <level>trace</level>
     </text_log>
 
-    <!-- Metric log contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval. -->
+    <!-- Metric log contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval.
+
+         The schema of the table is selected by "schema_type":
+         - "bucketed" (default) - all metrics in a single Map column with the bucketed serialization,
+           plus an ALIAS column per metric, so the table has a few columns instead of thousands;
+         - "wide" - a separate column per metric;
+         - "transposed" - metrics as rows, similar to system.asynchronous_metric_log.
+         Note that "bucketed" gets the settings of the bucketed Map serialization from the
+         default table definition, so specifying "engine" below replaces them.
+    -->
     <metric_log>
         <database>system</database>
         <table>metric_log</table>
@@ -1360,6 +1369,7 @@
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
         <flush_on_crash>false</flush_on_crash>
+        <!-- <schema_type>bucketed</schema_type> -->
     </metric_log>
 
     <!-- Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval. -->
