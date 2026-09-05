@@ -1,0 +1,9 @@
+Read while the SQLite file is missing:
+PATH_ACCESS_DENIED
+First successful read after restoring the SQLite file:
+1	2
+Generated-column classification copied to the proxy:
+MATERIALIZED
+Insert after metadata refresh:
+1	2
+3	6
