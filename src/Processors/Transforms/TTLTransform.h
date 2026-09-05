@@ -22,7 +22,10 @@ public:
         const MergeTreeData::MutableDataPartPtr & data_part_,
         const NamesAndTypesList & expired_columns_,
         time_t current_time,
-        bool force_
+        bool force_,
+        /// Re-evaluate rows-WHERE TTLs even when no source part reported an expired row. Set for
+        /// merges that combine rows, where the WHERE can first become true in the merge output.
+        bool force_rows_where_ttl_
     );
 
     String getName() const override { return "TTL"; }

@@ -645,6 +645,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
+    ctx->force_rows_where_ttl = false;
     for (const auto & part : global_ctx->future_part->parts)
     {
         global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
@@ -661,10 +662,22 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     if (global_ctx->metadata_snapshot->hasAnyTTL() && local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
         ctx->need_remove_expired_values = true;
 
+    /// `part_min_ttl` for a rows-WHERE TTL only counts rows that already pass the WHERE, so it cannot
+    /// see a condition that first becomes true in the merge output. Re-evaluate it from the output
+    /// instead of trusting the source parts.
+    if (global_ctx->metadata_snapshot->hasAnyRowsWhereTTL() && mergeCanChangeColumnValues(global_ctx->merging_params.mode))
+    {
+        ctx->need_remove_expired_values = true;
+        ctx->force_rows_where_ttl = true;
+    }
+
     if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
     {
         LOG_INFO(ctx->log, "Part {} has values with expired TTL, but merges with TTL are cancelled.", global_ctx->new_data_part->name);
         ctx->need_remove_expired_values = false;
+        ctx->force_rows_where_ttl = false;
+        /// The merged part then inherits the source parts' rows-WHERE info, which says nothing about
+        /// the values this merge produces. Refreshing it without deleting anything is a follow-up.
     }
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
@@ -1324,6 +1337,25 @@ bool MergeTask::canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx)
         return false;
 
     return global_ctx.metadata_snapshot->hasRowsTTL() || global_ctx.metadata_snapshot->hasAnyRowsWhereTTL();
+}
+
+bool MergeTask::mergeCanChangeColumnValues(MergeTreeData::MergingParams::Mode mode)
+{
+    /// The collapsing and replacing modes only pick among existing rows, so every surviving row
+    /// keeps the values it was written with. The modes below combine rows into new values.
+    switch (mode)
+    {
+        case MergeTreeData::MergingParams::Summing:
+        case MergeTreeData::MergingParams::Aggregating:
+        case MergeTreeData::MergingParams::Graphite:
+        case MergeTreeData::MergingParams::Coalescing:
+            return true;
+        case MergeTreeData::MergingParams::Ordinary:
+        case MergeTreeData::MergingParams::Collapsing:
+        case MergeTreeData::MergingParams::Replacing:
+        case MergeTreeData::MergingParams::VersionedCollapsing:
+            return false;
+    }
 }
 
 bool MergeTask::isVerticalTTLDelete(
@@ -3015,11 +3047,12 @@ public:
         const MergeTreeData::MutableDataPartPtr & data_part_,
         const NamesAndTypesList & expired_columns_,
         time_t current_time,
-        bool force_)
+        bool force_,
+        bool force_rows_where_ttl_)
         : ITransformingStep(input_header_, TTLTransform::addExpiredColumnsToBlock(input_header_, expired_columns_), getTraits())
     {
         transform = std::make_shared<TTLTransform>(
-            context_, input_header_, storage_, metadata_snapshot_, data_part_, expired_columns_, current_time, force_);
+            context_, input_header_, storage_, metadata_snapshot_, data_part_, expired_columns_, current_time, force_, force_rows_where_ttl_);
 
         /// Build sets eagerly here rather than via addCreatingSetsStep.
         /// If they were built inside the merge pipeline, the subquery progress (rows read)
@@ -3524,7 +3557,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->new_data_part,
             global_ctx->merging_columns_expired_by_ttl,
             global_ctx->time_of_merge,
-            ctx->force_ttl);
+            ctx->force_ttl,
+            ctx->force_rows_where_ttl);
 
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
