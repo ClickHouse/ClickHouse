@@ -208,14 +208,17 @@ Code: 36. DB::Exception: Unknown command `/hepl`. Maybe you meant: ['/help']. Ty
 ClickHouse Client는 쿼리에 사용할 외부 데이터(외부 임시 테이블)를 전달할 수 있습니다.
 자세한 내용은 [쿼리 처리용 외부 데이터](/ko/reference/engines/table-engines/special/external-data) 섹션을 참조하십시오.
 
-### 별칭 {#cli_aliases}
+### Aliases {#cli_aliases}
 
-REPL에서는 다음 별칭을 사용할 수 있습니다:
+REPL 내에서 다음 별칭을 사용할 수 있습니다:
 
-* `\l` - SHOW DATABASES
-* `\d` - SHOW TABLES
-* `\c <DATABASE>` - USE DATABASE
-* `.` - 마지막 쿼리 다시 실행
+* `\l` - `SHOW DATABASES`
+* `\d` - `SHOW TABLES`
+* `\d <TABLE>` - `DESCRIBE TABLE <TABLE>`
+* `\c <DATABASE>` - `USE <DATABASE>`
+* `.` - 마지막 쿼리 반복
+
+`\d`의 인수가 테이블 이름이 아니라 `\d FROM system`이나 `\d LIKE 'hits%'`처럼 `SHOW TABLES` 쿼리를 이어가는 형태라면 테이블 목록 조회가 그대로 유지됩니다. 이러한 절과 같은 이름을 가진 테이블은 따옴표로 감싸야 합니다: `` \d `format` ``.
 
 ### 키보드 단축키 {#keyboard_shortcuts}
 

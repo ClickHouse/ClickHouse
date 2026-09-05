@@ -210,12 +210,15 @@ Code: 36. DB::Exception: Unknown command `/hepl`. Maybe you meant: ['/help']. Ty
 
 ### Псевдонимы {#cli_aliases}
 
-В REPL можно использовать следующие псевдонимы:
+В REPL доступны следующие псевдонимы:
 
-* `\l` - SHOW DATABASES
-* `\d` - SHOW TABLES
-* `\c <DATABASE>` - USE DATABASE
-* `.` - повторить последний запрос
+* `\l` — `SHOW DATABASES`
+* `\d` — `SHOW TABLES`
+* `\d <TABLE>` — `DESCRIBE TABLE <TABLE>`
+* `\c <DATABASE>` — `USE <DATABASE>`
+* `.` — повторить последний запрос
+
+Если аргумент `\d` продолжает запрос `SHOW TABLES`, а не задаёт имя таблицы — как в `\d FROM system` или `\d LIKE 'hits%'` — вывод списка таблиц сохраняется. Таблицу, имя которой совпадает с одной из таких секций, нужно заключать в обратные кавычки: `` \d `format` ``.
 
 ### Сочетания клавиш {#keyboard_shortcuts}
 

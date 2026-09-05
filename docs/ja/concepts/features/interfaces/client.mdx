@@ -210,12 +210,15 @@ ClickHouse Client では、クエリ実行用に外部データ (外部一時テ
 
 ### 別名 {#cli_aliases}
 
-REPL では、次の別名を使用できます。
+REPL 内では、以下の別名を使用できます:
 
-* `\l` - SHOW DATABASES
-* `\d` - SHOW TABLES
-* `\c <DATABASE>` - USE DATABASE
-* `.` - 直前のクエリを再実行
+* `\l` - `SHOW DATABASES`
+* `\d` - `SHOW TABLES`
+* `\d <TABLE>` - `DESCRIBE TABLE <TABLE>`
+* `\c <DATABASE>` - `USE <DATABASE>`
+* `.` - 直前のクエリを繰り返す
+
+`\d` の引数がテーブル名の指定ではなく、`\d FROM system` や `\d LIKE 'hits%'` のように `SHOW TABLES` クエリの続きとなっている場合は、一覧表示のままになります。これらの句と同じ名前のテーブルを指定するには、引用符で囲む必要があります: `` \d `format` ``。
 
 ### キーボードショートカット {#keyboard_shortcuts}
 

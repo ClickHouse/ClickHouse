@@ -210,12 +210,15 @@ Para mais informações, consulte a seção [Dados externos para processamento d
 
 ### Aliases {#cli_aliases}
 
-Você pode usar os seguintes aliases no REPL:
+Você pode usar os seguintes aliases dentro do REPL:
 
-* `\l` - SHOW DATABASES
-* `\d` - SHOW TABLES
-* `\c <DATABASE>` - USE DATABASE
+* `\l` - `SHOW DATABASES`
+* `\d` - `SHOW TABLES`
+* `\d <TABLE>` - `DESCRIBE TABLE <TABLE>`
+* `\c <DATABASE>` - `USE <DATABASE>`
 * `.` - repete a última consulta
+
+Um argumento de `\d` que dá continuidade à consulta `SHOW TABLES` em vez de nomear uma tabela — como em `\d FROM system` ou `\d LIKE 'hits%'` — mantém a listagem. Uma tabela cujo nome coincida com uma dessas cláusulas precisa ser colocada entre crases: `` \d `format` ``.
 
 ### Atalhos de teclado {#keyboard_shortcuts}
 

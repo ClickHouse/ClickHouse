@@ -212,10 +212,13 @@ ClickHouse 客户端 允许在查询时传递外部数据 (外部临时表) 。
 
 你可以在 REPL 中使用以下别名：
 
-* `\l` - SHOW DATABASES
-* `\d` - SHOW TABLES
-* `\c <DATABASE>` - USE DATABASE
-* `.` - 重复上一条查询
+* `\l` - `SHOW DATABASES`
+* `\d` - `SHOW TABLES`
+* `\d <TABLE>` - `DESCRIBE TABLE <TABLE>`
+* `\c <DATABASE>` - `USE <DATABASE>`
+* `.` - 重复执行上一条查询
+
+如果 `\d` 后面的参数不是表名，而是对 `SHOW TABLES` 查询的延续 (例如 `\d FROM system` 或 `\d LIKE 'hits%'`) ，则仍会列出表。若某个表的名称恰好与这些子句相同，则必须加引号：`` \d `format` ``。
 
 ### 键盘快捷键 {#keyboard_shortcuts}
 

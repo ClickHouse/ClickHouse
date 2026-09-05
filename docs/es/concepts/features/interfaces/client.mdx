@@ -208,14 +208,17 @@ Si no espera y pulsa `Ctrl+C` por segunda vez, el cliente se cerrará.
 Cliente de ClickHouse permite pasar datos externos (tablas temporales externas) al realizar consultas.
 Para obtener más información, consulte la sección [Datos externos para el procesamiento de consultas](/es/reference/engines/table-engines/special/external-data).
 
-### Alias {#cli_aliases}
+### Aliases {#cli_aliases}
 
-Puedes usar los siguientes alias en el REPL:
+Puede usar los siguientes alias desde el REPL:
 
-* `\l` - SHOW DATABASES
-* `\d` - SHOW TABLES
-* `\c <DATABASE>` - USE DATABASE
-* `.` - repite la última consulta
+* `\l` - `SHOW DATABASES`
+* `\d` - `SHOW TABLES`
+* `\d <TABLE>` - `DESCRIBE TABLE <TABLE>`
+* `\c <DATABASE>` - `USE <DATABASE>`
+* `.` - repetir la última consulta
+
+Un argumento de `\d` que continúa la consulta `SHOW TABLES` en lugar de nombrar una tabla —como en `\d FROM system` o `\d LIKE 'hits%'`— mantiene la enumeración. Una tabla cuyo nombre coincida con una de estas cláusulas debe escribirse entre comillas: `` \d `format` ``.
 
 ### Atajos de teclado {#keyboard_shortcuts}
 

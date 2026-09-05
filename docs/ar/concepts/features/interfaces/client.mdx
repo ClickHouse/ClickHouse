@@ -208,14 +208,17 @@ Code: 36. DB::Exception: Unknown command `/hepl`. Maybe you meant: ['/help']. Ty
 يتيح عميل ClickHouse تمرير بيانات خارجية (جداول مؤقتة خارجية) لاستخدامها في الاستعلام.
 لمزيد من المعلومات، راجع قسم [البيانات الخارجية لمعالجة الاستعلام](/ar/reference/engines/table-engines/special/external-data).
 
-### الأسماء المستعارة {#cli_aliases}
+### Aliases {#cli_aliases}
 
-يمكنك استخدام الأسماء المستعارة التالية من داخل بيئة REPL:
+يمكنك استخدام الـ Aliases التالية من داخل REPL:
 
-* `\l` - SHOW DATABASES
-* `\d` - SHOW TABLES
-* `\c <DATABASE>` - USE DATABASE
-* `.` - كرّر آخر استعلام
+* `\l` - `SHOW DATABASES`
+* `\d` - `SHOW TABLES`
+* `\d <TABLE>` - `DESCRIBE TABLE <TABLE>`
+* `\c <DATABASE>` - `USE <DATABASE>`
+* `.` - تكرار آخر استعلام
+
+إذا كان الـ argument المُمرَّر إلى `\d` استكمالاً لاستعلام الـ `SHOW TABLES` بدلاً من أن يكون اسم جدول - كما في `\d FROM system` أو `\d LIKE 'hits%'` - فسيبقى السلوك هو الـ listing. أما الجدول الذي يحمل اسماً مطابقاً لإحدى هذه الـ clauses فيجب وضعه بين علامتَي اقتباس: `` \d `format` ``.
 
 ### اختصارات لوحة المفاتيح {#keyboard_shortcuts}
 
