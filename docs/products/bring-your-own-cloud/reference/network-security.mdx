@@ -2,7 +2,7 @@
 title: 'BYOC Network Security'
 slug: /cloud/reference/byoc/reference/network_security
 sidebarTitle: 'Network security'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'network security']
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'network security', 'aws', 'gcp', 'azure', 'network boundaries', 'firewall']
 description: 'Deploy ClickHouse on your own cloud infrastructure'
 doc_type: 'reference'
 ---
@@ -15,7 +15,7 @@ The ClickHouse Cloud control plane maintains several types of connections to ope
 
 | Purpose                                      | Connection type                                 | Notes                                                                                                                                                                                           |
 | -------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Daily operations — Kubernetes API server** | Public with IP filtering (default), or private via Tailscale or AWS VPC Lattice | Management services talk to the Kubernetes (EKS/GKE/AKS) API server over the public network, restricted by IP allow lists. After initial deployment, you can optionally switch this to private access via Tailscale or, on AWS, VPC Lattice. |
+| **Daily operations — Kubernetes API server** | Public endpoint by default, gated differently per cloud, or private via Tailscale or AWS VPC Lattice | Management services talk to the Kubernetes (EKS/GKE/AKS) API server over its public endpoint. What restricts that access differs per cloud — an IP allow list on AWS, cloud IAM on GCP and Azure; see [Kubernetes API server exposure](#kubernetes-api-server-exposure). After initial deployment, you can optionally switch this to private access via Tailscale or, on AWS, VPC Lattice. |
 | **Daily operations — cloud provider APIs**   | ClickHouse VPC → cloud provider                 | Management services call your cloud provider's APIs (e.g., EKS and EC2 on AWS, GKE on GCP, AKS on Azure) from ClickHouse Cloud’s own environment. This doesn't involve your VPC/VNet or Tailscale.                                                          |
 | **Troubleshooting — ClickHouse service**     | Tailscale                                       | ClickHouse engineers access the ClickHouse service (e.g., system tables) for diagnostics via Tailscale.                                                                                         |
 | **Troubleshooting — Kubernetes API server**  | Tailscale                                       | ClickHouse engineers access the Kubernetes API server for cluster diagnostics via Tailscale.                                                                                                           |
@@ -29,10 +29,12 @@ Two distinct control paths are easy to conflate. They differ in where the traffi
 | **What it manages** | Cloud resources: the Kubernetes cluster itself, node groups, load balancers, storage buckets, DNS | Workloads inside the cluster: ClickHouse pods, operators, and their configuration |
 | **Traffic destination** | The cloud provider's public API endpoints (for example `eks.amazonaws.com`, `ec2.amazonaws.com`) — this traffic never enters your VPC/VNet | Your cluster's API endpoint in your account |
 | **Authentication** | AWS: cross-account `sts:AssumeRole` into `ClickHouseManagementRole` and the per-infrastructure management role, protected by an external ID. GCP: service account impersonation (no keys). Azure: federated identity for the ClickHouse service principal (no credentials exchanged) | Short-lived Kubernetes credentials issued through the cloud provider's API (for example `eks:GetToken` using the assumed role) |
-| **Tailscale applicability** | **None.** These calls go from ClickHouse Cloud's network directly to the cloud provider and cannot be routed through Tailscale or through your network | Public endpoint restricted to ClickHouse egress IPs by default; can be switched to private access via Tailscale or, on AWS, VPC Lattice |
+| **Tailscale applicability** | **None.** These calls go from ClickHouse Cloud's network directly to the cloud provider and cannot be routed through Tailscale or through your network | Public endpoint by default — restricted to ClickHouse egress IPs on AWS, gated by cloud IAM on GCP and Azure (see [Kubernetes API server exposure](#kubernetes-api-server-exposure)); can be switched to private access via Tailscale or, on AWS, VPC Lattice |
 | **Your audit trail** | AWS CloudTrail (or the GCP/Azure equivalents) in your account records every call with the assumed identity | On AWS, EKS control-plane logs — including the audit log — are delivered to a CloudWatch log group in your account (see [billable AWS services](/products/bring-your-own-cloud/reference/billable-aws-services)); on GCP and Azure, contact support to confirm or enable control-plane audit logging for your cluster |
 
-In short: only Kubernetes API and troubleshooting traffic can use Tailscale. Cloud provider API calls always originate from ClickHouse Cloud's network and terminate at the provider's endpoints — routing them through Tailscale isn't possible, because they never enter your network in the first place.
+In short: only Kubernetes API and troubleshooting traffic can use Tailscale. The management calls described above always originate from ClickHouse Cloud's network and terminate at the provider's endpoints — routing them through Tailscale isn't possible, because they never enter your network in the first place.
+
+Cloud provider APIs are also called from the other direction, by controllers running inside your own cluster — the load balancer controller, CSI driver, autoscaler, DNS controller, and cert-manager. Those calls use in-cluster identities and leave through your own egress path, so they appear in your audit trail under a different identity and a different source address than the management calls. See [Outbound connections](#outbound-connections).
 
 ### Network-origin permission boundaries {#network-origin-permission-boundaries}
 
@@ -53,7 +55,7 @@ Tailscale creates an encrypted, private network tunnel between the ClickHouse co
 - **Metrics access**: ClickHouse’s centralized monitoring dashboards access metrics from the Prometheus stack deployed within your BYOC VPC, providing ClickHouse engineers observability into the environment.
 
 <Warning>
-Tailscale is used **only for management and troubleshooting operations**. It is **never used for query traffic** or customer data access. All customer data remains within your VPC and is never transmitted through Tailscale connections.
+Tailscale is used **only for management and troubleshooting operations**. It is **never used for query traffic** or customer data access. All customer data remains in your own cloud account and is never transmitted through Tailscale connections.
 </Warning>
 
 ### How Tailscale Works in BYOC {#how-tailscale-works}
@@ -109,13 +111,13 @@ For the full data access policy — what engineers can see, certificate-based au
 
 ### Management Services Access {#management-services-access}
 
-By default, ClickHouse management services access your BYOC Kubernetes cluster via the API server's public IP address, which is restricted to ClickHouse's NAT gateway IP addresses only.
+By default, ClickHouse management services reach your BYOC Kubernetes cluster over the API server's public endpoint, which each cloud gates differently — on AWS by an IP allow list containing only ClickHouse's NAT gateway addresses, on GCP and Azure by cloud IAM. See [Kubernetes API server exposure](#kubernetes-api-server-exposure) for the per-cloud detail.
 
 **Optional Private Endpoint Configuration**:
 
 - You can configure the Kubernetes API server to use only a private endpoint
 - In this case, management services access the API server via Tailscale (similar to human troubleshooting access) or, on AWS, via VPC Lattice (see [Kubernetes API Private Connection](/products/bring-your-own-cloud/configuration/configurations#k8s-api-private-connection))
-- By default, the public endpoint (restricted to ClickHouse's NAT IP addresses) is kept as a backup mechanism for emergency investigation and support needs; once private access is verified, it can be disabled entirely in coordination with ClickHouse
+- By default, the public endpoint is kept as a backup mechanism for emergency investigation and support needs; once private access is verified, it can be disabled entirely in coordination with ClickHouse
 
 ### Network Traffic Flow {#tailscale-traffic-flow}
 
@@ -125,57 +127,144 @@ By default, ClickHouse management services access your BYOC Kubernetes cluster v
 2. Tailscale agent on engineer's machine → Tailscale coordination server (outbound)
 3. Direct or relayed connection established between agents
 4. Encrypted traffic flows through the established tunnel
-5. Nginx pod in EKS terminates TLS and routes to internal services
+5. Nginx pod in your Kubernetes cluster terminates TLS and routes to internal services
 
 **No Customer Data Transmission**:
 
 - Tailscale connections are used only for management and troubleshooting
 - Query traffic and customer data never flow through Tailscale
-- All customer data remains within your VPC
+- All customer data remains in your own cloud account
 
 For more technical details about how Tailscale is implemented in BYOC, see the [Building ClickHouse BYOC on AWS blog post](https://clickhouse.com/blog/building-clickhouse-byoc-on-aws#tailscale-connection). For what ClickHouse engineers can read once connected and how ClickHouse audits that access, see [ClickHouse data access](/products/bring-your-own-cloud/reference/clickhouse-data-access).
 
 ## Network boundaries {#network-boundaries}
 
-This section covers different network traffic to and from the customer BYOC VPC:
+This section is the firewall view of a BYOC deployment: every connection that crosses the boundary of your BYOC network, in either direction. It applies to AWS, GCP, and Azure; where the clouds behave differently, the cloud is named explicitly.
 
-- **Inbound**: Traffic entering the customer BYOC VPC.
-- **Outbound**: Traffic originating from the customer BYOC VPC and sent to an external destination.
-- **Public**: A network endpoint accessible from the public internet.
-- **Private**: A network endpoint accessible only through private connections, such as VPC peering, VPC Private Link, or Tailscale.
+Terms used throughout:
 
-**Istio ingress is deployed behind an AWS NLB to accept ClickHouse client traffic.**
+- **Inbound**: traffic entering your BYOC network — a VPC on AWS, a VPC network on GCP, or a VNet on Azure.
+- **Outbound**: traffic originating in your BYOC network and sent to an external destination.
+- **Public**: an endpoint reachable from the public internet.
+- **Private**: an endpoint reachable only over a private path — VPC/VNet peering, AWS PrivateLink, GCP Private Service Connect, Azure Private Link, or Tailscale.
 
-_Inbound, Public or Private_
+### Provider equivalents {#provider-equivalents}
 
-The Istio ingress gateway terminates TLS. The certificate, provisioned by CertManager with Let's Encrypt, is stored as a secret within the EKS cluster. Traffic between Istio and ClickHouse is [encrypted by AWS](https://docs.aws.amazon.com/whitepapers/latest/logical-separation/encrypting-data-at-rest-and--in-transit.html#:~:text=All%20network%20traffic%20between%20AWS,supported%20Amazon%20EC2%20instance%20types) since they reside in the same VPC.
+The rest of this page uses cloud-neutral names. This table maps them to each provider:
 
-By default, ingress is publicly accessible with IP allow list filtering. Customers can configure VPC peering to make it private and disable public connections. We highly recommend setting up an [IP filter](/products/cloud/guides/security/connectivity/setting-ip-filters) to restrict access.
+| Concept | AWS | GCP | Azure |
+| --- | --- | --- | --- |
+| BYOC network | VPC | VPC network | VNet |
+| Kubernetes cluster | EKS | GKE | AKS |
+| Client ingress load balancer | Network Load Balancer | External passthrough Network Load Balancer | Azure Load Balancer |
+| Private endpoint service | PrivateLink endpoint service | Private Service Connect service attachment | Private Link Service |
+| Object storage | S3 | Cloud Storage | Blob Storage |
+| Node/log volumes | EBS | Persistent Disk | Managed Disks |
+| Egress path | NAT gateway per availability zone, with static Elastic IPs | Cloud NAT with manually reserved static IPs | NAT Gateway with assigned public IPs |
+| Private path to the provider's storage APIs | S3 gateway VPC endpoint | Private Google Access | Azure backbone via NAT |
+| Cloud API audit trail | CloudTrail | Cloud Audit Logs | Azure Activity log |
+
+Egress to the public internet leaves your BYOC network through a small, fixed set of NAT addresses on every cloud, so you can pin them in your own egress controls. Ask your ClickHouse team for the current values for your deployment. On AWS and GCP, traffic to the provider's own storage APIs is the exception: it takes the private path in the row above and never reaches the NAT gateway.
+
+### Inbound connections {#inbound-connections}
+
+| Listener | Ports | Source | Purpose | Your controls |
+| --- | --- | --- | --- | --- |
+| Public client ingress load balancer (default with a ClickHouse-managed VPC) | TCP 8443 (HTTPS interface) and 9440 (native protocol over TLS); 443 also routes to the HTTPS interface | Your ClickHouse clients | Query traffic. TLS terminates at the Istio ingress gateway inside your own network | IP access list; can be disabled entirely once a private path is in place |
+| Private client ingress load balancer (default with a customer-managed VPC) | Same ports as above | Networks you nominate | Query traffic from peered networks | Source-range allowlist you control |
+| Private endpoint service (optional) | Same ports as above | Private endpoints you create in your own account, project, or subscription | Query traffic with no internet exposure | Each endpoint must be registered with ClickHouse by its endpoint ID before it can connect — see [Connect to your BYOC service](/products/bring-your-own-cloud/configuration/connect) |
+| Kubernetes API server | TCP 443 | ClickHouse management services | Cluster management | Differs per cloud — see [Kubernetes API server exposure](#kubernetes-api-server-exposure) |
+| Monitoring endpoint (present once the private load balancer is enabled) | TCP 443 | Networks that can reach your BYOC network privately | PromQL queries and federation against the in-cluster Prometheus and Thanos stack | Reachable over private paths only, never the public internet. It does not require authentication, so network reachability is the access control — see [observability](/products/bring-your-own-cloud/reference/observability-aws) |
+| Tailscale peer relay (optional, off by default) | UDP 40000 | ClickHouse tailnet peers | Improves NAT traversal for the management mesh | Accepts only mutually authenticated WireGuard peers; payloads stay end-to-end encrypted |
+
+Two ports are sometimes visible on these load balancers but are not client-facing: TCP 15021 serves the provider's own health checks against the ingress gateway and carries no query traffic, and the MySQL interface (port 3306) is not currently exposed in BYOC — see the [FAQ](/products/bring-your-own-cloud/reference/faq).
+
+The ingress gateway's certificate is issued by cert-manager from a public ACME certificate authority (Let's Encrypt) using DNS-01 validation, and is stored as a Kubernetes secret inside your own cluster. Traffic between the ingress gateway and the ClickHouse pods stays inside your BYOC network — see [Intra-network traffic](#intra-network-traffic).
+
+Which of the two load balancers is enabled by default depends on your networking model. With a ClickHouse-managed VPC, each service gets the public load balancer, protected by an IP access list, and the private load balancer can be enabled alongside it. With a customer-managed VPC the defaults invert: only the private load balancer is enabled, and your services have no public ingress surface unless you add one. See [Connect to your BYOC service](/products/bring-your-own-cloud/configuration/connect).
+
+Wherever the public path is enabled, we strongly recommend configuring an [IP filter](/products/cloud/guides/security/connectivity/setting-ip-filters), and you can add a private path — see [Private networking setup](/products/bring-your-own-cloud/onboarding/network) — and then disable public access entirely. Note that IP filtering is enforced at the ingress proxy layer, so the load balancer ports may appear open in a scan while connections from unlisted sources are rejected.
+
+<Note>
+Beyond the listeners above there is no SSH, no bastion host, and no standing administrative credential. Query traffic never traverses ClickHouse-owned infrastructure in either direction: your clients connect straight to the ingress inside your own network.
+
+Additional protocol ports can be enabled per deployment — certificate-authenticated native access and Arrow Flight are the current examples — so confirm the exact port set for your own deployment with your ClickHouse team before you write firewall rules from this table.
+</Note>
+
+#### Kubernetes API server exposure {#kubernetes-api-server-exposure}
+
+How ClickHouse management services reach the Kubernetes API server, and what restricts that access, differs by cloud:
+
+- **AWS (EKS)**: the public endpoint is restricted to ClickHouse's egress CIDR ranges through the cluster's public access CIDR list. It can be switched to private-only access via Tailscale or VPC Lattice — see [Kubernetes API Private Connection](/products/bring-your-own-cloud/configuration/configurations#k8s-api-private-connection).
+- **GCP (GKE)**: nodes are always private. The control plane is reached over its DNS-based endpoint (`*.gke.goog`), authorized by the `container.clusters.connect` IAM permission on the impersonated service account rather than by an IP allow list. The request terminates at Google's frontend rather than inside your VPC network, but it is still an access path into your cluster's control plane, so review it as inbound access. The separate IP-based public endpoint can be disabled.
+- **Azure (AKS)**: the API server is reached over its public FQDN and authorized by Microsoft Entra ID together with Azure RBAC. API-server authorized IP ranges are not applied by default; contact ClickHouse if your policy requires them.
+
+<Note>
+Only Kubernetes API and troubleshooting traffic can be moved onto a private path. The management calls to your cloud provider's APIs originate from ClickHouse Cloud's network and cannot be routed through it — see [Cloud provider APIs vs the Kubernetes API](#cloud-api-vs-kubernetes-api), which also covers the provider API calls made by controllers inside your own cluster.
+</Note>
 
 ### Troubleshooting access {#troubleshooting-access}
 
 _Inbound, Private_
 
-ClickHouse Cloud engineers require troubleshooting access via Tailscale. They're provisioned with just-in-time certificate-based authentication for BYOC deployments. See [ClickHouse data access](/products/bring-your-own-cloud/reference/clickhouse-data-access) for the full access policy.
+ClickHouse Cloud engineers reach your deployment for troubleshooting over Tailscale only, never the public internet, on every cloud. Access is just-in-time and certificate-based: an engineer requests it through an internal approval workflow, the platform mints a short-lived per-engineer credential, and it expires automatically. There is no shared administrative identity and no standing access. See [ClickHouse data access](/products/bring-your-own-cloud/reference/clickhouse-data-access) for the full policy, including which tables engineers can read.
+
+### Outbound connections {#outbound-connections}
+
+| Destination | Ports | Initiated by | Purpose | What crosses the boundary |
+| --- | --- | --- | --- | --- |
+| Your cloud provider's regional APIs | TCP 443 | In-cluster controllers: load balancer controller, CSI driver, autoscaler, DNS controller, cert-manager | Normal operation of the cluster in your own account | Cloud API calls only |
+| Your own object storage | TCP 443 | ClickHouse servers, backup jobs, and the monitoring stack where long-term retention is enabled | Data parts, backups, and long-term metric retention | Your data — it stays in your account. On AWS and GCP, same-region traffic takes the private path in [Provider equivalents](#provider-equivalents) and bypasses the NAT gateway; on Azure it stays on the Azure backbone but still leaves through your NAT gateway. The monitoring stack writes with its own identity, documented in [privilege](/products/bring-your-own-cloud/reference/privilege) |
+| ClickHouse-owned telemetry bucket | TCP 443 | Metrics scraper sidecar | Usage metering, health monitoring, autoscaling | System metrics and operational metadata — see [Billing scraper](#billing-scraper) |
+| ClickHouse-owned message queue | TCP 443 | State exporter | Service status shown in the ClickHouse Cloud console | State metadata — see [Service state](#service-state) |
+| ClickHouse-owned container registry | TCP 443 | Kubelet image pulls, chart delivery | Signed data-plane images and charts | Pull-only |
+| Tailscale coordination service and DERP relays | TCP 443, WireGuard over UDP | Tailscale agents in your cluster | Establishes the management mesh | Encrypted control channel |
+| Public ACME certificate authority | TCP 443, DNS | cert-manager | TLS certificate issuance for your service endpoints | Certificate signing requests — public keys only |
+| ClickHouse Cloud alert intake | TCP 443 | AlertManager | Pages ClickHouse SRE when your cluster is unhealthy | Alert name and service identifier — see [Alerts](#alerts) |
 
 ### Billing scraper {#billing-scraper}
 
 _Outbound, Private_
 
-The Billing scraper collects billing data from ClickHouse and sends it to an S3 bucket owned by ClickHouse Cloud.
+The billing scraper collects usage data from ClickHouse and sends it to a bucket owned by ClickHouse Cloud — S3 on AWS, Cloud Storage on GCP, Blob Storage on Azure.
 
-It runs as a sidecar alongside the ClickHouse server container, periodically scraping CPU and memory metrics. Requests within the same region are routed through VPC gateway service endpoints.
+It runs as a sidecar alongside the ClickHouse server container and periodically scrapes CPU and memory metrics from ClickHouse system tables. Records are keyed by an opaque service identifier and pod name. Same-region requests take the private path to the provider's storage APIs listed in [Provider equivalents](#provider-equivalents), so this traffic does not traverse the public internet on AWS or GCP.
+
+<Warning>
+This stream carries system metrics and operational metadata only. It contains no table rows, no column values, and no raw query text.
+</Warning>
 
 ### Alerts {#alerts}
 
 _Outbound, Public_
 
-AlertManager is configured to send alerts to ClickHouse Cloud when the customer's ClickHouse cluster is unhealthy.
+AlertManager is configured to send alerts to ClickHouse Cloud when your ClickHouse cluster is unhealthy. BYOC alert payloads are deliberately reduced to an alert name and a service identifier.
 
-Metrics and logs are stored within the customer's BYOC VPC. Logs are currently stored locally in EBS. In a future update, they will be stored in LogHouse, a ClickHouse service within the BYOC VPC. Metrics use a Prometheus and Thanos stack, stored locally in the BYOC VPC.
+The full monitoring dataset stays in your own account on every cloud. Distinguish two things here, because they have different boundaries:
+
+- **Continuously exported.** The reduced usage and health telemetry described under [Billing scraper](#billing-scraper), plus these alert payloads, is the only observability data written into ClickHouse-owned systems. Prometheus remote-write to ClickHouse Cloud is disabled in BYOC builds.
+- **Read in place.** ClickHouse's monitoring dashboards and, on approved escalation, its engineers query the in-cluster Prometheus stack and your logs over Tailscale — see [Tailscale Private Network](#tailscale-private-network). Query results necessarily reach ClickHouse-side tooling to be displayed, but nothing is persisted there and the underlying data never leaves your account.
+
+Metrics use a Prometheus and Thanos stack running in your cluster, with optional long-term retention in a bucket in your own account; where you enable that retention, the writes leave your BYOC network for the provider's storage API, but the data stays within your account. Logs are currently written to the node volumes attached to your ClickHouse nodes; in a future update they will be written to LogHouse, a ClickHouse-based log store that also runs inside your BYOC network.
 
 ### Service state {#service-state}
 
 _Outbound, Public_
 
-State Exporter sends ClickHouse service and backup state information (operational status events, not backup contents) to an SQS queue owned by ClickHouse Cloud.
+The state exporter sends ClickHouse service and backup state information — operational status events, not backup contents — to a queue owned by ClickHouse Cloud: SQS on AWS, Pub/Sub on GCP, Service Bus on Azure. This is what lets the ClickHouse Cloud console show the status of a service running in your account.
+
+### Intra-network traffic {#intra-network-traffic}
+
+Traffic between components inside the cluster — ClickHouse to ClickHouse Keeper, the operator, ingress to ClickHouse pods, monitoring scrapes — never leaves your BYOC network. Each provider encrypts traffic between its own instances at the network layer: see [AWS](https://docs.aws.amazon.com/whitepapers/latest/logical-separation/encrypting-data-at-rest-and--in-transit.html), [GCP](https://cloud.google.com/docs/security/encryption-in-transit), and [Azure](https://learn.microsoft.com/azure/security/fundamentals/encryption-overview).
+
+Egress is unrestricted at the security group, firewall rule, and network security group layer by default; the destinations actually contacted are the ones in [Outbound connections](#outbound-connections). An optional per-service egress firewall can enforce a destination allowlist instead — contact your ClickHouse team if you need it.
+
+### Auditing the boundary {#auditing-the-boundary}
+
+Because the whole data plane runs in your own account, the flows on this page are observable with your own tooling. Some sources are on by default; others you enable yourself:
+
+- **Cloud audit trail** (CloudTrail, Cloud Audit Logs, or the Azure Activity log): every role assumption, service account impersonation, or service principal sign-in by ClickHouse automation, and every cloud API call made with it.
+- **Flow logs** (VPC Flow Logs, VPC flow logs, or NSG flow logs): the connections above that traverse your own network — client ingress, every outbound flow, and the Tailscale channel. Enable these yourself if you want them retained. Management access to the Kubernetes API server is the exception: while the public endpoint is in use it terminates at your provider's managed control-plane endpoint rather than inside your network, so it does not appear in your flow logs. Look for it in the Kubernetes audit logs and your cloud audit trail instead; it shows up in flow logs only once the API server is switched to a private endpoint.
+- **Kubernetes audit logs**: on AWS, EKS control-plane logs including the audit log are delivered to a CloudWatch log group in your account; on GCP and Azure, contact support to confirm or enable control-plane audit logging for your cluster.
+- **Object storage access logs** on your data and backup buckets, and on the long-term monitoring retention bucket where you have that enabled.
+- **Your own `system.query_log`**: every statement run by ClickHouse automation or by an engineer, with the identity attached.
