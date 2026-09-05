@@ -188,6 +188,9 @@ struct DecorrelationContext
     /// Whether the optimizer will turn the referenced input subplan into an in-memory ChunkBuffer.
     /// Decided once here (see decorrelateQueryPlan); buildLogicalJoin uses it to pick the join kind.
     bool uses_in_memory_buffer = false;
+    /// Owned by the caller and shared by every correlated subquery of one expression; null when the
+    /// caller does not share a root.
+    SharedCorrelatedInputRoot * shared_input_root = nullptr;
 };
 
 /// How to convert an equivalent column to exactly the correlated column type.
@@ -591,10 +594,33 @@ QueryPlan decorrelateQueryPlan(
         }
 
         auto default_join_kind = settings[Setting::correlated_subqueries_default_join_kind];
-        context.query_plan.addStep(std::make_unique<CommonSubplanStep>(context.query_plan.getCurrentHeader()));
+
+        /// One referenced root serves every correlated subquery decorrelated against the same input. It
+        /// cannot be shared when the result is buffered (useMemoryBufferForCommonSubplanResult replaces
+        /// the referenced step), nor when a correlated column exists only in the root grown so far.
+        QueryPlan::Node * reference_root = nullptr;
+        if (context.shared_input_root && !context.uses_in_memory_buffer)
+        {
+            if (auto * shared = context.shared_input_root->node)
+            {
+                const auto & shared_header = shared->step->getOutputHeader();
+                if (std::ranges::all_of(
+                        context.correlated_subquery.correlated_column_identifiers,
+                        [&](const auto & column) { return shared_header->has(column); }))
+                    reference_root = shared;
+            }
+        }
+
+        if (!reference_root)
+        {
+            context.query_plan.addStep(std::make_unique<CommonSubplanStep>(context.query_plan.getCurrentHeader()));
+            reference_root = context.query_plan.getRootNode();
+            if (context.shared_input_root && !context.uses_in_memory_buffer)
+                context.shared_input_root->node = reference_root;
+        }
 
         auto buffer_header = std::make_shared<Block>();
-        const auto & input_header = context.query_plan.getCurrentHeader();
+        const auto & input_header = reference_root->step->getOutputHeader();
         for (const auto & column : context.correlated_subquery.correlated_column_identifiers)
         {
             /// A nested correlated subquery may reference a column from a scope beyond its immediate
@@ -614,7 +640,7 @@ QueryPlan decorrelateQueryPlan(
 
         rhs_plan.addStep(std::make_unique<CommonSubplanReferenceStep>(
             buffer_header,
-            context.query_plan.getRootNode(),
+            reference_root,
             context.correlated_subquery.correlated_column_identifiers));
         rhs_plan.getRootNode()->step->setStepDescription("Input for " + context.correlated_subquery.action_node_name, 100);
 
@@ -1199,7 +1225,8 @@ void buildQueryPlanForCorrelatedSubquery(
     const PlannerContextPtr & planner_context,
     QueryPlan & query_plan,
     const CorrelatedSubquery & correlated_subquery,
-    const SelectQueryOptions & select_query_options)
+    const SelectQueryOptions & select_query_options,
+    SharedCorrelatedInputRoot * shared_input_root)
 {
     auto * query_node = correlated_subquery.query_tree->as<QueryNode>();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     auto * union_node = correlated_subquery.query_tree->as<UnionNode>();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
@@ -1231,7 +1258,8 @@ void buildQueryPlanForCorrelatedSubquery(
                 .query_plan = std::move(query_plan),
                 .correlated_query_plan = std::move(correlated_plan),
                 .correlated_plan_steps = std::move(correlated_step_map),
-                .scope_stack = { DecorrelationScope{} }
+                .scope_stack = { DecorrelationScope{} },
+                .shared_input_root = shared_input_root,
             };
 
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
@@ -1279,7 +1307,8 @@ void buildQueryPlanForCorrelatedSubquery(
                 .query_plan = std::move(query_plan),
                 .correlated_query_plan = std::move(correlated_plan),
                 .correlated_plan_steps = std::move(correlated_step_map),
-                .scope_stack = { DecorrelationScope{} }
+                .scope_stack = { DecorrelationScope{} },
+                .shared_input_root = shared_input_root,
             };
 
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
