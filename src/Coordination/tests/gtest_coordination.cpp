@@ -1446,9 +1446,11 @@ public:
     static void dropInFlightRequests(KeeperRequestDispatcher & dispatcher) { dispatcher.dropInFlightRequests(); }
 
     /// Parks a read in the batch's late_reads, the way dispatchThread's case (2) does.
-    static bool addLateRead(KeeperRequestDispatcher & dispatcher, size_t batch_idx, KeeperRequestForSession & request)
+    static bool addLateRead(
+        KeeperRequestDispatcher & dispatcher, size_t batch_idx, KeeperRequestForSession & request, bool waits_for_write)
     {
-        return dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()].late_reads.add(request);
+        return dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()].late_reads.add(
+            request, waits_for_write);
     }
 
     /// What onCommit does once the whole batch has committed, before it drains the parked reads.
@@ -1966,7 +1968,7 @@ TEST(KeeperDispatcher, ReadWaitForWriteOnlyCountsWaitsForWrites)
     /// (`add` moves the request out, so keep our own pointer to it.)
     auto waiting_read = makeReadRequest(/*session_id=*/ 5, "/waiting");
     auto waiting_request = waiting_read.request;
-    ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, waiting_read));
+    ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, waiting_read, /*waits_for_write=*/ true));
     EXPECT_TRUE(waiting_request->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite));
 
     /// Parked after the batch committed, in the window where onCommit re-opens the container between
@@ -1974,7 +1976,7 @@ TEST(KeeperDispatcher, ReadWaitForWriteOnlyCountsWaitsForWrites)
     RequestDispatcherAccessor::markWritesCommitted(dispatcher, batch_idx);
     auto ordered_read = makeReadRequest(/*session_id=*/ 5, "/ordered");
     auto ordered_request = ordered_read.request;
-    ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, ordered_read));
+    ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, ordered_read, /*waits_for_write=*/ true));
     EXPECT_FALSE(ordered_request->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite))
         << "a read parked after the batch committed was counted as waiting for a write";
 
@@ -2000,7 +2002,7 @@ TEST(KeeperDispatcher, ReadWaitForWriteNotObservedForDroppedReads)
 
     auto read = makeReadRequest(/*session_id=*/ 7, "/dropped");
     auto read_request = read.request;
-    ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, read));
+    ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, read, /*waits_for_write=*/ true));
     ASSERT_TRUE(read_request->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite));
 
     UInt64 before = histogramSampleCount("keeper_read_wait_for_write_time_milliseconds");
@@ -2009,6 +2011,30 @@ TEST(KeeperDispatcher, ReadWaitForWriteNotObservedForDroppedReads)
     EXPECT_EQ(histogramSampleCount("keeper_read_wait_for_write_time_milliseconds"), before)
         << "an abandoned wait was recorded in keeper_read_wait_for_write_time_milliseconds";
     EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1) << "the dropped batch was not popped";
+}
+
+/// With `quorum_reads` the first read of a batch is pushed through raft and the reads behind it are
+/// parked, so what a parked read waits for can be another read rather than a write of its own
+/// session. dispatchThread works that out and passes it down; the parking path has to honour it, or
+/// the histogram quietly widens from "waited for a write" to "waited for whatever was in front".
+TEST(KeeperDispatcher, ReadWaitForWriteNotStartedForAReadThatFollowsAnotherRead)
+{
+    DispatcherFixture fixture;
+    auto & dispatcher = *fixture.dispatcher;
+
+    size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
+        dispatcher, makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 25));
+
+    auto read = makeReadRequest(/*session_id=*/ 11, "/behind-a-read");
+    auto read_request = read.request;
+    ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, read, /*waits_for_write=*/ false));
+
+    /// The finalizing side observes the histogram for exactly the spans that were started, so not
+    /// starting one is what keeps this read out of `keeper_read_wait_for_write_time_milliseconds`.
+    EXPECT_FALSE(read_request->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite))
+        << "a read that was not waiting for a write was counted as waiting for one";
+
+    RequestDispatcherAccessor::dropInFlightRequests(dispatcher);
 }
 
 #endif

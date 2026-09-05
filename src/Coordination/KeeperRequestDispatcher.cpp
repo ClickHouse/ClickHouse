@@ -875,6 +875,9 @@ void KeeperRequestDispatcher::dispatchThread()
                     }
 
                     bool is_read = request.request->isReadRequest();
+                    /// Whether the request is a write as far as the session's dependencies are
+                    /// concerned, i.e. before the `quorum_reads` override below.
+                    const bool is_write_request = !is_read;
 
                     /// If read has to go through raft, put it in the batch as if it were a write.
                     /// It's sufficient to do this for the first request of a batch, the rest are ordered after it.
@@ -900,6 +903,17 @@ void KeeperRequestDispatcher::dispatchThread()
                             session->last_batch_idx = batch_idx;
 
                         size_t last_batch = session->last_batch_idx;
+
+                        /// `keeper_read_wait_for_write_time_milliseconds` measures how long a read
+                        /// waited for the write it depends on, so parking the read is only a sample
+                        /// of it if the batch it attaches to holds a write of this very session.
+                        /// Without `quorum_reads` that is implied by `last_batch_idx`, which only
+                        /// writes advance. With `quorum_reads` the read was force-attached to the
+                        /// batch it happened to land in just above, and what it ends up ordered
+                        /// behind can be another read pushed through raft, so the session's last
+                        /// *write* batch is what has to match.
+                        const bool waits_for_write = session->last_write_batch_idx == last_batch;
+
                         if (last_batch == batch_idx)
                         {
                             /// Case (1): read request should be attached to the current batch.
@@ -907,7 +921,8 @@ void KeeperRequestDispatcher::dispatchThread()
                             chassert(!requests.empty());
                             if (session)
                                 session->reordering_version = current_reordering_version;
-                            startReadWaitForWriteSpan(request);
+                            if (waits_for_write)
+                                startReadWaitForWriteSpan(request);
                             late_reads.push_back(std::move(request));
                         }
                         else
@@ -922,7 +937,8 @@ void KeeperRequestDispatcher::dispatchThread()
                                 /// If added == false, it means last_batch was committed and all its
                                 /// read requests were finished, which means we can execute this
                                 /// request right in dispatchThread.
-                                added = in_flight_batches[last_batch % in_flight_batches.size()].late_reads.add(request);
+                                added = in_flight_batches[last_batch % in_flight_batches.size()].late_reads.add(
+                                    request, waits_for_write);
                             }
                             if (!added)
                                 /// Case (3): do the read right in dispatchThread.
@@ -934,7 +950,13 @@ void KeeperRequestDispatcher::dispatchThread()
                         if ((session && session->reordering_version == current_reordering_version) || !optimize_read_order)
                             flush_to_intermediate_reads();
                         if (session)
+                        {
                             session->last_batch_idx = batch_idx;
+                            /// A read that `quorum_reads` pushed through raft is in the batch, but
+                            /// it is not a write, so reads ordered after it are not waiting for one.
+                            if (is_write_request)
+                                session->last_write_batch_idx = batch_idx;
+                        }
 
                         batch_subrequests += getSubrequestCount(*request.request);
                         batch_bytes += getRequestBytesCost(*request.request);
