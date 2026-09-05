@@ -59,6 +59,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataFilesCache.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
+#include <Processors/Formats/Impl/Parquet/ParquetOrderedRowGroupIndexCache.h>
 #include <Storages/StreamingStorageRegistry.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
@@ -5351,6 +5352,10 @@ void Context::clearParquetMetadataCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    /// The ordered row-group fence index is keyed by file identity like the footer cache,
+    /// so `SYSTEM CLEAR PARQUET METADATA CACHE` resets both.
+    Parquet::clearGlobalOrderedRowGroupIndexCache();
 }
 #endif
 

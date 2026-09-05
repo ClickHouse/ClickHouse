@@ -501,6 +501,7 @@ struct Reader
     ReadOptions options;
     const Block * sample_block{};
     FormatFilterInfoPtr format_filter_info;
+    std::optional<String> row_group_index_cache_key;
     Prefetcher prefetcher;
 
     parq::FileMetaData file_metadata;
@@ -564,7 +565,9 @@ struct Reader
 
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 
-    void init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_);
+    void init(
+        const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_,
+        std::optional<String> row_group_index_cache_key_ = std::nullopt);
 
     static parq::FileMetaData readFileMetaData(Prefetcher & prefetcher);
     void prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);
@@ -627,6 +630,19 @@ struct Reader
     void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx);
 
 private:
+    struct PointProbe
+    {
+        size_t key_idx;
+        size_t primitive_idx;
+        Field point;
+    };
+
+    struct OrderedRowGroupLookup
+    {
+        bool proven = false;
+        std::optional<size_t> candidate_row_group;
+    };
+
     struct BloomFilterLookup : public KeyCondition::BloomFilter
     {
         Prefetcher & prefetcher;
@@ -644,6 +660,10 @@ private:
     /// headers (and their transitive includes) into every translation unit that includes Reader.h.
     struct DictionaryLookup;
 
+    std::vector<PointProbe> findPointProbes() const;
+    bool getFiniteRowGroupRange(
+        const parq::RowGroup & meta, const PrimitiveColumnInfo & column_info, Range & range) const;
+    OrderedRowGroupLookup findOrderedRowGroupForPoint(const PointProbe & probe) const;
     void getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle, bool only_spatial_bbox = false) const;
     /// Whether all four `covering.bbox` columns of `spatial_key_conditions[spatial_key_condition_idx]`
     /// report a known `null_count` of zero in this row group. Spatial pruning (both row-group and
