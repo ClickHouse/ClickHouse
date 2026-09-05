@@ -1171,9 +1171,9 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
     const auto & settings = getContext()->getSettingsRef();
 
-    /// If it's not attach and not materialized view to existing table,
-    /// we need to validate data types (check for experimental or suspicious types).
-    if (!create.attach && !create.is_materialized_view)
+    /// A view stores no data of its own, so the gates on types chosen for storage do not apply to it;
+    /// a materialized view's inner table is created by its own statement and validated there.
+    if (!create.attach && !create.isView())
     {
         DataTypeValidationSettings validation_settings(settings);
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
