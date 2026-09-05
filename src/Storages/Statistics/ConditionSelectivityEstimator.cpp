@@ -809,8 +809,11 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
                 /// if the sub-clause is different, but has only one column, it also works, e.g
                 /// (a > 0 and a < 5) or (a > 3 and a < 10) can be merged to (a > 0 and a < 10)
                 || (e.column_ranges.size() + e.column_not_ranges.size()
-                    + e.null_check_columns.size() + e.not_null_check_columns.size()) == 1
-                || e.function == FUNCTION_UNKNOWN)
+                    + e.null_check_columns.size() + e.not_null_check_columns.size()) == 1)
+                /// `FUNCTION_UNKNOWN` is deliberately absent: merging carries only ranges, and an
+                /// unknown atom has none, so absorbing it into the merged clause would silently give it
+                /// a selectivity of 1. Leaving it unmergeable sends it down the branch that finalizes
+                /// both sides, where it contributes `default_unknown_cond_factor` like any other atom.
                 && !e.finalized;
     };
     /// we will merge normal expression and not expression separately.
