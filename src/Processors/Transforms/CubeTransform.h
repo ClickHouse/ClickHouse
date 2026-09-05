@@ -26,7 +26,6 @@ private:
     /// The `__grouping_set` number for the subset described by `position_mask`.
     UInt64 groupingSetForMask(UInt64 position_mask) const;
 
-private:
     const ColumnsMask aggregates_mask;
 
     Columns current_columns;
