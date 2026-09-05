@@ -8,6 +8,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/IAST.h>
 
+#include <algorithm>
 #include <vector>
 
 namespace DB
@@ -32,6 +33,55 @@ void stripNamesFromSetQuery(ASTSetQuery & set_query, Predicate && is_stripped)
 {
     std::erase_if(set_query.changes, [&](const SettingChange & change) { return is_stripped(change.name); });
     std::erase_if(set_query.default_settings, [&](const String & name) { return is_stripped(name); });
+}
+
+/// Detach `field` from `owner`, tolerating a `field` slot that is not registered in `owner.children`.
+/// IAST::reset hard-throws LOGICAL_ERROR ("AST subtree not found in children") in that case, but the
+/// server-side AST fuzzer can hand us structurally-invalid ASTs whose SETTINGS slot is desynced from
+/// `children` (executeQuery.cpp documents that the fuzzer produces such ASTs and the surrounding code
+/// only skips them at format time - this strip runs before that guard). Erase the child if present,
+/// then clear the slot unconditionally, so a desynced node is detached instead of aborting the server.
+/// `IAST::children` is a boost::container::vector, so use the remove/erase idiom (no std::erase_if).
+void eraseChild(IAST & owner, const IAST * child_ptr)
+{
+    owner.children.erase(
+        std::remove_if(
+            owner.children.begin(),
+            owner.children.end(),
+            [&](const ASTPtr & child) { return child.get() == child_ptr; }),
+        owner.children.end());
+}
+
+void detachChild(IAST & owner, ASTPtr & field)
+{
+    if (!field)
+        return;
+    eraseChild(owner, field.get());
+    field.reset();
+}
+
+/// Raw-pointer overload for owners that hold their SETTINGS slot as a bare pointer (e.g. ASTStorage).
+template <typename T>
+void detachChild(IAST & owner, T *& field)
+{
+    if (field == nullptr)
+        return;
+    eraseChild(owner, field);
+    field = nullptr;
+}
+
+/// Return the owning `ASTPtr` in `owner.children` whose target is `raw` (as an `ASTSetQuery`), or null
+/// if none. An owning child *is* the node's keep-alive, so a match proves `raw` still points at that
+/// exact live node, while an address-only test proves nothing: a freed node's address can be handed to
+/// an unrelated live one. Compares pointer values only (`child.get() == raw`), never dereferences `raw`.
+ASTPtr findOwningChild(const IAST & owner, const IAST * raw)
+{
+    if (raw == nullptr)
+        return nullptr;
+    for (const auto & child : owner.children)
+        if (child.get() == raw && child->as<ASTSetQuery>())
+            return child;
+    return nullptr;
 }
 
 template <typename Visitor>
@@ -81,6 +131,7 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
     /// left untouched - stripping them would only risk the same bare-`SETTINGS` prune problem without
     /// closing any override path. Each owner strips and prunes its own clause in one visit, so a single
     /// traversal suffices.
+    ///
     visitAllNodes(
         ast,
         [&](IAST & node)
@@ -104,7 +155,7 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                     {
                         stripNamesFromSetQuery(*set_query, is_stripped);
                         if (isEmptySetQuery(*set_query))
-                            insert_query->reset(insert_query->settings_ast);
+                            detachChild(*insert_query, insert_query->settings_ast);
                     }
                 return;
             }
@@ -114,11 +165,26 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                 /// `CREATE ... SETTINGS max_rows_to_read = 0` parks the cap here; on the server
                 /// applySettingsFromQuery moves the non-engine settings from the storage clause onto the
                 /// context, so it must be stripped (and pruned to avoid a bare `SETTINGS`).
+                ///
+                /// `storage->settings` is a bare `ASTSetQuery *` whose designated owner is
+                /// `storage->children` (see ASTStorage::normalizeChildrenOrder), and a fuzzer-mutated child
+                /// list can drop that owning intrusive_ptr while leaving the slot set. An owning child there
+                /// proves the slot is still that same live node, so strip through it, preserving surviving
+                /// engine settings (e.g. `index_granularity`), and detach if it empties. Without one the slot
+                /// is unprovable rather than provably freed - a caller may hold the node alive outside
+                /// `children` - so clear it unread: dropping a desynced clause whole is the safe direction,
+                /// since `ASTStorage::formatImpl` would otherwise serialize `*storage->settings`.
                 if (storage->settings)
                 {
-                    stripNamesFromSetQuery(*storage->settings, is_stripped);
-                    if (isEmptySetQuery(*storage->settings))
-                        storage->reset(storage->settings);
+                    if (auto owning = findOwningChild(*storage, storage->settings))
+                    {
+                        auto & set_query = owning->as<ASTSetQuery &>();
+                        stripNamesFromSetQuery(set_query, is_stripped);
+                        if (isEmptySetQuery(set_query))
+                            detachChild(*storage, storage->settings);
+                    }
+                    else
+                        storage->settings = nullptr;
                 }
                 return;
             }
@@ -137,7 +203,7 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                     {
                         stripNamesFromSetQuery(*set_query, is_stripped);
                         if (isEmptySetQuery(*set_query))
-                            query_with_output->reset(query_with_output->settings_ast);
+                            detachChild(*query_with_output, query_with_output->settings_ast);
                     }
             }
 
