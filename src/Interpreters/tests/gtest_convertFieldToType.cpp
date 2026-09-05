@@ -104,6 +104,35 @@ INSTANTIATE_TEST_SUITE_P(
     })
 );
 
+/// A source type reaches `convertFieldToType` exactly as the caller declared it: `to_type` is
+/// unwrapped on the way in, the hint is not. `StorageMongoDB`'s predicate pushdown passes the
+/// literal's own result type, so `CAST(... AS Nullable(DateTime64))` arrives wrapped. Every
+/// `which_from_type` test then read false and the conversion fell through to `TYPE_MISMATCH`.
+/// These cases live here rather than in the stateless suite because that is the only caller that
+/// can produce a wrapped hint, and it needs a MongoDB server to reach.
+INSTANTIATE_TEST_SUITE_P(
+    WrappedSourceTypeHint,
+    ConvertFieldToTypeTest,
+    ::testing::ValuesIn(std::initializer_list<ConvertFieldToTypeTestParams>{
+        // Whole seconds narrow back to `DateTime` through a `Nullable` hint.
+        {
+            "Nullable(DateTime64(3, 'UTC'))",
+            DecimalField<DateTime64>(DateTime64(123'000), 3),
+            "DateTime('UTC')",
+            Field(static_cast<UInt64>(123))
+        },
+        // `LowCardinality` comes off as well. The branch this unblocks `static_cast`s the hint to
+        // `DataTypeDateTime` to read its time zone, so it is the pointer that has to be unwrapped -
+        // unwrapping only the `WhichDataType` would turn an inert branch into an invalid cast.
+        {
+            "LowCardinality(DateTime('UTC'))",
+            Field(static_cast<UInt64>(123 * Day)),
+            "Date",
+            Field(static_cast<UInt64>(123))
+        },
+    })
+);
+
 INSTANTIATE_TEST_SUITE_P(
     Date32ToDateTime64,
     ConvertFieldToTypeTest,

@@ -228,6 +228,25 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
+    /// `convertFieldToType` unwraps `to_type` but passes the source type as it was written, so a
+    /// constant declared `Nullable(DateTime64)` or `LowCardinality(DateTime64)` arrives wrapped.
+    /// Every test below reads the hint through `WhichDataType`, and several of the branches they
+    /// guard then `static_cast` it to a concrete type, so the wrapper has to come off once here
+    /// rather than at each use: left on, every test reads false and the conversion falls through
+    /// to the type mismatch at the end - which is the failure this function was changed to avoid,
+    /// reappearing for a semantically identical query that happens to name a wrapped type.
+    /// A null source is rejected by `convertFieldToType` before this point, so the value carried
+    /// under a `Nullable` hint is always a real one.
+    while (from_type_hint)
+    {
+        if (const auto * nullable_hint = typeid_cast<const DataTypeNullable *>(from_type_hint))
+            from_type_hint = nullable_hint->getNestedType().get();
+        else if (const auto * low_cardinality_hint = typeid_cast<const DataTypeLowCardinality *>(from_type_hint))
+            from_type_hint = low_cardinality_hint->getDictionaryType().get();
+        else
+            break;
+    }
+
     if (from_type_hint && from_type_hint->equals(type))
     {
         return src;
@@ -402,6 +421,58 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
         }
 
+        /// `Time64` is carried in a `Field` as `DecimalField<Decimal64>` too, but counts seconds of day
+        /// rather than seconds of epoch, so both narrowing branches below are keyed on the source type
+        /// rather than on the `Field` tag alone - otherwise a `Time64` constant aimed at a `DateTime`
+        /// column would be silently reinterpreted as an epoch.
+        if (which_type.isDateTime() && which_from_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
+        {
+            /// A `DateTime64` narrowed back to whole seconds. This is the reverse of the `DateTime64`
+            /// branch below, and `LogicalExpressionOptimizerPass` round-trips through both to check that
+            /// widening a `DateTime` constant to a `DateTime64` column lost nothing. Without this branch
+            /// the reverse direction fell through to the type mismatch at the end of this function, so
+            /// the check could only ever fail - and it failed by throwing, which is recorded in
+            /// `system.errors` even though the caller discards the exception.
+            const auto & from_value = src.safeGet<Decimal64>();
+            const UInt32 from_scale = from_value.getScale();
+
+            /// A sub-second part is not representable as `DateTime`. Reject it whatever `strict` says:
+            /// non-strict callers push the converted constant down as an exact comparison bound - see
+            /// `StorageMongoDB::visitWhereFunctionArguments` building a BSON filter - so truncating here
+            /// would turn `!=` and `<` at a sub-second boundary into silently missing rows.
+            if (DecimalUtils::getFractionalPart(from_value.getValue(), from_scale) != 0)
+                return {};
+
+            const Int64 whole = DecimalUtils::getWholePart(from_value.getValue(), from_scale);
+
+            /// `DateTime` holds a `UInt32`; reject anything outside that window rather than let the
+            /// serializer truncate it downstream, as the `Date` and `Date32` branches above do.
+            if (whole < 0 || whole > static_cast<Int64>(std::numeric_limits<UInt32>::max()))
+                return {};
+
+            return Field(static_cast<UInt64>(whole));
+        }
+
+        if (which_type.isTime() && which_from_type.isTime64() && src.getType() == Field::Types::Decimal64)
+        {
+            /// The same narrowing for the time-of-day pair: `tryConvertToColumnType` round-trips a `Time`
+            /// constant through a `Time64` column exactly as it does for `DateTime`, and
+            /// `enable_time_time64_type` is on by default, so this leg was reachable too.
+            const auto & from_value = src.safeGet<Decimal64>();
+            const UInt32 from_scale = from_value.getScale();
+
+            if (DecimalUtils::getFractionalPart(from_value.getValue(), from_scale) != 0)
+                return {};
+
+            const Int64 whole = DecimalUtils::getWholePart(from_value.getValue(), from_scale);
+
+            /// `Time` holds an `Int32`, and its canonical `Field` type is `Int64`.
+            if (whole < std::numeric_limits<Int32>::min() || whole > std::numeric_limits<Int32>::max())
+                return {};
+
+            return Field(whole);
+        }
+
         if (which_type.isTime() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
         {
             /// `Time` stores `Int32` under the hood; convert through `Int32` to produce the canonical
@@ -565,20 +636,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
 
         /// An Enum arrives as its underlying number, but `CAST(enum AS String)` uses the name.
-        /// Only `to_type` is unwrapped by the caller, so unwrap the hint here.
-        const IDataType * unwrapped_hint = from_type_hint;
-        while (unwrapped_hint)
-        {
-            if (const auto * nullable_hint = typeid_cast<const DataTypeNullable *>(unwrapped_hint))
-                unwrapped_hint = nullable_hint->getNestedType().get();
-            else if (const auto * low_cardinality_hint = typeid_cast<const DataTypeLowCardinality *>(unwrapped_hint))
-                unwrapped_hint = low_cardinality_hint->getDictionaryType().get();
-            else
-                break;
-        }
-
+        /// The hint was unwrapped on entry, so a `Nullable`/`LowCardinality` Enum reaches this too.
         /// Re-enter so that a `FixedString` target still zero-pads the name to its width.
-        if (const auto * enum_from_type = dynamic_cast<const IDataTypeEnum *>(unwrapped_hint))
+        if (const auto * enum_from_type = dynamic_cast<const IDataTypeEnum *>(from_type_hint))
             return convertFieldToTypeImpl(
                 enum_from_type->castToName(src), type, nullptr, format_settings, strict, convert_inexact_floats);
 
