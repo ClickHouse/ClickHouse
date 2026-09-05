@@ -1551,6 +1551,76 @@ SELECT arrayFlatten([[[1]], [[2], [3]]]);
 [1,2,3]
 ```
 
+## arrayFlattenedLength {#arrayFlattenedLength}
+
+Добавленный в: v26.9.0
+
+Возвращает общее количество элементов многомерного массива, как если бы он был развёрнут с помощью функции [`arrayFlatten`](/ru/reference/functions/regular-functions/array-functions#arrayFlatten).
+
+Функция:
+
+* Применима к массивам с любой глубиной вложенности.
+* Эквивалентна [`length`](/ru/reference/functions/regular-functions/array-functions#length) для уже плоских массивов.
+* Учитывает только вложенность `Array`. Элементы подсчитываются на первом уровне, не являющемся массивом, поэтому элементы вложенных [`Map`](/ru/reference/data-types/map), [`Tuple`](/ru/reference/data-types/tuple), [`Dynamic`](/ru/reference/data-types/dynamic) или [`Variant`](/ru/reference/data-types/variant) не подсчитываются по отдельности, даже если они сами содержат массивы.
+
+Это аналог `cardinality` в PostgreSQL, тогда как в ClickHouse `cardinality` — псевдоним `length` и подсчитывает только элементы внешнего массива.
+
+**Синтаксис**
+
+```sql
+arrayFlattenedLength(arr)
+```
+
+**Аргументы**
+
+* `arr` — Массив, возможно многомерный. [`Array(T)`](/ru/reference/data-types/array)
+
+**Возвращаемое значение**
+
+Возвращает количество элементов массива после разворачивания всех вложенных массивов. [`UInt64`](/ru/reference/data-types/int-uint)
+
+**Примеры**
+
+**Вложенный массив**
+
+```sql title=Query
+SELECT arrayFlattenedLength([[1, 2], [3, 4]]);
+```
+
+```response title=Response
+4
+```
+
+**Более глубокая вложенность**
+
+```sql title=Query
+SELECT arrayFlattenedLength([[[1]], [[2], [3]]]);
+```
+
+```response title=Response
+3
+```
+
+**Плоский массив**
+
+```sql title=Query
+SELECT arrayFlattenedLength([1, 2, 3]);
+```
+
+```response title=Response
+3
+```
+
+**Элементы, не являющиеся массивами, не обходятся**
+
+```sql title=Query
+SELECT arrayFlattenedLength([map('a', [1, 2, 3])]);
+```
+
+```response title=Response
+1
+```
+
 ## arrayFold {#arrayFold}
 
 Добавленный в: v23.10.0

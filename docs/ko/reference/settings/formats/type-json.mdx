@@ -12,25 +12,19 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이 설정은 [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h)에서 자동으로 생성됩니다.
 
-<div id="type_json_allow_duplicated_key_with_literal_and_nested_object">
-  ## type_json_allow_duplicated_key_with_literal_and_nested_object
-</div>
+## type_json_allow_duplicated_key_with_literal_and_nested_object {#type_json_allow_duplicated_key_with_literal_and_nested_object}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 활성화하면 일부 키가 중복되더라도 그중 하나가 중첩된 객체인 `{"a" : 42, "a" : {"b" : 42}}`와 같은 JSON을 파싱할 수 있습니다.
 
-<div id="type_json_skip_duplicated_paths">
-  ## type_json_skip_duplicated_paths
-</div>
+## type_json_skip_duplicated_paths {#type_json_skip_duplicated_paths}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 활성화하면 JSON 객체를 JSON 타입으로 파싱할 때 중복된 경로는 무시되며, 예외를 발생시키는 대신 첫 번째 경로만 삽입됩니다.
 
-<div id="type_json_skip_invalid_typed_paths">
-  ## type_json_skip_invalid_typed_paths
-</div>
+## type_json_skip_invalid_typed_paths {#type_json_skip_invalid_typed_paths}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -43,9 +37,18 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 * 0 — 비활성화(타입 불일치 시 오류 발생)
 * 1 — 활성화(타입 불일치 시 필드 건너뜀)
 
-<div id="type_json_use_partial_match_to_skip_paths_by_regexp">
-  ## type_json_use_partial_match_to_skip_paths_by_regexp
-</div>
+## type_json_skip_null_typed_paths {#type_json_skip_null_typed_paths}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+활성화하면 JSON 컬럼에서 NULL 값을 갖는 타입이 지정된 경로가 존재하지 않는 것으로 처리되어 dynamic paths의 동작과 동일해집니다. 이는 JSON serialization 출력과 `JSONAllPaths`, `JSONHas`, `JSONExtractRaw`, `has` 같은 인트로스펙션 함수, 그리고 `empty`/`notEmpty` 검사에 영향을 줍니다.
+
+가능한 값:
+
+* 0 — 비활성화(타입이 지정된 경로는 NULL 값이더라도 항상 존재하는 것으로 처리됩니다).
+* 1 — 활성화(NULL인 타입이 지정된 경로는 존재하지 않는 것으로 처리됩니다).
+
+## type_json_use_partial_match_to_skip_paths_by_regexp {#type_json_use_partial_match_to_skip_paths_by_regexp}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

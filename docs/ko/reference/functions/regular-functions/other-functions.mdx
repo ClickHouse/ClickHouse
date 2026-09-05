@@ -2663,6 +2663,8 @@ SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header
 매크로는 설정 파일의 [`<macros>`](/ko/reference/settings/server-settings/settings/other#macros) 섹션에 정의되며, 호스트명이 복잡하더라도 서버를 알기 쉬운 이름으로 구분하는 데 사용할 수 있습니다.
 이 함수가 분산 테이블에서 실행되면 각 세그먼트에 해당하는 값을 가진 일반 컬럼을 생성합니다.
 
+해당 테이블을 읽을 때와 마찬가지로 `system.macros`에 대한 `SELECT` 권한이 필요합니다.
+
 <Note>
   이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
 </Note>
@@ -2734,6 +2736,8 @@ SELECT getMaxTableNameLengthForDatabase('default');
 도입 버전: v25.6.0
 
 MergeTree 설정의 현재 값을 반환합니다.
+
+해당 테이블을 직접 읽을 때와 마찬가지로 `system.merge_tree_settings`에 대한 `SELECT` 권한이 필요합니다.
 
 <Note>
   이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
@@ -2848,6 +2852,8 @@ SELECT getServerPort('tcp_port');
 도입 버전: v25.6.0
 
 서버 설정 이름이 주어지면 현재 설정된 값을 반환합니다.
+
+해당 테이블을 직접 읽을 때와 마찬가지로 `system.server_settings`에 대한 `SELECT` 권한이 필요합니다.
 
 <Note>
   이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.

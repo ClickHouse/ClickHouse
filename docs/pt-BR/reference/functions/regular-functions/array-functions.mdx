@@ -1551,6 +1551,76 @@ SELECT arrayFlatten([[[1]], [[2], [3]]]);
 [1,2,3]
 ```
 
+## arrayFlattenedLength {#arrayFlattenedLength}
+
+Introduzido em: v26.9.0
+
+Retorna o número total de elementos de um array multidimensional, como se ele tivesse sido achatado com a função [`arrayFlatten`](/pt-BR/reference/functions/regular-functions/array-functions#arrayFlatten).
+
+Função:
+
+* Aplica-se a arrays aninhados com qualquer profundidade.
+* É equivalente a [`length`](/pt-BR/reference/functions/regular-functions/array-functions#length) para arrays que já estão achatados.
+* Considera apenas o aninhamento de `Array`. Os elementos são contados no primeiro nível que não é um array. Portanto, os elementos de um [`Map`](/pt-BR/reference/data-types/map), [`Tuple`](/pt-BR/reference/data-types/tuple), [`Dynamic`](/pt-BR/reference/data-types/dynamic) ou [`Variant`](/pt-BR/reference/data-types/variant) aninhado não são contados individualmente, mesmo que eles próprios contenham arrays.
+
+É o equivalente a `cardinality` no PostgreSQL, enquanto no ClickHouse `cardinality` é um alias de `length` e conta apenas os elementos do array mais externo.
+
+**Sintaxe**
+
+```sql
+arrayFlattenedLength(arr)
+```
+
+**Argumentos**
+
+* `arr` — Um array possivelmente multidimensional. [`Array(T)`](/pt-BR/reference/data-types/array)
+
+**Valor retornado**
+
+Retorna o número de elementos do array após o achatamento de todos os arrays aninhados. [`UInt64`](/pt-BR/reference/data-types/int-uint)
+
+**Exemplos**
+
+**Array aninhado**
+
+```sql title=Query
+SELECT arrayFlattenedLength([[1, 2], [3, 4]]);
+```
+
+```response title=Response
+4
+```
+
+**Aninhamento mais profundo**
+
+```sql title=Query
+SELECT arrayFlattenedLength([[[1]], [[2], [3]]]);
+```
+
+```response title=Response
+3
+```
+
+**Array plano**
+
+```sql title=Query
+SELECT arrayFlattenedLength([1, 2, 3]);
+```
+
+```response title=Response
+3
+```
+
+**Elementos que não são arrays não são percorridos**
+
+```sql title=Query
+SELECT arrayFlattenedLength([map('a', [1, 2, 3])]);
+```
+
+```response title=Response
+1
+```
+
 ## arrayFold {#arrayFold}
 
 Introduzido em: v23.10.0

@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_text_index_header_cache">
-  ## use_text_index_header_cache
-</div>
+## use_text_index_header_cache {#use_text_index_header_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -24,9 +22,7 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 Indica si los encabezados deserializados del índice de texto deben almacenarse en caché en memoria.
 Usar la caché de encabezados del índice de texto puede reducir significativamente la latencia y aumentar el rendimiento al trabajar con un gran número de consultas sobre índice de texto.
 
-<div id="use_text_index_like_evaluation_by_dictionary_scan">
-  ## use_text_index_like_evaluation_by_dictionary_scan
-</div>
+## use_text_index_like_evaluation_by_dictionary_scan {#use_text_index_like_evaluation_by_dictionary_scan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -34,9 +30,9 @@ Usar la caché de encabezados del índice de texto puede reducir significativame
 
 Permite evaluar consultas LIKE/ILIKE escaneando el diccionario del índice de texto invertido.
 
-<div id="use_text_index_negative_tokens_cache">
-  ## use_text_index_negative_tokens_cache
-</div>
+Los patrones acelerados son `%value%`, `value%` y `%value`, así como las llamadas a `startsWith` y `endsWith` que `optimize_rewrite_like_perfect_affix` reescribe como `value%` y `%value`.
+
+## use_text_index_negative_tokens_cache {#use_text_index_negative_tokens_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -45,9 +41,7 @@ Permite evaluar consultas LIKE/ILIKE escaneando el diccionario del índice de te
 Indica si se deben almacenar en caché los tokens de índice de texto que no están presentes en una parte de datos.
 La caché de tokens inexistentes utiliza la caché de tokens de índice de texto y evita consultas repetidas al diccionario para tokens inexistentes.
 
-<div id="use_text_index_postings_cache">
-  ## use_text_index_postings_cache
-</div>
+## use_text_index_postings_cache {#use_text_index_postings_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -56,9 +50,7 @@ La caché de tokens inexistentes utiliza la caché de tokens de índice de texto
 Si se almacenan en memoria las listas de postings deserializadas del índice de texto.
 Usar la caché de postings del índice de texto puede reducir significativamente la latencia y aumentar el rendimiento al trabajar con una gran cantidad de consultas sobre índice de texto.
 
-<div id="use_text_index_tokens_cache">
-  ## use_text_index_tokens_cache
-</div>
+## use_text_index_tokens_cache {#use_text_index_tokens_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

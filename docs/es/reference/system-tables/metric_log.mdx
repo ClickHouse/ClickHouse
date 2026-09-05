@@ -420,7 +420,7 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_ExternalSortUncompressedBytes` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de datos (sin comprimir, antes de la compresión) escrita para la ordenación en memoria externa.
 * `ProfileEvent_ExternalAggregationWritePart` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se escribió un archivo temporal en disco para la agregación en memoria externa.
 * `ProfileEvent_ExternalAggregationMerge` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se combinaron archivos temporales para la agregación en memoria externa.
-* `ProfileEvent_ExternalAggregationCompressedBytes` ([UInt64](/es/reference/data-types/int-uint)) — Número de bytes comprimidos escritos en disco para la agregación en memoria externa.
+* `ProfileEvent_ExternalAggregationCompressedBytes` ([UInt64](/es/reference/data-types/int-uint)) — Número de bytes escritos en disco para la agregación en memoria externa.
 * `ProfileEvent_ExternalAggregationUncompressedBytes` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de datos (sin comprimir, antes de la compresión) escrita en disco para la agregación en memoria externa.
 * `ProfileEvent_ExternalJoinWritePart` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se escribió un archivo temporal en disco para JOIN en memoria externa.
 * `ProfileEvent_ExternalJoinMerge` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se combinaron archivos temporales para JOIN en memoria externa.
@@ -1511,6 +1511,7 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_AsyncLoggingTextLogDroppedMessages` ([UInt64](/es/reference/data-types/int-uint)) — Cuántos mensajes se han descartado del text&#95;log porque la cola de logs asíncrona estaba llena
 * `ProfileEvent_JemallocFailedAllocationSampleTracking` ([UInt64](/es/reference/data-types/int-uint)) — Número total de veces que falló el seguimiento de la muestra de allocations de jemalloc
 * `ProfileEvent_JemallocFailedDeallocationSampleTracking` ([UInt64](/es/reference/data-types/int-uint)) — Número total de veces que falló el seguimiento de la muestra de deallocations de jemalloc
+* `ProfileEvent_SetsBuiltFromSubquery` ([UInt64](/es/reference/data-types/int-uint)) — Número de conjuntos `IN`/`JOIN` rellenados al ejecutar su subconsulta. No se cuenta un conjunto obtenido de la caché de conjuntos preparados, ni uno ya construido y reutilizado.
 * `ProfileEvent_LoadedStatisticsMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo transcurrido al cargar STATISTICS desde las partes
 * `ProfileEvent_SelectivityEstimatorInSetNotBuilt` ([UInt64](/es/reference/data-types/int-uint)) — Número de condiciones `IN` que el estimador de selectividad no pudo analizar porque el conjunto aún no se había construido y no debe ejecutar la subconsulta para rellenarlo
 * `ProfileEvent_SelectivityEstimatorInSetEstimatedFromSize` ([UInt64](/es/reference/data-types/int-uint)) — Número de condiciones `IN` cuya selectividad se estimó a partir del tamaño y los límites del conjunto en lugar de sus rangos exactos, porque el conjunto supera `statistics_max_set_size_for_exact_selectivity_estimation`

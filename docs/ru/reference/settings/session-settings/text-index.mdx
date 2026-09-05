@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного файла](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="text_index_hint_max_selectivity">
-  ## text_index_hint_max_selectivity
-</div>
+## text_index_hint_max_selectivity {#text_index_hint_max_selectivity}
 
 <SettingsInfoBlock type="Float" default_value="0.2" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Максимальная селективность фильтра для использования хинта, построенного на основе inverted текстового индекса.
 
-<div id="text_index_lazy_intersection_density_threshold">
-  ## text_index_lazy_intersection_density_threshold
-</div>
+## text_index_lazy_intersection_density_threshold {#text_index_lazy_intersection_density_threshold}
 
 **Псевдонимы**: `text_index_density_threshold`
 
@@ -36,9 +32,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Порог плотности списка вхождений для выбора алгоритма пересечения в отложенном режиме применения списка вхождений (`text_index_posting_list_apply_mode = 'lazy'`).
 Ниже порога: алгоритм пересечения leapfrog (предпочтителен для разреженных списков вхождений). При значении порога и выше: brute-force-пересечение битмапов (предпочтительно для плотных списков вхождений).
 
-<div id="text_index_like_max_postings_to_read">
-  ## text_index_like_max_postings_to_read
-</div>
+## text_index_like_max_postings_to_read {#text_index_like_max_postings_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -48,22 +42,19 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Требует включения `use_text_index_like_evaluation_by_dictionary_scan`.
 
-<div id="text_index_like_min_pattern_length">
-  ## text_index_like_min_pattern_length
-</div>
+## text_index_like_min_pattern_length {#text_index_like_min_pattern_length}
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4"},{"label": "новая настройка"}]}]} />
 
-Минимальная длина буквенно-цифровой подстроки в шаблоне LIKE/ILIKE, необходимая для использования оценки LIKE текстового индекса при сканировании словаря.
+Минимальная длина буквенно-цифровой подстроки в шаблоне LIKE/ILIKE или подстроки в `startsWith`/`endsWith`,
+необходимая для использования оценки LIKE текстового индекса при сканировании словаря.
 Шаблоны короче этого порога соответствуют слишком большому количеству токенов словаря и пропускаются во избежание ресурсоемкого сканирования.
 
 Требует, чтобы `use_text_index_like_evaluation_by_dictionary_scan` был включен.
 
-<div id="text_index_posting_list_apply_mode">
-  ## text_index_posting_list_apply_mode
-</div>
+## text_index_posting_list_apply_mode {#text_index_posting_list_apply_mode}
 
 <SettingsInfoBlock type="TextIndexPostingListApplyMode" default_value="lazy" />
 

@@ -138,14 +138,14 @@ LIMIT 5;
 
 لنفترض أن لدينا عدة ملفات بعناوين URI التالية على S3:
 
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;4.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;1.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;4.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;4.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;1.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;4.csv&#39;
 
 احسب عدد الصفوف في الملفات التي تنتهي بأرقام من 1 إلى 3:
 
@@ -204,27 +204,25 @@ INSERT INTO FUNCTION s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-
 SELECT name, value FROM existing_table;
 ```
 
-يمكن استخدام `**` في Glob للاجتياز التعاودي للأدلة. انظر المثال أدناه، إذ سيجلب جميع الملفات من دليل `my-test-bucket-768` بشكل تعاودي:
+يمكن استخدام `**` في نمط glob للاجتياز التكراري للمجلدات. يقرأ الاستعلام التالي كل ملف باسم `some_file_1.csv` ضمن `my-test-bucket-768`:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/**/some_file_1.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-يجلب ما يلي البيانات من جميع ملفات `test-data.csv.gz` الموجودة في أي دليل داخل دليل `my-test-bucket` بشكل تعاودي:
+يمكن دمج الأقواس المعقوفة مع `**` لمطابقة عدة أسماء ملفات بشكل تعاودي:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/**/some_file_{1..3}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-ملاحظة. يمكن تحديد محوّلات URL مخصصة في ملف تكوين الخادم. مثال:
+يعمل النمط التعاودي نفسه أيضًا مع عنوان URL ‏`s3://`:
 
 ```sql
-SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('s3://datasets-documentation/my-test-bucket-768/**/some_file_1.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-سيُستبدل URL ‏`'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'` بـ `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`
-
-يمكن إضافة محوّل مخصّص إلى `config.xml`:
+يمكنك إضافة محوّل URL مخصص في `config.xml`:
 
 ```xml
 <url_scheme_mappers>

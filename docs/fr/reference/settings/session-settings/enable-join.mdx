@@ -15,9 +15,7 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="enable_join_fixed_hash_table_conversion">
-  ## enable_join_fixed_hash_table_conversion
-</div>
+## enable_join_fixed_hash_table_conversion {#enable_join_fixed_hash_table_conversion}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -25,9 +23,15 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 Permet d’activer la conversion de la table de hachage en tableau plat pour les jointures lorsque la clé est un seul entier avec une plage de valeurs réduite.
 
-<div id="enable_join_runtime_filters">
-  ## enable_join_runtime_filters
-</div>
+## enable_join_key_only_hash_tables {#enable_join_key_only_hash_tables}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nouveau paramètre permettant de ne stocker que les join keys, sans référence à une row de droite, dans les tables de hachage des jointures dont le résultat ne peut jamais contenir une valeur issue d'une row de droite (`LEFT ANTI`, et `LEFT SEMI` lorsqu'aucune column de droite n'est sélectionnée)."}]}]} />
+
+Utiliser des tables de hachage qui ne stockent que les join keys, sans référence à une row de droite, pour les jointures dont le résultat ne peut jamais contenir une valeur issue d&#39;une row de droite : `LEFT ANTI`, et `LEFT SEMI` lorsqu&#39;aucune column de droite n&#39;est sélectionnée. Une telle table possède une cell plus petite et permet d&#39;abandonner les blocks de droite au lieu de les stocker.
+
+## enable_join_runtime_filters {#enable_join_runtime_filters}
 
 <BetaBadge />
 
@@ -37,9 +41,7 @@ Permet d’activer la conversion de la table de hachage en tableau plat pour les
 
 Filtre la partie gauche à l’aide de l’ensemble des clés de JOIN collectées du côté droit à l’exécution.
 
-<div id="enable_join_runtime_filters_index_analysis">
-  ## enable_join_runtime_filters_index_analysis
-</div>
+## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
 <ExperimentalBadge />
 
@@ -49,9 +51,7 @@ Filtre la partie gauche à l’aide de l’ensemble des clés de JOIN collectée
 
 Exécute une seconde passe d’analyse d’index (via use&#95;skip&#95;indexes&#95;on&#95;data&#95;read) afin d’élaguer les granules du côté gauche (LHS) d’une jointure.
 
-<div id="enable_join_transitive_predicates">
-  ## enable_join_transitive_predicates
-</div>
+## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 
 <BetaBadge />
 

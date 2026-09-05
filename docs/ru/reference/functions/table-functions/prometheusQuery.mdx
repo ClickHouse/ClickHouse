@@ -44,16 +44,16 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 ### Функции {#functions}
 
-| Категория     | Функции                                                                                                                       |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Диапазон      | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`                                |
-| Математика    | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max` |
-| Тригонометрия | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`                                |
-| Дата и время  | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year`                              |
-| Метка         | `label_replace`, `label_join`                                                                                                 |
-| Тип           | `scalar`, `vector`                                                                                                            |
-| Гистограмма   | `histogram_quantile`                                                                                                          |
-| Другое        | `time`, `pi`, `absent`                                                                                                        |
+| Категория     | Функции                                                                                                                                             |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Диапазон      | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `sum_over_time`, `avg_over_time`, `count_over_time`, `deriv`, `changes`, `resets` |
+| Математика    | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max`                       |
+| Тригонометрия | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`                                                      |
+| Дата и время  | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year`                                                    |
+| Метка         | `label_replace`, `label_join`                                                                                                                       |
+| Тип           | `scalar`, `vector`                                                                                                                                  |
+| Гистограмма   | `histogram_quantile`                                                                                                                                |
+| Другое        | `time`, `pi`, `absent`                                                                                                                              |
 
 **Note**: `histogram_quantile` использует линейную интерполяцию для классических бакетов гистограммы (обозначаемых меткой `le`). Нативные гистограммы не поддерживаются. Аргумент `phi` (уровень квантиля) должен быть константным скаляром. Выражения, которые меняются на каждом шаге, например `histogram_quantile(time() / 1000, ...)`, отклоняются с исключением `NOT_IMPLEMENTED`.
 
@@ -71,7 +71,7 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 ### Пока не поддерживаются {#not-yet-supported}
 
-* Функции диапазона `predict_linear`, `avg_over_time`, `min_over_time`, `max_over_time`, `sum_over_time`, `count_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
+* Функции диапазона `predict_linear`, `min_over_time`, `max_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
 
 ## Пример {#example}
 

@@ -2664,6 +2664,8 @@ Retorna o valor de uma macro do arquivo de configuração do servidor.
 As macros são definidas na seção [`<macros>`](/pt-BR/reference/settings/server-settings/settings/other#macros) do arquivo de configuração e podem ser usadas para diferenciar servidores por nomes convenientes, mesmo que tenham hostname complexos.
 Se a função for executada no contexto de uma tabela distribuída, ela gerará uma coluna normal com valores correspondentes a cada shard.
 
+Requer o privilégio `SELECT` em `system.macros`, assim como para ler essa tabela.
+
 <Note>
   Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
 </Note>
@@ -2735,6 +2737,8 @@ SELECT getMaxTableNameLengthForDatabase('default');
 Introduzido em: v25.6.0
 
 Retorna o valor atual de uma configuração do MergeTree.
+
+Exige o privilégio `SELECT` em `system.merge_tree_settings`, assim como a leitura dessa tabela.
 
 <Note>
   Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
@@ -2849,6 +2853,8 @@ SELECT getServerPort('tcp_port');
 Introduzido em: v25.6.0
 
 Retorna o valor definido no momento para a configuração do servidor informada.
+
+Requer o privilégio `SELECT` em `system.server_settings`, assim como para ler essa tabela.
 
 <Note>
   Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.

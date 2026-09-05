@@ -46,16 +46,16 @@ Selectores instantáneos, selectores de rango, comparadores de etiquetas (`=`, `
 
 ### Funciones {#functions}
 
-| Categoría     | Funciones                                                                                                                     |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Rango         | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`                                |
-| Matemáticas   | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max` |
-| Trigonometría | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`                                |
-| DateTime      | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year`                              |
-| Etiqueta      | `label_replace`, `label_join`                                                                                                 |
-| Tipo          | `scalar`, `vector`                                                                                                            |
-| Histograma    | `histogram_quantile`                                                                                                          |
-| Otros         | `time`, `pi`, `absent`                                                                                                        |
+| Categoría     | Funciones                                                                                                                                           |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rango         | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `sum_over_time`, `avg_over_time`, `count_over_time`, `deriv`, `changes`, `resets` |
+| Matemáticas   | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max`                       |
+| Trigonometría | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`                                                      |
+| DateTime      | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year`                                                    |
+| Etiqueta      | `label_replace`, `label_join`                                                                                                                       |
+| Tipo          | `scalar`, `vector`                                                                                                                                  |
+| Histograma    | `histogram_quantile`                                                                                                                                |
+| Otros         | `time`, `pi`, `absent`                                                                                                                              |
 
 **Nota**: `histogram_quantile` usa interpolación lineal en los buckets de histogramas clásicos (identificados por la etiqueta `le`). Los histogramas nativos no son compatibles. El argumento `phi` (nivel de cuantil) debe ser un escalar constante. Las expresiones que varían en cada paso, como `histogram_quantile(time() / 1000, ...)`, se rechazan con una excepción `NOT_IMPLEMENTED`.
 
@@ -73,7 +73,7 @@ Operadores unarios `+` y `-`.
 
 ### Aún no admitido {#not-yet-supported}
 
-* Funciones de rango `predict_linear`, `avg_over_time`, `min_over_time`, `max_over_time`, `sum_over_time`, `count_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
+* Funciones de rango `predict_linear`, `min_over_time`, `max_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
 
 ## Ejemplo {#example}
 

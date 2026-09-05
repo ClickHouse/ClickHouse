@@ -420,6 +420,18 @@ primary key 집합을 구성하고 이를 인덱스 분석에 활용하여 Repla
 
 지원되는 스토리지에서 필터를 PREWHERE 표현식으로 푸시다운하도록 허용합니다
 
+## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "필터 conjunct를 equi-조인 키를 넘어 전파하여 양쪽 모두에서 primary key 프루닝이 동작하도록 하는 새로운 설정입니다."}]}]} />
+
+equi-조인 한쪽의 필터 conjunct를 equi-key 치환을 통해 반대쪽으로 복사하여, 반대쪽에서도 primary key/인덱스 프루닝에 활용할 수 있도록 하는 쿼리 계획 수준의 최적화를 켜거나 끕니다.
+
+필터와 `MergeTree` 읽기가 표현식 단계와 필터 단계만을 사이에 두고 조인과 떨어져 있으며, 복사되는 conjunct가 primary key 컬럼을 상수와 비교하는 경우(상수 Set을 사용하는 `IN` 포함)에 적용됩니다. 중첩된 조인 아래나 `DISTINCT` 아래에 있는 프레디케이트, 또는 두 key 컬럼 간의 비교는 그대로 둡니다. 이런 경우에는 반대쪽에서 primary key 프루닝을 유도할 수 없으므로, 복사해 봐야 작업량만 늘어나기 때문입니다.
+
+`query_plan_enable_optimizations`가 1인 경우에만 적용됩니다.
+
 ## query_plan_push_down_limit {#query_plan_push_down_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

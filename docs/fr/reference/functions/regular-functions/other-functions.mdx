@@ -2658,14 +2658,16 @@ SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header
 
 ## getMacro {#getMacro}
 
-Introduit dans : v20.1.0
+Introduit dans : v20.1.0
 
 Renvoie la valeur d’une macro du fichier de configuration du serveur.
 Les macros sont définies dans la section [`<macros>`](/fr/reference/settings/server-settings/settings/other#macros) du fichier de configuration et peuvent être utilisées pour distinguer les serveurs à l’aide de noms explicites, même si leurs noms d’hôte sont complexes.
 Si la fonction est exécutée dans le contexte d’une table distribuée, elle génère une colonne normale avec des valeurs correspondant à chaque fragment.
 
+Nécessite le privilège `SELECT` sur `system.macros`, tout comme la lecture de cette table.
+
 <Note>
-  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -2732,12 +2734,14 @@ SELECT getMaxTableNameLengthForDatabase('default');
 
 ## getMergeTreeSetting {#getMergeTreeSetting}
 
-Introduit dans : v25.6.0
+Introduit dans : v25.6.0
 
 Renvoie la valeur actuelle d’un paramètre MergeTree.
 
+Nécessite le privilège `SELECT` sur `system.merge_tree_settings`, tout comme la lecture de cette table.
+
 <Note>
-  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -2846,12 +2850,14 @@ SELECT getServerPort('tcp_port');
 
 ## getServerSetting {#getServerSetting}
 
-Introduit dans : v25.6.0
+Introduit dans : v25.6.0
 
 Renvoie la valeur actuellement définie pour le paramètre serveur indiqué.
 
+Nécessite le privilège `SELECT` sur `system.server_settings`, tout comme la lecture de cette table.
+
 <Note>
-  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**

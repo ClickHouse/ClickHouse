@@ -15,9 +15,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-<div id="enable_join_fixed_hash_table_conversion">
-  ## enable_join_fixed_hash_table_conversion
-</div>
+## enable_join_fixed_hash_table_conversion {#enable_join_fixed_hash_table_conversion}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -25,9 +23,15 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 키가 값 범위가 작은 단일 정수인 경우, 조인 시 해시 테이블을 평면 배열로 변환하는 기능을 활성화합니다.
 
-<div id="enable_join_runtime_filters">
-  ## enable_join_runtime_filters
-</div>
+## enable_join_key_only_hash_tables {#enable_join_key_only_hash_tables}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "결과에 오른쪽 행의 값이 포함될 수 없는 조인(`LEFT ANTI`, 그리고 오른쪽 컬럼을 선택하지 않은 `LEFT SEMI`)의 해시 테이블에 오른쪽 행에 대한 참조 없이 JOIN 키만 저장하는 새로운 설정."}]}]} />
+
+결과에 오른쪽 행에서 가져온 값이 절대 포함될 수 없는 조인, 즉 `LEFT ANTI` 및 오른쪽 컬럼을 선택하지 않은 `LEFT SEMI`에서는 오른쪽 행에 대한 참조 없이 JOIN 키만 저장하는 해시 테이블을 사용합니다. 이러한 테이블은 cell 크기가 더 작고, 오른쪽 block을 저장하지 않고 삭제할 수 있습니다.
+
+## enable_join_runtime_filters {#enable_join_runtime_filters}
 
 <BetaBadge />
 
@@ -37,9 +41,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 런타임에 오른쪽에서 수집한 JOIN 키 집합을 사용해 왼쪽을 필터링합니다.
 
-<div id="enable_join_runtime_filters_index_analysis">
-  ## enable_join_runtime_filters_index_analysis
-</div>
+## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
 <ExperimentalBadge />
 
@@ -49,9 +51,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 두 번째 패스 인덱스 분석(`use_skip_indexes_on_data_read` 사용)을 실행해 조인의 좌측(LHS)에서 그래뉼을 프루닝합니다.
 
-<div id="enable_join_transitive_predicates">
-  ## enable_join_transitive_predicates
-</div>
+## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 
 <BetaBadge />
 

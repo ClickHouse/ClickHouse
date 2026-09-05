@@ -2661,8 +2661,10 @@ SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header
 أُضيف في: v20.1.0
 
 يعيد قيمة ماكرو من ملف تهيئة الخادم.
-تُعرَّف وحدات الماكرو في قسم [`<macros>`](/ar/reference/settings/server-settings/settings/other#macros) من ملف التهيئة، ويمكن استخدامها لتمييز الخوادم بأسماء مناسبة حتى لو كانت أسماء المضيفين الخاصة بها معقدة.
-إذا نُفِّذت الدالة في سياق جدول موزّع، فإنها تُنشئ عمودًا عاديًا بقيم مرتبطة بكل shard.
+تُعرَّف وحدات الماكرو في قسم [`<macros>`](/ar/reference/settings/server-settings/settings/other#macros) من ملف التهيئة، ويمكن استخدامها لتمييز الخوادم بأسماء مناسبة حتى لو كانت أسماء المضيفين الخاصة بها معقدة.
+إذا نُفِّذت الدالة في سياق جدول موزّع، فإنها تُنشئ عمودًا عاديًا بقيم مرتبطة بكل shard.
+
+يتطلب صلاحية `SELECT` على `system.macros`، تمامًا كما هو الحال عند قراءة ذلك الجدول.
 
 <Note>
   هذه الدالة غير حتمية: قد تُرجِع نتائج مختلفة للمعاملات نفسها.
@@ -2674,7 +2676,7 @@ SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header
 getMacro(name)
 ```
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `name` — اسم الماكرو المطلوب استرجاعه. [`const String`](/ar/reference/data-types/string)
 
@@ -2736,6 +2738,8 @@ SELECT getMaxTableNameLengthForDatabase('default');
 
 تُرجع القيمة الحالية لأحد إعدادات MergeTree.
 
+تتطلب صلاحية `SELECT` على `system.merge_tree_settings`، تمامًا كما هو الحال عند قراءة ذلك الجدول.
+
 <Note>
   هذه الدالة غير حتمية: يمكنها إرجاع نتائج مختلفة للوسائط نفسها.
 </Note>
@@ -2746,7 +2750,7 @@ SELECT getMaxTableNameLengthForDatabase('default');
 getMergeTreeSetting(setting_name)
 ```
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `setting_name` — اسم الإعداد. [`String`](/ar/reference/data-types/string)
 
@@ -2850,6 +2854,8 @@ SELECT getServerPort('tcp_port');
 
 يعيد القيمة المعينة حاليًا عند تزويده باسم إعداد الخادم.
 
+يتطلب صلاحية `SELECT` على `system.server_settings`، تمامًا كما هو الحال عند قراءة ذلك الجدول.
+
 <Note>
   هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسائط نفسها.
 </Note>
@@ -2860,7 +2866,7 @@ SELECT getServerPort('tcp_port');
 getServerSetting(setting_name')
 ```
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `setting_name` — اسم إعداد الخادم. [`String`](/ar/reference/data-types/string)
 

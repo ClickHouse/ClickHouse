@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="use_statistics">
-  ## use_statistics
-</div>
+## use_statistics {#use_statistics}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -24,9 +22,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 /// &#39;use&#95;primary&#95;key&#39; および &#39;use&#95;skip&#95;indexes&#39; との整合性を保つため、&#39;allow&#95;statistics&#95;optimize&#39; よりこちらが推奨されます
 クエリの最適化にSTATISTICSを使用できるようにします
 
-<div id="use_statistics_cache">
-  ## use_statistics_cache
-</div>
+## use_statistics_cache {#use_statistics_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -34,9 +30,24 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 各パーツのSTATISTICSの読み込みオーバーヘッドを避けるため、クエリでSTATISTICSキャッシュを使用します
 
-<div id="use_statistics_for_part_pruning">
-  ## use_statistics_for_part_pruning
-</div>
+## use_statistics_for_min_max_aggregation {#use_statistics_for_min_max_aggregation}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`GROUP BY` とフィルタを伴わない `min`、`max`、`count` の集計を、統計情報が materialize 済みのパーツについてはパーツごとのカラム STATISTICS から返し、残りのパーツのみを読み取る新しい設定。previous_value=false のため、26.9 より前のバージョンとの `compatibility` 設定ではこの最適化は無効のままとなり、従来の実行プランが復元されます。"}]}]} />
+
+`min`、`max`、`count` の集計を、データを読み取る代わりにパーツごとのカラム STATISTICS から返します。
+
+有効な場合、`GROUP BY` とフィルタを伴わない `SELECT min(column), max(column), count() FROM table` の形式のクエリは、
+統計情報が materialize 済みのデータパーツについてはカラム STATISTICS (例: minmax 統計情報。`auto_statistics_types` MergeTree 設定を参照) から返され、
+残りのパーツのみが読み取られます。
+
+設定可能な値:
+
+* 0 — 無効。
+* 1 — 有効。
+
+## use_statistics_for_part_pruning {#use_statistics_for_part_pruning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

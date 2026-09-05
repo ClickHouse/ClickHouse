@@ -137,14 +137,14 @@ LIMIT 5;
 
 假设我们在 S3 上有若干文件，URI 如下：
 
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;4.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;file&#95;1.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;4.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;4.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;1.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;4.csv&#39;
 
 统计文件名以数字 1 到 3 结尾的文件中的行数：
 
@@ -203,27 +203,25 @@ INSERT INTO FUNCTION s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-
 SELECT name, value FROM existing_table;
 ```
 
-Glob ** 可用于递归遍历目录。以下示例将递归拉取 `my-test-bucket-768` 目录中的所有文件：
+`**` 通配符可用于递归遍历目录。以下查询会读取 `my-test-bucket-768` 下所有名为 `some_file_1.csv` 的文件：
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/**/some_file_1.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-以下示例将递归获取 `my-test-bucket` 目录中任意子目录内所有 `test-data.csv.gz` 文件的数据：
+大括号可以与 `**` 结合使用，以递归匹配多个文件名：
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/**/some_file_{1..3}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-注意：可以在服务器配置文件中指定自定义 URL 映射器。示例：
+同样的递归模式也适用于 `s3://` URL：
 
 ```sql
-SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('s3://datasets-documentation/my-test-bucket-768/**/some_file_1.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-URL `'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'` 将被替换为 `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`
-
-可在 `config.xml` 中添加自定义 URL 映射器：
+您可以在 `config.xml` 中添加自定义 URL 映射器：
 
 ```xml
 <url_scheme_mappers>

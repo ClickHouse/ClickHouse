@@ -1,7 +1,7 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
-  // Mintlify의 프로덕션 렌더러는 내보낸 컴포넌트를 모듈 범위 바인딩을
+  // Mintlify의 프로덕션 렌더러는 내보낸 컴포넌트를 모듈 스코프 바인딩을
   // 유지하지 않은 채로 평가합니다. 레이지 상태는 생성된 데이터를
-  // 해당 평가 범위에 보관하여 마운트당 한 번만 구성되도록 합니다.
+  // 해당 평가 스코프에 보관하여 마운트당 한 번만 구성되도록 합니다.
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -828,9 +828,10 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_join_*",
-      count: 4,
+      count: 5,
       settings: [
         { name: "enable_join_fixed_hash_table_conversion", path: "/enable-join#enable_join_fixed_hash_table_conversion", default: "1" },
+        { name: "enable_join_key_only_hash_tables", path: "/enable-join#enable_join_key_only_hash_tables", default: "1" },
         { name: "enable_join_runtime_filters", path: "/enable-join#enable_join_runtime_filters", default: "1" },
         { name: "enable_join_runtime_filters_index_analysis", path: "/enable-join#enable_join_runtime_filters_index_analysis", default: "0" },
         { name: "enable_join_transitive_predicates", path: "/enable-join#enable_join_transitive_predicates", default: "1" }
@@ -2314,7 +2315,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "query_plan_*",
-      count: 52,
+      count: 53,
       settings: [
         { name: "query_plan_aggregation_bucket_top_k", path: "/query-plan#query_plan_aggregation_bucket_top_k", default: "1" },
         { name: "query_plan_aggregation_in_order", path: "/query-plan#query_plan_aggregation_in_order", default: "1" },
@@ -2354,6 +2355,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "query_plan_optimize_lazy_materialization_for_file", path: "/query-plan#query_plan_optimize_lazy_materialization_for_file", default: "1" },
         { name: "query_plan_optimize_lazy_materialization_for_object_storage", path: "/query-plan#query_plan_optimize_lazy_materialization_for_object_storage", default: "1" },
         { name: "query_plan_optimize_prewhere", path: "/query-plan#query_plan_optimize_prewhere", default: "1" },
+        { name: "query_plan_propagate_predicate_across_join", path: "/query-plan#query_plan_propagate_predicate_across_join", default: "1" },
         { name: "query_plan_push_down_limit", path: "/query-plan#query_plan_push_down_limit", default: "1" },
         { name: "query_plan_push_down_volume_reducing_functions", path: "/query-plan#query_plan_push_down_volume_reducing_functions", default: "1" },
         { name: "query_plan_push_limit_by_into_sort", path: "/query-plan#query_plan_push_limit_by_into_sort", default: "1" },
@@ -2928,10 +2930,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "use_statistics_*",
-      count: 3,
+      count: 4,
       settings: [
         { name: "use_statistics", path: "/use-statistics#use_statistics", default: "1" },
         { name: "use_statistics_cache", path: "/use-statistics#use_statistics_cache", default: "1" },
+        { name: "use_statistics_for_min_max_aggregation", path: "/use-statistics#use_statistics_for_min_max_aggregation", default: "1" },
         { name: "use_statistics_for_part_pruning", path: "/use-statistics#use_statistics_for_part_pruning", default: "1" }
       ],
       children: []

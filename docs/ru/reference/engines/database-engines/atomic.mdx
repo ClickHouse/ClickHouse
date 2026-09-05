@@ -17,21 +17,15 @@ doc_type: 'reference'
   описанные выше операции.
 </Note>
 
-<div id="creating-a-database">
-  ## Создание базы данных
-</div>
+## Создание базы данных {#creating-a-database}
 
 ```sql
 CREATE DATABASE test [ENGINE = Atomic] [SETTINGS disk=...];
 ```
 
-<div id="specifics-and-recommendations">
-  ## Особенности и рекомендации
-</div>
+## Особенности и рекомендации {#specifics-and-recommendations}
 
-<div id="table-uuid">
-  ### UUID таблицы
-</div>
+### UUID таблицы {#table-uuid}
 
 У каждой таблицы в базе данных `Atomic` есть постоянный [UUID](/ru/reference/data-types/uuid), а её данные хранятся в следующем каталоге:
 
@@ -53,22 +47,16 @@ CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE 
   Вы можете использовать настройку [show&#95;table&#95;uuid&#95;in&#95;table&#95;create&#95;query&#95;if&#95;not&#95;nil](/ru/reference/settings/session-settings/show#show_table_uuid_in_table_create_query_if_not_nil), чтобы выводить UUID в запросе `SHOW CREATE`.
 </Note>
 
-<div id="rename-table">
-  ### RENAME TABLE
-</div>
+### RENAME TABLE {#rename-table}
 
 Запросы [`RENAME`](/ru/reference/statements/rename) не изменяют UUID и не перемещают данные таблицы. Они выполняются немедленно и не ждут завершения других запросов, использующих эту таблицу.
 
-<div id="drop-detach-table">
-  ### DROP/DETACH TABLE
-</div>
+### DROP/DETACH TABLE {#drop-detach-table}
 
 При использовании `DROP TABLE` данные не удаляются. Движок `Atomic` лишь помечает таблицу как удалённую, перемещая её метаданные в `/clickhouse_path/metadata_dropped/`, и уведомляет фоновый поток. Задержка перед окончательным удалением данных таблицы задаётся настройкой [`database_atomic_delay_before_drop_table_sec`](/ru/reference/settings/server-settings/settings/other#database_atomic_delay_before_drop_table_sec).
 Вы можете включить синхронный режим с помощью модификатора `SYNC`. Для этого используйте настройку [`database_atomic_wait_for_drop_and_detach_synchronously`](/ru/reference/settings/session-settings/database#database_atomic_wait_for_drop_and_detach_synchronously). В этом случае `DROP` ожидает завершения выполняющихся `SELECT`, `INSERT` и других запросов, использующих таблицу. Таблица будет удалена, когда она перестанет использоваться.
 
-<div id="exchange-tables">
-  ### EXCHANGE TABLES/DICTIONARIES
-</div>
+### EXCHANGE TABLES/DICTIONARIES {#exchange-tables}
 
 Запрос [`EXCHANGE`](/ru/reference/statements/exchange) атомарно меняет местами таблицы или словари. Например, вместо этой неатомарной операции:
 
@@ -82,15 +70,11 @@ RENAME TABLE new_table TO tmp, old_table TO new_table, tmp TO old_table;
 EXCHANGE TABLES new_table AND old_table;
 ```
 
-<div id="replicatedmergetree-in-atomic-database">
-  ### ReplicatedMergeTree в базе данных Atomic
-</div>
+### ReplicatedMergeTree в базе данных Atomic {#replicatedmergetree-in-atomic-database}
 
 Для таблиц [`ReplicatedMergeTree`](/ru/reference/engines/table-engines/mergetree-family/replication) рекомендуется не задавать параметры движка для пути в ZooKeeper и имени реплики. В этом случае будут использоваться параметры конфигурации [`default_replica_path`](/ru/reference/settings/server-settings/settings/default-replica#default_replica_path) и [`default_replica_name`](/ru/reference/settings/server-settings/settings/default-replica#default_replica_name). Если вы хотите явно указать параметры движка, рекомендуется использовать макрос `{uuid}`. Это гарантирует автоматическое создание уникальных путей в ZooKeeper для каждой таблицы.
 
-<div id="metadata-disk">
-  ### Диск для метаданных
-</div>
+### Диск для метаданных {#metadata-disk}
 
 Когда в `SETTINGS` указан параметр `disk`, этот диск используется для хранения файлов метаданных таблицы.
 Например:
@@ -101,9 +85,31 @@ CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path
 
 Если не указано, по умолчанию используется диск, заданный в `database_disk.disk`.
 
-<div id="see-also">
-  ## См. также
-</div>
+### Ограничение количества таблиц {#limiting-the-number-of-tables}
+
+Настройка `max_tables` ограничивает количество таблиц, которые может содержать база данных. `0` (значение по умолчанию) означает, что количество таблиц не ограничено. В лимит учитывается каждый табличный объект: обычная таблица, представление, materialized view и словарь, созданный с помощью `CREATE DICTIONARY`. При достижении лимита команды `CREATE TABLE`, `CREATE DICTIONARY` и `ATTACH TABLE` генерируют исключение `TOO_MANY_TABLES`.
+
+```sql
+CREATE DATABASE db ENGINE = Atomic SETTINGS max_tables = 100;
+```
+
+Для существующей базы данных лимит можно изменить с помощью `ALTER DATABASE`:
+
+```sql
+ALTER DATABASE db MODIFY SETTING max_tables = 200;
+```
+
+Уменьшение лимита ниже текущего количества таблиц не удаляет существующие таблицы. Оно лишь предотвращает создание новых, пока количество таблиц вновь не станет ниже лимита.
+
+`CREATE OR REPLACE TABLE` на короткое время создаёт заменяющую таблицу под временным именем, прежде чем подменить ею исходную. Поэтому замена таблицы, когда в базе данных уже ровно `max_tables` таблиц, завершается ошибкой `TOO_MANY_TABLES`, хотя итоговое количество таблиц не увеличится. Перемещение объекта в базу данных с помощью `RENAME TABLE` или `RENAME DICTIONARY` также подпадает под действие лимита.
+
+Materialized view, созданное без предложения `TO`, имеет скрытую внутреннюю таблицу, которая учитывается в лимите как отдельная таблица.
+
+Лимит проверяется до начала операции, поэтому его соблюдение не гарантируется: параллельные запросы могут немного превысить его.
+
+Настройка доступна для дисковых движков баз данных, хранящих таблицы в памяти, а метаданные — в локальных `.sql`-файлах: `Atomic` и `Ordinary`. Движок `Replicated` её не поддерживает.
+
+## См. также {#see-also}
 
 * системная таблица [system.databases](/ru/reference/system-tables/databases)
 

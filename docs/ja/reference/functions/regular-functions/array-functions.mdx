@@ -1548,6 +1548,76 @@ SELECT arrayFlatten([[[1]], [[2], [3]]);
 [1,2,3]
 ```
 
+## arrayFlattenedLength {#arrayFlattenedLength}
+
+導入バージョン: v26.9.0
+
+多次元Arrayを [`arrayFlatten`](/ja/reference/functions/regular-functions/array-functions#arrayFlatten) 関数で平坦化した場合と同じように、要素の総数を返します。
+
+関数:
+
+* 任意の深さにネストされたArrayに適用されます。
+* すでに平坦化されているArrayでは、[`length`](/ja/reference/functions/regular-functions/array-functions#length) と同等です。
+* `Array` のネストのみをたどります。要素はArrayではない最初のレベルでカウントされるため、ネストされた [`Map`](/ja/reference/data-types/map)、[`Tuple`](/ja/reference/data-types/tuple)、[`Dynamic`](/ja/reference/data-types/dynamic)、または [`Variant`](/ja/reference/data-types/variant) がそれ自体にArrayを保持している場合でも、その要素は個別にカウントされません。
+
+これは PostgreSQL の `cardinality` に相当します。一方、ClickHouse の `cardinality` は `length` のエイリアスであり、最外層のArrayの要素のみをカウントします。
+
+**構文**
+
+```sql
+arrayFlattenedLength(arr)
+```
+
+**引数**
+
+* `arr` — 多次元Arrayの場合もあるArray。[`Array(T)`](/ja/reference/data-types/array)
+
+**戻り値**
+
+ネストされたすべてのArrayをフラット化した後のArrayの要素数を返します。[`UInt64`](/ja/reference/data-types/int-uint)
+
+**例**
+
+**ネストされたArray**
+
+```sql title=Query
+SELECT arrayFlattenedLength([[1, 2], [3, 4]]);
+```
+
+```response title=Response
+4
+```
+
+**より深いネスト**
+
+```sql title=Query
+SELECT arrayFlattenedLength([[[1]], [[2], [3]]]);
+```
+
+```response title=Response
+3
+```
+
+**フラットArray**
+
+```sql title=Query
+SELECT arrayFlattenedLength([1, 2, 3]);
+```
+
+```response title=Response
+3
+```
+
+**Array 以外の要素は走査されません**
+
+```sql title=Query
+SELECT arrayFlattenedLength([map('a', [1, 2, 3])]);
+```
+
+```response title=Response
+1
+```
+
 ## arrayFold {#arrayFold}
 
 導入バージョン: v23.10.0

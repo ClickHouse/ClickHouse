@@ -2664,6 +2664,8 @@ SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header
 宏在配置文件的 [`<macros>`](/zh/reference/settings/server-settings/settings/other#macros) 部分中定义，即使服务器的主机名很复杂，也可以使用便于识别的名称来区分服务器。
 如果该函数是在分布式表的上下文中执行，它会生成一个普通列，其中的值与各个分片相关。
 
+与读取该表一样，需要在 `system.macros` 上具有 `SELECT` 权限。
+
 <Note>
   此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
 </Note>
@@ -2735,6 +2737,8 @@ SELECT getMaxTableNameLengthForDatabase('default');
 引入于：v25.6.0
 
 返回 MergeTree 设置的当前值。
+
+需要对 `system.merge_tree_settings` 拥有 `SELECT` 权限，与读取该表的要求相同。
 
 <Note>
   此函数是非确定性的：对于相同的参数，可能会返回不同的结果。
@@ -2849,6 +2853,8 @@ SELECT getServerPort('tcp_port');
 首次引入于：v25.6.0
 
 给定服务器设置名称，返回当前设置的值。
+
+需要对 `system.server_settings` 拥有 `SELECT` 权限，与读取该表的要求相同。
 
 <Note>
   此函数是非确定性的：对于相同参数，可能返回不同结果。

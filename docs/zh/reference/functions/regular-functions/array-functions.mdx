@@ -1543,6 +1543,76 @@ SELECT arrayFlatten([[[1]], [[2], [3]]]);
 [1,2,3]
 ```
 
+## arrayFlattenedLength {#arrayFlattenedLength}
+
+引入版本：v26.9.0
+
+返回多维数组的元素总数，即该数组经 [`arrayFlatten`](/zh/reference/functions/regular-functions/array-functions#arrayFlatten) 函数展平后的元素个数。
+
+该函数：
+
+* 适用于任意嵌套深度的数组。
+* 对于本身已是扁平结构的数组，等同于 [`length`](/zh/reference/functions/regular-functions/array-functions#length)。
+* 仅沿 `Array` 嵌套层级向下遍历。元素在第一个非数组层级上进行计数，因此嵌套的 [`Map`](/zh/reference/data-types/map)、[`Tuple`](/zh/reference/data-types/tuple)、[`Dynamic`](/zh/reference/data-types/dynamic) 或 [`Variant`](/zh/reference/data-types/variant) 中的元素不会被单独计数，即便它们本身包含数组也是如此。
+
+该函数相当于 PostgreSQL 中的 `cardinality`；而在 ClickHouse 中，`cardinality` 是 `length` 的别名，只统计最外层数组的元素数量。
+
+**语法**
+
+```sql
+arrayFlattenedLength(arr)
+```
+
+**参数**
+
+* `arr` — 数组，可以是多维数组。[`Array(T)`](/zh/reference/data-types/array)
+
+**返回值**
+
+返回将所有嵌套数组展平后该数组的元素数量。[`UInt64`](/zh/reference/data-types/int-uint)
+
+**示例**
+
+**嵌套数组**
+
+```sql title=Query
+SELECT arrayFlattenedLength([[1, 2], [3, 4]]);
+```
+
+```response title=Response
+4
+```
+
+**更深层的嵌套**
+
+```sql title=Query
+SELECT arrayFlattenedLength([[[1]], [[2], [3]]]);
+```
+
+```response title=Response
+3
+```
+
+**扁平数组**
+
+```sql title=Query
+SELECT arrayFlattenedLength([1, 2, 3]);
+```
+
+```response title=Response
+3
+```
+
+**非数组元素不会被遍历**
+
+```sql title=Query
+SELECT arrayFlattenedLength([map('a', [1, 2, 3])]);
+```
+
+```response title=Response
+1
+```
+
 ## arrayFold {#arrayFold}
 
 首次引入版本：v23.10.0

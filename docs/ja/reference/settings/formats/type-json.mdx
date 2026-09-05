@@ -12,25 +12,19 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h)から自動生成されています。
 
-<div id="type_json_allow_duplicated_key_with_literal_and_nested_object">
-  ## type_json_allow_duplicated_key_with_literal_and_nested_object
-</div>
+## type_json_allow_duplicated_key_with_literal_and_nested_object {#type_json_allow_duplicated_key_with_literal_and_nested_object}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 有効にすると、`{"a" : 42, "a" : {"b" : 42}}` のように、キーが重複していても、その一方がネストされたオブジェクトである JSON をパースできるようになります。
 
-<div id="type_json_skip_duplicated_paths">
-  ## type_json_skip_duplicated_paths
-</div>
+## type_json_skip_duplicated_paths {#type_json_skip_duplicated_paths}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 有効にすると、JSON オブジェクト を JSON 型 にパースする際、重複するパスは無視され、例外を発生させる代わりに最初のものだけが挿入されます
 
-<div id="type_json_skip_invalid_typed_paths">
-  ## type_json_skip_invalid_typed_paths
-</div>
+## type_json_skip_invalid_typed_paths {#type_json_skip_invalid_typed_paths}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -43,9 +37,18 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 * 0 — 無効 (型の不一致時にエラーをスローする) 。
 * 1 — 有効 (型の不一致時にフィールドをスキップする) 。
 
-<div id="type_json_use_partial_match_to_skip_paths_by_regexp">
-  ## type_json_use_partial_match_to_skip_paths_by_regexp
-</div>
+## type_json_skip_null_typed_paths {#type_json_skip_null_typed_paths}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+有効にすると、JSON カラム内で NULL 値を持つ型付きパスは存在しないものとして扱われ、動的パス (dynamic paths) と同じ挙動になります。これは JSON シリアライゼーションの出力、`JSONAllPaths`、`JSONHas`、`JSONExtractRaw`、`has` といったイントロスペクション関数、および `empty`/`notEmpty` による判定に影響します。
+
+設定可能な値:
+
+* 0 — 無効 (型付きパスは NULL 値であっても常に存在するものとして扱われます) 。
+* 1 — 有効 (NULL の型付きパスは存在しないものとして扱われます) 。
+
+## type_json_use_partial_match_to_skip_paths_by_regexp {#type_json_use_partial_match_to_skip_paths_by_regexp}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

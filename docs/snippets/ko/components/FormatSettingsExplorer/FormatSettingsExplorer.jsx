@@ -430,11 +430,12 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "type_json_*",
-      count: 4,
+      count: 5,
       settings: [
         { name: "type_json_allow_duplicated_key_with_literal_and_nested_object", path: "/type-json#type_json_allow_duplicated_key_with_literal_and_nested_object", default: "1" },
         { name: "type_json_skip_duplicated_paths", path: "/type-json#type_json_skip_duplicated_paths", default: "0" },
         { name: "type_json_skip_invalid_typed_paths", path: "/type-json#type_json_skip_invalid_typed_paths", default: "0" },
+        { name: "type_json_skip_null_typed_paths", path: "/type-json#type_json_skip_null_typed_paths", default: "0" },
         { name: "type_json_use_partial_match_to_skip_paths_by_regexp", path: "/type-json#type_json_use_partial_match_to_skip_paths_by_regexp", default: "1" }
       ],
       children: []

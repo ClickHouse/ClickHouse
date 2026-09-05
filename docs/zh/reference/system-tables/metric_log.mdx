@@ -1511,6 +1511,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_AsyncLoggingTextLogDroppedMessages` ([UInt64](/zh/reference/data-types/int-uint)) — 由于异步日志队列已满而从 text&#95;log 中丢弃的消息数
 * `ProfileEvent_JemallocFailedAllocationSampleTracking` ([UInt64](/zh/reference/data-types/int-uint)) — 跟踪 jemalloc allocations 样本失败的总次数
 * `ProfileEvent_JemallocFailedDeallocationSampleTracking` ([UInt64](/zh/reference/data-types/int-uint)) — 跟踪 jemalloc 释放样本失败的总次数
+* `ProfileEvent_SetsBuiltFromSubquery` ([UInt64](/zh/reference/data-types/int-uint)) — 通过运行子查询填充的 `IN`/`JOIN` 集合数量。从预备集合缓存中获取、或已构建并复用的集合不计入此项。
 * `ProfileEvent_LoadedStatisticsMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 从 parts 加载 STATISTICS 的耗时
 * `ProfileEvent_SelectivityEstimatorInSetNotBuilt` ([UInt64](/zh/reference/data-types/int-uint)) — 由于集合尚未构建且不能运行子查询来填充该集合，选择性估算器无法分析的 `IN` 条件数量
 * `ProfileEvent_SelectivityEstimatorInSetEstimatedFromSize` ([UInt64](/zh/reference/data-types/int-uint)) — 由于集合超过 `statistics_max_set_size_for_exact_selectivity_estimation`，选择性根据集合的大小和边界而非其精确范围估算的 `IN` 条件数量

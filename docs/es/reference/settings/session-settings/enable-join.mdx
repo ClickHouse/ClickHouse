@@ -15,9 +15,7 @@ import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="enable_join_fixed_hash_table_conversion">
-  ## enable_join_fixed_hash_table_conversion
-</div>
+## enable_join_fixed_hash_table_conversion {#enable_join_fixed_hash_table_conversion}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -25,9 +23,15 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 
 Habilita la conversión de la tabla hash a un array plano para joins cuando la clave es un único entero con un rango de valores pequeño.
 
-<div id="enable_join_runtime_filters">
-  ## enable_join_runtime_filters
-</div>
+## enable_join_key_only_hash_tables {#enable_join_key_only_hash_tables}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nueva opción para almacenar únicamente las claves de join, sin referencia a una fila del lado derecho, en las tablas hash de los joins cuyo resultado nunca puede contener un valor de una fila del lado derecho (`LEFT ANTI` y `LEFT SEMI` cuando no se selecciona ninguna columna del lado derecho)."}]}]} />
+
+Use tablas hash que almacenen únicamente las claves de join, sin referencia a una fila del lado derecho, para los joins cuyo resultado nunca puede contener un valor de una fila del lado derecho: `LEFT ANTI` y `LEFT SEMI` cuando no se selecciona ninguna columna del lado derecho. Estas tablas tienen celdas más pequeñas y permiten descartar los bloques del lado derecho en lugar de almacenarlos.
+
+## enable_join_runtime_filters {#enable_join_runtime_filters}
 
 <BetaBadge />
 
@@ -37,9 +41,7 @@ Habilita la conversión de la tabla hash a un array plano para joins cuando la c
 
 Filtra el lado izquierdo usando el conjunto de claves de JOIN recopiladas del lado derecho durante la ejecución.
 
-<div id="enable_join_runtime_filters_index_analysis">
-  ## enable_join_runtime_filters_index_analysis
-</div>
+## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
 <ExperimentalBadge />
 
@@ -49,9 +51,7 @@ Filtra el lado izquierdo usando el conjunto de claves de JOIN recopiladas del la
 
 Ejecuta un segundo análisis de índices (mediante use&#95;skip&#95;indexes&#95;on&#95;data&#95;read) para descartar gránulos en el lado izquierdo de un JOIN.
 
-<div id="enable_join_transitive_predicates">
-  ## enable_join_transitive_predicates
-</div>
+## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 
 <BetaBadge />
 

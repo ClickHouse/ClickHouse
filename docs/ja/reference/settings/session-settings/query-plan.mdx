@@ -420,6 +420,18 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 
 サポートされているストレージで、フィルタをPREWHERE式にプッシュダウンできるようにします
 
+## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "等価結合キーをまたいでフィルターの conjunct を持ち上げ、両側で主キーの pruning が発火するようにする新しい設定。"}]}]} />
+
+等価結合の一方の側にあるフィルターの conjunct を、等価キーの substitution によってもう一方の側へコピーするクエリプランレベルの最適化を切り替えます。これにより、もう一方の側の主キー / 索引の pruning でその conjunct を利用できるようになります。
+
+この最適化が適用されるのは、フィルターと `MergeTree` の読み取りが式ステップおよびフィルターステップのみを挟んで join と隔てられており、かつコピー対象の conjunct が主キーカラムと定数を比較している場合(定数の Set を用いた `IN` を含む)です。ネストされた join の下や `DISTINCT` の下にある述語、および 2 つのキーカラム同士の比較は対象外です。これらはもう一方の側で主キーの pruning に利用できず、コピーしても処理が増えるだけだからです。
+
+`query_plan_enable_optimizations` が 1 の場合にのみ有効になります。
+
 ## query_plan_push_down_limit {#query_plan_push_down_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

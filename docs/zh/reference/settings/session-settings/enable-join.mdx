@@ -15,9 +15,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="enable_join_fixed_hash_table_conversion">
-  ## enable_join_fixed_hash_table_conversion
-</div>
+## enable_join_fixed_hash_table_conversion {#enable_join_fixed_hash_table_conversion}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -25,9 +23,15 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 启用此功能：在键为单个整数且取值范围较小时，将用于 JOIN 的哈希表转换为扁平数组。
 
-<div id="enable_join_runtime_filters">
-  ## enable_join_runtime_filters
-</div>
+## enable_join_key_only_hash_tables {#enable_join_key_only_hash_tables}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增设置：对于结果绝不会包含右侧行中值的 JOIN，仅在哈希表中存储连接键，而不引用右侧行（`LEFT ANTI`，以及未选择右侧列时的 `LEFT SEMI`）。"}]}]} />
+
+对于结果绝不会包含右侧行中值的 JOIN，使用仅存储连接键而不引用右侧行的哈希表：`LEFT ANTI`，以及未选择右侧列时的 `LEFT SEMI`。此类表的单元更小，并且可丢弃右侧块而无需存储。
+
+## enable_join_runtime_filters {#enable_join_runtime_filters}
 
 <BetaBadge />
 
@@ -37,9 +41,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 在运行时，根据从右侧收集到的一组 JOIN 连接键对左侧进行过滤。
 
-<div id="enable_join_runtime_filters_index_analysis">
-  ## enable_join_runtime_filters_index_analysis
-</div>
+## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
 <ExperimentalBadge />
 
@@ -49,9 +51,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 执行第二轮索引分析 (通过 use&#95;skip&#95;indexes&#95;on&#95;data&#95;read) ，以对 join 左侧的粒度进行剪枝。
 
-<div id="enable_join_transitive_predicates">
-  ## enable_join_transitive_predicates
-</div>
+## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 
 <BetaBadge />
 

@@ -420,6 +420,24 @@ Utiliza la optimización de materialización diferida al leer archivos Parquet d
 
 Permite aplicar el filtro en la expresión PREWHERE para los almacenamientos compatibles
 
+## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nueva configuración que propaga las conjunciones de un filtro a través de las claves de equi-join para que el pruning por clave primaria se active en ambos lados."}]}]} />
+
+Activa o desactiva una optimización a nivel del plan de consulta que copia las conjunciones de un filtro
+desde un lado de un equi-join hacia el otro mediante la sustitución de claves equivalentes, de modo que el
+pruning por clave primaria o por índice del otro lado pueda aprovecharlas.
+
+Se aplica cuando el filtro y la lectura de `MergeTree` están separados del join únicamente por pasos de
+expresión y de filtrado, y cuando la conjunción copiada compara una columna de la clave primaria con una constante
+(incluido `IN` con un conjunto constante). Un predicado situado por debajo de un join anidado o por debajo de `DISTINCT`, o una
+comparación entre dos columnas clave, se deja intacto: no permitiría aplicar el pruning por clave primaria en el
+otro lado, por lo que copiarlo solo supondría trabajo adicional.
+
+Solo tiene efecto si `query_plan_enable_optimizations` es 1.
+
 ## query_plan_push_down_limit {#query_plan_push_down_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

@@ -1551,6 +1551,76 @@ SELECT arrayFlatten([[[1]], [[2], [3]]]);
 [1,2,3]
 ```
 
+## arrayFlattenedLength {#arrayFlattenedLength}
+
+أُضيف في: v26.9.0
+
+تُعيد العدد الإجمالي لعناصر مصفوفة متعددة الأبعاد، كما لو جرى تسويتها بالدالة [`arrayFlatten`](/ar/reference/functions/regular-functions/array-functions#arrayFlatten).
+
+الدالة:
+
+* تنطبق على أي عمق من المصفوفات المتداخلة.
+* تكافئ [`length`](/ar/reference/functions/regular-functions/array-functions#length) في حالة المصفوفات المسطّحة أصلًا.
+* تتبع تداخل `Array` فقط، إذ تُحصى العناصر عند أول مستوى ليس مصفوفة، ومن ثمّ لا تُحصى عناصر [`Map`](/ar/reference/data-types/map) أو [`Tuple`](/ar/reference/data-types/tuple) أو [`Dynamic`](/ar/reference/data-types/dynamic) أو [`Variant`](/ar/reference/data-types/variant) المتداخلة كلٌّ على حدة، حتى وإن كانت تحتوي بدورها على مصفوفات.
+
+وهذا يكافئ `cardinality` في PostgreSQL، في حين أن `cardinality` في ClickHouse ليست سوى اسم بديل لـ `length` ولا تحصي إلا عناصر المصفوفة الخارجية.
+
+**بنية**
+
+```sql
+arrayFlattenedLength(arr)
+```
+
+**الوسائط**
+
+* `arr` — مصفوفة قد تكون متعددة الأبعاد. [`Array(T)`](/ar/reference/data-types/array)
+
+**القيمة المُعادة**
+
+تعيد عدد عناصر المصفوفة بعد تسطيح جميع المصفوفات المتداخلة. [`UInt64`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**مصفوفة متداخلة**
+
+```sql title=Query
+SELECT arrayFlattenedLength([[1, 2], [3, 4]]);
+```
+
+```response title=Response
+4
+```
+
+**تداخل أكثر عمقًا**
+
+```sql title=Query
+SELECT arrayFlattenedLength([[[1]], [[2], [3]]]);
+```
+
+```response title=Response
+3
+```
+
+**مصفوفة مسطحة**
+
+```sql title=Query
+SELECT arrayFlattenedLength([1, 2, 3]);
+```
+
+```response title=Response
+3
+```
+
+**لا تُجتاز العناصر غير المصفوفية**
+
+```sql title=Query
+SELECT arrayFlattenedLength([map('a', [1, 2, 3])]);
+```
+
+```response title=Response
+1
+```
+
 ## arrayFold {#arrayFold}
 
 تم تقديمه في: v23.10.0

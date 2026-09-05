@@ -12,25 +12,19 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Essas configurações são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h).
 
-<div id="type_json_allow_duplicated_key_with_literal_and_nested_object">
-  ## type_json_allow_duplicated_key_with_literal_and_nested_object
-</div>
+## type_json_allow_duplicated_key_with_literal_and_nested_object {#type_json_allow_duplicated_key_with_literal_and_nested_object}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Quando habilitada, a análise de JSONs como `{"a" : 42, "a" : {"b" : 42}}`, em que alguma chave é duplicada, mas uma delas é um objeto aninhado, é permitida.
 
-<div id="type_json_skip_duplicated_paths">
-  ## type_json_skip_duplicated_paths
-</div>
+## type_json_skip_duplicated_paths {#type_json_skip_duplicated_paths}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Quando habilitado, durante o parsing de um objeto JSON para o tipo JSON, caminhos duplicados serão ignorados e apenas o primeiro será inserido, sem gerar uma exceçã
 
-<div id="type_json_skip_invalid_typed_paths">
-  ## type_json_skip_invalid_typed_paths
-</div>
+## type_json_skip_invalid_typed_paths {#type_json_skip_invalid_typed_paths}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -43,9 +37,18 @@ Valores possíveis:
 * 0 — Desabilitar (gerar erro em caso de incompatibilidade de tipo).
 * 1 — Habilitar (ignorar o campo em caso de incompatibilidade de tipo).
 
-<div id="type_json_use_partial_match_to_skip_paths_by_regexp">
-  ## type_json_use_partial_match_to_skip_paths_by_regexp
-</div>
+## type_json_skip_null_typed_paths {#type_json_skip_null_typed_paths}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Quando habilitada, caminhos tipados em colunas JSON com valores NULL são tratados como ausentes, seguindo o comportamento dos caminhos dinâmicos. Isso afeta a saída da serialização JSON, funções de introspecção como `JSONAllPaths`, `JSONHas`, `JSONExtractRaw` e as verificações `has` e `empty`/`notEmpty`.
+
+Valores possíveis:
+
+* 0 — Desabilitar (os caminhos tipados estão sempre presentes, mesmo com valores NULL).
+* 1 — Habilitar (caminhos tipados com NULL são tratados como ausentes).
+
+## type_json_use_partial_match_to_skip_paths_by_regexp {#type_json_use_partial_match_to_skip_paths_by_regexp}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

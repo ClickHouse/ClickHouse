@@ -2664,6 +2664,8 @@ SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header
 マクロは設定ファイルの[`<macros>`](/ja/reference/settings/server-settings/settings/other#macros)セクションで定義され、ホスト名が複雑な場合でも、わかりやすい名前でサーバーを識別するために使用できます。
 この関数を分散テーブルのコンテキストで実行すると、各分片に対応する値を持つ通常のカラムが生成されます。
 
+そのテーブルを読み取る場合と同様に、`system.macros` に対する `SELECT` 権限が必要です。
+
 <Note>
   この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
 </Note>
@@ -2736,6 +2738,8 @@ SELECT getMaxTableNameLengthForDatabase('default');
 
 MergeTree設定の現在の値を返します。
 
+このテーブルを読み取る場合と同様に、`system.merge_tree_settings` に対する `SELECT` 権限が必要です。
+
 <Note>
   この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
 </Note>
@@ -2748,7 +2752,7 @@ getMergeTreeSetting(setting_name)
 
 **引数**
 
-* `setting_name` — 設定の名前。 [`String`](/ja/reference/data-types/string)
+* `setting_name` — 設定名。 [`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -2848,7 +2852,9 @@ SELECT getServerPort('tcp_port');
 
 導入バージョン: v25.6.0
 
-サーバー設定の名前を指定すると、現在設定されている値を返します。
+サーバー設定名を指定すると、現在設定されている値を返します。
+
+このテーブルを直接読み取る場合と同様に、`system.server_settings` に対する `SELECT` 権限が必要です。
 
 <Note>
   この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
@@ -2862,7 +2868,7 @@ getServerSetting(setting_name')
 
 **引数**
 
-* `setting_name` — サーバー設定の名前。[`String`](/ja/reference/data-types/string)
+* `setting_name` — サーバー設定名。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 

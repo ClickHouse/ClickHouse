@@ -828,9 +828,10 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_join_*",
-      count: 4,
+      count: 5,
       settings: [
         { name: "enable_join_fixed_hash_table_conversion", path: "/enable-join#enable_join_fixed_hash_table_conversion", default: "1" },
+        { name: "enable_join_key_only_hash_tables", path: "/enable-join#enable_join_key_only_hash_tables", default: "1" },
         { name: "enable_join_runtime_filters", path: "/enable-join#enable_join_runtime_filters", default: "1" },
         { name: "enable_join_runtime_filters_index_analysis", path: "/enable-join#enable_join_runtime_filters_index_analysis", default: "0" },
         { name: "enable_join_transitive_predicates", path: "/enable-join#enable_join_transitive_predicates", default: "1" }
@@ -2314,7 +2315,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "query_plan_*",
-      count: 52,
+      count: 53,
       settings: [
         { name: "query_plan_aggregation_bucket_top_k", path: "/query-plan#query_plan_aggregation_bucket_top_k", default: "1" },
         { name: "query_plan_aggregation_in_order", path: "/query-plan#query_plan_aggregation_in_order", default: "1" },
@@ -2354,6 +2355,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "query_plan_optimize_lazy_materialization_for_file", path: "/query-plan#query_plan_optimize_lazy_materialization_for_file", default: "1" },
         { name: "query_plan_optimize_lazy_materialization_for_object_storage", path: "/query-plan#query_plan_optimize_lazy_materialization_for_object_storage", default: "1" },
         { name: "query_plan_optimize_prewhere", path: "/query-plan#query_plan_optimize_prewhere", default: "1" },
+        { name: "query_plan_propagate_predicate_across_join", path: "/query-plan#query_plan_propagate_predicate_across_join", default: "1" },
         { name: "query_plan_push_down_limit", path: "/query-plan#query_plan_push_down_limit", default: "1" },
         { name: "query_plan_push_down_volume_reducing_functions", path: "/query-plan#query_plan_push_down_volume_reducing_functions", default: "1" },
         { name: "query_plan_push_limit_by_into_sort", path: "/query-plan#query_plan_push_limit_by_into_sort", default: "1" },
@@ -2928,10 +2930,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "use_statistics_*",
-      count: 3,
+      count: 4,
       settings: [
         { name: "use_statistics", path: "/use-statistics#use_statistics", default: "1" },
         { name: "use_statistics_cache", path: "/use-statistics#use_statistics_cache", default: "1" },
+        { name: "use_statistics_for_min_max_aggregation", path: "/use-statistics#use_statistics_for_min_max_aggregation", default: "1" },
         { name: "use_statistics_for_part_pruning", path: "/use-statistics#use_statistics_for_part_pruning", default: "1" }
       ],
       children: []
@@ -3207,11 +3210,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
   }
 
   const filterEntry = (entry) => {
-    const settings = entry.settings.filter((setting) => matchesSearch(setting.name))
+    const paramètres = entry.paramètres.filter((paramètre) => matchesSearch(paramètre.name))
     const children = entry.children.map(filterEntry).filter(Boolean)
-    const count = settings.length + children.reduce((total, child) => total + child.count, 0)
+    const count = paramètres.length + children.reduce((total, child) => total + child.count, 0)
     if (!count) return null
-    return { ...entry, count, settings, children }
+    return { ...entry, count, paramètres, children }
   }
 
   const filteredEntries = isSearching ? entries.map(filterEntry).filter(Boolean) : entries
@@ -3248,7 +3251,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
   const renderGroup = (entry, continuations = [], isLast = false, path = []) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
-    const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
+    const items = [...entry.paramètres.map((paramètre) => ({ type: "paramètre", value: paramètre })), ...entry.children.map((child) => ({ type: "group", value: child }))]
     const countLabel = `${entry.count} ${entry.count === 1 ? "paramètre" : "paramètres"}`
 
     return (

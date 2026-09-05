@@ -1517,6 +1517,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_AsyncLoggingTextLogDroppedMessages` ([UInt64](/ja/reference/data-types/int-uint)) — 非同期ログ queue がいっぱいだったため、text&#95;log から破棄されたメッセージ数
 * `ProfileEvent_JemallocFailedAllocationSampleTracking` ([UInt64](/ja/reference/data-types/int-uint)) — jemalloc の割り当てサンプルの追跡に失敗した総回数
 * `ProfileEvent_JemallocFailedDeallocationSampleTracking` ([UInt64](/ja/reference/data-types/int-uint)) — jemalloc のメモリ解放サンプルの追跡に失敗した総回数
+* `ProfileEvent_SetsBuiltFromSubquery` ([UInt64](/ja/reference/data-types/int-uint)) — サブクエリを実行することで埋められた `IN`/`JOIN` のセット数。prepared sets cache から取得されたセットや、すでに構築済みで再利用されたセットはカウントされません。
 * `ProfileEvent_LoadedStatisticsMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — パーツから統計情報を loading するのにかかった経過時間
 * `ProfileEvent_SelectivityEstimatorInSetNotBuilt` ([UInt64](/ja/reference/data-types/int-uint)) — Set がまだ構築されておらず、それを埋めるためにサブクエリを実行できないため、選択性推定器が解析できなかった `IN` 条件の数
 * `ProfileEvent_SelectivityEstimatorInSetEstimatedFromSize` ([UInt64](/ja/reference/data-types/int-uint)) — Set が `statistics_max_set_size_for_exact_selectivity_estimation` を超えているため、正確な範囲ではなく Set のサイズと境界に基づいて選択性が推定された `IN` 条件の数

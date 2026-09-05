@@ -29,7 +29,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `event_time_microseconds` ([DateTime64(6)](/ar/reference/data-types/datetime64)) — وقت الحدث بدقة الميكروثانية.
 * `memory_usage` ([UInt64](/ar/reference/data-types/int-uint)) — مقدار RAM الذي يستخدمه الاستعلام. وقد لا يشمل بعض أنواع الذاكرة المخصّصة.
 * `peak_memory_usage` ([UInt64](/ar/reference/data-types/int-uint)) — الحد الأقصى لمقدار RAM الذي استخدمه الاستعلام.
-* `ProfileEvent_Query` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاستعلامات المطلوب تفسيرها وقد تُنفَّذ. لا يشمل الاستعلامات التي فشل تحليلها أو التي رُفضت بسبب حدود حجم AST أو حدود الحصة أو الحدود المفروضة على عدد الاستعلامات التي تعمل بالتزامن. وقد يشمل الاستعلامات الداخلية التي يبدأها ClickHouse نفسه. ولا يحتسب الاستعلامات الفرعية.
+* `ProfileEvent_Query` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاستعلامات المطلوب تفسيرها وقد تُنفَّذ. لا يشمل الاستعلامات التي فشل تحليلها أو التي رُفضت بسبب حدود حجم AST أو حدود الحصة أو الحدود المفروضة على عدد الاستعلامات التي تعمل بالتزامن. وقد يشمل الاستعلامات الداخلية التي يبدأها ClickHouse نفسه. ولا يحتسب الاستعلامات الفرعية.
 * `ProfileEvent_SelectQuery` ([UInt64](/ar/reference/data-types/int-uint)) — مثل Query، ولكن فقط لاستعلامات SELECT.
 * `ProfileEvent_InsertQuery` ([UInt64](/ar/reference/data-types/int-uint)) — مثل Query، ولكن فقط لاستعلامات INSERT.
 * `ProfileEvent_InitialQuery` ([UInt64](/ar/reference/data-types/int-uint)) — مثل Query، ولكنه يحتسب الاستعلامات الأولية فقط (راجع is&#95;initial&#95;query).
@@ -181,7 +181,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_EncryptionHeaderCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يُعثر فيها على بايتات ترويسة التشفير في ذاكرة التخزين المؤقت لترويسة التشفير، ولذلك قُرئت من المصدر.
 * `ProfileEvent_QueryCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على نتيجة query في query cache (وبالتالي تم تجنب تنفيذ query). لا يتم تحديثه إلا لاستعلامات SELECT التي تستخدم SETTING use&#95;query&#95;cache = 1.
 * `ProfileEvent_QueryCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يُعثر فيها على نتيجة query في query cache (مما استلزم تنفيذ query). لا يتم تحديثه إلا لاستعلامات SELECT التي تستخدم SETTING use&#95;query&#95;cache = 1.
-* `ProfileEvent_QueryCacheAgeSeconds` ([UInt64](/ar/reference/data-types/int-uint)) — مجموع أعمار cache entries التي تم العثور عليها، بالثواني. تُضبط القيمة لكلٍّ من hits وmisses.
+* `ProfileEvent_QueryCacheAgeSeconds` ([UInt64](/ar/reference/data-types/int-uint)) — مجموع أعمار cache entries التي تم العثور عليها، بالثواني. تُضبط القيمة لكلٍّ من hits وmisses.
 * `ProfileEvent_QueryCacheReadRows` ([UInt64](/ar/reference/data-types/int-uint)) — عدد rows المقروءة من query cache.
 * `ProfileEvent_QueryCacheReadBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات (غير المضغوطة) المقروءة من ذاكرة تخزين الاستعلامات المؤقتة.
 * `ProfileEvent_QueryCacheWrittenRows` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الصفوف المحفوظة في ذاكرة تخزين الاستعلامات المؤقتة.
@@ -212,17 +212,17 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_LocalThreadPoolJobs` ([UInt64](/ar/reference/data-types/int-uint)) — يحصي عدد المهام التي دُفعت إلى مجمّعات الخيوط المحلية.
 * `ProfileEvent_LocalThreadPoolBusyMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضته الخيوط في تنفيذ العمل الفعلي.
 * `ProfileEvent_LocalThreadPoolJobWaitTimeMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — يقيس الزمن المنقضي منذ جدولة مهمة في مجمّع الخيوط حتى يلتقطها خيط عامل للتنفيذ. يساعد هذا المقياس على تحديد التأخيرات في معالجة المهام، بما يوضح مدى استجابة مجمّع الخيوط للمهام الجديدة.
-* `ProfileEvent_DiskS3GetRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET وSELECT الخاصة بـ DiskS3 التي مرّت عبر المُقيِّد، سواء المحظورة أو غير المحظورة.
-* `ProfileEvent_DiskS3GetRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET وSELECT الخاصة بـ DiskS3 التي حظرها المُقيِّد.
+* `ProfileEvent_DiskS3GetRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET وSELECT الخاصة بـ DiskS3 التي مرّت عبر المُقيِّد، سواء المحظورة أو غير المحظورة.
+* `ProfileEvent_DiskS3GetRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET وSELECT الخاصة بـ DiskS3 التي حظرها المُقيِّد.
 * `ProfileEvent_DiskS3GetRequestThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي مدة انتظار الاستعلام امتثالًا لتقييد طلبات GET وSELECT الخاصة بـ DiskS3.
-* `ProfileEvent_DiskS3PutRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT وCOPY وPOST وLIST الخاصة بـ DiskS3 التي مرّت عبر المُقيِّد، سواء المحظورة أو غير المحظورة.
-* `ProfileEvent_DiskS3PutRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT وCOPY وPOST وLIST الخاصة بـ DiskS3 التي حظرها المُقيِّد.
+* `ProfileEvent_DiskS3PutRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT وCOPY وPOST وLIST الخاصة بـ DiskS3 التي مرّت عبر المُقيِّد، سواء المحظورة أو غير المحظورة.
+* `ProfileEvent_DiskS3PutRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT وCOPY وPOST وLIST الخاصة بـ DiskS3 التي حظرها المُقيِّد.
 * `ProfileEvent_DiskS3PutRequestThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي مدة انتظار الاستعلام امتثالًا لتقييد طلبات PUT وCOPY وPOST وLIST الخاصة بـ DiskS3.
-* `ProfileEvent_S3GetRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET وSELECT الخاصة بـ S3 التي مرّت عبر المُقيِّد، سواء المحظورة أو غير المحظورة.
-* `ProfileEvent_S3GetRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET وSELECT الخاصة بـ S3 التي حظرها المُقيِّد.
+* `ProfileEvent_S3GetRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET وSELECT الخاصة بـ S3 التي مرّت عبر المُقيِّد، سواء المحظورة أو غير المحظورة.
+* `ProfileEvent_S3GetRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET وSELECT الخاصة بـ S3 التي حظرها المُقيِّد.
 * `ProfileEvent_S3GetRequestThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي مدة انتظار الاستعلام امتثالًا لتقييد طلبات GET وSELECT الخاصة بـ S3.
-* `ProfileEvent_S3PutRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT وCOPY وPOST وLIST الخاصة بـ S3 التي مرّت عبر المُقيِّد، سواء المحظورة أو غير المحظورة.
-* `ProfileEvent_S3PutRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT وCOPY وPOST وLIST الخاصة بـ S3 التي حظرها المُقيِّد.
+* `ProfileEvent_S3PutRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT وCOPY وPOST وLIST الخاصة بـ S3 التي مرّت عبر المُقيِّد، سواء المحظورة أو غير المحظورة.
+* `ProfileEvent_S3PutRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT وCOPY وPOST وLIST الخاصة بـ S3 التي حظرها المُقيِّد.
 * `ProfileEvent_S3PutRequestThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي مدة انتظار الاستعلام امتثالًا لتقييد طلبات PUT وCOPY وPOST وLIST الخاصة بـ S3.
 * `ProfileEvent_ACMEAPIRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات واجهة برمجة تطبيقات ACME التي أُرسلت.
 * `ProfileEvent_ACMECertificateOrders` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات شهادات ACME التي أُرسلت.
@@ -252,8 +252,8 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_DiskAzureGetRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET لقرص Azure التي مرّت عبر آلية تقييد المعدل: المحظورة وغير المحظورة.
 * `ProfileEvent_DiskAzureGetRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات GET لقرص Azure التي حظرتها آلية تقييد المعدل.
 * `ProfileEvent_DiskAzureGetRequestThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي مدة انتظار الاستعلام امتثالًا لتقييد معدل طلبات GET لقرص Azure.
-* `ProfileEvent_AzurePutRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure من نوع PUT التي مرّت عبر محدِّد المعدل: المحظورة وغير المحظورة.
-* `ProfileEvent_AzurePutRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure من نوع PUT التي حظرها محدِّد المعدل.
+* `ProfileEvent_AzurePutRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure من نوع PUT التي مرّت عبر محدِّد المعدل: المحظورة وغير المحظورة.
+* `ProfileEvent_AzurePutRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure من نوع PUT التي حظرها محدِّد المعدل.
 * `ProfileEvent_AzurePutRequestThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي مدة انتظار الاستعلام امتثالًا لتقييد معدل طلبات Azure من نوع PUT.
 * `ProfileEvent_DiskAzurePutRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT لقرص Azure التي مرّت عبر محدِّد المعدل: المحظورة وغير المحظورة.
 * `ProfileEvent_DiskAzurePutRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات PUT لقرص Azure التي حظرها محدِّد المعدل.
@@ -908,8 +908,8 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_ThreadPoolReaderPageCacheHit` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي جرت فيها القراءة داخل ThreadPoolReader من page cache.
 * `ProfileEvent_ThreadPoolReaderPageCacheHitBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المقروءة داخل ThreadPoolReader عندما كانت القراءة من page cache.
 * `ProfileEvent_ThreadPoolReaderPageCacheHitElapsedMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في قراءة البيانات من page cache داخل ThreadPoolReader.
-* `ProfileEvent_ThreadPoolReaderPageCacheMiss` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم تُنفَّذ فيها القراءة داخل ThreadPoolReader من page cache وتم تمريرها إلى thread pool.
-* `ProfileEvent_ThreadPoolReaderPageCacheMissBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المقروءة داخل ThreadPoolReader عندما لم تُنفَّذ القراءة من page cache وتم تمريرها إلى thread pool.
+* `ProfileEvent_ThreadPoolReaderPageCacheMiss` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم تُنفَّذ فيها القراءة داخل ThreadPoolReader من page cache وتم تمريرها إلى thread pool.
+* `ProfileEvent_ThreadPoolReaderPageCacheMissBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المقروءة داخل ThreadPoolReader عندما لم تُنفَّذ القراءة من page cache وتم تمريرها إلى thread pool.
 * `ProfileEvent_ThreadPoolReaderPageCacheMissElapsedMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في قراءة البيانات داخل المهمة غير المتزامنة في ThreadPoolReader عندما لا تتم القراءة من page cache.
 * `ProfileEvent_AsynchronousReadWaitMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في انتظار عمليات القراءة غير المتزامنة في القراءة المحلية غير المتزامنة.
 * `ProfileEvent_SynchronousReadWaitMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في انتظار عمليات القراءة المتزامنة في القراءة المحلية غير المتزامنة.
@@ -964,14 +964,14 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_BlobKillerThreadLockedBlobs` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الـ blobs المُعادة من metadata storage
 * `ProfileEvent_BlobKillerThreadRemoveTasks` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مهام الإزالة التي أنشأها BlobKiller
 * `ProfileEvent_BlobKillerThreadRemovedBlobs` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الـ blobs التي أزالها BlobKiller
-* `ProfileEvent_BlobKillerThreadRecordedBlobs` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الـ blobs التي سُجِّل حذفها بواسطة BlobKiller في metadata storage
+* `ProfileEvent_BlobKillerThreadRecordedBlobs` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الـ blobs التي سُجِّل حذفها بواسطة BlobKiller في metadata storage
 * `ProfileEvent_BlobKillerThreadLockBlobsErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد أخطاء قفل الـ blobs التي حدثت أثناء تنفيذ BlobKiller
 * `ProfileEvent_BlobKillerThreadRemoveBlobsErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد أخطاء إزالة الـ blobs التي حدثت أثناء تنفيذ BlobKiller
 * `ProfileEvent_BlobKillerThreadRecordBlobsErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد أخطاء تسجيل الـ blobs التي حدثت أثناء تنفيذ BlobKiller
 * `ProfileEvent_BlobCopierThreadRuns` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات تنفيذ thread الخاص بـ BlobCopier
 * `ProfileEvent_BlobCopierThreadLockedBlobs` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الـ blobs المُعادة من metadata storage
 * `ProfileEvent_BlobCopierThreadReplicatedBlobs` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الـ blobs التي نسخها BlobCopier نسخًا متماثلًا
-* `ProfileEvent_BlobCopierThreadRecordedBlobs` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الـ blobs التي سُجِّل نسخها المتماثل بواسطة BlobCopier في metadata storage
+* `ProfileEvent_BlobCopierThreadRecordedBlobs` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الـ blobs التي سُجِّل نسخها المتماثل بواسطة BlobCopier في metadata storage
 * `ProfileEvent_BlobCopierThreadLockBlobsErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد أخطاء قفل الـ blobs التي حدثت أثناء تنفيذ BlobCopier
 * `ProfileEvent_BlobCopierThreadReplicateBlobsErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد أخطاء النسخ المتماثل للـ blobs التي حدثت أثناء تنفيذ BlobCopier
 * `ProfileEvent_BlobCopierThreadRecordBlobsErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد أخطاء تسجيل الـ blobs التي حدثت أثناء تنفيذ BlobCopier
@@ -1517,6 +1517,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_AsyncLoggingTextLogDroppedMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل التي أُسقطت من text&#95;log بسبب امتلاء طابور السجل غير المتزامن
 * `ProfileEvent_JemallocFailedAllocationSampleTracking` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لمرات فشل تتبع عيّنة تخصيص jemalloc
 * `ProfileEvent_JemallocFailedDeallocationSampleTracking` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لمرات فشل تتبع عيّنة إلغاء تخصيص jemalloc
+* `ProfileEvent_SetsBuiltFromSubquery` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مجموعات `IN`/`JOIN` التي مُلئت بتشغيل استعلامها الفرعي. لا تُحتسب المجموعة المأخوذة من ذاكرة التخزين المؤقت للمجموعات المُحضّرة، أو التي بُنيت بالفعل وأُعيد استخدامها.
 * `ProfileEvent_LoadedStatisticsMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المنقضي لتحميل الإحصاءات من الأجزاء
 * `ProfileEvent_SelectivityEstimatorInSetNotBuilt` ([UInt64](/ar/reference/data-types/int-uint)) — عدد شروط `IN` التي لم يتمكن مقدّر الانتقائية من تحليلها لأن المجموعة لم تُبنَ بعد، ولا ينبغي له تشغيل الاستعلام الفرعي لملئها
 * `ProfileEvent_SelectivityEstimatorInSetEstimatedFromSize` ([UInt64](/ar/reference/data-types/int-uint)) — عدد شروط `IN` التي قُدّرت انتقائيتها استنادًا إلى حجم المجموعة وحدودها بدلًا من نطاقاتها الدقيقة، لأن المجموعة تتجاوز `statistics_max_set_size_for_exact_selectivity_estimation`

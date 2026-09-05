@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源文件](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="use_text_index_header_cache">
-  ## use_text_index_header_cache
-</div>
+## use_text_index_header_cache {#use_text_index_header_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -24,9 +22,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 是否将反序列化后的文本索引头部缓存在内存中。
 在处理大量文本索引查询时，使用文本索引头部缓存可显著降低延迟并提高吞吐量。
 
-<div id="use_text_index_like_evaluation_by_dictionary_scan">
-  ## use_text_index_like_evaluation_by_dictionary_scan
-</div>
+## use_text_index_like_evaluation_by_dictionary_scan {#use_text_index_like_evaluation_by_dictionary_scan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -34,9 +30,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 启用通过扫描倒排文本索引字典对 LIKE/ILIKE 查询进行求值。
 
-<div id="use_text_index_negative_tokens_cache">
-  ## use_text_index_negative_tokens_cache
-</div>
+可加速的模式包括 `%value%`、`value%` 和 `%value`，以及被 `optimize_rewrite_like_perfect_affix` 改写为 `value%` 和 `%value` 的 `startsWith` 与 `endsWith` 调用。
+
+## use_text_index_negative_tokens_cache {#use_text_index_negative_tokens_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -45,9 +41,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 是否缓存数据分区片段中不存在的文本索引标记。
 负标记缓存使用文本索引标记缓存，避免重复查找不存在的标记。
 
-<div id="use_text_index_postings_cache">
-  ## use_text_index_postings_cache
-</div>
+## use_text_index_postings_cache {#use_text_index_postings_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -56,9 +50,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 是否在内存中缓存反序列化后的文本索引倒排列表。
 在处理大量文本索引查询时，使用文本索引倒排列表缓存可以显著降低延迟并提高吞吐量。
 
-<div id="use_text_index_tokens_cache">
-  ## use_text_index_tokens_cache
-</div>
+## use_text_index_tokens_cache {#use_text_index_tokens_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

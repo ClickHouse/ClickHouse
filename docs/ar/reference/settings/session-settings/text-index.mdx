@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [الملف المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="text_index_hint_max_selectivity">
-  ## text_index_hint_max_selectivity
-</div>
+## text_index_hint_max_selectivity {#text_index_hint_max_selectivity}
 
 <SettingsInfoBlock type="Float" default_value="0.2" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 الحد الأقصى لانتقائية عامل التصفية الذي يسمح باستخدام التلميح المُنشأ من الفهرس النصي المعكوس.
 
-<div id="text_index_lazy_intersection_density_threshold">
-  ## text_index_lazy_intersection_density_threshold
-</div>
+## text_index_lazy_intersection_density_threshold {#text_index_lazy_intersection_density_threshold}
 
 **الأسماء البديلة**: `text_index_density_threshold`
 
@@ -36,9 +32,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 عتبة كثافة قوائم الإسناد التي تحدد خوارزمية التقاطع في وضع التطبيق الكسول لقوائم الإسناد (`text_index_posting_list_apply_mode = 'lazy'`).
 دون العتبة: تقاطع leapfrog (يفضّل قوائم الإسناد المتفرقة). عند العتبة أو فوقها: تقاطع bitmap بأسلوب brute-force (يفضّل قوائم الإسناد الكثيفة).
 
-<div id="text_index_like_max_postings_to_read">
-  ## text_index_like_max_postings_to_read
-</div>
+## text_index_like_max_postings_to_read {#text_index_like_max_postings_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -48,22 +42,19 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 يتطلب تمكين `use_text_index_like_evaluation_by_dictionary_scan`.
 
-<div id="text_index_like_min_pattern_length">
-  ## text_index_like_min_pattern_length
-</div>
+## text_index_like_min_pattern_length {#text_index_like_min_pattern_length}
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4"},{"label": "إعداد جديد"}]}]} />
 
-الحد الأدنى لطول السلسلة الأبجدية الرقمية الهدف في نمط LIKE/ILIKE، واللازم لاستخدام تقييم LIKE في الفهرس النصي عبر فحص القاموس.
+الحد الأدنى لطول السلسلة الأبجدية الرقمية الهدف في نمط LIKE/ILIKE، أو للسلسلة الهدف في `startsWith`/`endsWith`،
+واللازم لاستخدام تقييم LIKE في الفهرس النصي عبر فحص القاموس.
 الأنماط الأقصر من هذه العتبة تطابق عددًا كبيرًا جدًا من الرموز القاموسية، لذا يتم تجاوزها لتجنّب عمليات فحص مكلفة.
 
 يتطلب أن يكون `use_text_index_like_evaluation_by_dictionary_scan` مفعّلًا.
 
-<div id="text_index_posting_list_apply_mode">
-  ## text_index_posting_list_apply_mode
-</div>
+## text_index_posting_list_apply_mode {#text_index_posting_list_apply_mode}
 
 <SettingsInfoBlock type="TextIndexPostingListApplyMode" default_value="lazy" />
 

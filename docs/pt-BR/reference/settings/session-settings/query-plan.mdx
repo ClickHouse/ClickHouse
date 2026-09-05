@@ -420,6 +420,24 @@ Use a otimização de materialização lazy para ler arquivos Parquet do armazen
 
 Permitir o push down do filtro para a expressão PREWHERE em armazenamentos compatíveis
 
+## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nova configuração que eleva conjunções de filtro através de chaves de equi-join para que a poda por chave primária seja acionada em ambos os lados."}]}]} />
+
+Ativa ou desativa uma otimização no nível do plano de consulta que copia conjunções de filtro de um
+lado de um equi-join para o outro lado por meio da substituição de equi-chaves, de modo que a poda
+por chave primária/índice do outro lado possa utilizá-las.
+
+Aplica-se quando o filtro e a leitura do `MergeTree` estão separados do join apenas por passos de
+expressão e de filtro, e quando a conjunção copiada compara uma coluna de chave primária com uma
+constante (incluindo `IN` com um conjunto constante). Um predicado abaixo de um join aninhado ou
+abaixo de `DISTINCT`, ou uma comparação entre duas colunas-chave, não é alterado: ele não teria como
+viabilizar a poda por chave primária do outro lado, portanto copiá-lo apenas geraria trabalho extra.
+
+Só entra em vigor se `query_plan_enable_optimizations` for 1.
+
 ## query_plan_push_down_limit {#query_plan_push_down_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

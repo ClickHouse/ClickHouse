@@ -15,21 +15,15 @@ doc_type: 'reference'
   在 ClickHouse Cloud 中，默认使用的是 [`Shared` 数据库引擎](/zh/products/cloud/features/infrastructure/shared-catalog#shared-database-engine)，它也支持上述操作。
 </Note>
 
-<div id="creating-a-database">
-  ## 创建数据库
-</div>
+## 创建数据库 {#creating-a-database}
 
 ```sql
 CREATE DATABASE test [ENGINE = Atomic] [SETTINGS disk=...];
 ```
 
-<div id="specifics-and-recommendations">
-  ## 具体事项和建议
-</div>
+## 具体事项和建议 {#specifics-and-recommendations}
 
-<div id="table-uuid">
-  ### 表 UUID
-</div>
+### 表 UUID {#table-uuid}
 
 `Atomic` 数据库中的每个表都有一个持久的 [UUID](/zh/reference/data-types/uuid)，其数据存储在以下目录中：
 
@@ -51,22 +45,16 @@ CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE 
   你可以使用 [show&#95;table&#95;uuid&#95;in&#95;table&#95;create&#95;query&#95;if&#95;not&#95;nil](/zh/reference/settings/session-settings/show#show_table_uuid_in_table_create_query_if_not_nil) 设置，以便在 `SHOW CREATE` 查询中显示 UUID。
 </Note>
 
-<div id="rename-table">
-  ### RENAME TABLE
-</div>
+### RENAME TABLE {#rename-table}
 
 [`RENAME`](/zh/reference/statements/rename) 查询不会修改 UUID，也不会移动表中的数据。这些查询会立即执行，不会等待其他正在使用该表的查询结束。
 
-<div id="drop-detach-table">
-  ### DROP/DETACH TABLE
-</div>
+### DROP/DETACH TABLE {#drop-detach-table}
 
 使用 `DROP TABLE` 时，不会删除任何数据。`Atomic` 引擎只是将该表的元数据移动到 `/clickhouse_path/metadata_dropped/`，以此将其标记为已删除，并通知后台线程。最终删除表数据前的延迟由 [`database_atomic_delay_before_drop_table_sec`](/zh/reference/settings/server-settings/settings/other#database_atomic_delay_before_drop_table_sec) 设置指定。
 您可以使用 `SYNC` 修饰符来指定同步模式。为此，请使用 [`database_atomic_wait_for_drop_and_detach_synchronously`](/zh/reference/settings/session-settings/database#database_atomic_wait_for_drop_and_detach_synchronously) 设置。在这种情况下，`DROP` 会等待正在使用该表的 `SELECT`、`INSERT` 及其他查询完成。该表会在不再被使用时被移除。
 
-<div id="exchange-tables">
-  ### EXCHANGE TABLES/DICTIONARIES
-</div>
+### EXCHANGE TABLES/DICTIONARIES {#exchange-tables}
 
 [`EXCHANGE`](/zh/reference/statements/exchange) 查询可原子地交换表或字典。例如，可替代下面这种非原子操作：
 
@@ -80,15 +68,11 @@ RENAME TABLE new_table TO tmp, old_table TO new_table, tmp TO old_table;
 EXCHANGE TABLES new_table AND old_table;
 ```
 
-<div id="replicatedmergetree-in-atomic-database">
-  ### 原子数据库中的 ReplicatedMergeTree
-</div>
+### 原子数据库中的 ReplicatedMergeTree {#replicatedmergetree-in-atomic-database}
 
 对于 [`ReplicatedMergeTree`](/zh/reference/engines/table-engines/mergetree-family/replication) 表，建议不要指定 ZooKeeper 中的路径和副本名称这两个引擎参数。在这种情况下，将使用配置参数 [`default_replica_path`](/zh/reference/settings/server-settings/settings/default-replica#default_replica_path) 和 [`default_replica_name`](/zh/reference/settings/server-settings/settings/default-replica#default_replica_name)。如果想显式指定引擎参数，建议使用 `{uuid}` 宏。这样可以确保在 ZooKeeper 中为每个表自动生成唯一的路径。
 
-<div id="metadata-disk">
-  ### 元数据磁盘
-</div>
+### 元数据磁盘 {#metadata-disk}
 
 当在 `SETTINGS` 中指定 `disk` 时，该磁盘将用于存储表的元数据文件。
 例如：
@@ -99,9 +83,31 @@ CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path
 
 若未指定，默认使用 `database_disk.disk` 中定义的磁盘。
 
-<div id="see-also">
-  ## 另请参见
-</div>
+### 限制表的数量 {#limiting-the-number-of-tables}
+
+`max_tables` 设置用于限制数据库中可包含的表数量，`0` (默认值) 表示不限制。所有类表对象都会计入该限制：普通表、视图、materialized view，以及通过 `CREATE DICTIONARY` 创建的字典。达到上限后，`CREATE TABLE`、`CREATE DICTIONARY` 和 `ATTACH TABLE` 会抛出 `TOO_MANY_TABLES` 异常。
+
+```sql
+CREATE DATABASE db ENGINE = Atomic SETTINGS max_tables = 100;
+```
+
+对于已存在的 数据库，可以使用 `ALTER DATABASE` 修改该限制：
+
+```sql
+ALTER DATABASE db MODIFY SETTING max_tables = 200;
+```
+
+将限制值调低至当前表数量以下不会删除任何表，只会阻止创建新表，直到表数量再次低于限制值。
+
+`CREATE OR REPLACE TABLE` 会先以临时名称创建替换表，然后再将其替换到位。因此，当数据库中的表数量恰好达到 `max_tables` 时，替换表会因 `TOO_MANY_TABLES` 而失败，即使最终表数量不会增加。使用 `RENAME TABLE` 或 `RENAME DICTIONARY` 将对象移入数据库同样受此限制约束。
+
+未指定 `TO` 子句的 materialized view 会创建一个隐藏的内部表，该表会作为独立表计入限制。
+
+该限制会在操作开始前进行检查，因此只能尽力保证：并发查询可能会使数据库中的表数量略微超出限制。
+
+该设置适用于将表保存在内存中、将元数据保存在本地 `.sql` 文件中的磁盘型数据库引擎：`Atomic` 和 `Ordinary`。`Replicated` 引擎不支持此设置。
+
+## 另请参见 {#see-also}
 
 * [system.databases](/zh/reference/system-tables/databases) 系统表
 

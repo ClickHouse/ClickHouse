@@ -1551,6 +1551,76 @@ SELECT arrayFlatten([[[1]], [[2], [3]]]);
 [1,2,3]
 ```
 
+## arrayFlattenedLength {#arrayFlattenedLength}
+
+Introducido en: v26.9.0
+
+Devuelve el número total de elementos de un array multidimensional, como si se hubiera aplanado con la función [`arrayFlatten`](/es/reference/functions/regular-functions/array-functions#arrayFlatten).
+
+Función:
+
+* Se aplica a arrays anidados con cualquier nivel de profundidad.
+* Es equivalente a [`length`](/es/reference/functions/regular-functions/array-functions#length) para arrays que ya son planos.
+* Solo sigue el anidamiento de `Array`. Los elementos se cuentan en el primer nivel que no es un array, por lo que los elementos de un [`Map`](/es/reference/data-types/map), [`Tuple`](/es/reference/data-types/tuple), [`Dynamic`](/es/reference/data-types/dynamic) o [`Variant`](/es/reference/data-types/variant) anidado no se cuentan individualmente, incluso cuando contienen arrays.
+
+Equivale a `cardinality` en PostgreSQL; en cambio, en ClickHouse `cardinality` es un alias de `length` y solo cuenta los elementos del array más externo.
+
+**Sintaxis**
+
+```sql
+arrayFlattenedLength(arr)
+```
+
+**Argumentos**
+
+* `arr` — Un array posiblemente multidimensional. [`Array(T)`](/es/reference/data-types/array)
+
+**Valor devuelto**
+
+Devuelve el número de elementos del array tras aplanar todos los arrays anidados. [`UInt64`](/es/reference/data-types/int-uint)
+
+**Ejemplos**
+
+**Array anidado**
+
+```sql title=Query
+SELECT arrayFlattenedLength([[1, 2], [3, 4]]);
+```
+
+```response title=Response
+4
+```
+
+**Anidamiento más profundo**
+
+```sql title=Query
+SELECT arrayFlattenedLength([[[1]], [[2], [3]]]);
+```
+
+```response title=Response
+3
+```
+
+**Array plana**
+
+```sql title=Query
+SELECT arrayFlattenedLength([1, 2, 3]);
+```
+
+```response title=Response
+3
+```
+
+**No se recorren los elementos que no son arrays**
+
+```sql title=Query
+SELECT arrayFlattenedLength([map('a', [1, 2, 3])]);
+```
+
+```response title=Response
+1
+```
+
 ## arrayFold {#arrayFold}
 
 Introducido en: v23.10.0

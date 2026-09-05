@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_statistics">
-  ## use_statistics
-</div>
+## use_statistics {#use_statistics}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -24,9 +22,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 /// préféré à &#39;allow&#95;statistics&#95;optimize&#39; pour assurer la cohérence avec &#39;use&#95;primary&#95;key&#39; et &#39;use&#95;skip&#95;indexes&#39;
 Permet d&#39;utiliser les statistiques pour optimiser les requêtes
 
-<div id="use_statistics_cache">
-  ## use_statistics_cache
-</div>
+## use_statistics_cache {#use_statistics_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -34,9 +30,24 @@ Permet d&#39;utiliser les statistiques pour optimiser les requêtes
 
 Utiliser le cache des statistiques dans une requête pour éviter le surcoût lié au chargement des statistiques de toutes les parts
 
-<div id="use_statistics_for_part_pruning">
-  ## use_statistics_for_part_pruning
-</div>
+## use_statistics_for_min_max_aggregation {#use_statistics_for_min_max_aggregation}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nouveau paramètre permettant de répondre aux agrégations `min`, `max` et `count` sans `GROUP BY` ni filtres à partir des statistiques de colonnes par part, pour les parts qui les ont matérialisées, en ne lisant que les parts restantes. previous_value=false, de sorte que la `compatibility` avec les versions antérieures à 26.9 laisse l'optimisation désactivée et rétablit le plan préexistant."}]}]} />
+
+Répondre aux agrégations `min`, `max` et `count` à partir des statistiques de colonnes par part plutôt qu&#39;en lisant les données.
+
+Lorsque ce paramètre est activé, une requête de la forme `SELECT min(column), max(column), count() FROM table` sans `GROUP BY` ni filtres
+est traitée à partir des statistiques de colonnes (par exemple les statistiques MinMax, voir le paramètre MergeTree `auto_statistics_types`)
+pour les data parts qui les ont matérialisées, et seules les parts restantes sont lues.
+
+Valeurs possibles :
+
+* 0 — Désactivé.
+* 1 — Activé.
+
+## use_statistics_for_part_pruning {#use_statistics_for_part_pruning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

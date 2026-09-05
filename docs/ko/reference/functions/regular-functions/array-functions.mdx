@@ -1547,6 +1547,76 @@ SELECT arrayFlatten([[[1]], [[2], [3]]]);
 [1,2,3]
 ```
 
+## arrayFlattenedLength {#arrayFlattenedLength}
+
+도입 버전: v26.9.0
+
+[`arrayFlatten`](/ko/reference/functions/regular-functions/array-functions#arrayFlatten) 함수로 평탄화했을 때의 다차원 배열 총 원소 수를 반환합니다.
+
+함수:
+
+* 중첩 배열의 깊이에 관계없이 적용됩니다.
+* 이미 평탄화된 배열에서는 [`length`](/ko/reference/functions/regular-functions/array-functions#length)와 동일합니다.
+* `Array` 중첩만 따릅니다. 배열이 아닌 첫 번째 수준의 원소를 계산하므로, 중첩된 [`Map`](/ko/reference/data-types/map), [`튜플`](/ko/reference/data-types/tuple), [`Dynamic`](/ko/reference/data-types/dynamic) 또는 [`Variant`](/ko/reference/data-types/variant) 자체가 배열을 포함하더라도 그 내부 원소는 개별적으로 계산하지 않습니다.
+
+PostgreSQL에서는 이에 해당하는 함수가 `cardinality`이지만, ClickHouse에서 `cardinality`는 `length`의 별칭이며 가장 바깥쪽 배열의 원소만 계산합니다.
+
+**구문**
+
+```sql
+arrayFlattenedLength(arr)
+```
+
+**인수**
+
+* `arr` — 다차원 배열일 수 있습니다. [`Array(T)`](/ko/reference/data-types/array)
+
+**반환 값**
+
+중첩된 모든 배열을 평탄화한 후 배열의 원소 수를 반환합니다. [`UInt64`](/ko/reference/data-types/int-uint)
+
+**예시**
+
+**중첩 배열**
+
+```sql title=Query
+SELECT arrayFlattenedLength([[1, 2], [3, 4]]);
+```
+
+```response title=Response
+4
+```
+
+**더 깊이 중첩된 경우**
+
+```sql title=Query
+SELECT arrayFlattenedLength([[[1]], [[2], [3]]]);
+```
+
+```response title=Response
+3
+```
+
+**1차원 배열**
+
+```sql title=Query
+SELECT arrayFlattenedLength([1, 2, 3]);
+```
+
+```response title=Response
+3
+```
+
+**배열이 아닌 원소는 순회하지 않습니다**
+
+```sql title=Query
+SELECT arrayFlattenedLength([map('a', [1, 2, 3])]);
+```
+
+```response title=Response
+1
+```
+
 ## arrayFold {#arrayFold}
 
 도입 버전: v23.10.0

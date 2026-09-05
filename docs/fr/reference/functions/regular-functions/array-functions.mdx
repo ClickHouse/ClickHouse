@@ -1551,6 +1551,76 @@ SELECT arrayFlatten([[[1]], [[2], [3]]]);
 [1,2,3]
 ```
 
+## arrayFlattenedLength {#arrayFlattenedLength}
+
+Introduit dans : v26.9.0
+
+Renvoie le nombre total d&#39;éléments d&#39;un tableau multidimensionnel, comme s&#39;il avait été aplati avec la fonction [`arrayFlatten`](/fr/reference/functions/regular-functions/array-functions#arrayFlatten).
+
+Cette fonction :
+
+* S&#39;applique à n&#39;importe quelle profondeur de tableaux imbriqués.
+* Est équivalente à [`length`](/fr/reference/functions/regular-functions/array-functions#length) pour les tableaux déjà plats.
+* Ne suit que l&#39;imbrication `Array`. Les éléments sont comptés au premier niveau qui n&#39;est pas un tableau : les éléments d&#39;un [`Map`](/fr/reference/data-types/map), [`Tuple`](/fr/reference/data-types/tuple), [`Dynamic`](/fr/reference/data-types/dynamic) ou [`Variant`](/fr/reference/data-types/variant) imbriqué ne sont donc pas comptés individuellement, même lorsqu&#39;ils contiennent eux-mêmes des tableaux.
+
+C&#39;est l&#39;équivalent de `cardinality` dans PostgreSQL, alors que dans ClickHouse `cardinality` est un alias de `length` et ne compte que les éléments du tableau le plus externe.
+
+**Syntaxe**
+
+```sql
+arrayFlattenedLength(arr)
+```
+
+**Arguments**
+
+* `arr` — Un tableau éventuellement multidimensionnel. [`Array(T)`](/fr/reference/data-types/array)
+
+**Valeur renvoyée**
+
+Renvoie le nombre d&#39;éléments du tableau une fois tous les tableaux imbriqués aplatis. [`UInt64`](/fr/reference/data-types/int-uint)
+
+**Exemples**
+
+**Tableau imbriqué**
+
+```sql title=Query
+SELECT arrayFlattenedLength([[1, 2], [3, 4]]);
+```
+
+```response title=Response
+4
+```
+
+**Imbrication plus profonde**
+
+```sql title=Query
+SELECT arrayFlattenedLength([[[1]], [[2], [3]]]);
+```
+
+```response title=Response
+3
+```
+
+**Tableau plat**
+
+```sql title=Query
+SELECT arrayFlattenedLength([1, 2, 3]);
+```
+
+```response title=Response
+3
+```
+
+**Les éléments qui ne sont pas des tableaux ne sont pas parcourus**
+
+```sql title=Query
+SELECT arrayFlattenedLength([map('a', [1, 2, 3])]);
+```
+
+```response title=Response
+1
+```
+
 ## arrayFold {#arrayFold}
 
 Introduit dans : v23.10.0

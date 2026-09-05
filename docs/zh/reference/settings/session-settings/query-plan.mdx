@@ -420,6 +420,21 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 允许将过滤器下推到受支持存储的 PREWHERE 表达式
 
+## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增设置：通过等值连接键传播过滤合取项，使主键裁剪可在连接两侧触发。"}]}]} />
+
+启用或禁用一项查询计划级别的优化：该优化会通过等值键替换，将过滤合取项从等值连接的一侧复制到另一侧，
+使另一侧的主键/索引裁剪也能利用这些合取项。
+
+当过滤器与 `MergeTree` 读取之间仅隔有表达式和过滤步骤时，以及复制的合取项将主键列与常量进行比较时
+(包括使用常量集合的 `IN`) ，此优化才会生效。位于嵌套连接或 `DISTINCT` 下方的谓词，以及两个键列之间的
+比较，不会被复制：它们无法驱动另一侧的主键裁剪，复制只会增加额外工作。
+
+仅当 `query_plan_enable_optimizations` 为 1 时生效。
+
 ## query_plan_push_down_limit {#query_plan_push_down_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

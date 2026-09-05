@@ -138,14 +138,14 @@ LIMIT 5;
 
 Supongamos que tenemos varios archivos con los siguientes URIs en S3:
 
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;4.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;1.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;4.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;4.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;1.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;4.csv&#39;
 
 Cuenta el número de filas en archivos cuyos nombres terminan con números del 1 al 3:
 
@@ -204,27 +204,25 @@ INSERT INTO FUNCTION s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-
 SELECT name, value FROM existing_table;
 ```
 
-El glob ** puede utilizarse para el recorrido recursivo de directorios. Considere el siguiente ejemplo: recuperará todos los archivos del directorio `my-test-bucket-768` de forma recursiva:
+El glob `**` puede utilizarse para el recorrido recursivo de directorios. La siguiente consulta lee todos los archivos llamados `some_file_1.csv` dentro de `my-test-bucket-768`:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/**/some_file_1.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-Lo siguiente obtiene datos de todos los archivos `test-data.csv.gz` de cualquier carpeta dentro del directorio `my-test-bucket` de forma recursiva:
+Las llaves se pueden combinar con `**` para buscar varios nombres de archivo de forma recursiva:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/**/some_file_{1..3}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-Nota. Es posible especificar mapeadores de URL personalizados en el archivo de configuración del servidor. Ejemplo:
+El mismo patrón recursivo también funciona con una URL `s3://`:
 
 ```sql
-SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('s3://datasets-documentation/my-test-bucket-768/**/some_file_1.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-La URL `'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'` se reemplazaría por `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`
-
-Se puede añadir un mapeador personalizado en `config.xml`:
+Puede añadir un mapeador de URL personalizado en `config.xml`:
 
 ```xml
 <url_scheme_mappers>

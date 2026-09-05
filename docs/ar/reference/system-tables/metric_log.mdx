@@ -240,17 +240,17 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_AzureWriteRequestsErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد أخطاء طلبات الكتابة إلى Azure.
 * `ProfileEvent_AzureWriteRequestsThrottling` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات الكتابة إلى Azure التي تم تقييد معدلها.
 * `ProfileEvent_AzureWriteRequestsRedirects` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات إعادة توجيه طلبات الكتابة إلى Azure.
-* `ProfileEvent_AzureGetRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure GET التي مرّت عبر مقيِّد المعدل: المحجوبة وغير المحجوبة.
-* `ProfileEvent_AzureGetRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure GET التي حجبها مقيِّد المعدل.
+* `ProfileEvent_AzureGetRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure GET التي مرّت عبر مقيِّد المعدل: المحجوبة وغير المحجوبة.
+* `ProfileEvent_AzureGetRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure GET التي حجبها مقيِّد المعدل.
 * `ProfileEvent_AzureGetRequestThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضاه الاستعلام في الانتظار للالتزام بتقييد معدل طلبات Azure GET.
-* `ProfileEvent_DiskAzureGetRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure GET لقرص Azure التي مرّت عبر مقيِّد المعدل: المحجوبة وغير المحجوبة.
-* `ProfileEvent_DiskAzureGetRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure GET لقرص Azure التي حجبها مقيِّد المعدل.
+* `ProfileEvent_DiskAzureGetRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure GET لقرص Azure التي مرّت عبر مقيِّد المعدل: المحجوبة وغير المحجوبة.
+* `ProfileEvent_DiskAzureGetRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure GET لقرص Azure التي حجبها مقيِّد المعدل.
 * `ProfileEvent_DiskAzureGetRequestThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضاه الاستعلام في الانتظار للالتزام بتقييد معدل طلبات Azure GET لقرص Azure.
-* `ProfileEvent_AzurePutRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure PUT التي مرّت عبر مقيِّد المعدل: المحجوبة وغير المحجوبة.
-* `ProfileEvent_AzurePutRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure PUT التي حجبها مقيِّد المعدل.
+* `ProfileEvent_AzurePutRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure PUT التي مرّت عبر مقيِّد المعدل: المحجوبة وغير المحجوبة.
+* `ProfileEvent_AzurePutRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure PUT التي حجبها مقيِّد المعدل.
 * `ProfileEvent_AzurePutRequestThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضاه الاستعلام في الانتظار للالتزام بتقييد معدل طلبات Azure PUT.
-* `ProfileEvent_DiskAzurePutRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure PUT لقرص Azure التي مرّت عبر مقيِّد المعدل: المحجوبة وغير المحجوبة.
-* `ProfileEvent_DiskAzurePutRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure PUT لقرص Azure التي حجبها مقيِّد المعدل.
+* `ProfileEvent_DiskAzurePutRequestThrottlerCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure PUT لقرص Azure التي مرّت عبر مقيِّد المعدل: المحجوبة وغير المحجوبة.
+* `ProfileEvent_DiskAzurePutRequestThrottlerBlocked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Azure PUT لقرص Azure التي حجبها مقيِّد المعدل.
 * `ProfileEvent_DiskAzurePutRequestThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضاه الاستعلام في الانتظار للامتثال لتقييد معدل طلبات PUT لقرص Azure.
 * `ProfileEvent_RemoteReadThrottlerBytes` ([UInt64](/ar/reference/data-types/int-uint)) — البايتات التي مرّت عبر مُقيِّد &#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#39;.
 * `ProfileEvent_RemoteReadThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضاه الاستعلام في الانتظار للامتثال لتقييد &#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#39;.
@@ -828,13 +828,13 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_FilesystemCacheEvictedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات التي أُزيلت من ذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_FilesystemCacheCreatedKeyDirectories` ([UInt64](/ar/reference/data-types/int-uint)) — عدد أدلة المفاتيح التي تم إنشاؤها
 * `ProfileEvent_FilesystemCacheEvictedFileSegments` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مقاطع الملفات التي أُزيلت من ذاكرة التخزين المؤقت لنظام الملفات
-* `ProfileEvent_FilesystemCacheDowngradedFileSegments` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مقاطع الملفات التي خُفِّضت (نُقلت) من قائمة الانتظار المحمية إلى قائمة الانتظار الاختبارية في سياسة التخزين المؤقت SLRU. هذه حركة داخلية داخل ذاكرة التخزين المؤقت وليست عملية إزالة.
+* `ProfileEvent_FilesystemCacheDowngradedFileSegments` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مقاطع الملفات التي خُفِّضت (نُقلت) من قائمة الانتظار المحمية إلى قائمة الانتظار الاختبارية في سياسة التخزين المؤقت SLRU. هذه حركة داخلية داخل ذاكرة التخزين المؤقت وليست عملية إزالة.
 * `ProfileEvent_FilesystemCacheBackgroundDownloadQueuePush` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مقاطع الملفات المرسلة للتنزيل في الخلفية في ذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_FilesystemCacheEvictionSkippedFileSegments` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مقاطع الملفات التي تم تخطيها عند الإزالة لأنها في حالة غير قابلة للتحرير
 * `ProfileEvent_FilesystemCacheEvictionSkippedEvictingFileSegments` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مقاطع الملفات التي تم تخطيها عند الإزالة لأنها في حالة إزالة
 * `ProfileEvent_FilesystemCacheEvictionSkippedMovingFileSegments` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مقاطع الملفات التي تم تخطيها عند الإزالة لأنها في حالة نقل
 * `ProfileEvent_FilesystemCacheEvictionTries` ([UInt64](/ar/reference/data-types/int-uint)) — عدد محاولات إزالة عناصر ذاكرة التخزين المؤقت لنظام الملفات
-* `ProfileEvent_FilesystemCacheEvictionReusedIterator` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات إعادة استخدام المكرِّر لذاكرة التخزين المؤقت لنظام الملفات
+* `ProfileEvent_FilesystemCacheEvictionReusedIterator` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات إعادة استخدام المكرِّر لذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_FilesystemCacheOvercommitCandidatesIterationSteps` ([UInt64](/ar/reference/data-types/int-uint)) — عدد التكرارات الخارجية التي نفذتها حلقة إزالة overcommit بعد المرور الأول لتغطية العجز في حجز المساحة
 * `ProfileEvent_FilesystemCacheLockKeyMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — زمن قفل مفتاح ذاكرة التخزين المؤقت
 * `ProfileEvent_FilesystemCacheLockMetadataMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — زمن قفل بيانات التعريف الخاصة بذاكرة التخزين المؤقت لنظام الملفات
@@ -1511,6 +1511,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_AsyncLoggingTextLogDroppedMessages` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الرسائل التي أُسقطت من text&#95;log بسبب امتلاء طابور السجل غير المتزامن
 * `ProfileEvent_JemallocFailedAllocationSampleTracking` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لمرات فشل تتبّع عيّنة تخصيص jemalloc
 * `ProfileEvent_JemallocFailedDeallocationSampleTracking` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لمرات فشل تتبّع عيّنة إلغاء تخصيص jemalloc
+* `ProfileEvent_SetsBuiltFromSubquery` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مجموعات `IN`/`JOIN` التي مُلئت بتشغيل الاستعلام الفرعي الخاص بها. ولا تُحتسب المجموعة المأخوذة من ذاكرة التخزين المؤقت للمجموعات المُعدّة مسبقًا، أو التي بُنيت بالفعل وأُعيد استخدامها.
 * `ProfileEvent_LoadedStatisticsMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المنقضي في تحميل الإحصاءات من الأجزاء
 * `ProfileEvent_SelectivityEstimatorInSetNotBuilt` ([UInt64](/ar/reference/data-types/int-uint)) — عدد شروط `IN` التي لم يتمكن مقدّر الانتقائية من تحليلها لأن المجموعة لم تكن قد بُنيت بعد، ولا ينبغي له تشغيل الاستعلام الفرعي لملئها
 * `ProfileEvent_SelectivityEstimatorInSetEstimatedFromSize` ([UInt64](/ar/reference/data-types/int-uint)) — عدد شروط `IN` التي قُدّرت انتقائيتها بناءً على حجم المجموعة وحدودها بدلًا من نطاقاتها الدقيقة، لأن المجموعة تتجاوز `statistics_max_set_size_for_exact_selectivity_estimation`

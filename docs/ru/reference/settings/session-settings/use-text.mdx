@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_text_index_header_cache">
-  ## use_text_index_header_cache
-</div>
+## use_text_index_header_cache {#use_text_index_header_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -24,9 +22,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Определяет, кэшировать ли в памяти десериализованные заголовки текстового индекса.
 Использование кэша заголовков текстового индекса может значительно снизить задержки и повысить пропускную способность при работе с большим количеством запросов, использующих текстовый индекс.
 
-<div id="use_text_index_like_evaluation_by_dictionary_scan">
-  ## use_text_index_like_evaluation_by_dictionary_scan
-</div>
+## use_text_index_like_evaluation_by_dictionary_scan {#use_text_index_like_evaluation_by_dictionary_scan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -34,9 +30,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Включает вычисление запросов LIKE/ILIKE путём сканирования словаря инвертированного текстового индекса.
 
-<div id="use_text_index_negative_tokens_cache">
-  ## use_text_index_negative_tokens_cache
-</div>
+Ускоряются шаблоны `%value%`, `value%` и `%value`, а также вызовы `startsWith` и `endsWith`, которые `optimize_rewrite_like_perfect_affix` преобразует в `value%` и `%value`.
+
+## use_text_index_negative_tokens_cache {#use_text_index_negative_tokens_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -45,9 +41,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Определяет, следует ли кэшировать токены текстового индекса, отсутствующие в части данных.
 Кэш отрицательных токенов использует кэш токенов текстового индекса и позволяет избежать повторных обращений к словарю для отсутствующих токенов.
 
-<div id="use_text_index_postings_cache">
-  ## use_text_index_postings_cache
-</div>
+## use_text_index_postings_cache {#use_text_index_postings_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -56,9 +50,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Следует ли кэшировать в памяти десериализованные списки вхождений текстового индекса.
 Использование кэша списков вхождений текстового индекса может значительно снизить задержку и повысить пропускную способность при работе с большим количеством запросов к текстовому индексу.
 
-<div id="use_text_index_tokens_cache">
-  ## use_text_index_tokens_cache
-</div>
+## use_text_index_tokens_cache {#use_text_index_tokens_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

@@ -428,7 +428,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_IcebergPartitionPrunedFiles` ([UInt64](/ko/reference/data-types/int-uint)) — Iceberg 파티션 프루닝 중 건너뛴 파일 수입니다.
 * `ProfileEvent_IcebergTrivialCountOptimizationApplied` ([UInt64](/ko/reference/data-types/int-uint)) — Iceberg에서 읽는 동안 단순 count 최적화가 적용된 횟수입니다.
 * `ProfileEvent_IcebergVersionHintUsed` ([UInt64](/ko/reference/data-types/int-uint)) — version-hint.text가 사용된 횟수입니다.
-* `ProfileEvent_IcebergMinMaxIndexPrunedFiles` ([UInt64](/ko/reference/data-types/int-uint)) — Iceberg에서 MinMax 인덱스를 사용해 건너뛬 파일 수입니다.
+* `ProfileEvent_IcebergMinMaxIndexPrunedFiles` ([UInt64](/ko/reference/data-types/int-uint)) — Iceberg에서 MinMax 인덱스를 사용해 건너뛴 파일 수입니다.
 * `ProfileEvent_JoinBuildTableRowCount` ([UInt64](/ko/reference/data-types/int-uint)) — JOIN 연산의 빌드 테이블에 있는 전체 행 수입니다.
 * `ProfileEvent_JoinProbeTableRowCount` ([UInt64](/ko/reference/data-types/int-uint)) — JOIN 연산의 프로브 테이블에 있는 전체 행 수입니다.
 * `ProfileEvent_JoinResultRowCount` ([UInt64](/ko/reference/data-types/int-uint)) — JOIN 연산 결과의 전체 행 수입니다.
@@ -1333,7 +1333,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_KeeperLogsReadAheadFillReopens` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper read-ahead fill이 changelog file을 다시 열거나 탐색한 횟수
 * `ProfileEvent_KeeperLogsReadAheadFillDecodedEntries` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper read-ahead fill 작업이 디코딩한 로그 항목 수
 * `ProfileEvent_KeeperLogsReadAheadCursorsInstalled` ([UInt64](/ko/reference/data-types/int-uint)) — fill 작업이 아직 처리하지 않는 Keeper changelog read-ahead reader(peer 또는 commit)에 큐잉된 새 fill 커서 수
-* `ProfileEvent_KeeperLogsReadAheadPlanEpochMismatches` ([UInt64](/ko/reference/data-types/int-uint)) — 동시 `write&#95;at` 절단으로 제공되기 전에 무효화되어 Keeper changelog 읽기 계획이 폐기된 횟수
+* `ProfileEvent_KeeperLogsReadAheadPlanEpochMismatches` ([UInt64](/ko/reference/data-types/int-uint)) — 동시 write&#95;at 절단으로 제공되기 전에 무효화되어 Keeper changelog 읽기 계획이 폐기된 횟수
 * `ProfileEvent_KeeperLogsReadAheadScheduleRejected` ([UInt64](/ko/reference/data-types/int-uint)) — read-ahead 스레드 풀 큐가 가득 차 Keeper changelog read-ahead reader를 생성할 수 없었던 횟수입니다. 호출자는 직접 읽기로 폴백합니다.
 * `ProfileEvent_KeeperLogsReadAheadReadersCreated` ([UInt64](/ko/reference/data-types/int-uint)) — 생성된 Keeper changelog read-ahead reader(및 해당 fill 작업) 수입니다. 파일 경계를 넘어 이 값이 일정하면 reader를 종료하고 다시 생성하는 대신 재사용하고 있음을 나타냅니다.
 * `ProfileEvent_KeeperLogsReadAheadTimeoutFallbacks` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper changelog read-ahead 제공 요청이 fill 작업을 기다리다 시간 초과되어 남은 tail을 직접 읽기로 폴백한 횟수
@@ -1510,6 +1510,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_AsyncLoggingTextLogDroppedMessages` ([UInt64](/ko/reference/data-types/int-uint)) — 비동기 로그 큐가 가득 차 text&#95;log에서 버려진 메시지 수
 * `ProfileEvent_JemallocFailedAllocationSampleTracking` ([UInt64](/ko/reference/data-types/int-uint)) — jemalloc allocation sample 추적에 실패한 총 횟수
 * `ProfileEvent_JemallocFailedDeallocationSampleTracking` ([UInt64](/ko/reference/data-types/int-uint)) — jemalloc deallocation sample 추적에 실패한 총 횟수
+* `ProfileEvent_SetsBuiltFromSubquery` ([UInt64](/ko/reference/data-types/int-uint)) — 서브쿼리를 실행해 채운 `IN`/`JOIN` Set 수입니다. 준비된 Set 캐시에서 가져오거나 이미 빌드되어 재사용된 Set은 집계하지 않습니다.
 * `ProfileEvent_LoadedStatisticsMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 파트에서 통계를 로드하는 데 걸린 시간
 * `ProfileEvent_SelectivityEstimatorInSetNotBuilt` ([UInt64](/ko/reference/data-types/int-uint)) — Set이 아직 빌드되지 않았고 이를 채우기 위해 서브쿼리를 실행해서는 안 되므로 선택도 추정기가 분석할 수 없었던 `IN` 조건 수
 * `ProfileEvent_SelectivityEstimatorInSetEstimatedFromSize` ([UInt64](/ko/reference/data-types/int-uint)) — Set이 `statistics_max_set_size_for_exact_selectivity_estimation`를 초과하여 정확한 범위 대신 Set의 크기와 경계로 선택도를 추정한 `IN` 조건 수

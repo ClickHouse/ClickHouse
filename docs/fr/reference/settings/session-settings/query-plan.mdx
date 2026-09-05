@@ -420,6 +420,24 @@ Utilise l&#39;optimisation de matérialisation différée pour lire des fichiers
 
 Permet de pousser le filtre dans l&#39;expression PREWHERE pour les moteurs de stockage pris en charge
 
+## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nouveau paramètre qui fait remonter les conjoncts de filtre à travers les clés d'équi-jointure afin que le pruning par clé primaire s'applique des deux côtés."}]}]} />
+
+Active ou désactive une optimisation au niveau du plan de requête qui copie les conjoncts de filtre d&#39;un côté
+d&#39;une équi-jointure vers l&#39;autre par substitution des clés d&#39;équi-jointure, afin que le pruning par clé primaire/index
+de l&#39;autre côté puisse en tirer parti.
+
+S&#39;applique lorsque le filtre et la lecture `MergeTree` ne sont séparés de la jointure que par des étapes d&#39;expression
+et de filtre, et lorsque le conjonct copié compare une colonne de clé primaire à une constante
+(y compris `IN` avec un ensemble constant). Un prédicat situé sous une jointure imbriquée ou sous `DISTINCT`, de même qu&#39;une
+comparaison entre deux colonnes clés, est laissé tel quel : il ne pourrait pas déclencher de pruning par clé primaire de
+l&#39;autre côté, et le copier ne ferait donc qu&#39;ajouter du travail inutile.
+
+Ne prend effet que si `query_plan_enable_optimizations` vaut 1.
+
 ## query_plan_push_down_limit {#query_plan_push_down_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

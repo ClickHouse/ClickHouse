@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_text_index_header_cache">
-  ## use_text_index_header_cache
-</div>
+## use_text_index_header_cache {#use_text_index_header_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -24,9 +22,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 Indique s’il faut mettre en cache en mémoire les en-têtes d’index de texte désérialisés.
 L’utilisation du cache des en-têtes d’index de texte peut réduire considérablement la latence et augmenter le débit lors du traitement d’un grand nombre de requêtes utilisant un index de texte.
 
-<div id="use_text_index_like_evaluation_by_dictionary_scan">
-  ## use_text_index_like_evaluation_by_dictionary_scan
-</div>
+## use_text_index_like_evaluation_by_dictionary_scan {#use_text_index_like_evaluation_by_dictionary_scan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -34,9 +30,9 @@ L’utilisation du cache des en-têtes d’index de texte peut réduire considé
 
 Active l’évaluation des requêtes LIKE/ILIKE via le parcours du dictionnaire de l’index de texte inversé.
 
-<div id="use_text_index_negative_tokens_cache">
-  ## use_text_index_negative_tokens_cache
-</div>
+Les motifs accélérés sont `%value%`, `value%` et `%value`, ainsi que les appels `startsWith` et `endsWith` que `optimize_rewrite_like_perfect_affix` réécrit en `value%` et `%value`.
+
+## use_text_index_negative_tokens_cache {#use_text_index_negative_tokens_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -45,9 +41,7 @@ Active l’évaluation des requêtes LIKE/ILIKE via le parcours du dictionnaire 
 Indique s’il faut mettre en cache les jetons de l’index de texte absents d’une partie de données.
 Le cache des jetons négatifs utilise le cache des jetons de l’index de texte et évite les recherches répétées dans le dictionnaire pour les jetons absents.
 
-<div id="use_text_index_postings_cache">
-  ## use_text_index_postings_cache
-</div>
+## use_text_index_postings_cache {#use_text_index_postings_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -56,9 +50,7 @@ Le cache des jetons négatifs utilise le cache des jetons de l’index de texte 
 Indique s’il faut mettre en cache en mémoire les posting lists désérialisées de l’index de texte.
 L’utilisation du cache des postings de l’index de texte peut réduire considérablement la latence et augmenter le débit lors du traitement d’un grand nombre de requêtes sur l’index de texte.
 
-<div id="use_text_index_tokens_cache">
-  ## use_text_index_tokens_cache
-</div>
+## use_text_index_tokens_cache {#use_text_index_tokens_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
