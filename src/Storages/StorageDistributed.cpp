@@ -1013,6 +1013,10 @@ void StorageDistributed::read(
 
     const auto & settings = local_context->getSettingsRef();
 
+    /// `parseArguments` rewrites a table function's arguments in place, so the AST handed to it must
+    /// belong to one operation. This member outlives the query and is read by every concurrent one.
+    ASTPtr table_function_for_query = remote_table_function_ptr ? remote_table_function_ptr->clone() : nullptr;
+
     if (settings[Setting::allow_experimental_analyzer])
     {
         StorageID remote_storage_id = StorageID{remote_database, remote_table};
@@ -1020,7 +1024,7 @@ void StorageDistributed::read(
         auto query_tree_distributed = buildQueryTreeDistributed(modified_query_info,
             query_info.initial_storage_snapshot ? query_info.initial_storage_snapshot : storage_snapshot,
             remote_storage_id,
-            remote_table_function_ptr);
+            table_function_for_query);
         Block block = *InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
         /** For distributed tables we do not need constants in header, since we don't send them to remote servers.
           * Moreover, constants can break some functions like `hostName` that are constants only for local queries.
@@ -1050,7 +1054,7 @@ void StorageDistributed::read(
 
         modified_query_info.query = ClusterProxy::rewriteSelectQuery(
             local_context, modified_query_info.query,
-            remote_database, remote_table, remote_table_function_ptr);
+            remote_database, remote_table, table_function_for_query);
 
         if (modified_query_info.getCluster()->getShardsInfo().empty())
         {
@@ -1078,7 +1082,7 @@ void StorageDistributed::read(
         header,
         processed_stage,
         remote_storage,
-        remote_table_function_ptr,
+        table_function_for_query,
         select_stream_factory,
         log,
         local_context,
@@ -1207,8 +1211,12 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
 
     if (src_distributed.remote_table_function_ptr)
     {
+        /// The source storage's member is shared by its own concurrent readers, and argument parsing
+        /// rewrites it in place, so this operation works on a copy.
+        const ASTPtr src_table_function_ast = src_distributed.remote_table_function_ptr->clone();
+
         const TableFunctionPtr src_table_function =
-            TableFunctionFactory::instance().get(src_distributed.remote_table_function_ptr, local_context);
+            TableFunctionFactory::instance().get(src_table_function_ast, local_context);
         if (const TableFunctionView * view_function = typeid_cast<const TableFunctionView *>(src_table_function.get()))
         {
             new_query->setOrReplace(new_query->select, view_function->getSelectQuery().clone());
@@ -1223,7 +1231,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
             auto expression_list = make_intrusive<ASTExpressionList>();
             expression_list->children.push_back(make_intrusive<ASTAsterisk>());
             select->setExpression(ASTSelectQuery::Expression::SELECT, expression_list->clone());
-            select->addTableFunction(src_distributed.remote_table_function_ptr);
+            select->addTableFunction(src_table_function_ast);
 
             select_with_union_query->list_of_selects->children.push_back(select->clone());
 
