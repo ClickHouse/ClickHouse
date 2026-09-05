@@ -138,8 +138,8 @@ namespace
         const auto metadata = storage.getInMemoryMetadataPtr(context, false);
         const auto time_series_type = metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type->getName();
 
-        /// Sent over each replica's own connection, so an undeclared database is that replica's default; a replica
-        /// that is this server itself is read and written in-process instead, so the name resolves on this context.
+        /// An undeclared database is each replica's own default, except on a replica that is this server itself: the
+        /// read and the write pin prefer_localhost_replica on and parallel replicas off, so it runs on this context.
         auto make_probe_query = [&](bool runs_on_the_caller)
         {
             const String database_predicate = !remote_id.database_name.empty()
@@ -282,7 +282,8 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
     /// cluster() call enforces only later is required here, before it can report on a shard-local target.
     context->checkAccess(AccessType::READ, AccessTypeObjects::toStringSource(AccessTypeObjects::Source::REMOTE));
 
-    /// A shard that is this server itself is read in-process, on the caller's context: its selector's grants too.
+    /// The read pins prefer_localhost_replica on and parallel replicas off, so a shard that is this server itself
+    /// runs in-process on the caller's context: the selector's own grants are asked for here, before the probe.
     const auto cluster = typeid_cast<const StorageDistributed &>(storage).getCluster();
     if (std::ranges::any_of(cluster->getShardsInfo(), &Cluster::ShardInfo::isLocal))
     {
