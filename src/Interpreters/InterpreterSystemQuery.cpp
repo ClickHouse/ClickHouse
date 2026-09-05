@@ -1482,7 +1482,9 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     create.attach = true;
 
     auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, LoadingStrictnessLevel::ATTACH);
-    auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
+    /// Re-attaches an existing table from its own stored definition.
+    auto constraints = InterpreterCreateQuery::getConstraintsDescription(
+        create.columns_list->constraints, columns, system_context, /*is_fresh_definition=*/false);
     auto data_path = database->getTableDataPath(create);
 
     /// After the table is detached, we must re-create and re-attach it.

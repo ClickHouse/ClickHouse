@@ -46,6 +46,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -165,6 +166,18 @@ void checkColumnDeclarationIsSupportedByAlter(const ASTColumnDeclaration & ast_c
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Cannot specify PRIMARY KEY in ALTER TABLE ... {}. The primary key can only be defined when the table is created",
             alter_name);
+}
+
+/// Must mirror the `if_not_exists` / `if_exists` early returns of `AlterCommand::apply`: false means
+/// the command stores no declaration. `constraint_names` holds one entry per stored declaration, in
+/// order, since names need not be unique and the commands of one ALTER apply sequentially.
+bool constraintCommandChangesMetadata(const AlterCommand & command, const Names & constraint_names)
+{
+    const bool name_exists
+        = std::find(constraint_names.begin(), constraint_names.end(), command.constraint_name) != constraint_names.end();
+    if (command.type == AlterCommand::ADD_CONSTRAINT)
+        return !(name_exists && command.if_not_exists);
+    return !(!name_exists && command.if_exists);
 }
 
 }
@@ -2056,6 +2069,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     NameSet modified_columns;
     NameSet renamed_columns;
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
+    /// Advanced with each constraint command, so a later command sees what the earlier ones left.
+    Names constraint_names;
+    for (const auto & constraint : metadata->constraints.getConstraints())
+        constraint_names.push_back(constraint->as<ASTConstraintDeclaration &>().name);
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
@@ -2083,6 +2100,26 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         /// way around it.
         if (command.type == AlterCommand::ADD_CONSTRAINT || command.type == AlterCommand::MODIFY_CONSTRAINT)
             ConstraintsDescription::assertConstraintPreservesRowCount(command.constraint_decl);
+
+        /// Only a declaration this command persists: an already stored constraint of that shape must
+        /// stay ALTER-able, including `DROP CONSTRAINT`, and a no-op command must keep succeeding.
+        if (command.type == AlterCommand::ADD_CONSTRAINT || command.type == AlterCommand::MODIFY_CONSTRAINT)
+        {
+            if (constraintCommandChangesMetadata(command, constraint_names))
+            {
+                if (command.constraint_decl)
+                    checkConstraintExpressionIsValid(*command.constraint_decl);
+                if (command.type == AlterCommand::ADD_CONSTRAINT)
+                    constraint_names.push_back(command.constraint_name);
+            }
+        }
+        else if (command.type == AlterCommand::DROP_CONSTRAINT)
+        {
+            /// `apply` erases the first match only, so a duplicate name stays present.
+            auto it = std::find(constraint_names.begin(), constraint_names.end(), command.constraint_name);
+            if (it != constraint_names.end())
+                constraint_names.erase(it);
+        }
 
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)

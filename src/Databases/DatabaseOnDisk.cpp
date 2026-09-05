@@ -9,6 +9,7 @@
 #include <Core/UUID.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOrdinary.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
@@ -158,7 +159,9 @@ std::pair<String, StoragePtr> createTableFromAST(
         else
         {
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);
-            constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints, columns, context);
+            constraints = InterpreterCreateQuery::getConstraintsDescription(
+                ast_create_query.columns_list->constraints, columns, context,
+                isFreshTableDefinition(mode, ast_create_query.attach_short_syntax));
         }
     }
 
