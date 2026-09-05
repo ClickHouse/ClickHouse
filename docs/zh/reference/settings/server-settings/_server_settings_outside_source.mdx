@@ -199,10 +199,10 @@ ClickHouse 每隔 x 秒会重新加载一次内置字典。因此，无需重启
 **满足条件时的操作**：
 
 * 如果某个数据分区片段匹配某组条件，ClickHouse 会使用指定的压缩方法。
-* 如果某个数据分区片段匹配多组条件，ClickHouse 会使用第一个匹配的条件组。
+* 如果某个数据分区片段匹配多组条件，ClickHouse 会使用最后一个匹配的条件组 (`<case>` 段按顺序检查，每个匹配的段都会覆盖之前的选择) 。
 
 <Note>
-  如果某个数据分区片段未满足任何条件，ClickHouse 会使用 `lz4` 压缩。
+  如果某个数据分区片段未满足任何条件，ClickHouse 会使用与大小相关的内置默认值：小于 100 MB 时使用 `LZ4`，达到或超过该值时使用 `ZSTD(3)`。与上述 `min_part_size` 条件一样，这里的大小是在选择编解码器时 (即数据写入之前) 已知的大小：对于刚刚插入的 part 为 `0`，对于 merge 或 mutation 则为源 parts 的大小。因此，会缩减输入数据的 rewrite (例如 `TTL DELETE` 或 collapsing merge) 会按输入大小进行归类，可能生成一个虽然低于阈值但仍使用 `ZSTD(3)` 的 part。
 </Note>
 
 **示例**
@@ -213,7 +213,7 @@ ClickHouse 每隔 x 秒会重新加载一次内置字典。因此，无需重启
         <min_part_size>10000000000</min_part_size>
         <min_part_size_ratio>0.01</min_part_size_ratio>
         <method>zstd</method>
-        <level>1</level>
+        <level>10</level>
     </case>
 </compression>
 ```

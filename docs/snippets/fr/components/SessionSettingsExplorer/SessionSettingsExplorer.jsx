@@ -1943,8 +1943,8 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       label: "network_*",
       count: 2,
       settings: [
-        { name: "network_compression_method", path: "/network#network_compression_method", default: "LZ4" },
-        { name: "network_zstd_compression_level", path: "/network#network_zstd_compression_level", default: "1" }
+        { name: "network_compression_method", path: "/network#network_compression_method", default: "ZSTD" },
+        { name: "network_zstd_compression_level", path: "/network#network_zstd_compression_level", default: "3" }
       ],
       children: []
     },
@@ -3210,11 +3210,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
   }
 
   const filterEntry = (entry) => {
-    const paramètres = entry.paramètres.filter((paramètre) => matchesSearch(paramètre.name))
+    const settings = entry.settings.filter((setting) => matchesSearch(setting.name))
     const children = entry.children.map(filterEntry).filter(Boolean)
-    const count = paramètres.length + children.reduce((total, child) => total + child.count, 0)
+    const count = settings.length + children.reduce((total, child) => total + child.count, 0)
     if (!count) return null
-    return { ...entry, count, paramètres, children }
+    return { ...entry, count, settings, children }
   }
 
   const filteredEntries = isSearching ? entries.map(filterEntry).filter(Boolean) : entries
@@ -3251,7 +3251,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
   const renderGroup = (entry, continuations = [], isLast = false, path = []) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
-    const items = [...entry.paramètres.map((paramètre) => ({ type: "paramètre", value: paramètre })), ...entry.children.map((child) => ({ type: "group", value: child }))]
+    const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
     const countLabel = `${entry.count} ${entry.count === 1 ? "paramètre" : "paramètres"}`
 
     return (

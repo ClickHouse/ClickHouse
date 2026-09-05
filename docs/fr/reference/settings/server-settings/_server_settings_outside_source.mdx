@@ -185,24 +185,24 @@ Paramètres de compression des données pour les tables utilisant le moteur [Mer
 </compression>
 ```
 
-**Champs `<case>`** :
+**Champs `<case>`** :
 
 * `min_part_size` – Taille minimale d’une partie de données.
 * `min_part_size_ratio` – Ratio entre la taille de la partie de données et celle de la table.
-* `method` – Méthode de compression. Valeurs acceptées : `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
+* `method` – Méthode de compression. Valeurs acceptées : `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
 * `level` – Niveau de compression. Voir [Codecs](/fr/reference/statements/create/table/codec#general-purpose-codecs).
 
 <Note>
   Vous pouvez configurer plusieurs sections `<case>`.
 </Note>
 
-**Actions lorsque les conditions sont remplies** :
+**Actions lorsque les conditions sont remplies** :
 
 * Si une partie de données correspond à un jeu de conditions, ClickHouse utilise la méthode de compression spécifiée.
-* Si une partie de données correspond à plusieurs jeux de conditions, ClickHouse utilise le premier jeu de conditions correspondant.
+* Si une partie de données correspond à plusieurs jeux de conditions, ClickHouse utilise le dernier jeu de conditions correspondant (les sections `<case>` sont vérifiées dans l’ordre, et chaque correspondance remplace le choix précédent).
 
 <Note>
-  Si aucune condition n’est remplie pour une partie de données, ClickHouse utilise la compression `lz4`.
+  Si aucune condition n’est remplie pour une partie de données, ClickHouse applique la valeur par défaut intégrée qui tient compte de la taille : `LZ4` en dessous de 100 Mo et `ZSTD(3)` à partir de ce seuil. Comme pour les conditions `min_part_size` ci-dessus, la taille prise en compte est celle connue au moment où le codec doit être choisi, avant l’écriture des données : `0` pour une partie fraîchement insérée, et la taille des parties sources pour une fusion ou une mutation. Une réécriture qui réduit son entrée, telle qu’un `TTL DELETE` ou une fusion avec collapsing, est donc classée selon la taille d’entrée et peut produire une partie sous le seuil mais tout de même compressée en `ZSTD(3)`.
 </Note>
 
 **Exemple**
@@ -213,7 +213,7 @@ Paramètres de compression des données pour les tables utilisant le moteur [Mer
         <min_part_size>10000000000</min_part_size>
         <min_part_size_ratio>0.01</min_part_size_ratio>
         <method>zstd</method>
-        <level>1</level>
+        <level>10</level>
     </case>
 </compression>
 ```

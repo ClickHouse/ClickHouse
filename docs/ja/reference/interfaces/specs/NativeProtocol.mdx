@@ -19,9 +19,7 @@ keywords: ['ネイティブプロトコル', 'TCP', 'wire protocol', 'handshake'
 
 いくつかの性質は全体を通して共通しています。このプロトコルはバイナリであり、位置依存です。`BlockInfo`内を除いてフィールドタグは存在しないため、1バイトでもずれると、それ以降のすべてが同期しなくなります。また、これはステートフルなプロトコルであり、各TCP接続は一度に1つのクエリだけを処理します。多重化はありません。固定幅整数はリトルエンディアンです。
 
-<div id="overview">
-  ## 概要
-</div>
+## 概要 {#overview}
 
 | プロパティ     | 値                                                                         |
 | --------- | ------------------------------------------------------------------------- |
@@ -68,19 +66,13 @@ sequenceDiagram
 
 ネイティブTCPプロトコルでは、SQL 内の `FORMAT` 句に関係なく、表形式のデータは常に Nativeフォーマットで運ばれます。`RowBinary`、`CSV`、`JSON` などへの再フォーマットはクライアント側の役割であり、Nativeブロックをデコードした後に行われます。 (HTTPインターフェイスはこれとは別のコードパスで、`FORMAT` 句を*実際に*尊重します。HTTP はここでの対象外です。)
 
-<div id="security">
-  ## セキュリティ
-</div>
+## セキュリティ {#security}
 
-<div id="transport-security">
-  ### トランスポートセキュリティ (TLS)
-</div>
+### トランスポートセキュリティ (TLS) {#transport-security}
 
 TLS はプロトコルの下位にあるトランスポート層で動作します。有効にすると TCP ストリーム全体が暗号化され、TLS を使用するかどうかにかかわらず、プロトコルメッセージ自体はバイト単位でまったく同一です。
 
-<div id="authentication">
-  ### 認証
-</div>
+### 認証 {#authentication}
 
 認証は、ハンドシェイク時の [`ClientHello`](#clienthello) メッセージで行われます。`user` フィールドと `password` フィールドは平文の文字列として送信されるため、転送中の認証情報を保護するのはトランスポート層の暗号化 (TLS) です。
 
@@ -88,19 +80,13 @@ TLS はプロトコルの下位にあるトランスポート層で動作しま�
 
 SSH チャレンジレスポンス認証は、プロトコルバージョン 54466 以降で利用できます。詳しくは、[SSH チャレンジレスポンス認証](#ssh-authentication) を参照してください。
 
-<div id="inter-server-secret">
-  ### サーバー間シークレット
-</div>
+### サーバー間シークレット {#inter-server-secret}
 
 分散クエリ実行では、サーバー同士は共有シークレットを知っていることを証明することで相互認証を行います。この際、シークレット自体が wire 上に送られることはありません。各 Query は、salt、nonce、設定されたシークレット、およびクエリから計算される 32 バイトの SHA-256 `auth_hash` を [`Query`](#query) のフィールド 4 に含み、受信側のサーバーはこれを再計算して照合します。これは `INTERSERVER_SECRET` 機能 (v54441) によって有効化されます。外部クライアントは、ここには常に空文字列を送信します。[サーバー間認証](#inter-server-authentication)を参照してください。
 
-<div id="versioning-and-feature-gates">
-  ## バージョン管理とフィーチャーゲート
-</div>
+## バージョン管理とフィーチャーゲート {#versioning-and-feature-gates}
 
-<div id="version-negotiation">
-  ### バージョン交渉
-</div>
+### バージョン交渉 {#version-negotiation}
 
 client と server はどちらも、ハンドシェイク時に対応する最大の プロトコルバージョン を通知します。**交渉後のバージョン** は、その 2 つのうち小さい方です。
 
@@ -110,9 +96,7 @@ negotiated_version = min(client_version, server_version)
 
 その後の各メッセージでは、ネゴシエートされたバージョンに基づいて、wire 上にどのフィールドが含まれるかが決まります。
 
-<div id="feature-gates">
-  ### 機能ゲート
-</div>
+### 機能ゲート {#feature-gates}
 
 機能は、それが導入されたプロトコルバージョンによって識別され、ネゴシエートされたバージョンがその番号以上の場合に**有効**になります。
 
@@ -120,9 +104,7 @@ negotiated_version = min(client_version, server_version)
   機能が有効な場合、そのフィールドは wire 上に**必ず**存在していなければなりません。プロトコルは位置に厳密に依存するため、機能ゲートされたフィールドを省略すると、それ以降のすべてのフィールドのバイトストリームが破損します。
 </Warning>
 
-<div id="feature-table">
-  ### 機能一覧
-</div>
+### 機能一覧 {#feature-table}
 
 | 機能                                                           | バージョン | 影響範囲                             | ワイヤ形式への影響                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | ------------------------------------------------------------ | ----- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -178,9 +160,7 @@ negotiated_version = min(client_version, server_version)
 | QUANTILE&#95;DETERMINISTIC&#95;SKIP&#95;DEGREE               | 54491 | Block (Column)                   | `AggregateFunction(quantileDeterministic, ...)` (およびその `quantiles`/`median` 表記) の state バージョンを `0` から `1` に引き上げます。これにより、シリアライズされた各 state の末尾に `UInt8 skip_degree` が追加されます。変更されるのはその 1 つの集約関数の state ペイロードのみです。カラムのフレーミングには変更がなく、他のすべての集約関数はそれぞれ独自のバージョンを維持します。このリビジョン未満では writer はバージョン `0` の state を出力するため、古い peer は影響を受けません。                                                                                                                                                                                                                                                                        |
 | STRING&#95;WITH&#95;SIZE&#95;STREAM&#95;SERIALIZATION        | 54492 | Block (Column)                   | `String` カラムは、値ごとの長さプレフィックス付きレイアウトから、累積バイトオフセットの別ストリーム (`Array` が使用するものと同じオフセットレイアウト) に切り替わり、そのまま送信されます: `[UInt64 × num_rows offsets][data blob]`。ネゴシエートされたリビジョンにより制御されます。54492 未満では、writer は値ごとの長さプレフィックスを使用します。ワイヤにはこれを示すカラムごとのマーカーはありません。両方の peer がリビジョンのみから判断します。[String column layout](/ja/reference/interfaces/specs/NativeFormat#string-type) を参照してください。                                                                                                                                                                                                                                          |
 
-<div id="packet-envelope">
-  ## パケットのエンベロープ
-</div>
+## パケットのエンベロープ {#packet-envelope}
 
 送受信どちらの方向でも、通信上のすべてのメッセージは同じ外側の構造を持ちます：
 
@@ -195,9 +175,7 @@ negotiated_version = min(client_version, server_version)
 
 [message reference](#message-reference)では、各パケットの**ボディ**、つまりパケット型コードの後に続くバイト列のみを記載しています。フィールド番号は、最初のボディフィールドを1として始まります。
 
-<div id="chunked-framing">
-  ### チャンク化フレーミング (v54470+)
-</div>
+### チャンク化フレーミング (v54470+) {#chunked-framing}
 
 `CHUNKED_PROTOCOL` 機能の使用が**ネゴシエート**されると ([ハンドシェイク](#handshake-phase)を参照) 、wire 上のすべてのパケットはチャンク化フレーミングで包まれます。この包み方は**方向ごと**です。つまり、client→server と server→client は個別にネゴシエートされるため、異なるモード (チャンク化または非フレーム) になる場合があります。
 
@@ -240,15 +218,11 @@ chunkごとのWireレイアウト:
 
 **タイミング。** ネゴシエーション文字列はフレーム化されていない wire 上を流れます: ClientHello → ServerHello (server prefs) → Addendum (client のネゴシエート済みの値) 。フレーミングへの切り替えは、Addendum が flush された*後*に送信されるすべてのバイトに適用されます。Addendum 自体、ClientHello、ServerHello は常にフレーム化されません。
 
-<div id="connection-lifecycle">
-  ## 接続ライフサイクル
-</div>
+## 接続ライフサイクル {#connection-lifecycle}
 
 接続は常に、`HANDSHAKE`、`READY`、`READING_RESPONSE`、または終了済みの4つの状態のいずれか1つにあります。プロトコルは多重化を行わないため、前のレスポンスを読み切る前にクライアントが新しいリクエストを送信すると、転送中のバイト列が交錯してストリームが破損します。
 
-<div id="states">
-  ### 状態
-</div>
+### 状態 {#states}
 
 ```mermaid
 stateDiagram-v2
@@ -274,9 +248,7 @@ stateDiagram-v2
 | `READING_RESPONSE` | クライアントがクエリを送信したときに入る状態です。クライアントは `READY` に戻る前に、サーバーのレスポンスストリームを最後まで完全に読み切る必要があります。ここでクライアント→サーバー間で許可されるパケットは Cancel のみです (このページでは説明していません) 。                                                                        |
 | Terminated         | 以後は使用できません。クライアントは新しい TCP connection を開き、ハンドシェイク をやり直す必要があります。                                                                                                                                                    |
 
-<div id="handshake-phase">
-  ### ハンドシェイクフェーズ
-</div>
+### ハンドシェイクフェーズ {#handshake-phase}
 
 認証を行い、プロトコルバージョンをネゴシエートします。これは各接続で、他のどの処理よりも前に、必ず一度だけ発生します。
 
@@ -314,9 +286,7 @@ sequenceDiagram
 
 成功すると接続は `READY` に移行し、何らかのエラーが発生した場合は終了します。
 
-<div id="ping-phase">
-  ### Ping フェーズ
-</div>
+### Ping フェーズ {#ping-phase}
 
 TCP keepalive とは独立した、アプリケーションレベルの生存確認です。Ping/Pong の往復が成功すれば、TCP接続が双方向で生きており、サーバーが応答可能であることを確認できます。Ping はステートレスで、どのクエリとも相関付けられていないため、連続する複数の Ping は互いに独立しています。
 
@@ -345,9 +315,7 @@ sequenceDiagram
    | `Exception` (2) | [`Exception`](#exception) をデコードし、エラーとして返します。 |
    | anything else   | プロトコル違反。                                     |
 
-<div id="query-phase">
-  ### クエリフェーズ
-</div>
+### クエリフェーズ {#query-phase}
 
 クライアントは SQL ステートメントを送信し、サーバーは結果ブロックと実行テレメトリーをストリームで返します。レスポンスは一連のパケットで構成され、最後は必ず 1 つの `EndOfStream` または `Exception` で終わります。
 
@@ -401,9 +369,7 @@ sequenceDiagram
   `num_rows == 0` のケースは、新しい実装でよくつまずくポイントです。行数 0 の block は境界マーカーまたはスキーマヘッダーであり、ストリーム終端を示すシグナルではありません。応答を終了させるのは `EndOfStream` または `Exception` だけです。
 </Note>
 
-<div id="insert-phase">
-  ### INSERT フェーズ
-</div>
+### INSERT フェーズ {#insert-phase}
 
 INSERT フェーズは、[クエリフェーズ](#query-phase)に 2 回の追加のやり取りを加えたものです。クライアントが `INSERT` ステートメントを送信すると、サーバーはターゲットテーブルを示す **スキーマブロック** を返します。続いてクライアントは行を含む Data packets をストリーミングし、その後に空の Data マーカーを送信します。最後に、サーバーは `EndOfStream` または `Exception` を返して終了します。
 
@@ -447,9 +413,7 @@ sequenceDiagram
 
 接続は、`EndOfStream` または処理済みの `Exception` を受け取ると `READY` に戻ります。プロトコル違反や I/O エラーが発生した場合、接続は終了します。
 
-<div id="message-reference">
-  ## メッセージリファレンス
-</div>
+## メッセージリファレンス {#message-reference}
 
 フィールドは wire 順で記載しています。`Type` カラムでは次を使用します。
 
@@ -466,9 +430,7 @@ sequenceDiagram
 
 これらの表で記載しているのは、各パケットのパケット種別コードに続くボディのみです。
 
-<div id="clienthello">
-  ### ClientHello (パケットタイプ 0)
-</div>
+### ClientHello (パケットタイプ 0) {#clienthello}
 
 クライアント → サーバー。TCP接続の確立後に送信される最初のメッセージです。
 
@@ -482,9 +444,7 @@ sequenceDiagram
 | 6 | user                 | String  | universal | 認証用のユーザー名。空の場合はサーバーのデフォルトセッションユーザー (`default_session_user` サーバー設定。26.8より前のサーバーでは拒否されます) を意味します。[認証](#authentication)を参照してください。 |
 | 7 | password             | String  | universal | パスワード (平文)                                                                                                                     |
 
-<div id="serverhello">
-  ### ServerHello (パケットタイプ 0)
-</div>
+### ServerHello (パケットタイプ 0) {#serverhello}
 
 Server → Client。認証に成功した場合の ClientHello への応答です。
 
@@ -519,9 +479,7 @@ Server → Client。認証に成功した場合の ClientHello への応答で�
   悪意のある、または誤設定されたサーバーに対する resource 使用量を抑えるため、デコードする `count` は 256 エントリ、各 `pattern` と `message` の String は 4096 バイトを上限にしてください。パスワードポリシーが設定されていないサーバーでは、`count` が `0` (後続の組なし) であるのが一般的です。
 </Note>
 
-<div id="addendum">
-  ### 追補 (パケットタイプなし)
-</div>
+### 追補 (パケットタイプなし) {#addendum}
 
 クライアント → サーバー。`ADDENDUM` (v54458) によって有効化され、ハンドシェイクのやり取りが完了した直後に送信されます。これは独立したパケットタイプではなく、各フィールドはパケットタイプを示すバイト接頭辞なしで、生のまま wire に載せられます。
 
@@ -534,21 +492,15 @@ Server → Client。認証に成功した場合の ClientHello への応答で�
 
 チャンク化フレーミング への切り替えは、この Addendum が *flush された後* に適用されます。つまり、Addendum 自体はフレーム化されません。
 
-<div id="ping">
-  ### Ping (パケットタイプ 4)
-</div>
+### Ping (パケットタイプ 4) {#ping}
 
 クライアント → サーバー。ボディはありません。パケットは、チャンク化フレーミング の前では 1 バイトの `0x04` のみです。chunking がネゴシエートされると、このバイトは chunk の 1 バイトのペイロードになります ([チャンク化フレーミング](#chunked-framing) を参照) 。
 
-<div id="pong">
-  ### Pong (packet type 4)
-</div>
+### Pong (packet type 4) {#pong}
 
 サーバー → クライアント。ボディはありません。パケットは、チャンク化フレーミングの前は 1 バイトの `0x04` のみです。チャンク化がネゴシエートされると、このバイトは chunk の 1 バイトのペイロードになります ([chunked framing](#chunked-framing)を参照) 。
 
-<div id="exception">
-  ### Exception (packet type 2)
-</div>
+### Exception (packet type 2) {#exception}
 
 サーバー → クライアント。いずれかのフェーズでサーバーがエラーに遭遇した場合に送信されます。
 
@@ -560,9 +512,7 @@ Server → Client。認証に成功した場合の ClientHello への応答で�
 | 4 | stack&#95;trace           | String | universal | サーバー側のスタックトレース                        |
 | 5 | has&#95;nested (obsolete) | Bool   | universal | 廃止された互換性用バイト。サーバーは常に `false` を書き込みます  |
 
-<div id="query">
-  ### クエリ (パケットタイプ 1)
-</div>
+### クエリ (パケットタイプ 1) {#query}
 
 クライアント → サーバー。
 
@@ -578,9 +528,7 @@ Server → Client。認証に成功した場合の ClientHello への応答で�
 | 7  | query&#95;body     | String      | universal    | always                                                    | SQL テキスト                                                                                                                                                                                                                                             |
 | 8  | parameters         | Parameter[] | client       | PARAMETERS (v54459)                                       | [Parameter](#parameter) を参照。空のキーで終端します。                                                                                                                                                                                                              |
 
-<div id="clientinfo">
-  ### ClientInfo (Query に埋め込み)
-</div>
+### ClientInfo (Query に埋め込み) {#clientinfo}
 
 クライアント → サーバー。Query のボディ (フィールド 2) に埋め込まれます。`CLIENT_INFO` (v54032) で制御されます。 (ClientInfo 内の一部のフィールドは、以下の各フィールドの注記にあるとおり、以降のバージョンで制御されます。)
 
@@ -637,9 +585,7 @@ If has_trace == 1:
   [UInt8:    trace_flags]       W3C trace flags
 ```
 
-<div id="inter-server-authentication">
-  ### Inter-server authentication
-</div>
+### Inter-server authentication {#inter-server-authentication}
 
 Query のフィールド 4 (`auth_hash`) は、通信上でやり取りされる共有クラスターシークレット **ではありません**。生のシークレットを送信すると、認証に失敗するだけでなく、シークレット自体も漏えいしてしまいます。代わりに、inter-server クライアントとして動作するサーバーは、ソルト付き SHA-256 ハッシュを使ってシークレットを知っていることを証明します。
 
@@ -650,9 +596,7 @@ Query のフィールド 4 (`auth_hash`) は、通信上でやり取りされる
 
 外部 (inter-server ではない) クライアントはこのモードに入ることはなく、常に空の `auth_hash` を送信します。
 
-<div id="setting">
-  ### 設定
-</div>
+### 設定 {#setting}
 
 Query ボディの設定リスト ([Query](#query) パケットのフィールド 3) にインラインでエンコードされます。このリストは、ネゴシエーションされたバージョンに関係なく**常に存在し**、空の key を持つ Setting、つまり後続に flags も value も続かない単一の `VarUInt 0` で終端されます。setting ごとのエンコードだけが、`SETTINGS_SERIALIZED_AS_STRINGS` (v54429) を境に、ネゴシエーション済みバージョンに応じて変わります。
 
@@ -675,9 +619,7 @@ Query ボディの設定リスト ([Query](#query) パケットのフィール�
 * `0x0c` — 独立したフラグではなく **2-bit tier** フィールドです: `0x00` = Production、`0x04` = 廃止された、`0x08` = Experimental、`0x0c` = ベータ。2 ビットすべて (`flags & 0x0c`) を読んでください。単純に `flags & 0x04` で判定すると、ベータ (`0x0c`) を廃止されたものと誤分類してしまいます。
 * `0x80` — **HotReload** (再起動なしでの config 再読み込み。flags enum で定義されており、主に 協調 settings で見られます) 。
 
-<div id="parameter">
-  ### パラメータ
-</div>
+### パラメータ {#parameter}
 
 `SELECT {x:UInt64}` のようなパラメータ化クエリで使用するクエリパラメータです。`Custom` フラグ (`0x02`) が設定された [Setting](#setting) と同じ形式でエンコードされ、同様に空の key で終端されます。
 
@@ -691,9 +633,7 @@ Query ボディの設定リスト ([Query](#query) パケットのフィール�
   パラメータ値は生のリテラルではなく、値の SQL 表現です。文字列型のパラメータは、単一引用符で囲んだ状態で渡す必要があります (たとえば、`{name:String}` の値は `Alice` ではなく `'Alice'` です) 。そうでない場合、サーバー側の値パーサーに拒否されます。
 </Note>
 
-<div id="data">
-  ### Data (パケットタイプ 1 server→client、パケットタイプ 2 client→server)
-</div>
+### Data (パケットタイプ 1 server→client、パケットタイプ 2 client→server) {#data}
 
 双方向で使用されます。結果ブロック、INSERT データ、外部テーブル、データ終端マーカーを運びます。
 
@@ -714,9 +654,7 @@ Query ボディの設定リスト ([Query](#query) パケットのフィール�
 
 ブロックの各種バリアントとその意味については、[Block variants](/ja/reference/interfaces/specs/NativeFormat#block-variants) を参照してください。
 
-<div id="progress">
-  ### Progress (パケットタイプ 3)
-</div>
+### Progress (パケットタイプ 3) {#progress}
 
 サーバー → クライアント。クエリの実行中に定期的に送信されます。すべてのフィールドは VarUInt で、各パケットに含まれるのは**直前の `Progress` パケット以降の増分**であり、累計値ではありません。送信前に、サーバーは counters を読み取ってアトミックに 0 にリセットし、`elapsed_ns` は前回送信からの経過時間の差分として計算します。したがってクライアントは、連続して届くパケットをローカルで**必ず加算していく**必要があります。パケットを絶対値として扱うと、複数のパケットが到着した時点で進捗表示が後戻りしたり、過少計上されたりします。
 
@@ -730,9 +668,7 @@ Query ボディの設定リスト ([Query](#query) パケットのフィール�
 | 6 | wrote&#95;bytes | VarUInt | 共通  | WRITE&#95;CLIENT&#95;INFO (v54420)                     | 前回のパケット以降に書き込まれたバイト数 (INSERT 用) 。累積します                               |
 | 7 | elapsed&#95;ns  | VarUInt | 共通  | SERVER&#95;QUERY&#95;TIME&#95;IN&#95;PROGRESS (v54460) | 前回のパケット以降に経過したナノ秒数 (クエリ全体の経過時間ではなく差分) 。累積します                         |
 
-<div id="profileinfo">
-  ### ProfileInfo (パケットタイプ 6)
-</div>
+### ProfileInfo (パケットタイプ 6) {#profileinfo}
 
 Server → Client。各クエリにつき1回、実行の終盤に送信されます。
 
@@ -747,9 +683,7 @@ Server → Client。各クエリにつき1回、実行の終盤に送信され�
 | 7 | applied&#95;aggregation         | Bool    | universal | ROWS&#95;BEFORE&#95;AGGREGATION (v54469) | GROUP BY が適用されたかどうか                                                                                                                                                                          |
 | 8 | rows&#95;before&#95;aggregation | VarUInt | universal | ROWS&#95;BEFORE&#95;AGGREGATION (v54469) | 集約前の行数                                                                                                                                                                                       |
 
-<div id="totals">
-  ### Totals (パケットタイプ 7)
-</div>
+### Totals (パケットタイプ 7) {#totals}
 
 サーバー → クライアント。`WITH TOTALS` を指定したクエリに対して送信されます。ワイヤ形式は [Data](#data) と同一で、`table_name` 文字列 (常に空) の後に Block が続きます。異なるのはパケットタイプのバイトだけです。
 
@@ -759,9 +693,7 @@ Server → Client。各クエリにつき1回、実行の終盤に送信され�
 [Block]                     see the Native Format spec
 ```
 
-<div id="extremes">
-  ### Extremes (パケットタイプ 8)
-</div>
+### Extremes (パケットタイプ 8) {#extremes}
 
 サーバー → クライアント。`extremes` 設定が有効な場合に送信されます。ワイヤ形式は [Data](#data) と同一です。ブロックにはちょうど 2 行が含まれます。行 0 には各カラムの最小値が、行 1 には最大値が入ります。
 
@@ -771,9 +703,7 @@ Server → Client。各クエリにつき1回、実行の終盤に送信され�
 [Block]                     num_rows = 2
 ```
 
-<div id="log">
-  ### Log (パケットタイプ 10)
-</div>
+### Log (パケットタイプ 10) {#log}
 
 サーバー → クライアント。クエリにアクティブなログキューがある場合に送信されます (`send_logs_level` 設定。詳細は[ログストリーミング](#log-streaming)を参照) 。
 
@@ -798,9 +728,7 @@ Server → Client。各クエリにつき1回、実行の終盤に送信され�
 | 7 | source                          | String   | ロガー名                                                      |
 | 8 | text                            | String   | ログメッセージ本文                                                 |
 
-<div id="profileevents">
-  ### ProfileEvents (パケットタイプ 14)
-</div>
+### ProfileEvents (パケットタイプ 14) {#profileevents}
 
 サーバー → クライアント。クエリごとのパフォーマンスカウンターを格納します。
 
@@ -827,9 +755,7 @@ Server → Client。各クエリにつき1回、実行の終盤に送信され�
   `value` カラムの要素型はパケットごとに固定ではありません。古いサーバーは `UInt64` を、新しいサーバーは `Int64` を出力します。ビット幅を決め打ちせず、block header からカラムの型文字列を読み取ってください。
 </Note>
 
-<div id="tablecolumns">
-  ### TableColumns (パケットタイプ 11)
-</div>
+### TableColumns (パケットタイプ 11) {#tablecolumns}
 
 Server → Client。`COLUMN_DEFAULTS_METADATA` (v54410) によって制御されます。サーバーは、カラムのデフォルト値に関するメタデータを渡すために、INSERT のスキーマブロックの前にこれを送信します。ただし、ネゴシエートされたバージョンが 54410 以上 **かつ** `input_format_defaults_for_omitted_fields` 設定が有効な場合に限られます。54410 未満ではこのパケットは一切送信されないため、古い client はこれを待っては**なりません** — スキーマ `Data` block が直接続きます。v54410+ の client は、どちらの順序にも対応できるようにしておく必要があります。つまり、オプションの `TableColumns` があり、その後にスキーマブロックが続く場合です。
 
@@ -844,9 +770,7 @@ Server → Client。`COLUMN_DEFAULTS_METADATA` (v54410) によって制御され
   ネゴシエートされたバージョンが 54481 以上 (`COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS`) の場合、サーバーは **両方の** フィールドを同じオプションの圧縮出力パス経由で書き込みます。そのため、クエリで `compression = true` の場合、`TableColumns` のボディ全体 (`external_table` + `columns_description`) は [compression frame](/ja/reference/interfaces/specs/NativeFormat#compression-frame) 内に含まれ、client は対応する展開済み stream を通してこれを読み取ります。クエリで圧縮が有効でない場合、ボディは上の table に示したとおり、wire 上でそのまま非圧縮で送られます。これは `INSERT` のスキーマ応答では重要です。`Log` と `ProfileEvents` では圧縮処理を切り替えていても、`TableColumns` では切り替えない client は、クエリ圧縮が有効なときに応答を誤って読み取ります。
 </Info>
 
-<div id="timezoneupdate">
-  ### TimezoneUpdate (パケット型 17)
-</div>
+### TimezoneUpdate (パケット型 17) {#timezoneupdate}
 
 Server → Client。`TIMEZONE_UPDATES` (v54464) で有効になります。送信されるのは厳密に 1 か所だけで、`input` table function の初期化時です (`INSERT INTO <table> SELECT ... FROM input('<structure>')` 形式のクエリで、client から行をストリーミングします) 。server は入力スキーマの `Data` block ([INSERT phase](#insert-phase) を参照) を送信した直後に、クエリコンテキストにおける現在の `session_timezone` を含む `TimezoneUpdate` を送出します。これにより、client はこれから送信する行を同じ timezone で parse できます。server は、クエリの途中で任意に実行された `SET session_timezone` の変更に対してこのパケットを送出することは**なく**、後続の結果 block をどのような timezone でフォーマットすべきかを client に伝えるために送出することもありません。
 
@@ -856,9 +780,7 @@ Server → Client。`TIMEZONE_UPDATES` (v54464) で有効になります。送�
 
 このパケットは 1 回だけ到着し、入力スキーマ block の直後、client が行 block の送信を開始する前に届きます。`TimezoneUpdate` を無視するデコーダーでも、wire の整合性を保つために末尾の `String` は必ず消費しなければなりません。
 
-<div id="ssh-authentication">
-  ### SSH チャレンジレスポンス認証 (パケットタイプ 11、12、18)
-</div>
+### SSH チャレンジレスポンス認証 (パケットタイプ 11、12、18) {#ssh-authentication}
 
 `SSH_AUTHENTICATION` (v54466) で有効になり、明示的に有効化した場合にのみ使用されます。ClientHello が `user = " SSH KEY AUTHENTICATION " + <real_user>` (先頭と末尾のスペースを含む) および `password = ""` を送信すると、接続は SSH フローに入ります。サーバーはこのプレフィックスを読み取り、取り除いて実際のユーザー名を復元し、チャレンジレスポンス方式に切り替えます。
 
@@ -915,9 +837,7 @@ sequenceDiagram
 
 SSH 認証を使用しない外部 client では、パケット 11、12、18 が現れることはありません。ユーザーが username のプレフィックスで明示的に有効化しない限り、これらが wire 上に出ることはありません。
 
-<div id="mergetreeallrangesannouncementresponse">
-  ### MergeTreeAllRangesAnnouncementResponse (パケットタイプ 14)
-</div>
+### MergeTreeAllRangesAnnouncementResponse (パケットタイプ 14) {#mergetreeallrangesannouncementresponse}
 
 Client → Server、サーバー間専用。`parallel_replicas_protocol_version ≥ 8` の場合に有効です ([VERSIONED&#95;PARALLEL&#95;REPLICAS&#95;PROTOCOL](#feature-table) を参照) 。外部クライアントがこのパケットを送信することはありません。
 
@@ -929,9 +849,7 @@ Client → Server、サーバー間専用。`parallel_replicas_protocol_version 
 
 バージョン `8` 未満では、mode に関係なく announcement は fire-and-forget であり、フォロワーはローカルで認識しているすべてのパーツに対して source を構築します (従来の動作) 。
 
-<div id="mergetreeallrangesannouncementresponse-body">
-  #### ボディ
-</div>
+#### ボディ {#mergetreeallrangesannouncementresponse-body}
 
 | # | フィールド         | 型                                                             | 説明                                                                                                                                                                                                                                                                                                                                                                  |
 | - | ------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -939,18 +857,14 @@ Client → Server、サーバー間専用。`parallel_replicas_protocol_version 
 | 2 | parts         | [RangesInDataPartsDescription](#rangesindatapartsdescription) | マージコーディネーターがそのアナウンスのストリームに対して登録した、正とされるパーツの集合です。空のリストは、そのストリームがマージコーディネーター上に存在しないことを意味します (たとえば、follower がイニシエーターの作成数を超える分割を過剰にアナウンスした場合) 。この場合、そのストリームに対応する follower 側のプールは即座に完了済みとしてマークされます。                                                                                                                                                                      |
 | 3 | stream&#95;id | String                                                        | このレスポンスが応答するアナウンスの `stream_id` をそのまま返します (分割トポロジが使われている場合は、テーブル名に `#split_i` 接尾辞を付けたもの) 。                                                                                                                                                                                                                                                                           |
 
-<div id="rangesindatapartsdescription">
-  #### RangesInDataPartsDescription ボディ
-</div>
+#### RangesInDataPartsDescription ボディ {#rangesindatapartsdescription}
 
 | # | フィールド | 型                                                                                  | 説明                                                                |
 | - | ----- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | 1 | count | VarUInt                                                                            | この後に続くパーツディスクリプタの数です。デコーダは、`100'000'000'000` を超える値を不正なものとして拒否します。 |
 | 2 | parts | [RangesInDataPartDescription](#rangesindatapartdescription) repeated `count` times | ディスクリプタです。マージコーディネーターへの登録順に並びます。                                  |
 
-<div id="rangesindatapartdescription">
-  #### RangesInDataPartDescription ボディ
-</div>
+#### RangesInDataPartDescription ボディ {#rangesindatapartdescription}
 
 | # | フィールド                          | 型                                       | Gate                                                                 | 説明                                                                            |
 | - | ------------------------------ | --------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
@@ -960,9 +874,7 @@ Client → Server、サーバー間専用。`parallel_replicas_protocol_version 
 | 4 | projection&#95;name            | String                                  | `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PROJECTION` (PR v5)         | プライマリパートの行では空で、それ以外の場合はプロジェクション名です。                                           |
 | 5 | min&#95;marks&#95;per&#95;task | VarUInt                                 | `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK` (PR v6) | フォロワーのプールがこのパートに対して 1 つの読み取りタスクにまとめるべきマーク数の下限。                                |
 
-<div id="mergetreepartinfo">
-  #### MergeTreePartInfo ボディ
-</div>
+#### MergeTreePartInfo ボディ {#mergetreepartinfo}
 
 | # | フィールド                            | 型                      | 説明                                                                             |
 | - | -------------------------------- | ---------------------- | ------------------------------------------------------------------------------ |
@@ -974,22 +886,16 @@ Client → Server、サーバー間専用。`parallel_replicas_protocol_version 
 | 6 | mutation                         | Int64 (little-endian)  | このパートを生成した mutation のバージョン (mutation が適用されていない場合は `0`) 。                       |
 | 7 | use&#95;legacy&#95;max&#95;level | Bool (text)            | 単一の ASCII バイト (`'1'` または `'0'`) としてエンコードされます。パート名フォーマットとの後方互換性を保つための履歴上のフラグです。 |
 
-<div id="markranges">
-  #### MarkRanges ボディ
-</div>
+#### MarkRanges ボディ {#markranges}
 
 | # | フィールド  | 型                                                                 | 説明                                                               |
 | - | ------ | ----------------------------------------------------------------- | ---------------------------------------------------------------- |
 | 1 | size   | UInt64 (little-endian)                                            | 後続する mark-range ペアの数。注: little-endian の固定幅で、VarUInt **ではありません**。 |
 | 2 | ranges | `(UInt64 begin, UInt64 end)` を `size` 回繰り返したもの (各 little-endian)  | 半開区間 `[begin, end)` の mark インターバル。                               |
 
-<div id="packet-type-reference">
-  ## パケットタイプ リファレンス
-</div>
+## パケットタイプ リファレンス {#packet-type-reference}
 
-<div id="client-to-server">
-  ### Client → Server
-</div>
+### Client → Server {#client-to-server}
 
 | Code | Name                                   | ボディのフォーマット                                                                             | 説明                                                                                                                                                                                                                                         |
 | ---- | -------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -1009,9 +915,7 @@ Client → Server、サーバー間専用。`parallel_replicas_protocol_version 
 | 13   | QueryPlan                              | [QueryPlan](#queryplan)                                                           | クエリプラン                                                                                                                                                                                                                                     |
 | 14   | MergeTreeAllRangesAnnouncementResponse | [MergeTreeAllRangesAnnouncementResponse](#mergetreeallrangesannouncementresponse) | フォロワーの[`MergeTreeAllRangesAnnouncement`](#packet-type-reference)に対するイニシエーターの応答 (`parallel_replicas_protocol_version ≥ 8` の場合に限る — [VERSIONED&#95;PARALLEL&#95;REPLICAS&#95;PROTOCOL](#feature-table)を参照) 。サーバー間専用 — 外部クライアントが送信することはありません。 |
 
-<div id="server-to-client">
-  ### サーバー → クライアント
-</div>
+### サーバー → クライアント {#server-to-client}
 
 | コード | 名前                             | ボディ形式                             | 説明                     |
 | --- | ------------------------------ | --------------------------------- | ---------------------- |
@@ -1035,9 +939,7 @@ Client → Server、サーバー間専用。`parallel_replicas_protocol_version 
 | 17  | TimezoneUpdate                 | [TimezoneUpdate](#timezoneupdate) | サーバータイムゾーンの更新          |
 | 18  | SSHChallenge                   | [SSH auth](#ssh-authentication)   | SSH認証チャレンジ             |
 
-<div id="queryplan">
-  ### QueryPlan
-</div>
+### QueryPlan {#queryplan}
 
 `QueryPlan` はInter-server通信でのみ使用されるクライアントパケットです。`stage` が `QueryPlan` (`7`) である [`Query`](#query) に続き、シリアル化されたプランストリームを1つ含みます。
 
@@ -1050,9 +952,7 @@ Client → Server、サーバー間専用。`parallel_replicas_protocol_version 
 
 バージョン `10` より前では、フィールド2と3は存在しません。いずれかの実行上限がデフォルト以外に設定されているイニシエーターは、この古いレイアウトを送信してはなりません。代わりに元の SQL クエリを送信し、古い receiver がクエリ設定から上限を再構築できるようにします。
 
-<div id="configuration">
-  ## 設定
-</div>
+## 設定 {#configuration}
 
 このセクションでは、ネイティブプロトコル接続の挙動を左右する調整項目について説明します。
 
@@ -1062,13 +962,9 @@ Client → Server、サーバー間専用。`parallel_replicas_protocol_version 
 
 以下のデフォルト値は最近のサーバーリリースに基づいていますが、バージョンやデプロイ環境によって異なる場合があります。
 
-<div id="transport-layer-settings">
-  ### トランスポート層の設定
-</div>
+### トランスポート層の設定 {#transport-layer-settings}
 
-<div id="socket-options">
-  #### ソケットオプション
-</div>
+#### ソケットオプション {#socket-options}
 
 | オプション                     | デフォルト                          | 適用側 | 説明                                                                                                            |
 | ------------------------- | ------------------------------ | --- | ------------------------------------------------------------------------------------------------------------- |
@@ -1076,9 +972,7 @@ Client → Server、サーバー間専用。`parallel_replicas_protocol_version 
 | `SO_KEEPALIVE`            | on (クライアント) 、OS のデフォルト (サーバー)  | 非対称 | カーネルレベルの TCP keepalive プローブです。`tcp_keep_alive_timeout > 0` の場合、クライアントはこれを明示的に有効にします。サーバーは OS のデフォルト設定を引き継ぎます。 |
 | `SO_RCVBUF` / `SO_SNDBUF` | OS のデフォルト                      | —   | ソケットバッファのサイズです。プロトコル側では調整されません。                                                                               |
 
-<div id="timeouts">
-  #### タイムアウト
-</div>
+#### タイムアウト {#timeouts}
 
 | Setting                                   | Default | Unit | Side   | Description                         |
 | ----------------------------------------- | ------- | ---- | ------ | ----------------------------------- |
@@ -1104,9 +998,7 @@ tcp_keep_alive_timeout (290s)
 
 OS の keepalive が最初に働き、カーネルレベルで切断されたピアを暗黙のうちに検出できる場合があります。次の防御策は、アプリケーションの受信タイムアウトです。最後の手段として、アイドルタイムアウトが長時間使われていない接続を回収します。
 
-<div id="connection-limits">
-  #### 接続の上限
-</div>
+#### 接続の上限 {#connection-limits}
 
 | 設定                                           | デフォルト    | 単位 | 対象   | 説明                          |
 | -------------------------------------------- | -------- | -- | ---- | --------------------------- |
@@ -1117,26 +1009,20 @@ OS の keepalive が最初に働き、カーネルレベルで切断されたピ
 
 定期的にクエリを発行する接続は、無期限に維持できます。1 時間後に回収されるのはアイドル接続のみで、デフォルトでは接続の最大寿命は設定されていません。
 
-<div id="application-layer-settings">
-  ### アプリケーション層の設定
-</div>
+### アプリケーション層の設定 {#application-layer-settings}
 
 これらの設定は、クエリごとに [Query パケットの設定リスト](#setting) に含まれて送信されます。これにより、サーバーがワイヤ形式で送信する内容や、そのフレーミング方法が変わります。
 
-<div id="compression-settings">
-  #### 圧縮
-</div>
+#### 圧縮 {#compression-settings}
 
-| Setting                          | Default | Unit   | Description                                                                                     |
-| -------------------------------- | ------- | ------ | ----------------------------------------------------------------------------------------------- |
-| `network_compression_method`     | `"LZ4"` | string | Query パケットの `compression` フラグが設定されている場合に使用される圧縮コーデック。値: `"LZ4"`, `"LZ4HC"`, `"ZSTD"`, `"NONE"`。 |
-| `network_zstd_compression_level` | 1       | 1–15   | `network_compression_method == "ZSTD"` の場合の ZSTD レベル。                                           |
+| Setting                          | Default  | Unit   | Description                                                                                     |
+| -------------------------------- | -------- | ------ | ----------------------------------------------------------------------------------------------- |
+| `network_compression_method`     | `"ZSTD"` | string | Query パケットの `compression` フラグが設定されている場合に使用される圧縮コーデック。値: `"LZ4"`, `"LZ4HC"`, `"ZSTD"`, `"NONE"`。 |
+| `network_zstd_compression_level` | 3        | 1–15   | `network_compression_method == "ZSTD"` の場合の ZSTD レベル。                                           |
 
 [Query パケット](#query) (フィールド 6) の `compression` フラグは、圧縮のオン/オフを切り替えます。これらの設定では、オンのときに使用するコーデックを選択します。
 
-<div id="log-streaming">
-  #### ログストリーミング
-</div>
+#### ログストリーミング {#log-streaming}
 
 | 設定                        | デフォルト     | 単位  | 説明                                                                                                       |
 | ------------------------- | --------- | --- | -------------------------------------------------------------------------------------------------------- |
@@ -1145,9 +1031,7 @@ OS の keepalive が最初に働き、カーネルレベルで切断されたピ
 
 `send_logs_level` を `"none"` 以外に設定すると、サーバーはクエリ実行中に [Log](#log) パケットを出力します。
 
-<div id="progress-reporting">
-  #### Progress レポート
-</div>
+#### Progress レポート {#progress-reporting}
 
 | 設定                  | デフォルト  | 単位    | 説明                          |
 | ------------------- | ------ | ----- | --------------------------- |
@@ -1155,9 +1039,7 @@ OS の keepalive が最初に働き、カーネルレベルで切断されたピ
 
 これは目標となる最小値であり、厳密な最大値ではありません。クエリの処理の進みが十分に速くない場合、サーバーは Progress パケットの送信頻度をさらに下げることがあります。
 
-<div id="result-envelope">
-  #### 結果エンベロープ
-</div>
+#### 結果エンベロープ {#result-envelope}
 
 | Setting                | Default   | Unit    | Description                                                                    |
 | ---------------------- | --------- | ------- | ------------------------------------------------------------------------------ |
@@ -1166,9 +1048,7 @@ OS の keepalive が最初に働き、カーネルレベルで切断されたピ
 | `max_result_bytes`     | 0 (無制限)   | 非圧縮バイト数 | 非圧縮バイト数の上限です。動作は `result_overflow_mode` によって制御されます。                            |
 | `result_overflow_mode` | `"throw"` | string  | `"throw"` は Exception でストリームを終了します。`"break"` は部分的な結果を送信した後、EndOfStream を送信します。 |
 
-<div id="async-insert">
-  #### 非同期 INSERT
-</div>
+#### 非同期 INSERT {#async-insert}
 
 | 設定                              | デフォルト | 単位      | 説明                                                                  |
 | ------------------------------- | ----- | ------- | ------------------------------------------------------------------- |
@@ -1176,17 +1056,13 @@ OS の keepalive が最初に働き、カーネルレベルで切断されたピ
 | `wait_for_async_insert`         | true  | bool    | true の場合 (`async_insert` が有効なとき) 、サーバーはキュー内のデータがフラッシュされるまで応答を保留します。 |
 | `wait_for_async_insert_timeout` | 120   | seconds | サーバーがフラッシュを待機してから応答を返すまでの最大時間です。                                    |
 
-<div id="distributed-tracing">
-  #### 分散トレーシング
-</div>
+#### 分散トレーシング {#distributed-tracing}
 
 | 設定                                      | デフォルト | 単位      | 説明                                           |
 | --------------------------------------- | ----- | ------- | -------------------------------------------- |
 | `opentelemetry_start_trace_probability` | 0.0   | 0～1 の確率 | サーバー側で応答テレメトリーに OpenTelemetry コンテキストを付加する確率。 |
 
-<div id="settings-out-of-scope">
-  ### 対象外の設定
-</div>
+### 対象外の設定 {#settings-out-of-scope}
 
 これらの設定はプロトコルレベルの設定と誤解されることがありますが、ワイヤ上の挙動ではなく、SQL の実行、ストレージ、または CPU 使用量を制御するものです。プロトコル実装側でこれらを特別に扱う必要はありません。
 
@@ -1199,9 +1075,7 @@ OS の keepalive が最初に働き、カーネルレベルで切断されたピ
 
 例外は `*_native_*` 設定です。これらはネイティブ TCP の `Data` block 内のバイト列を変更するため、プロトコル実装ではそれを考慮する必要があります。`output_format_native_encode_types_in_binary_format` は column の `type` フィールドをテキスト文字列からバイナリの型エンコーディングに切り替え、`output_format_native_write_json_as_string` は `JSON` カラムを `String` として出力し、`output_format_native_use_flattened_dynamic_and_json_serialization` は FLATTENED `Dynamic`/`JSON` レイアウトを選択します。これらはパケットのエンベロープではなく block のボディに影響するため、[Native Format](/ja/reference/interfaces/specs/NativeFormat) の仕様で規定されています。詳しくは、[column wire layout](/ja/reference/interfaces/specs/NativeFormat#column-wire-layout) と [versioned types](/ja/reference/interfaces/specs/NativeFormat#versioned-types) を参照してください。
 
-<div id="glossary">
-  ## 用語集
-</div>
+## 用語集 {#glossary}
 
 **キャンセル** — 実行中のクエリを中止する、クライアント起点のパケット (type 3) です。このページでは詳しく規定していません。
 

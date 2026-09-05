@@ -12,7 +12,7 @@ doc_type: 'reference'
 import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-Por padrão, o ClickHouse usa compressão `lz4` na versão autogerenciada e `zstd` no ClickHouse Cloud.
+Por padrão, o ClickHouse usa compressão `ZSTD(3)` na versão autogerenciada e `zstd` no ClickHouse Cloud. Para a família `MergeTree`, o padrão leva em conta o tamanho: o `LZ4`, mais rápido, é usado abaixo de 100 MB e o `ZSTD(3)` a partir desse valor, de modo que os dados recém-inseridos começam como `LZ4` e as partes maiores produzidas por background merges passam para `ZSTD(3)`. O threshold é aplicado ao tamanho da parte conhecido no momento em que o codec precisa ser escolhido, antes de os dados serem gravados — `0` para uma parte recém-inserida e o tamanho das partes de origem para um merge ou uma mutação — e não ao tamanho da parte resultante.
 
 Para a família de motores `MergeTree`, é possível alterar o método de compressão padrão na seção [compression](/pt-BR/reference/settings/server-settings/settings/other#compression) da configuração do servidor.
 
@@ -50,7 +50,8 @@ Os codecs podem ser combinados em um pipeline, por exemplo, `CODEC(Delta, Defaul
 A compressão é compatível com os seguintes motores de tabela:
 
 * Família [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree). Oferece suporte a codecs de compressão de coluna e à seleção do método de compressão padrão nas configurações de [compressão](/pt-BR/reference/settings/server-settings/settings/other#compression).
-* Família [Log](/pt-BR/reference/engines/table-engines/log-family/index). Usa o método de compressão `lz4` por padrão e oferece suporte a codecs de compressão de coluna.
+* Família [Log](/pt-BR/reference/engines/table-engines/log-family/index) — os motores `Log` e `TinyLog` usam o método de compressão padrão `ZSTD(3)` e oferecem suporte a codecs de compressão de coluna.
+* [StripeLog](/pt-BR/reference/engines/table-engines/log-family/index) grava todas as colunas em um único fluxo de dados compartilhado comprimido com o método padrão `ZSTD(3)`, portanto codecs de compressão por coluna não são aplicados a ele.
 * [Set](/pt-BR/reference/engines/table-engines/special/set). Oferece suporte apenas à compressão padrão.
 * [Join](/pt-BR/reference/engines/table-engines/special/join). Oferece suporte apenas à compressão padrão.
 
@@ -64,7 +65,7 @@ O ClickHouse oferece suporte a codecs de uso geral e codecs especializados.
 
 ### LZ4 {#lz4}
 
-`LZ4` — [algoritmo de compressão de dados](https://github.com/lz4/lz4) sem perdas usado por padrão. Aplica a compressão rápida LZ4.
+`LZ4` — [algoritmo de compressão de dados](https://github.com/lz4/lz4) sem perdas. Aplica a compressão rápida LZ4.
 
 ### LZ4HC {#lz4hc}
 
@@ -72,9 +73,9 @@ O ClickHouse oferece suporte a codecs de uso geral e codecs especializados.
 
 ### ZSTD {#zstd}
 
-`ZSTD[(level)]` — [algoritmo de compressão ZSTD](https://en.wikipedia.org/wiki/Zstandard) com `level` configurável. Níveis possíveis: [1, 22]. Nível padrão: 1.
+`ZSTD[(level)]` — [algoritmo de compressão ZSTD](https://en.wikipedia.org/wiki/Zstandard) com `level` configurável. Níveis possíveis: [1, 22]. Nível padrão: 1. `ZSTD(3)` é o codec aplicado por padrão às colunas que não especificam um codec explicitamente (para partes `MergeTree`, isso vale a partir do momento em que o tamanho da parte estimado na escrita atinge 100 MB; abaixo disso, usa-se `LZ4`).
 
-Níveis altos de compressão são úteis em cenários assimétricos, como compactar uma vez e descompactar várias vezes. Níveis mais altos proporcionam melhor compressão e maior uso de CPU.
+Níveis altos de compressão são úteis em cenários assimétricos, como comprimir uma vez e descomprimir várias vezes. Níveis mais altos proporcionam melhor compressão e maior uso de CPU.
 
 ### ZXC {#zxc}
 

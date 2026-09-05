@@ -12,7 +12,7 @@ doc_type: 'reference'
 import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-기본적으로 ClickHouse는 자가 관리형 버전에서 `lz4` 압축을 사용하고, ClickHouse Cloud에서는 `zstd`를 사용합니다.
+기본적으로 ClickHouse는 자가 관리형 버전에서 `ZSTD(3)` 압축을 사용하고, ClickHouse Cloud에서는 `zstd`를 사용합니다. `MergeTree` 계열에서는 기본값이 크기에 따라 결정됩니다. 100 MB 미만에서는 더 빠른 `LZ4`가 사용되고 그 이상에서는 `ZSTD(3)`가 사용되므로, 새로 삽입된 데이터는 `LZ4`로 시작하고 백그라운드 머지로 생성된 더 큰 파트는 `ZSTD(3)`로 전환됩니다. 이 임계값은 결과 파트의 크기가 아니라, 데이터가 기록되기 전 코덱을 선택해야 하는 시점에 알려진 파트 크기(새로 삽입된 파트는 `0`, 머지나 뮤테이션은 소스 파트의 크기)에 적용됩니다.
 
 `MergeTree` 엔진 패밀리에서는 서버 구성의 [compression](/ko/reference/settings/server-settings/settings/other#compression) 섹션에서 기본 압축 메서드를 변경할 수 있습니다.
 
@@ -50,7 +50,8 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 다음 테이블 엔진에서 압축을 지원합니다.
 
 * [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 계열. 컬럼 압축 코덱을 지원하며 [compression](/ko/reference/settings/server-settings/settings/other#compression) 설정에서 기본 압축 메서드를 선택할 수 있습니다.
-* [Log](/ko/reference/engines/table-engines/log-family/index) 계열. 기본적으로 `lz4` 압축 메서드를 사용하며 컬럼 압축 코덱을 지원합니다.
+* [Log](/ko/reference/engines/table-engines/log-family/index) 계열 — `Log` 및 `TinyLog` 엔진은 기본 `ZSTD(3)` 압축 메서드를 사용하며 컬럼 압축 코덱을 지원합니다.
+* [StripeLog](/ko/reference/engines/table-engines/log-family/index)는 모든 컬럼을 기본 `ZSTD(3)` 메서드로 압축된 하나의 공유 데이터 스트림에 기록하므로, 컬럼별 압축 코덱이 적용되지 않습니다.
 * [Set](/ko/reference/engines/table-engines/special/set). 기본 압축만 지원합니다.
 * [Join](/ko/reference/engines/table-engines/special/join). 기본 압축만 지원합니다.
 
@@ -64,7 +65,7 @@ ClickHouse는 범용 코덱과 특수 코덱을 지원합니다.
 
 ### LZ4 {#lz4}
 
-`LZ4` — 기본적으로 사용되는 무손실 [데이터 압축 알고리즘](https://github.com/lz4/lz4)입니다. LZ4의 고속 압축을 적용합니다.
+`LZ4` — 무손실 [데이터 압축 알고리즘](https://github.com/lz4/lz4)입니다. LZ4의 고속 압축을 적용합니다.
 
 ### LZ4HC {#lz4hc}
 
@@ -72,7 +73,7 @@ ClickHouse는 범용 코덱과 특수 코덱을 지원합니다.
 
 ### ZSTD {#zstd}
 
-`ZSTD[(level)]` — `level`을 구성할 수 있는 [ZSTD 압축 알고리즘](https://en.wikipedia.org/wiki/Zstandard)입니다. 설정 가능한 수준: [1, 22]. 기본 수준: 1.
+`ZSTD[(level)]` — `level`을 구성할 수 있는 [ZSTD 압축 알고리즘](https://en.wikipedia.org/wiki/Zstandard)입니다. 설정 가능한 수준: [1, 22]. 기본 수준: 1. `ZSTD(3)`은 코덱을 명시적으로 지정하지 않은 컬럼에 기본으로 적용되는 코덱입니다(`MergeTree` 파트에서는 쓰기 시점에 추정된 파트 크기가 100 MB에 도달하면 적용되며, 그 미만에서는 `LZ4`가 사용됩니다).
 
 높은 압축 수준은 한 번 압축한 뒤 반복적으로 압축을 해제하는 비대칭 시나리오에서 유용합니다. 수준이 높을수록 압축률은 향상되지만 CPU 사용량도 증가합니다.
 

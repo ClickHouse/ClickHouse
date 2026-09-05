@@ -12,7 +12,7 @@ doc_type: 'reference'
 import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-По умолчанию в самоуправляемой версии ClickHouse используется сжатие `lz4`, а в ClickHouse Cloud — `zstd`.
+По умолчанию в самоуправляемой версии ClickHouse используется сжатие `ZSTD(3)`, а в ClickHouse Cloud — `zstd`. Для семейства `MergeTree` значение по умолчанию зависит от размера: при размере менее 100 МБ применяется более быстрый `LZ4`, а при размере, равном или превышающем это значение, — `ZSTD(3)`, поэтому только что вставленные данные начинаются с `LZ4`, а более крупные части, образующиеся в результате фоновых слияний, переключаются на `ZSTD(3)`. Порог применяется к размеру части, известному на момент выбора кодека, то есть до записи данных — `0` для только что вставленной части и размер исходных частей для слияния или мутации, — а не к размеру итоговой части.
 
 Для таблиц семейства `MergeTree` метод сжатия по умолчанию можно изменить в разделе [compression](/ru/reference/settings/server-settings/settings/other#compression) конфигурации сервера.
 
@@ -50,7 +50,8 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 Сжатие поддерживается следующими движками таблиц:
 
 * Семейство [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree). Поддерживает кодеки сжатия для столбцов и выбор метода сжатия по умолчанию в настройках [сжатия](/ru/reference/settings/server-settings/settings/other#compression).
-* Семейство [Log](/ru/reference/engines/table-engines/log-family/index). По умолчанию использует метод сжатия `lz4` и поддерживает кодеки сжатия для столбцов.
+* Семейство [Log](/ru/reference/engines/table-engines/log-family/index) — движки `Log` и `TinyLog` по умолчанию используют метод сжатия `ZSTD(3)` и поддерживают кодеки сжатия для столбцов.
+* [StripeLog](/ru/reference/engines/table-engines/log-family/index) записывает все столбцы в единый общий поток данных, сжимаемый методом `ZSTD(3)` по умолчанию, поэтому кодеки сжатия для отдельных столбцов к нему не применяются.
 * [Set](/ru/reference/engines/table-engines/special/set). Поддерживается только сжатие по умолчанию.
 * [Join](/ru/reference/engines/table-engines/special/join). Поддерживается только сжатие по умолчанию.
 
@@ -64,7 +65,7 @@ ClickHouse поддерживает кодеки общего назначени
 
 ### LZ4 {#lz4}
 
-`LZ4` — алгоритм [сжатия данных](https://github.com/lz4/lz4) без потерь, используемый по умолчанию. Использует быстрое сжатие LZ4.
+`LZ4` — алгоритм [сжатия данных](https://github.com/lz4/lz4) без потерь. Использует быстрое сжатие LZ4.
 
 ### LZ4HC {#lz4hc}
 
@@ -72,7 +73,7 @@ ClickHouse поддерживает кодеки общего назначени
 
 ### ZSTD {#zstd}
 
-`ZSTD[(level)]` — [алгоритм сжатия ZSTD](https://en.wikipedia.org/wiki/Zstandard) с настраиваемым `level`. Допустимые уровни: [1, 22]. Уровень по умолчанию: 1.
+`ZSTD[(level)]` — [алгоритм сжатия ZSTD](https://en.wikipedia.org/wiki/Zstandard) с настраиваемым `level`. Допустимые уровни: [1, 22]. Уровень по умолчанию: 1. `ZSTD(3)` — кодек, применяемый по умолчанию к столбцам, для которых кодек не задан явно (для частей `MergeTree` это действует, когда оценённый на момент записи размер части достигает 100 МБ; ниже этого значения используется `LZ4`).
 
 Высокие уровни сжатия полезны в асимметричных сценариях, например когда данные сжимаются один раз, а распаковываются многократно. Чем выше уровень, тем лучше сжатие и выше использование CPU.
 

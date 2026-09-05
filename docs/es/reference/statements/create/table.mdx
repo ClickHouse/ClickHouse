@@ -12,15 +12,11 @@ doc_type: 'referencia'
 Crea una tabla nueva. De forma predeterminada, las tablas se crean solo en el servidor actual.
 Las consultas DDL distribuidas se implementan mediante la cláusula `ON CLUSTER`, que se [describe por separado](/es/reference/statements/distributed-ddl).
 
-<div id="syntax-forms">
-  ## Formas sintácticas
-</div>
+## Formas sintácticas {#syntax-forms}
 
 Esta consulta puede tener varias formas sintácticas según el caso de uso.
 
-<div id="with-explicit-schema">
-  ### Crear una tabla con un esquema explícito
-</div>
+### Crear una tabla con un esquema explícito {#with-explicit-schema}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -45,9 +41,7 @@ Si es necesario, se puede especificar la clave primaria, con una o más expresio
 
 Se pueden añadir comentarios a las columnas y a la tabla.
 
-<div id="with-a-schema-similar-to-other-table">
-  ### Crear una tabla con el esquema de una tabla existente
-</div>
+### Crear una tabla con el esquema de una tabla existente {#with-a-schema-similar-to-other-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine]
@@ -59,9 +53,7 @@ Para replicar el esquema de una tabla existente:
 
 Esto crea una tabla con la misma estructura que otra.
 
-<div id="with-a-schema-and-data-cloned-from-another-table">
-  ### Crear una tabla con el esquema y los datos de una tabla existente
-</div>
+### Crear una tabla con el esquema y los datos de una tabla existente {#with-a-schema-and-data-cloned-from-another-table}
 
 Para replicar el esquema y los datos de una tabla existente:
 
@@ -78,9 +70,7 @@ ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
 
 Para ambas funcionalidades, puede especificar un motor diferente para la tabla. Si no se especifica el motor, se usará el mismo motor que para la tabla original (`db.table`).
 
-<div id="from-a-table-function">
-  ### Crear una tabla con una función de tabla
-</div>
+### Crear una tabla con una función de tabla {#from-a-table-function}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
@@ -88,9 +78,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 
 Crea una tabla con el mismo resultado que la [función de tabla](/es/reference/functions/table-functions/index) especificada. La tabla creada también funcionará del mismo modo que la función de tabla correspondiente que se haya especificado.
 
-<div id="from-select-query">
-  ### Crear una tabla con una consulta SELECT
-</div>
+### Crear una tabla con una consulta SELECT {#from-select-query}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
@@ -115,9 +103,7 @@ SELECT x, toTypeName(x) FROM t1;
 └───┴───────────────┘
 ```
 
-<div id="default_values">
-  ## Especificar valores predeterminados de columnas
-</div>
+## Especificar valores predeterminados de columnas {#default_values}
 
 La descripción de la columna puede especificar una expresión de valor predeterminado en la forma `DEFAULT expr`, `MATERIALIZED expr` o `ALIAS expr`. Ejemplo: `URLDomain String DEFAULT domain(URL)`.
 
@@ -129,9 +115,7 @@ Si se especifican tanto un tipo de dato como una expresión de valor predetermin
 
 Una expresión de valor predeterminado `expr` puede hacer referencia a columnas de tabla arbitrarias y constantes. ClickHouse comprueba que los cambios en la estructura de la tabla no introduzcan bucles en el cálculo de la expresión. Para INSERT, comprueba que las expresiones puedan resolverse; es decir, que se hayan pasado todas las columnas a partir de las cuales pueden calcularse.
 
-<div id="default">
-  ### DEFAULT
-</div>
+### DEFAULT {#default}
 
 `DEFAULT expr`
 
@@ -157,9 +141,7 @@ SELECT * FROM test;
 └────┴─────────────────────┴─────────────────┘
 ```
 
-<div id="materialized">
-  ### MATERIALIZED
-</div>
+### MATERIALIZED {#materialized}
 
 `MATERIALIZED expr`
 
@@ -197,9 +179,7 @@ SELECT * FROM test SETTINGS asterisk_include_materialized_columns=1;
 └────┴─────────────────────┴─────────────────┘
 ```
 
-<div id="ephemeral">
-  ### EPHEMERAL
-</div>
+### EPHEMERAL {#ephemeral}
 
 `EPHEMERAL [expr]`
 
@@ -235,9 +215,7 @@ hexed:      Z��
 hex(hexed): 5A90B714
 ```
 
-<div id="alias">
-  ### ALIAS
-</div>
+### ALIAS {#alias}
 
 `ALIAS expr`
 
@@ -274,9 +252,7 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
 └────┴────────────┴──────────┘
 ```
 
-<div id="null-or-not-null-modifiers">
-  ## Modificadores `NULL` o `NOT NULL`
-</div>
+## Modificadores `NULL` o `NOT NULL` {#null-or-not-null-modifiers}
 
 Los modificadores `NULL` y `NOT NULL` después del tipo de dato en la definición de una columna permiten o impiden que sea [Nullable](/es/reference/data-types/nullable).
 
@@ -284,9 +260,7 @@ Si el tipo no es `Nullable` y se especifica `NULL`, se tratará como `Nullable`;
 
 Véase también la opción de configuración [data&#95;type&#95;default&#95;nullable](/es/reference/settings/session-settings/other#data_type_default_nullable).
 
-<div id="primary-key">
-  ## Clave primaria
-</div>
+## Clave primaria {#primary-key}
 
 Puede definir una [clave primaria](/es/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries) al crear una tabla. La clave primaria se puede especificar de dos maneras:
 
@@ -322,15 +296,11 @@ Puede definir una [clave primaria](/es/reference/engines/table-engines/mergetree
   No se pueden combinar ambas formas en una sola consulta.
 </Tip>
 
-<div id="constraints">
-  ## Especificar restricciones de tabla
-</div>
+## Especificar restricciones de tabla {#constraints}
 
 Además de las descripciones de las columnas, se pueden definir restricciones:
 
-<div id="constraint">
-  ### CONSTRAINT
-</div>
+### CONSTRAINT {#constraint}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -348,9 +318,7 @@ Añadir una gran cantidad de restricciones puede afectar negativamente al rendim
 
 Las restricciones existentes en todas las tablas pueden inspeccionarse mediante la tabla [`system.constraints`](/es/reference/system-tables/constraints).
 
-<div id="assume">
-  ### ASSUME
-</div>
+### ASSUME {#assume}
 
 La cláusula `ASSUME` se utiliza para definir una `CONSTRAINT` sobre una tabla que se asume verdadera. Esta restricción puede ser utilizada posteriormente por el optimizador para mejorar el rendimiento de las consultas SQL.
 
@@ -374,15 +342,11 @@ Luego, al ejecutar la consulta `SELECT name FROM users_a WHERE length(name) < 5;
 
 `ASSUME CONSTRAINT` **no impone la restricción**, simplemente informa al optimizador de que la restricción se cumple. Si la restricción en realidad no es cierta, los resultados de las consultas pueden ser incorrectos. Por lo tanto, solo debes usar `ASSUME CONSTRAINT` si estás seguro de que la restricción es cierta.
 
-<div id="ttl-expression">
-  ## Definir el tiempo de almacenamiento con TTL
-</div>
+## Definir el tiempo de almacenamiento con TTL {#ttl-expression}
 
 Define el tiempo de almacenamiento de los valores. Solo se puede especificar para tablas de la familia MergeTree. Para obtener una descripción detallada, consulte [TTL para columnas y tablas](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).
 
-<div id="column_compression_codec">
-  ## Seleccionar códecs de compresión para columnas
-</div>
+## Seleccionar códecs de compresión para columnas {#column_compression_codec}
 
 {/* Anclas de destino para enlaces a secciones trasladadas a /reference/statements/create/table/codec */}
 
@@ -430,7 +394,7 @@ Define el tiempo de almacenamiento de los valores. Solo se puede especificar par
 
 <a id="adaptive-codec-selection" />
 
-De forma predeterminada, ClickHouse aplica la compresión `lz4` en la versión autogestionada y `zstd` en ClickHouse Cloud. También puede definir el método de compresión para cada columna en la consulta `CREATE TABLE`:
+De forma predeterminada, ClickHouse aplica la compresión `ZSTD(3)` en la versión autogestionada y `zstd` en ClickHouse Cloud. Para la familia `MergeTree`, el valor predeterminado depende del tamaño: se utiliza el más rápido `LZ4` por debajo de 100 MB y `ZSTD(3)` a partir de ese umbral, de modo que los datos recién insertados comienzan como `LZ4` y las partes más grandes producidas por las fusiones en segundo plano pasan a `ZSTD(3)`. El umbral se aplica al tamaño de la parte conocido en el momento en que debe elegirse el códec, antes de que los datos se escriban —`0` para una parte recién insertada y el tamaño de las partes de origen en una fusión o una mutación—, no al tamaño de la parte resultante. También puede definir el método de compresión para cada columna en la consulta `CREATE TABLE`:
 
 ```sql
 CREATE TABLE codec_example
@@ -447,15 +411,11 @@ ENGINE = <Engine>
 
 Para consultar los códecs de uso general, especializados y de cifrado disponibles, consulte [Códecs de compresión de columnas](/es/reference/statements/create/table/codec).
 
-<div id="temporary-tables">
-  ## Crear tablas temporales
-</div>
+## Crear tablas temporales {#temporary-tables}
 
 ClickHouse admite tablas temporales, que desaparecen al finalizar la sesión. Para más información, consulta [CREATE TEMPORARY TABLE](/es/reference/statements/create/table/temporary-table).
 
-<div id="replace-table">
-  ## Actualizar una tabla de forma atómica con REPLACE TABLE
-</div>
+## Actualizar una tabla de forma atómica con REPLACE TABLE {#replace-table}
 
 {/* Anclas para enlaces a secciones trasladadas a /reference/statements/create/table/replace-table */}
 
@@ -465,9 +425,7 @@ ClickHouse admite tablas temporales, que desaparecen al finalizar la sesión. Pa
 
 La sentencia `REPLACE` permite actualizar una tabla [de forma atómica](/es/concepts/core-concepts/glossary#atomicity). Para obtener más información, consulte [REPLACE TABLE](/es/reference/statements/create/table/replace-table).
 
-<div id="comment-clause">
-  ## Añadir un comentario a la tabla
-</div>
+## Añadir un comentario a la tabla {#comment-clause}
 
 Puede añadir un comentario a la tabla cuando la cree.
 
@@ -508,9 +466,7 @@ SELECT name, comment FROM system.tables WHERE name = 't1';
 └──────┴─────────────────────┘
 ```
 
-<div id="related-content">
-  ## Contenido relacionado
-</div>
+## Contenido relacionado {#related-content}
 
 * Blog: [Optimizar ClickHouse con esquemas y códecs](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
 * Blog: [Trabajar con datos de series temporales en ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

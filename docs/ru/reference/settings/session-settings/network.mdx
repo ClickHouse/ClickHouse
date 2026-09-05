@@ -12,13 +12,13 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются из [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="network_compression_method">
-  ## network_compression_method
-</div>
+## network_compression_method {#network_compression_method}
 
-<SettingsInfoBlock type="String" default_value="LZ4" />
+<SettingsInfoBlock type="String" default_value="ZSTD" />
 
-Кодек для сжатия данных при обмене между client/server и server/server.
+Кодек для сжатия данных при обмене между client/server и server/server по собственному протоколу.
+
+Настройка не применяется к каналу потокового обмена (streaming-exchange) распределённых запросов, который всегда использует кодек сервера по умолчанию: каждый сжатый кадр является самоописывающимся, поэтому приёмник определяет кодек автоматически.
 
 Возможные значения:
 
@@ -31,11 +31,9 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 * [network&#95;zstd&#95;compression&#95;level](/ru/reference/settings/session-settings/network#network_zstd_compression_level)
 
-<div id="network_zstd_compression_level">
-  ## network_zstd_compression_level
-</div>
+## network_zstd_compression_level {#network_zstd_compression_level}
 
-<SettingsInfoBlock type="Int64" default_value="1" />
+<SettingsInfoBlock type="Int64" default_value="3" />
 
 Задает уровень сжатия ZSTD. Используется только если для [network&#95;compression&#95;method](/ru/reference/settings/session-settings/network#network_compression_method) установлено значение `ZSTD`.
 

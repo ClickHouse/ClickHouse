@@ -12,13 +12,13 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، ويجري إنشاؤها تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="network_compression_method">
-  ## network_compression_method
-</div>
+## network_compression_method {#network_compression_method}
 
-<SettingsInfoBlock type="String" default_value="LZ4" />
+<SettingsInfoBlock type="String" default_value="ZSTD" />
 
-ترميز الضغط المستخدم لاتصالات client/server وserver/server.
+ترميز الضغط المستخدم لاتصالات client/server وserver/server عبر native protocol.
+
+لا ينطبق هذا الإعداد على قناة التبادل التدفقي الخاصة بـ distributed queries، إذ تستخدم دائمًا ترميز الـ server الافتراضي: فكل frame مضغوط هو self-describing، ومن ثمّ يكتشف الـ receiver الترميز تلقائيًا.
 
 القيم الممكنة:
 
@@ -31,11 +31,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 * [network&#95;zstd&#95;compression&#95;level](/ar/reference/settings/session-settings/network#network_zstd_compression_level)
 
-<div id="network_zstd_compression_level">
-  ## network_zstd_compression_level
-</div>
+## network_zstd_compression_level {#network_zstd_compression_level}
 
-<SettingsInfoBlock type="Int64" default_value="1" />
+<SettingsInfoBlock type="Int64" default_value="3" />
 
 يحدّد مستوى ضغط ZSTD. لا يُستخدم إلا عندما تكون قيمة [network&#95;compression&#95;method](/ar/reference/settings/session-settings/network#network_compression_method) هي `ZSTD`.
 

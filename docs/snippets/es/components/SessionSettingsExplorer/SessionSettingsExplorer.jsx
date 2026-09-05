@@ -1943,8 +1943,8 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       label: "network_*",
       count: 2,
       settings: [
-        { name: "network_compression_method", path: "/network#network_compression_method", default: "LZ4" },
-        { name: "network_zstd_compression_level", path: "/network#network_zstd_compression_level", default: "1" }
+        { name: "network_compression_method", path: "/network#network_compression_method", default: "ZSTD" },
+        { name: "network_zstd_compression_level", path: "/network#network_zstd_compression_level", default: "3" }
       ],
       children: []
     },

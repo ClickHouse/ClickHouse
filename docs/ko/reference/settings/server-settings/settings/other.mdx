@@ -131,10 +131,10 @@ cgroup observer를 비활성화하려면 이 값을 `0`으로 설정하십시오
 **조건 충족 시 동작**:
 
 * 데이터 파트가 조건 Set과 일치하면 ClickHouse는 지정된 압축 방식을 사용합니다.
-* 데이터 파트가 여러 조건 Set과 일치하면 ClickHouse는 가장 먼저 일치한 조건 Set을 사용합니다.
+* 데이터 파트가 여러 조건 Set과 일치하면 ClickHouse는 가장 마지막에 일치한 조건 Set을 사용합니다(`<case>` 섹션은 순서대로 검사되며, 일치하는 항목이 나올 때마다 이전 선택을 재정의합니다).
 
 <Note>
-  데이터 파트에 대해 충족되는 조건이 없으면 ClickHouse는 `lz4` 압축을 사용합니다.
+  데이터 파트에 대해 충족되는 조건이 없으면 ClickHouse는 크기를 고려한 기본 내장 설정을 사용합니다. 즉, 100MB 미만이면 `LZ4`, 그 이상이면 `ZSTD(3)`를 사용합니다. 위의 `min_part_size` 조건과 마찬가지로, 여기서의 크기는 데이터가 기록되기 전 코덱을 선택해야 하는 시점에 알려진 크기입니다. 즉, 새로 삽입된 파트의 경우 `0`이며, 머지나 mutation의 경우 소스 파트들의 크기입니다. 따라서 `TTL DELETE`나 축약 머지처럼 입력보다 결과가 작아지는 재작성은 입력 크기를 기준으로 분류되며, 임계값 미만인데도 `ZSTD(3)`로 압축된 파트가 만들어질 수 있습니다.
 </Note>
 
 **예시**
@@ -145,7 +145,7 @@ cgroup observer를 비활성화하려면 이 값을 `0`으로 설정하십시오
         <min_part_size>10000000000</min_part_size>
         <min_part_size_ratio>0.01</min_part_size_ratio>
         <method>zstd</method>
-        <level>1</level>
+        <level>10</level>
     </case>
 </compression>
 ```

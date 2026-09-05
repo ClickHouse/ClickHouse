@@ -22,9 +22,7 @@ Tous les champs entiers sur plusieurs octets sont en little-endian. Les entiers 
   Pour une introduction orientée utilisateur au format `Native` (avec des exemples `curl`), consultez la [page du format Native](/fr/reference/formats/Native). Cette spécification est la référence wire de bas niveau.
 </Tip>
 
-<div id="overview">
-  ## Vue d’ensemble
-</div>
+## Vue d’ensemble {#overview}
 
 Tout ce qui transporte des lignes sur le réseau est un **bloc** : un fragment auto-descriptif de lignes stockées colonne par colonne. Toutes les valeurs de la colonne 1 viennent d’abord, puis toutes celles de la colonne 2, et ainsi de suite. Un bloc ne transporte que les colonnes auxquelles la requête fait référence, jamais la table entière.
 
@@ -36,9 +34,7 @@ Le `data` d’une colonne est organisé selon la *famille* à laquelle appartien
 * Les types **composites** (`Nullable`, `Array`, `Tuple`, `Map`, `Nested`) ont une structure récursive entièrement dérivable de la chaîne de type, sans préfixe de version ni état d&#39;un bloc à l&#39;autre.
 * Les types **versionnés / avec état** (`LowCardinality`, `JSON`, `Variant`, `Dynamic`) commencent chaque bloc non vide par un préfixe de version de sérialisation/état. Sur le wire `Native`, ce préfixe et tout dictionnaire sont **propres à chaque bloc** — le format ne transporte aucun état *d&#39;un bloc à l&#39;autre* (l&#39;émetteur crée un nouvel état de sérialisation pour chaque bloc et définit `low_cardinality_max_dictionary_size = 0`). L&#39;état entre blocs relève du stockage sur disque de MergeTree, pas du wire layout `Native`.
 
-<div id="wire-primitives">
-  ## Primitifs wire
-</div>
+## Primitifs wire {#wire-primitives}
 
 Le format Native repose sur quatre encodages primitifs.
 
@@ -49,9 +45,7 @@ Le format Native repose sur quatre encodages primitifs.
 | String                | variable             | Préfixe de longueur VarUInt + octets bruts par valeur ; un [flux d’offsets](#string-type) distinct à la révision `54492`+ |
 | Bool                  | 1 B                  | `0x00` = false, valeur non nulle = true                                                                                   |
 
-<div id="varuint">
-  ### VarUInt
-</div>
+### VarUInt {#varuint}
 
 Un entier non signé à longueur variable utilisant l’encodage LEB-128. Chaque octet contient 7 bits de données aux positions 0–6 et 1 bit de continuation à la position 7. Le bit de continuation vaut `1` lorsque d’autres octets suivent et `0` dans l’octet final.
 
@@ -78,9 +72,7 @@ Byte 0: data = 0x2C, continuation = 1 → accumulator = 0x2C, shift = 7
 Byte 1: data = 0x02, continuation = 0 → accumulator = (0x02 << 7) | 0x2C = 300
 ```
 
-<div id="fixed-width-integers">
-  ### Entiers de taille fixe
-</div>
+### Entiers de taille fixe {#fixed-width-integers}
 
 | Type    | Bytes | Encodage                                 |
 | ------- | ----- | ---------------------------------------- |
@@ -101,9 +93,7 @@ Byte 1: data = 0x02, continuation = 0 → accumulator = (0x02 << 7) | 0x2C = 300
 
 Par exemple, la valeur UInt32 `1` est encodée sous la forme `01 00 00 00`, et la valeur Int32 `-1` sous la forme `FF FF FF FF`.
 
-<div id="string">
-  ### String
-</div>
+### String {#string}
 
 Une séquence d’octets précédée de sa longueur :
 
@@ -113,19 +103,13 @@ Une séquence d’octets précédée de sa longueur :
 
 La séquence d’octets n’a pas besoin d’être du UTF-8 valide. Une chaîne vide s’encode en un seul octet `0x00`, et les chaînes peuvent contenir n’importe quelle valeur d’octet, y compris un NUL intégré. La chaîne `"ab"` s’encode en `02 61 62` ; pour la décoder, lisez la longueur VarUInt (`2`), puis lisez ce nombre d’octets.
 
-<div id="bool">
-  ### Bool
-</div>
+### Bool {#bool}
 
 Un seul octet. `0x00` correspond à false ; toute valeur non nulle correspond à true (sous sa forme canonique, `0x01`).
 
-<div id="block-and-column-structure">
-  ## Structure des blocs et des colonnes
-</div>
+## Structure des blocs et des colonnes {#block-and-column-structure}
 
-<div id="block-wire-layout">
-  ### wire layout du bloc
-</div>
+### wire layout du bloc {#block-wire-layout}
 
 ```text
 [BlockInfo]               metadata (only on the TCP Data-packet path; see below)
@@ -145,9 +129,7 @@ La présence du préfixe `BlockInfo` dépend du canal, car l’écriture est par
 
 En d’autres termes, les exemples d’octets de cette section qui commencent par un préfixe `BlockInfo` décrivent la charge utile du paquet Data en TCP. La même requête exécutée via `FORMAT Native` produit la forme plus courte affichée à côté.
 
-<div id="blockinfo">
-  ### BlockInfo
-</div>
+### BlockInfo {#blockinfo}
 
 BlockInfo est une séquence de champs, chacun précédé d’un ID de champ VarUInt, terminée par un ID de champ égal à `0`. Le wire format n’est **pas** auto-descriptif : un ID de champ n’encode ni la longueur ni le type de sa valeur, donc le lecteur doit déjà connaître le type de chaque ID de champ qu’il peut rencontrer. Le lecteur natif de ClickHouse traite un ID de champ non reconnu comme une corruption et lève une exception (`UNKNOWN_BLOCK_INFO_FIELD`). La compatibilité ascendante est assurée par la révision du protocole : l’émetteur n’écrit un champ que si la révision négociée est au moins égale à la révision minimale de ce champ, de sorte qu’un récepteur plus ancien ne voie jamais un champ qu’il ne connaît pas.
 
@@ -166,9 +148,7 @@ Les champs `1` et `2` ont une révision minimale de `0` ; ils sont donc présen
 [VarUInt: 0]
 ```
 
-<div id="column-wire-layout">
-  ### Wire layout d’une colonne
-</div>
+### Wire layout d’une colonne {#column-wire-layout}
 
 Une colonne apparaît `num_columns` fois dans un bloc.
 
@@ -190,9 +170,7 @@ Un décodeur s’appuie sur la chaîne `type`. Les chaînes de type contiennent 
 
 <img className="w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch.webp" alt="Routage du décodeur depuis une description de type vers sa famille d’encodage" width="1568" height="854" loading="lazy" />
 
-<div id="kind-stack-and-sparse-encoding">
-  #### kind_stack et encodage sparse
-</div>
+#### kind_stack et encodage sparse {#kind-stack-and-sparse-encoding}
 
 L’octet `kind_stack` énumère une sérialisation non standard par colonne :
 
@@ -252,9 +230,7 @@ Un décodeur reconstruit une colonne dense en sélectionnant `elements[indexes[i
 
 Si la colonne encapsulée était sparse, sa pile est `{DEFAULT, SPARSE, DETACHED}`, ce qui se sérialise en `DETACHED_OVER_SPARSE`. Un client qui décode une telle colonne lit la longueur du blob et ses octets, puis décompresse le blob pour récupérer la charge utile de la colonne interne (voir la [note `ColumnBLOB`](#compression-negotiation) dans la section sur la compression).
 
-<div id="block-variants">
-  ### Variantes de bloc
-</div>
+### Variantes de bloc {#block-variants}
 
 Tous les paquets de la famille Data partagent le même wire format Block. Les variantes ne diffèrent que par leur nombre de colonnes et de lignes :
 
@@ -264,9 +240,7 @@ Tous les paquets de la famille Data partagent le même wire format Block. Les va
 | Bloc de résultat | N &gt; 0        | M &gt; 0     | Lignes de résultat proprement dites.                                     |
 | Bloc vide        | 0               | 0            | Sentinelle — fin d’entrée côté client ; marqueur de limite côté serveur. |
 
-<div id="byte-level-examples">
-  ### Exemples à l’échelle de l’octet
-</div>
+### Exemples à l’échelle de l’octet {#byte-level-examples}
 
 Tous les exemples de cette section sont tirés du **chemin des paquets TCP Data** ; ils incluent donc le préfixe `BlockInfo` et l’octet `has_custom_serialization`. Avec `FORMAT Native`, les mêmes blocs sont plus courts — la forme courte équivalente est indiquée lorsque c’est utile.
 
@@ -320,17 +294,13 @@ Avec `FORMAT Native` (révision `0`), le même bloc de résultats ne comporte ni
 
 (Un résultat sans aucune ligne, comme un bloc contenant uniquement un en-tête, ne produit aucun octet avec `FORMAT Native` : le format de sortie n’émet pas de blocs vides.)
 
-<div id="protocol-revision">
-  ## Révision du protocole et format Native
-</div>
+## Révision du protocole et format Native {#protocol-revision}
 
 Un flux d’octets Native est avant tout déterminé par la **révision du protocole** utilisée par son lecteur et son rédacteur. La révision n’apparaît nulle part dans les octets eux-mêmes — il n’existe pas de champ de révision dans la représentation transmise — mais elle détermine malgré tout si plusieurs fonctionnalités sont présentes ou non. Pour cette raison, un décodeur doit connaître la révision avec laquelle une charge utile a été écrite avant de pouvoir l’analyser. Comme la révision ne figure pas dans le flux, le lecteur et le rédacteur doivent s’accorder dessus d’une autre manière.
 
 Il s’agit d’un simple `UInt64`, et `NativeWriter` comme `NativeReader` le prennent comme argument du constructeur. Le rédacteur l’appelle `client_revision` et le lecteur l’appelle `server_revision`, mais c’est le même nombre. La révision la plus récente prise en charge par cette version est `DBMS_TCP_PROTOCOL_VERSION` (voir `src/Core/ProtocolDefines.h`).
 
-<div id="what-the-revision-gates">
-  ### Ce que conditionne la révision
-</div>
+### Ce que conditionne la révision {#what-the-revision-gates}
 
 Chaque fonctionnalité est conditionnée par un seuil `DBMS_MIN_REVISION_WITH_*`. Le rédacteur n’émet la fonctionnalité qu’à partir du moment où sa révision atteint ce seuil, et le lecteur la recherche selon exactement la même règle, afin que les deux restent synchronisés — si la révision est incorrecte d’un côté ou de l’autre, ils se désynchronisent. Les seuils importants pour le format Native sont les suivants :
 
@@ -357,23 +327,17 @@ Ce forçage correspond au flag `remove_low_cardinality`. La sortie de `FORMAT Na
 
 En pratique : un flux `FORMAT Native` par défaut peut légitimement contenir `LowCardinality` ; ne le considérez donc pas comme une fonctionnalité absente à la révision `0`.
 
-<div id="revision-per-channel">
-  ### D’où vient la révision selon le mode de transport des données
-</div>
+### D’où vient la révision selon le mode de transport des données {#revision-per-channel}
 
 Les mêmes octets Native peuvent transiter par différents chemins : le protocole TCP natif, une requête HTTP ou un fichier sur disque. Chaque chemin définit la révision à sa façon. Point important : le côté lecture et le côté écriture sont configurés séparément, et peuvent donc se retrouver avec des révisions différentes.
 
-<div id="revision-tcp">
-  #### Protocole TCP natif — négocié dans les deux sens
-</div>
+#### Protocole TCP natif — négocié dans les deux sens {#revision-tcp}
 
 Sur le [protocole TCP natif](/fr/reference/interfaces/specs/NativeProtocol), la révision est issue du handshake Hello initial. Le client envoie `DBMS_TCP_PROTOCOL_VERSION`, le serveur renvoie la sienne, puis chaque côté sérialise selon la **révision annoncée par l’autre** : le serveur construit son `NativeReader`/`NativeWriter` à partir de `client_tcp_protocol_version`, tandis que le client utilise la `server_revision` reçue. Il n’y a pas de `min` explicite, mais aucune des deux parties ne peut émettre une fonctionnalité qu’elle n’a pas implémentée ; en pratique, chaque sens est donc limité par le plus ancien des deux pairs.
 
 Lorsque les deux pairs utilisent la même build récente, les deux sens aboutissent à la même révision (`DBMS_TCP_PROTOCOL_VERSION`, voir `src/Core/ProtocolDefines.h`) et tous les mécanismes de contrôle sont actifs. C’est le cas le plus courant, mais ce n’est pas garanti. Avec des pairs de versions différentes ou tiers, les deux sens peuvent se retrouver à des révisions distinctes ; ces mécanismes doivent donc être interprétés pour chaque sens : `BlockInfo` est présent pour toute révision non nulle, mais le reste — y compris `has_custom_serialization` — n’apparaît que lorsque la révision effective de ce sens atteint les seuils correspondants. Un pair annonçant une révision inférieure à `54454`, par exemple, n’envoie ni ne reçoit l’octet `has_custom_serialization`.
 
-<div id="revision-output">
-  #### Sortie `FORMAT Native` — révision 0 par défaut, pouvant être relevée via HTTP
-</div>
+#### Sortie `FORMAT Native` — révision 0 par défaut, pouvant être relevée via HTTP {#revision-output}
 
 Le format de *sortie* `Native` utilise par défaut la révision **`0`**. Cela couvre `SELECT ... FORMAT Native` via HTTP, `INTO OUTFILE ... FORMAT Native`, ainsi que la sortie `Native` produite par `clickhouse-client` ; dans chaque cas, la fabrique de sortie transmet directement `FormatSettings::client_protocol_version` au `NativeWriter`, qui régit le tramage `BlockInfo` / `has_custom_serialization` *ainsi que* la disposition `String` avec offsets. Ainsi, un `SELECT ... FORMAT Native` HTTP avec un `client_protocol_version` relevé (≥ `54492`) écrit la disposition avec offsets, tandis que la révision par défaut `0` conserve la disposition portable par valeur.
 
@@ -381,17 +345,13 @@ Avec HTTP, toutefois, cela ne s’arrête pas là. Un client peut relever cette 
 
 Comme le paramètre est placé dans le contexte de l’ensemble de la requête, il atteint chaque `NativeWriter` créé pour cette requête, et pas seulement le flux de résultats. En particulier, une écriture côté serveur telle que `INSERT INTO FUNCTION file('x.native', 'Native', ...) SELECT ...` via HTTP avec un `?client_protocol_version=` relevé écrit le fichier à cette révision. Il s’agit d’un comportement ancien (antérieur à la sérialisation `String` avec offsets et qui s’applique également à `BlockInfo` et à `has_custom_serialization`) et il est asymétrique : le côté lecture (ci-dessous) n’est pas relevé de la même manière, de sorte qu’un tel fichier ne peut pas être relu via `file(...)`. N’incluez pas `client_protocol_version` dans une requête qui écrit des données destinées à être relues. `INTO OUTFILE` et la sortie locale de `clickhouse-client` n’offrent pas ce type de réglage et restent à `0`.
 
-<div id="revision-input">
-  #### Entrée `FORMAT Native` — toujours à la révision 0
-</div>
+#### Entrée `FORMAT Native` — toujours à la révision 0 {#revision-input}
 
 Le format d’*entrée* `Native` crée toujours son `NativeReader` à la révision **`0`**. Il n’attend jamais de préfixe `BlockInfo`, ne lit jamais l’octet `has_custom_serialization` et suppose toujours la sérialisation par défaut, qu’il analyse le corps d’un `INSERT ... FORMAT Native`, lise un fichier `Native` ou infère un schéma. `?client_protocol_version=<n>` n’augmente pas la révision d’entrée (seule la sortie lit ce paramètre).
 
 Puisque la révision d’entrée est toujours `0`, le format d’entrée lit systématiquement la disposition `String` pour chaque valeur ; un flux écrit avec la disposition par offsets (sur le protocole TCP natif ou via un `SELECT ... FORMAT Native` avec un `client_protocol_version` augmenté) ne peut pas être relu via l’entrée `FORMAT Native` — même asymétrie que pour le tramage `BlockInfo`.
 
-<div id="revision-round-trip">
-  ### Implications pour un aller-retour
-</div>
+### Implications pour un aller-retour {#revision-round-trip}
 
 Pour `FORMAT Native`, la valeur par défaut est la révision `0` des deux côtés. Les données écrites par `SELECT ... FORMAT Native` avec la révision `0` peuvent être relues directement par `INSERT ... FORMAT Native`, sans surprise.
 
@@ -413,9 +373,7 @@ Les fichiers constituent le cas asymétrique. Un `?client_protocol_version=` aug
   Ne confondez pas la révision du protocole avec la [version de sérialisation](#serialization-version-concept). Ici, la révision vaut pour l&#39;ensemble de la connexion ou de la requête et n&#39;apparaît jamais dans les octets. La version de sérialisation, elle, est propre à chaque colonne, est portée par les [types versionnés](#versioned-types) et est écrite dans chaque bloc non vide. La révision détermine si une fonctionnalité est présente ou non ; la version de sérialisation, une fois dans une colonne versionnée, choisit quelle variante de l&#39;encodage de ce type précis suit.
 </Info>
 
-<div id="data-types">
-  ## Types de données
-</div>
+## Types de données {#data-types}
 
 Cette section documente l’encodage wire des types que le format Native peut transporter dans le `data` d’une colonne, répartis en quatre familles selon une complexité croissante du décodeur. Deux types — `AggregateFunction(func, ...)` et `QBit(T, N[, stride])` — sont des types de colonne `Native` valides, mais leurs payloads spécifiques à la fonction ou au type ne sont pas couverts ici ; ils sont signalés ci-dessous aux endroits où ils pourraient sinon être confondus avec des alias.
 
@@ -426,9 +384,7 @@ Cette section documente l’encodage wire des types que le format Native peut tr
 | Composite (forme fixe) | [Types composites](#composite-types)                | Plusieurs        | Aucun                                                                             |
 | Versionnés / avec état | [Types versionnés](#versioned-types)                | Plusieurs        | Aucun sur le wire Native — préfixe d’état par bloc, réinitialisé pour chaque bloc |
 
-<div id="fixed-width-types">
-  ### Types à largeur fixe
-</div>
+### Types à largeur fixe {#fixed-width-types}
 
 Chaque valeur occupe un nombre constant d’octets. Une colonne de `M` lignes occupe exactement `bytes_per_row × M` octets dans le flux binaire, concaténés sans séparateurs ni remplissage.
 
@@ -466,9 +422,7 @@ Chaque valeur occupe un nombre constant d’octets. Une colonne de `M` lignes oc
 | `Enum16`            | 2                 | Signé sur 16 bits (index de variant)                                                                            | Little-endian                                                           |
 | `Decimal(P, S)`     | 4 / 8 / 16 / 32   | `value × 10^S` sous forme d’entier signé ; la largeur dépend de P (≤9 → 4 B, ≤18 → 8 B, ≤38 → 16 B, ≤76 → 32 B) | Entier signé little-endian                                              |
 
-<div id="integer-types">
-  #### Types entiers
-</div>
+#### Types entiers {#integer-types}
 
 `UInt8`–`UInt256` et `Int8`–`Int256` sont des encodages binaires directs de valeurs entières. Un décodeur lit `bytes_per_row × num_rows` octets et les interprète selon le type.
 
@@ -487,9 +441,7 @@ FF FF FF FF              row 0: -1
 2A 00 00 00              row 1: 42
 ```
 
-<div id="float32-and-float64">
-  #### Float32 et Float64
-</div>
+#### Float32 et Float64 {#float32-and-float64}
 
 Nombres à virgule flottante binaires IEEE 754 standard : 4 octets en simple précision (`binary32`) et 8 octets en double précision (`binary64`), tous deux en little-endian. NaN, ±Infinity, ±0.0 et les nombres subnormaux sont tous préservés à l’aller-retour, sans normalisation.
 
@@ -505,9 +457,7 @@ Valeur `1.5` de `Float32` (`0x3FC00000`) :
 00 00 00 00 00 00 F8 3F  little-endian IEEE 754
 ```
 
-<div id="bfloat16">
-  #### BFloat16
-</div>
+#### BFloat16 {#bfloat16}
 
 Le format en virgule flottante brain-float : les 16 bits de poids fort d’un `Float32` IEEE 754 — 1 bit de signe, 8 bits d’exposant, 7 bits de mantisse. Chaque valeur occupe 2 octets, en little-endian, et contient le motif binaire brut sur 16 bits. Pour retrouver la valeur numérique, il faut l’élargir de nouveau en `Float32` en plaçant le motif dans la moitié haute et en mettant à zéro la moitié basse (`bits << 16` réinterprété en `Float32`) ; la valeur élargie utilise alors la même représentation textuelle que `Float32`.
 
@@ -517,9 +467,7 @@ Valeur `BFloat16` `1.5` (motif `0x3FC0`, moitié haute de `Float32` `0x3FC00000`
 C0 3F                    little-endian, widens to Float32 1.5
 ```
 
-<div id="bool-type">
-  #### Bool
-</div>
+#### Bool {#bool-type}
 
 Compatible au niveau binaire avec `UInt8` : 1 octet par ligne, `0x00` = false, `0x01` = true. La chaîne de type sur le wire est littéralement `Bool` (et non `UInt8`) ; un décodeur qui se base sur la chaîne de type doit donc le reconnaître séparément.
 
@@ -529,9 +477,7 @@ Une colonne `Bool` `[true, false, true]` :
 01 00 01
 ```
 
-<div id="date-and-date32">
-  #### Date et Date32
-</div>
+#### Date et Date32 {#date-and-date32}
 
 Tous deux encodent les dates sous forme d’un nombre entier de jours par rapport à l’époque Unix `1970-01-01`. Aucun ne comporte de composante horaire.
 
@@ -552,9 +498,7 @@ Valeur `1900-01-01` de `Date32` (-25567 jours) :
 21 9C FF FF              Int32 LE = -25567
 ```
 
-<div id="datetime">
-  #### DateTime
-</div>
+#### DateTime {#datetime}
 
 Compatible au niveau du format binaire avec `UInt32` : un horodatage Unix en secondes, sur 4 octets little-endian. Le type peut apparaître sous la forme `DateTime` ou `DateTime('Timezone')` ; le fuseau horaire n’affecte que l’affichage et ne fait pas partie de la valeur transmise sur le wire. Deux colonnes `DateTime` avec des paramètres de fuseau horaire différents produisent des octets identiques pour le même instant. Un décodeur supprime le suffixe de paramètre `(...)` et traite la colonne comme `UInt32`.
 
@@ -564,9 +508,7 @@ Valeur `DateTime('UTC')` : `2024-03-15 14:30:00 UTC` (timestamp `1710513000`) 
 68 5B F4 65              UInt32 LE = 1710513000
 ```
 
-<div id="datetime64">
-  #### DateTime64(scale[, timezone])
-</div>
+#### DateTime64(scale[, timezone]) {#datetime64}
 
 8 octets, Int64 little-endian représentant des ticks de `10^-scale` seconde depuis l’époque Unix. Le paramètre `scale` (0–9) figure dans la chaîne de type et définit l’unité de temps :
 
@@ -591,9 +533,7 @@ Valeur `DateTime64(3, 'UTC')` : `2024-01-15 12:30:45.123 UTC` (1705321845123 ms
 75 25 A5 65 00 00 00 00  Int64 LE = 1705321845
 ```
 
-<div id="time-and-time64">
-  #### Time et Time64(scale)
-</div>
+#### Time et Time64(scale) {#time-and-time64}
 
 Une durée plutôt qu&#39;un point dans le temps. `Time` est un décompte signé de secondes, un Int32 little-endian sur 4 octets ; `Time64(scale)` est un décompte signé de ticks à l&#39;échelle décimale indiquée (0–9), un Int64 little-endian sur 8 octets — avec la même représentation sur le wire que `DateTime64`.
 
@@ -615,9 +555,7 @@ Valeur `45296789` en ticks de `Time64(3)` (`12:34:56.789`) :
   `Time` et `Time64` sont expérimentaux et nécessitent l’activation de `allow_experimental_time_time64_type = 1` sur le serveur.
 </Note>
 
-<div id="interval">
-  #### Interval
-</div>
+#### Interval {#interval}
 
 `Interval<Unit>` — `IntervalSecond`, `IntervalMinute`, `IntervalHour`, `IntervalDay`, `IntervalWeek`, `IntervalMonth`, `IntervalQuarter`, `IntervalYear`, `IntervalNanosecond`, etc. Toutes les unités partagent le même encodage binaire : le nombre est représenté par un Int64 signé de 8 octets en little-endian. L&#39;unité n&#39;existe **que** dans la chaîne de type — elle ne modifie ni les octets sur le wire ni la forme textuelle, qui est l&#39;entier brut. Un seul chemin de décodage gère toutes les unités.
 
@@ -627,9 +565,7 @@ Valeur `IntervalDay` `5` :
 05 00 00 00 00 00 00 00  Int64 LE = 5
 ```
 
-<div id="uuid">
-  #### UUID
-</div>
+#### UUID {#uuid}
 
 16 octets par valeur. L’encodage binaire **n’est pas** constitué des 16 octets canoniques en big-endian : chaque moitié de 8 octets est inversée indépendamment, octet par octet.
 
@@ -650,9 +586,7 @@ D4 41 9B E2 00 84 0E 55  high half byte-reversed
 
 L’UUID nul (entièrement composé de zéros) s’écrit de la même façon dans les deux représentations.
 
-<div id="ipv4-and-ipv6">
-  #### IPv4 et IPv6
-</div>
+#### IPv4 et IPv6 {#ipv4-and-ipv6}
 
 Deux types d’adresses apparentés, mais encodés différemment.
 
@@ -675,9 +609,7 @@ Deux types d’adresses apparentés, mais encodés différemment.
 
 L&#39;asymétrie est délibérée : IPv4 est stocké sous forme de `u32` pour les opérations arithmétiques et les requêtes compactes sur des plages, tandis qu&#39;IPv6 conserve la disposition en ordre réseau courante dans la plupart des API réseau.
 
-<div id="enum8-and-enum16">
-  #### Enum8 and Enum16
-</div>
+#### Enum8 and Enum16 {#enum8-and-enum16}
 
 Compatibles au niveau binaire avec `Int8` et `Int16` respectivement : 1 ou 2 octets par ligne, complément à deux en little-endian pour la variante sur 16 bits. La correspondance complète des variantes se trouve dans la chaîne de type :
 
@@ -700,9 +632,7 @@ Une valeur `30000` de `Enum16(...)` :
 30 75                    Int16 LE = 30000
 ```
 
-<div id="decimal">
-  #### Decimal(P, S)
-</div>
+#### Decimal(P, S) {#decimal}
 
 Un entier signé mis à l’échelle par une puissance de 10. La taille en octets de l’entier est implicitement déterminée par la **précision** `P` ; l’**échelle** `S` correspond à l’exposant négatif (le nombre de chiffres après le séparateur décimal). Les deux figurent dans la chaîne de type.
 
@@ -735,9 +665,7 @@ F1 FF FF FF FF FF FF FF  Int64 LE = -15
 87 D6 12 00 00 00 00 00 00 00 00 00 00 00 00 00
 ```
 
-<div id="nothing">
-  #### Nothing
-</div>
+#### Nothing {#nothing}
 
 Le type `Nothing` ne contient aucune valeur. En pratique, il n’apparaît que comme type interne de `Nullable(Nothing)` — c’est ce que le serveur renvoie pour une expression comme `SELECT NULL`, dont la seule valeur possible est l’absence de valeur. Conceptuellement, il s’agit d’un type unitaire.
 
@@ -754,15 +682,11 @@ Une colonne `Nullable(Nothing)` avec 3 lignes (toutes NULL) :
 
 Le préfixe de la null-map correspond à l&#39;encodage standard de `Nullable` (voir [Nullable](#nullable)) ; les trois octets internes forment le `payload` de `Nothing`, que le décodeur saute.
 
-<div id="variable-length-types">
-  ### Types à longueur variable
-</div>
+### Types à longueur variable {#variable-length-types}
 
 Chaque valeur inclut sa propre longueur dans le format binaire transmis.
 
-<div id="string-type">
-  #### String
-</div>
+#### String {#string-type}
 
 Chaîne de type : `String`. Une colonne `String` possède deux dispositions wire, sélectionnées selon la révision du protocole (voir [Ce que contrôle la révision](#what-the-revision-gates)). La révision correspond à celle négociée pour le protocole TCP natif et à `client_protocol_version` pour la sortie `FORMAT Native` (valeur par défaut : `0`) ; l&#39;entrée `FORMAT Native` utilise toujours la révision `0` et le format `Buffers` utilise toujours la disposition par valeur.
 
@@ -806,9 +730,7 @@ Lorsque la disposition des offsets est utilisée, il s&#39;applique à tous les 
 
 Dans les deux dispositions, le type `String` de ClickHouse est orienté octets plutôt que texte : la validité UTF-8 n&#39;est pas vérifiée, et une valeur peut contenir n&#39;importe quels octets, y compris des NUL intégrés. Un décodeur ciblant un type de chaîne UTF-8 valide les données à la lecture ou expose les octets bruts à l&#39;appelant.
 
-<div id="fixedstring">
-  #### FixedString(N)
-</div>
+#### FixedString(N) {#fixedstring}
 
 Chaîne de type : `FixedString(N)`, où `N` est un entier positif (par exemple, `FixedString(16)`). La colonne contient exactement `N × num_rows` octets bruts, sans préfixe de longueur ni séparateur. Un décodeur analyse `N` à partir de la chaîne de type et consomme ce nombre d’octets par ligne.
 
@@ -832,9 +754,7 @@ Comparaison des deux types de chaînes :
 | UTF-8 attendu                       | Généralement (non imposé)                                                     | Non (traité comme des octets bruts) |
 | Paramètre de type                   | None                                                                          | Entier `N` obligatoire              |
 
-<div id="composite-types">
-  ### Types composites
-</div>
+### Types composites {#composite-types}
 
 Les types composites encapsulent un ou plusieurs types internes et partagent un modèle binaire commun sur le wire : **plusieurs flux par colonne**. Une même colonne logique est encodée sous la forme de deux séquences d’octets ou plus, lues indépendamment puis concaténées.
 
@@ -852,9 +772,7 @@ Ainsi, lorsqu’un composite encapsule un [type versionné/avec état](#versione
 
 Un décodeur qui lit les offsets avant d’exécuter la phase de préfixe interne se désynchronisera sur tout composite contenant `LowCardinality`, `Variant`, `Dynamic` ou `JSON`. Lorsque tous les types internes sont soit des types feuilles simples, soit d’autres composites non versionnés, la phase de préfixe n’émet aucun octet et la description « offsets d’abord » ci-dessous s’applique telle quelle.
 
-<div id="nullable">
-  #### Nullable(T)
-</div>
+#### Nullable(T) {#nullable}
 
 Chaîne de type : `Nullable(InnerType)`. Exemples : `Nullable(UInt32)`, `Nullable(String)`, `Nullable(FixedString(16))`, `Nullable(DateTime('UTC'))`.
 
@@ -905,9 +823,7 @@ Un `Nullable(String)` comportant trois lignes `["hello", NULL, "world"]` (15 oct
 05 'w' 'o' 'r' 'l' 'd'   row 2: "world"
 ```
 
-<div id="array">
-  #### Array(T)
-</div>
+#### Array(T) {#array}
 
 Chaîne de type : `Array(InnerType)`. Exemples : `Array(UInt32)`, `Array(String)`, `Array(Nullable(UInt32))`, `Array(Array(UInt8))`.
 
@@ -969,9 +885,7 @@ Values (2 strings, 4 bytes total):
 
 Cela représente 24 (offsets externes) + 24 (offsets intermédiaires) + 20 (valeurs) = 68 octets.
 
-<div id="tuple">
-  #### Tuple(T1, T2, ...)
-</div>
+#### Tuple(T1, T2, ...) {#tuple}
 
 Chaîne de type : `Tuple(T1, T2, ..., Tn)`. Exemples : `Tuple(UInt32, String)`, `Tuple(Int32)`, `Tuple(Array(UInt32), String)`, `Tuple(UInt8, Tuple(Int32, String))`. ClickHouse prend également en charge les **tuples nommés** via `Tuple(a UInt32, b String)` ; les noms ne sont que des métadonnées et n’affectent pas le wire format.
 
@@ -1013,9 +927,7 @@ Element 1 stream (2 strings, 5 bytes total):
 02 'b' 'b'                   "bb"
 ```
 
-<div id="map">
-  #### Map(K, V)
-</div>
+#### Map(K, V) {#map}
 
 Chaîne de type : `Map(KeyType, ValueType)`. Exemples : `Map(String, UInt32)`, `Map(String, Array(UInt32))`, `Map(UInt8, Tuple(Int32, String))`, `Map(Array(String), Int8)`. Le format wire n’impose aucune restriction à l’un ou l’autre type : `K` et `V` peuvent tous deux être de n’importe quel type pris en charge, y compris des types composites. (Les règles de ClickHouse au niveau SQL concernant les types de clé acceptés ont varié selon les versions ; consultez la documentation SQL correspondant à la version ciblée du serveur.)
 
@@ -1065,9 +977,7 @@ Values (2 × UInt32 LE = 8 bytes):
 02 00 00 00                  2
 ```
 
-<div id="nested">
-  #### Nested(name1 T1, name2 T2, ...)
-</div>
+#### Nested(name1 T1, name2 T2, ...) {#nested}
 
 La représentation on-wire de `Nested` dépend du paramètre `flatten_nested` côté serveur, ce qui donne lieu à deux cas distincts.
 
@@ -1126,9 +1036,7 @@ Field 'b' stream (3 strings, 6 bytes):
 01 'x' 01 'y' 01 'z'         "x", "y", "z"
 ```
 
-<div id="type-aliases">
-  ### Alias de type
-</div>
+### Alias de type {#type-aliases}
 
 Plusieurs types sont de simples alias : le serveur envoie le nom de l&#39;alias dans l&#39;en-tête de colonne, mais les octets qui suivent sont ceux d&#39;un type sous-jacent. Un décodeur associe l&#39;alias à ce type et réutilise son codec — aucun nouveau format wire n&#39;entre en jeu.
 
@@ -1154,17 +1062,13 @@ Ainsi, une colonne `Point` est décodée exactement comme `Tuple(Float64, Float6
   * `QBit(T, N[, stride])` stocke un vecteur dont les plans de bits sont transposés pour les charges de travail de recherche vectorielle ; son format de flux binaire (flux de plans de bits `FixedString` regroupés par groupe, au nombre de `element_size * (N / stride)`, avec un `stride` explicite) et son encodage binaire des types (balise `0x36`, ou `0x37` `QBitWithStride` lorsque `stride != N`) sont documentés sur la [page du type de données `QBit`](/fr/reference/data-types/qbit) et dans la référence de l’[encodage binaire des types](/fr/reference/data-types/data-types-binary-encoding), afin qu’un lecteur `Native` n’ait pas à les retrouver dans le code source C++.
 </Note>
 
-<div id="versioned-types">
-  ### Types versionnés
-</div>
+### Types versionnés {#versioned-types}
 
 Les types versionnés comportent un préfixe de version de sérialisation on-wire qui indique quelle variante de l’encodage suit. Ils peuvent aussi utiliser plusieurs flux (comme les composites). Avec le format `Native`, le préfixe et tout dictionnaire sont définis par bloc — ces types ne conservent aucun état d’un bloc à l’autre (voir [la note sur le préfixe par bloc](#serialization-version-concept) ci-dessous) ; un état de sérialisation entre les blocs n’existe que dans le flux sur disque de MergeTree.
 
 Ces types sont nettement plus complexes que les composites à structure fixe, et un client visant de simples requêtes analytiques peut en remettre la prise en charge à plus tard.
 
-<div id="serialization-version-concept">
-  #### Version de sérialisation : concept
-</div>
+#### Version de sérialisation : concept {#serialization-version-concept}
 
 Une **version de sérialisation** est un numéro de version on-wire, propre à chaque type et à chaque colonne, qui indique quelle variante de l’encodage d’un type l’expéditeur utilise. C’est le premier élément du préfixe d’état de la colonne ; le décodeur le lit donc en premier et l’aiguille vers le parseur approprié pour le reste de la colonne.
 
@@ -1187,9 +1091,7 @@ Les header blocks (`rows = 0`) et les blocs vides n’émettent donc rien, et un
 
 <img className="w-full h-auto" src="/images/interfaces/native-format/state-prefix-per-block.webp" alt="Préfixe d’état répété pour chaque bloc non vide" width="1226" height="1162" loading="lazy" />
 
-<div id="serialization-version-reference">
-  #### Référence des versions de sérialisation
-</div>
+#### Référence des versions de sérialisation {#serialization-version-reference}
 
 | Type                                                                                         | Largeur du champ | Valeur | Nom                                    | Signification                                                                                                                          |
 | -------------------------------------------------------------------------------------------- | ---------------- | ------ | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1218,9 +1120,7 @@ Quelques points à noter à propos du tableau :
 * **Certaines valeurs sont propres au format natif.** `Object::STRING`, `Object::FLATTENED` et `Dynamic::FLATTENED` existent pour assurer la compatibilité du protocole natif avec les clients qui n&#39;implémentent pas entièrement Object/Dynamic. Elles n&#39;apparaissent pas dans le stockage sur disque de MergeTree.
 * **`V3` est principalement utilisé sur disque.** Les clients qui utilisent le protocole TCP natif voient généralement `FLATTENED` (valeur `3`) plutôt que `V3` (valeur `4`).
 
-<div id="lowcardinality">
-  #### LowCardinality(T)
-</div>
+#### LowCardinality(T) {#lowcardinality}
 
 Le type versionné le plus simple. Il remplace une colonne de `N` valeurs sous-jacentes par un petit dictionnaire de valeurs uniques, ainsi que `N` indices dans ce dictionnaire.
 
@@ -1295,9 +1195,7 @@ Reconstitué : `dict[1], dict[2], dict[1], dict[3], dict[2]` = `["a", "b", "a",
 
 Reconstitué : `dict[2]` = `"a"`, `dict[0]` = `NULL`, `dict[1]` = `""`, `dict[3]` = `"b"`, c.-à-d. `["a", NULL, "", "b"]`. `dict[0]` et `dict[1]` correspondent tous deux à des octets vides dans la représentation binaire transmise ; le fait d’être `NULL` vient de la clé qui pointe vers l’emplacement `0`, et non des octets eux-mêmes.
 
-<div id="json-tier-1-string-fallback">
-  #### JSON (Tier 1 : String fallback)
-</div>
+#### JSON (Tier 1 : String fallback) {#json-tier-1-string-fallback}
 
 Le type `JSON` de ClickHouse possède plusieurs encodages binaires (voir [la référence sur la version de sérialisation](#serialization-version-reference)). Le Tier 1 est le plus simple : lorsque le paramètre par requête `output_format_native_write_json_as_string = 1` est défini, le serveur convertit chaque valeur JSON en son texte sérialisé et émet la colonne sous forme de `String` avec un marqueur de préfixe d’état.
 
@@ -1320,9 +1218,7 @@ Valeur `JSON` `'{"a":1}'` (une ligne) :
 
 La valeur est émise sous la forme de son texte JSON compact — `{"a":1}`, l’entier étant conservé comme entier. Le texte n’est qu’une valeur `String`, donc le client reçoit le JSON comme un contenu opaque en transit, mais ne retrouve pas les chemins individuels ni leurs types ClickHouse ; pour conserver un typage fidèle par chemin, l’encodage de niveau 2 ci-dessous est nécessaire.
 
-<div id="variant">
-  #### Variant(T1, T2, ...)
-</div>
+#### Variant(T1, T2, ...) {#variant}
 
 Une union discriminée : chaque ligne contient une valeur d’un seul des types de variante, ou NULL. Chaque ligne porte un **discriminateur global** d’un octet qui sélectionne son type, puis les valeurs de chaque type sont stockées de manière dense, en une séquence contiguë par type de variante.
 
@@ -1363,9 +1259,7 @@ Le flux de discriminateurs constitue l’index ; chaque discriminateur non-NULL
 
 <img className="w-full h-auto" src="/images/interfaces/native-format/variant-discriminators.webp" alt="Discriminateurs sélectionnant des valeurs dans des séquences denses propres à chaque type" width="1568" height="624" loading="lazy" />
 
-<div id="dynamic">
-  #### Dynamic
-</div>
+#### Dynamic {#dynamic}
 
 Colonne dont le type de valeur est déterminé à l’exécution : chaque ligne contient une valeur d’un ensemble de types déterminé à l’exécution, ou `NULL`. Contrairement à `Variant`, l’ensemble des types **n’apparaît pas** dans la chaîne de type de la colonne — il est porté par le préfixe d’état.
 
@@ -1428,9 +1322,7 @@ La liste des types au runtime suit normalement la canonicalisation de `Variant` 
 
 Reconstitué : ligne 0 = UInt64 run[0] = `42`; ligne 1 = String run[0] = `"hi"`; ligne 2 = NULL. Les séquences par type suivent le même ordre de transmission que la liste des types (`String` avant `UInt64`).
 
-<div id="json-tier-2-flattened-object">
-  #### JSON (Tier 2 : Object FLATTENED)
-</div>
+#### JSON (Tier 2 : Object FLATTENED) {#json-tier-2-flattened-object}
 
 L’encodage JSON le plus riche : au lieu de ramener chaque valeur à du texte (Tier 1), la colonne est scindée en une sous-colonne par chemin JSON. Ce mode est sélectionné si l’on **ne** demande **pas** le mécanisme de repli Tier 1 (`output_format_native_write_json_as_string = 0`) tout en activant l’indicateur de sérialisation aplatie (`output_format_native_use_flattened_dynamic_and_json_serialization = 1`) ; le server émet alors la **version 3** de sérialisation.
 
@@ -1477,15 +1369,11 @@ Valeur `JSON` `{"a": 42, "b": "hi"}` (une ligne, les deux chemins étant dynamiq
 00 02 68 69                  "b" data: discriminator 0, String "hi"
 ```
 
-<div id="json-non-flat">
-  #### JSON non aplati (V2/V3)
-</div>
+#### JSON non aplati (V2/V3) {#json-non-flat}
 
 Les encodages `Object` non aplatis (`V1`/`V2`/`V3`) sont utilisés par le stockage sur disque de MergeTree et correspondent à ce que le serveur émet sur le wire lorsque l’indicateur flattened est désactivé — `V1` via `clickhouse-client` / HTTP `FORMAT Native` (revision `0`), `V2` via le native TCP protocol. Ils incluent une colonne de données partagées et ne sont **pas** spécifiés sur cette page. Notez qu’ils n’incluent **pas** de statistiques par chemin sur le wire Native : `NativeWriter` laisse les statistiques désactivées, de sorte que le préfixe de structure `Object` ne contient pas de section de statistiques, et les octets qui suivent sont directement les préfixes typed/dynamic/données partagées et les données. Les statistiques n’apparaissent que sur les chemins sur disque de MergeTree où elles sont activées. Pour décoder une colonne `JSON` à l’aide de cette page, un client doit sélectionner l’un des tiers documentés : définissez `output_format_native_write_json_as_string = 1` pour le [String fallback](#json-tier-1-string-fallback), ou `output_format_native_use_flattened_dynamic_and_json_serialization = 1` (avec `output_format_native_write_json_as_string = 0`) pour la disposition [FLATTENED Object](#json-tier-2-flattened-object).
 
-<div id="compression-frame">
-  ## Trame de compression
-</div>
+## Trame de compression {#compression-frame}
 
 ClickHouse peut compresser les données de colonnes d’un flux `Native` à l’aide d’un format de trame interne. La [structure de la trame](#frame-format) ci-dessous est **indépendante du transport** — les mêmes trames apparaissent aussi bien avec le protocole TCP natif que sur HTTP — mais la façon dont la compression est demandée, ainsi que ce qui entoure les trames, diffère selon le transport.
 
@@ -1494,9 +1382,7 @@ ClickHouse peut compresser les données de colonnes d’un flux `Native` à l’
 
 Ainsi, un client qui n’implémente que la structure non compressée `FORMAT Native` doit quand même ajouter cette couche de trame pour lire une réponse HTTP `Native` compressée ou pour envoyer un body de requête `decompress=1`.
 
-<div id="frame-format">
-  ### Format de la trame
-</div>
+### Format de la trame {#frame-format}
 
 ```text
 [16 bytes: CityHash128 checksum over the 9-byte header + compressed body]
@@ -1510,19 +1396,17 @@ La taille totale de la trame est `16 + compressed_size` = `16 + 9 + body_size` =
 
 <img className="w-full h-auto" src="/images/interfaces/native-format/compression-frame.webp" alt="Champs de la trame de compression et limite de taille compressée" width="1568" height="206" loading="lazy" />
 
-<div id="method-byte-values">
-  ### Valeurs des octets de méthode
-</div>
+### Valeurs des octets de méthode {#method-byte-values}
 
-Ces trois codecs sont ceux que le serveur produit pour le tramage `Native` sur flux complet : la sortie HTTP `compress=1` utilise toujours `LZ4`, et le protocole TCP natif utilise `LZ4`, `ZSTD` ou `NONE` selon `network_compression_method`. Un `client` `Native` générique n’a besoin de produire et de consommer que ceux-ci.
+Ces trois codecs sont ceux que le serveur produit pour le tramage `Native` sur flux complet : la sortie HTTP `compress=1` utilise le codec par défaut du serveur (`ZSTD(3)`), et le protocole TCP natif utilise `LZ4`, `ZSTD` ou `NONE` selon `network_compression_method`. Un `client` `Native` générique n’a besoin de produire et de consommer que ceux-ci.
 
 | Byte   | Method | Body encoding                                                                                                                         |
 | ------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `0x02` | NONE   | Le corps correspond aux octets bruts (sans compression). La trame est tout de même émise ; le récepteur vérifie la somme de contrôle. |
+| `0x02` | NONE   | Le corps correspond aux octets bruts (sans compression). La trame est tout de même émise ; le récepteur vérifie la somme de contrôle. |
 | `0x82` | LZ4    | Le corps utilise le **format de bloc LZ4** — *et non* le format de trame LZ4. Aucun nombre magique.                                   |
 | `0x90` | ZSTD   | Le corps est un flux zstd brut à trame unique (le nombre magique zstd standard fait partie du corps).                                 |
 
-L’octet de méthode encode également les [codecs au niveau des colonnes](/fr/reference/statements/create/table/codec). Ceux-ci sont appliqués par colonne sur les chemins sur disque de MergeTree plutôt qu’au tramage sur flux complet, mais le chemin d’entrée HTTP `decompress=1` prend le codec dans l’octet de méthode de chaque trame, de sorte que n’importe lequel de ces octets peut légitimement apparaître en entrée. Un décodeur conforme doit donc reconnaître tout l’espace alloué et rejeter un octet qu’il n’implémente pas, plutôt que de mal interpréter le corps. Leurs corps sont spécifiques à chaque codec et sortent du cadre de ce contrat de trame générique :
+L’octet de méthode encode également les [codecs au niveau des colonnes](/fr/reference/statements/create/table/codec). Ceux-ci sont appliqués par colonne sur les chemins sur disque de MergeTree plutôt qu’au tramage sur flux complet, mais le chemin d’entrée HTTP `decompress=1` prend le codec dans l’octet de méthode de chaque trame, de sorte que n’importe lequel de ces octets peut légitimement apparaître en entrée. Un décodeur conforme doit donc reconnaître tout l’espace alloué et rejeter un octet qu’il n’implémente pas, plutôt que de mal interpréter le corps. Leurs corps sont spécifiques à chaque codec et sortent du cadre de ce contrat de trame générique :
 
 | Byte   | Method                                                                     |
 | ------ | -------------------------------------------------------------------------- |
@@ -1540,21 +1424,17 @@ L’octet de méthode encode également les [codecs au niveau des colonnes](/fr/
 | `0x9e` | `Quantized`                                                                |
 | `0x9f` | `ZXC`                                                                      |
 
-`0x9c` (`ALP`) est un codec **bêta** sans perte pour `Float32` et `Float64` (compression adaptative sans perte en virgule flottante). Une table peut être créée avec `CODEC(ALP)` uniquement lorsque le paramètre `enable_alp_codec` est défini, mais l’octet de méthode est toujours accepté lors de la décompression afin que les données précédemment écrites restent lisibles. `0x9d` (`SZ3`) est un codec **expérimental** *avec perte* et à erreur bornée pour `Float32`, `Float64` et `Array` de ces types. Une table peut être créée avec `CODEC(SZ3)` uniquement lorsque le paramètre `enable_sz3_codec` est défini, mais l’octet de méthode est toujours accepté lors de la décompression afin que les données précédemment écrites restent lisibles. `0x9f` (`ZXC`) est un codec LZ asymétrique **expérimental** : lent à compresser, mais très rapide à décompresser, avec un ratio situé entre `LZ4` et `ZSTD`. Une table peut être créée avec `CODEC(ZXC)` uniquement lorsque le paramètre `enable_zxc_codec` est défini, mais l’octet de méthode est toujours accepté lors de la décompression afin que les données précédemment écrites restent lisibles. Les octets `0x99` (`DeflateQpl`) et `0x9b` (`ZSTD_QPL`) avaient été attribués à des codecs qui ont depuis été supprimés ; ils sont réservés et ne sont pas réutilisés.
+`0x9c` (`ALP`) est un codec **bêta** sans perte pour `Float32` et `Float64` (compression adaptative sans perte en virgule flottante). Une table peut être créée avec `CODEC(ALP)` uniquement lorsque le paramètre `enable_alp_codec` est défini, mais l’octet de méthode est toujours accepté lors de la décompression afin que les données précédemment écrites restent lisibles. `0x9d` (`SZ3`) est un codec **expérimental** *avec perte* et à erreur bornée pour `Float32`, `Float64` et `Array` de ces types. Une table peut être créée avec `CODEC(SZ3)` uniquement lorsque le paramètre `enable_sz3_codec` est défini, mais l’octet de méthode est toujours accepté lors de la décompression afin que les données précédemment écrites restent lisibles. `0x9f` (`ZXC`) est un codec LZ asymétrique **expérimental** : lent à compresser, mais très rapide à décompresser, avec un ratio situé entre `LZ4` et `ZSTD`. Une table peut être créée avec `CODEC(ZXC)` uniquement lorsque le paramètre `enable_zxc_codec` est défini, mais l’octet de méthode est toujours accepté lors de la décompression afin que les données précédemment écrites restent lisibles. Les octets `0x99` (`DeflateQpl`) et `0x9b` (`ZSTD_QPL`) avaient été attribués à des codecs qui ont depuis été supprimés ; ils sont réservés et ne sont pas réutilisés.
 
 `0x9e` (`Quantized`) est un codec de colonne **expérimental** pour les colonnes de vecteurs denses (`Array(Float32)` et assimilés). Comme `NONE`, il agit en passthrough — le corps en pleine précision est stocké tel quel — mais sa présence associe une sérialisation qui écrit un flux compagnon quantifié compact utilisé pour accélérer la recherche vectorielle. Une table peut être créée avec `CODEC(Quantized(...))` uniquement lorsque le paramètre `enable_quantized_codec` est défini, et l’octet de méthode est toujours accepté lors de la décompression.
 
-<div id="checksum">
-  ### Somme de contrôle
-</div>
+### Somme de contrôle {#checksum}
 
 ClickHouse utilise CityHash v1.0.2 (la variante historique), **et non** la version moderne de Google CityHash ; les deux produisent des résultats différents.
 
 La somme de contrôle est calculée sur les 9 octets d’en-tête (method + compressed&#95;size + uncompressed&#95;size) plus les N octets du corps — c’est-à-dire tout ce qui se trouve entre la somme de contrôle et la fin de la trame. Dans la sortie de 16 octets de CityHash128, les 8 premiers octets correspondent à la moitié basse (LE) et les 8 suivants à la moitié haute (LE). Un décodeur recalcule CityHash128 sur l’en-tête et le corps reçus, puis compare le résultat aux 16 octets de tête ; en cas de non-correspondance, les données sont corrompues et le décodeur échoue.
 
-<div id="per-block-boundaries">
-  ### Limites par bloc
-</div>
+### Limites par bloc {#per-block-boundaries}
 
 La charge utile compressée d’un Block est un **flux d’une ou plusieurs trames**, et pas nécessairement d’une seule trame. L’émetteur écrit le bloc sérialisé via un `CompressedWriteBuffer`, qui émet une trame chaque fois que son tampon interne se remplit (≈ 1 MB, `DBMS_DEFAULT_BUFFER_SIZE`), puis une trame finale lorsque le bloc est vidé. Ainsi, un petit bloc tient dans une seule trame ; un grand bloc s’étend sur plusieurs trames consécutives.
 
@@ -1564,21 +1444,17 @@ Un récepteur lit les trames en flux : lire 16 + 9 octets, lire exactement `comp
 
 Sur le protocole TCP natif, l’enveloppe de paquet — le VarUInt du type de paquet et la chaîne `table_name` — est écrite dans le flux **brut**, hors de la charge utile compressée ; seul le corps du bloc (BlockInfo + colonnes) est découpé en trames. Le chemin HTTP `compress`/`decompress` n’a pas une telle enveloppe : l’ensemble du flux est constitué de blocs découpés en trames.
 
-<div id="compression-negotiation">
-  ### Négociation
-</div>
+### Négociation {#compression-negotiation}
 
-Avec le protocole TCP natif, la compression s’applique par requête, et non par connexion. Le champ `compression: bool` du paquet Query l’active pour cette requête uniquement. Le serveur respecte cette demande et émet des corps `Data`/`Totals`/`Extremes`/`Log`/`ProfileEvents` compressés pendant toute la durée de vie de la requête (`Log`/`ProfileEvents` uniquement à partir de v54481+). Il attend également que les blocs de Data *envoyés* par le client — tables externes, marqueur vide de fin de données et lignes INSERT — soient encapsulés de la même façon. Les requêtes suivantes sur la même connexion peuvent utiliser un réglage différent.
+Avec le protocole TCP natif, la compression s’applique par requête, et non par connexion. Le champ `compression: bool` du Query packet l’active pour cette requête uniquement. Le serveur respecte cette demande et émet des corps `Data`/`Totals`/`Extremes`/`Log`/`ProfileEvents` compressés pendant toute la durée de vie de la requête (`Log`/`ProfileEvents` uniquement à partir de v54481+). Il attend également que les blocs de Data *envoyés* par le client — tables externes, marqueur vide de fin de données et lignes INSERT — soient encapsulés de la même façon. Les requêtes suivantes sur la même connexion peuvent utiliser un réglage différent.
 
-En HTTP, il n’y a pas de paquet Query : le paramètre de requête `compress=1` sélectionne une sortie encapsulée pour cette requête, et `decompress=1` indique que le corps de la requête est encapsulé. La sortie `compress=1` est écrite avec le codec par défaut du serveur (`LZ4`) plutôt qu’avec `network_compression_method` ; le lecteur `decompress=1` détermine le codec à partir de l’octet de méthode de chaque trame, de sorte que n’importe quel codec est accepté en entrée.
+En HTTP, il n’y a pas de Query packet : le paramètre de requête `compress=1` sélectionne une sortie encapsulée pour cette requête, et `decompress=1` indique que le corps de la requête est encapsulé. La sortie `compress=1` est écrite avec le codec par défaut du serveur (`ZSTD(3)`) plutôt qu’avec `network_compression_method` ; le lecteur `decompress=1` détermine le codec à partir de l’octet de méthode de chaque trame, de sorte que n’importe quel codec est accepté en entrée.
 
 <Note>
   Lorsque la compression est activée, le serveur peut également faire passer les colonnes par le chemin parallèle de sérialisation des blocs / `ColumnBLOB` (`PARALLEL_BLOCK_MARSHALLING`, v54478) pour les blocs de plus d’une ligne. Une implémentation qui compresse les données INSERT doit être capable de gérer ce chemin (ou de le désactiver explicitement) afin d’éviter une désynchronisation du flux.
 </Note>
 
-<div id="glossary">
-  ## Glossaire
-</div>
+## Glossaire {#glossary}
 
 **Bloc** — l’unité d’échange de données du format Native. Un bloc auto-descriptif de lignes stockées en format colonnaire. Voir [structure des blocks et des colonnes](#block-and-column-structure).
 

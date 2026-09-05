@@ -199,10 +199,10 @@ Configurações de compressão de dados para tabelas do motor [MergeTree](/pt-BR
 **Ações quando as condições são atendidas**:
 
 * Se uma parte de dados corresponder a um conjunto de condições, o ClickHouse usará o método de compressão especificado.
-* Se uma parte de dados corresponder a vários conjuntos de condições, o ClickHouse usará o primeiro conjunto de condições correspondente.
+* Se uma parte de dados corresponder a vários conjuntos de condições, o ClickHouse usará o último conjunto de condições correspondente (as seções `<case>` são verificadas em ordem, e cada uma que corresponder substitui a escolha anterior).
 
 <Note>
-  Se nenhuma condição for atendida para uma parte de dados, o ClickHouse usará a compressão `lz4`.
+  Se nenhuma condição for atendida para uma parte de dados, o ClickHouse usará o padrão interno sensível ao tamanho: `LZ4` abaixo de 100 MB e `ZSTD(3)` a partir desse valor. Assim como nas condições de `min_part_size` acima, o tamanho considerado é aquele conhecido no momento em que o codec precisa ser escolhido, antes de os dados serem gravados: `0` para uma parte recém-inserida e o tamanho das partes de origem para um merge ou uma mutação. Portanto, uma reescrita que reduz sua entrada, como um `TTL DELETE` ou um merge de collapsing, é classificada pelo tamanho da entrada e pode produzir uma parte abaixo do limite que ainda assim usa `ZSTD(3)`.
 </Note>
 
 **Exemplo**
@@ -213,7 +213,7 @@ Configurações de compressão de dados para tabelas do motor [MergeTree](/pt-BR
         <min_part_size>10000000000</min_part_size>
         <min_part_size_ratio>0.01</min_part_size_ratio>
         <method>zstd</method>
-        <level>1</level>
+        <level>10</level>
     </case>
 </compression>
 ```

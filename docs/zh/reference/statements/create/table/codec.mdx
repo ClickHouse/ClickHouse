@@ -12,7 +12,7 @@ doc_type: 'reference'
 import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-默认情况下，自管理版本的 ClickHouse 使用 `lz4` 压缩，ClickHouse Cloud 则使用 `zstd`。
+默认情况下，自管理版本的 ClickHouse 使用 `ZSTD(3)` 压缩，ClickHouse Cloud 则使用 `zstd`。对于 `MergeTree` 家族，默认压缩方式会根据大小自适应：低于 100 MB 时使用更快的 `LZ4`，达到或超过该阈值时使用 `ZSTD(3)`，因此新插入的数据最初采用 `LZ4`，而 background merges 生成的较大 parts 则会切换为 `ZSTD(3)`。该阈值应用于选择编解码器时已知的 part 大小，即数据写入之前的大小——对于新插入的 part 为 `0`，对于 merge 或变更则为 source parts 的大小——而不是最终生成 part 的大小。
 
 对于 `MergeTree` 引擎家族，您可以在服务器配置的 [compression](/zh/reference/settings/server-settings/settings/other#compression) 部分更改默认压缩方法。
 
@@ -50,7 +50,8 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 以下表引擎支持压缩：
 
 * [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 家族：支持列压缩编解码器，并可通过 [compression](/zh/reference/settings/server-settings/settings/other#compression) 设置选择默认压缩方法。
-* [Log](/zh/reference/engines/table-engines/log-family/index) 家族：默认使用 `lz4` 压缩方法，并支持列压缩编解码器。
+* [Log](/zh/reference/engines/table-engines/log-family/index) 家族 —— `Log` 和 `TinyLog` 引擎默认使用 `ZSTD(3)` 压缩方法，并支持列压缩编解码器。
+* [StripeLog](/zh/reference/engines/table-engines/log-family/index) 会将所有列写入单个共享的数据流，并使用默认的 `ZSTD(3)` 方法压缩，因此不会对其应用按列的压缩编解码器。
 * [Set](/zh/reference/engines/table-engines/special/set)：仅支持默认压缩。
 * [Join](/zh/reference/engines/table-engines/special/join)：仅支持默认压缩。
 
@@ -64,7 +65,7 @@ ClickHouse 支持通用编解码器和专用编解码器。
 
 ### LZ4 {#lz4}
 
-`LZ4` — 默认使用的无损[数据压缩算法](https://github.com/lz4/lz4)，采用 LZ4 快速压缩。
+`LZ4` — 无损[数据压缩算法](https://github.com/lz4/lz4)，采用 LZ4 快速压缩。
 
 ### LZ4HC {#lz4hc}
 
@@ -72,7 +73,7 @@ ClickHouse 支持通用编解码器和专用编解码器。
 
 ### ZSTD {#zstd}
 
-`ZSTD[(level)]` — 使用可配置 `level` 的 [ZSTD 压缩算法](https://en.wikipedia.org/wiki/Zstandard)。可选级别：[1, 22]。默认级别：1。
+`ZSTD[(level)]` — 使用可配置 `level` 的 [ZSTD 压缩算法](https://en.wikipedia.org/wiki/Zstandard)。可选级别：[1, 22]。默认级别：1。对于未显式指定 编解码器 的列，默认应用的 编解码器 是 `ZSTD(3)` (对于 `MergeTree` parts，这在写入时估算的 part 大小达到 100 MB 后生效；低于该值时使用 `LZ4`) 。
 
 高压缩级别适用于非对称场景，例如一次压缩、多次解压。级别越高，压缩效果越好，CPU 使用率也越高。
 

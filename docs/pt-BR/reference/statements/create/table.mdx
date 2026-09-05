@@ -12,15 +12,11 @@ doc_type: 'referência'
 Cria uma nova tabela. Por padrão, as tabelas são criadas apenas no servidor atual.
 As consultas DDL distribuídas são implementadas por meio da cláusula `ON CLUSTER`, que é [descrita separadamente](/pt-BR/reference/statements/distributed-ddl).
 
-<div id="syntax-forms">
-  ## Formas de sintaxe
-</div>
+## Formas de sintaxe {#syntax-forms}
 
 Esta consulta pode assumir várias variações de sintaxe, dependendo do caso de uso.
 
-<div id="with-explicit-schema">
-  ### Criar uma tabela com um esquema explícito
-</div>
+### Criar uma tabela com um esquema explícito {#with-explicit-schema}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -45,9 +41,7 @@ Se necessário, a chave primária pode ser especificada com uma ou mais express�
 
 Comentários podem ser adicionados às colunas e à tabela.
 
-<div id="with-a-schema-similar-to-other-table">
-  ### Criar uma tabela com o esquema de uma tabela existente
-</div>
+### Criar uma tabela com o esquema de uma tabela existente {#with-a-schema-similar-to-other-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine]
@@ -59,9 +53,7 @@ Para replicar o esquema de uma tabela existente:
 
 Isso cria uma tabela com a mesma estrutura de outra tabela.
 
-<div id="with-a-schema-and-data-cloned-from-another-table">
-  ### Crie uma tabela com o esquema e os dados de tabelas existentes
-</div>
+### Crie uma tabela com o esquema e os dados de tabelas existentes {#with-a-schema-and-data-cloned-from-another-table}
 
 Para replicar o esquema e os dados de uma tabela existente:
 
@@ -78,9 +70,7 @@ ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
 
 Para ambas as funcionalidades, você pode especificar um motor diferente para a tabela. Se o motor não for especificado, será usado o mesmo motor da tabela original (`db.table`).
 
-<div id="from-a-table-function">
-  ### Criar uma tabela com uma função de tabela
-</div>
+### Criar uma tabela com uma função de tabela {#from-a-table-function}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
@@ -88,9 +78,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 
 Cria uma tabela com o mesmo resultado da [função de tabela](/pt-BR/reference/functions/table-functions/index) especificada. A tabela criada também funcionará da mesma forma que a função de tabela correspondente.
 
-<div id="from-select-query">
-  ### Criar uma tabela com uma consulta SELECT
-</div>
+### Criar uma tabela com uma consulta SELECT {#from-select-query}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
@@ -115,9 +103,7 @@ SELECT x, toTypeName(x) FROM t1;
 └───┴───────────────┘
 ```
 
-<div id="default_values">
-  ## Especificar valores padrão de colunas
-</div>
+## Especificar valores padrão de colunas {#default_values}
 
 A descrição da coluna pode especificar uma expressão de valor padrão na forma de `DEFAULT expr`, `MATERIALIZED expr` ou `ALIAS expr`. Exemplo: `URLDomain String DEFAULT domain(URL)`.
 
@@ -129,9 +115,7 @@ Se um tipo de dado e uma expressão de valor padrão forem especificados, será 
 
 Uma expressão de valor padrão `expr` pode referenciar colunas arbitrárias da tabela e constantes. O ClickHouse verifica se alterações na estrutura da tabela não introduzem loops no cálculo da expressão. Para INSERT, ele verifica se as expressões podem ser resolvidas — isto é, se todas as colunas a partir das quais elas podem ser calculadas foram fornecidas.
 
-<div id="default">
-  ### DEFAULT
-</div>
+### DEFAULT {#default}
 
 `DEFAULT expr`
 
@@ -157,9 +141,7 @@ SELECT * FROM test;
 └────┴─────────────────────┴─────────────────┘
 ```
 
-<div id="materialized">
-  ### MATERIALIZED
-</div>
+### MATERIALIZED {#materialized}
 
 `MATERIALIZED expr`
 
@@ -197,9 +179,7 @@ SELECT * FROM test SETTINGS asterisk_include_materialized_columns=1;
 └────┴─────────────────────┴─────────────────┘
 ```
 
-<div id="ephemeral">
-  ### EPHEMERAL
-</div>
+### EPHEMERAL {#ephemeral}
 
 `EPHEMERAL [expr]`
 
@@ -235,9 +215,7 @@ hexed:      Z��
 hex(hexed): 5A90B714
 ```
 
-<div id="alias">
-  ### ALIAS
-</div>
+### ALIAS {#alias}
 
 `ALIAS expr`
 
@@ -274,9 +252,7 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
 └────┴────────────┴──────────┘
 ```
 
-<div id="null-or-not-null-modifiers">
-  ## Modificadores `NULL` ou `NOT NULL`
-</div>
+## Modificadores `NULL` ou `NOT NULL` {#null-or-not-null-modifiers}
 
 Os modificadores `NULL` e `NOT NULL`, quando usados após o tipo de dado na definição da coluna, indicam se ela pode ou não ser [Nullable](/pt-BR/reference/data-types/nullable).
 
@@ -284,9 +260,7 @@ Se o tipo não for `Nullable` e `NULL` for especificado, ele será tratado como 
 
 Veja também a configuração [data&#95;type&#95;default&#95;nullable](/pt-BR/reference/settings/session-settings/other#data_type_default_nullable).
 
-<div id="primary-key">
-  ## Chave primária
-</div>
+## Chave primária {#primary-key}
 
 Você pode definir uma [chave primária](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries) ao criar uma tabela. A chave primária pode ser especificada de duas formas:
 
@@ -322,15 +296,11 @@ Você pode definir uma [chave primária](/pt-BR/reference/engines/table-engines/
   Não é possível combinar as duas formas em uma única consulta.
 </Tip>
 
-<div id="constraints">
-  ## Especificar restrições de tabela
-</div>
+## Especificar restrições de tabela {#constraints}
 
 Além das descrições das colunas, também é possível definir restrições:
 
-<div id="constraint">
-  ### CONSTRAINT
-</div>
+### CONSTRAINT {#constraint}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -348,9 +318,7 @@ Adicionar um grande número de restrições pode afetar negativamente o desempen
 
 As restrições existentes em todas as tabelas podem ser inspecionadas por meio da tabela [`system.constraints`](/pt-BR/reference/system-tables/constraints).
 
-<div id="assume">
-  ### ASSUME
-</div>
+### ASSUME {#assume}
 
 A cláusula `ASSUME` é usada para definir uma `CONSTRAINT` em uma tabela que se presume ser true. Essa restrição pode então ser usada pelo otimizador para melhorar o desempenho das consultas SQL.
 
@@ -374,17 +342,13 @@ Assim, ao executar a consulta `SELECT name FROM users_a WHERE length(name) < 5;`
 
 `ASSUME CONSTRAINT` **não impõe a restrição**; ele apenas informa ao otimizador que a restrição é válida. Se a restrição não for realmente válida, os resultados das consultas poderão estar incorretos. Portanto, você só deve usar `ASSUME CONSTRAINT` se tiver certeza de que a restrição é válida.
 
-<div id="ttl-expression">
-  ## Defina o tempo de armazenamento com TTL
-</div>
+## Defina o tempo de armazenamento com TTL {#ttl-expression}
 
 Define por quanto tempo os valores são armazenados. Pode ser especificada apenas para tabelas da família MergeTree. Para uma descrição detalhada, consulte [TTL para colunas e tabelas](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).
 
-<div id="column_compression_codec">
-  ## Selecionar codecs de compressão para colunas
-</div>
+## Selecionar codecs de compressão para colunas {#column_compression_codec}
 
-{/* Âncoras de destino para links de seções movidas para /reference/statements/create/table/codec */}
+{/* Âncoras para links de seções movidas para /reference/statements/create/table/codec */}
 
 <a id="general-purpose-codecs" />
 
@@ -430,7 +394,7 @@ Define por quanto tempo os valores são armazenados. Pode ser especificada apena
 
 <a id="adaptive-codec-selection" />
 
-Por padrão, o ClickHouse usa a compressão `lz4` na versão autogerenciada e `zstd` no ClickHouse Cloud. Também é possível definir o método de compressão de cada coluna na consulta `CREATE TABLE`:
+Por padrão, o ClickHouse usa a compressão `ZSTD(3)` na versão autogerenciada e `zstd` no ClickHouse Cloud. Para a família `MergeTree`, o padrão leva em conta o tamanho: o `LZ4`, mais rápido, é usado abaixo de 100 MB e o `ZSTD(3)` a partir desse valor, de modo que os dados recém-inseridos começam como `LZ4` e as partes maiores produzidas pelas mesclagens em segundo plano passam para `ZSTD(3)`. O threshold é aplicado ao tamanho da parte conhecido no momento em que o codec precisa ser escolhido, antes de os dados serem gravados — `0` para uma parte recém-inserida e o tamanho das partes de origem em um merge ou uma mutation —, e não ao tamanho da parte resultante. Também é possível definir o método de compressão de cada coluna na consulta `CREATE TABLE`:
 
 ```sql
 CREATE TABLE codec_example
@@ -447,15 +411,11 @@ ENGINE = <Engine>
 
 Para ver os codecs de uso geral, especializados e de criptografia disponíveis, consulte [Codecs de compressão de colunas](/pt-BR/reference/statements/create/table/codec).
 
-<div id="temporary-tables">
-  ## Criar tabelas temporárias
-</div>
+## Criar tabelas temporárias {#temporary-tables}
 
 O ClickHouse oferece suporte a tabelas temporárias, que desaparecem quando a sessão é encerrada. Para mais detalhes, consulte [CREATE TEMPORARY TABLE](/pt-BR/reference/statements/create/table/temporary-table).
 
-<div id="replace-table">
-  ## Atualize uma tabela atomicamente com REPLACE TABLE
-</div>
+## Atualize uma tabela atomicamente com REPLACE TABLE {#replace-table}
 
 {/* Âncoras de destino para links de seções movidas para /reference/statements/create/table/replace-table */}
 
@@ -465,9 +425,7 @@ O ClickHouse oferece suporte a tabelas temporárias, que desaparecem quando a se
 
 A instrução `REPLACE` permite atualizar uma tabela [atomicamente](/pt-BR/concepts/core-concepts/glossary#atomicity). Para obter detalhes, consulte [REPLACE TABLE](/pt-BR/reference/statements/create/table/replace-table).
 
-<div id="comment-clause">
-  ## Adicionar um comentário à tabela
-</div>
+## Adicionar um comentário à tabela {#comment-clause}
 
 Você pode adicionar um comentário à tabela ao criá-la.
 
@@ -508,9 +466,7 @@ SELECT name, comment FROM system.tables WHERE name = 't1';
 └──────┴─────────────────────┘
 ```
 
-<div id="related-content">
-  ## Conteúdo relacionado
-</div>
+## Conteúdo relacionado {#related-content}
 
 * Blog: [Otimizando o ClickHouse com esquemas e codecs](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
 * Blog: [Trabalhando com dados de séries temporais no ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

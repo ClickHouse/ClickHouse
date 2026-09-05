@@ -12,7 +12,7 @@ doc_type: 'مرجع'
 import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-افتراضيًا، يستخدم ClickHouse ضغط `lz4` في الإصدار المُدار ذاتيًا، و`zstd` في ClickHouse Cloud.
+افتراضيًا، يستخدم ClickHouse ضغط `ZSTD(3)` في الإصدار المُدار ذاتيًا، و`zstd` في ClickHouse Cloud. أما بالنسبة إلى عائلة `MergeTree` فالإعداد الافتراضي يراعي الحجم: يُستخدم `LZ4` الأسرع لما هو أقل من 100 ميغابايت، و`ZSTD(3)` عند هذا الحد أو أعلى منه، بحيث تبدأ البيانات المُدرجة حديثًا بـ`LZ4` بينما تنتقل الأجزاء الأكبر الناتجة عن عمليات الدمج في الخلفية إلى `ZSTD(3)`. ويُطبَّق هذا الحد على حجم الجزء المعروف عند وجوب اختيار برنامج الترميز، أي قبل كتابة البيانات — وهو `0` لجزء مُدرج حديثًا، وحجم الأجزاء المصدر في حالة الدمج أو التحوير — وليس على حجم الجزء الناتج.
 
 بالنسبة إلى عائلة محركات `MergeTree`، يمكنك تغيير طريقة الضغط الافتراضية في قسم [الضغط](/ar/reference/settings/server-settings/settings/other#compression) ضمن إعدادات الخادم.
 
@@ -50,7 +50,8 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 يدعم الضغط في محركات الجداول التالية:
 
 * عائلة [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree): تدعم برامج ترميز ضغط الأعمدة وتحديد طريقة الضغط الافتراضية من خلال إعدادات [الضغط](/ar/reference/settings/server-settings/settings/other#compression).
-* عائلة [Log](/ar/reference/engines/table-engines/log-family/index): تستخدم طريقة الضغط `lz4` افتراضيًا وتدعم برامج ترميز ضغط الأعمدة.
+* عائلة [Log](/ar/reference/engines/table-engines/log-family/index) — يستخدم محركا `Log` و`TinyLog` طريقة الضغط الافتراضية `ZSTD(3)` ويدعمان برامج ترميز ضغط الأعمدة.
+* يكتب [StripeLog](/ar/reference/engines/table-engines/log-family/index) جميع الأعمدة في تدفق بيانات مشترك واحد مضغوط بالطريقة الافتراضية `ZSTD(3)`، لذا لا تُطبَّق عليه برامج ترميز الضغط لكل عمود.
 * [Set](/ar/reference/engines/table-engines/special/set): لا يدعم سوى الضغط الافتراضي.
 * [Join](/ar/reference/engines/table-engines/special/join): لا يدعم سوى الضغط الافتراضي.
 
@@ -64,7 +65,7 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 ### LZ4 {#lz4}
 
-`LZ4` — [خوارزمية ضغط بيانات](https://github.com/lz4/lz4) بلا فقدان، تُستخدم افتراضيًا. تستخدم ضغط LZ4 السريع.
+`LZ4` — [خوارزمية ضغط بيانات](https://github.com/lz4/lz4) بلا فقدان. تستخدم ضغط LZ4 السريع.
 
 ### LZ4HC {#lz4hc}
 
@@ -72,7 +73,7 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 ### ZSTD {#zstd}
 
-`ZSTD[(level)]` — [خوارزمية الضغط ZSTD](https://en.wikipedia.org/wiki/Zstandard) ذات `level` قابل للضبط. المستويات المتاحة: [1, 22]. المستوى الافتراضي: 1.
+`ZSTD[(level)]` — [خوارزمية الضغط ZSTD](https://en.wikipedia.org/wiki/Zstandard) ذات `level` قابل للضبط. المستويات المتاحة: [1, 22]. المستوى الافتراضي: 1. و`ZSTD(3)` هو الـ برنامج ترميز المطبَّق افتراضيًا على الأعمدة التي لا تحدد برنامج ترميز بشكل صريح (بالنسبة إلى أجزاء `MergeTree` ينطبق ذلك بمجرد أن يبلغ حجم الجزء المقدَّر وقت الكتابة 100 ميغابايت؛ وما دون ذلك يُستخدم `LZ4`).
 
 تكون مستويات الضغط العالية مفيدة في السيناريوهات غير المتناظرة، مثل الضغط مرة واحدة وفك الضغط مرارًا. فكلما ارتفع المستوى، تحسن الضغط وزاد استخدام CPU.
 

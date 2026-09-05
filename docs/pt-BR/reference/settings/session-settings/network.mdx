@@ -12,13 +12,13 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="network_compression_method">
-  ## network_compression_method
-</div>
+## network_compression_method {#network_compression_method}
 
-<SettingsInfoBlock type="String" default_value="LZ4" />
+<SettingsInfoBlock type="String" default_value="ZSTD" />
 
-O codec usado para comprimir a comunicação cliente/servidor e servidor/servidor.
+O codec usado para comprimir a comunicação cliente/servidor e servidor/servidor pelo native protocol.
+
+A configuração não se aplica ao canal de streaming-exchange das consultas distribuídas, que sempre usa o default codec do servidor: cada frame comprimido é self-describing, portanto o receiver detecta o codec automaticamente.
 
 Valores possíveis:
 
@@ -31,11 +31,9 @@ Valores possíveis:
 
 * [network&#95;zstd&#95;compression&#95;level](/pt-BR/reference/settings/session-settings/network#network_zstd_compression_level)
 
-<div id="network_zstd_compression_level">
-  ## network_zstd_compression_level
-</div>
+## network_zstd_compression_level {#network_zstd_compression_level}
 
-<SettingsInfoBlock type="Int64" default_value="1" />
+<SettingsInfoBlock type="Int64" default_value="3" />
 
 Ajusta o nível de compressão ZSTD. Usado somente quando [network&#95;compression&#95;method](/pt-BR/reference/settings/session-settings/network#network_compression_method) está definido como `ZSTD`.
 

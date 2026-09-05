@@ -12,7 +12,7 @@ doc_type: 'referencia'
 import { CloudNotSupportedBadge } from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-De forma predeterminada, ClickHouse aplica la compresión `lz4` en la versión autogestionada y `zstd` en ClickHouse Cloud.
+De forma predeterminada, ClickHouse aplica la compresión `ZSTD(3)` en la versión autogestionada y `zstd` en ClickHouse Cloud. Para la familia `MergeTree`, el valor predeterminado depende del tamaño: se usa el más rápido `LZ4` por debajo de 100 MB y `ZSTD(3)` a partir de ese tamaño, de modo que los datos recién insertados comienzan como `LZ4` y las partes más grandes producidas por las fusiones en segundo plano cambian a `ZSTD(3)`. El umbral se aplica al tamaño de la parte conocido en el momento en que debe elegirse el códec, antes de que se escriban los datos —`0` para una parte recién insertada y el tamaño de las partes de origen en una fusión o una mutación—, no al tamaño de la parte resultante.
 
 En las tablas de la familia de motores `MergeTree`, puede cambiar el método de compresión predeterminado en la sección [compression](/es/reference/settings/server-settings/settings/other#compression) de la configuración del servidor.
 
@@ -50,7 +50,8 @@ Los códecs se pueden combinar en una canalización; por ejemplo, `CODEC(Delta, 
 La compresión es compatible con los siguientes motores de tabla:
 
 * La familia [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree). Admite códecs de compresión de columnas y permite seleccionar el método de compresión predeterminado mediante la configuración de [compresión](/es/reference/settings/server-settings/settings/other#compression).
-* La familia [Log](/es/reference/engines/table-engines/log-family/index). Utiliza el método de compresión `lz4` de forma predeterminada y admite códecs de compresión de columnas.
+* La familia [Log](/es/reference/engines/table-engines/log-family/index): los motores `Log` y `TinyLog` utilizan el método de compresión predeterminado `ZSTD(3)` y admiten códecs de compresión de columnas.
+* [StripeLog](/es/reference/engines/table-engines/log-family/index) escribe todas las columnas en un único flujo de datos compartido comprimido con el método predeterminado `ZSTD(3)`, por lo que no se le aplican códecs de compresión por columna.
 * [Set](/es/reference/engines/table-engines/special/set). Solo admite la compresión predeterminada.
 * [Join](/es/reference/engines/table-engines/special/join). Solo admite la compresión predeterminada.
 
@@ -64,7 +65,7 @@ ClickHouse admite códecs de uso general y códecs especializados.
 
 ### LZ4 {#lz4}
 
-`LZ4`: [algoritmo de compresión de datos](https://github.com/lz4/lz4) sin pérdida utilizado de forma predeterminada. Aplica compresión rápida mediante LZ4.
+`LZ4`: [algoritmo de compresión de datos](https://github.com/lz4/lz4) sin pérdida. Aplica compresión rápida mediante LZ4.
 
 ### LZ4HC {#lz4hc}
 
@@ -72,7 +73,7 @@ ClickHouse admite códecs de uso general y códecs especializados.
 
 ### ZSTD {#zstd}
 
-`ZSTD[(level)]` — [algoritmo de compresión ZSTD](https://en.wikipedia.org/wiki/Zstandard) con un `level` configurable. Niveles posibles: [1, 22]. Nivel predeterminado: 1.
+`ZSTD[(level)]` — [algoritmo de compresión ZSTD](https://en.wikipedia.org/wiki/Zstandard) con un `level` configurable. Niveles posibles: [1, 22]. Nivel predeterminado: 1. `ZSTD(3)` es el códec que se aplica de forma predeterminada a las columnas que no especifican un códec explícitamente (en el caso de las partes `MergeTree`, esto se aplica cuando el tamaño de la parte estimado en el momento de la escritura alcanza los 100 MB; por debajo de ese valor se utiliza `LZ4`).
 
 Los niveles de compresión altos son útiles en escenarios asimétricos, como cuando se comprime una vez y se descomprime repetidamente. Los niveles más altos ofrecen una mejor compresión y un mayor uso de CPU.
 

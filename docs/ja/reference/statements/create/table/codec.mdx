@@ -12,7 +12,7 @@ doc_type: 'reference'
 import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-デフォルトでは、ClickHouse はセルフマネージド版では `lz4` 圧縮を使用し、ClickHouse Cloud では `zstd` を使用します。
+デフォルトでは、ClickHouse はセルフマネージド版では `ZSTD(3)` 圧縮を使用し、ClickHouse Cloud では `zstd` を使用します。`MergeTree` ファミリーでは、デフォルトはサイズに応じて決まります。100 MB 未満では高速な `LZ4` が使用され、100 MB 以上では `ZSTD(3)` が使用されます。そのため、挿入されたばかりのデータは `LZ4` として始まり、バックグラウンドマージによって生成されたより大きなパーツは `ZSTD(3)` に切り替わります。このしきい値は、データが書き込まれる前、コーデックを選択しなければならない時点で判明しているパーツサイズ (挿入されたばかりのパーツでは `0`、マージやミューテーションではソースパーツのサイズ) に適用され、結果として生成されるパーツのサイズには適用されません。
 
 `MergeTree` エンジンファミリーでは、サーバー設定の [compression](/ja/reference/settings/server-settings/settings/other#compression) セクションでデフォルトの圧縮方式を変更できます。
 
@@ -50,7 +50,8 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 圧縮は、以下のテーブルエンジンでサポートされています。
 
 * [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) ファミリー。カラム圧縮コーデックと、[compression](/ja/reference/settings/server-settings/settings/other#compression) 設定でデフォルトの圧縮方式を選択する機能をサポートします。
-* [Log](/ja/reference/engines/table-engines/log-family/index) ファミリー。デフォルトでは `lz4` 圧縮方式を使用し、カラム圧縮コーデックをサポートします。
+* [Log](/ja/reference/engines/table-engines/log-family/index) ファミリー — `Log` および `TinyLog` エンジンはデフォルトの `ZSTD(3)` 圧縮方式を使用し、カラム圧縮コーデックをサポートします。
+* [StripeLog](/ja/reference/engines/table-engines/log-family/index) は、すべてのカラムをデフォルトの `ZSTD(3)` 方式で圧縮された単一の共有データストリームに書き込むため、カラムごとの圧縮コーデックは適用されません。
 * [Set](/ja/reference/engines/table-engines/special/set)。デフォルトの圧縮のみをサポートします。
 * [Join](/ja/reference/engines/table-engines/special/join)。デフォルトの圧縮のみをサポートします。
 
@@ -64,7 +65,7 @@ ClickHouse は、汎用コーデックと特殊用途のコーデックをサポ
 
 ### LZ4 {#lz4}
 
-`LZ4` — デフォルトで使用される可逆[データ圧縮アルゴリズム](https://github.com/lz4/lz4)です。LZ4 の高速圧縮を使用します。
+`LZ4` — 可逆[データ圧縮アルゴリズム](https://github.com/lz4/lz4)です。LZ4 の高速圧縮を使用します。
 
 ### LZ4HC {#lz4hc}
 
@@ -72,7 +73,7 @@ ClickHouse は、汎用コーデックと特殊用途のコーデックをサポ
 
 ### ZSTD {#zstd}
 
-`ZSTD[(level)]` — `level`を指定可能な[ZSTD圧縮アルゴリズム](https://en.wikipedia.org/wiki/Zstandard)。指定可能なレベル: [1, 22]。デフォルトのレベル: 1。
+`ZSTD[(level)]` — `level`を指定可能な[ZSTD圧縮アルゴリズム](https://en.wikipedia.org/wiki/Zstandard)。指定可能なレベル: [1, 22]。デフォルトのレベル: 1。`ZSTD(3)`は、コーデックを明示的に指定していないカラムにデフォルトで適用されるコーデックです (`MergeTree`のパーツの場合、書き込み時に見積もられたパーツサイズが100 MBに達した時点で適用されます。それ未満では`LZ4`が使用されます) 。
 
 高い圧縮レベルは、1回圧縮して何度も展開するような非対称なシナリオで有用です。レベルが高いほど圧縮率は向上しますが、CPU使用率も高くなります。
 
