@@ -201,6 +201,9 @@ private:
     /// Execute both previous methods if needed
     void rotateAndDropIfNeeded();
 
+    /// The same after writing records, when a failure must not be reported as a failure of the operation
+    void rotateAndDropIfNeededAfterWrite();
+
     /// Open an appending writer for the current log if it is not open yet. The writer is opened
     /// lazily on the first written record: finalizing an appending writer that has written nothing
     /// leaves a phantom blob in the log file's metadata on object storages.
