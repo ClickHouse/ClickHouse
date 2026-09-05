@@ -124,7 +124,7 @@ void TerminalKeystrokeInterceptor::run(TerminalKeystrokeInterceptor::CallbackMap
 
 void TerminalKeystrokeInterceptor::runImpl(const DB::TerminalKeystrokeInterceptor::CallbackMap & map) const
 {
-    char ch = 0;
+    char ch;
 
     int available = 0;
     if (ioctl(fd, FIONREAD, &available) < 0)

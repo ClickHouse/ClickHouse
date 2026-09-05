@@ -5,8 +5,6 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileSize.h>
 #include <IO/WriteBufferFromVector.h>
-#include <Common/Exception.h>
-#include <Common/ProfileEvents.h>
 
 #include <shared_mutex>
 
@@ -14,6 +12,7 @@ namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 namespace ProfileEvents
@@ -423,10 +422,7 @@ void Prefetcher::decreaseTaskRefcount(Task * task, size_t amount)
         return;
 
     if (task->state.exchange(Task::State::Deallocated) != Task::State::Running)
-    {
         task->buf = {};
-        task->cached_region.reset();
-    }
 }
 
 void Prefetcher::scheduleTask(Task * task)
@@ -469,25 +465,11 @@ std::span<const char> Prefetcher::getRangeData(const PrefetchHandle & request)
         rethrowException(task);
     chassert(s == Task::State::Done);
 
-    /// Both `buf` and `cached_region` below cover at least [task->offset, task->offset + task->length).
+    /// `buf` below covers [task->offset, task->offset + task->length).
     /// Checked instead of asserted: handing out a span past the end would be a segfault in release builds.
     if (req->task_offset > task->length || req->length > task->length - req->task_offset)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Prefetched range [{}, {}) is outside its read task [{}, {})",
             task->offset + req->task_offset, task->offset + req->task_offset + req->length, task->offset, task->offset + task->length);
-
-    if (task->cached_region.has_value())
-    {
-        /// Zero-copy path: serve data directly from cache cells.
-        size_t req_file_offset = task->offset + req->task_offset;
-
-        const auto & r = task->cached_region.value();
-        chassert(r.file_offset <= req_file_offset);
-        chassert(r.file_offset + r.size >= req_file_offset + req->length);
-
-        size_t offset_in_region = req_file_offset - r.file_offset;
-
-        return std::span(r.data + offset_in_region, req->length);
-    }
 
     chassert(req->task_offset + req->length <= task->buf.size());
     return std::span(task->buf.data() + req->task_offset, req->length);
@@ -501,49 +483,8 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
     auto final_state = Task::State::Done;
     try
     {
-        /// When the reader supports zero-copy cached reads, get retained cache cells
-        /// instead of allocating a buffer and copying data into it.
-        if (read_mode == ReadMode::RandomRead && reader->supportsReadAtRetainCells() && task->length > 0)
-        {
-            auto cached_regions = reader->readBigAtRetainCells(task->length, task->offset);
-            chassert(!cached_regions.empty());
-
-            if (cached_regions.size() == 1)
-            {
-                /// We got lucky and the Task's range is all in one cache cell. Zero-copy it.
-                auto & cr = cached_regions[0];
-                task->cached_region = Task::CachedReadRegion{
-                    .handle = std::move(cr.handle),
-                    .data = cr.data,
-                    .size = cr.size,
-                    .file_offset = cr.file_offset,
-                };
-            }
-            else
-            {
-                /// If the data spans multiple cache blocks, pre-assemble it into task->buf now
-                /// (on the single-threaded producer side) to avoid a data race in getRangeData,
-                /// where multiple consumer threads could try to lazily populate task->buf concurrently.
-                if (cached_regions.size() > 1)
-                {
-                    task->buf.resize(task->length);
-                    size_t copied = 0;
-                    for (const auto & region : cached_regions)
-                    {
-                        memcpy(task->buf.data() + copied, region.data, region.size);
-                        copied += region.size;
-                    }
-                    chassert(copied == task->length);
-                }
-            }
-
-            ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadRandomRead);
-        }
-        else
-        {
-            task->buf.resize(task->length);
-            readSync(task->buf.data(), task->length, task->offset);
-        }
+        task->buf.resize(task->length);
+        readSync(task->buf.data(), task->length, task->offset);
     }
     catch (...)
     {
@@ -561,7 +502,6 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
     {
         chassert(s == Task::State::Deallocated);
         task->buf = {};
-        task->cached_region.reset();
     }
 
     task->completion.notify();
@@ -572,8 +512,14 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
 void Prefetcher::rethrowException(Task * task)
 {
     std::lock_guard lock(exception_mutex);
-    /// Each waiter gets a private copy so callers can safely mutate it (addMessage())
-    std::rethrow_exception(copyMutableException(task->exception));
+    if (task->exception)
+        std::rethrow_exception(task->exception);
+    else
+        /// exception_ptr is not copyable, so we rethrow the correct exception only the first time,
+        /// then throw uninformative exceptions if called again (e.g. for multiple requests covered
+        /// by the same task). Hopefully the first thrown exception will usually be propagated to
+        /// the user.
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read failed");
 }
 
 PrefetchHandle::PrefetchHandle(RequestState * request_) : request(request_) {}

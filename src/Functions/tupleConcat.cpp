@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 /// tupleConcat(tup1, ...) - concatenate tuples.
-class FunctionTupleConcat final : public IFunction
+class FunctionTupleConcat : public IFunction
 {
 public:
     static constexpr auto name = "tupleConcat";
@@ -97,7 +97,7 @@ Combines tuples passed as arguments.
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple containing all elements from the input tuples.", {"Tuple(T)"}};
     FunctionDocumentation::Examples examples = {
-        {"Usage example", "SELECT tupleConcat((1, 2), ('a',), (true, false))", "(1,2,'a',true,false)"}
+        {"Usage example", "SELECT tupleConcat((1, 2), ('a',), (true, false))", "(1, 2, 'a', true, false)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Tuple;

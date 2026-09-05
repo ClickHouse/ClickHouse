@@ -1,11 +1,6 @@
 -- Tags: no-replicated-database, no-parallel-replicas
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
-SET explain_query_plan_default = 'legacy';
-
--- A not relaxed key condition enables the exact count optimization, which requires projections.
-SET optimize_use_projections = 1;
-SET optimize_use_implicit_projections = 1;
 
 
 DROP TABLE IF EXISTS 03772_table_match;

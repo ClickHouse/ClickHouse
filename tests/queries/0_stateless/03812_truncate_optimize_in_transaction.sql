@@ -1,3 +1,6 @@
+-- Tags: no-encrypted-storage
+-- Tag: no-encrypted-storage: not support transactions
+
 DROP TABLE IF EXISTS test_table;
 DROP TABLE IF EXISTS t2;
 
@@ -8,7 +11,7 @@ INSERT INTO TABLE test_table VALUES (1, 'a'), (2, 'b'), (1, 'a');
 
 SET throw_on_unsupported_query_inside_transaction=0;
 SET implicit_transaction=1;
-OPTIMIZE TABLE test_table FINAL DEDUPLICATE BY key, value PARALLEL WITH  OPTIMIZE TABLE t2 SETTINGS max_threads=10; -- { serverError INVALID_TRANSACTION, NOT_IMPLEMENTED, SERIALIZATION_ERROR }
+OPTIMIZE TABLE test_table FINAL DEDUPLICATE BY key, value PARALLEL WITH  OPTIMIZE TABLE t2 SETTINGS max_threads=10; -- { serverError INVALID_TRANSACTION, NOT_IMPLEMENTED }
 
 SET implicit_transaction=0;
 TRUNCATE TABLE test_table;

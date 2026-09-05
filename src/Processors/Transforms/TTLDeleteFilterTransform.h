@@ -13,7 +13,7 @@ namespace DB
 /// Evaluates TTL delete expressions and produces a UInt8 filter column
 /// without actually filtering the block. The filter column is then used
 /// by the merging algorithm to set skip flags in row sources for vertical merge.
-class TTLDeleteFilterTransform final : public ISimpleTransform
+class TTLDeleteFilterTransform : public ISimpleTransform
 {
 public:
     static inline const String TTL_FILTER_COLUMN_NAME = "_ttl_filter";
@@ -58,7 +58,7 @@ private:
 
     /// Convert a typed TTL column into a uniform Int64 timestamp array.
     /// Resolves the concrete column type once, then extracts all values in a tight loop.
-    void extractTimestamps(const IColumn * ttl_column);
+    void extractTimestamps(const IColumn * ttl_column, size_t num_rows);
 };
 
 }

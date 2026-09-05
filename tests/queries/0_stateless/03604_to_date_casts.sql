@@ -5,26 +5,17 @@ CREATE TABLE test_date32_casts (from String, val Date32) Engine=Memory;
 
 SELECT 'check date32 interpreted as seconds';
 INSERT INTO test_date32_casts VALUES
-    ('Int32', 2932897::Int32),
-    ('UInt32', 2932897::UInt32),
-    ('Int64', 2932897::Int64),
-    ('UInt64', 2932897::UInt64),
-    ('Int128', 2932897::Int128),
-    ('UInt128', 2932897::UInt128),
-    ('Int256', 2932897::Int256),
-    ('UInt256', 2932897::UInt256),
-    ('Float32', 2932897::Float32),
-    ('Float64', 2932897::Float64),
-    ('BFloat16', 2949120::BFloat16); -- BFloat16 can't represent 2932897 exactly, so use the nearest representable value above the day-number threshold
-SELECT from, val, val::Int32 FROM test_date32_casts ORDER BY ALL;
-
-TRUNCATE TABLE test_date32_casts;
-
-SELECT 'check date32 interpreted as days near the upper bound';
-INSERT INTO test_date32_casts VALUES
-    ('Int32', 2932896::Int32),
-    ('Int64', 2932896::Int64),
-    ('Float64', 2932896::Float64);
+    ('Int32', 120530::Int32),
+    ('UInt32', 120530::UInt32),
+    ('Int64', 120530::Int64),
+    ('UInt64', 120530::UInt64),
+    ('Int128', 120530::Int128),
+    ('UInt128', 120530::UInt128),
+    ('Int256', 120530::Int256),
+    ('UInt256', 120530::UInt256),
+    ('Float32', 120530::Float32),
+    ('Float64', 120530::Float64),
+    ('BFloat16', 121344::BFloat16); -- BFloat16 can't represent 120530 exactly, but it's still the same date
 SELECT from, val, val::Int32 FROM test_date32_casts ORDER BY ALL;
 
 TRUNCATE TABLE test_date32_casts;
@@ -46,7 +37,7 @@ SELECT from, val, val::Int32 FROM test_date32_casts ORDER BY ALL;
 
 TRUNCATE TABLE test_date32_casts;
 
-SELECT 'check date32 pre-1900 days';
+SELECT 'check date32 negative limit';
 INSERT INTO test_date32_casts VALUES
     ('Int16', -30000::Int16),
     ('Int32', -30000::Int32),
@@ -56,15 +47,6 @@ INSERT INTO test_date32_casts VALUES
     ('Float32', -30000::Float32),
     ('Float64', -30000::Float64),
     ('BFloat16', -30000::BFloat16);
-SELECT from, val, val::Int32 FROM test_date32_casts ORDER BY ALL;
-
-TRUNCATE TABLE test_date32_casts;
-
-SELECT 'check date32 negative limit';
-INSERT INTO test_date32_casts VALUES
-    ('Int32', -800000::Int32),
-    ('Int64', -800000::Int64),
-    ('Float64', -800000::Float64);
 SELECT from, val, val::Int32 FROM test_date32_casts ORDER BY ALL;
 
 -- toDate function

@@ -157,7 +157,7 @@ def test_transient_error_after_sent_file_keeps_only_unsent_files(started_cluster
                 drop view mv;
                 create materialized view mv to data as
                     select key, uniqExact(value) uniq_values
-                    from null_ array join range(if(value = 2, 2, 1))
+                    from null_ array join range(if(value = 2, 2, 1)) as r
                     group by key;
             """
         )

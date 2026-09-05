@@ -26,7 +26,7 @@ extern const int SUPPORT_IS_DISABLED;
 }
 
 template <typename Impl, typename Name>
-class FunctionTextClassificationString final : public IFunction
+class FunctionTextClassificationString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -75,7 +75,7 @@ public:
 };
 
 template <typename Impl, typename Name>
-class FunctionTextClassificationFloat final : public IFunction
+class FunctionTextClassificationFloat : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

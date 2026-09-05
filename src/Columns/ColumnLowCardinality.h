@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnUnique.h>
 #include <Columns/ColumnIndex.h>
@@ -86,11 +85,6 @@ public:
 #else
     void doInsertFrom(const IColumn & src, size_t n) override;
 #endif
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
-    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
-#else
-    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
-#endif
     void insertFromFullColumn(const IColumn & src, size_t n);
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -114,12 +108,14 @@ public:
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
+    void skipSerializedInArena(ReadBuffer & in) const override;
+
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
         getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
     }
 
-    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash &) const override;
 
@@ -157,8 +153,6 @@ public:
 
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator &) const override;
 
-    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const override;
-
     bool hasEqualValues() const override;
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -180,7 +174,7 @@ public:
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().replicate(offsets), isSharedDictionary());
     }
 
-    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
+    std::vector<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
 
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const override
     {
@@ -268,11 +262,6 @@ public:
         return getIndexes().getNumberOfDefaultRows();
     }
 
-    bool hasOnlyTypeDefaults() const override
-    {
-        return getIndexes().hasOnlyTypeDefaults();
-    }
-
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
         getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
@@ -290,20 +279,10 @@ public:
      * So LC(Nullable(T)) would return true, LC(U) -- false.
      */
     bool nestedIsNullable() const { return isColumnNullable(*dictionary.getColumnUnique().getNestedColumn()); }
-
-    /// When `offset` is given, only the rows in `[offset, offset + map.size())` are affected and `map`
-    /// covers just that range; otherwise it must cover the whole column.
-    void applyNegatedNullMap(const NullMap & map, size_t offset = 0);
     bool nestedCanBeInsideNullable() const { return dictionary.getColumnUnique().getNestedColumn()->canBeInsideNullable(); }
     void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
     void nestedRemoveNullable() { dictionary.getColumnUnique().nestedRemoveNullable(); }
     MutableColumnPtr cloneNullable() const;
-
-    /// Promote a non-nullable dictionary to `Nullable(T)` in place, rebuilding it with a NULL placeholder
-    /// and remapping the indexes accordingly. Unlike `nestedToNullable()`, this keeps existing values valid.
-    void convertDictionaryToNullableInplace() { compactInplaceToNullable(); }
-
-    void compactDictionaryInplace() { compactInplace(); }
 
     ColumnPtr cloneWithDefaultOnNull() const;
 
@@ -332,10 +311,6 @@ public:
             default: throwUnexpectedLowCardinalityIndexType(idx.getSizeOfIndexType());
         }
     }
-
-    /// The distinct dictionary positions used by rows [offset, offset + limit) of
-    /// getIndexes(), in unspecified order. Requires offset + limit <= getIndexes().size().
-    PaddedPODArray<UInt64> getDistinctIndexes(size_t offset, size_t limit) const;
 
     ///void setIndexes(MutableColumnPtr && indexes_) { indexes = std::move(indexes_); }
 

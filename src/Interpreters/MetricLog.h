@@ -4,7 +4,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Core/Field.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -26,12 +26,6 @@ struct MetricLogElement
     std::vector<ProfileEvents::Count> profile_events;
     std::vector<CurrentMetrics::Metric> current_metrics;
 
-    Array histogram_metric;
-    Array histogram_labels;
-    Array histogram_histogram;
-    Array histogram_count;
-    Array histogram_sum;
-
     static std::string name() { return "MetricLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
@@ -50,13 +44,5 @@ private:
     std::vector<ProfileEvents::Count> previous_profile_events TSA_GUARDED_BY(previous_profile_events_mutex) = std::vector<ProfileEvents::Count>(ProfileEvents::end());
     mutable std::mutex previous_profile_events_mutex;
 };
-
-/// Fills a metric log element: per-interval increments of profile events, current metric values
-/// and histogram snapshots. Shared by MetricLog and BucketedMetricLog.
-void collectMetricLogElement(
-    MetricLogElement & elem,
-    std::chrono::system_clock::time_point current_time,
-    std::vector<ProfileEvents::Count> & previous_profile_events,
-    bool show_zero_values_in_histograms);
 
 }
