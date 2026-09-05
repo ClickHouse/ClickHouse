@@ -200,6 +200,35 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
 
     new_context->setUser(getDefinerID(context));
 
+    /// `Context::setUser` only sets the access-control identity (`user_id`); it does not touch the
+    /// user names in `ClientInfo`. That is harmless when there is an invoker whose names were copied
+    /// above, but a scheduled refresh of a refreshable materialized view builds its context from the
+    /// global context, where `current_user`, `initial_user` and `authenticated_user` are empty.
+    /// `RemoteQueryExecutor` sends the names as-is, and a shard that accepts the interserver
+    /// `<secret>` treats an empty `initial_user` as "interserver mode": it skips authentication
+    /// (see `TCPHandler::receiveQuery`) and executes the query with full access
+    /// (see `Context::getAccess`, `full_access = !user_id`). Stamp the definer into the empty fields
+    /// so the remote leg of the query is bounded by the same identity as the local one. Non-empty
+    /// fields are left alone so `currentUser` inside an ordinary `DEFINER` view still returns the
+    /// invoker. `AsynchronousInsertQueue` and `InterpreterExecuteAsQuery` do the same.
+    {
+        const auto & new_client_info = new_context->getClientInfo();
+        const bool current_user_empty = new_client_info.current_user.empty();
+        const bool initial_user_empty = new_client_info.initial_user.empty();
+        const bool authenticated_user_empty = new_client_info.authenticated_user.empty();
+
+        if (current_user_empty || initial_user_empty || authenticated_user_empty)
+        {
+            const auto definer_name = new_context->getUserName();
+            if (current_user_empty)
+                new_context->setCurrentUserName(definer_name);
+            if (initial_user_empty)
+                new_context->setInitialUserName(definer_name);
+            if (authenticated_user_empty)
+                new_context->setAuthenticatedUserName(definer_name);
+        }
+    }
+
     auto changed_settings = context->getSettingsRef().changes();
     new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
     new_context->applySettingsChanges(changed_settings);
