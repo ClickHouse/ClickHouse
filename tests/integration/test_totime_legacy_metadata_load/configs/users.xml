@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <use_legacy_to_time>0</use_legacy_to_time>
+        </default>
+    </profiles>
+</clickhouse>
