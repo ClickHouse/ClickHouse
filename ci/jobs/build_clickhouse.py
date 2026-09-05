@@ -131,7 +131,7 @@ def warn_on_low_sccache_hit_rate(info):
         )
         return
     hit_rate = 100 * hits / total
-    if hit_rate < 40:
+    if hit_rate < 101:  # TEST RIG (do not merge): forces the warning to always fire; real threshold is 40
         info.add_workflow_warning(
             f"Low sccache hit rate {hit_rate:.1f}% ({hits}/{total} compilations cached) - the compiler cache may be degraded or stale"
         )
