@@ -31,6 +31,20 @@ public:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
+    void checkSourceObjectAccess(const ContextPtr & context, bool for_structure) const override
+    {
+        /// The structure is static, so nothing about the source is owed for resolving it.
+        if (for_structure)
+            return;
+
+        StorageID source_table_id{source_database, source_table};
+        checkSourceTableAccess(context, source_table_id, AccessType::SHOW_TABLES);
+        /// The alias target is authorized here too: `executeImpl` can run lazily under the global
+        /// context, which has no user and therefore full access.
+        if (auto source_table_ptr = DatabaseCatalog::instance().tryGetTable(source_table_id, context))
+            checkSourceStorageAccess(context, source_table_ptr, source_table_id, AccessType::SHOW_COLUMNS);
+    }
+
 private:
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
@@ -99,7 +113,9 @@ StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
     ColumnsDescription /*cached_columns*/,
     bool is_insert_query) const
 {
-    auto source_table_ptr = DatabaseCatalog::instance().getTable(StorageID{source_database, source_table}, context);
+    StorageID source_table_id{source_database, source_table};
+    auto source_table_ptr = DatabaseCatalog::instance().getTable(source_table_id, context);
+    checkSourceStorageAccess(context, source_table_ptr, source_table_id, AccessType::SHOW_COLUMNS);
     auto metadata_snapshot = source_table_ptr->getInMemoryMetadataPtr(context, false);
     const auto & index_desc = metadata_snapshot->getSecondaryIndices().getByName(source_index_name);
 

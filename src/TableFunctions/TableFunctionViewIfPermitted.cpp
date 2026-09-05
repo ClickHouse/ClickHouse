@@ -44,6 +44,16 @@ public:
 
     std::string getName() const override { return name; }
 
+    /// Both paths of this function resolve the `ELSE` function's structure and nothing else, so it
+    /// owes what resolving that structure owes no matter which seam asks. The `ELSE` function is
+    /// executed separately, where its own execution-mode checks run.
+    void checkSourceObjectAccess(const ContextPtr & context, bool /*for_structure*/) const override
+    {
+        else_table_function->checkSourceAccess(context, /*is_insert_query=*/ false);
+        else_table_function->checkEngineAccess(context);
+        else_table_function->checkSourceObjectAccess(context, /*for_structure=*/ true);
+    }
+
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
@@ -156,7 +166,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
 void registerTableFunctionViewIfPermitted(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionViewIfPermitted>({.description = R"DOC(Returns the result of a SELECT query as a view, but only if the current user has the permissions required to run it; otherwise it returns the result of the ELSE table function.)DOC", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
+    factory.registerFunction<TableFunctionViewIfPermitted>({.description = R"DOC(Returns the result of a SELECT query as a view, but only if the current user has the permissions required to run it; otherwise it returns the result of the ELSE table function. The privileges needed to resolve the structure of the `ELSE` table function are required either way.)DOC", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
 }
 
 }
