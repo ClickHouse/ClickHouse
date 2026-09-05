@@ -9,6 +9,7 @@ FAILURE_CONTEXT_LINES=100
 FAILURE_CONTEXT_MAX_LINE_WIDTH=3000
 FAILURE_TAIL_LINES=30
 FAILURE_TAIL_MAX_BYTES=3000
+FAILURE_ENCODE_TIMEOUT=60
 FAILURE_DRAIN_GRACE=15
 FAILURE_DRAIN_GRACE_OK=5
 FAILURE_DRAIN_TIMEOUT=30
@@ -29,7 +30,10 @@ function escaped_tail()
     # Escape stdin as one value with the `Escaped` rule `read_test_results` decodes, at ONE
     # escape level -- so callers must append with `printf '%s'`; `echo -e` would collapse it.
     # `right` keeps the end of the input, where the exception line is.
-    clickhouse local -S 's String' --input-format=RawBLOB -q "select right(s, $FAILURE_TAIL_MAX_BYTES)
+    # Bounded: the encoder is the binary under stress, and this runs only after the wrapped
+    # script already failed, so waiting on a wedged one would cost the reason it encodes.
+    timeout --verbose --signal=TERM --kill-after=10 "$FAILURE_ENCODE_TIMEOUT" \
+        clickhouse local -S 's String' --input-format=RawBLOB -q "select right(s, $FAILURE_TAIL_MAX_BYTES)
       from table format CustomSeparated settings format_custom_escaping_rule='Escaped'"
 }
 
