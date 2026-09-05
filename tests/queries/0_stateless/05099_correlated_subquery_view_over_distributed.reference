@@ -3,6 +3,8 @@ through a view
 through a view over a view
 through a parameterized view
 through a Merge over the view
+through a materialized view whose target is a view over the Distributed table
+through a materialized view whose target is the Distributed table
 a view over a local table still works
 100
 100

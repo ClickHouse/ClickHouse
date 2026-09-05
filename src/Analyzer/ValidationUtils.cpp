@@ -581,13 +581,6 @@ static bool readsFromRemoteTable(
     if (!context || depth >= max_dependency_depth)
         return false;
 
-    /// Reading a materialized view only ever reads its target table, and `StorageMaterializedView::isRemote`
-    /// already answered that question by delegating to the target. Its referential dependencies also include
-    /// the `SELECT` source, which is reachable at insert time only, so following them here would refuse a
-    /// materialized view with a `Distributed` source and a local target - a query that works.
-    if (storage->as<StorageMaterializedView>())
-        return false;
-
     /// A cycle in the graph would otherwise be bounded only by the depth cap, and every `Merge` level
     /// iterates over databases. A storage produced by a table function may not be in the catalog and then
     /// has nothing to key on; the depth cap still bounds those.
@@ -607,6 +600,15 @@ static bool readsFromRemoteTable(
             break;
         nested_storage = proxy->getNested();
     }
+
+    /// Reading a materialized view only ever reads its target table, so follow that target rather than the
+    /// referential dependencies: those also include the `SELECT` source, which is read at insert time only,
+    /// and following it would refuse a materialized view with a `Distributed` source and a local target - a
+    /// query that works. `StorageMaterializedView::isRemote`, checked above, only asks the target about
+    /// itself, which misses a target that is itself a view over a `Distributed` table.
+    if (const auto * materialized_view = nested_storage->as<StorageMaterializedView>())
+        return readsFromRemoteTable(
+            materialized_view->tryGetTargetTable(), materialized_view->getTargetTableId(), context, visited, depth + 1);
 
     /// `Merge` matches its source tables by a pattern resolved at read time, so the catalog records no
     /// referential dependency for it. `StorageMerge::isRemote`, checked above, asks every matched source
