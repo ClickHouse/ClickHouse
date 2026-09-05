@@ -656,3 +656,21 @@ Features:
 - Connection options: HTTP/HTTPS, SSH tunnel for private clusters behind a firewall, optional read-only mode for safe production browsing.
 - Works with ClickHouse Cloud and self-hosted.
 </Accordion>
+
+<Accordion title="ADQM Control">
+
+[ADQM Control](https://docs.arenadata.io/en/ADQMCONTROL/current/concept/overview.html) (Arenadata QuickMarts Control) is an observability platform for ClickHouse clusters deployed as [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html), the column-oriented DBMS built on ClickHouse by Arenadata. It combines host metrics from Prometheus with data about hosts, tables, and queries collected from the cluster to show how tables grow, how queries behave, and where hosts are under pressure, across one or many ADQM clusters. ADQM Control is deployed as a separate cluster with [Arenadata Cluster Manager (ADCM)](https://github.com/arenadata/adcm) and stores collected data in PostgreSQL.
+
+Features:
+
+- Heat map of host states across all connected ADQM clusters.
+- Related alerts grouped into incidents by time, with adjustable sensitivity.
+- Table size, rows, and request counts over time, with skew and imbalance metrics across hosts.
+- Per-column compressed and uncompressed size, compression ratio, and codec, with graphs.
+- Complete query history with status, exception codes, duration, memory, and rows and bytes read and written.
+- Query filters by text, table, user, host, duration, status, and exception-code presets.
+- Query graphs by duration, user, and kind; per-host load graphs with anomaly detection.
+- Threshold alerts on host resources that explain the problem and recommend a fix.
+- One-click navigation from a host or table into ADQM Notebook.
+
+</Accordion>
