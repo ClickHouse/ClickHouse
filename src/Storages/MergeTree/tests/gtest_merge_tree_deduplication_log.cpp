@@ -187,7 +187,7 @@ TEST(MergeTreeDeduplicationLog, FlushFailureKeepsLogUsable)
         EXPECT_TRUE(log.addPart({"block3"}, part("all_3_3_0")).empty());
         EXPECT_FALSE(log.addPart({"block3"}, part("all_4_4_0")).empty());
 
-        /// The same for the other entry point that writes records.
+        /// The other entry point that writes records keeps working too.
         EXPECT_NO_THROW(log.dropPart(part("all_1_1_0")));
         EXPECT_TRUE(log.addPart({"block1"}, part("all_5_5_0")).empty());
     }
@@ -200,6 +200,49 @@ TEST(MergeTreeDeduplicationLog, FlushFailureKeepsLogUsable)
         EXPECT_FALSE(log.addPart({"block3"}, part("all_6_6_0")).empty());
         /// The record whose flush failed is not, so a retry of that insert is not deduplicated away.
         EXPECT_TRUE(log.addPart({"block2"}, part("all_6_6_0")).empty());
+    }
+
+    std::filesystem::remove_all(disk_path);
+}
+
+/// The operation that follows the failed flush can be a `DROP PARTITION` rather than another insert, so
+/// `dropPart` is an independent entry into the canceled writer: it reaches it with no `addPart` having
+/// replaced it first.
+TEST(MergeTreeDeduplicationLog, CanceledWriterRecoversThroughDropPart)
+{
+    const auto disk_path
+        = std::filesystem::temp_directory_path() / ("clickhouse_gtest_dedup_log_droppart_" + std::to_string(getpid()));
+    std::filesystem::remove_all(disk_path);
+    std::filesystem::create_directories(disk_path);
+
+    /// `load` opens the first log, and that writer fails its second flush, which is the second record.
+    auto disk = std::make_shared<DiskFailingOnNthFlush>(disk_path.string() + "/", 2);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_1_1_0")).empty());
+
+        /// The flush of the second record fails, which cancels the writer.
+        expectInjectedFailure([&] { log.addPart({"block2"}, part("all_2_2_0")); });
+
+        /// The dropped part covers the part of `block1`, so this writes a record through the dead writer.
+        EXPECT_NO_THROW(log.dropPart(part("all_1_1_0")));
+        EXPECT_TRUE(log.addPart({"block3"}, part("all_3_3_0")).empty());
+    }
+
+    {
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        /// The drop record reached the disk, so `block1` is not deduplicated against the dropped part.
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_4_4_0")).empty());
+        /// The record added through the replaced writer reached the disk as well.
+        EXPECT_FALSE(log.addPart({"block3"}, part("all_4_4_0")).empty());
     }
 
     std::filesystem::remove_all(disk_path);
