@@ -1605,31 +1605,6 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         if (!unchanged_columns.empty())
         {
-            if (!stages.empty())
-            {
-                std::vector<Stage> stages_copy;
-                /// Copy all filled stages except index calculation stage.
-                /// We need to deep clone ASTs because prepareMutationStages may modify the ASTs in place
-                /// (e.g., replacing scalar subqueries with default values during dry_run).
-                for (const auto & stage : stages)
-                {
-                    stages_copy.emplace_back(context);
-                    for (const auto & [name, ast] : stage.column_to_updated)
-                        stages_copy.back().column_to_updated.emplace(name, ast->clone());
-                    stages_copy.back().output_columns = stage.output_columns;
-                    stages_copy.back().affects_all_columns = stage.affects_all_columns;
-                    for (const auto & filter : stage.filters)
-                        stages_copy.back().filters.push_back(filter->clone());
-                }
-
-                prepareMutationStages(stages_copy, true);
-
-                QueryPlan plan;
-                initQueryPlan(stages_copy.front(), plan);
-                auto pipeline = addStreamsForLaterStages(stages_copy, plan);
-                updated_header = std::make_unique<Block>(pipeline.getHeader());
-            }
-
             /// Special step to recalculate affected indices, projections and TTL expressions.
             stages.emplace_back(context);
             stages.back().is_readonly = true;
@@ -2619,8 +2594,39 @@ QueryPipelineBuilder MutationsInterpreter::execute()
         }
     }
 
-    if (!updated_header)
-        updated_header = std::make_unique<Block>(builder.getHeader());
+    Block header = builder.getHeader();
+
+    const bool rewrites_whole_part = settings.return_all_columns
+        || std::any_of(
+            stages.begin(),
+            stages.end(),
+            [](const Stage & stage) { return !stage.is_readonly && stage.affects_all_columns; });
+
+    if (!rewrites_whole_part)
+    {
+        NameSet write_stage_columns;
+        for (const auto & stage : stages)
+        {
+            if (stage.is_readonly)
+                continue;
+
+            for (const auto & [column_name, _] : stage.column_to_updated)
+                write_stage_columns.insert(column_name);
+        }
+
+        /// Keep only write stage columns to avoid rewriting readonly stage columns whose data the
+        /// mutation does not touch. A readonly stage only reads unchanged columns, so that indices,
+        /// projections and TTL expressions can be recalculated.
+        Block kept;
+        for (const auto & column : header)
+        {
+            if (write_stage_columns.contains(column.name))
+                kept.insert(column);
+        }
+        header = std::move(kept);
+    }
+
+    updated_header = std::make_unique<Block>(std::move(header));
 
     return builder;
 }
@@ -2665,7 +2671,15 @@ std::vector<MutationActions> MutationsInterpreter::getMutationActions() const
 Block MutationsInterpreter::getUpdatedHeader() const
 {
     // If it's an index/projection materialization, we don't write any data columns, thus empty header is used
-    return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION ? Block{} : *updated_header;
+    if (mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION)
+        return Block{};
+
+    /// Not an empty header like the branch above: that would silently hardlink every column instead
+    /// of writing the ones the mutation changed.
+    if (!updated_header)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "getUpdatedHeader called before execute. It is a bug");
+
+    return *updated_header;
 }
 
 const ColumnDependencies & MutationsInterpreter::getColumnDependencies() const
