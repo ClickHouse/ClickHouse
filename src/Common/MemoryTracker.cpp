@@ -717,7 +717,7 @@ void MemoryTracker::setOvercommitWaitingTime(UInt64 wait_time)
     /// The parameter is unsigned but the stored count is signed, so a value above the signed range would
     /// arrive negative and read as an already-expired wait. Saturating upwards keeps zero exact, which the
     /// overcommit tracker reads as "overcommit waiting is off".
-    static constexpr UInt64 max_representable = static_cast<UInt64>(std::numeric_limits<Int64>::max());
+    static constexpr UInt64 max_representable = static_cast<UInt64>(std::chrono::microseconds::max().count());
     max_wait_time.store(
         std::chrono::microseconds(static_cast<Int64>(std::min(wait_time, max_representable))),
         std::memory_order_relaxed);
