@@ -380,7 +380,8 @@ public:
 
         /// Force the client to be rebuilt even if the stored settings did not change. Used to re-resolve
         /// credentials under a different accessing context (e.g. re-applying the server-credential opt-in to a
-        /// server-internal table whose client was built restricted at metadata load) without detaching the table.
+        /// server-internal table whose client was built restricted at metadata load) without detaching the table,
+        /// and by the config reload of server disks, which rebuilds the client unconditionally.
         bool force_client_rebuild = false;
     };
     virtual void applyNewSettings(
@@ -466,10 +467,34 @@ public:
     /// Returns nullptr for non-decorator types, meaning this storage is already the base.
     virtual ObjectStoragePtr getUnderlying() { return nullptr; }
 
+    /// Creates a private copy of this object storage: same settings and an equivalent client, but
+    /// no shared mutable state, so `applyNewSettings` on the copy cannot affect the original.
+    /// Decorators (e.g. `CachedObjectStorage`) clone the wrapped storage and keep sharing the
+    /// immutable parts (the file cache object itself). Used by data-lake tables created on top of
+    /// a server disk (`SETTINGS disk = '...'`): the table works through a copy of the disk's
+    /// object storage, so per-table setting updates cannot corrupt the disk.
+    /// The only state shared with the copy on purpose is the IO scheduling resource names: they are a
+    /// property of the disk (see `DiskObjectStorage::propagateResourceNamesNoLock`) and change with
+    /// `CREATE RESOURCE` / `DROP RESOURCE`, so the copy keeps following the disk's resources.
+    ObjectStoragePtr clone() const;
+
+protected:
+    /// Creates the copy itself, see `clone`. The state of the base class is handled by `clone`.
+    virtual ObjectStoragePtr cloneImpl() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'clone' is not implemented for {}", getName());
+    }
+
 private:
-    mutable std::mutex io_scheduling_mutex;
-    String read_resource_name;
-    String write_resource_name;
+    /// Names of the workload scheduler resources for reads and writes. Set by the owning
+    /// `DiskObjectStorage`, shared with the copies created by `clone`.
+    struct IOSchedulingResourceNames
+    {
+        std::mutex mutex;
+        String read_resource_name;
+        String write_resource_name;
+    };
+    std::shared_ptr<IOSchedulingResourceNames> io_scheduling_resource_names = std::make_shared<IOSchedulingResourceNames>();
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;

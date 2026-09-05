@@ -62,6 +62,7 @@ public:
     const URLShards & getURLShards() const { return url_shards; }
     const HTTPHeaderEntries & getHeaders() const { return headers; }
     ContextPtr getRequestContext() const;
+    ObjectStoragePtr cloneImpl() const override;
     std::vector<String> buildURLs(const std::string & path) const;
     std::vector<String> buildURLs(const std::string & path, size_t shard_index) const;
 

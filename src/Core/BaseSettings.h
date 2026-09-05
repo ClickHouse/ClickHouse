@@ -52,6 +52,10 @@ struct BaseSettingsHelpers
         IMPORTANT = 0x01,  /// Setting affects query results, cannot be ignored by older versions
         CUSTOM = 0x02,     /// User-defined custom setting
         TIER = 0x1c,       /// 0b11100 == 3 bits for tier level (PRODUCTION/BETA/PRIVATE_PREVIEW/EXPERIMENTAL)
+        /// Flag indicating that the setting is baked into a client object built from the settings (e.g. the S3 client
+        /// of an object storage), so a change of the setting requires rebuilding that client.
+        /// See `hasChangesAffectingClient`. Currently only used in S3RequestSettings.
+        AFFECTS_CLIENT = 0x20,
         /// Flag indicating that changes from config can be picked up without server restart.
         /// Currently only works in CoordinationSettings.
         HOT_RELOAD = 0x80,
@@ -296,6 +300,11 @@ public:
     /// Copy settings with HOT_RELOAD flag from `new_settings` into `this`.
     /// Leave other settings unchanged.
     void updateHotReloadableSettings(const BaseSettings & new_settings);
+
+    /// Returns true if some setting with the AFFECTS_CLIENT flag is changed in `new_settings` and has a different value
+    /// than in `this`. Mirrors the semantics of the `updateIfChanged` methods of the settings wrappers (only the settings
+    /// changed in `new_settings` are applied): tells whether applying `new_settings` requires rebuilding the client.
+    bool hasChangesAffectingClient(const BaseSettings & new_settings) const;
 
     /// Convert all settings to a human-readable string (for debugging)
     std::string toString() const;
@@ -809,6 +818,20 @@ void BaseSettings<TTraits>::updateHotReloadableSettings(const BaseSettings & new
         Field value = accessor.getValue(new_settings, index);
         accessor.setValue(*this, index, value);
     }
+}
+
+template <typename TTraits>
+bool BaseSettings<TTraits>::hasChangesAffectingClient(const BaseSettings & new_settings) const
+{
+    const auto & accessor = Traits::Accessor::instance();
+    for (size_t index = 0; index < accessor.size(); ++index)
+    {
+        if (!accessor.affectsClient(index) || !accessor.isValueChanged(new_settings, index))
+            continue;
+        if (accessor.getValue(*this, index) != accessor.getValue(new_settings, index))
+            return true;
+    }
+    return false;
 }
 
 template <typename TTraits>
@@ -1335,6 +1358,7 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             std::string_view getDescription(size_t index) const { return field_infos[index].description; } \
             bool isImportant(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::IMPORTANT; } \
             bool isHotReload(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::HOT_RELOAD; } \
+            bool affectsClient(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::AFFECTS_CLIENT; } \
             SettingsTierType getTier(size_t index) const { return BaseSettingsHelpers::getTier(field_infos[index].flags); } \
             \
             /* Value conversion utilities — use type-level ops (no Data instance needed) */ \
@@ -1577,6 +1601,7 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
         static const Accessor the_instance = [] \
         { \
             [[maybe_unused]] constexpr int IMPORTANT = 0x01; \
+            [[maybe_unused]] constexpr int AFFECTS_CLIENT = 0x20; \
             [[maybe_unused]] constexpr int HOT_RELOAD = 0x80; \
             Accessor res; \
             /* offsetof on non-standard-layout types is well-defined in Clang */ \

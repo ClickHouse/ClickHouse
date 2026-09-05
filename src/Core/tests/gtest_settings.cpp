@@ -285,5 +285,6 @@ GTEST_TEST(SettingsTier, GetTierDecodesEveryEncoding)
     constexpr UInt64 private_preview = static_cast<UInt64>(SettingsTierType::PRIVATE_PREVIEW);
     EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::IMPORTANT), SettingsTierType::PRIVATE_PREVIEW);
     EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::CUSTOM), SettingsTierType::PRIVATE_PREVIEW);
+    EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::AFFECTS_CLIENT), SettingsTierType::PRIVATE_PREVIEW);
     EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::HOT_RELOAD), SettingsTierType::PRIVATE_PREVIEW);
 }

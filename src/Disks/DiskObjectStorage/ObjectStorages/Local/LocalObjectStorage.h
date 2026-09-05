@@ -96,6 +96,8 @@ public:
 
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
 
+    ObjectStoragePtr cloneImpl() const override;
+
 private:
     void removeObject(const StoredObject & object) const;
     void removeObjects(const StoredObjects &  objects) const;

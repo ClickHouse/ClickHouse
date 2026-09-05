@@ -221,6 +221,13 @@ void CachedObjectStorage::applyNewSettings(
     object_storage->applyNewSettings(config, config_prefix, context, options);
 }
 
+ObjectStoragePtr CachedObjectStorage::cloneImpl() const
+{
+    /// The cache object itself is intentionally shared: caches are global objects keyed by name,
+    /// so the copy keeps hitting the same cached data as the original.
+    return std::make_shared<CachedObjectStorage>(object_storage->clone(), cache, cache_settings, cache_config_name);
+}
+
 String CachedObjectStorage::getObjectsNamespace() const
 {
     return object_storage->getObjectsNamespace();

@@ -1,0 +1,24 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_disk_repro>
+                <type>s3</type>
+                <path>s3_disk_repro/</path>
+                <endpoint>http://minio1:9001/root/data/disk_client_replacement/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <!-- Placeholders changed by the tests: a setting the S3 client is built from and one it is not. -->
+                <s3_retry_attempts>10</s3_retry_attempts>
+                <s3_max_single_read_retries>4</s3_max_single_read_retries>
+            </s3_disk_repro>
+            <s3_cache_repro>
+                <type>cache</type>
+                <disk>s3_disk_repro</disk>
+                <path>/tmp/s3_cache_repro/</path>
+                <max_size>1000000000</max_size>
+            </s3_cache_repro>
+        </disks>
+    </storage_configuration>
+
+    <allowed_disks_for_table_engines>s3_disk_repro,s3_cache_repro</allowed_disks_for_table_engines>
+</clickhouse>

@@ -161,6 +161,8 @@ public:
 
     ObjectStoragePtr getUnderlying() override { return object_storage; }
 
+    ObjectStoragePtr cloneImpl() const override;
+
 private:
     FileCacheKey getCacheKey(const std::string & path) const;
 
