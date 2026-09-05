@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <exception>
 #include <Common/Scheduler/IncreaseRequest.h>
 #include <Common/Scheduler/DecreaseRequest.h>
@@ -119,7 +120,7 @@ private:
     bool memory_growth_suspended = false; /// Scheduler-thread only.
     bool memory_growth_suspension_attempted = false; /// Scheduler-thread only.
     UInt64 memory_growth_eviction_order = 0; /// Queue-local order assigned on eviction nomination.
-    bool memory_growth_recovery_pending = false; /// Queue-mutex protected durable query-to-scheduler hand-off.
+    std::atomic_bool memory_growth_recovery_pending = false; /// Durable query-to-scheduler hand-off.
     bool memory_growth_suction_priority = false; /// The allocation owns the one suction slot in its scope.
     bool kill_requested = false; /// Scheduler-thread marker preventing duplicate victim selection across stacked limits.
     IncreaseRequest increase;
