@@ -215,9 +215,12 @@ protected:
     JoinSettings join_settings;
     SortingStep::Settings sorting_settings;
 
+    /// Whether the join order was already chosen. A copy of this step, whether made by `clone` or taken
+    /// over the wire, carries it, so that whoever receives the copy does not choose an order again.
+    bool optimized = false;
+
     /// Runtime info, do not serialize
 
-    bool optimized = false;
     std::optional<UInt64> result_rows_estimation = {};
     std::unordered_map<String, ColumnStats> result_column_stats = {};
 
@@ -232,7 +235,6 @@ protected:
 
     /// Table statistics hint passed via query parameter, consumed by the Cascades optimizer.
     String table_stats_hint;
-
 
     std::unique_ptr<JoinAlgorithmParams> join_algorithm_params;
     VolumePtr tmp_volume;

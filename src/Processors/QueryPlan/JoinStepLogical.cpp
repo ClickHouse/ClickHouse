@@ -12,6 +12,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 
 #include <Core/Joins.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -2229,6 +2230,18 @@ void JoinStepLogical::serialize(Serialization & ctx) const
 
     join_operator.serialize(ctx.out, actions_dag.get());
     serializeNodeList(ctx.out, actions_dag->getNodeToIdMap(), actions_after_join);
+
+    /// A step that crosses the wire tells the receiver that the join order was already chosen, so that
+    /// the receiver does not choose again. The bit is left out of a plan cache key because it differs
+    /// between the single-node and the parallel-replicas plan build, and those two builds have to hash
+    /// alike.
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_ORDER_DECIDED && !ctx.for_cache_key)
+    {
+        UInt8 optimizer_flags = 0;
+        if (optimized)
+            optimizer_flags |= 1;
+        writeIntBinary(optimizer_flags, ctx.out);
+    }
 }
 
 static ActionsDAG::NodeRawConstPtrs deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node)
@@ -2281,7 +2294,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     SortingStep::Settings sort_settings(ctx.settings);
     JoinSettings join_settings(ctx.settings);
 
-    return std::make_unique<JoinStepLogical>(
+    auto step = std::make_unique<JoinStepLogical>(
         std::move(left_header),
         std::move(right_header),
         std::move(join_operator),
@@ -2289,6 +2302,16 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         std::move(actions_after_join),
         std::move(join_settings),
         std::move(sort_settings));
+
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_ORDER_DECIDED)
+    {
+        UInt8 optimizer_flags = 0;
+        readIntBinary(optimizer_flags, ctx.in);
+
+        step->optimized = bool(optimizer_flags & 1);
+    }
+
+    return step;
 }
 
 QueryPlanStepPtr JoinStepLogical::clone() const
