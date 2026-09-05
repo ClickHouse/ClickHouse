@@ -19,6 +19,24 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static bool anyChunkColumnReplicated(const Chunk & chunk)
+{
+    if (!chunk)
+        return false;
+    for (const auto & column : chunk.getColumns())
+        if (column->isReplicated())
+            return true;
+    return false;
+}
+
+static bool anyInputColumnReplicated(const IMergingAlgorithm::Inputs & inputs)
+{
+    for (const auto & input : inputs)
+        if (anyChunkColumnReplicated(input.chunk))
+            return true;
+    return false;
+}
+
 static void rememberVirtualRowBoundary(const SortCursorImpl & cursor, Columns & virtual_row_boundary)
 {
     virtual_row_boundary.clear();
@@ -157,6 +175,14 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
     removeReplicatedFromSortingColumns(header, inputs, description);
     removeConstAndSparse(inputs);
     merged_data.initialize(*header, inputs);
+
+    /// Enable the row-by-row fast path in `MergedData` when no input column is `ColumnReplicated`.
+    /// `removeReplicatedFromSortingColumns` already materialized the sort columns, but non-sort
+    /// columns can still be replicated (for example from a JOIN with lazy replication). If none
+    /// are, the per-row wrapping check in `insertRow` / `insertRows` is pure overhead. This is
+    /// only ever raised back to `true` in `consume` (before those rows can reach `insertRow`).
+    merged_data.setMayHaveReplicatedColumns(anyInputColumnReplicated(inputs));
+
     current_inputs = std::move(inputs);
     virtual_row_boundary.assign(current_inputs.size(), {});
 
@@ -302,6 +328,13 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 
     removeReplicatedFromSortingColumns(header, input, description);
     removeConstAndSparse(input);
+
+    /// A late-arriving chunk may bring non-sort `ColumnReplicated` columns even if the initial
+    /// inputs had none. Raise the hint monotonically (never lower it) so `MergedData` restores the
+    /// wrapping check before these rows are inserted. See `initialize`.
+    if (!merged_data.mayHaveReplicatedColumns() && anyChunkColumnReplicated(input.chunk))
+        merged_data.setMayHaveReplicatedColumns(true);
+
     current_inputs[source_num].swap(input);
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), *header, current_inputs[source_num].chunk.getNumRows());
 

@@ -74,21 +74,33 @@ void MergedData::insertRow(const ColumnRawPtrs & raw_columns, size_t row, size_t
 {
     size_t num_columns = raw_columns.size();
     chassert(columns.size() == num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        /// If the source is `ColumnReplicated` but the destination is not, wrap the destination
-        /// in `ColumnReplicated` so its `insertFrom` can consume both regular and replicated
-        /// sources through the same optimized path. This preserves the lazy replication
-        /// optimization instead of eagerly materializing the source.
-        ///
-        /// This can happen when `initialize` set the destination type based on the initial
-        /// inputs (none of which were `ColumnReplicated`), but a later chunk arrives via
-        /// `consume` with non-sort `ColumnReplicated` columns (for example, from a JOIN
-        /// with `enable_lazy_columns_replication = 1`).
-        if (raw_columns[i]->isReplicated() && !columns[i]->isReplicated())
-            columns[i] = ColumnReplicated::create(std::move(columns[i]));
 
-        columns[i]->insertFrom(*raw_columns[i], row);
+    /// Fast path: the merge cannot receive any `ColumnReplicated` source (e.g. a plain sort with
+    /// no JOIN), so skip the per-column wrapping check entirely. This is the hot path for wide
+    /// row-by-row sorts. See `mayHaveReplicatedColumns`.
+    if (!may_have_replicated_columns)
+    {
+        for (size_t i = 0; i < num_columns; ++i)
+            columns[i]->insertFrom(*raw_columns[i], row);
+    }
+    else
+    {
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            /// If the source is `ColumnReplicated` but the destination is not, wrap the destination
+            /// in `ColumnReplicated` so its `insertFrom` can consume both regular and replicated
+            /// sources through the same optimized path. This preserves the lazy replication
+            /// optimization instead of eagerly materializing the source.
+            ///
+            /// This can happen when `initialize` set the destination type based on the initial
+            /// inputs (none of which were `ColumnReplicated`), but a later chunk arrives via
+            /// `consume` with non-sort `ColumnReplicated` columns (for example, from a JOIN
+            /// with `enable_lazy_columns_replication = 1`).
+            if (raw_columns[i]->isReplicated() && !columns[i]->isReplicated())
+                columns[i] = ColumnReplicated::create(std::move(columns[i]));
+
+            columns[i]->insertFrom(*raw_columns[i], row);
+        }
     }
 
     ++total_merged_rows;
@@ -100,16 +112,31 @@ void MergedData::insertRows(const ColumnRawPtrs & raw_columns, size_t start_inde
 {
     size_t num_columns = raw_columns.size();
     chassert(columns.size() == num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        /// See comment in `insertRow` for why this wrapping is needed.
-        if (raw_columns[i]->isReplicated() && !columns[i]->isReplicated())
-            columns[i] = ColumnReplicated::create(std::move(columns[i]));
 
-        if (length == 1)
-            columns[i]->insertFrom(*raw_columns[i], start_index);
-        else
-            columns[i]->insertRangeFrom(*raw_columns[i], start_index, length);
+    /// Fast path: see `insertRow`. No `ColumnReplicated` source is possible, skip the wrap check.
+    if (!may_have_replicated_columns)
+    {
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            if (length == 1)
+                columns[i]->insertFrom(*raw_columns[i], start_index);
+            else
+                columns[i]->insertRangeFrom(*raw_columns[i], start_index, length);
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            /// See comment in `insertRow` for why this wrapping is needed.
+            if (raw_columns[i]->isReplicated() && !columns[i]->isReplicated())
+                columns[i] = ColumnReplicated::create(std::move(columns[i]));
+
+            if (length == 1)
+                columns[i]->insertFrom(*raw_columns[i], start_index);
+            else
+                columns[i]->insertRangeFrom(*raw_columns[i], start_index, length);
+        }
     }
 
     total_merged_rows += length;
