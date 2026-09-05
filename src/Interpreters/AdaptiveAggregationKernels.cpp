@@ -11,11 +11,13 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
+#include <Common/CurrentThread.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/MemoryTrackerUtils.h>
+#include <Common/ThreadStatus.h>
 #include <Common/memcpySmall.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <base/arithmeticOverflow.h>
@@ -1483,6 +1485,21 @@ size_t Aggregator::estimateAdaptiveDrainBytes(size_t records, size_t staged_byte
 /// returns: the staged keys, and the staged payload beside them - the run lengths of a
 /// count-only chunk, or the argument columns a general-aggregate chunk gathered at publish,
 /// whose variable-width values can outweigh everything the drained table itself will cost.
+/// The bytes the calling thread holds as its own memory tracker counts them, with the untracked
+/// tail flushed so that two readings around a piece of work bound what it allocated and kept.
+/// Unlike a table's `allocatedBytes`, which sums its arenas and hash-table buffers, this sees
+/// the heap that states such as `uniqExact` or `groupBitmap` own outside the arenas.
+static Int64 currentThreadTrackedMemory()
+{
+    if (!CurrentThread::isInitialized())
+        return 0;
+    CurrentThread::get().flushUntrackedMemory();
+    const auto * tracker = CurrentThread::getMemoryTracker();
+    if (!tracker || tracker->level != VariableContext::Thread)
+        return 0;
+    return tracker->get();
+}
+
 static size_t stagedChunkBytes(const StagedChunk & chunk)
 {
     size_t bytes = chunk.keys.routing_hashes.allocated_bytes() + chunk.keys.key_bytes.allocated_bytes()
@@ -1762,7 +1779,14 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
 
     auto local = createAdaptiveDrainTable(routing_type);
 
+    /// The drain runs on this thread alone, so the growth of its own tracked memory across the
+    /// call is what the built table costs in full: the arenas and buckets its `allocatedBytes`
+    /// reports, and the heap that states owning memory outside the arenas allocated for their
+    /// groups, which neither the estimate nor `allocatedBytes` can see. Read before the staged
+    /// batch is released, so its bytes do not come off the reading.
+    const Int64 tracked_before_drain = currentThreadTrackedMemory();
     const size_t drained_records = drainStagedBatch(*local, batch, shared.cancelled, places_scratch);
+    const Int64 drain_growth = currentThreadTrackedMemory() - tracked_before_drain;
     /// Release the staged memory before the write, not after; the batch is dropped rather
     /// than requeued even when cancellation stopped the drain early, because bucket-major
     /// progress means parts of every chunk may already be in the table.
@@ -1772,9 +1796,11 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
     shared.backlog.recordDrained(drained_records);
     LOG_TRACE(log, "Adaptive aggregation: pressure sweep drained {} staged records into a producer-local table", drained_records);
 
-    /// Correct the estimate upward to the built table's real footprint; never downward, so
-    /// the serialization scratch still to come is not double-booked to someone else.
-    reservation.resize(std::max(estimated_bytes, local->allocatedBytes()));
+    /// Correct the estimate upward to the built table's real footprint - the larger of what the
+    /// table reports and what the drain was seen to allocate - never downward, so the
+    /// serialization scratch still to come is not double-booked to someone else.
+    const size_t drain_growth_bytes = static_cast<size_t>(std::max<Int64>(drain_growth, 0));
+    reservation.resize(std::max({estimated_bytes, local->allocatedBytes(), drain_growth_bytes}));
 
     if (drained_records)
         spillDetachedAdaptiveTable(shared, *local);
