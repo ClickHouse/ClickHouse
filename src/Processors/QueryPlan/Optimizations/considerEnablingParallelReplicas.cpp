@@ -317,11 +317,19 @@ void considerEnablingParallelReplicas(
     /// decide whether replicas pay off, and optimizing it would otherwise re-run every `IN` subquery.
     auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
     if (!plan_with_parallel_replicas)
+    {
+        LOG_DEBUG(getLogger("optimizeTree"), "Cannot build a plan with parallel replicas. Skipping optimization");
         return;
+    }
 
     const auto * final_node_in_replica_plan = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
     if (!final_node_in_replica_plan)
+    {
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "The plan built with parallel replicas contains no read from the other replicas. Skipping optimization");
         return;
+    }
     LOG_DEBUG(getLogger("optimizeTree"), "Top node of replicas plan: {}", final_node_in_replica_plan->step->getName());
 
     const auto [corresponding_node_in_single_replica_plan, single_replica_plan_node_hash]
