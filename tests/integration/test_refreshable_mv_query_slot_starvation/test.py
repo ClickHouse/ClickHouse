@@ -12,7 +12,7 @@ node = cluster.add_instance("node", main_configs=["configs/small_pool.xml"])
 
 SLOW_VIEWS = 10
 FAST_VIEWS = 100
-SLOW_DURATION_SECONDS = 600
+SLOW_DURATION_SECONDS = 60
 MAX_FAST_STALL_SECONDS = 10
 
 
@@ -55,7 +55,7 @@ def diagnostics():
     }
 
 
-@pytest.mark.timeout(900)
+@pytest.mark.timeout(300)
 def test_queued_long_refreshes_do_not_starve_fast_refreshes():
     node.query("CREATE DATABASE starvation")
     try:
@@ -161,7 +161,7 @@ def test_queued_long_refreshes_do_not_starve_fast_refreshes():
             if completed:
                 assert len(completed) == 1, states
                 assert completed[0]["view"] == first_running, states
-                assert int(completed[0]["last_success_duration_ms"]) >= 600_000, states
+                assert int(completed[0]["last_success_duration_ms"]) >= SLOW_DURATION_SECONDS * 1000, states
                 next_running = [
                     view for view in states
                     if view["status"] == "Running" and view["view"] != first_running
@@ -172,7 +172,7 @@ def test_queued_long_refreshes_do_not_starve_fast_refreshes():
                     # Keep checking fast-view progress after the next long refresh starts.
                     if now - handoff_seen_at >= MAX_FAST_STALL_SECONDS:
                         break
-            assert now - started < SLOW_DURATION_SECONDS + 120, diagnostics()
+            assert now - started < SLOW_DURATION_SECONDS + 60, diagnostics()
             time.sleep(1)
 
         refreshes = [previous[view_id] - baseline[view_id] for view_id in previous]
@@ -183,7 +183,7 @@ def test_queued_long_refreshes_do_not_starve_fast_refreshes():
             time.monotonic() - started, FAST_VIEWS, min(refreshes), max(refreshes), maximum_stall,
         )
     finally:
-        # Cancel the remaining ten-minute queries; do not run the one-slot queue for 100 minutes.
+        # Cancel the remaining long queries after observing the first slot handoff.
         node.query("SYSTEM STOP VIEWS", timeout=30)
         node.query("DROP DATABASE starvation SYNC", timeout=30)
         node.query("DROP WORKLOAD IF EXISTS fast; DROP WORKLOAD IF EXISTS slow;")
