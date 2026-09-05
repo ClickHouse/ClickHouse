@@ -1431,6 +1431,7 @@ ContextData::ContextData(const ContextData &o) :
     has_process_list_elem(o.has_process_list_elem),
     normalized_query_hash(o.normalized_query_hash),
     insertion_table_info(o.insertion_table_info),
+    insert_source(o.insert_source),
     is_distributed(o.is_distributed),
     default_format(o.default_format),
     insert_format(o.insert_format),

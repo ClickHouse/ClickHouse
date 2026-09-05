@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
+#include <Core/InsertProfileEventsSource.h>
 #include <Core/Joins.h>
 #include <Common/Exception.h>
 #include <Common/MultiVersion.h>
@@ -412,6 +413,7 @@ protected:
     };
 
     InsertionTableInfo insertion_table_info;  /// Saved information about insertion table in query context
+    std::optional<InsertSource> insert_source; /// Logical source preserved across nested insert pipelines.
     bool is_distributed = false;  /// Whether the current context it used for distributed query
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
@@ -1230,6 +1232,9 @@ public:
     const StorageID & getInsertionTable() const { return insertion_table_info.table; }
     const std::optional<Names> & getInsertionTableColumnNames() const{ return insertion_table_info.column_names; }
     const std::shared_ptr<ColumnsDescription> & getInsertionTableColumnsDescription() const { return insertion_table_info.columns_description; }
+
+    void setInsertSource(std::optional<InsertSource> source) { insert_source = source; }
+    const std::optional<InsertSource> & getInsertSource() const { return insert_source; }
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }

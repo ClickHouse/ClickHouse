@@ -445,7 +445,11 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
-        auto counting = std::make_shared<CountingTransform>(in_header, context->getQuota(), context->getNormalizedQueryHash());
+        auto counting = std::make_shared<CountingTransform>(
+            in_header,
+            context->getInsertSource().value_or(InsertSource::Direct),
+            context->getQuota(),
+            context->getNormalizedQueryHash());
         counting->setProcessListElement(context->getProcessListElement());
         counting->setProgressCallback(context->getProgressCallback());
 
@@ -954,7 +958,11 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
             settings[Setting::shrink_over_allocated_columns_min_waste_bytes]));
 
     {
-        auto counting = std::make_shared<CountingTransform>(insert_header, context->getQuota(), context->getNormalizedQueryHash());
+        auto counting = std::make_shared<CountingTransform>(
+            insert_header,
+            context->getInsertSource().value_or(InsertSource::Direct),
+            context->getQuota(),
+            context->getNormalizedQueryHash());
         counting->setProcessListElement(context->getProcessListElement());
         counting->setProgressCallback(context->getProgressCallback());
         add_head_transform(std::move(counting));
