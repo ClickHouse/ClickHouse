@@ -158,11 +158,6 @@ public:
     virtual IBlocksStreamPtr getDelayedBlocks() { return nullptr; }
     virtual bool hasDelayedBlocks() const { return false; }
 
-    /// Whether the join emits left rows in the same order they arrive. HashJoin/DirectJoin/ConcurrentHashJoin
-    /// stream the probe side, so they do. PartialMergeJoin re-sorts left blocks by the join key, so it does not;
-    /// the read-in-order-through-join optimisation in optimizeReadInOrder.cpp must not propagate through such joins.
-    virtual bool preservesLeftBlockOrder() const { return true; }
-
     virtual IBlocksStreamPtr
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
 
@@ -186,6 +181,10 @@ public:
             return {};
         return getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
     }
+
+    /// Whether the join emits left rows in their original stream order. Read-in-order relies on
+    /// this to keep the left sort property, so the default is fail-closed: a join has to opt in.
+    virtual bool preservesLeftBlockOrder() const { return false; }
 
     /// Notify the join that the query plan requires left-side read-in-order preservation.
     /// SpillingHashJoin overrides this to forbid switching to GraceHashJoin at runtime.

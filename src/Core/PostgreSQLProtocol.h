@@ -286,6 +286,37 @@ public:
      * (if type is provided for the message by the protocol).
      */
     virtual void deserialize(ReadBuffer & in) = 0;
+
+protected:
+    template <typename F>
+    static void deserializePayload(ReadBuffer & in, std::string_view message_name, F && deserialize_payload)
+    {
+        Int32 size = 0;
+        readBinaryBigEndian(size, in);
+        if (size < 4)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in {}, it must be at least 4", size, message_name);
+
+        const size_t payload_size = static_cast<size_t>(size - 4);
+        LimitReadBuffer payload_in(in, {.read_no_less = payload_size, .read_no_more = payload_size});
+        try
+        {
+            deserialize_payload(payload_in);
+        }
+        catch (...)
+        {
+            /// Keep the stream aligned before the handler starts discarding messages through `Sync`.
+            payload_in.ignore(payload_size - payload_in.count());
+            throw;
+        }
+
+        const size_t unread_payload_bytes = payload_size - payload_in.count();
+        payload_in.ignore(unread_payload_bytes);
+        if (unread_payload_bytes != 0)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in {}, it has {} unexpected trailing payload bytes",
+                            size, message_name, unread_payload_bytes);
+    }
 };
 
 class BackendMessage : public IMessage, public ISerializable
@@ -720,9 +751,10 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        readNullTerminated(query, in);
+        deserializePayload(in, "Query message", [this](ReadBuffer & payload_in)
+        {
+            readNullTerminated(query, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -742,21 +774,22 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        readNullTerminated(function_name, in);
-        readNullTerminated(sql_query, in);
-        readBinaryBigEndian(num_params, in);
-        if (num_params < 0)
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong parameter count {} in Parse message, it must not be negative", num_params);
-        parameter_types.reserve(num_params);
-        Int32 oid_param = 0;
-        for (int i = 0; i < num_params; ++i)
+        deserializePayload(in, "Parse message", [this](ReadBuffer & payload_in)
         {
-            readBinaryBigEndian(oid_param, in);
-            parameter_types.push_back(oid_param);
-        }
+            readNullTerminated(function_name, payload_in);
+            readNullTerminated(sql_query, payload_in);
+            readBinaryBigEndian(num_params, payload_in);
+            if (num_params < 0)
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                "Wrong parameter count {} in Parse message, it must not be negative", num_params);
+            parameter_types.reserve(num_params);
+            Int32 oid_param = 0;
+            for (int i = 0; i < num_params; ++i)
+            {
+                readBinaryBigEndian(oid_param, payload_in);
+                parameter_types.push_back(oid_param);
+            }
+        });
     }
 
     MessageType getMessageType() const override
@@ -800,56 +833,57 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        readNullTerminated(portal_name, in);
-        readNullTerminated(function_name, in);
+        deserializePayload(in, "Bind message", [this](ReadBuffer & payload_in)
+        {
+            readNullTerminated(portal_name, payload_in);
+            readNullTerminated(function_name, payload_in);
 
-        /// Read all format codes before rejecting binary values to preserve stream alignment.
-        Int16 num_format_params = 0;
-        readBinaryBigEndian(num_format_params, in);
-        if (num_format_params < 0)
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong parameter format code count {} in Bind message, it must not be negative", num_format_params);
-        Int16 format_param = 0;
-        for (Int16 i = 0; i < num_format_params; ++i)
-        {
-            readBinaryBigEndian(format_param, in);
-            if (format_param != 0)
-                has_binary_format_param = true;
-        }
-        readBinaryBigEndian(num_params, in);
-        if (num_params < 0)
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong parameter count {} in Bind message, it must not be negative", num_params);
-        for (int i = 0; i < num_params; ++i)
-        {
-            Int32 sz_param = 0;
-            readBinaryBigEndian(sz_param, in);
-            /// -1 is the protocol sentinel for a NULL parameter and no value bytes follow;
-            /// any other negative value is malformed.
-            if (sz_param < -1)
+            /// Read all format codes before rejecting binary values to preserve stream alignment.
+            Int16 num_format_params = 0;
+            readBinaryBigEndian(num_format_params, payload_in);
+            if (num_format_params < 0)
                 throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                                "Wrong parameter length {} in Bind message, it must not be less than -1", sz_param);
-            if (sz_param == -1)
+                                "Wrong parameter format code count {} in Bind message, it must not be negative", num_format_params);
+            Int16 format_param = 0;
+            for (Int16 i = 0; i < num_format_params; ++i)
             {
-                parameters.emplace_back(std::nullopt);
-                continue;
+                readBinaryBigEndian(format_param, payload_in);
+                if (format_param != 0)
+                    has_binary_format_param = true;
             }
-            String current_param(sz_param, 0);
-            in.readStrict(current_param.data(), sz_param);
-            parameters.push_back(std::move(current_param));
-        }
+            readBinaryBigEndian(num_params, payload_in);
+            if (num_params < 0)
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                "Wrong parameter count {} in Bind message, it must not be negative", num_params);
+            for (int i = 0; i < num_params; ++i)
+            {
+                Int32 sz_param = 0;
+                readBinaryBigEndian(sz_param, payload_in);
+                /// -1 is the protocol sentinel for a NULL parameter and no value bytes follow;
+                /// any other negative value is malformed.
+                if (sz_param < -1)
+                    throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                    "Wrong parameter length {} in Bind message, it must not be less than -1", sz_param);
+                if (sz_param == -1)
+                {
+                    parameters.emplace_back(std::nullopt);
+                    continue;
+                }
+                String current_param(sz_param, 0);
+                payload_in.readStrict(current_param.data(), sz_param);
+                parameters.push_back(std::move(current_param));
+            }
 
-        /// Consume result format codes; this implementation always returns text.
-        Int16 num_format_params_result = 0;
-        readBinaryBigEndian(num_format_params_result, in);
-        if (num_format_params_result < 0)
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong result format code count {} in Bind message, it must not be negative", num_format_params_result);
-        Int16 format_param_result = 0;
-        for (Int16 i = 0; i < num_format_params_result; ++i)
-            readBinaryBigEndian(format_param_result, in);
+            /// Consume result format codes; this implementation always returns text.
+            Int16 num_format_params_result = 0;
+            readBinaryBigEndian(num_format_params_result, payload_in);
+            if (num_format_params_result < 0)
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                "Wrong result format code count {} in Bind message, it must not be negative", num_format_params_result);
+            Int16 format_param_result = 0;
+            for (Int16 i = 0; i < num_format_params_result; ++i)
+                readBinaryBigEndian(format_param_result, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -888,10 +922,11 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        in.readStrict(&describe, 1);
-        readNullTerminated(function_name, in);
+        deserializePayload(in, "Describe message", [this](ReadBuffer & payload_in)
+        {
+            payload_in.readStrict(&describe, 1);
+            readNullTerminated(function_name, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -909,10 +944,11 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        readNullTerminated(portal_name, in);
-        readBinaryBigEndian(max_rows, in);
+        deserializePayload(in, "Execute message", [this](ReadBuffer & payload_in)
+        {
+            readNullTerminated(portal_name, payload_in);
+            readBinaryBigEndian(max_rows, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -957,12 +993,13 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        Int8 byte = 0;
-        readBinaryBigEndian(byte, in);
-        close_target = static_cast<char>(byte);
-        readNullTerminated(function_name, in);
+        deserializePayload(in, "Close message", [this](ReadBuffer & payload_in)
+        {
+            Int8 byte = 0;
+            readBinaryBigEndian(byte, payload_in);
+            close_target = static_cast<char>(byte);
+            readNullTerminated(function_name, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -1000,8 +1037,11 @@ class SyncQuery : FrontMessage
 public:
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
+        Int32 size = 0;
+        readBinaryBigEndian(size, in);
+        if (size != 4)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in Sync message, it must be 4", size);
     }
 
     MessageType getMessageType() const override
@@ -1244,8 +1284,11 @@ class CopyDone : FrontMessage
 public:
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
+        Int32 size = 0;
+        readBinaryBigEndian(size, in);
+        if (size != 4)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in CopyDone message, it must be 4", size);
     }
 
     MessageType getMessageType() const override

@@ -1,5 +1,6 @@
 legacy-cgi==2.6.4
 blinker==1.4
+boto3==1.38.28
 cryptography==48.0.1
 dbus-python==1.2.18
 distro==1.7.0

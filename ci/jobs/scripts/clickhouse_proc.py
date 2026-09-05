@@ -1504,6 +1504,12 @@ if __name__ == "__main__":
             if not Info().is_local_run:
                 # Disable log export for local runs - ideally this command wouldn't be triggered,
                 # but conditional disabling is complex in legacy bash scripts (run_fuzzer.sh, stress_runner.sh)
+                # This command runs in a process of its own, so it holds none of the
+                # credentials `logs_export_config` fetched, and `setup_log_cluster.sh`
+                # creates no `_sender` table without them.
+                ch.log_export_host, ch.log_export_password = (
+                    log_export.get_credentials()
+                )
                 res = ch.start_log_exports(check_start_time=Utils.timestamp())
             else:
                 res = True

@@ -5293,6 +5293,71 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context, share_nested_offsets);
 
+    /// The sort direction of a retained sorting key column is immutable via ALTER, in either direction. Existing parts
+    /// stay physically sorted in the directions the key had when they were written, and no regular data part records those
+    /// directions: every reader of a regular data part's order takes them from the current metadata. A direction change in
+    /// place would therefore make the metadata describe an order the data does not have, and primary key index
+    /// analysis compares boundary tuples in the claimed order, so it would prune the wrong mark ranges and silently
+    /// return wrong results.
+    {
+        /// Under a Replicated database every replica re-runs this interpreter over an entry the initiator already
+        /// committed. A replica catching up on an ALTER accepted by an older version must not be failed by a check
+        /// that version did not have, or the DDL queue stalls on an entry it cannot skip.
+        bool is_initial_alter = true;
+        if (auto txn = local_context->getZooKeeperMetadataTransaction())
+            is_initial_alter = txn->isInitialQuery();
+
+        bool changes_order_by = false;
+        for (const auto & command : commands)
+        {
+            if (command.type == AlterCommand::MODIFY_ORDER_BY)
+            {
+                changes_order_by = true;
+                break;
+            }
+        }
+
+        if (is_initial_alter && changes_order_by)
+        {
+            const KeyDescription & old_sorting_key = old_metadata.getSortingKey();
+            const KeyDescription & new_sorting_key = new_metadata.getSortingKey();
+
+            /// Positions beyond the stored flags are ascending, and an empty vector means the whole key is ascending
+            /// (the `KeyOrder` convention).
+            auto is_reversed = [](const std::vector<bool> & flags, size_t column)
+            {
+                return column < flags.size() && flags[column];
+            };
+
+            const Names & old_key_columns = old_sorting_key.column_names;
+            const Names & new_key_columns = new_sorting_key.column_names;
+
+            /// Walk the two keys with the same correspondence rule `checkProperties` uses for added key columns: the
+            /// old index advances only on a name match, so extending the key with new trailing columns is not flagged.
+            for (size_t new_i = 0, old_i = 0; new_i < new_key_columns.size() && old_i < old_key_columns.size(); ++new_i)
+            {
+                if (new_key_columns[new_i] != old_key_columns[old_i])
+                    continue;
+
+                const bool was_reversed = is_reversed(old_sorting_key.reverse_flags, old_i);
+                const bool is_now_reversed = is_reversed(new_sorting_key.reverse_flags, new_i);
+
+                if (was_reversed != is_now_reversed)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Sort direction of the sorting key column {} would change from {} to {}. The existing parts are "
+                        "physically sorted in the old direction, so the table would return wrong results. Changing the "
+                        "sort direction of an existing sorting key column is not supported; create a new table with the "
+                        "desired ORDER BY and copy the data with INSERT ... SELECT into it.",
+                        backQuoteIfNeed(old_key_columns[old_i]),
+                        was_reversed ? "DESC" : "ASC",
+                        is_now_reversed ? "DESC" : "ASC");
+
+                ++old_i;
+            }
+        }
+    }
+
     /// The `Quantize(...)` codec is immutable via ALTER: it cannot be added, removed, or changed, and the TYPE of a
     /// Quantize-coded column cannot be changed either. Both reach `ColumnsDescription::modify` as metadata-only changes
     /// (existing parts are not rewritten and the custom serialization is not reattached), so an in-place ALTER would

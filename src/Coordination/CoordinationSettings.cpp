@@ -2,9 +2,11 @@
 #include <Coordination/KeeperConstants.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
+#include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteIntText.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <base/sanitizer_defs.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -16,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /** These settings represent fine tunes for internal details of Coordination storages
@@ -174,6 +177,14 @@ void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const 
     if ((*this)[CoordinationSetting::commit_logs_cache_size_threshold].changed
         && !(*this)[CoordinationSetting::log_readahead_commit_window_bytes].changed)
         (*this)[CoordinationSetting::log_readahead_commit_window_bytes] = (*this)[CoordinationSetting::commit_logs_cache_size_threshold];
+
+#if defined(MEMORY_SANITIZER)
+    if ((*this)[CoordinationSetting::commit_profiler_real_time_period_ns].changed
+        && (*this)[CoordinationSetting::commit_profiler_real_time_period_ns].value != 0)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "The Keeper setting `commit_profiler_real_time_period_ns` is not supported in a MemorySanitizer build");
+#endif
 }
 
 CoordinationSettings::CoordinationSettings() : impl(std::make_unique<CoordinationSettingsImpl>())

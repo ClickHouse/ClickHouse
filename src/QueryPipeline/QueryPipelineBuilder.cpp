@@ -13,6 +13,7 @@
 #include <Processors/DelayedPortsProcessor.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/LimitTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ResizeProcessor.h>
@@ -369,7 +370,38 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
         right->pipe.resize(1);
     }
     else if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Join is supported only for pipelines with one output port, got {} and {}", left->getNumStreams(), right->getNumStreams());
+    {
+        /// `MergeJoinTransform` below takes exactly one input per side. The streams are already sorted by the
+        /// join keys, so a sorted merge on those keys preserves the order it requires.
+        auto merge_to_single_sorted_stream = [&](std::unique_ptr<QueryPipelineBuilder> & pipeline, const Names & key_names)
+        {
+            if (pipeline->getNumStreams() <= 1)
+                return;
+
+            SortDescription sort_description;
+            sort_description.reserve(key_names.size());
+            for (const auto & key_name : key_names)
+                sort_description.emplace_back(key_name);
+
+            auto transform = std::make_shared<MergingSortedTransform>(
+                pipeline->getSharedHeader(),
+                pipeline->getNumStreams(),
+                sort_description,
+                max_block_size,
+                /*max_block_size_bytes=*/ 0,
+                /*max_dynamic_subcolumns=*/ std::nullopt,
+                SortingQueueStrategy::Default);
+
+            /// Report the merge to the caller's collector so that `EXPLAIN PIPELINE` lists it.
+            pipeline->pipe.collected_processors = collected_processors;
+            pipeline->addTransform(std::move(transform));
+            pipeline->pipe.collected_processors = nullptr;
+        };
+
+        const auto & on_clause = join->getTableJoin().getOnlyClause();
+        merge_to_single_sorted_stream(left, on_clause.key_names_left);
+        merge_to_single_sorted_stream(right, on_clause.key_names_right);
+    }
 
     if (left->hasTotals() || right->hasTotals())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Current join algorithm is supported only for pipelines without totals");

@@ -3,6 +3,7 @@
 
 #include <Client/HedgedConnections.h>
 #include <Client/scaleInteractiveDelayByFanout.h>
+#include <Client/SecondaryQuerySettings.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
@@ -21,7 +22,6 @@ namespace Setting
     extern const SettingsBool allow_changing_replica_until_first_data_packet;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 connections_with_failover_max_tries;
-    extern const SettingsDialect dialect;
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 group_by_two_level_threshold;
@@ -219,9 +219,9 @@ void HedgedConnections::sendQuery(
     {
         Settings modified_settings = settings;
 
-        /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
-        modified_settings[Setting::dialect] = Dialect::clickhouse;
-        modified_settings[Setting::dialect].changed = false;
+        /// Demote the `compatibility`-derived values and force ClickHouse SQL. Runs before the
+        /// overrides below, so all of them are marked changed afterwards and are serialized.
+        prepareSecondaryQuerySettings(modified_settings);
 
         modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
             modified_settings[Setting::interactive_delay],

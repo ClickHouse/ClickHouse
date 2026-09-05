@@ -12,7 +12,6 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Columns/IColumn.h>
-#include <Columns/ColumnSparse.h>
 #include <Core/Settings.h>
 #include <Core/Block.h>
 #include <IO/WriteHelpers.h>
@@ -416,12 +415,23 @@ void DeduplicationInfo::calculateDataHashes() const
 
     chassert(original_block && original_block->rows() == getRows());
 
-    /// The hash must not depend on the column's sparse/dense representation, so remove sparse before hashing.
+    /// The hash must not depend on the column's representation, so strip every representation wrapper
+    /// (`ColumnConst`, `ColumnReplicated`, `ColumnSparse`) before hashing. A wrapper hashes through the
+    /// generic per-row loop, whose byte stream differs from the dense column's range overload for every
+    /// variable-size type - the same rows would then produce two different block hashes and a retried
+    /// insert would not deduplicate.
+    /// `convertToFullIfWrapped` strips the whole column tree rather than just the root, because a
+    /// composite column hashes by delegating to its children (`ColumnTuple::updateHashWithValueRange`
+    /// calls each element's), so a wrapper anywhere in the tree would reach the generic loop. Every
+    /// wrapper observed here so far sits at the root, and it costs nothing to be exhaustive: with no
+    /// wrapper anywhere the call returns the column itself.
+    /// `LowCardinality` is deliberately not removed: it is a semantic type rather than a representation,
+    /// so it cannot differ between two attempts at the same insert.
     /// Column-major so only one column is materialized at a time, instead of a dense copy of the whole block.
     std::vector<SipHash> hashes(pending.size());
     for (const auto & col : original_block->getColumns())
     {
-        auto dense = recursiveRemoveSparse(col);
+        auto dense = col->convertToFullIfWrapped();
         for (size_t i = 0; i < pending.size(); ++i)
             dense->updateHashWithValueRange(getTokenBegin(pending[i]), getTokenEnd(pending[i]), hashes[i]);
     }

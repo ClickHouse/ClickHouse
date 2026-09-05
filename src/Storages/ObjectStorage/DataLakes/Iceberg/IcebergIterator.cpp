@@ -36,6 +36,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
@@ -53,6 +54,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 #include <Interpreters/IcebergMetadataLog.h>
 #include <base/wide_integer_to_string.h>
@@ -79,7 +81,8 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 extern const SettingsBool use_iceberg_partition_pruning;
-extern const SettingsNonZeroUInt64 iceberg_delete_manifest_decode_concurrency;
+extern const SettingsNonZeroUInt64 iceberg_file_entries_queue_size;
+extern const SettingsNonZeroUInt64 iceberg_manifest_decode_concurrency;
 };
 
 
@@ -88,8 +91,8 @@ using namespace Iceberg;
 namespace
 {
 
-/// All entries of one delete manifest file, produced by a single decode task.
-using DeleteManifestBatch = std::vector<ProcessedManifestFileEntryPtr>;
+/// All entries of one manifest file, produced by a single decode task.
+using ManifestEntryBatch = std::vector<ProcessedManifestFileEntryPtr>;
 
 /// decode path agrees on whether pruning applies.
 std::shared_ptr<const ActionsDAG> makeManifestFilterDag(const ActionsDAG * filter_dag, const ContextPtr & context)
@@ -178,113 +181,151 @@ std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
 
 }
 
-std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
+namespace Iceberg
+{
+
+DataFileEntriesStream::DataFileEntriesStream(
+    size_t queue_size_,
+    size_t decode_concurrency_,
+    IcebergDataSnapshotPtr data_snapshot_,
+    std::function<void()> prepare_,
+    CreateManifestIterator create_manifest_iterator_)
+    : chunk_size(queue_size_)
+    , decode_concurrency(decode_concurrency_)
+    , data_snapshot(std::move(data_snapshot_))
+    , prepare(std::move(prepare_))
+    , create_manifest_iterator(std::move(create_manifest_iterator_))
+    , queue(queue_size_)
+{
+    producer = std::make_unique<ThreadFromGlobalPool>(
+        [this, thread_group = CurrentThread::getGroup()]()
+        {
+            DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::ICEBERG_ITERATOR);
+            try
+            {
+                run();
+            }
+            catch (...)
+            {
+                std::lock_guard lock(exception_mutex);
+                if (!exception)
+                {
+                    exception = std::current_exception();
+                }
+            }
+            stop();
+        });
+}
+
+DataFileEntriesStream::~DataFileEntriesStream()
+{
+    stop();
+    if (producer)
+    {
+        producer->join();
+    }
+}
+
+bool DataFileEntriesStream::pop(ProcessedManifestFileEntryPtr & entry)
+{
+    return queue.pop(entry);
+}
+
+void DataFileEntriesStream::clearAndFinish()
+{
+    stopped.store(true, std::memory_order_relaxed);
+    queue.clearAndFinish();
+}
+
+void DataFileEntriesStream::stop()
+{
+    stopped.store(true, std::memory_order_relaxed);
+    queue.finish();
+}
+
+std::exception_ptr DataFileEntriesStream::getException() const
+{
+    std::lock_guard lock(exception_mutex);
+    return exception;
+}
+
+void DataFileEntriesStream::run()
 {
     if (!data_snapshot)
-    {
-        return std::nullopt;
-    }
+        return;
 
-    while (true)
-    {
-        /// Try to get the next entry from the current manifest file iterator.
-        if (current_manifest_file_iterator)
+    if (prepare)
+        prepare();
+
+    auto stream_runner = threadPoolCallbackRunnerUnsafe<void>(getIcebergManifestDecodeThreadPool().get(), DB::ThreadName::ICEBERG_ITERATOR);
+
+    std::deque<std::unique_ptr<InFlightManifest>> in_flight;
+    SCOPE_EXIT({
+        for (auto & manifest : in_flight)
         {
-            auto entry = current_manifest_file_iterator->next();
-            if (entry)
-                return entry;
+            if (manifest->future.valid())
+                manifest->future.wait();
+        }
+    });
 
-            /// next() returned nullptr, meaning the manifest file is fully exhausted.
-            current_manifest_file_iterator = nullptr;
+    const auto & manifest_list_entries = data_snapshot->manifest_list_entries;
+    size_t next_index = 0;
+    while (!stopped.load(std::memory_order_relaxed))
+    {
+        while (in_flight.size() < decode_concurrency && next_index < manifest_list_entries.size())
+        {
+            const size_t index = next_index++;
+            if (manifest_list_entries[index].content_type != ManifestFileContentType::DATA)
+                continue;
+            auto manifest = std::make_unique<InFlightManifest>(manifest_list_entries[index]);
+            auto * scheduled = manifest.get();
+            manifest->future = stream_runner([this, scheduled] { decodeChunk(*scheduled); }, Priority{});
+            in_flight.push_back(std::move(manifest));
         }
 
-        /// Make sure a prefetch of the next matching manifest is in flight.
-        schedulePrefetchIfPossible();
-        if (!prefetched_manifest.has_value())
-            return std::nullopt;
+        if (in_flight.empty())
+            return;
 
-        /// Take ownership of the in-flight prefetch: move it out of the member and reset the
-        /// optional (a moved-from optional is still engaged, so schedulePrefetchIfPossible would
-        /// otherwise see an occupied slot and never start the next fetch).
-        auto curr_prefetched = std::move(prefetched_manifest);
-        prefetched_manifest.reset();
-        /// While the future lives only in this local, the destructor's wait no longer covers it,
-        /// so the task capturing `this` could outlive the iterator if anything below throws
-        /// (for example scheduling the next prefetch while the pool is shutting down).
-        SCOPE_EXIT({
-            if (curr_prefetched.has_value() && curr_prefetched->future.valid())
-                curr_prefetched->future.wait();
-        });
+        auto & manifest = *in_flight.front();
+        manifest.future.get();
 
-        /// Start scheduling the next prefetch before we block and parse.
-        schedulePrefetchIfPossible();
-
-        auto manifest_file_cacheable_part = curr_prefetched->future.get();
-        const auto & manifest_list_entry = data_snapshot->manifest_list_entries[curr_prefetched->manifest_list_index];
-
-        current_manifest_file_iterator = Iceberg::ManifestFileIterator::create(
-            manifest_file_cacheable_part.deserializer,
-            manifest_list_entry.manifest_file_path,
-            persistent_components.path_resolver,
-            *persistent_components.schema_processor,
-            manifest_list_entry.added_sequence_number,
-            manifest_list_entry.added_snapshot_id,
-            manifest_list_entry.first_row_id,
-            local_context,
-            filter_dag,
-            table_snapshot->schema_id);
-    }
-}
-
-void SingleThreadIcebergKeysIterator::schedulePrefetchIfPossible()
-{
-    if (!data_snapshot || prefetched_manifest.has_value())
-        return;
-
-    while (manifest_file_index < data_snapshot->manifest_list_entries.size())
-    {
-        const size_t index = manifest_file_index++;
-        const auto & manifest_list_entry = data_snapshot->manifest_list_entries[index];
-        if (manifest_list_entry.content_type != manifest_file_content_type)
-            continue;
-
-        auto fetch = [this, path = manifest_list_entry.manifest_file_path]()
+        for (auto & entry : manifest.chunk)
         {
-            return Iceberg::getManifestFile(object_storage, persistent_components, local_context, log, path);
-        };
-        prefetched_manifest = PrefetchedManifest{index, prefetch_runner(std::move(fetch), Priority{})};
-        return;
+            if (!queue.push(std::move(entry)))
+                return;
+        }
+        manifest.chunk.clear();
+
+        if (manifest.exhausted)
+            in_flight.pop_front();
+        else
+            manifest.future = stream_runner([this, scheduled = &manifest] { decodeChunk(*scheduled); }, Priority{});
     }
 }
 
-SingleThreadIcebergKeysIterator::~SingleThreadIcebergKeysIterator()
+void DataFileEntriesStream::decodeChunk(InFlightManifest & manifest)
 {
-    /// The scheduled task captures `this`, so it must not outlive the iterator.
-    if (prefetched_manifest.has_value() && prefetched_manifest->future.valid())
-        prefetched_manifest->future.wait();
+    if (stopped.load(std::memory_order_relaxed))
+    {
+        manifest.exhausted = true;
+        return;
+    }
+
+    if (!manifest.iterator)
+        manifest.iterator = create_manifest_iterator(manifest.key, &stopped);
+
+    while (manifest.chunk.size() < chunk_size)
+    {
+        auto entry = manifest.iterator->next();
+        if (!entry)
+        {
+            manifest.exhausted = true;
+            return;
+        }
+        manifest.chunk.push_back(std::move(entry));
+    }
 }
 
-SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
-    ObjectStoragePtr object_storage_,
-    ContextPtr local_context_,
-    Iceberg::ManifestFileContentType manifest_file_content_type_,
-    const ActionsDAG * filter_dag_,
-    Iceberg::TableStateSnapshotPtr table_snapshot_,
-    Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-    PersistentTableComponents persistent_components_)
-    : object_storage(object_storage_)
-    , filter_dag(makeManifestFilterDag(filter_dag_, local_context_))
-    , local_context(local_context_)
-    , table_snapshot(table_snapshot_)
-    , data_snapshot(data_snapshot_)
-    , persistent_components(persistent_components_)
-    , log(getLogger("IcebergIterator"))
-    , manifest_file_content_type(manifest_file_content_type_)
-    , prefetch_runner(threadPoolCallbackRunnerUnsafe<Iceberg::ManifestFileCacheableInfo>(
-          getIOThreadPool().get(), DB::ThreadName::ICEBERG_ITERATOR))
-{
-    /// Warm the first manifest fetch.
-    schedulePrefetchIfPossible();
 }
 
 IcebergIterator::IcebergIterator(
@@ -301,64 +342,29 @@ IcebergIterator::IcebergIterator(
     , table_state_snapshot(table_snapshot_)
     , data_snapshot(data_snapshot_)
     , persistent_components(persistent_components_)
-    , deletes_filter_dag(makeManifestFilterDag(filter_dag_, local_context_))
-    , data_files_iterator(
-          object_storage,
-          local_context_,
-          Iceberg::ManifestFileContentType::DATA,
-          filter_dag_,
-          table_snapshot_,
-          data_snapshot_,
-          persistent_components_)
-    , blocking_queue(100)
+    , manifest_filter_dag(makeManifestFilterDag(filter_dag_, local_context_))
     , callback(std::move(callback_))
 {
-    /// Decoding any manifest reads settings from the context, so a missing one is fatal either way.
-    if (!local_context)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Context is required to construct IcebergIterator");
+    chassert(local_context);
 
-    producer_task = std::make_unique<ThreadFromGlobalPool>(
-        [this, thread_group = CurrentThread::getGroup()]()
+    data_files_stream = std::make_unique<Iceberg::DataFileEntriesStream>(
+        local_context->getSettingsRef()[Setting::iceberg_file_entries_queue_size],
+        local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency],
+        data_snapshot,
+        [this]
         {
-            DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::ICEBERG_ITERATOR);
-            while (!blocking_queue.isFinished())
-            {
-                std::optional<ProcessedManifestFileEntryPtr> entry;
-                try
-                {
-                    entry = data_files_iterator.next();
-                }
-                catch (...)
-                {
-                    std::lock_guard lock(exception_mutex);
-                    if (!exception)
-                    {
-                        exception = std::current_exception();
-                    }
-                    blocking_queue.finish();
-                    break;
-                }
-                if (!entry.has_value())
-                    break;
-                while (!blocking_queue.push(std::move(entry.value())))
-                {
-                    if (blocking_queue.isFinished())
-                    {
-                        break;
-                    }
-                }
-            }
-            blocking_queue.finish();
-        });
+            if (manifest_filter_dag)
+                VirtualColumnUtils::buildOrderedSetsForDAG(*manifest_filter_dag, local_context);
+        },
+        [this](const ManifestFileCacheKey & manifest_list_entry, const std::atomic<bool> * stop_flag)
+        { return createManifestIterator(manifest_list_entry, stop_flag); });
 }
 
-// ensureDeletesReady is called lazily so that delete and data manifest downloads overlap.
 void IcebergIterator::ensureDeletesReady()
 {
     std::lock_guard lock(deletes_mutex);
     if (!deletes_ready)
     {
-        /// Deferred part of the iterator initialization, charged to the same event as the constructor.
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergIteratorInitializationMicroseconds);
         try
         {
@@ -367,14 +373,50 @@ void IcebergIterator::ensureDeletesReady()
         catch (...)
         {
             deletes_exception = std::current_exception();
-            /// Every `next` rethrows this exception, so the buffered entries are dead and the producer must stop.
-            blocking_queue.clearAndFinish();
+            data_files_stream->clearAndFinish();
         }
         deletes_ready = true;
     }
     /// Stored rather than rethrown from a fresh decode, so that every `next` thread sees one error.
     if (deletes_exception)
         std::rethrow_exception(deletes_exception);
+}
+
+Iceberg::ManifestIteratorPtr IcebergIterator::createManifestIterator(const ManifestFileCacheKey & manifest_list_entry, const std::atomic<bool> * stop_flag) const
+{
+    auto manifest_file_cacheable_part = Iceberg::getManifestFile(
+        object_storage,
+        persistent_components,
+        local_context,
+        logger,
+        manifest_list_entry.manifest_file_path);
+
+    return Iceberg::ManifestFileIterator::create(
+        manifest_file_cacheable_part.deserializer,
+        manifest_list_entry.manifest_file_path,
+        persistent_components.path_resolver,
+        *persistent_components.schema_processor,
+        manifest_list_entry.added_sequence_number,
+        manifest_list_entry.added_snapshot_id,
+        manifest_list_entry.first_row_id,
+        local_context,
+        manifest_filter_dag,
+        table_state_snapshot->schema_id,
+        stop_flag);
+}
+
+std::vector<Iceberg::ProcessedManifestFileEntryPtr> IcebergIterator::decodeManifest(const ManifestFileCacheKey & manifest_list_entry, const std::atomic<bool> * stop_flag) const
+{
+    if (stop_flag && stop_flag->load(std::memory_order_relaxed))
+        return {};
+
+    auto manifest_file_iterator = createManifestIterator(manifest_list_entry, stop_flag);
+
+    ManifestEntryBatch batch;
+    while (auto entry = manifest_file_iterator->next())
+        batch.push_back(entry);
+    /// Iterator and deserializer die here, before the batch is handed over.
+    return batch;
 }
 
 void IcebergIterator::decodeDeleteManifests()
@@ -390,12 +432,12 @@ void IcebergIterator::decodeDeleteManifests()
     }
 
     /// Cap concurrency: each in-flight manifest holds its decoded contents.
-    const size_t max_in_flight = local_context->getSettingsRef()[Setting::iceberg_delete_manifest_decode_concurrency];
+    const size_t max_in_flight = local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency];
 
     auto decode_runner
-        = threadPoolCallbackRunnerUnsafe<DeleteManifestBatch>(getIOThreadPool().get(), DB::ThreadName::ICEBERG_ITERATOR);
+        = threadPoolCallbackRunnerUnsafe<ManifestEntryBatch>(getIOThreadPool().get(), DB::ThreadName::ICEBERG_DELETE_DECODE);
 
-    std::deque<std::future<DeleteManifestBatch>> in_flight;
+    std::deque<std::future<ManifestEntryBatch>> in_flight;
     /// The tasks capture `this`, so none of them may still be running when this function is left.
     SCOPE_EXIT({
         for (auto & future : in_flight)
@@ -411,32 +453,7 @@ void IcebergIterator::decodeDeleteManifests()
         while (in_flight.size() < max_in_flight && next_to_decode < delete_manifests.size())
         {
             auto decode = [this, manifest_list_entry = delete_manifests[next_to_decode++]]()
-            {
-                auto manifest_file_cacheable_part = Iceberg::getManifestFile(
-                    object_storage,
-                    persistent_components,
-                    local_context,
-                    logger,
-                    manifest_list_entry.manifest_file_path);
-
-                auto manifest_file_iterator = Iceberg::ManifestFileIterator::create(
-                    manifest_file_cacheable_part.deserializer,
-                    manifest_list_entry.manifest_file_path,
-                    persistent_components.path_resolver,
-                    *persistent_components.schema_processor,
-                    manifest_list_entry.added_sequence_number,
-                    manifest_list_entry.added_snapshot_id,
-                    manifest_list_entry.first_row_id,
-                    local_context,
-                    deletes_filter_dag,
-                    table_state_snapshot->schema_id);
-
-                DeleteManifestBatch batch;
-                while (auto entry = manifest_file_iterator->next())
-                    batch.push_back(entry);
-                /// Iterator and deserializer die here, before the batch is handed over.
-                return batch;
-            };
+            { return decodeManifest(manifest_list_entry, /* stop_flag */ nullptr); };
             in_flight.push_back(decode_runner(std::move(decode), Priority{}));
         }
 
@@ -466,7 +483,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataReadWaitTimeMicroseconds);
     ensureDeletesReady();
     Iceberg::ProcessedManifestFileEntryPtr manifest_file_entry;
-    if (blocking_queue.pop(manifest_file_entry))
+    if (data_files_stream->pop(manifest_file_entry))
     {
         IcebergDataObjectInfoPtr object_info
             = std::make_shared<IcebergDataObjectInfo>(
@@ -545,14 +562,11 @@ ObjectInfoPtr IcebergIterator::next(size_t)
 
         return object_info;
     }
+    if (auto exception = data_files_stream->getException())
     {
-        std::lock_guard lock(exception_mutex);
-        if (exception)
-        {
-            auto exception_message = getExceptionMessage(exception, true, true);
-            auto exception_code = getExceptionErrorCode(exception);
-            throw DB::Exception(exception_code, "Iceberg iterator is failed with exception: {}", exception_message);
-        }
+        auto exception_message = getExceptionMessage(exception, true, true);
+        auto exception_code = getExceptionErrorCode(exception);
+        throw DB::Exception(exception_code, "Iceberg iterator is failed with exception: {}", exception_message);
     }
 
     return nullptr;
@@ -563,14 +577,7 @@ size_t IcebergIterator::estimatedKeysCount()
     return std::numeric_limits<size_t>::max();
 }
 
-IcebergIterator::~IcebergIterator()
-{
-    blocking_queue.finish();
-    if (producer_task)
-    {
-        producer_task->join();
-    }
-}
+IcebergIterator::~IcebergIterator() = default;
 }
 
 #endif

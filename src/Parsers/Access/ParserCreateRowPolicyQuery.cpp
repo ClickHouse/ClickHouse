@@ -373,6 +373,8 @@ A multi-name list **cannot** be combined with a multi-table `ON` list in one gro
 
 Optional `ON CLUSTER` applies to the whole statement (one cluster name). ClickHouse does **not** accept a different `ON CLUSTER` per policy name packed into a single create — run separate `CREATE ROW POLICY` statements when policies must be created on different clusters.
 
+`CREATE ROW POLICY` requires the [CREATE ROW POLICY](/reference/statements/grant#access-management) privilege on the table the policy is created on. `OR REPLACE` throws away an existing policy of the same name, including which roles it applies to, so it additionally requires the [DROP ROW POLICY](/reference/statements/grant#access-management) privilege on that table. The `DROP ROW POLICY` privilege is required whether or not the policy already exists, so the statement cannot be used to find out which policies exist.
+
 ## Multiple names and tables {#multiple-names-and-tables}
 
 Valid:

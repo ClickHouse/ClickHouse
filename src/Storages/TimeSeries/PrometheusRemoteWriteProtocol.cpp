@@ -25,8 +25,10 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
@@ -318,6 +320,9 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
         /// A shard that is this server itself is always written in-process, as the shard-target check assumes.
         context_->setSetting("prefer_localhost_replica", true);
     }
+    else
+        /// A shard-local table's version is checked by its own write on the shard.
+        checkTimeSeriesVersionIsWritable(*storagePtrToTimeSeries(time_series_storage));
 }
 
 PrometheusRemoteWriteProtocol::~PrometheusRemoteWriteProtocol() = default;

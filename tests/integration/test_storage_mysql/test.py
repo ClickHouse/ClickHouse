@@ -1,5 +1,4 @@
 import os
-import threading
 import time
 from contextlib import contextmanager
 
@@ -10,6 +9,7 @@ import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import mysql_pass
+from helpers.test_tools import assert_eq_with_retry
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -423,6 +423,9 @@ def test_settings_connection_wait_timeout(started_cluster):
     table_name = "test_settings_connection_wait_timeout"
     node1.query(f"DROP TABLE IF EXISTS {table_name}")
     wait_timeout = 2
+    # The holder query below reads one row per block and sleeps a second on each block, so this
+    # row count is how many seconds it keeps the pool's single connection checked out.
+    holder_rows = 60
 
     conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
     drop_mysql_table(conn, table_name)
@@ -443,42 +446,41 @@ def test_settings_connection_wait_timeout(started_cluster):
     )
 
     node1.query(
-        "INSERT INTO {} (id, name) SELECT number, concat('name_', toString(number)) from numbers(10) ".format(
-            table_name
+        "INSERT INTO {} (id, name) SELECT number, concat('name_', toString(number)) from numbers({}) ".format(
+            table_name, holder_rows
         )
     )
 
-    worker_started_event = threading.Event()
-
-    def worker():
-        worker_started_event.set()
-        node1.query(
-            "SELECT 1, sleepEachRow(1) FROM {} SETTINGS max_threads=1".format(
-                table_name
-            )
+    holder_query_id = f"{table_name}_holder"
+    holder = node1.get_query_request(
+        f"SELECT 1, sleepEachRow(1) FROM {table_name} SETTINGS max_threads=1, max_block_size=1",
+        query_id=holder_query_id,
+    )
+    try:
+        # A non-zero `read_rows` means the MySQL source has already returned a row, so it has taken
+        # the pool's single connection and keeps it for the rest of the read.
+        assert_eq_with_retry(
+            node1,
+            f"SELECT read_rows > 0 FROM system.processes WHERE query_id = '{holder_query_id}'",
+            "1",
+            retry_count=60,
         )
 
-    worker_thread = threading.Thread(target=worker)
-    worker_thread.start()
+        started = time.time()
+        with pytest.raises(
+            QueryRuntimeException,
+            match=r"Exception: mysqlxx::Pool is full \(connection_wait_timeout is exceeded\)",
+        ):
+            node1.query(f"SELECT 2 FROM {table_name} SETTINGS max_threads=1")
+        ended = time.time()
+        assert (ended - started) >= wait_timeout
+    finally:
+        node1.query(f"KILL QUERY WHERE query_id = '{holder_query_id}' SYNC")
+        _, holder_error = holder.get_answer_and_error()
 
-    # ensure that first query started in worker_thread
-    assert worker_started_event.wait(10)
-    time.sleep(1)
-
-    started = time.time()
-    with pytest.raises(
-        QueryRuntimeException,
-        match=r"Exception: mysqlxx::Pool is full \(connection_wait_timeout is exceeded\)",
-    ):
-        node1.query(
-            "SELECT 2, sleepEachRow(1) FROM {} SETTINGS max_threads=1".format(
-                table_name
-            )
-        )
-    ended = time.time()
-    assert (ended - started) >= wait_timeout
-
-    worker_thread.join()
+    # Cancelled rather than finished: the holder still owned the connection while the query above
+    # was waiting for it.
+    assert "Query was cancelled" in holder_error
 
     drop_mysql_table(conn, table_name)
     conn.close()

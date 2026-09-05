@@ -461,7 +461,6 @@ void PostgreSQLHandler::run()
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::SYNC:
                     /// `Sync` ends the cycle and produces one `ReadyForQuery`.
-                    ignore_until_sync = false;
                     processSyncQuery();
                     need_ready_for_query = true;
                     message_transport->flush();

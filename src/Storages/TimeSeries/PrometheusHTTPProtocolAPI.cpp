@@ -28,6 +28,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
@@ -211,7 +212,9 @@ PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series
     /// Check the engine of the target table early, before any endpoint is called. The SELECT
     /// check comes first so the engine error cannot fingerprint a table the caller cannot read.
     context_->checkAccess(AccessType::SELECT, time_series_storage->getStorageID());
-    resolvePrometheusQueryTarget(*time_series_storage);
+    /// The shard-local tables' versions are checked by the selector on each shard.
+    if (!resolvePrometheusQueryTarget(*time_series_storage))
+        checkTimeSeriesVersionSupportedByPromQL(*storagePtrToTimeSeries(time_series_storage));
 }
 
 PrometheusHTTPProtocolAPI::~PrometheusHTTPProtocolAPI() = default;

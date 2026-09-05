@@ -424,6 +424,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
     extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
+    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_size;
+    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_free_size;
+    extern const ServerSettingsUInt64 iceberg_manifest_decode_thread_pool_queue_size;
     extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
@@ -1332,6 +1335,14 @@ try
             " 'dl_iterate_phdr' is not lock free and not async-signal safe).");
 #endif
 
+#if defined(MEMORY_SANITIZER)
+    /// The TraceCollector itself stays enabled: the memory profiler, `trace_profile_events` and
+    /// `SYSTEM INSTRUMENT` all feed it from ordinary code rather than from a signal handler.
+    LOG_INFO(log, "The sampling Query Profiler is disabled under Memory Sanitizer, because a profiler signal"
+        " delivered to a thread that is printing a sanitizer report aborts the process and truncates the"
+        " report. See QUERY_PROFILER_SUPPORTED in Common/QueryProfiler.h.");
+#endif
+
     // Settings validation for page cache. Ensure that page_cache_max_size is > page_cache_min_size.
     // Otherwise, crash might happen during cache resizing in src/Common/PageCache.cpp::autoResize
     size_t page_cache_min_size = server_settings[ServerSetting::page_cache_min_size];
@@ -1672,6 +1683,11 @@ try
         server_settings[ServerSetting::max_format_parsing_thread_pool_size],
         server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
         server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
+
+    getIcebergManifestDecodeThreadPool().initialize(
+        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
+        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
+        server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
 
     std::string path_str = getCanonicalPath(String(server_settings[ServerSetting::path]), original_working_directory);
     fs::path path = path_str;
@@ -2710,6 +2726,11 @@ try
                 new_server_settings[ServerSetting::max_format_parsing_thread_pool_size],
                 new_server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
                 new_server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
+
+            getIcebergManifestDecodeThreadPool().reloadConfiguration(
+                new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
+                new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
+                new_server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
 
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
