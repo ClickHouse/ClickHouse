@@ -1240,7 +1240,9 @@ try
         }
     }
 
-    is_interactive = stdin_is_a_tty
+    /// `--dump-schema` always runs non-interactively, so its output can be redirected to a file
+    /// without an interactive banner mixed into the SQL.
+    is_interactive = !getClientConfiguration().has("dump-schema") && stdin_is_a_tty
         && (getClientConfiguration().hasOption("interactive")
             || (queries.empty() && !getClientConfiguration().has("table-structure") && queries_files.empty() && !getClientConfiguration().has("table-file")));
 
@@ -1311,6 +1313,9 @@ try
 
     connect();
 
+    if (tryRunDumpSchema())
+        return 0;
+
     if (!table_name.empty())
     {
         // Set option to false for hidden query to prevent double-printing time
@@ -1364,6 +1369,18 @@ void LocalServer::processConfig()
 {
     if (!queries.empty() && !queries_files.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
+
+    bool dump_schema = getClientConfiguration().has("dump-schema");
+    if (dump_schema && (!queries.empty() || !queries_files.empty()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option '--dump-schema' cannot be combined with '--query' or '--queries-file'");
+    if (dump_schema && (getClientConfiguration().has("table-file") || getClientConfiguration().has("table-structure")))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option '--dump-schema' cannot be combined with '--table-file' or '--table-structure'");
+    if (!dump_schema && (getClientConfiguration().has("dump-schema-exclude") || getClientConfiguration().has("dump-schema-dir")))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--dump-schema-exclude'/'--dump-schema-dir' require '--dump-schema'");
+    if (dump_schema && !getClientConfiguration().getString("dump-schema", "").empty()
+        && getClientConfiguration().has("dump-schema-exclude"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`--dump-schema` with an explicit database list cannot be combined with `--dump-schema-exclude`");
 
     pager = getClientConfiguration().getString("pager", "");
 
