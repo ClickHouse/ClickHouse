@@ -160,7 +160,8 @@ public:
         ResourceLink master_link_,
         ResourceLink worker_link_,
         CPULeaseSettings settings = {},
-        SlotCount initial_max_slots_ = 0);
+        SlotCount initial_max_slots_ = 0,
+        ResourceSchedulingContext * scheduling_context_ = nullptr);
     ~CPULeaseAllocation() override;
 
     /// Free all resources held by this allocation.
@@ -302,7 +303,7 @@ private:
     class RequestChain
     {
     public:
-        RequestChain(CPULeaseAllocation * lease, size_t max_threads_, ResourceLink master_link_, ResourceLink worker_link_);
+        RequestChain(CPULeaseAllocation * lease, size_t max_threads_, ResourceLink master_link_, ResourceLink worker_link_, ResourceSchedulingContext * scheduling_context_);
         void finish();
         void granted();
         bool enqueue(ResourceCost cost, ResourceCost requested_ns_);
@@ -315,6 +316,7 @@ private:
         // Configuration
         const ResourceLink master_link; /// Resource link to use for master thread resource requests
         const ResourceLink worker_link; /// Resource link to use for worker threads resource requests
+        ResourceSchedulingContext * scheduling_context; /// Per-query scheduling context tagged on every request (null = anonymous)
 
         // Current state
         using Requests = std::vector<Request>;

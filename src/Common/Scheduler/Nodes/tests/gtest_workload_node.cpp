@@ -21,9 +21,9 @@ TEST(SchedulerTimeSharedWorkloadNode, Smoke)
 
     t.addCustom<TimeSharedWorkloadNode>("/", WorkloadSettings{}, CostUnit::IOByte, "test_resource");
 
-    t.enqueue("/fifo", {10, 10});
+    t.enqueue("/queue", {10, 10});
     t.dequeue(2);
-    t.consumed("fifo", 20);
+    t.consumed("queue", 20);
 }
 
 TEST(SchedulerTimeSharedWorkloadNode, FairnessWeight)

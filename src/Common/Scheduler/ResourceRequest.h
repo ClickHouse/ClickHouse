@@ -1,11 +1,14 @@
 #pragma once
 
 #include <Common/Scheduler/CostUnit.h>
+#include <Common/Priority.h>
 
 #include <base/types.h>
 #include <boost/intrusive/list.hpp>
+#include <boost/intrusive/set.hpp>
 #include <array>
 #include <exception>
+#include <utility>
 
 namespace DB
 {
@@ -14,7 +17,13 @@ namespace DB
 class ISchedulerQueue;
 class ISchedulerConstraint;
 class FifoQueue;
+class RequestQueue;
+class FifoAlgorithm;
+class FairAlgorithm;
+class LasAlgorithm;
+class PriorityAlgorithm;
 class CPUSlotsAllocation;
+class ResourceSchedulingContext;
 
 /// Max number of constraints for a request to pass though (depth of constraints chain)
 constexpr size_t ResourceMaxConstraints = 8;
@@ -52,9 +61,49 @@ public:
     /// NOTE: If cost is not known in advance, ResourceBudget should be used (note that every ISchedulerQueue has it)
     ResourceCost cost{};
 
+    /// Per-query scheduling cost, used by the query-aware schedulers (`fair`, `las`) for the query's
+    /// own virtual-runtime / attained-service accounting. It is the request's ORIGINAL declared cost,
+    /// captured by `reset()` before any `ResourceBudget` adjustment. `ResourceBudget::ask()` rewrites
+    /// `cost` queue-wide to smooth estimation error across the queue, which is correct for queue-level
+    /// throughput accounting but would let one query's misestimate bleed into another query's fairness
+    /// state; keeping a separate declared cost isolates per-query scheduling from that redistribution.
+    ResourceCost scheduling_cost{};
+
+    /// Effective per-query charge used by `fair` to advance both `vruntime` and `attained_cost`:
+    /// the declared `scheduling_cost` adjusted by the query's accumulated real-vs-estimate cost
+    /// correction, computed once at enqueue by `FairAlgorithm::push`. (`las` folds the same
+    /// correction into `attained_cost` directly at pop, so it does not use this field.) Defaults to
+    /// `scheduling_cost` in `reset()` so it is never stale for schedulers that ignore it.
+    ResourceCost scheduling_charge{};
+
     /// If true, request is not throttled by the scheduler
     /// This is used for special requests that should not be throttled, e.g. for CPUSlotsAllocation
     bool ignore_throttling = false;
+
+    /// Non-owning link to the per-query scheduling context shared by all requests of one query.
+    /// Used by the query-aware schedulers in `RequestQueue` (`fair`, `las`) to look up the query's
+    /// weight, age and per-resource attained cost / virtual runtime. `nullptr` means "no query
+    /// identity" (e.g. background operations); such requests are scheduled anonymously.
+    /// The owning `shared_ptr` lives in the query context (`ThreadGroup`) and outlives every request
+    /// the query enqueues (a request is enqueued only while the query runs), so this raw pointer
+    /// never dangles while the request is in the queue.
+    /// Must be set by the producer just before `enqueueRequest()` and is cleared by `reset()`.
+    ResourceSchedulingContext * scheduling_context = nullptr;
+
+    /// Ordering key for the query-aware schedulers (`fair`, `las`) in `RequestQueue`. Computed at
+    /// enqueue and constant while the request is in the queue (required by the intrusive ordered
+    /// set). `.first` is the virtual runtime (`fair`) or MLFQ level (`las`); `.second` a monotonic
+    /// sequence number for a stable FIFO tie-break (also used by the `priority` scheduler). Unused
+    /// by the `fifo` scheduler.
+    std::pair<double, UInt64> scheduling_key{0.0, 0};
+
+    /// Primary ordering key for the `priority` scheduler in `RequestQueue` (lower value first,
+    /// then `scheduling_key.second` for FIFO). Uses the scheduler's `Priority` type (lower value =
+    /// higher priority) for consistency. The `priority` query setting (`UInt64`) is mapped into it
+    /// at enqueue: priority `0` = "no priority" → the max value so it sorts last. An integer key
+    /// avoids the precision loss of routing the value through the `double` half of `scheduling_key`
+    /// (which would collapse distinct priorities above 2^53). Unused by the other schedulers.
+    Priority scheduling_priority;
 
     /// Scheduler nodes to be notified on consumption finish
     /// Auto-filled during request dequeue
@@ -71,9 +120,18 @@ public:
     void reset(ResourceCost cost_)
     {
         cost = cost_;
+        // Capture the declared cost for per-query scheduling BEFORE any `ResourceBudget` adjustment
+        // (which later rewrites `cost` only). For queues without a budget the two stay equal.
+        scheduling_cost = cost_;
+        scheduling_charge = cost_;
         for (auto & constraint : constraints)
             constraint = nullptr;
-        // Note that list_base_hook should be reset independently (by intrusive list)
+        // Clear per-request query identity and ordering key so a reused request (e.g. the
+        // thread-local `ResourceGuard::Request`) never carries stale state from a previous query.
+        scheduling_context = nullptr;
+        scheduling_key = {0.0, 0};
+        scheduling_priority = {};
+        // Note that the intrusive hooks are reset independently (by their intrusive containers)
     }
 
     virtual ~ResourceRequest() = default;
@@ -99,13 +157,24 @@ public:
 
 private:
     friend class FifoQueue;
+    friend class FifoAlgorithm; // uses `enqueued_hook` for the `fifo` scheduler
+    friend class FairAlgorithm; // uses `scheduling_hook` + `scheduling_key` for the `fair` scheduler
+    friend class LasAlgorithm; // uses `scheduling_hook` + `scheduling_key` for the `las` scheduler
+    friend class PriorityAlgorithm; // uses `scheduling_hook` + `scheduling_key` for the `priority` scheduler
+    friend class RequestQueue;
     friend class CPUSlotsAllocation; // hack for tests only
 
-    /// For an intrusive list of enqueued requests
-    /// NOTE: Can only be accessed under FifoQueue::mutex
+    /// For an intrusive list of enqueued requests (FifoQueue and the `fifo` scheduler).
+    /// NOTE: Can only be accessed under the owning queue's mutex.
     boost::intrusive::list_member_hook<> enqueued_hook;
     using EnqueuedHook = boost::intrusive::member_hook<ResourceRequest, boost::intrusive::list_member_hook<>, &ResourceRequest::enqueued_hook>;
     using EnqueuedList = boost::intrusive::list<ResourceRequest, EnqueuedHook>;
+
+    /// For an intrusive ordered set of enqueued requests (the `fair` and `las` schedulers).
+    /// A request is in at most one of the two containers (list or set) at a time.
+    /// NOTE: Can only be accessed under the owning queue's mutex.
+    boost::intrusive::set_member_hook<> scheduling_hook;
+    using SchedulingHook = boost::intrusive::member_hook<ResourceRequest, boost::intrusive::set_member_hook<>, &ResourceRequest::scheduling_hook>;
 };
 
 }

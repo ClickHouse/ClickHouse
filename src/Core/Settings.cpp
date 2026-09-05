@@ -7552,6 +7552,21 @@ SETTINGS additional_result_filter = 'x != 2'
     DECLARE(String, workload, "default", R"(
 Name of workload to be used to access resources
 )", 0) \
+    DECLARE(Float, weight, 1.0, R"(
+Base scheduling weight of the query within its workload, used by the `fair` workload scheduler (see the `scheduler` workload setting). Queries with a higher weight receive a proportionally larger share of a time-shared resource (CPU, IO) when they compete inside the same workload. Ignored by the default `fifo` scheduler. A non-positive value (`<= 0`) is meaningless for the fair share and is treated as the default `1.0`.
+)", BETA) \
+    DECLARE(Float, weight_lowering_factor, 1.0, R"(
+For the `fair` workload scheduler: once the query crosses any of the `weight_lowering_*` thresholds below, its effective weight is multiplied by this factor once (values in (0, 1) lower the weight, biasing scheduling toward shorter/newer queries). The thresholds do not combine — the first one to trip applies the full lowering. `1.0` disables lowering. The value is clamped to the range `[0, 1]`, so the factor can only ever lower a query's weight, never raise it.
+)", BETA) \
+    DECLARE(Float, weight_lowering_age_seconds, 0, R"(
+For the `fair` workload scheduler: once the query has been running (wall-clock) for this many seconds, its weight is lowered by `weight_lowering_factor`. `0` (or any negative value) disables the age threshold.
+)", BETA) \
+    DECLARE(Float, weight_lowering_cpu_seconds, 0, R"(
+For the `fair` workload scheduler: once the query has attained this many CPU-seconds, its weight is lowered by `weight_lowering_factor`. Applies to CPU resources. `0` (or any negative value) disables the CPU threshold. Attained CPU is the granted scheduler service, charged when a request is granted rather than as CPU is spent, so it leads actual consumption by at most one quantum (`cpu_slot_quantum_ns`) per active slot. CPU scheduling requires CPU slot preemption (`cpu_slot_preemption = 1`, the default); when preemption is disabled the CPU scheduler falls back to `fifo` and this threshold — like the other `fair` settings — has no effect on CPU.
+)", BETA) \
+    DECLARE(Float, weight_lowering_io_bytes, 0, R"(
+For the `fair` workload scheduler: once the query has attained this many bytes of IO, its weight is lowered by `weight_lowering_factor`. Applies to IO resources. `0` (or any negative value) disables the IO threshold.
+)", BETA) \
     DECLARE(Milliseconds, storage_system_stack_trace_pipe_read_timeout_ms, 100, R"(
 Maximum time to read from a pipe for receiving information from the threads when querying the `system.stack_trace` table. This setting is used for testing purposes and not meant to be changed by users.
 )", 0) \

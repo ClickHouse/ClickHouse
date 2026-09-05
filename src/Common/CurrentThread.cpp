@@ -106,6 +106,14 @@ ThreadGroupPtr CurrentThread::getGroup()
     return current_thread->getThreadGroup();
 }
 
+ResourceSchedulingContext * CurrentThread::getResourceSchedulingContext()
+{
+    if (unlikely(!current_thread))
+        return nullptr;
+
+    return current_thread->getResourceSchedulingContext();
+}
+
 ContextPtr CurrentThread::tryGetQueryContext()
 {
     if (unlikely(!current_thread))

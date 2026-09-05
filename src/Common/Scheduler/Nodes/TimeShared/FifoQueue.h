@@ -135,7 +135,7 @@ public:
             request->failed(exception);
     }
 
-    void updateQueueLimit(Int64 value)
+    void updateQueueLimit(Int64 value) override
     {
         std::lock_guard lock(mutex);
         if (value <= 0)
@@ -199,7 +199,7 @@ public:
         return nullptr;
     }
 
-    std::pair<UInt64, Int64> getQueueLengthAndCost()
+    std::pair<UInt64, Int64> getQueueLengthAndCost() override
     {
         std::lock_guard lock(mutex);
         return {requests.size(), queue_cost};

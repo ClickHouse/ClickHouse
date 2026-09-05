@@ -67,6 +67,12 @@ namespace Setting
     extern const SettingsUInt64 query_profiler_cpu_time_period_ns;
     extern const SettingsUInt64 query_profiler_real_time_period_ns;
     extern const SettingsBool enable_adaptive_memory_spill_scheduler;
+    extern const SettingsFloat weight;
+    extern const SettingsFloat weight_lowering_factor;
+    extern const SettingsFloat weight_lowering_age_seconds;
+    extern const SettingsFloat weight_lowering_cpu_seconds;
+    extern const SettingsFloat weight_lowering_io_bytes;
+    extern const SettingsUInt64 priority;
     extern const SettingsBool jemalloc_enable_profiler;
     extern const SettingsBool jemalloc_collect_profile_samples_in_trace_log;
     extern const SettingsInt32 os_threads_nice_value_query;
@@ -143,6 +149,10 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group)
     , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
     , shared_data(parent->getSharedData())
 {
+    // Borrowed child pipelines (materialized views, EXPLAIN ANALYZE) belong to the same foreground
+    // query, so inherit the parent's per-query scheduling context; otherwise their CPU/IO requests
+    // would be scheduled anonymously and escape the per-query fair/las/priority service accounting.
+    scheduling_context = parent->scheduling_context;
 }
 
 ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group)
@@ -171,6 +181,10 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread
                 elem->throwIfKilled();
         }
     };
+    // NOTE: this borrowed constructor (used by `createForFlushAsyncInsertQueue`) does NOT inherit the
+    // parent's `scheduling_context` — an async-insert flush is not the parent (foreground) query.
+    // `createForFlushAsyncInsertQueue` instead mints a fresh context from the flushed batch's own
+    // settings bundle, so the flush is scheduled under the workload the inserts specified.
 }
 
 std::vector<UInt64> ThreadGroup::getInvolvedThreadIds() const
@@ -221,9 +235,21 @@ void ThreadGroup::unlinkThread()
 
 ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
 {
-    const Int32 os_threads_nice_value = query_context_->getSettingsRef()[Setting::os_threads_nice_value_query];
+    const auto & settings = query_context_->getSettingsRef();
+    const Int32 os_threads_nice_value = settings[Setting::os_threads_nice_value_query];
     auto group = std::make_shared<ThreadGroup>(query_context_, os_threads_nice_value, std::move(fatal_error_callback_));
     group->memory_tracker.setDescription("Query");
+    // Mint the per-query scheduling context here (real queries only, from the query settings) so
+    // the query-aware workload schedulers (`fair`) can weight this query and lower its weight as it
+    // accrues age/CPU/IO. Background thread groups get their own context in `create()`.
+    group->scheduling_context = std::make_shared<ResourceSchedulingContext>(
+        clock_gettime_ns(),
+        settings[Setting::weight],
+        settings[Setting::weight_lowering_factor],
+        settings[Setting::weight_lowering_age_seconds],
+        settings[Setting::weight_lowering_cpu_seconds],
+        settings[Setting::weight_lowering_io_bytes],
+        settings[Setting::priority]);
     return group;
 }
 
@@ -234,6 +260,20 @@ ThreadGroupPtr ThreadGroup::create(ContextPtr context, Int32 os_threads_nice_val
     /// However settings from storage context have to be applied
     const Settings & settings = context->getSettingsRef();
     configureMemoryTrackerFromSettings(context->hasTraceCollector(), group->memory_tracker, settings);
+
+    // Long-running background activities (merges, mutations, background materialized views) go
+    // through this helper. Give them a scheduling context from their context's settings so the
+    // query-aware workload schedulers (`fair`/`las`) treat each as an accumulating flow instead of
+    // an infinite stream of fresh, contextless requests — the latter would keep re-entering at
+    // `vstart = system_vruntime` / level 0 and jump ahead of foreground queries, starving them.
+    group->scheduling_context = std::make_shared<ResourceSchedulingContext>(
+        clock_gettime_ns(),
+        settings[Setting::weight],
+        settings[Setting::weight_lowering_factor],
+        settings[Setting::weight_lowering_age_seconds],
+        settings[Setting::weight_lowering_cpu_seconds],
+        settings[Setting::weight_lowering_io_bytes],
+        settings[Setting::priority]);
     return group;
 }
 
@@ -271,6 +311,21 @@ ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, T
 {
     auto res_group = ThreadGroupPtr(new ThreadGroup(context, parent_thread_group));
     res_group->memory_tracker.setDescription("FlushAsyncInsertQueue");
+    // An async-insert flush writes a batch coalesced from inserts that share one effective settings
+    // bundle (async inserts are grouped by table/format/settings/identity), so mint a per-batch
+    // scheduling context from those settings. The flush's CPU/IO is then scheduled under the
+    // workload/weight/priority the inserts specified, instead of bypassing the query-aware
+    // schedulers as an anonymous background task. `context` carries the batch settings (the flush
+    // job applies `key.settings` to it before creating this group).
+    const auto & settings = context->getSettingsRef();
+    res_group->scheduling_context = std::make_shared<ResourceSchedulingContext>(
+        clock_gettime_ns(),
+        settings[Setting::weight],
+        settings[Setting::weight_lowering_factor],
+        settings[Setting::weight_lowering_age_seconds],
+        settings[Setting::weight_lowering_cpu_seconds],
+        settings[Setting::weight_lowering_io_bytes],
+        settings[Setting::priority]);
     return res_group;
 }
 

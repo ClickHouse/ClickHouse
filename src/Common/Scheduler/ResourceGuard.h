@@ -5,11 +5,13 @@
 #include <Common/Scheduler/ISchedulerConstraint.h>
 #include <Common/Scheduler/ISchedulerQueue.h>
 #include <Common/Scheduler/ResourceRequest.h>
+#include <Common/Scheduler/ResourceSchedulingContext.h>
 #include <Common/Scheduler/ResourceLink.h>
 
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 
+#include <atomic>
 #include <condition_variable>
 #include <exception>
 #include <mutex>
@@ -70,6 +72,9 @@ public:
             // spuriously throw even though this (new) request was granted via `execute()`.
             exception = {};
             ResourceRequest::reset(cost_);
+            // Tag this IO request with the current thread's per-query scheduling context (reset() cleared
+            // any stale one from a previous reuse). Null on background threads => anonymous FIFO ordering.
+            captureSchedulingContext();
             estimated_cost = link_.queue->enqueueRequestUsingBudget(this); // NOTE: it modifies `cost` and enqueues request
         }
 
@@ -96,6 +101,10 @@ public:
 
         void wait();
 
+        /// Sets `scheduling_context` from the current thread's query context. Defined out of line to
+        /// keep `CurrentThread.h` out of this header.
+        void captureSchedulingContext();
+
         void finish(ResourceCost real_cost_, ResourceLink link_)
         {
             // lock(mutex) is not required because `Dequeued` request cannot be used by the scheduler thread
@@ -103,6 +112,15 @@ public:
             state = Finished;
             if (estimated_cost != real_cost_)
                 link_.queue->adjustBudget(estimated_cost, real_cost_);
+            // Feed the per-query schedulers (`fair`/`las`) the real-vs-estimate error so their
+            // per-query service tracks real cost, not the enqueue estimate. Accumulated here (on the
+            // consumer thread, hence atomic) and folded into the query's NEXT request charge at
+            // push/pop — it never rewrites an already-assigned key. `link_.queue` is the same leaf
+            // the algorithms key the per-query state by.
+            if (scheduling_context)
+                scheduling_context->getResourceState(link_.queue).cost_correction.fetch_add(
+                    static_cast<Int64>(real_cost_) - static_cast<Int64>(scheduling_cost),
+                    std::memory_order_relaxed);
             ResourceRequest::finish();
             ProfileEvents::increment(metrics->requests);
             ProfileEvents::increment(metrics->cost, real_cost_);

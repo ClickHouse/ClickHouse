@@ -116,6 +116,32 @@ void forEachReference(
     }
 }
 
+/// Throws if `workload` sets `scheduler = ... FOR <resource>` on a resource that cannot honor it.
+/// The `scheduler` reorders CPU/IO requests by per-query identity, so it applies only to time-shared
+/// CPU/IO resources; targeting a QUERY or MEMORY RESERVATION resource (any non-CPU/IO unit) would be
+/// silently ignored at runtime, so reject it at definition time. `entities_by_name` resolves the
+/// referenced resource (an unknown name is left to reference validation). Shared by the SQL path
+/// (`storeEntity`) and the config/Keeper load path (`setLocalEntities`).
+void validateSchedulerResourceTargets(
+    const ASTCreateWorkloadQuery & workload,
+    const std::unordered_map<String, ASTPtr> & entities_by_name)
+{
+    for (const auto & [name, value, res_name] : workload.changes)
+    {
+        if (name != "scheduler" || res_name.empty())
+            continue;
+        auto it = entities_by_name.find(res_name);
+        if (it == entities_by_name.end())
+            continue;
+        auto * res = typeid_cast<ASTCreateResourceQuery *>(it->second.get());
+        if (res && res->unit != CostUnit::IOByte && res->unit != CostUnit::CPUNanosecond)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Workload setting 'scheduler' can only be set for a time-shared CPU or IO resource, "
+                "but resource '{}' manages {}; remove the `FOR {}` clause or target a CPU/IO resource",
+                res_name, costUnitToString(res->unit), res_name);
+    }
+}
+
 /// Helper for recursive DFS
 void topologicallySortedWorkloadsImpl(const String & name, const ASTPtr & ast, const std::unordered_map<String, ASTPtr> & workloads, std::unordered_set<String> & visited, std::vector<std::pair<String, ASTPtr>> & sorted_workloads)
 {
@@ -447,6 +473,11 @@ bool WorkloadEntityStorageBase::storeEntity(
             // Check the settings values and throw if something is wrong
             WorkloadSettings validator;
             validator.initFromChanges(workload->changes);
+
+            // `scheduler = ... FOR <resource>` may only target a CPU/IO resource; reject it here for
+            // the SQL path (the referenced resource is created first, so it is already in `entities`;
+            // the config/Keeper load path is validated in setLocalEntities).
+            validateSchedulerResourceTargets(*workload, entities);
         }
 
         // Validate resource: cost unit cannot change via CREATE OR REPLACE — the scheduler
@@ -744,6 +775,52 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Cost unit of resource '{}' cannot be changed; drop and recreate the resource instead.",
                 change.name);
+    }
+
+    // Validate new/changed workloads' setting VALUES on the config/Keeper/disk load path (which
+    // bypasses storeEntity) — otherwise a bad value (e.g. scheduler = 'bogus', a negative weight, or
+    // such a value inside a `... FOR <resource>` clause) is accepted here and only surfaces later,
+    // when the scheduler node is built. Pass `throw_on_unknown_setting = false` so this LOAD path
+    // stays forward-compatible and no stricter than the runtime parser in
+    // `WorkloadResourceManager::NodeInfo` (which also uses `false`): an unknown setting NAME written
+    // by a newer node must not make an older node reject the whole entity. Value checks (scheduler
+    // algorithm, non-negative numerics) fire regardless of that flag, so a genuinely bad value is
+    // still rejected. Both the base group and each per-resource group are checked, plus the
+    // `scheduler = ... FOR <resource>` unit targets. Only new/changed entities are checked (like the
+    // cost-unit check above), so a pre-existing entity is not re-validated on every refresh.
+    for (const auto & change : changes)
+    {
+        if (!change.after)
+            continue;
+        if (auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(change.after.get()))
+        {
+            WorkloadSettings validator;
+            validator.initFromChanges(workload->changes, /*resource_name=*/{}, /*throw_on_unknown_setting=*/false);
+            std::unordered_set<String> validated_resources;
+            for (const auto & setting_change : workload->changes)
+            {
+                if (!setting_change.resource.empty() && validated_resources.insert(setting_change.resource).second)
+                {
+                    // A `... FOR <resource>` clause must reference an existing resource (not a
+                    // workload, not a missing entity) — the same contract storeEntity enforces via
+                    // forEachReference. validateSchedulerResourceTargets() below only checks the
+                    // referenced resource's unit and silently skips a missing or non-resource target,
+                    // so the existence/type check has to happen here too.
+                    auto ref = merged_new_entities.find(setting_change.resource);
+                    if (ref == merged_new_entities.end())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Workload entity '{}' references another workload entity '{}' that doesn't exist",
+                            workload->getWorkloadName(), setting_change.resource);
+                    if (typeid_cast<ASTCreateResourceQuery *>(ref->second.get()) == nullptr)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Workload settings should reference resource in FOR clause, not '{}'.",
+                            setting_change.resource);
+                    WorkloadSettings resource_validator;
+                    resource_validator.initFromChanges(workload->changes, setting_change.resource, /*throw_on_unknown_setting=*/false);
+                }
+            }
+            validateSchedulerResourceTargets(*workload, merged_new_entities);
+        }
     }
 
     // Update local entities
