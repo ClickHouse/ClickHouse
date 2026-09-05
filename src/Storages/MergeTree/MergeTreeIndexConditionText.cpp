@@ -954,11 +954,17 @@ static String serializeFieldAsText(const Field & value, const DataTypePtr & type
 /// which holds an Array of that type.
 static DataTypePtr getMapValueTypeFromIndexHeader(const Block & header, const String & map_column_name)
 {
+    /// An index is also matched by its normalized expression name, which the header does not carry,
+    /// and a text index is defined on a single column, so fall back to that column.
     auto index_column_name = fmt::format("mapValues({})", map_column_name);
-    if (!header.has(index_column_name))
+    const auto * index_column = header.has(index_column_name)
+        ? &header.getByName(index_column_name)
+        : (header.columns() == 1 ? &header.getByPosition(0) : nullptr);
+
+    if (!index_column)
         return nullptr;
 
-    const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByName(index_column_name).type.get());
+    const auto * array_type = typeid_cast<const DataTypeArray *>(index_column->type.get());
     if (!array_type)
         return nullptr;
 
