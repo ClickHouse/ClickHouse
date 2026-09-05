@@ -17,6 +17,10 @@ INSERT INTO t2_04931 SELECT number FROM numbers(100);
 -- aggregation rejects any limit; automatic_parallel_replicas_mode is pinned off alongside
 -- enable_parallel_replicas because the test runner randomizes it.
 
+-- The stress profile sets `ast_fuzzer_runs = 5`; a fuzzed re-run inherits `log_comment`, so it would
+-- add rows to the lookup below and break the exact Cascades run count.
+SET ast_fuzzer_runs = 0;
+
 SELECT (
     SELECT count()
     FROM t1_04931 INNER JOIN t2_04931 ON intDiv(t1_04931.key, 2) = t2_04931.key
