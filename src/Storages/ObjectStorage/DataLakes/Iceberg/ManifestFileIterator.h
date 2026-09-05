@@ -193,13 +193,6 @@ private:
     mutable std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> pruners_by_schema_id;
     const ManifestFilesPruner * getOrCreatePruner(Int32 schema_id) const;
 
-    /// Hash of the partition-only predicate, computed once per iterator
-    /// (via the first pruner). Queries sharing a prefix share this hash,
-    /// so the partition-decision cache hits across different point
-    /// lookups. Lazy: pruners are created on first use.
-    mutable std::mutex partition_hash_mutex;
-    mutable String partition_filter_hash TSA_GUARDED_BY(partition_hash_mutex);
-    String getPartitionFilterHash() const;
 };
 
 using ManifestIteratorPtr = std::shared_ptr<ManifestFileIterator>;

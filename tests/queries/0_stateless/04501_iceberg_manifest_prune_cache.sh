@@ -22,7 +22,7 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE iceberg_prune_test (id Int32, part Int32) EN
 $CLICKHOUSE_CLIENT -q "INSERT INTO iceberg_prune_test SETTINGS allow_insert_into_iceberg=1 VALUES (1, 0), (2, 1), (3, 2), (4, 3), (5, 1)"
 
 # First query with filter that prunes to part=1 (should miss prune cache)
-$CLICKHOUSE_CLIENT -q "SELECT * FROM iceberg_prune_test WHERE part = 1 SETTINGS use_iceberg_partition_pruning=1" --query_id="${QID_PREFIX}1" > /dev/null
+$CLICKHOUSE_CLIENT -q "SELECT * FROM iceberg_prune_test WHERE part = 1 AND id = 2 SETTINGS use_iceberg_partition_pruning=1" --query_id="${QID_PREFIX}1" > /dev/null
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 $CLICKHOUSE_CLIENT -q "SELECT ProfileEvents['IcebergManifestPruneCacheMisses'] > 0 AS miss1, ProfileEvents['IcebergPartitionPrunedFiles'] > 0 AS pruned1 FROM system.query_log WHERE query_id='${QID_PREFIX}1' AND type='QueryFinish'"
 

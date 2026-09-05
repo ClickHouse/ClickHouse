@@ -224,7 +224,6 @@ Field decodePartitionDecimalByType(const String & bytes, const IDataType & type)
 PruningReturnStatus ManifestFilesPruner::canBePrunedByPartition(
     const ProcessedManifestFileEntryPtr & entry) const
 {
-{
     const auto & partition_value = entry->parsed_entry->partition_key_value;
 
     if (partition_key_condition.has_value())
@@ -309,147 +308,42 @@ PruningReturnStatus ManifestFilesPruner::canBePrunedByMinMax(
     return PruningReturnStatus::NOT_PRUNED;
 }
 
-String ManifestFilesPruner::partitionFilterHash() const
+std::optional<String> ManifestFilesPruner::partitionFilterHash() const
 {
     if (!partition_key_condition.has_value())
-        return "no_partition_condition";
+        return std::nullopt;
 
-    /// The KeyCondition is built from the full query filter, so its RPN also
-    /// contains atoms for non-partition columns. Canonicalize before
-    /// serializing so the key depends only on the partition predicate:
-    ///   - atoms over non-partition columns are replaced with UNKNOWN
-    ///   - UNKNOWN AND x -> x, x AND UNKNOWN -> x
-    ///   - UNKNOWN OR x -> UNKNOWN, x OR UNKNOWN -> UNKNOWN
-    ///   - NOT UNKNOWN -> UNKNOWN
-    /// An UNKNOWN result means the partition predicate is unrestricted.
-    const auto & rpn = partition_key_condition->getRPN();
-    constexpr auto unknown_function = KeyCondition::RPNElement::FUNCTION_UNKNOWN;
-
-    auto is_unknown = [&](const KeyCondition::RPNElement & element)
+    /// Preserve the complete RPN structure instead of rewriting Boolean subexpressions.
+    /// Non-partition atoms are already `UNKNOWN` in this condition. Only cache atoms
+    /// whose printed form contains their complete bounds: notably, `IN` prints a set's
+    /// cardinality, not its values, and must never be used as a cache key.
+    WriteBufferFromOwnString buf;
+    for (const auto & element : partition_key_condition->getRPN())
     {
-        if (element.function == unknown_function)
-            return true;
-        if (!element.key_columns.empty())
-            return false;
-        /// Leaf atoms without key columns are also non-partition atoms;
-        /// compound partition atoms (e.g. space-filling curves) keep their
-        /// key_columns and are serialized as-is.
-        switch (element.function)
-        {
-            case KeyCondition::RPNElement::FUNCTION_IN_RANGE:
-            case KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE:
-            case KeyCondition::RPNElement::FUNCTION_IN_SET:
-            case KeyCondition::RPNElement::FUNCTION_NOT_IN_SET:
-            case KeyCondition::RPNElement::FUNCTION_IS_NULL:
-            case KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL:
-                return true;
-            default:
-                return false;
-        }
-    };
-
-    auto canonical = [&](const KeyCondition::RPNElement & element)
-    {
-        KeyCondition::RPNElement result = element;
-        if (is_unknown(element))
-        {
-            result.function = unknown_function;
-            result.key_columns.clear();
-        }
-        return result;
-    };
-
-    std::vector<KeyCondition::RPNElement> simplified;
-    auto top_is_unknown = [&] { return !simplified.empty() && simplified.back().function == unknown_function; };
-
-    for (const auto & element : rpn)
-    {
+        if (!element.monotonic_functions_chain.empty())
+            return std::nullopt;
         switch (element.function)
         {
             case KeyCondition::RPNElement::FUNCTION_AND:
-            {
-                if (simplified.size() < 2)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Malformed partition `KeyCondition` RPN: `AND` with {} operands", simplified.size());
-                auto rhs = std::move(simplified.back());
-                simplified.pop_back();
-                auto lhs = std::move(simplified.back());
-                simplified.pop_back();
-
-                const bool lhs_unknown = lhs.function == unknown_function;
-                const bool rhs_unknown = rhs.function == unknown_function;
-                if (lhs_unknown && rhs_unknown)
-                    simplified.push_back(std::move(lhs));
-                else if (lhs_unknown)
-                    simplified.push_back(std::move(rhs));
-                else if (rhs_unknown)
-                    simplified.push_back(std::move(lhs));
-                else
-                {
-                    simplified.push_back(std::move(lhs));
-                    simplified.push_back(std::move(rhs));
-                    simplified.push_back(element);
-                }
-                break;
-            }
             case KeyCondition::RPNElement::FUNCTION_OR:
-            {
-                if (simplified.size() < 2)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Malformed partition `KeyCondition` RPN: `OR` with {} operands", simplified.size());
-                auto rhs = std::move(simplified.back());
-                simplified.pop_back();
-                auto lhs = std::move(simplified.back());
-                simplified.pop_back();
-
-                if (lhs.function == unknown_function || rhs.function == unknown_function)
-                    simplified.push_back(KeyCondition::RPNElement(unknown_function));
-                else
-                {
-                    simplified.push_back(std::move(lhs));
-                    simplified.push_back(std::move(rhs));
-                    simplified.push_back(element);
-                }
-                break;
-            }
             case KeyCondition::RPNElement::FUNCTION_NOT:
-            {
-                if (simplified.empty())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Malformed partition `KeyCondition` RPN: `NOT` with no operand");
-                /// NOT UNKNOWN is UNKNOWN; otherwise apply the NOT.
-                if (!top_is_unknown())
-                    simplified.push_back(element);
+            case KeyCondition::RPNElement::FUNCTION_UNKNOWN:
+            case KeyCondition::RPNElement::ALWAYS_TRUE:
+            case KeyCondition::RPNElement::ALWAYS_FALSE:
                 break;
-            }
+            case KeyCondition::RPNElement::FUNCTION_IN_RANGE:
+            case KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE:
+            case KeyCondition::RPNElement::FUNCTION_IS_NULL:
+            case KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL:
+                if (element.key_columns.size() != 1)
+                    return std::nullopt;
+                break;
             default:
-                simplified.push_back(canonical(element));
-                break;
+                return std::nullopt;
         }
-    }
-
-    if (simplified.empty() || simplified.back().function == unknown_function)
-        return "no_partition_condition";
-
-    std::vector<String> names;
-    if (partition_key != nullptr)
-        names = partition_key->column_names;
-
-    WriteBufferFromOwnString buf;
-    for (size_t i = 0; i < simplified.size(); ++i)
-    {
-        if (i != 0)
-            writeChar(';', buf);
-        writeString(simplified[i].toString(names), buf);
+        writeStringBinary(element.toString(partition_key->column_names), buf);
     }
     return buf.str();
-}
-
-PruningReturnStatus ManifestFilesPruner::canBePruned(
-    const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const
-{
-    auto partition_status = canBePrunedByPartition(entry);
-    if (partition_status == PruningReturnStatus::PARTITION_PRUNED)
-        return partition_status;
-
-    return canBePrunedByMinMax(entry, entry_hyperrectangles);
 }
 }
 

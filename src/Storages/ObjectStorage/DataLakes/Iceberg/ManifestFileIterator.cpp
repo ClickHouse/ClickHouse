@@ -515,11 +515,13 @@ ManifestFileIterator::ManifestFileIterator(
     , filter_dag(std::move(filter_dag_))
     , schema_processor_ptr(&schema_processor)
 {
-    if (filter_dag && partition_key_description.has_value())
+    const auto partition_filter = filter_dag && partition_key_description.has_value()
+        ? getOrCreatePruner(manifest_schema_id)->partitionFilterHash() : std::nullopt;
+    if (partition_filter)
     {
         candidate_cache_key = path_resolver.getTableRoot() + "#" + path_to_manifest_file.serialize()
             + "#snapshot=" + std::to_string(table_snapshot_id)
-            + "#partition=" + getPartitionFilterHash()
+            + "#partition=" + *partition_filter
             + "#manifest_schema=" + std::to_string(manifest_schema_id)
             + "#table_schema=" + std::to_string(table_snapshot_schema_id)
             + "#sequence=" + std::to_string(inherited_sequence_number);
@@ -783,24 +785,6 @@ void ManifestFileIterator::publishCandidateRowsIfComplete()
     auto value = std::make_shared<ManifestPruneCacheValue>();
     value->candidate_row_indexes = std::move(completed);
     getPruneCache()->set(candidate_cache_key, std::move(value));
-}
-
-String ManifestFileIterator::getPartitionFilterHash() const
-{
-    std::lock_guard lock(partition_hash_mutex);
-    if (!partition_filter_hash.empty())
-        return partition_filter_hash;
-    if (!filter_dag || !partition_key_description.has_value())
-    {
-        partition_filter_hash = "no_partition_filter";
-        return partition_filter_hash;
-    }
-    // The pruner's KeyCondition is built over the partition-key columns only,
-    // so its serialization is identical for every query sharing a prefix -
-    // the point-lookup literal does not appear in it.
-    const ManifestFilesPruner * pruner = getOrCreatePruner(manifest_schema_id);
-    partition_filter_hash = pruner->partitionFilterHash();
-    return partition_filter_hash;
 }
 
 const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema_id) const

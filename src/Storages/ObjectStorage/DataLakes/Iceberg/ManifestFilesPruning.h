@@ -70,11 +70,9 @@ public:
     PruningReturnStatus canBePrunedByPartition(const ProcessedManifestFileEntryPtr & entry) const;
     PruningReturnStatus canBePrunedByMinMax(const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const;
 
-    /// Stable hash of the partition-predicate condition (empty string if
-    /// the table has no partition key or no filter). Same hash for any
-    /// two queries whose partition predicates are identical, regardless
-    /// of other WHERE literals. Used as the partition-cache key.
-    String partitionFilterHash() const;
+    /// Exact serialization of supported partition RPN atoms, or no key if their
+    /// representation is insufficient to identify the predicate safely.
+    std::optional<String> partitionFilterHash() const;
 };
 
 }
