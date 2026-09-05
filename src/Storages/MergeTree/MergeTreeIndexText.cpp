@@ -44,6 +44,7 @@
 #include <base/arithmeticOverflow.h>
 #include <base/range.h>
 #include <base/types.h>
+#include <base/PackedStringRef.h>
 #include <fmt/ranges.h>
 
 #include <limits>
@@ -1677,11 +1678,12 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
     char * data = arena->alloc(total_size) + pad_left;
 
     bool inserted = false;
-    TokenToPostingsBuilderMap::LookupResult it;
+    TokenToPostingsBuilderMap::LookupResult it{};
+    auto hash_fn = [](const char * d, size_t s) { return static_cast<uint32_t>(StringViewHash()(std::string_view(d, s))); };
     for (const auto & filter_token : filter_tokens)
     {
         memcpy(data, filter_token.data(), filter_token.size());
-        std::string_view key(data, filter_token.size());
+        auto key = PackedStringRef::build(data, filter_token.size(), hash_fn);
         data += filter_token.size();
 
         tokens_map.emplace(key, it, inserted);
@@ -1693,11 +1695,14 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
 void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position)
 {
     bool inserted = false;
-    TokenToPostingsBuilderMap::LookupResult it;
+    TokenToPostingsBuilderMap::LookupResult it{};
+
+    auto hash_fn = [](const char * d, size_t s) { return static_cast<uint32_t>(StringViewHash()(std::string_view(d, s))); };
+    auto packed_key = PackedStringRef::build(token.data(), token.size(), hash_fn);
 
     if (postprocessor_drop_filter && !postprocessor_drop_filter->drop_on_match)
     {
-        it = tokens_map.find(token);
+        it = tokens_map.find(packed_key);
         if (!it)
             return;
 
@@ -1706,7 +1711,7 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
     }
     else
     {
-        ArenaKeyHolder key_holder(token, *arena);
+        ArenaPackedStringHolder key_holder{packed_key, *arena};
         tokens_map.emplace(key_holder, it, inserted);
 
         if (postprocessor_drop_filter)
@@ -1725,7 +1730,7 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
 
         if (position_map)
         {
-            TokenToPositionListMap::LookupResult pos_it;
+            TokenToPositionListMap::LookupResult pos_it{};
             position_map->emplace(key_holder, pos_it, inserted);
             auto & positions_builder = pos_it->getMapped();
             positions_builder.add(static_cast<UInt32>(current_row), token_position);
@@ -1751,7 +1756,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
 
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
-        std::string_view token = key;
+        std::string_view token = static_cast<std::string_view>(key);
         if (mapped.isFiltered())
             return;
         chassert(!mapped.isEmpty());
@@ -1767,7 +1772,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
         size_t attached = 0;
         position_map->forEachValue([&](const auto & key, auto & mapped)
         {
-            const std::string_view token(key);
+            const std::string_view token(static_cast<std::string_view>(key));
             auto it = std::ranges::lower_bound(
                 sorted_tokens, token,
                 [](std::string_view lhs, std::string_view rhs) { return lhs < rhs; },
