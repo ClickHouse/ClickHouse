@@ -201,6 +201,22 @@ public:
         }
     }
 
+    void addBatchWithNonNullPlaces(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if (array_arguments)
+            Base::addBatchWithNonNullPlaces(
+                row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+        else
+            addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+    }
+
     void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
