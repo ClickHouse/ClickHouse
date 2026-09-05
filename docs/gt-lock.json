@@ -7,36 +7,36 @@
       "versionId": "a8c423ee2e7d8aaabc1fd4b606f216e5a3fef6b4f791089a4c8b91cbf093f5cb",
       "translations": {
         "zh": {
-          "updatedAt": "2026-09-05T02:44:36.072Z",
+          "updatedAt": "2026-09-05T03:25:38.110Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-05T02:44:36.474Z",
+          "updatedAt": "2026-09-05T03:25:38.458Z",
           "fileName": "docs.json",
           "postProcessHash": "c45f1086285cfcd1b994264230280c464fd5766f25cbd1ad8a11276da2287e65"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-05T02:44:35.678Z",
+          "updatedAt": "2026-09-05T03:25:37.735Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-05T02:44:35.037Z",
+          "updatedAt": "2026-09-05T03:25:37.103Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-05T02:44:35.884Z",
+          "updatedAt": "2026-09-05T03:25:37.926Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-09-05T02:44:35.258Z",
+          "updatedAt": "2026-09-05T03:25:37.309Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-05T02:44:36.278Z",
+          "updatedAt": "2026-09-05T03:25:38.292Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-09-05T02:44:35.481Z",
+          "updatedAt": "2026-09-05T03:25:37.528Z",
           "fileName": "docs.json"
         }
       },
@@ -134118,51 +134118,50 @@
     },
     {
       "fileId": "e4d8c676dd7f3e5d8b96ed2b057921621c185f96e0c589c730f072c23a86681b",
-      "versionId": "6143a5d809df6114d38453ce7ae686d1cd7350d4462a553a25ab74faa673cd7e",
+      "versionId": "f6e6494b4496fa77cc90bd0c3aa615f2e33cecf07d9721580802795a0761f4ea",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.737Z",
-          "fileName": "es/products/managed-postgres/monitoring/notifications.mdx",
-          "postProcessHash": "598ae9a2285ac7307ede3849e0b8d15c8e3c81cedfb6adfe250d13730ea2dbfa"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.737Z",
-          "fileName": "ja/products/managed-postgres/monitoring/notifications.mdx",
-          "postProcessHash": "1ed21b40515d491b0e7ffea7e7f4d8c25b3b0bd3cb725bff935eb790db644d36"
-        },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:06.737Z",
+          "updatedAt": "2026-09-05T03:25:43.205Z",
           "fileName": "ko/products/managed-postgres/monitoring/notifications.mdx",
-          "postProcessHash": "0d734e7f431fcc8a436616c80b5285530eadcf886ebfa11349dd994c6b59c7f8"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.737Z",
-          "fileName": "pt-BR/products/managed-postgres/monitoring/notifications.mdx",
-          "postProcessHash": "9de38d9792f39358b5c6c7c62c5e862b7cc8712f681ed5a928e5e0eab1dbb71f"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.737Z",
-          "fileName": "ru/products/managed-postgres/monitoring/notifications.mdx",
-          "postProcessHash": "86373e6ed2a71104fbd95e7b82de6fa8f832f4da67390ae2fe3b70c5532bbc5a"
+          "postProcessHash": "2bcbdb0998d530a6a9018a65524ffcf9d3049203f31d4f5f2e97270c2bcc97b5"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:06.738Z",
+          "updatedAt": "2026-09-05T03:25:43.206Z",
           "fileName": "zh/products/managed-postgres/monitoring/notifications.mdx",
-          "postProcessHash": "c55a4d76bf70814f03481b084467a375e5a55062a92d9d273e99541303a16c03"
+          "postProcessHash": "a2c7f1ddc4337118e40faef2eabba98e40353e2769730604fe565d2c0429e467"
         },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.738Z",
-          "fileName": "ar/products/managed-postgres/monitoring/notifications.mdx",
-          "postProcessHash": "f58e952e87b9ebbfb72bf9c0ad3c8ad26f388579880c3cfabbbe3a8a95a08b08"
+        "pt-BR": {
+          "updatedAt": "2026-09-05T03:25:43.207Z",
+          "fileName": "pt-BR/products/managed-postgres/monitoring/notifications.mdx",
+          "postProcessHash": "4bce1c919c70f3fedb573fe3c258eda212366e9c0fd22624f2f5133c8022a513"
+        },
+        "es": {
+          "updatedAt": "2026-09-05T03:25:43.207Z",
+          "fileName": "es/products/managed-postgres/monitoring/notifications.mdx",
+          "postProcessHash": "1ec93c5234fb0a9225363d3bde150b1e5fbc3574e4ae2c0a6aa761cc2f4355bf"
+        },
+        "ja": {
+          "updatedAt": "2026-09-05T03:25:43.208Z",
+          "fileName": "ja/products/managed-postgres/monitoring/notifications.mdx",
+          "postProcessHash": "83b3cdc2e7fc6f515c84b38c1f61445622a05db8e606893d9ce8ff1f19c2a649"
+        },
+        "ru": {
+          "updatedAt": "2026-09-05T03:25:43.209Z",
+          "fileName": "ru/products/managed-postgres/monitoring/notifications.mdx",
+          "postProcessHash": "894916091c530e475d252f92fe9d94cd7eca85d87e1f6702cdd740d0413b00b1"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.738Z",
+          "updatedAt": "2026-09-05T03:25:43.209Z",
           "fileName": "fr/products/managed-postgres/monitoring/notifications.mdx",
-          "postProcessHash": "c87da9bb3e872a174be7140908d48f217668fee1be9997925b09d5dbff5955d1"
+          "postProcessHash": "a60589f2ac7d538503a211b5e8750f94e7d2dd9f029c3a6eafdeea805c50bc0b"
+        },
+        "ar": {
+          "updatedAt": "2026-09-05T03:25:43.210Z",
+          "fileName": "ar/products/managed-postgres/monitoring/notifications.mdx",
+          "postProcessHash": "8aaa4e97b1adb751bf19e89f55b2c0e138f96ace5ce4ab67eda0f09f1eceeef6"
         }
       },
-      "fileName": "products/managed-postgres/monitoring/notifications.mdx",
-      "staged": false
+      "fileName": "products/managed-postgres/monitoring/notifications.mdx"
     },
     {
       "fileId": "4763784d653945b65392a62d6aed7b4e67d89d97bdf1cc5bb3b266c017890aba",
