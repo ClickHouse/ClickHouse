@@ -1086,15 +1086,22 @@ def get_transactions_list(args):
 
 # lldb's shared-library-event breakpoint is a software int3 in the inferior's
 # text, and only the debugger that wrote it restores it. Dropping it keeps the
-# server's text intact however the debugger ends. Selected by symbol: internal
-# breakpoint ids are insertion-ordered, and the JIT and sanitizer hooks own the
-# low ones.
+# server's text intact however the debugger ends. Internal breakpoint ids are
+# negative, handed out by decrementing and never reused, so no fixed range
+# covers them and they are read from lldb's own list. The JIT and sanitizer
+# hooks are internal too, hence the symbol test. The printed line is the audit
+# trail: an empty "dropped" means the int3 is still in the text.
 LLDB_DROP_RENDEZVOUS_BREAKPOINT = (
     "script t=lldb.target; "
-    "[t.BreakpointDelete(-i) for i in range(1, 16) "
-    "if t.FindBreakpointByID(-i).IsValid() "
-    'and "dl_debug_state" in str(t.FindBreakpointByID(-i)'
-    ".GetLocationAtIndex(0).GetAddress().GetSymbol().GetName())]"
+    "r=lldb.SBCommandReturnObject(); "
+    "lldb.debugger.GetCommandInterpreter()"
+    '.HandleCommand("breakpoint list --internal", r); '
+    'ids=[int(l.split(":")[0]) for l in (r.GetOutput() or "").splitlines() '
+    'if l[:1] == "-" and l.split(":")[0][1:].isdigit()]; '
+    'hit=[i for i in ids if "dl_debug_state" in str(t.FindBreakpointByID(i)'
+    ".GetLocationAtIndex(0).GetAddress().GetSymbol().GetName())]; "
+    'print("internal breakpoints %s, dropped %s"'
+    " % (ids, [i for i in hit if t.BreakpointDelete(i)]))"
 )
 
 # Per-PID lldb budget: the release value is also the fallback for a caller that
