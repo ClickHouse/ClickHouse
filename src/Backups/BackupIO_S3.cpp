@@ -42,6 +42,7 @@ namespace Setting
     extern const SettingsUInt64 s3_max_connections;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
     extern const SettingsBool backup_slow_all_threads_after_retryable_s3_error;
+    extern const SettingsBool s3_validate_etag_on_read;
 }
 
 namespace ServerSetting
@@ -383,6 +384,7 @@ BackupReaderS3::BackupReaderS3(
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false, ""}
+    , validate_etag_on_read(context_->getSettingsRef()[Setting::s3_validate_etag_on_read])
 {
     s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
 
@@ -435,8 +437,23 @@ UInt64 BackupReaderS3::getFileSize(const String & file_name)
 
 std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFile(const String & file_name)
 {
+    /// Thread the known object size into the reader so that a premature S3 stream close is
+    /// detected as `CANNOT_READ_ALL_DATA` (or `S3_OBJECT_CHANGED_DURING_READ`) instead of a silent
+    /// truncated EOF. Backup metadata (`.backup`) is consumed with `readStringUntilEOF`, which never
+    /// queries the size itself, so without an explicit `file_size` the full-object premature-EOF
+    /// guard in `ReadBufferFromS3::nextImpl` would not fire and a truncated backup could be read.
+    /// The ETag is threaded in as well: for a non-versioned bucket an in-place overwrite to exactly
+    /// the same size would otherwise pass the size check, and `RESTORE` could stitch together bytes
+    /// from two object generations. With `expected_etag` set, `ReadBufferFromS3` sends `If-Match` and
+    /// verifies the response ETag, so such an overwrite fails with `S3_OBJECT_CHANGED_DURING_READ`.
+    /// The ETag pinning is gated on `s3_validate_etag_on_read` (like the normal object-storage read
+    /// path), so backends with unstable ETags can keep restores working by disabling the setting.
+    const auto object_info = S3::getObjectInfo(*client, s3_uri.bucket, getS3BackupObjectKey(s3_uri, file_name), s3_uri.version_id);
     return std::make_unique<ReadBufferFromS3>(
-        client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, s3_settings.request_settings, read_settings);
+        client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, s3_settings.request_settings, read_settings,
+        /* use_external_buffer= */false, /* offset= */0, /* read_until_position= */0, /* restricted_seek= */false, object_info.size,
+        ReadBufferFromS3::S3CredentialsRefreshCallback{[] { return nullptr; }}, /* blob_storage_log_= */ BlobStorageLogWriterPtr{},
+        /* expected_etag_= */ validate_etag_on_read ? object_info.etag : String{});
 }
 
 void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
@@ -520,6 +537,7 @@ BackupWriterS3::BackupWriterS3(
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false, ""}
+    , validate_etag_on_read(context_->getSettingsRef()[Setting::s3_validate_etag_on_read])
     , s3_capabilities(getCapabilitiesFromConfig(context_->getConfigRef(), "s3"))
     , disk_client_factory(S3BackupClientCreator(context_))
 {
@@ -634,8 +652,21 @@ void BackupWriterS3::copyFile(const String & destination, const String & source,
         [&, this]
         {
             LOG_TRACE(log, "Falling back to copy file inside backup from {} to {} through direct buffers", source, destination);
+            /// `size` is the known length of the source object and `createS3UploadBody` reads exactly that
+            /// many bytes with `readStrict`, so pass it as `file_size`: a mid-stream S3 close is then
+            /// reconnected and resumed by `ReadBufferFromS3::nextImpl` instead of failing the `BACKUP`.
+            /// Resuming alone would not detect a same-size in-place overwrite of the source between the
+            /// original and the resumed GET, so pin the source generation with its ETag as well (gated on
+            /// `s3_validate_etag_on_read`, like `BackupReaderS3::readFile`): a torn copy then fails with
+            /// `S3_OBJECT_CHANGED_DURING_READ` instead of silently stitching two generations together.
+            String expected_etag;
+            if (validate_etag_on_read)
+                expected_etag = S3::getObjectInfo(*client, s3_uri.bucket, source_key, s3_uri.version_id).etag;
             return std::make_unique<ReadBufferFromS3>(
-                client, s3_uri.bucket, source_key, s3_uri.version_id, s3_settings.request_settings, read_settings);
+                client, s3_uri.bucket, source_key, s3_uri.version_id, s3_settings.request_settings, read_settings,
+                /* use_external_buffer= */false, /* offset= */0, /* read_until_position= */0, /* restricted_seek= */false, size,
+                ReadBufferFromS3::S3CredentialsRefreshCallback{[] { return nullptr; }}, /* blob_storage_log_= */ BlobStorageLogWriterPtr{},
+                /* expected_etag_= */ expected_etag);
         });
 }
 

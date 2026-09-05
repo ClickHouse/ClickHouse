@@ -52,6 +52,7 @@ namespace ErrorCodes
     extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
     extern const int TEMPORARY_DATA_NOT_IN_CACHE;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
     extern const int FILE_DOESNT_EXIST;
 }
 
@@ -1041,38 +1042,68 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                         file_segment.setDownloadFinishedWithoutContinuation();
                     }
 
-                    /// The remote object may have been overwritten with shorter content
-                    /// between listing and reading. Check the actual remote file metadata (size and
-                    /// last modification time, fetched in a single request) to distinguish that from
-                    /// a genuine logic error.
+                    /// The source stopped returning data before the bytes the reader actually
+                    /// needs were downloaded. We must NOT treat this as EOF (return a short/zero
+                    /// read): the caller would then consume buffer bytes that were never
+                    /// written -- a use-of-uninitialized-value under MSan, and silent garbage in
+                    /// release. Check the actual remote file metadata (size and last modification
+                    /// time, fetched in a single request) to distinguish a concurrent overwrite of
+                    /// the object and a premature close of the stream from a genuine logic error.
                     const auto remote_metadata = state.buf->getRemoteFileMetadata();
-                    /// The object size known at buffer creation time (from listing). Logged alongside
-                    /// the actual size so a truncation is immediately visible in diagnostics.
+                    /// The object size known at read setup time (from listing).
                     const auto expected_object_size = state.buf->tryGetFileSize();
-                    if (remote_metadata.has_value()
-                        && remote_metadata->size == file_segment.getCurrentWriteOffset())
+
+                    if (remote_metadata.has_value())
                     {
-                        /// We reached the real end of the (now shorter) object while
-                        /// predownloading, before reaching the bytes the reader actually
-                        /// needs: those lie beyond the truncated object, because
+                        /// We reached the real end of the (now shorter) object while predownloading,
+                        /// before reaching the bytes the reader actually needs: those lie beyond the
+                        /// truncated object, because
                         /// offset == current_write_offset + bytes_to_predownload > remote_metadata->size.
-                        ///
-                        /// There is no valid data to return for `offset`. We must NOT treat
-                        /// this as EOF (return a short/zero read): the caller would then
-                        /// consume buffer bytes that were never written -- a
-                        /// use-of-uninitialized-value under MSan, and silent garbage in
-                        /// release. Fail with a regular CANNOT_READ_ALL_DATA instead of a
-                        /// LOGICAL_ERROR: it does not alert as a server bug and is retryable
-                        /// while the object is being concurrently replaced.
+                        /// Report it as a truncation between listing and reading -- retryable, and
+                        /// (unlike a LOGICAL_ERROR) it does not alert as a server bug.
+                        if (remote_metadata->size == file_segment.getCurrentWriteOffset())
+                            throw Exception(
+                                ErrorCodes::CANNOT_READ_ALL_DATA,
+                                "Remote object was truncated between listing and reading: "
+                                "actual object size {}, expected object size {}, last modified {}, "
+                                "but need to read until offset {}. Current file segment: {}",
+                                remote_metadata->size,
+                                expected_object_size ? std::to_string(*expected_object_size) : "None",
+                                formatRemoteFileLastModified(remote_metadata),
+                                offset,
+                                file_segment.getInfoForLog());
+
+                        /// The object size no longer matches the size known at read setup, and the
+                        /// stream did not even end at the new size: the object was overwritten during
+                        /// the read. Fail with the same error code as the etag validation in
+                        /// `ReadBufferFromS3`: retryable by the user and, unlike a LOGICAL_ERROR, does
+                        /// not alert as a server bug.
+                        if (expected_object_size.has_value() && remote_metadata->size != *expected_object_size)
+                            throw Exception(
+                                ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                                "Remote object was overwritten during read: "
+                                "object size changed from {} to {}, last modified: {}. "
+                                "Downloaded until offset {} but need to read until offset {}. "
+                                "Current file segment: {}",
+                                *expected_object_size,
+                                remote_metadata->size,
+                                formatRemoteFileLastModified(remote_metadata),
+                                file_segment.getCurrentWriteOffset(),
+                                offset,
+                                file_segment.getInfoForLog());
+
+                        /// The object is unchanged, but the stream was closed before delivering
+                        /// the whole requested range - a transient I/O failure, not a logic bug.
                         throw Exception(
                             ErrorCodes::CANNOT_READ_ALL_DATA,
-                            "Remote object was truncated between listing and reading: "
-                            "actual object size {}, expected object size {}, last modified {}, "
-                            "but need to read until offset {}. Current file segment: {}",
-                            remote_metadata->size,
-                            expected_object_size ? std::to_string(*expected_object_size) : "None",
-                            formatRemoteFileLastModified(remote_metadata),
+                            "Connection closed prematurely while predownloading remote object: "
+                            "downloaded until offset {} but need to read until offset {}. "
+                            "Object size {} (unchanged), last modified: {}. "
+                            "Current file segment: {}",
+                            file_segment.getCurrentWriteOffset(),
                             offset,
+                            remote_metadata->size,
+                            formatRemoteFileLastModified(remote_metadata),
                             file_segment.getInfoForLog());
                     }
 
@@ -1739,14 +1770,11 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
 #endif
         }
 
-        if (remote_metadata.has_value() && remote_metadata->size == offset)
+        if (remote_metadata.has_value())
         {
-            /// The remote object is smaller than file_size_ indicated, e.g. the object was
-            /// overwritten with shorter content between listing and reading. This downloader
-            /// will not continue: release the segment so other readers waiting on it can take
-            /// over, then fail with a regular CANNOT_READ_ALL_DATA -- retryable while the object
-            /// is being concurrently replaced, and (unlike a LOGICAL_ERROR) it does not alert as a
-            /// server bug. The predownloadForFileSegment and readBigAt paths fail the same way.
+            /// The source returned zero bytes while the requested range is not finished.
+            /// This downloader will not continue: release the segment so other readers waiting
+            /// on it can take over. The predownloadForFileSegment path fails the same way.
             if (file_segment.isDownloader())
             {
                 /// Withdraw the shared remote reader before releasing the segment.
@@ -1760,13 +1788,49 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
                 file_segment.resetRemoteFileReader();
                 file_segment.setDownloadFinishedWithoutContinuation();
             }
+
+            /// The stream ended exactly at the current (smaller) object size: the object was
+            /// overwritten with shorter content between listing and reading. Retryable while the
+            /// object is being concurrently replaced, and (unlike a LOGICAL_ERROR) it does not
+            /// alert as a server bug.
+            if (remote_metadata->size == offset)
+                throw Exception(
+                    ErrorCodes::CANNOT_READ_ALL_DATA,
+                    "Remote object was truncated between listing and reading: "
+                    "read until offset {} but expected to read until position {}. "
+                    "Actual object size {}, expected object size {}, last modified {}, stop reason: {}. "
+                    "Current file segment: {}",
+                    offset, info.read_until_position, remote_metadata->size, file_size_,
+                    formatRemoteFileLastModified(remote_metadata),
+                    impl_read_stop_reason ? *impl_read_stop_reason : "None",
+                    file_segment.getInfoForLog());
+
+            /// The object size no longer matches the size known at read setup, and the stream did
+            /// not even end at the new size: the object was overwritten during the read. Fail with
+            /// the same error code as the etag validation in `ReadBufferFromS3`: retryable by
+            /// the user and, unlike a LOGICAL_ERROR, does not alert as a server bug.
+            if (remote_metadata->size != file_size_)
+                throw Exception(
+                    ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                    "Remote object was overwritten during read: "
+                    "object size changed from {} to {}, last modified: {}. "
+                    "Read until offset {} but expected to read until position {}, stop reason: {}. "
+                    "Current file segment: {}",
+                    file_size_, remote_metadata->size,
+                    formatRemoteFileLastModified(remote_metadata),
+                    offset, info.read_until_position,
+                    impl_read_stop_reason ? *impl_read_stop_reason : "None",
+                    file_segment.getInfoForLog());
+
+            /// The object is unchanged, but the stream was closed before delivering the whole
+            /// requested range - a transient I/O failure, not a logic bug.
             throw Exception(
                 ErrorCodes::CANNOT_READ_ALL_DATA,
-                "Remote object was truncated between listing and reading: "
+                "Connection closed prematurely while reading remote object: "
                 "read until offset {} but expected to read until position {}. "
-                "Actual object size {}, expected object size {}, last modified {}, stop reason: {}. "
+                "Object size {} (unchanged), last modified: {}, stop reason: {}. "
                 "Current file segment: {}",
-                offset, info.read_until_position, remote_metadata->size, file_size_,
+                offset, info.read_until_position, remote_metadata->size,
                 formatRemoteFileLastModified(remote_metadata),
                 impl_read_stop_reason ? *impl_read_stop_reason : "None",
                 file_segment.getInfoForLog());
@@ -2005,9 +2069,10 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
 
         if (!size)
         {
-            /// A truncated remote object (overwritten with shorter content between listing and
-            /// reading) is handled in readFromFileSegment, which throws CANNOT_READ_ALL_DATA before
-            /// returning here. Reaching this point with a zero-sized read is therefore unexpected.
+            /// An overwritten remote object or a prematurely closed stream is handled in
+            /// readFromFileSegment, which throws S3_OBJECT_CHANGED_DURING_READ or
+            /// CANNOT_READ_ALL_DATA before returning here. Reaching this point with
+            /// a zero-sized read is therefore unexpected.
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot read all data. Offset: {} (initial offset: {}), read bytes {}/{}",

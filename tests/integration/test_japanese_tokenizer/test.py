@@ -19,6 +19,12 @@ node_bad_sha = cluster.add_instance(
 node_s3 = cluster.add_instance(
     "node_s3", main_configs=["configs/mecab_tokenizer_s3.xml"], with_minio=True, stay_alive=True
 )
+node_s3_premature_eof = cluster.add_instance(
+    "node_s3_premature_eof", main_configs=["configs/mecab_tokenizer_s3.xml"], with_minio=True, stay_alive=True
+)
+node_s3_etag = cluster.add_instance(
+    "node_s3_etag", main_configs=["configs/mecab_tokenizer_s3.xml"], with_minio=True, stay_alive=True
+)
 
 DICT_FILE = "minimal_dic.tar.gz"
 DICT_IN_CONTAINER = "/var/lib/clickhouse/user_files/" + DICT_FILE
@@ -90,3 +96,36 @@ def test_dictionary_from_s3(started_cluster):
         node_s3.query("SELECT tokens('日本語の形態素解析エンジン', 'japanese')").strip()
         == "['日本語','の','形態','素','解析','エンジン']"
     )
+
+
+def test_dictionary_from_s3_recovers_from_premature_eof(started_cluster):
+    skip_if_no_mecab(node_s3_premature_eof)
+    node_s3_premature_eof.query("SYSTEM ENABLE FAILPOINT s3_read_buffer_force_premature_eof")
+    try:
+        assert (
+            node_s3_premature_eof.query("SELECT tokens('日本語の形態素解析エンジン', 'japanese')").strip()
+            == "['日本語','の','形態','素','解析','エンジン']"
+        )
+    finally:
+        node_s3_premature_eof.query("SYSTEM DISABLE FAILPOINT s3_read_buffer_force_premature_eof")
+
+
+def test_dictionary_from_s3_honors_query_level_etag_validation(started_cluster):
+    # The dictionary is loaded from the global context, but `s3_validate_etag_on_read` must be taken
+    # from the query that triggers the load.
+    skip_if_no_mecab(node_s3_etag)
+    node_s3_etag.query("SYSTEM ENABLE FAILPOINT s3_read_inject_etag_mismatch")
+    try:
+        # With the default setting the pinned ETag is validated, so the injected mismatch fails the load.
+        error = node_s3_etag.query_and_get_error("SELECT tokens('日本語', 'japanese')")
+        assert "S3_OBJECT_CHANGED_DURING_READ" in error
+        # A failed load is not cached, and disabling the setting in the query must really disable
+        # the ETag pinning even though the dictionary is loaded through the global context.
+        assert (
+            node_s3_etag.query(
+                "SELECT tokens('日本語の形態素解析エンジン', 'japanese') SETTINGS s3_validate_etag_on_read = 0"
+            ).strip()
+            == "['日本語','の','形態','素','解析','エンジン']"
+        )
+    finally:
+        node_s3_etag.query("SYSTEM DISABLE FAILPOINT s3_read_inject_etag_mismatch")

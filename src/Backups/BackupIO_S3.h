@@ -80,6 +80,9 @@ private:
     const DataSourceDescription data_source_description;
     S3Settings s3_settings;
     std::shared_ptr<S3::Client> client;
+    /// Snapshot of the `s3_validate_etag_on_read` query setting: when false, `readFile` must not
+    /// pin the object generation with `If-Match`, keeping restores working on backends with unstable ETags.
+    const bool validate_etag_on_read;
 
     BlobStorageLogWriterPtr blob_storage_log;
 };
@@ -128,6 +131,8 @@ private:
     const DataSourceDescription data_source_description;
     S3Settings s3_settings;
     std::shared_ptr<S3::Client> client;
+    /// Snapshot of the `s3_validate_etag_on_read` query setting (see `BackupReaderS3`).
+    const bool validate_etag_on_read;
     S3Capabilities s3_capabilities;
     S3BackupDiskClientFactory disk_client_factory;
     BlobStorageLogWriterPtr blob_storage_log;
