@@ -17,9 +17,9 @@ Estas configuraciones están disponibles en [system.settings](/es/reference/syst
   ## join_algorithm
 </div>
 
-<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash" />
+<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' quedó obsoleto en favor de algoritmos join especificados explícitamente; además, ahora se prefiere parallel_hash a hash"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "Se añadió `ie_join` a la lista predeterminada, por lo que un join cuya sección `ON` solo tiene condiciones de desigualdad se ejecuta con IEJoin en lugar de un `CROSS JOIN` con un filtro. Al estar al final, solo se utiliza cuando no se aplican los demás algoritmos."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' quedó obsoleto en favor de algoritmos join especificados explícitamente; además, ahora se prefiere parallel_hash a hash"}]}]} />
 
 Especifica qué algoritmo [JOIN](/es/reference/statements/select/join) se utiliza.
 
@@ -60,20 +60,20 @@ Una variación del [algoritmo sort-merge](https://en.wikipedia.org/wiki/Sort-mer
 
 `RIGHT JOIN` y `FULL JOIN` solo se admiten con estrictez `ALL` (`SEMI`, `ANTI`, `ANY` y `ASOF` no son compatibles).
 
-Cuando se usa el algoritmo `partial_merge`, ClickHouse ordena los datos y los vuelca a disco. El algoritmo `partial_merge` en ClickHouse difiere ligeramente de la implementación clásica. Primero, ClickHouse ordena la tabla derecha por join keys en bloques y crea un índice min-max para los bloques ordenados. Después, ordena partes de la tabla izquierda por la `join key` y las combina con la tabla derecha. El índice min-max también se utiliza para omitir bloques innecesarios de la tabla derecha.
+Al usar el algoritmo `partial_merge`, ClickHouse ordena los datos y los vuelca al disco. El algoritmo `partial_merge` de ClickHouse difiere ligeramente de la implementación clásica. Primero, ClickHouse ordena la tabla derecha por las claves de combinación en bloques y crea un índice min-max para los bloques ordenados. Luego ordena partes de la tabla izquierda por la `join key` y las combina con la tabla derecha. El índice min-max también se utiliza para omitir bloques innecesarios de la tabla derecha.
 
 * direct
 
 El algoritmo `direct` (también conocido como nested loop) realiza una lookup en la tabla derecha usando como claves las filas de la tabla izquierda.
 Es compatible con almacenamientos especiales como [Dictionary](/es/reference/engines/table-engines/special/dictionary), [EmbeddedRocksDB](/es/reference/engines/table-engines/integrations/embedded-rocksdb) y tablas [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree).
 
-Para las tablas MergeTree, el algoritmo envía los filtros de join key directamente a la storage layer. Esto puede ser más eficiente cuando la clave puede usar el primary key index de la tabla para lookups; de lo contrario, realiza escaneos completos de la tabla derecha para cada block de la tabla izquierda.
+Para las tablas MergeTree, el algoritmo envía los filtros de join key directamente a la storage layer. Esto puede ser más eficiente cuando la clave puede usar el primary key index de la tabla para lookups; de lo contrario, realiza escaneos completos de la tabla derecha para cada bloque de la tabla izquierda.
 
 Admite joins `INNER` y `LEFT`, y solo join keys de igualdad de una sola columna sin otras condiciones.
 
 * auto
 
-Cuando se establece en `auto`, primero se prueba `hash` join y el algoritmo cambia dinámicamente a otro algoritmo si se supera el memory limit.
+Cuando se establece en `auto`, primero se prueba `hash` join y el algoritmo cambia dinámicamente a otro algoritmo si se supera el límite de memoria.
 
 * full&#95;sorting&#95;merge
 
@@ -83,7 +83,7 @@ Cuando se establece en `auto`, primero se prueba `hash` join y el algoritmo camb
 
 El algoritmo [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) basado en ordenación para un `JOIN` cuya sección `ON` tiene dos comparaciones de desigualdad (`<`, `<=`, `>`, `>=`) entre expresiones de las tablas combinadas. Admite `ALL INNER/LEFT/RIGHT/FULL JOIN` y `SEMI`/`ANTI` `LEFT/RIGHT JOIN`.
 
-La posición en la lista establece la prioridad: si aparece después de otros algoritmos, IEJoin se usa solo cuando estos no se aplican (la sección `ON` no tiene condiciones de igualdad); si aparece primero, se usa siempre que la sección `ON` tenga dos condiciones de desigualdad. Las condiciones restantes (incluidas las igualdades) se aplican como filtro sobre el resultado del join para `ALL INNER JOIN`, y se evalúan dentro del operador como una condición residual que afecta a la coincidencia para los demás tipos. Sin `ie_join` en la lista, un `INNER JOIN` con solo condiciones de desigualdad se ejecuta como un `CROSS JOIN` con un filtro, y los demás tipos no son compatibles.
+La posición en la lista establece la prioridad: si aparece después de otros algoritmos, como en el valor predeterminado, IEJoin se usa solo cuando estos no se aplican (la sección `ON` no tiene condiciones de igualdad); si aparece primero, se usa siempre que la sección `ON` tenga dos condiciones de desigualdad. Las condiciones restantes (incluidas las igualdades) se aplican como filtro sobre el resultado del join para `ALL INNER JOIN`, y se evalúan dentro del operador como una condición residual que afecta a la coincidencia para los demás tipos. Sin `ie_join` en la lista, un `INNER JOIN` con solo condiciones de desigualdad se ejecuta como un `CROSS JOIN` con un filtro, y los demás tipos no son compatibles.
 
 Ambas entradas se acumulan en memoria antes de realizar el join: [`max_rows_in_join`](/es/reference/settings/session-settings/max-rows#max_rows_in_join) y [`max_bytes_in_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_in_join) limitan conjuntamente la entrada acumulada de ambos lados (no solo del lado derecho), con la acción ante overflow establecida mediante [`join_overflow_mode`](/es/reference/settings/session-settings/join#join_overflow_mode); los índices de ordenación que el operador construye sobre la entrada acumulada no cuentan para el límite. El propio operador join se ejecuta en un único thread; solo se paralelizan las ordenaciones de las entradas previas al join.
 

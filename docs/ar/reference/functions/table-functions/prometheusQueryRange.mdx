@@ -58,23 +58,26 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
   ### الدوال
 </div>
 
-| الفئة          | الدوال                                                                                           |
-| -------------- | ------------------------------------------------------------------------------------------------ |
-| النطاق         | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`   |
-| الرياضيات      | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`                |
-| حساب المثلثات  | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`   |
-| DateTime       | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
-| نوع           | `scalar`, `vector`                                                                               |
-| مُدرَّج تكراري | `histogram_quantile`                                                                             |
-| أخرى           | `time`, `pi`                                                                                     |
+| الفئة          | الدوال                                                                                                                        |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| النطاق         | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`                                |
+| الرياضيات      | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max` |
+| حساب المثلثات  | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`                                |
+| DateTime       | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year`                              |
+| الوسم          | `label_replace`, `label_join`                                                                                                 |
+| نوع            | `scalar`, `vector`                                                                                                            |
+| مُدرَّج تكراري | `histogram_quantile`                                                                                                          |
+| أخرى           | `time`, `pi`                                                                                                                  |
 
-**ملاحظة**: تستخدم `histogram_quantile` الاستيفاء الخطي على حاويات المُدرَّج التكراري التقليدية (التي يحدّدها الوسم `le`). لا تزال المُدرَّجات التكرارية الأصلية غير مدعومة، ويجب أن تكون قيمة الوسيط `phi` (مستوى الكوانتايل) حاليًا قيمة `scalar` ثابتة — وتُرفَض التعبيرات التي تتغيّر في كل خطوة، مثل `histogram_quantile(time() / 1000, ...)`، مع ظهور الخطأ `NOT_IMPLEMENTED`.
+**ملاحظة**: تستخدم `histogram_quantile` الاستيفاء الخطي على حاويات المُدرَّج التكراري التقليدية (التي يحدّدها الوسم `le`). المُدرَّجات التكرارية الأصلية غير مدعومة. يجب أن تكون قيمة الوسيط `phi` (مستوى الكوانتايل) قيمة `scalar` ثابتة. تُرفَض التعبيرات التي تتغيّر في كل خطوة، مثل `histogram_quantile(time() / 1000, ...)`، مع ظهور استثناء `NOT_IMPLEMENTED`.
 
 <div id="operators">
   ### العوامل
 </div>
 
-جميع العوامل الثنائية الحسابية (`+`, `-`, `*`, `/`, `%`, `^`)، وعوامل المقارنة (`==`, `!=`, `<`, `>`, `<=`, `>=` مع `bool` اختياري)، والعوامل المنطقية (`and`, `or`, `unless`)، مع المعدِّلات `on()`/`ignoring()` و`group_left()`/`group_right()`.
+العوامل الثنائية الحسابية (`+`, `-`, `*`, `/`, `%`, `^`, `atan2`) وعوامل المقارنة (`==`, `!=`, `<`, `>`, `<=`, `>=` مع `bool` اختياري)، مع المعدِّلات `on()`/`ignoring()` و`group_left()`/`group_right()`.
+
+عوامل المجموعات المنطقية `and` و`or` و`unless`، مع المعدِّلات `on()`/`ignoring()`.
 
 العاملان الأحاديان `+` و`-`.
 
@@ -84,7 +87,13 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 
 `sum`, `avg`, `min`, `max`, `count`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — مع معدِّلات اختيارية `by()` أو `without()`.
 
-غير مدعوم بعد: `count_values`.
+<div id="not-yet-supported">
+  ### غير مدعوم حاليًا
+</div>
+
+* عامل التجميع `count_values`
+* دوال النطاق `predict_linear`، `avg_over_time`، `min_over_time`، `max_over_time`، `sum_over_time`، `count_over_time`، `quantile_over_time`، `stddev_over_time`، `stdvar_over_time`، `present_over_time`، `absent_over_time`، `mad_over_time`، `first_over_time`، `ts_of_min_over_time`، `ts_of_max_over_time`، `ts_of_last_over_time`، `ts_of_first_over_time`
+* الدالة `absent`
 
 <div id="example">
   ## مثال

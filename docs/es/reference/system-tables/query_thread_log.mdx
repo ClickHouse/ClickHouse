@@ -53,19 +53,19 @@ Puede usar la configuración [log&#95;queries&#95;probability](/es/reference/set
 * `current_database` ([LowCardinality(String)](/es/reference/data-types/lowcardinality)) — Nombre de la base de datos actual.
 * `query` ([String](/es/reference/data-types/string)) — Texto de la consulta.
 * `normalized_query_hash` ([UInt64](/es/reference/data-types/int-uint)) — El hash de la consulta normalizada, con las constantes eliminadas, etc.
-* `is_initial_query` ([UInt8](/es/reference/data-types/int-uint)) — Tipo de consulta. Valores posibles: 1 — La consulta la inició el cliente, 0 — La inició otra consulta para la ejecución distribuida de consultas.
+* `is_initial_query` ([UInt8](/es/reference/data-types/int-uint)) — Indica si la consulta es inicial. Valores posibles: 1 — una consulta inicial (de nivel superior), 0 — una consulta secundaria iniciada por otra consulta, incluidas las consultas para ejecución distribuida y las subconsultas internas.
 * `connection_address` ([IPv6](/es/reference/data-types/ipv6)) — La dirección IP del cliente desde la que se realizó la conexión. Si la conexión se realiza a través de un proxy, esta será la dirección del proxy.
 * `connection_port` ([UInt16](/es/reference/data-types/int-uint)) — El puerto del cliente desde el que se estableció la conexión. Cuando la conexión se realiza a través de un proxy, este será el puerto del proxy.
 * `user` ([LowCardinality(String)](/es/reference/data-types/lowcardinality)) — Nombre del usuario que inició la consulta actual.
 * `query_id` ([String](/es/reference/data-types/string)) — identificador de la consulta.
 * `address` ([IPv6](/es/reference/data-types/ipv6)) — Dirección IP utilizada para realizar la consulta. Si la conexión se realiza a través de un proxy y `auth_use_forwarded_address` está configurado, esta será la dirección del cliente en lugar de la del proxy.
 * `port` ([UInt16](/es/reference/data-types/int-uint)) — El puerto del cliente que se utilizó para realizar la consulta. Cuando la conexión se realiza a través de un proxy y `auth_use_forwarded_address` está configurado, este será el puerto del cliente en lugar del del proxy.
-* `initial_user` ([LowCardinality(String)](/es/reference/data-types/lowcardinality)) — Nombre del usuario que ejecutó la consulta inicial (para la ejecución distribuida de consultas).
-* `initial_query_id` ([String](/es/reference/data-types/string)) — ID de la consulta inicial (para la ejecución distribuida de consultas).
-* `initial_address` ([IPv6](/es/reference/data-types/ipv6)) — dirección IP desde la que se lanzó la consulta principal.
-* `initial_port` ([UInt16](/es/reference/data-types/int-uint)) — El puerto del cliente utilizado para realizar la consulta principal.
-* `initial_query_start_time` ([DateTime](/es/reference/data-types/datetime)) — Hora de inicio de la ejecución de la consulta inicial.
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/es/reference/data-types/datetime64)) — Hora de inicio de la ejecución de la consulta inicial
+* `initial_user` ([LowCardinality(String)](/es/reference/data-types/lowcardinality)) — Nombre del usuario que ejecutó la consulta inicial en la misma cadena de consultas.
+* `initial_query_id` ([String](/es/reference/data-types/string)) — ID de la consulta inicial en la misma cadena de consultas.
+* `initial_address` ([IPv6](/es/reference/data-types/ipv6)) — dirección IP desde la que se lanzó la consulta inicial en la misma cadena de consultas.
+* `initial_port` ([UInt16](/es/reference/data-types/int-uint)) — Puerto del cliente desde el que se lanzó la consulta inicial en la misma cadena de consultas.
+* `initial_query_start_time` ([DateTime](/es/reference/data-types/datetime)) — Hora de inicio de la consulta inicial en la misma cadena de consultas.
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/es/reference/data-types/datetime64)) — Hora de inicio de la consulta inicial en la misma cadena de consultas, con precisión de microsegundos.
 * `authenticated_user` ([LowCardinality(String)](/es/reference/data-types/lowcardinality)) — Nombre del usuario autenticado en la sesión.
 * `interface` ([UInt8](/es/reference/data-types/int-uint)) — Interfaz desde la cual se inició la consulta. Valores posibles: 1 — TCP, 2 — HTTP.
 * `is_secure` ([UInt8](/es/reference/data-types/int-uint)) — Indica si la conexión era segura.

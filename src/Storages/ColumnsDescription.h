@@ -151,6 +151,8 @@ public:
 
     /// `after_column` can be a Nested column name;
     void add(ColumnDescription column, const String & after_column = String(), bool first = false, bool add_subcolumns = true);
+    /// Adds a column at the end if a column with the same name doesn't exist.
+    void addIfNotExists(ColumnDescription column);
     /// `column_name` can be a Nested column name;
     void remove(const String & column_name);
 
@@ -286,7 +288,7 @@ private:
     SubcolumnsContainter subcolumns;
 
     void modifyColumnOrder(const String & column_name, const String & after_column, bool first);
-    void addSubcolumnsToList(NamesAndTypesList & source_list) const;
+    void addSubcolumnsToList(NamesAndTypesList & source_list, const GetColumnsOptions & options) const;
 
     void addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage);
     void removeSubcolumns(const String & name_in_storage);

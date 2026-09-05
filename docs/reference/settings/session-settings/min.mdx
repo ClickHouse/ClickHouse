@@ -95,6 +95,14 @@ The `min_outstreams_per_resize_after_split` setting ensures that the splitting o
 ### Disabling the Setting
 To disable the split of `Resize` nodes, set this setting to 0. This will prevent the splitting of `Resize` nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
 
+## min_rows_ratio_for_hash_join_row_store {#min_rows_ratio_for_hash_join_row_store}
+
+<SettingsInfoBlock type="Double" default_value="5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "5"},{"label": "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."}]}]}/>
+
+Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.
+
 ## min_table_rows_to_use_projection_index {#min_table_rows_to_use_projection_index}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />

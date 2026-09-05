@@ -170,6 +170,12 @@ cgroup observer를 비활성화하려면 이 값을 `0`으로 설정하십시오
 </compression>
 ```
 
+<div id="config-file">
+  ## 구성 파일
+</div>
+
+<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />서버 구성 파일을 가리킵니다.
+
 <div id="config_reload_interval_ms">
   ## config_reload_interval_ms
 </div>
@@ -177,12 +183,6 @@ cgroup observer를 비활성화하려면 이 값을 `0`으로 설정하십시오
 <SettingsInfoBlock type="UInt64" default_value="2000" changeable_without_restart="예" />
 
 ClickHouse가 구성을 다시 로드하고 새로운 변경 사항이 있는지 확인하는 주기입니다
-
-<div id="config-file">
-  ## 구성 파일
-</div>
-
-<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />서버 구성 파일을 가리킵니다.
 
 <div id="core_dump">
   ## core_dump
@@ -973,7 +973,7 @@ JSON 로깅을 사용하려면 다음 스니펫을 사용하세요:
   ## message_queue_disable_insertion
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />메시지 큐 엔진(Kafka, RabbitMQ, NATS)에서 attached 상태인 materialized view로 삽입하는 기능을 비활성화합니다
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />메시지 큐 엔진(Kafka, RabbitMQ, NATS)에서 attached 상태인 materialized view로 삽입하는 기능을 비활성화합니다
 
 <div id="metric_log">
   ## metric_log

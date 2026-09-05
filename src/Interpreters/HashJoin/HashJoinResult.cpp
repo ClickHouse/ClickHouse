@@ -347,7 +347,11 @@ static size_t numLeftRowsForNextBlock(
 
     size_t max_rows = max_joined_block_rows;
     if (max_joined_block_bytes)
-        max_rows = std::min<size_t>(max_rows, max_joined_block_bytes / std::max<size_t>(avg_bytes_per_row, 1));
+    {
+        const size_t max_rows_by_bytes
+            = std::max<size_t>(1, max_joined_block_bytes / std::max<size_t>(avg_bytes_per_row, 1));
+        max_rows = max_rows ? std::min(max_rows, max_rows_by_bytes) : max_rows_by_bytes;
+    }
 
     const size_t prev_offset = next_row ? offsets[next_row - 1] : 0;
     const size_t next_allowed_offset = prev_offset + max_rows;
@@ -375,6 +379,7 @@ HashJoinResult::HashJoinResult(
     IColumn::Offsets offsets_,
     IColumn::Filter filter_,
     IColumn::Offsets && matched_rows_,
+    size_t matched_right_rows_,
     ScatteredBlock && block_,
     Properties properties_)
     : lazy_output(std::move(lazy_output_))
@@ -384,6 +389,7 @@ HashJoinResult::HashJoinResult(
     , offsets(std::move(offsets_))
     , filter(std::move(filter_))
     , matched_rows(std::move(matched_rows_))
+    , matched_right_rows(matched_right_rows_)
 {
 }
 

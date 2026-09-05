@@ -15,8 +15,10 @@ Introduzido em: v25.6.0
 
 Função de agregação que recebe dados de séries temporais como pares de timestamps e valores e calcula a [taxa no estilo do PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#rate) a partir desses dados em uma grade temporal regular descrita pelo timestamp inicial, timestamp final e passo. Para cada ponto da grade, as amostras usadas para calcular `rate` são consideradas dentro da janela de tempo especificada.
 
+Se várias amostras tiverem o mesmo timestamp, apenas uma delas será usada: a amostra com o maior valor. Um valor NaN perde para qualquer outro valor, portanto um valor NaN será usado somente se todas as amostras nesse timestamp forem NaN.
+
 <Warning>
-  Esta função é experimental; habilite-a definindo `allow_experimental_ts_to_grid_aggregate_function=true`.
+  Esta função é experimental; habilite-a definindo `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>
 
 **Sintaxe**
@@ -27,10 +29,10 @@ timeSeriesRateToGrid(start_timestamp, end_timestamp, grid_step, staleness)(times
 
 **Parâmetros**
 
-* `start_timestamp` — Especifica o início da grade. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`DateTime`](/pt-BR/reference/data-types/datetime)
-* `end_timestamp` — Especifica o fim da grade. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`DateTime`](/pt-BR/reference/data-types/datetime)
-* `grid_step` — Especifica o passo da grade em segundos. [`UInt32`](/pt-BR/reference/data-types/int-uint)
-* `staleness` — Especifica a defasagem máxima, em segundos, das amostras consideradas. A janela de defasagem é um intervalo aberto à esquerda e fechado à direita. [`UInt32`](/pt-BR/reference/data-types/int-uint)
+* `start_timestamp` — Especifica o início da grade. Com um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string contendo um número ou um texto de data e hora. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
+* `end_timestamp` — Especifica o fim da grade. Com um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string contendo um número ou um texto de data e hora. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
+* `grid_step` — Especifica o passo da grade em segundos. Com um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string contendo um número ou uma duração como &#39;15s&#39; ou &#39;1m&#39;. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
+* `staleness` — Especifica a defasagem máxima, em segundos, das amostras consideradas. A janela de defasagem é um intervalo aberto à esquerda e fechado à direita. Com um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string contendo um número ou uma duração como &#39;15s&#39; ou &#39;1m&#39;. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
 
 **Argumentos**
 
@@ -68,7 +70,7 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.06666667,0.1,0.083333336,NULL,NULL,0.083333336]                         │
+│ [NULL,NULL,0,0.06666667,0.1,0.055555556,NULL,NULL,0.083333336]                         │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -88,7 +90,7 @@ SELECT timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(time
 
 ```response title=Response
 ┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.06666667,0.1,0.083333336,NULL,NULL,0.083333336]                           │
+│ [NULL,NULL,0,0.06666667,0.1,0.055555556,NULL,NULL,0.083333336]                           │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

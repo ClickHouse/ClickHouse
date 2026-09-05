@@ -50,6 +50,9 @@ Devuelve una cadena formada por los valores concatenados de la columna o la expr
 **Uso básico sin delimitador**
 
 ```sql title=Query
+CREATE TABLE Employees (Name String) ENGINE = Memory;
+INSERT INTO Employees VALUES ('John'), ('Jane'), ('Bob');
+
 SELECT groupConcat(Name) FROM Employees;
 ```
 

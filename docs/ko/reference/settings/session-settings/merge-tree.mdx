@@ -130,6 +130,26 @@ ClickHouse가 하나의 쿼리에서 `merge_tree_max_rows_to_use_cache`보다 �
 
 * 임의의 양의 정수.
 
+<div id="merge_tree_min_bytes_per_read_stream">
+  ## merge_tree_min_bytes_per_read_stream
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="65536" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "65536"},{"label": "sqrt 비용 모델을 사용해 일반 로컬 비정렬 `MergeTree` 협소 컬럼 스캔의 스트림 수를 제한하는 새로운 설정입니다. 코어 수가 많은 머신에서 스트림별 오버헤드를 줄입니다. previous_value=0(비활성화)이므로 26.8 이전 버전과의 `compatibility`를 사용하면 기존 스트림 수가 복원됩니다."}]}]} />
+
+바이트 단위로 환산한 스트림별 오버헤드 비용입니다. 일반 로컬 비정렬 `MergeTree` 스캔에서 생성되는 최대 읽기 스트림 수를 제어합니다. 정렬된 읽기, `FINAL`, 계층형 읽기 및 병렬 레플리카 읽기에는 적용되지 않습니다. 볼륨 기반 상한은 `ceil(sqrt(estimated_read_bytes / this_setting))`입니다. ClickHouse는 이 상한 적용 전 요청된 스트림 수의 4분의 1 이상이면서 최소 16개의 스트림을 유지하므로, 실제 스트림 수는 `min(requested_streams, max(volume_based_cap, 16, floor(requested_streams / 4)))`입니다. 이러한 하한은 비용이 `estimated_read_bytes`에 반영되지 않는 CPU 집약적 표현식과 집계 작업의 후속 병렬성을 유지합니다.
+
+`estimated_read_bytes`는 인덱스 및 파티션 프루닝 후 남은 마크 범위에서 읽는 컬럼의 압축되지 않은 크기입니다. 스트림별 오버헤드와 스트림당 수행되는 작업량 간의 절충을 위해 압축되지 않은 크기를 사용합니다. 이 작업량은 압축률이 아니라 처리되는 값의 수에 따라 증가하기 때문입니다.
+
+읽기 볼륨을 보수적으로 추정할 수 없는 경우에는 상한이 적용되지 않습니다. 예를 들어 이전 파트에서 새로 추가된 `DEFAULT` 컬럼을 평가하기 위해 다른 물리적 컬럼이 필요하거나, 선택한 범위가 가변 폭 컬럼의 일부만 읽는 경우입니다.
+
+기본값 64 KB는 `T(N) = W/N + F + V·N` 비용 모델에서 도출됩니다. 여기서 `W`는 유효 작업량, `F`는 고정 파이프라인 오버헤드, `V`는 스트림별 가변 비용입니다. 최적의 스트림 수는 `sqrt(W/V)`입니다. 처리량을 통해 `W`를 바이트로 표현하면 `C = throughput · V ≈ 400 MB/s · 0.17 ms ≈ 64 KB`가 됩니다. 이 값을 늘리면 스트림 수가 줄어들어 더 보수적으로 동작하며, 줄이면 더 많은 스트림을 허용합니다. 이 최적화를 비활성화하려면 0으로 설정하십시오.
+
+가능한 값:
+
+* 음이 아닌 정수.
+
 <div id="merge_tree_min_bytes_per_task_for_remote_reading">
   ## merge_tree_min_bytes_per_task_for_remote_reading
 </div>

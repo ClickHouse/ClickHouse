@@ -399,7 +399,7 @@ ClickHouse 是一种<a href="/zh/get-started/about/distinctive-features#true-col
   SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
   ```
 
-  在测试机器上返回 `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4`。
+  在测试机器上返回 `/Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4`。
 
   **步骤 2：获取 user&#95;files&#95;path**
 
@@ -407,12 +407,12 @@ ClickHouse 是一种<a href="/zh/get-started/about/distinctive-features#true-col
 
   在 Linux 上，你可以检查它是否已被修改：`$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-  在测试机器上，该路径是 `/Users/tomschreiber/Clickhouse/user_files/`
+  在测试机器上，该路径是 `/Users/tomschreiber/ClickHouse/user_files/`
 
   **步骤 3：将主索引文件复制到 user&#95;files&#95;path**
 
   ```bash
-  cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx
+  cp /Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/ClickHouse/user_files/primary-hits_UserID_URL.idx
   ```
 
   现在我们可以通过 SQL 检查主索引的内容：
@@ -464,7 +464,7 @@ ClickHouse 是一种<a href="/zh/get-started/about/distinctive-features#true-col
   主索引中存储的 `UserID` 值按升序排列。<br />
   因此，上图中的“标记 1”表示，粒度 1 以及后续所有粒度中的所有表行，其 `UserID` 值都保证大于或等于 4.073.710。
 
-[正如我们稍后将看到的](#the-primary-index-is-used-for-selecting-granules)，这种全局有序性使 ClickHouse 能够在查询按主键第一列进行过滤时，对第一键列的索引标记 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">使用二分查找算法</a>。
+[正如我们稍后将看到的](#the-primary-index-is-used-for-selecting-granules)，这种全局有序性使 ClickHouse 能够在查询按主键第一列进行过滤时，对首个键列的索引标记 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">使用二分查找算法</a>。
 
 * URL 索引标记：
 

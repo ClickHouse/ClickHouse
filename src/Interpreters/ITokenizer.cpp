@@ -35,8 +35,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-#if USE_ICU
     extern const int BAD_ARGUMENTS;
+#if USE_ICU
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_STRING_SIZE;
 #endif
@@ -317,6 +317,139 @@ String SplitByStringTokenizer::getDescription() const
     return result + "])";
 }
 
+SplitByRegexpTokenizer::SplitByRegexpTokenizer(const String & regexp_, bool match_tokens_)
+    : ITokenizerHelper(Type::SplitByRegexp)
+    , regexp_str(regexp_)
+    , match_tokens(match_tokens_)
+    /// Captures are tracked in both modes for simplicity, though only `match_tokens` mode reads them.
+    , regexp(std::make_shared<OptimizedRegularExpression>(regexp_, OptimizedRegularExpression::RE_DOT_NL))
+    /// A pattern with capture groups is never "trivial", so whenever `getNumberOfSubpatterns()` is
+    /// non-zero, index 1 is always populated. See the `chassert` in `nextInStringImpl`.
+    , token_group(match_tokens_ && regexp->getNumberOfSubpatterns() > 0 ? 1 : 0)
+{
+    /// Best-effort: reject patterns that can match empty (they'd get `nextMatchedToken` stuck). Not
+    /// exhaustive - a zero-width assertion (`\b`, `$`) can still match empty only in some contexts,
+    /// which this check can't see; `nextMatchedToken` catches that case at the point of use instead.
+    OptimizedRegularExpression::MatchVec probe_matches;
+    if (match_tokens_ && regexp->match("", 0, probe_matches) > 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "'{}' tokenizer: pattern '{}' can match an empty string, which is not supported with match_tokens = true",
+            getName(), regexp_);
+}
+
+bool SplitByRegexpTokenizer::nextInStringImpl(
+    const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length, OptimizedRegularExpression::MatchVec & matches) const
+{
+    if (match_tokens)
+        return nextMatchedToken(data, length, pos, token_start, token_length, matches);
+
+    while (pos <= length)
+    {
+        const size_t token_begin = pos;
+        size_t match_start = 0;
+        size_t match_length = 0;
+
+        if (nextRegexpMatch(*regexp, data, length, pos, match_start, match_length, matches))
+        {
+            /// The token is the text preceding the separator; `pos` has already advanced past the separator.
+            if (match_start > token_begin)
+            {
+                token_start = token_begin;
+                token_length = match_start - token_begin;
+                return true;
+            }
+            /// Empty piece (leading or consecutive separators): skip it and keep scanning.
+        }
+        else
+        {
+            /// No further separator: the remaining tail is the last token. An empty tail is not emitted.
+            pos = length + 1; /// Mark exhausted so subsequent calls return false.
+            if (token_begin < length)
+            {
+                token_start = token_begin;
+                token_length = length - token_begin;
+                return true;
+            }
+            return false;
+        }
+    }
+
+    return false;
+}
+
+bool SplitByRegexpTokenizer::nextMatchedToken(
+    const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length, OptimizedRegularExpression::MatchVec & matches) const
+{
+    while (pos <= length)
+    {
+        if (regexp->match(data, length, pos, matches) == 0)
+        {
+            pos = length + 1; /// Mark exhausted so subsequent calls return false.
+            return false;
+        }
+
+        chassert(token_group < matches.size());
+        const auto & whole_match = matches[0];
+
+        if (whole_match.length == 0)
+        {
+            /// Safety net for context-dependent cases (e.g. `\b`) the constructor's check can't see.
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "'{}' tokenizer: pattern '{}' matched an empty string, which is not supported with match_tokens = true",
+                getName(), regexp_str);
+        }
+
+        /// Advance past the whole match, not just the captured span, so matches never overlap.
+        pos = whole_match.offset + whole_match.length;
+
+        /// Capture group 1, or the whole match when the pattern has none. A non-participating or
+        /// empty group contributes no token.
+        const auto & group = matches[token_group];
+        if (group.offset != std::string::npos && group.length > 0)
+        {
+            token_start = group.offset;
+            token_length = group.length;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool SplitByRegexpTokenizer::nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
+{
+    /// Allocates the RE2 match scratch per call. This is only used by the (constant-only, documented as
+    /// inefficient) `stringToTokens` / `stringToBloomFilter` paths. The hot path - `forEachToken`, used by
+    /// index build, search and the `tokens` function - goes through `forEachTokenImpl`, which reuses a single
+    /// scratch buffer across all tokens of a string.
+    OptimizedRegularExpression::MatchVec matches;
+    return nextInStringImpl(data, length, pos, token_start, token_length, matches);
+}
+
+bool SplitByRegexpTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t & /*pos*/, String & /*token*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByRegexpTokenizer::nextInStringLike is not implemented");
+}
+
+void SplitByRegexpTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByRegexpTokenizer::substringToBloomFilter is not implemented");
+}
+
+void SplitByRegexpTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByRegexpTokenizer::substringToTokens is not implemented");
+}
+
+String SplitByRegexpTokenizer::getDescription() const
+{
+    if (match_tokens)
+        return fmt::format("{}({}, true)", getName(), quoteString(regexp_str));
+    return fmt::format("{}({})", getName(), quoteString(regexp_str));
+}
+
 bool ArrayTokenizer::nextInString(const char * /*data*/, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
 {
     if (pos == 0)
@@ -519,8 +652,6 @@ ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, s
     {
         const IColumn & data = col_array->getData();
         const IColumn::Offsets & src_offsets = col_array->getOffsets();
-        /// isNullable() is false for LowCardinality(Nullable), so use the helper that also
-        /// covers that case, otherwise getDataAt() throws NOT_IMPLEMENTED on a NULL element.
         const bool data_is_nullable = isColumnNullableOrLowCardinalityNullable(data);
 
         for (size_t i = from; i < from + rows; ++i)

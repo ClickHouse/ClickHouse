@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/array/length.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
@@ -118,9 +119,7 @@ struct AggregateFunctionSequenceMatchData final
         size_t size = 0;
         readBinary(size, buf);
 
-        /// Guard against allocation bombs (mirrors windowFunnel): a crafted state
-        /// can declare a huge size and make reserve allocate gigabytes before any
-        /// event is read.
+        /// The constant is arbitrary (mirrors `windowFunnel`).
         if (size > 100'000'000)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                 "Too large size ({}) of the state of sequenceMatch/sequenceCount", size);
@@ -131,7 +130,8 @@ struct AggregateFunctionSequenceMatchData final
         conditions_met.set();
 
         events_list.clear();
-        events_list.reserve(size);
+        /// Reserving is only an optimization here, so it is derived from payload that already arrived.
+        events_list.reserve(std::min(size, buf.available() / (sizeof(Timestamp) + sizeof(UInt64))));
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -276,8 +276,12 @@ private:
 
                     UInt64 duration = 0;
                     const auto * prev_pos = pos;
-                    pos = tryReadIntText(duration, pos, end);
-                    if (pos == prev_pos)
+                    ReadBufferFromMemory duration_buf(pos, end - pos);
+                    /// Both checks are load-bearing: a lone sign is consumed and then rejected,
+                    /// while a leading non-digit is rejected without consuming anything.
+                    const bool parsed_duration = tryReadIntText(duration, duration_buf);
+                    pos += duration_buf.count();
+                    if (pos == prev_pos || !parsed_duration)
                         throw_exception("Could not parse number");
 
                     if (actions.back().type != PatternActionType::SpecificEvent &&
@@ -296,7 +300,7 @@ private:
                     if (pos == prev_pos)
                         throw_exception("Could not parse number");
 
-                    if (event_number > arg_count - 1)
+                    if (event_number == 0 || event_number > arg_count - 1)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Event number {} is out of range", event_number);
 
                     actions.emplace_back(PatternActionType::SpecificEvent, event_number - 1);

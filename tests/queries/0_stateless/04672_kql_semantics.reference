@@ -1,0 +1,73 @@
+-- integer division truncates --
+3
+3.5
+3.5
+-3
+-- substring indexes from 0, and a negative start counts from the end --
+ab
+bc
+ef
+cdefg
+-- indexof is 0-based and reports -1 when absent --
+2
+-1
+0
+-- split takes the source first --
+['a','b','c']
+['a']
+1
+b
+-- strcat renders every argument and treats null as empty --
+abc
+a1b
+ab
+-- bin --
+4
+4
+-5
+15
+-- isempty / isnotempty treat null as empty --
+true
+false
+true
+-- conditionals --
+n
+y
+b
+c
+-- casts yield null on failure rather than raising --
+42
+\N
+9223372036854775807
+1.5
+1.5
+\N
+-- timespans are intervals, rendered in Kusto form --
+1.00:00:00
+01:30:00
+00:00:01.5000000
+02:30:00
+00:00:00.0000001
+-- timespan arithmetic on a datetime --
+2020-01-02 00:00:00.000000000
+2019-12-31 12:00:00.000000000
+86400
+-- datetime parts --
+2020
+3
+4
+00:00:00
+2020-03-04 00:00:00
+-- arrays --
+3
+6
+1
+20
+[2,3,4]
+-- sort defaults to descending, nulls at the small end --
+3
+2
+1
+1
+2
+3

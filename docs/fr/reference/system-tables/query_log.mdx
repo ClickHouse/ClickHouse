@@ -27,8 +27,31 @@ ClickHouse ne supprime pas automatiquement les données de la table. Voir [Intro
 
 La table `system.query_log` enregistre deux types de requêtes :
 
-1. Les requêtes initiales exécutées directement par le client.
-2. Les requêtes enfants initiées par d&#39;autres requêtes (pour l&#39;exécution distribuée des requêtes). Pour ces types de requêtes, les informations sur les requêtes parentes sont affichées dans les colonnes `initial_*`.
+1. Les requêtes initiales (de niveau supérieur).
+2. Les requêtes enfants initiées par d&#39;autres requêtes, y compris les requêtes pour l&#39;exécution distribuée et les sous-requêtes internes telles que l&#39;évaluation de vues. Pour ces requêtes, les informations sur la requête initiale d&#39;origine sont affichées dans les colonnes `initial_*`.
+
+<Tip>
+  **Filtrez les requêtes initiales par défaut**
+
+  En règle générale, ajoutez `is_initial_query = 1` chaque fois que vous interrogez `system.query_log`. Cela exclut les requêtes enfants afin que les étapes de traitement individuelles ne soient pas comptées séparément de la requête initiale. Ce filtre n&#39;implique pas qu&#39;une requête a été soumise par un client, car le travail interne au serveur peut également constituer une requête initiale.
+
+  Utilisez plutôt `initial_query_id` lorsque vous devez suivre une requête initiale avec les requêtes enfants qui conservent son ID. La requête initiale a la même valeur pour `initial_query_id` et `query_id`, tandis que les requêtes enfants de la même chaîne conservent l&#39;`initial_query_id` de la requête initiale et possèdent leur propre `query_id`. Tout le travail engendré par une requête initiale n&#39;est pas corrélé de cette manière : le travail routé par le serveur peut démarrer une nouvelle chaîne de requêtes initiales avec un nouvel `initial_query_id`, comme avec les routages distants de [`QueryRunner`](/fr/reference/engines/table-engines/special/query-runner#cluster-mode).
+
+  ```sql
+  SELECT
+      hostname,
+      type,
+      query_id,
+      initial_query_id,
+      is_initial_query,
+      query
+  FROM system.query_log
+  WHERE initial_query_id = '<query_id_of_initial_query>'
+  ORDER BY event_time_microseconds;
+  ```
+
+  Si des requêtes enfants corrélées peuvent s&#39;exécuter sur d&#39;autres nœuds, interrogez `system.query_log` sur chaque nœud, par exemple avec [`clusterAllReplicas`](/fr/reference/functions/table-functions/cluster).
+</Tip>
 
 Chaque requête crée une ou deux lignes dans la table `query_log`, selon le statut (voir la colonne `type`) de la requête :
 
@@ -75,19 +98,19 @@ Vous pouvez utiliser le paramètre [log&#95;formatted&#95;queries](/fr/reference
 * `exception_code` ([Int32](/fr/reference/data-types/int-uint)) — Code de l’exception.
 * `exception` ([String](/fr/reference/data-types/string)) — Message d’exception.
 * `stack_trace` ([String](/fr/reference/data-types/string)) — Trace de pile. Chaîne vide si la requête s’est terminée avec succès.
-* `is_initial_query` ([UInt8](/fr/reference/data-types/int-uint)) — Type de requête. Valeurs possibles : 1 — la requête a été initiée par le client, 0 — la requête a été initiée par une autre requête dans le cadre de l’exécution distribuée des requêtes.
+* `is_initial_query` ([UInt8](/fr/reference/data-types/int-uint)) — Indique si la requête est initiale. Valeurs possibles : 1 — une requête initiale (de niveau supérieur), 0 — une requête enfant initiée par une autre requête, y compris les requêtes destinées à l’exécution distribuée et les sous-requêtes internes.
 * `connection_address` ([IPv6](/fr/reference/data-types/ipv6)) — Adresse IP du client à partir de laquelle la connexion a été établie. En cas de connexion via un proxy, il s’agira de l’adresse du proxy.
 * `connection_port` ([UInt16](/fr/reference/data-types/int-uint)) — Port client à partir duquel la connexion a été établie. En cas de connexion via un proxy, il s’agira du port du proxy.
 * `user` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Nom de l’utilisateur qui a initié la requête en cours.
 * `query_id` ([String](/fr/reference/data-types/string)) — ID de la requête.
 * `address` ([IPv6](/fr/reference/data-types/ipv6)) — Adresse IP utilisée pour effectuer la requête. En cas de connexion via un proxy et si `auth_use_forwarded_address` est défini, il s’agira de l’adresse du client plutôt que de celle du proxy.
 * `port` ([UInt16](/fr/reference/data-types/int-uint)) — Port client utilisé pour effectuer la requête. En cas de connexion via un proxy et si `auth_use_forwarded_address` est défini, il s’agira du port du client plutôt que de celui du proxy.
-* `initial_user` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Nom de l’utilisateur qui a exécuté la requête initiale (pour l’exécution distribuée des requêtes).
-* `initial_query_id` ([String](/fr/reference/data-types/string)) — ID de la requête initiale (pour l’exécution distribuée des requêtes).
-* `initial_address` ([IPv6](/fr/reference/data-types/ipv6)) — Adresse IP depuis laquelle la requête parente a été lancée.
-* `initial_port` ([UInt16](/fr/reference/data-types/int-uint)) — Port client utilisé pour exécuter la requête parente.
-* `initial_query_start_time` ([DateTime](/fr/reference/data-types/datetime)) — Heure de début de la requête initiale (pour l’exécution distribuée des requêtes).
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/fr/reference/data-types/datetime64)) — Heure de début de la requête initiale avec une précision à la microseconde (pour l’exécution distribuée des requêtes).
+* `initial_user` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Nom de l’utilisateur qui a exécuté la requête initiale dans la même chaîne de requêtes.
+* `initial_query_id` ([String](/fr/reference/data-types/string)) — ID de la requête initiale dans la même chaîne de requêtes.
+* `initial_address` ([IPv6](/fr/reference/data-types/ipv6)) — Adresse IP depuis laquelle la requête initiale de la même chaîne de requêtes a été lancée.
+* `initial_port` ([UInt16](/fr/reference/data-types/int-uint)) — Port client depuis lequel la requête initiale de la même chaîne de requêtes a été lancée.
+* `initial_query_start_time` ([DateTime](/fr/reference/data-types/datetime)) — Heure de début de la requête initiale dans la même chaîne de requêtes.
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/fr/reference/data-types/datetime64)) — Heure de début de la requête initiale dans la même chaîne de requêtes, avec une précision à la microseconde.
 * `authenticated_user` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Nom de l’utilisateur authentifié dans la session.
 * `interface` ([UInt8](/fr/reference/data-types/int-uint)) — Interface à partir de laquelle la requête a été lancée. Valeurs possibles : 1 — TCP, 2 — HTTP.
 * `is_secure` ([UInt8](/fr/reference/data-types/int-uint)) — Indique si une requête a été exécutée via une interface sécurisée.
@@ -150,7 +173,13 @@ Vous pouvez utiliser le paramètre [log&#95;formatted&#95;queries](/fr/reference
 **Exemple simple**
 
 ```sql
-SELECT * FROM system.query_log WHERE type = 'QueryFinish' ORDER BY query_start_time DESC LIMIT 1 FORMAT Vertical;
+SELECT *
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND is_initial_query = 1
+ORDER BY query_start_time DESC
+LIMIT 1
+FORMAT Vertical;
 ```
 
 ```text
@@ -233,7 +262,7 @@ query_cache_usage:                     None
 
 Dans ClickHouse Cloud, `system.query_log` est local à chaque nœud ; pour voir tous les enregistrements, vous devez interroger via [`clusterAllReplicas`](/fr/reference/functions/table-functions/cluster).
 
-Par exemple, pour agréger les lignes de `query_log` de chaque réplique du cluster « default », vous pouvez écrire :
+Par exemple, pour agréger les lignes de `query&#95;log` de chaque réplique du cluster « default », vous pouvez écrire :
 
 ```sql
 SELECT * 

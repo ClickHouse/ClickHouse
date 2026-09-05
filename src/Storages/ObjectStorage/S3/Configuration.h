@@ -113,6 +113,8 @@ public:
     std::string getEngineName() const override { return url.storage_name; }
     std::string getNamespaceType() const override { return namespace_name; }
 
+    bool supportsFullyQualifiedPaths() const override { return isDataLakeConfiguration(); }
+
     const S3::S3AuthSettings & getAuthSettings() const { return s3_settings->auth_settings; }
 
     Path getRawPath() const override { return url.key; }
@@ -127,6 +129,7 @@ public:
 
     String getNamespace() const override { return url.bucket; }
     String getDataSourceDescription() const override;
+    String getDataSourceDescriptionForNamespace(const String & object_namespace) const override;
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
     bool isArchive() const override { return url.archive_pattern.has_value(); }

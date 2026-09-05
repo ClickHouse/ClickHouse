@@ -132,12 +132,7 @@ instantSelector
     ;
 
 labelMatcher
-    : selectorIdentifier labelMatcherOperator STRING
-    | STRING
-    ;
-
-selectorIdentifier
-    : labelName
+    : labelName labelMatcherOperator STRING
     | STRING
     ;
 
@@ -220,10 +215,11 @@ labelName
     : keyword
     | METRIC_NAME
     | LABEL_NAME
+    | STRING
     ;
 
 labelNameList
-    : LEFT_PAREN (labelName (COMMA labelName)*)? RIGHT_PAREN
+    : LEFT_PAREN (labelName (COMMA labelName)* COMMA?)? RIGHT_PAREN
     ;
 
 metricName

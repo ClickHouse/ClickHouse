@@ -60,19 +60,19 @@ doc_type: 'reference'
 * `exception_code` ([Int32](/ja/reference/data-types/int-uint)) — 例外コード。
 * `exception` ([String](/ja/reference/data-types/string)) — 例外メッセージ。
 * `stack_trace` ([String](/ja/reference/data-types/string)) — スタックトレース。クエリが正常に完了した場合は空文字列です。
-* `is_initial_query` ([UInt8](/ja/reference/data-types/int-uint)) — クエリタイプ。設定可能な値: 1 — クライアントによって開始されたクエリ、0 — 分散クエリ実行の一部として別のクエリによって開始されたクエリ。
+* `is_initial_query` ([UInt8](/ja/reference/data-types/int-uint)) — クエリが初期クエリかどうか。設定可能な値: 1 — 初期 (最上位) クエリ、0 — 分散実行用クエリおよび内部サブクエリを含む、別のクエリによって開始された子クエリ。
 * `connection_address` ([IPv6](/ja/reference/data-types/ipv6)) — 接続元のクライアントIPアドレス。プロキシ経由で接続している場合は、プロキシのアドレスです。
 * `connection_port` ([UInt16](/ja/reference/data-types/int-uint)) — 接続元のクライアントポート。プロキシ経由で接続している場合は、プロキシのポートです。
 * `user` ([String](/ja/reference/data-types/string)) — 現在のクエリを開始したユーザー名。
 * `query_id` ([String](/ja/reference/data-types/string)) — クエリID。
 * `address` ([IPv6](/ja/reference/data-types/ipv6)) — クエリの実行に使用されたIPアドレス。プロキシ経由で接続しており、`auth_use_forwarded_address` が設定されている場合は、プロキシではなくクライアントのアドレスです。
 * `port` ([UInt16](/ja/reference/data-types/int-uint)) — クエリの実行に使用されたクライアントポート。プロキシ経由で接続しており、`auth_use_forwarded_address` が設定されている場合は、プロキシではなくクライアントのポートです。
-* `initial_user` ([String](/ja/reference/data-types/string)) — 初期クエリを実行したユーザー名 (分散クエリ実行時) 。
-* `initial_query_id` ([String](/ja/reference/data-types/string)) — 初期クエリID (分散クエリ実行時) 。
-* `initial_address` ([IPv6](/ja/reference/data-types/ipv6)) — 親クエリの起動元IPアドレス。
-* `initial_port` ([UInt16](/ja/reference/data-types/int-uint)) — 親クエリの実行に使用されたクライアントポート。
-* `initial_query_start_time` ([DateTime](/ja/reference/data-types/datetime)) — 初期クエリの開始時刻 (分散クエリ実行時) 。
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/ja/reference/data-types/datetime64)) — マイクロ秒精度での初期クエリ開始時刻 (分散クエリ実行時) 。
+* `initial_user` ([String](/ja/reference/data-types/string)) — 同じクエリチェーン内の初期クエリを実行したユーザー名。
+* `initial_query_id` ([String](/ja/reference/data-types/string)) — 同じクエリチェーン内の初期クエリID。
+* `initial_address` ([IPv6](/ja/reference/data-types/ipv6)) — 同じクエリチェーン内の初期クエリの起動元IPアドレス。
+* `initial_port` ([UInt16](/ja/reference/data-types/int-uint)) — 同じクエリチェーン内の初期クエリの起動元クライアントポート。
+* `initial_query_start_time` ([DateTime](/ja/reference/data-types/datetime)) — 同じクエリチェーン内の初期クエリの開始時刻。
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/ja/reference/data-types/datetime64)) — 同じクエリチェーン内の初期クエリのマイクロ秒精度の開始時刻。
 * `authenticated_user` ([String](/ja/reference/data-types/string)) — セッションで認証されたユーザー名。
 * `interface` ([UInt8](/ja/reference/data-types/int-uint)) — クエリの開始元インターフェイス。設定可能な値: 1 — TCP、2 — HTTP。
 * `is_secure` ([UInt8](/ja/reference/data-types/int-uint)) — クエリがセキュアなインターフェイス経由で実行されたかどうかを示すフラグ
