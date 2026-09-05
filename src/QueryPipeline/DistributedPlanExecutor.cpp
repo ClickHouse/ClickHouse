@@ -1149,10 +1149,10 @@ UInt64 chooseTaskSerializationVersion(const ExchangeStreamSources & exchange_str
     return 1;
 }
 
-TaskToHostMap::TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
+TaskToHostMap::TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, size_t requested_workers_)
 {
     /// Only constructed for a plan that runs on workers; a local plan gets a null map instead.
-    fillWorkerAddresses(context_);
+    fillWorkerAddresses(context_, requested_workers_);
 
     /// Cap the host list to match the node count the optimizer planned for.
     size_t max_nodes = getCascadesClusterNodeCountParam(context_);
@@ -1196,17 +1196,14 @@ static Strings getDistributedWorkerHostnames(ContextPtr context)
     return result;
 }
 
-size_t getCascadesPlanningNodeCount(ContextPtr context)
+size_t getCascadesPlanningNodeCount(ContextPtr context, bool execute_locally, size_t requested_workers)
 {
-    const auto & settings = context->getSettingsRef();
-    const size_t requested_workers = settings[Setting::distributed_plan_workers_num];
-
     /// Local execution runs in-process, not bound to a cluster; use the requested count when set.
-    if (settings[Setting::distributed_plan_execute_locally] && requested_workers > 0)
+    if (execute_locally && requested_workers > 0)
         return requested_workers;
 
 #if CLICKHOUSE_CLOUD
-    /// Cloud discovery leases `distributed_plan_workers_num` workers instead of a static cluster.
+    /// Cloud discovery leases `requested_workers` workers instead of a static cluster.
     if (context->getConfigRef().has("stateless_worker_client.discovery_service"))
         return requested_workers;
 #endif
@@ -1217,7 +1214,8 @@ size_t getCascadesPlanningNodeCount(ContextPtr context)
 
 TaskToHostMap::~TaskToHostMap() = default;
 
-void TaskToHostMap::fillWorkerAddresses(ContextPtr context)
+/// `requested_workers` is consumed only by the Cloud discovery branch, so it is unused in OSS builds.
+void TaskToHostMap::fillWorkerAddresses(ContextPtr context, [[maybe_unused]] size_t requested_workers)
 {
     if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Stateless worker client is not enabled in configuration");
@@ -1229,13 +1227,12 @@ void TaskToHostMap::fillWorkerAddresses(ContextPtr context)
     /// both are present.
     if (context->getConfigRef().has("stateless_worker_client.discovery_service"))
     {
-        const auto workers_num = context->getSettingsRef()[Setting::distributed_plan_workers_num];
-        if (workers_num == 0)
+        if (requested_workers == 0)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Stateless worker discovery is configured but `distributed_plan_workers_num` is 0; "
                 "set it to a positive value to lease workers from the discovery service");
         auto provider = context->getStatelessWorkersProvider();
-        worker_allocation = provider->allocate(workers_num);
+        worker_allocation = provider->allocate(requested_workers);
         for (const auto & endpoint : worker_allocation->getEndpoints())
             worker_addresses.push_back(resolveWorkerAddress(endpoint.host, endpoint.port, 0, context));
         if (worker_addresses.empty())

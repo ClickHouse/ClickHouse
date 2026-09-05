@@ -957,7 +957,7 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         /// TaskToHostMap would require a configured worker cluster and fail on a plain single server.
         TaskToHostMapPtr task_to_host_map = execute_locally
             ? nullptr
-            : std::make_shared<TaskToHostMap>(distributed_plan, context);
+            : std::make_shared<TaskToHostMap>(distributed_plan, context, optimization_settings.distributed_plan_workers_num);
 
         /// Generate random unique id for the query
         /// We cannot use query_id from the context because user can put any string there and it might be not unique
