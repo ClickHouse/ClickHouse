@@ -54,6 +54,8 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTimeSeries.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 
 #include <Interpreters/Context.h>
@@ -3478,6 +3480,12 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
     /// For CREATE query generate UUID on initiator, so it will be the same on all hosts.
     /// It will be ignored if database does not support UUIDs.
     create.generateRandomUUIDs();
+
+    /// With an old DDL entry format the query is shipped un-normalized, so hosts running different releases
+    /// of ClickHouse would pin different latest versions. Pin the initiator's one here, like the UUIDs above.
+    /// A query with an AS clause is left alone: the hosts take the settings, including the version, from the other table.
+    if (create.is_time_series_table && create.as_table.empty() && !hasExplicitTimeSeriesSettingVersion(create))
+        setTimeSeriesSettingVersion(create, TimeSeriesVersion::LATEST);
 
     /// For cross-replication cluster we cannot use UUID in replica path.
     String cluster_name_expanded = local_context->getMacros()->expand(cluster_name);
