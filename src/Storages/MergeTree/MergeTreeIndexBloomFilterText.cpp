@@ -513,6 +513,14 @@ Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & t
     return field;
 }
 
+/// These compare a `FixedString` constant through the `String` supertype, which drops the trailing zero
+/// padding. `has`, `mapContainsKey`, `mapContainsValue`, `startsWith` and `endsWith` compare the raw
+/// padded bytes instead, so their terms must keep it; every other supported function rejects such a needle.
+bool functionIgnoresFixedStringPadding(const String & function_name)
+{
+    return function_name == "equals" || function_name == "notEquals" || function_name == "hasAny" || function_name == "hasAll";
+}
+
 }
 
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
@@ -545,7 +553,12 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
-    Field const_value = stripFixedStringPaddingForTerms(value_field, value_type);
+    /// Unconditional: every tokenizer `bloomFilterIndexTextCreator` allows - `ngrams`, `splitByNonAlpha`
+    /// and `sparseGrams` - emits the terms of the unpadded value as terms of the padded one, so a
+    /// `FixedString` indexed column, whose stored terms keep the padding, needs no extra condition here.
+    Field const_value = functionIgnoresFixedStringPadding(function_name)
+        ? stripFixedStringPaddingForTerms(value_field, value_type)
+        : value_field;
 
     /// The tokenizer would tokenize such a pattern differently than the scan does and could prune a
     /// granule holding matching rows.

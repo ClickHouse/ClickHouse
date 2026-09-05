@@ -1001,12 +1001,25 @@ static Field stripFixedStringPaddingForTerms(const Field & field, const DataType
     return field;
 }
 
-/// The terms of a value stay terms of the same value extended with zero bytes only for tokenizers
-/// that split on a zero byte or that emit substrings. `array` stores the whole value as a single
-/// term, `splitByString` keeps the padding inside the last one, and so on.
+/// These compare a `FixedString` constant through the `String` supertype, which drops the trailing zero
+/// padding. `has`, `mapContainsKey`, `mapContainsValue`, `startsWith` and `endsWith` compare the raw
+/// padded bytes instead, so their terms must keep it; every other supported function rejects such a needle.
+static bool functionIgnoresFixedStringPadding(const String & function_name)
+{
+    return function_name == "equals" || function_name == "notEquals" || function_name == "hasAny" || function_name == "hasAll";
+}
+
+/// The terms of a value stay terms of the same value extended with zero bytes for tokenizers that split
+/// on a zero byte (`splitByNonAlpha`, `asciiCJK`) or emit substrings (`ngrams`, `sparseGrams` - which
+/// emits a gram only while consuming the byte at its right border, so appending bytes keeps every gram
+/// and only adds new ones). `array` stores the whole value as one term, `splitByString` keeps the padding
+/// inside the last one, and the remaining tokenizers give no such guarantee.
 static bool tokenizerToleratesZeroPadding(ITokenizer::Type tokenizer_type)
 {
-    return tokenizer_type == ITokenizer::Type::SplitByNonAlpha || tokenizer_type == ITokenizer::Type::Ngrams;
+    return tokenizer_type == ITokenizer::Type::SplitByNonAlpha
+        || tokenizer_type == ITokenizer::Type::Ngrams
+        || tokenizer_type == ITokenizer::Type::SparseGrams
+        || tokenizer_type == ITokenizer::Type::AsciiCJK;
 }
 
 /// A `FixedString` indexed column stores the padding, and so do its terms. Stripping the constant is
@@ -1093,7 +1106,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
-    if (canStripFixedStringPadding(tokenizer->getType(), header))
+    if (functionIgnoresFixedStringPadding(function_name) && canStripFixedStringPadding(tokenizer->getType(), header))
         value_field = stripFixedStringPaddingForTerms(value_field, value_type);
 
     const auto & settings = getContext()->getSettingsRef();
