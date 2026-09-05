@@ -4247,6 +4247,11 @@ bool MutateTask::prepare()
         /// `collectFilesToSkip` cannot reach them since they are absent from `checksums.txt`.
         ctx->files_to_skip.insert(ctx->orphan_skip_index_files.begin(), ctx->orphan_skip_index_files.end());
 
+        /// A declaration that could not be analyzed has no `ProjectionDescription`, so nothing above can decide
+        /// whether its materialized data still matches the rows this mutation rewrites. Leave it out of the new part.
+        for (const auto & projection_name : ctx->metadata_snapshot->projections.getUnavailableNames())
+            ctx->files_to_skip.insert(projection_name + ".proj");
+
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->metadata_snapshot,
             ctx->source_part,
