@@ -1,7 +1,6 @@
-"""A cluster entry with no <default_database> is local on this node, so the sink writes it and
-the read rewrite reads it in-process on the caller's context - which resolves an undeclared
-shard-local database to the caller's current one, not to the probe connection's. The probe has
-to ask each replica about the table that replica will actually be given."""
+"""A cluster entry without <default_database> is local, so the sink and the read rewrite run it in-process
+on the caller's context, where an undeclared database is the caller's own: the probe must check that table.
+"""
 
 import json
 
@@ -13,7 +12,7 @@ from helpers.test_tools import assert_eq_with_retry
 from .prometheus_test_utils import (
     convert_time_series_to_protobuf,
     execute_query_via_http_api,
-    execute_range_query_via_http_api,
+    get_error_from_query_endpoint,
     get_response_to_remote_write,
     send_protobuf_to_remote_write,
 )
@@ -154,26 +153,16 @@ def test_remote_write_is_refused_when_only_the_probes_database_is_healthy():
 def query_as(endpoint, user, settings=None):
     """The error of the instant or range PromQL endpoint for a caller of this name."""
     params = {"user": user, "password": "", **(settings or {})}
-    if endpoint == "query":
-        return execute_query_via_http_api(
-            node.ip_address,
-            9093,
-            "/local_api/query",
-            "local_metric",
-            START_TIME,
-            params=params,
-            expect_error=True,
-        )
-    return execute_range_query_via_http_api(
+    return get_error_from_query_endpoint(
         node.ip_address,
         9093,
-        "/local_api/query_range",
+        "/local_api",
+        endpoint,
         "local_metric",
         START_TIME,
         START_TIME + 10,
         "10",
-        params=params,
-        expect_error=True,
+        params,
     )
 
 

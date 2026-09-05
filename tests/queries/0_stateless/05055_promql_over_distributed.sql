@@ -1,7 +1,6 @@
 -- Tags: no-parallel, no-fasttest, no-flaky-check, shard
--- no-parallel: uses the global shard_0 / shard_1 databases of test_cluster_two_shards_different_databases.
+-- no-parallel, no-flaky-check: uses the global shard_0 / shard_1 databases of test_cluster_two_shards_different_databases.
 -- no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
--- no-flaky-check: for the same reason, as for the other tests over these two databases.
 
 -- Raw samples are selected on every shard and the PromQL is evaluated on the initiator, so the answer
 -- must be the same as evaluating it against one local TimeSeries table holding all of the data.

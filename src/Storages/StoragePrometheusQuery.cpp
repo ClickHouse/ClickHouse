@@ -168,8 +168,8 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     {
         evaluation_settings.cluster_name = std::move(distributed_target->cluster_name);
         evaluation_settings.remote_time_series_storage_id = std::move(distributed_target->remote_time_series_storage_id);
-        std::tie(evaluation_settings.skip_unavailable_shards, evaluation_settings.skip_unavailable_shards_mode)
-            = declaredShardSkipSettings(*time_series_storage);
+        evaluation_settings.skip_unavailable_shards = distributed_target->skip_unavailable_shards;
+        evaluation_settings.skip_unavailable_shards_mode = std::move(distributed_target->skip_unavailable_shards_mode);
     }
     evaluation_settings.timestamp_data_type = std::move(timestamp_data_type);
     evaluation_settings.scalar_data_type = std::move(scalar_data_type);

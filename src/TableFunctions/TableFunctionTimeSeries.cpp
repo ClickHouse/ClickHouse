@@ -238,8 +238,8 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 ## Arguments {#arguments}
 
-- `db_name` - The name of the database where a TimeSeries table is located.
-- `time_series_table` - The name of a TimeSeries table.
+- `db_name` - The name of the database where the table is located.
+- `time_series_table` - The name of a TimeSeries table, or of a Distributed table over per-shard TimeSeries tables.
 - `promql_query` - A query written in [PromQL syntax](https://prometheus.io/docs/prometheus/latest/querying/basics/).
 - `evaluation_time - The evaluation timestamp. To evaluate a query at the current time, use `now()` as `evaluation_time`.
 
@@ -311,8 +311,8 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 
 ## Arguments {#arguments}
 
-- `db_name` - The name of the database where a TimeSeries table is located.
-- `time_series_table` - The name of a TimeSeries table.
+- `db_name` - The name of the database where the table is located.
+- `time_series_table` - The name of a TimeSeries table, or of a Distributed table over per-shard TimeSeries tables.
 - `promql_query` - A query written in [PromQL syntax](https://prometheus.io/docs/prometheus/latest/querying/basics/).
 - `start_time` - The start time of the evaluation range.
 - `end_time` - The end time of the evaluation range.

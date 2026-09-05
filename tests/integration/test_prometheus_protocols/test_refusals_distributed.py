@@ -1,6 +1,6 @@
-"""Surfaces that cannot merge shards - the inner-table readers /api/v1/series, /labels,
-/label/<name>/values, /metadata and remote read with its node-local counter - each refuse a
-Distributed target."""
+"""The inner-table readers (/api/v1/series, /labels, /label/<name>/values, /metadata) and remote read
+with its node-local counter cannot merge shards, so each refuses a Distributed target.
+"""
 
 import json
 
@@ -13,6 +13,7 @@ from helpers.test_tools import assert_eq_with_retry
 from .prometheus_test_utils import (
     convert_metrics_metadata_to_protobuf,
     convert_read_request_to_protobuf,
+    error_code,
     execute_query_via_http_api,
     execute_range_query_via_http_api,
     get_response_to_remote_read,
@@ -91,15 +92,6 @@ def start_cluster():
         cluster.shutdown()
 
 
-def error_code(name):
-    """The numeric code of a ClickHouse error, looked up on the server so that no test below
-    has to name a magic number of its own."""
-    return node.query(
-        f"SELECT DISTINCT code FROM system.errors WHERE name = '{name}'",
-        settings={"system_events_show_zero_values": 1},
-    ).strip()
-
-
 def get_answer(path):
     """The answer of an endpoint over the local TimeSeries table."""
     response = requests.get(f"http://{node.ip_address}:9093{path}")
@@ -163,7 +155,9 @@ def test_remote_read_refuses_a_distributed_target():
         node.ip_address, 9093, f"{DIST}/read", read_request
     )
     # Remote read reports the error code itself, so this pins the code and not its wording.
-    assert response.headers["X-ClickHouse-Exception-Code"] == error_code("NOT_IMPLEMENTED")
+    assert response.headers["X-ClickHouse-Exception-Code"] == error_code(
+        node, "NOT_IMPLEMENTED"
+    )
     assert response.status_code == requests.codes.not_implemented, response.text
     assert "NOT_IMPLEMENTED" in response.text
 
@@ -180,7 +174,13 @@ def test_the_query_endpoints_still_answer_over_a_distributed_target():
 
     ranged = json.loads(
         execute_range_query_via_http_api(
-            node.ip_address, 9093, f"{DIST}/query_range", "m", 100, EVALUATION_TIME, "20"
+            node.ip_address,
+            9093,
+            f"{DIST}/query_range",
+            "m",
+            100,
+            EVALUATION_TIME,
+            "20",
         )
     )
     assert len(ranged["result"]) == 4, ranged

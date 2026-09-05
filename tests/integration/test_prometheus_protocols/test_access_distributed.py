@@ -1,6 +1,6 @@
-"""Every Prometheus surface of a Distributed target checks its grant (SELECT to read, INSERT
-to write) before it looks at the table, so a denied caller learns nothing else. A read is
-denied for the grants the rewrite needs later too, before the shard probe speaks."""
+"""A denied caller learns only that it lacks a grant: every surface checks SELECT or INSERT before it
+looks at the table, and a read checks the grants the rewrite needs later before the shard probe speaks.
+"""
 
 import json
 
@@ -13,8 +13,9 @@ from helpers.test_tools import assert_eq_with_retry
 from .prometheus_test_utils import (
     convert_read_request_to_protobuf,
     convert_time_series_to_protobuf,
+    error_code,
     execute_query_via_http_api,
-    execute_range_query_via_http_api,
+    get_error_from_query_endpoint,
     get_response_to_remote_read,
     get_response_to_remote_write,
     send_protobuf_to_remote_write,
@@ -114,15 +115,6 @@ def start_cluster():
         cluster.shutdown()
 
 
-def error_code(name):
-    """The numeric code of a ClickHouse error, looked up on the server so that no test below
-    has to name a magic number of its own."""
-    return node.query(
-        f"SELECT DISTINCT code FROM system.errors WHERE name = '{name}'",
-        settings={"system_events_show_zero_values": 1},
-    ).strip()
-
-
 def as_user(user):
     return {} if user is None else {"user": user, "password": ""}
 
@@ -148,27 +140,16 @@ def query(handler, user=None, table=None, expect_error=False):
 
 def coarse_query(endpoint, user=None):
     """The error of the instant or range PromQL endpoint over the wrapper the probe rejects."""
-    params = as_user(user)
-    if endpoint == "query":
-        return execute_query_via_http_api(
-            node.ip_address,
-            9093,
-            f"{COARSE}/query",
-            "m",
-            EVALUATION_TIME,
-            params=params,
-            expect_error=True,
-        )
-    return execute_range_query_via_http_api(
+    return get_error_from_query_endpoint(
         node.ip_address,
         9093,
-        f"{COARSE}/query_range",
+        COARSE,
+        endpoint,
         "m",
         0,
         EVALUATION_TIME,
         "10",
-        params=params,
-        expect_error=True,
+        as_user(user),
     )
 
 
@@ -227,7 +208,9 @@ def test_remote_read_needs_the_select_grant():
         f"{DIST}/read{credentials_in_url(NO_SELECT_USER)}",
         read_request,
     )
-    assert denied.headers["X-ClickHouse-Exception-Code"] == error_code("ACCESS_DENIED")
+    assert denied.headers["X-ClickHouse-Exception-Code"] == error_code(
+        node, "ACCESS_DENIED"
+    )
     assert denied.status_code == requests.codes.forbidden, denied.text
     assert "NOT_IMPLEMENTED" not in denied.text
     assert "Distributed" not in denied.text
@@ -242,7 +225,9 @@ def test_remote_write_needs_the_insert_grant():
             [({"__name__": "denied_metric", "host": "h0"}, {EVALUATION_TIME: 1.0})]
         ),
     )
-    assert denied.headers["X-ClickHouse-Exception-Code"] == error_code("ACCESS_DENIED")
+    assert denied.headers["X-ClickHouse-Exception-Code"] == error_code(
+        node, "ACCESS_DENIED"
+    )
     assert denied.status_code == requests.codes.forbidden, denied.text
 
     # A write the same handler does accept, so the count below is read only after the sink has

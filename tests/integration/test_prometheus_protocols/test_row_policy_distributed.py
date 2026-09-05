@@ -1,6 +1,5 @@
-"""A row policy or an additional_table_filters entry that a plain SELECT applies and PromQL would not refuses
-the PromQL read: on the Distributed table, on a single TimeSeries table, and, checked on the shard, on a
-shard-local table. The metadata endpoints refuse a single table under either the same way.
+"""A row policy or additional_table_filters entry that a plain SELECT applies and PromQL would not refuses
+the PromQL read (wrapper, single table, shard-local table) and the metadata endpoints on a single table.
 """
 
 import contextlib
@@ -10,7 +9,7 @@ import requests
 
 from helpers.cluster import ClickHouseCluster
 
-from .prometheus_test_utils import get_response_to_http_api_query
+from .prometheus_test_utils import get_response_to_http_api_query, keyed_result
 
 cluster = ClickHouseCluster(__file__)
 
@@ -168,17 +167,6 @@ def assert_refused(response, *fragments):
         assert fragment in body["error"], body["error"]
 
 
-def keyed_result(data):
-    """Keys the series of a query result by their labels: an instant result comes back in no
-    defined order, so it has to be keyed before two answers can be compared."""
-    keyed = {
-        tuple(sorted(series["metric"].items())): series["value"]
-        for series in data["result"]
-    }
-    assert len(keyed) == len(data["result"]), f"Duplicate label sets in {data}"
-    return data["resultType"], keyed
-
-
 def query(handler, promql, user=None):
     response = query_response(handler, promql, user)
     assert response.status_code == 200, response.text
@@ -299,7 +287,7 @@ def test_metadata_endpoints_fail_closed_under_additional_table_filters(
             node.query("SELECT count() FROM ts_all", user="prom_filter_short").strip()
             == "0"
         )
-        for user in ("prom_filter_short", "prom_filter_full"):
+        for user in WRAPPER_FILTER_USERS:
             assert_refused(
                 metadata_response(endpoint, params, user),
                 f"The Prometheus {endpoint_name} endpoint is not supported on table",
