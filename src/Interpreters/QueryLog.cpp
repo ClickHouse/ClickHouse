@@ -109,7 +109,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"initial_query_start_time", std::make_shared<DataTypeDateTime>(), "Start time of the initial query in the same query chain."},
         {"initial_query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Start time of the initial query in the same query chain, with microsecond precision."},
         {"authenticated_user", low_cardinality_string, "Name of the user who was authenticated in the session."},
-        {"interface", std::make_shared<DataTypeUInt8>(), "Interface that the query was initiated from. Possible values: 1 — TCP, 2 — HTTP."},
+        {"interface", getReportedClientInterfaceEnum(), "Interface that the query was initiated from, as reported by the client. `Unknown` if the reported interface is not one this server recognizes."},
         {"is_secure", std::make_shared<DataTypeUInt8>(), "The flag whether a query was executed over a secure interface"},
         {"os_user", low_cardinality_string, "Operating system username who runs clickhouse-client."},
         {"client_hostname", low_cardinality_string, "Hostname of the client machine where the clickhouse-client or another TCP client is run."},
@@ -121,7 +121,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"client_version_patch", std::make_shared<DataTypeUInt32>(), "Patch component of the clickhouse-client or another TCP client version."},
         {"script_query_number", std::make_shared<DataTypeUInt32>(), "The query number in a script with multiple queries for clickhouse-client."},
         {"script_line_number", std::make_shared<DataTypeUInt32>(), "The line number of the query start in a script with multiple queries for clickhouse-client."},
-        {"http_method", std::make_shared<DataTypeUInt8>(), "HTTP method that initiated the query. Possible values: 0 - The query was launched from the TCP interface, 1 - GET method was used, 2 - POST method was used, 4 - PUT method was used, 5 - DELETE method was used, 6 - HEAD method was used."},
+        {"http_method", getClientHTTPMethodEnum(), "HTTP method that initiated the query. `UNKNOWN` if the query did not arrive over HTTP, or if the reported method is not one this server recognizes."},
         {"http_user_agent", low_cardinality_string, "HTTP header UserAgent passed in the HTTP query."},
         {"http_referer", std::make_shared<DataTypeString>(), "HTTP header Referer passed in the HTTP query (contains an absolute or partial address of the page making the query)."},
         {"forwarded_for", std::make_shared<DataTypeString>(), "HTTP header X-Forwarded-For passed in the HTTP query."},
@@ -393,7 +393,7 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
 
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.authenticated_user.data(), client_info.authenticated_user.size());
 
-    typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.interface));
+    typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(reportedClientInterfaceEnumValue(client_info.interface));
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.is_secure));
 
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.os_user.data(), client_info.os_user.size());
@@ -408,7 +408,7 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.script_query_number);
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.script_line_number);
 
-    typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.http_method));
+    typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(reportedClientHTTPMethodEnumValue(client_info.http_method));
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.http_user_agent.data(), client_info.http_user_agent.size());
     typeid_cast<ColumnString &>(*columns[i++]).insertData(client_info.http_referer.data(), client_info.http_referer.size());
     typeid_cast<ColumnString &>(*columns[i++]).insertData(client_info.forwarded_for.data(), client_info.forwarded_for.size());
