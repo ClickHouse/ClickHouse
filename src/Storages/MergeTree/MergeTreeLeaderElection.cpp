@@ -11,6 +11,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
@@ -39,6 +40,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char merge_tree_leader_election_pause_heartbeat[];
+}
 
 namespace ErrorCodes
 {
@@ -207,6 +213,10 @@ void MergeTreeLeaderElection::assertIsLeaderAndWritable() const
 
 void MergeTreeLeaderElection::run()
 {
+    /// Test hook: stall the heartbeat (all leader-election tables of this server) for as long as the
+    /// failpoint is enabled, so a lease can expire, be taken over and be dropped again unnoticed.
+    FailPointInjection::pauseFailPoint(FailPoints::merge_tree_leader_election_pause_heartbeat);
+
     try
     {
         bool became_leader = false;
@@ -335,6 +345,42 @@ void MergeTreeLeaderElection::run()
         /// renewal keeps its existing state: demoting a writable leader to
         /// `LeaderSyncing` on every successful heartbeat would block writes.
         bool was_leader = leadership_state.load(std::memory_order_acquire) != LeadershipState::Follower;
+
+        if (became_leader && was_leader && !was_renewal_attempt)
+        {
+            /// We still considered ourselves the leader, yet the lease was not ours to renew: it had
+            /// expired, was rewritten by another node and expired again, or disappeared - all
+            /// unnoticed, typically because this heartbeat was stalled past `session_timeout` - and we
+            /// have just re-taken it through the claim/create path. Another node may have held the
+            /// lease and written into the table in between. Continuing as the same leader would keep
+            /// serving with a part set, block-number counter and deduplication log that predate its
+            /// writes, and would let writes admitted under the old lease commit. Treat it as a loss
+            /// followed by a fresh acquisition: publish `Follower` and run the loss callback here, then
+            /// fall through to the acquisition path below, which bumps the epoch and runs the
+            /// takeover sync exactly as for any other new leader.
+            LOG_WARNING(log,
+                "Re-took the lease at '{}' through a takeover while still serving as leader: the previous "
+                "lease expired unnoticed, so the table is reconciled with the shared storage as a new leader",
+                lease_path);
+            leadership_state.store(LeadershipState::Follower, std::memory_order_release);
+            ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionLost);
+            CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionLeader);
+            CurrentMetrics::add(CurrentMetrics::MergeTreeLeaderElectionFollower);
+            if (on_leadership_change)
+            {
+                /// Shielded like the other loss paths: the acquisition below must still run.
+                try
+                {
+                    on_leadership_change(false);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Exception in leadership-loss callback");
+                }
+            }
+            was_leader = false;
+        }
+
         if (!became_leader)
             leadership_state.store(LeadershipState::Follower, std::memory_order_release);
         else if (!was_leader)

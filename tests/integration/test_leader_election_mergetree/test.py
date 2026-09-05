@@ -1,4 +1,5 @@
 import io
+import json
 import logging
 import random
 import threading
@@ -4383,5 +4384,116 @@ def test_restore_epoch_captured_at_admission(started_cluster):
         for table in (src, dst):
             try:
                 node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass
+
+
+SHARED_UUID_STALLED_LEADER = "12345678-abcd-abcd-abcd-12345678ab48"
+
+
+def read_lease(uuid):
+    """Return the parsed JSON of a table's lease file on the shared storage."""
+    key = find_lease_object_key(uuid)
+    assert key is not None, "The lease file was not found"
+    response = cluster.minio_client.get_object(cluster.minio_bucket, key)
+    try:
+        return json.loads(response.read().decode())
+    finally:
+        response.close()
+        response.release_conn()
+
+
+def test_stalled_leader_reclaims_lease_as_new_epoch(started_cluster):
+    """
+    Regression for a leader whose heartbeat stalls past `leader_election_session_timeout` while another
+    node takes the lease over, writes, and drops the lease again. When the stalled heartbeat resumed it
+    found an expired foreign lease and re-took it through the claim path, but it still considered itself
+    the leader (`was_leader`), so neither the leadership epoch was bumped nor the takeover sync ran: the
+    node went on serving with a part set, block-number counter and deduplication log that predated the
+    other node's writes, and writes admitted under the old lease could still commit. A lease re-taken
+    through the claim/create path while still serving as leader is now handled as a loss followed by a
+    fresh acquisition.
+
+    The `merge_tree_leader_election_pause_heartbeat` failpoint stalls the heartbeat of the leader;
+    the follower takes over, inserts a row and detaches the table so its lease expires; only then is
+    the heartbeat released.
+    """
+    ensure_node_up(node1)
+    ensure_node_up(node2)
+    failpoint = "merge_tree_leader_election_pause_heartbeat"
+    table = "test_stalled_leader"
+    paused_node = None
+    try:
+        create_table_on_first_node(node1, table, SHARED_UUID_STALLED_LEADER)
+        attach_table_on_second_node(node2, table, SHARED_UUID_STALLED_LEADER)
+        leader, followers = wait_for_leader([node1, node2], table_name=table)
+        follower = followers[0]
+
+        leader.query(f"INSERT INTO {table} VALUES (1), (2)")
+
+        lost_before = profile_event(leader, "MergeTreeLeaderElectionLost")
+        acquired_before = profile_event(leader, "MergeTreeLeaderElectionAcquired")
+
+        # Stall the leader's heartbeat: its lease is no longer renewed and expires.
+        leader.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        paused_node = leader
+
+        # The follower takes the lease over and writes a row the stalled leader knows nothing about.
+        new_leader, _ = wait_for_leader([follower], table_name=table)
+        assert new_leader is follower
+        follower.query(f"INSERT INTO {table} VALUES (100)")
+
+        # Detaching the table on the follower stops its election; its lease is not renewed and expires
+        # after `leader_election_session_timeout` (5 s). Release the stalled heartbeat only once the lease
+        # has provably expired, so that its first observation is an EXPIRED foreign lease (the case that
+        # used to be mistaken for a renewal), not a valid one.
+        follower.query(f"DETACH TABLE {table}")
+        lease = read_lease(SHARED_UUID_STALLED_LEADER)
+        assert lease["leader_id"] != "", "The follower's lease was not found"
+        deadline = time.monotonic() + 60
+        while time.time() - lease["timestamp"] <= 7:
+            assert time.monotonic() < deadline, "The follower's lease did not age out"
+            time.sleep(0.5)
+            lease = read_lease(SHARED_UUID_STALLED_LEADER)
+
+        leader.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        paused_node = None
+
+        # The resumed heartbeat re-takes the lease. It must go through a real loss and acquisition ...
+        wait_for_leader([leader], table_name=table)
+        assert profile_event(leader, "MergeTreeLeaderElectionLost") > lost_before, (
+            "The stalled leader re-took the lease without recording the loss of its previous lease"
+        )
+        assert profile_event(leader, "MergeTreeLeaderElectionAcquired") > acquired_before, (
+            "The stalled leader re-took the lease without a new leadership acquisition (epoch)"
+        )
+        # ... whose takeover sync makes the interim leader's row visible ...
+        rows = leader.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split()
+        assert rows == ["1", "2", "100"], (
+            f"The re-elected leader does not see the interim leader's write, got: {rows}"
+        )
+        # ... and advances the block-number counter past the interim leader's part, so the new part
+        # does not collide with it on the shared storage.
+        leader.query(f"INSERT INTO {table} VALUES (300)")
+        rows = leader.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split()
+        assert rows == ["1", "2", "100", "300"], f"Unexpected rows after the re-election: {rows}"
+
+        # The follower rejoins and sees the same data after a takeover-free refresh.
+        follower.query(f"ATTACH TABLE {table}")
+        deadline = time.monotonic() + 60
+        while follower.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split() != [
+            "1", "2", "100", "300",
+        ]:
+            assert time.monotonic() < deadline, "The follower did not observe the re-elected leader's data"
+            time.sleep(1)
+    finally:
+        if paused_node is not None:
+            try:
+                paused_node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            except Exception:
+                pass
+        for node in (node1, node2):
+            try:
+                node.query(f"DROP TABLE IF EXISTS {table} SYNC")
             except Exception:
                 pass

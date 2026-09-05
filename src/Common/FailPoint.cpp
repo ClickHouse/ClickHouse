@@ -301,6 +301,7 @@ static struct InitFiu
     PAUSEABLE(merge_task_pause_after_temporary_directory_created) \
     PAUSEABLE(merge_tree_leader_election_pause_after_detach_clone) \
     PAUSEABLE(merge_tree_leader_election_pause_after_restore_admission) \
+    PAUSEABLE(merge_tree_leader_election_pause_heartbeat) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE(rmt_mutate_task_pause_before_rename_part) \
     PAUSEABLE(rmt_mutate_task_pause_after_temporary_part_released) \
