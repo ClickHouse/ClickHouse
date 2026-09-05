@@ -1,0 +1,13 @@
+granted x, policy on y, sqp=0 shard1=10 shard2=10
+granted x, policy on y, sqp=1 shard1=10 shard2=10
+no grant on the leaf, sqp=0 ACCESS_DENIED
+no grant on the leaf, sqp=1 ACCESS_DENIED
+granted y only, selects x, sqp=0 ACCESS_DENIED
+granted y only, selects x, sqp=1 ACCESS_DENIED
+atf nd sqp=1 ONCE
+atf nd sqp=0 ONCE
+atf on policy subquery sqp=1 [0,1,2]
+atf on policy subquery sqp=0 [0,1,2]
+atf same table local [2]
+atf same table sqp=1 [2]
+atf same table sqp=0 [2]

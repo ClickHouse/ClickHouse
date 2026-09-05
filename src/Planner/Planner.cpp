@@ -2224,6 +2224,24 @@ void addReadFromQueryResultCacheStep(
 
 }
 
+void addBuildSubqueriesForTableFilterSets(
+    QueryPlan & query_plan,
+    const SelectQueryOptions & select_query_options,
+    const PlannerContextPtr & planner_context)
+{
+    UsefulSets useful_sets;
+    for (const auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
+    {
+        if (table_expression_data.getPrewhereFilterActions())
+            appendSetsFromActionsDAG(*table_expression_data.getPrewhereFilterActions(), useful_sets);
+
+        if (table_expression_data.getRowLevelFilterActions())
+            appendSetsFromActionsDAG(*table_expression_data.getRowLevelFilterActions(), useful_sets);
+    }
+
+    addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, useful_sets);
+}
+
 static PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
     const SelectQueryOptions & select_query_options,
     GlobalPlannerContextPtr global_planner_context)

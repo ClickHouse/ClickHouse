@@ -1,0 +1,3 @@
+dist sqp=1	1	1
+dist sqp=0	1	0
+parallel replicas	2

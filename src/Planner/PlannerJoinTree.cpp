@@ -563,31 +563,6 @@ bool hasTrivialCountIncompatibleModifiers(
     return false;
 }
 
-/// Returns the effective row policy filter for the table, or nullptr if the
-/// table has no row policies for the current user or the combined filter is
-/// always-true. Mirrors the effective-filter check used by
-/// buildRowPolicyFilterIfNeeded.
-RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const ContextPtr & query_context)
-{
-    auto storage_id = storage->getStorageID();
-    if (!storage_id.hasDatabase())
-        return nullptr;
-    auto row_policy_filter = query_context->getRowPolicyFilter(
-        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-
-    if (const auto * alias = storage->as<StorageAlias>())
-    {
-        const auto target_storage_id = alias->getTargetTable()->getStorageID();
-        auto target_row_policy_filter = query_context->getRowPolicyFilter(
-            target_storage_id.getDatabaseName(), target_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        row_policy_filter = combineRowPolicyFilters(std::move(row_policy_filter), std::move(target_row_policy_filter));
-    }
-
-    if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
-        return nullptr;
-    return row_policy_filter;
-}
-
 bool applyTrivialCountIfPossible(
     QueryPlan & query_plan,
     SelectQueryInfo & select_query_info,
@@ -839,7 +814,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
       * We do not check access rights for table functions because they have been already checked in ITableFunction::execute().
       */
     NameSet columns_names_allowed_to_select;
-    if (table_node)
+    if (table_node && !select_query_options.ignore_table_access_check)
     {
         const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
         columns_names_allowed_to_select = checkAccessRights(
@@ -907,7 +882,8 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
     }
 
     /// Limitation on the number of columns to read
-    if (settings[Setting::max_columns_to_read] && columns_names.size() > settings[Setting::max_columns_to_read])
+    if (!select_query_options.ignore_max_columns_to_read
+        && settings[Setting::max_columns_to_read] && columns_names.size() > settings[Setting::max_columns_to_read])
         throw Exception(
             ErrorCodes::TOO_MANY_COLUMNS,
             "Limit for number of columns to read exceeded. Requested: {}, maximum: {}",
@@ -1734,8 +1710,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         /// Skip under `only_analyze`, since we may not have the database in case of Distributed.
         if (!select_query_options.only_analyze)
         {
-            parseAdditionalFilterAstIfNeeded(
-                storage, table_expression->getOriginalAlias(), table_expression_query_info, query_context);
+            if (!select_query_options.skip_additional_table_filters)
+                parseAdditionalFilterAstIfNeeded(
+                    storage, table_expression->getOriginalAlias(), table_expression_query_info, query_context);
 
             /// `pushOrderByIntoView` depends on `additional_filter_ast` being parsed
             /// above, so it must run inside the same `!only_analyze` branch — otherwise
@@ -2467,8 +2444,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                             "Row policy filter for {} cannot be pushed into the storage read, and the storage processes "
                             "the query remotely, so the filter cannot be applied. Define the policy on the underlying "
-                            "tables instead; note that such a policy is not applied to reads shipped with "
-                            "`serialize_query_plan = 1`",
+                            "tables instead",
                             storage->getStorageID().getNameForLogs());
                 }
 
