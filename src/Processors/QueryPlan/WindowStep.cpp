@@ -314,6 +314,10 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
 
         UInt64 num_parameters = 0;
         readVarUInt(num_parameters, in);
+        if (num_parameters > in.available())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "WindowStep function claims {} parameters but only {} payload bytes remain",
+                num_parameters, in.available());
         func.function_parameters.resize(num_parameters);
         for (auto & param : func.function_parameters)
             param = readFieldBinary(in);

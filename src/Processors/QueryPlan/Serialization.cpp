@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 
 #include <IO/LimitReadBuffer.h>
+#include <IO/copyData.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -494,10 +495,14 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(
         settings.applyEntries(outline_node.settings);
 
         /// One frame at a time: the buffer is reused, so only the largest payload is ever held.
-        payload_bytes.resize(outline_node.payload_size);
+        /// The bytes are copied in as they arrive rather than reserving the declared size up front, so
+        /// a stream that ends early costs an allocation of what it actually sent, not of what it claimed.
+        payload_bytes.clear();
         try
         {
-            in.readStrict(payload_bytes.data(), payload_bytes.size());
+            WriteBufferFromString payload_writer(payload_bytes);
+            copyData(in, payload_writer, outline_node.payload_size);
+            payload_writer.finalize();
         }
         catch (Exception & e)
         {
