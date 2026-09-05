@@ -10,7 +10,7 @@ namespace DB::PrometheusQueryToSQL
 /// '+', '-', '*', '/', '%', '^', 'atan2'
 bool isMathBinaryOperator(std::string_view operator_name);
 
-/// Applies a prometheus math binary operator to two scalar expressions.
+/// Builds `f(x, y)` for a prometheus math binary operator.
 ASTPtr applyMathBinaryOperatorToAST(std::string_view operator_name, ASTPtr x, ASTPtr y);
 
 /// Applies a prometheus math binary operator.

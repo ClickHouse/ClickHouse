@@ -223,11 +223,8 @@ SQLQueryPiece applyAggregationOperatorQuantile(
         aggregation_query = builder.getSelectQuery();
     }
 
-    /// Step 2: rename `new_group` back to `group`.
-    /// Drop empty-values rows after the rename so `notEmpty(values)` cannot resolve to the
-    /// pre-aggregation input column when prefer_column_name_to_alias is enabled.
-    /// Empty arrays from quantileExactInclusiveForEach(...)([]) must also be dropped so the
-    /// values array length matches the steps in SQLQueryPiece (see StoreMethod::VECTOR_GRID).
+    /// Step 2: rename `new_group` back to `group` and drop empty grids (a WHERE, so `values` cannot bind to the input column
+    /// under prefer_column_name_to_alias).
     {
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(aggregation_query), SQLSubqueryType::TABLE});
 

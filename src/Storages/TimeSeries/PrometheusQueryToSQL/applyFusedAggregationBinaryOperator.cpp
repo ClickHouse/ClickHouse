@@ -34,9 +34,9 @@ namespace
         if (!isOneArgumentAggregationOperator(aggregation->operator_name) || (aggregation->getArguments().size() != 1))
             return nullptr;
 
-        /// With `by(__name__)` the aggregation keeps the metric name and the binary operator then removes it
-        /// from the result group, which can map several groups to the same one and must be reported as duplicate series.
-        if (aggregation->by && (std::find(aggregation->labels.begin(), aggregation->labels.end(), kMetricName) != aggregation->labels.end()))
+        /// `by (__name__)` keeps the metric name; the operator then drops it and must detect duplicate series.
+        const auto & labels = aggregation->labels;
+        if (aggregation->by && (std::find(labels.begin(), labels.end(), kMetricName) != labels.end()))
             return nullptr;
 
         return aggregation;
@@ -99,9 +99,6 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
     auto right_transform = getOneArgumentAggregationTransform(right_aggregation->operator_name);
     chassert(left_transform && right_transform);
 
-    /// The fused path replaces two applyOneArgumentAggregationOperator calls, so it must preserve the same
-    /// argument-type contract: a scalar or range vector argument (for example `sum(1) - max(1)` or
-    /// `sum(m[5m]) - max(m[5m])`) is a user error, not a logical error from toVectorGrid.
     if (argument.type != ResultType::INSTANT_VECTOR)
     {
         throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
@@ -110,7 +107,6 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
                         getPromQLText(argument, context), argument.type);
     }
 
-    /// If the argument is empty then both aggregations are empty, and so is the result.
     if (argument.store_method == StoreMethod::EMPTY)
         return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
 
@@ -120,14 +116,11 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
     res.node = operator_node;
     res.type = operator_node->result_type;
 
-    /// Step 1: aggregate over series, using `new_group` as an intermediate alias to avoid ambiguity with the
-    /// input `group` column when the alias and the source column share the same name (see applyOneArgumentAggregationOperator).
-    ///
+    /// Step 1:
     /// SELECT <group> AS new_group,
     ///        arrayMap((x, y) -> f(x, y), <left_aggregate>(values), <right_aggregate>(values)) AS values
     /// FROM argument
     /// [GROUP BY new_group]
-    /// HAVING notEmpty(values)
     ASTPtr aggregation_query;
     {
         SelectQueryBuilder builder;
@@ -158,9 +151,8 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
         aggregation_query = builder.getSelectQuery();
     }
 
-    /// Step 2: rename `new_group` back to `group`.
-    /// Drop empty-values rows after the rename so `notEmpty(values)` cannot resolve to the
-    /// pre-aggregation input column when prefer_column_name_to_alias is enabled.
+    /// Step 2: rename `new_group` back to `group` and drop empty grids (a WHERE, so `values` cannot bind to the input column
+    /// under prefer_column_name_to_alias).
     {
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(aggregation_query), SQLSubqueryType::TABLE});
 
