@@ -1,0 +1,90 @@
+<test>
+    <!--
+        Measure whether `ARRAY JOIN` preserves a shared `LowCardinality` dictionary
+        for downstream single-key aggregation.
+
+        The scalar and array columns contain the same `UInt128` keys in the same
+        row order. Every array has exactly one element, so both measured queries
+        aggregate the same number of rows and differ only by `ARRAY JOIN`.
+
+        The source has 8,190 distinct values, allowing both dictionaries to fit
+        within the default per-part limit. The first read block touches every
+        dictionary position, so later blocks can reuse the complete mapping
+        when dictionary identity is preserved.
+    -->
+
+    <settings>
+        <allow_suspicious_low_cardinality_types>1</allow_suspicious_low_cardinality_types>
+        <merge_tree_use_deserialization_prefixes_cache>1</merge_tree_use_deserialization_prefixes_cache>
+        <max_memory_usage>20G</max_memory_usage>
+    </settings>
+
+    <create_query>DROP TABLE IF EXISTS group_by_low_cardinality_array_join</create_query>
+    <create_query>
+        CREATE TABLE group_by_low_cardinality_array_join
+        (
+            stack_array Array(LowCardinality(UInt128)),
+            stack_flat LowCardinality(UInt128),
+            value UInt64
+        )
+        ENGINE = MergeTree
+        ORDER BY tuple()
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
+    </create_query>
+
+    <fill_query>
+        INSERT INTO group_by_low_cardinality_array_join
+        WITH
+            if(number &lt; 8190, number, intHash64(number) % 8190) AS stack_number,
+            bitOr(
+                bitShiftLeft(toUInt128(cityHash64(stack_number)), 64),
+                toUInt128(stack_number)) AS stack
+        SELECT
+            [stack] AS stack_array,
+            stack AS stack_flat,
+            toUInt64(1) AS value
+        FROM numbers(25000000)
+        SETTINGS
+            max_threads = 1,
+            max_insert_threads = 1,
+            max_block_size = 25000000,
+            max_insert_block_size = 25000000,
+            min_insert_block_size_rows = 25000000,
+            min_insert_block_size_bytes = 0
+    </fill_query>
+
+    <fill_query>
+        SELECT throwIf(
+            count() != 1 OR countIf(part_type = 'Wide') != 1,
+            'Expected one active Wide part')
+        FROM system.parts
+        WHERE database = currentDatabase()
+          AND table = 'group_by_low_cardinality_array_join'
+          AND active
+    </fill_query>
+
+    <!-- Shared-dictionary control without `ARRAY JOIN`. -->
+    <query>
+        SELECT stack_flat, sum(value)
+        FROM group_by_low_cardinality_array_join
+        GROUP BY stack_flat
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            max_block_size = 65536
+    </query>
+
+    <!-- The production-shaped path whose dictionary identity is currently lost. -->
+    <query>
+        SELECT stack, sum(value)
+        FROM group_by_low_cardinality_array_join
+        ARRAY JOIN stack_array AS stack
+        GROUP BY stack
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            max_block_size = 65536
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS group_by_low_cardinality_array_join</drop_query>
+</test>

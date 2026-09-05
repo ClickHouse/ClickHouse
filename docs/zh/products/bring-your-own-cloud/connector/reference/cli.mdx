@@ -1,0 +1,264 @@
+---
+title: '命令行客户端参考'
+sidebarTitle: '命令行客户端'
+description: 'clicklink clctl 命令参考：init、preflight、支持会话、网关 信任、审计和访问配置'
+keywords: ['BYOC', 'cloud', '自备 Cloud', '连接器', 'CLI']
+doc_type: 'reference'
+---
+
+连接器 以名为 `clicklink` 的单个二进制文件形式提供；可通过 `clicklink clctl` 运行相关命令。本页介绍安装和日常运维中使用的命令。对任意命令运行 `--help`，即可查看完整帮助文本。`troubleshoot` 和 `preflight` 子树中的 flags 还可通过 `CLCTL_*` 环境变量 (名称见各 flag 的帮助输出) 或 `~/.clicklink/clctl.yaml` 提供。
+
+<div id="init">
+  ## clicklink clctl init
+</div>
+
+通过注册令牌、已保存的注册包或带外签名证书初始化连接器。一次调用即可暂存配置、配置 ClickHouse 访问权限、获取 mTLS 客户端证书、部署 (Helm 图表或 systemd 单元) 并验证运行状况。重复运行是安全的：配置和集群 UUID 会被保留，凭据会以原子方式覆盖；除非传入 `--force`，否则会复用现有客户端密钥。有关完整流程，请参阅[入门配置](/zh/products/bring-your-own-cloud/connector/onboarding)。
+
+<div id="init-entry-points">
+  ### 入口点
+</div>
+
+三个入口点中必须且只能使用一个，彼此互斥。
+
+| 标志                     | 说明                                                                                                                                                                                                        |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--enroll <url>`       | 标准流程。接受组织连接器端点 (`https://<subdomain>.<connector domain>`) ，兑换一次性注册令牌 (在终端中会提示输入且不回显；否则从 stdin 的第一行读取) ，将生成的包写入 `handoff.yaml` (权限模式为 0600) ，然后以 `--handoff handoff.yaml` 继续执行。令牌绝不会出现在命令行、磁盘或日志中。 |
+| `--handoff <path>`     | 使用已保存的注册包进行引导。`handoff.yaml` 存在后，重新运行和恢复时都会使用此选项。                                                                                                                                                         |
+| `--signed-cert <path>` | 隔离网络流程的第 2 阶段：安装通过带外方式签名的客户端证书，并完成分阶段安装。还可使用 `--chain <path>` 同时替换 CA 证书链。                                                                                                                                |
+
+<div id="init-common-flags">
+  ### 通用标志
+</div>
+
+| 标志                          | 说明                                                                                                                             |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `--target <shape>`          | 部署形态：`systemd` (默认；引导当前所在的 VM) 或 `helm` (在具有 kubeconfig 的工作站上暂存 `clicklink-connector` chart) 。                                 |
+| `--instance <spec>`         | 以逗号分隔的 `key=value` 对指定 ClickHouse 实例 (`name`、`host`、`port`、`secure`、`database`、`namespace`、`cluster`) ；可重复指定。跳过交互式实例提示。        |
+| `--operators <emails>`      | 允许发起支持会话的 operator 电子邮件地址，以逗号分隔；启用会话网关并跳过提示。                                                                            |
+| `--no-gateway`              | 禁用会话网关 (不使用 OIDC 管理的会话) ；跳过提示。在 VM 上，主机上的 root 用户仍可通过本地会话文件管理会话。                                                         |
+| `--force`                   | 覆盖现有 config 或 overlay，并重新生成客户端密钥；同时确认替换尚未过期的自动签名证书。即使使用 `--force`，cluster UUID 也会保留。                           |
+| `--skip-provision`          | 仅暂存：跳过按角色进行的 ClickHouse 访问预配 (在 systemd target 上还会跳过单元启用和验证) 。请另行运行 `clicklink clctl {scraper,troubleshoot} access provision`。 |
+| `--ch-user-suffix <suffix>` | 为已预配的 ClickHouse 用户名添加可选后缀 (`pcm_scraper` 变为 `pcm_scraper_<suffix>`) ，使第二个连接器部署可与第一个共享同一实例，且不会发生用户冲突。                  |
+| `--ch-admin-password-stdin` | 当 SQL 预配需要 ClickHouse 管理员密码时，从 stdin 读取；在 terminal 中运行时则会提示输入。                                                              |
+
+<div id="init-signing-flags">
+  ### 签名选项 (仅限阶段 1)
+</div>
+
+| 标志                      | 描述                                                           |
+| ----------------------- | ------------------------------------------------------------ |
+| `--no-auto-sign`        | 仅限阶段 1：跳过通过注册端点自动签署 CSR，适用于隔离网络或带外签名流程。                      |
+| `--sign-endpoint <url>` | 覆盖注册签名端点 (默认值：通过在支持包端点中插入 `enroll` DNS 标签生成) 。必须为 HTTPS URL。 |
+
+<div id="init-kubernetes-flags">
+  ### 仅适用于 Kubernetes 的标志
+</div>
+
+仅可与 `--target helm` 一同使用。
+
+| 标志                          | 说明                                                                                                         |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `--target-namespace <ns>`   | chart 要安装到的命名空间，Secret 也会创建在此处 (默认值为 `clicklink`；会在终端中提示输入) 。                                              |
+| `--instance-namespace <ns>` | 目标 ClickHouse 实例所在的命名空间；用于初始化原生 Service 检测和实例相关提示。                                                         |
+| `--storage-class <name>`    | troubleshooter 状态卷使用的存储类 (默认值：集群的默认 StorageClass；如果集群未设置默认 StorageClass，则会提示输入或要求提供) 。                     |
+| `--values <path>`           | 暂存的配置值覆盖文件路径 (默认值为 `clicklink-values.yaml`) 。                                                              |
+| `--chart <ref>`             | 要部署的 chart：在 `--chart-repo` 中解析的名称，或用于镜像安装的直接 `oci://`、URL 或本地引用 (默认值为 `clicklink-connector`) 。            |
+| `--chart-repo <url>`        | 用于解析 chart 名称的 Helm 仓库 (默认值为 `https://releases.clicklink.clickhouse.com/charts`) ；直接指定 `--chart` 引用时将忽略此项。 |
+| `--chart-version <ver>`     | 要部署的 chart 版本 (默认值：此二进制文件的发行版版本) 。                                                                         |
+| `--ch-pod <ref>`            | 用于 pod 内预配步骤的 ClickHouse pod (容器组) ，可指定名称或 `k=v` 标签选择器 (默认值：为每个实例的 Service 提供支持的一个运行中 pod) 。               |
+| `--api-private-ca`          | API 端点提供由注册包 CA 签发的证书：暂存 `api.tls.caFile`，使其指向已挂载的 CA 证书链，而非系统根证书。                                           |
+
+<div id="init-vm-flags">
+  ### 仅适用于 VM 的标志
+</div>
+
+仅可与 `--target systemd` 配合使用。
+
+| 标志                   | 描述                                                                                  |
+| -------------------- | ----------------------------------------------------------------------------------- |
+| `--server <url>`     | 访问包所指向的 Kubernetes API server URL (默认使用此主机的 kubeconfig；否则会提示输入) 。                   |
+| `--ca-data <base64>` | 用于 `--server` 的 Base64 `certificate-authority-data` (默认使用此主机的 kubeconfig；否则会提示输入) 。 |
+
+<div id="init-flag-conflicts">
+  ### 标志冲突
+</div>
+
+* `--handoff`、`--enroll` 和 `--signed-cert` 互斥；必须且只能指定其中一个。
+* 仅 Kubernetes 适用的标志仅在指定 `--target helm` 时可用；使用 `--target helm` 时，不接受 `--server` 和 `--ca-data` (Helm 流程会读取工作站的 kubeconfig) 。
+* `--no-auto-sign` 与 `--sign-endpoint` 互斥，且二者 (以及 `--api-private-ca`) 均不能与 `--signed-cert` 一起使用。
+* `--operators` 与 `--no-gateway` 互斥。
+* 使用 `--skip-provision` 时，不接受 `--ch-pod`、`--ch-user-suffix`、`--server`、`--ca-data` 和 `--ch-admin-password-stdin` (不会执行任何预配) 。
+
+<div id="preflight">
+  ## clicklink clctl preflight
+</div>
+
+运行按类别分组的连接器检查套件：配置、文件、网络、ClickHouse、systemd、访问、磁盘和脱敏。每项检查会报告通过、警告、失败或跳过。退出代码为 0 表示所有检查均已通过 (警告不造成阻塞) ；退出代码为 2 表示一项或多项检查失败。
+
+该命令默认在本地运行。使用 `--k8s-namespace` 时，它会通过 `kubectl exec` 在连接器 pod (容器组) 中运行连接器自身的二进制文件，并在本地生成报告 (在 pod 中始终跳过 systemd 检查) 。使用[远程通道标志](#channel-flags)时，则会在远程 VM 上运行已安装的二进制文件。
+
+| 标志                       | 说明                                                        |
+| ------------------------ | --------------------------------------------------------- |
+| `--config <path>`        | 连接器配置文件的路径；对于远程目标，则为该主机上的路径。                              |
+| `--output <fmt>`, `-o`   | 输出格式：`text` (默认) 或 `json`。                                |
+| `--timeout <dur>`        | 所有检查的总超时时间 (默认值为 `30s`) 。                                 |
+| `--skip-systemd`         | 跳过 systemd 单元状态检查 (用于非 systemd 主机) 。                      |
+| `--k8s-namespace <ns>`   | 连接器 chart 所在的命名空间；通过 `kubectl exec` 在连接器 pod (容器组) 内运行预检。 |
+| `--k8s-component <name>` | 要运行预检的连接器 pod (容器组) ：`scraper` (默认) 或 `troubleshooter`。   |
+| `--k8s-pod <ref>`        | Pod (容器组) 名称，或 `k=v` 标记选择器覆盖项 (默认：chart 的组件标记) 。          |
+| `--k8s-container <name>` | 要 exec 进入的容器 (默认：组件名称) 。                                  |
+
+`--k8s-*` 标志与远程通道标志互斥；请选择其中一个目标。
+
+<div id="troubleshoot-session">
+  ## clicklink clctl troubleshoot session
+</div>
+
+用于启用、禁用和检查支持会话：故障排除程序在此限定时间窗口内接受命令。当没有活动会话时，即使其 WebSocket 已连接，守护进程也会拒绝所有命令。请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)。
+
+这些命令可在以下两种模式之一运行：
+
+* **本地文件** (默认) ：在运行故障排除程序的主机上读取和写入会话状态文件 (默认为 `/var/lib/clicklink/session.json`) 。
+* **Gateway**：使用 `--gateway-url` 时，会从您的工作站获取 OIDC ID 令牌，并改为调用故障排除程序的会话网关。
+
+<div id="session-shared-flags">
+  ### 共享选项
+</div>
+
+| 标志                         | 说明                                                                                       |
+| -------------------------- | ---------------------------------------------------------------------------------------- |
+| `--session-file <path>`    | 会话状态文件的路径 (默认为 `/var/lib/clicklink/session.json`) 。                                      |
+| `--config <path>`          | 连接器配置文件；会从其 `troubleshooter` 部分获取会话文件路径。                                          |
+| `--gateway-url <url>`      | 会话网关的基础 URL。设置后，命令会获取 OIDC Bearer 令牌并调用网关，而不访问本地状态文件。与 `--session-file` 和 `--config` 互斥。 |
+| `--gateway-audience <aud>` | OIDC 令牌绑定的 audience 声明 (默认为 `clicklink-clctl`，与网关自身的默认值一致) 。仅当重新配置了网关 audience 时才设置此项。   |
+| `--gateway-issuer <url>`   | 网关用于验证的 OIDC 签发方。留空时使用 Google 流程；与 `--oidc-client-id` 一同设置，可针对非 Google 身份提供商运行设备代码流程。    |
+| `--oidc-client-id <id>`    | 用于设备代码流程的公网 OIDC 客户端 ID，已在 `--gateway-issuer` 注册并启用设备授权。                                 |
+| `--token-file <path>`      | 包含预先生成的 OIDC ID 令牌的文件；该令牌将作为 Bearer 令牌使用，并绕过其他令牌提供商。                                     |
+| `--gateway-ca <path>`      | 用于验证网关证书的 CA bundle (自带证书) 。未设置时，使用通过 `gateway trust` 固定的证书；未固定证书的自签名网关会拒绝连接。            |
+
+<div id="session-enable">
+  ### 启用 session
+</div>
+
+| 标志                 | 描述                                                                             |
+| ------------------ | ------------------------------------------------------------------------------ |
+| `--duration <dur>` | session 保持激活状态的时长 (默认 `4h`，最长 `24h`) 。                                         |
+| `--reason <text>`  | 与 session 一同记录的可选自由文本原因 (最多 256 个字符) 。                                         |
+| `--user <name>`    | 在本地文件模式下记录的操作员身份；默认为 `$SUDO_USER` 或 `$USER`。在 gateway 模式下，以 token 认证的电子邮件地址为准。 |
+
+如果已有处于活动状态的 session，启用操作将失败；请先将其禁用，或等待其过期。
+
+<div id="session-disable">
+  ### 禁用 session
+</div>
+
+立即停用 session。未激活 session 时，此操作为空操作。
+
+<div id="session-status">
+  ### 会话状态
+</div>
+
+显示会话是否处于活动状态、由谁启用及其到期时间。`--output` (`-o`) 可选择 `table` (默认) 或 `json`。
+
+在 Kubernetes 中，通过端口转发访问网关：
+
+```bash
+kubectl -n <connector-namespace> port-forward \
+  statefulset/clicklink-connector-troubleshooter 8443:8443
+clicklink clctl troubleshoot session enable \
+  --gateway-url http://localhost:8443 \
+  --duration 1h --reason "support ticket 1234"
+```
+
+<div id="gateway-trust">
+  ## clicklink clctl troubleshoot gateway trust
+</div>
+
+在 VM 上，session 网关使用自签名 TLS 证书。此命令会将证书的 SHA-256 指纹记录到 `~/.clicklink/clctl.yaml`，以便 `session` 命令验证该证书；若固定的指纹不再匹配，验证将失败并拒绝连接。可通过以下两种带外方式之一建立信任：
+
+* 使用[远程通道标志](#channel-flags)时，会通过已完成身份验证的通道直接从 VM 读取并固定证书。
+* 不使用通道时，传入 `--gateway-fingerprint`，其值为连接器生成证书时记录的 SHA-256 指纹；仅当获取的证书与其匹配时才会固定。省略该标志会打印出当前提供的指纹，但不会固定任何内容。
+
+| 标志                               | 描述                                                                            |
+| -------------------------------- | ----------------------------------------------------------------------------- |
+| `--gateway-url <url>`            | 要信任的网关基础 URL (必填) ，例如 `https://<vm-host>:8443`。                        |
+| `--gateway-fingerprint <sha256>` | 连接器日志中记录的预期 SHA-256 指纹，固定前会进行验证。忽略冒号和字母大小写。                            |
+| `--remote-cert-file <path>`      | VM 上网关证书的路径，通过通道读取 (默认为 `/var/lib/clicklink/gateway/tls/server.crt`) 。 |
+
+```bash
+clicklink clctl troubleshoot gateway trust \
+  --gateway-url https://<vm-host>:8443 \
+  --gateway-fingerprint <sha256-from-connector-log>
+```
+
+在 Kubernetes 中，不使用固定方式：应通过具有 CA 签发证书的入口公开网关，或使用端口转发。
+
+<div id="audit-tail">
+  ## clicklink clctl troubleshoot audit tail
+</div>
+
+打印故障排除程序审计日志中的最后几条记录：采用以换行分隔的 JSON 格式，守护进程接受或阻止的每条命令各对应一条记录。该命令以只读方式打开日志，绝不会对其进行修改。
+
+| 标志                  | 说明                                                            |
+| ------------------- | ------------------------------------------------------------- |
+| `--lines <n>`, `-n` | 要打印的尾随记录数 (默认为 50) 。                                          |
+| `--path <path>`     | 审计日志文件的路径 (默认为 `/var/log/clicklink/troubleshoot-audit.log`) 。 |
+
+连接器 的运行时镜像不包含 shell，因此在 Kubernetes 中，此命令是受支持的读取方式：
+
+```bash
+kubectl -n <connector-namespace> exec <troubleshooter-pod> -- \
+  /clicklink clctl troubleshoot audit tail
+```
+
+<div id="access-provision">
+  ## 访问凭据预配
+</div>
+
+`clicklink clctl scraper access provision` 和 `clicklink clctl troubleshoot access provision` 会创建组件每个实例的访问包；使用 `--force` 时会轮换该访问包。访问包包括只读 ClickHouse 用户及其授权，以及组件所使用的 Kubernetes ServiceAccount、RBAC 和令牌。`init` 会在安装期间内联执行此操作；独立命令则用于重新执行和轮换。
+
+| 标志                                                                   | 说明                                                                                                                      |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `--instance <name>`                                                  | 配置中的实例名称 (必填) 。                                                                                                         |
+| `--server <url>`                                                     | Kubernetes API 服务器 URL (必填) 。                                                                                           |
+| `--ca-data <base64>`                                                 | 用于生成 kubeconfig 的 Base64 编码集群 CA 证书。                                                                                    |
+| `--config <path>`                                                    | 用于读取实例信息的连接器配置文件。                                                                                                       |
+| `--target <shape>`                                                   | `systemd` (默认：通过远程通道将访问包发送到 VM，或使用 `--provider local` 在本地生成) 或 `helm` (将访问包作为 Kubernetes Secret 推送到 chart) 。            |
+| `--target-namespace <ns>`                                            | 存放访问包 Secret 的命名空间 (使用 `--target helm` 时必填) 。                                                                           |
+| `--instance-namespace <ns>`                                          |  (`--target helm`) 目标 ClickHouse 实例所在的命名空间。                                                                             |
+| `--force`                                                            | 覆盖现有访问包：用于重新执行和轮换凭据。                                                                                                    |
+| `--secret-name <name>`                                               | 覆盖访问包 Secret 的名称 (默认值为 `clicklink-connector-<component>-access-<instance>`) 。                                           |
+| `--output-dir <path>`                                                |  (`--target helm` 或 `--provider local`) 访问包的输出根目录。                                                                      |
+| `--ch-admin-user <name>`                                             | 用于应用授权的 ClickHouse 管理员用户 (默认值为 `default`) 。                                                                             |
+| `--ch-admin-password-stdin`                                          | 从 stdin 读取 ClickHouse 管理员密码。                                                                                            |
+| `--ch-user-suffix <suffix>`                                          | 为预配的 ClickHouse 用户名指定可选后缀。                                                                                              |
+| `--ch-user-via <mode>`                                               | ClickHouse 用户的预配方式：`sql` (默认；以 `--ch-admin-user` 身份应用生成的授权) 或 `cr` (将用户写入实例的自定义资源，适用于由 operator 管理且没有可执行 SQL 的管理员的实例) 。 |
+| `--apply-ch-grants`                                                  |  (`--target helm`) 通过 `kubectl exec` 在 pod (容器组) 中应用生成的授权，而非留待你自行应用。                                                    |
+| `--ch-pod <ref>`, `--ch-pod-namespace <ns>`, `--ch-container <name>` |  (`--target helm` 搭配 `--apply-ch-grants` 或 `--ch-user-via cr`) 选择要 exec 进入的 ClickHouse pod (容器组) 和容器。                   |
+| `--token-duration <dur>`                                             | ServiceAccount 令牌有效期 (默认 `2160h`，即 90 天；EKS 将令牌有效期限制为 24 小时) 。                                                          |
+| `--skip-restart`                                                     | 预配后跳过重启组件。                                                                                                              |
+| `--dry-run`                                                          | 打印计划后退出；不会向 Kubernetes、远程系统或 ClickHouse 写入任何内容。                                                                         |
+
+轮换某个组件中某个实例的凭据：
+
+```bash
+clicklink clctl scraper access provision --target helm \
+  --target-namespace <connector-namespace> \
+  --instance <instance-name> --instance-namespace <clickhouse-namespace> \
+  --server <kubernetes-api-server-url> \
+  --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace <clickhouse-namespace> \
+  --force
+```
+
+<div id="channel-flags">
+  ## 远程通道标志
+</div>
+
+`preflight`、`gateway trust` 和 `access provision` 接受一组通用标志，用于指定连接到 VM 目标的方式：
+
+| 标志                                                                                          | 描述                                                                                                            |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `--provider <name>`                                                                         | 执行通道：对于远程 VM，可使用 `ssh`、`aws` (SSM) 或 `gcp` (IAP)；在目标 VM 上运行时，使用 `local`。未显式设置时，将根据各提供商相关的标志推断；绝不会推断为 `local`。 |
+| `--ssh-host <host>`, `--ssh-user <user>`, `--ssh-port <port>`, `--ssh-identity-file <path>` | SSH 连接信息 (`--provider ssh`) ；用户、端口和密钥默认采用你的 SSH 配置。                                                           |
+| `--instance-id <id>`, `--region <region>`, `--profile <name>`                               | 用于 SSM 的 EC2 实例、区域和共享配置 profile (`--provider aws`) 。                                                          |
+| `--project <id>`, `--zone <zone>`, `--instance-name <name>`                                 | 用于 IAP 隧道的项目、可用区和实例 (`--provider gcp`) 。                                                                      |

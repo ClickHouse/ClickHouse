@@ -259,12 +259,20 @@ public:
             /// column: literal if present, sub-object as JSON if not, NULL otherwise.
             String combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + path + "`";
             auto merged_type = data_type_object.getSubcolumnType(combined_name);
-            auto merged = data_type_object.getSubcolumn(combined_name, object_column);
 
             /// Typed paths are always present in a JSON column, even when the key was missing
             /// from the inserted JSON (they get the type's default value). For non-typed paths
             /// the combined subcolumn returns a Dynamic column where NULL means absent.
+            /// When type_json_skip_null_typed_paths is enabled, NULL typed paths are treated as absent.
             bool is_typed_path = data_type_object.getTypedPaths().contains(path);
+            bool treat_typed_as_always_present = is_typed_path && !format_settings.json.type_json_skip_null_typed_paths;
+
+            /// When skip_null_typed_paths is enabled for a non-typed parent path (e.g. 'a' when 'a.b' is typed),
+            /// use extractCombinedSubcolumn which propagates the setting into sub-object emptiness checks.
+            /// Otherwise the sub-object with all-NULL typed descendants would be considered non-empty.
+            auto merged = (format_settings.json.type_json_skip_null_typed_paths && !is_typed_path)
+                ? data_type_object.extractCombinedSubcolumn(path, object_column, true)
+                : data_type_object.getSubcolumn(combined_name, object_column);
 
             /// JSONHas must be UInt8 {0,1} from path presence. The generic `else` below would
             /// cast the extracted value to UInt8 and silently return the value itself.
@@ -272,7 +280,7 @@ public:
 
             if constexpr (is_has)
             {
-                if (is_typed_path)
+                if (treat_typed_as_always_present)
                     return DataTypeUInt8().createColumnConst(input_rows_count, 1u)->convertToFullColumnIfConst();
 
                 auto result = ColumnVector<UInt8>::create(input_rows_count);
@@ -303,7 +311,7 @@ public:
                 auto serialization = merged_type->getDefaultSerialization();
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    if (!is_typed_path && merged->isNullAt(i))
+                    if (!treat_typed_as_always_present && merged->isNullAt(i))
                     {
                         raw_col->insertDefault();
                     }
@@ -1300,7 +1308,7 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0;
             )",
             R"(
 1
-0
+1
             )"
         }
         };
@@ -1328,7 +1336,7 @@ SELECT isValidJSON('not JSON') = 0;
             )",
             R"(
 1
-0
+1
             )"
         },
         {
@@ -1347,9 +1355,7 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 3);
 1
 1
 1
-1
 0
-
             )"
         }
         };
@@ -1615,9 +1621,9 @@ Parses JSON and extracts a value with given ClickHouse data type.
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Array(Float64))') AS res;
             )",
             R"(
-┌─res──────────────────────────────┐
-│ ('hello',[-100,200,300])         │
-└──────────────────────────────────┘
+┌─res──────────────────────┐
+│ ('hello',[-100,200,300]) │
+└──────────────────────────┘
             )"
         }
         };
@@ -1676,9 +1682,9 @@ Returns a part of JSON as unparsed string.
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') AS res;
             )",
             R"(
-┌─res──────────────┐
-│ [-100,200.0,300] │
-└──────────────────┘
+┌─res────────────┐
+│ [-100,200,300] │
+└────────────────┘
             )"
         }
         };
@@ -1706,9 +1712,9 @@ Returns an array with elements of JSON array, each represented as unparsed strin
 SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') AS res;
             )",
             R"(
-┌─res──────────────────────────┐
-│ ['-100','200.0','"hello"']   │
-└──────────────────────────────┘
+┌─res──────────────────────┐
+│ ['-100','200','"hello"'] │
+└──────────────────────────┘
             )"
         }
         };
@@ -1765,9 +1771,9 @@ Parses a JSON string and extracts the keys.
 SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}') AS res;
             )",
             R"(
-┌─res─────────┐
-│ ['a','b']   │
-└─────────────┘
+┌─res───────┐
+│ ['a','b'] │
+└───────────┘
             )"
         }
         };

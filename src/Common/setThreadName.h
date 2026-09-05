@@ -62,6 +62,7 @@ namespace DB
     M(DISTRIBUTED_INDEX_ANALYSIS, "DistIdxAnalysis") \
     M(DISTRIBUTED_QUERY_TASK, "DistQueryTask") \
     M(DROP_TABLES, "DropTables") \
+    M(SHUTDOWN_TABLES, "ShutdownTables") \
     M(DWARF_DECODER, "DWARFDecoder") \
     M(ERROR_LOG, "ErrorLog") \
     M(EXTERNAL_LOADER, "ExternalLoader") \
@@ -72,6 +73,7 @@ namespace DB
     M(HASHED_DICT_LOAD, "HashedDictLoad") \
     M(HTTP_HANDLER, "HTTPHandler") \
     M(HTTP_SERVER_CONN, "HTTPSrvConn") \
+    M(ICEBERG_DELETE_DECODE, "IcebergDelDec") \
     M(ICEBERG_ITERATOR, "IcebergIter") \
     M(ICEBERG_SCHEDULE_POOL, "IcebergSchPool") \
     M(INTERSERVER_HANDLER, "IntersrvHandler") \

@@ -4,6 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
+#include <Common/FullyQualifiedObjectPath.h>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
@@ -70,7 +71,9 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Storages/MergeTree/MarkRange.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -108,6 +111,30 @@ namespace ErrorCodes
 
 namespace
 {
+    DataTypePtr rowLineageColumnType()
+    {
+        return makeNullable(std::make_shared<DataTypeInt64>());
+    }
+
+    Names getMaterializedRowLineageColumns(
+        [[maybe_unused]] const ObjectInfo & object_info,
+        [[maybe_unused]] const ReadFromFormatInfo & read_from_format_info,
+        [[maybe_unused]] const String & format_name)
+    {
+        Names result;
+#if USE_AVRO
+        if (Poco::toLower(format_name) != "parquet" || !dynamic_cast<const IcebergDataObjectInfo *>(&object_info))
+            return result;
+
+        for (const auto * name : {"_row_id", "_last_updated_sequence_number"})
+        {
+            if (read_from_format_info.requested_virtual_columns.contains(name))
+                result.emplace_back(name);
+        }
+#endif
+        return result;
+    }
+
     Map objectAttributesToMap(const ObjectAttributes & attributes)
     {
         Map result;
@@ -119,28 +146,6 @@ namespace
             result.emplace_back(std::move(element));
         }
         return result;
-    }
-
-    /// Compose the Query Condition Cache key (`part_name`) for an object, or return nullopt when the
-    /// object cannot be safely cached and caching must be skipped (fail-close).
-    ///
-    /// The object identifier already uses the full path, so files that share a base name in
-    /// different directories do not collide. For general (non-data-lake) remote objects the path
-    /// alone is not a stable identity - an object can be overwritten in place under the same path -
-    /// so the ETag is folded in as a content-version token; a query after an overwrite then misses
-    /// rather than reusing stale row-group information. If the ETag is unavailable we skip the cache
-    /// instead of risking a stale hit. Data-lake data files are immutable, so the path is a stable
-    /// identity on its own and no ETag is required (this also avoids disabling the cache for data
-    /// lakes whose object metadata does not carry an ETag).
-    std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
-    {
-        String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
-        if (is_data_lake)
-            return identifier;
-        const auto & metadata = object_info.getObjectMetadata();
-        if (!metadata || metadata->etag.empty())
-            return std::nullopt;
-        return QueryConditionCache::makeFilePartName(identifier, metadata->etag);
     }
 
     std::optional<Map> tryGetHeadersFromReadBuffer(const ReadBuffer * read_buffer)
@@ -242,6 +247,70 @@ static bool hasAttachedDeletes(const ObjectInfo & object_info)
         && object_info.data_lake_metadata->excluded_rows->size() > 0;
 }
 
+static bool readsIdentityPartitionColumn(
+    const ActionsDAG & dag, const std::vector<std::pair<String, Field>> & identity_partition_columns)
+{
+    if (identity_partition_columns.empty())
+        return false;
+
+    for (const auto & required : dag.getRequiredColumns())
+        for (const auto & [name, _] : identity_partition_columns)
+            if (name == required.name)
+                return true;
+    return false;
+}
+
+static ActionsDAG substituteIdentityPartitionColumns(
+    const ActionsDAG & dag, const std::vector<std::pair<String, Field>> & identity_partition_columns)
+{
+    std::unordered_map<std::string_view, const Field *> values_by_name;
+    for (const auto & [name, value] : identity_partition_columns)
+        values_by_name.emplace(name, &value);
+
+    ActionsDAG substitution;
+    for (const auto & required : dag.getRequiredColumns())
+    {
+        auto it = values_by_name.find(required.name);
+        if (it == values_by_name.end())
+            continue;
+
+        const auto & constant
+            = substitution.addColumn(required.type->createColumnConst(0, *it->second), required.type, required.name);
+        substitution.getOutputs().push_back(&substitution.materializeNode(constant));
+    }
+
+    return ActionsDAG::merge(std::move(substitution), dag.clone());
+}
+
+static std::optional<ActionsDAG> buildIdentityPartitionColumnsDag(
+    const Block & header, const std::vector<std::pair<String, Field>> & identity_partition_columns)
+{
+    std::unordered_map<std::string_view, const Field *> values_by_name;
+    for (const auto & [name, value] : identity_partition_columns)
+        if (header.has(name))
+            values_by_name.emplace(name, &value);
+
+    if (values_by_name.empty())
+        return {};
+
+    ActionsDAG dag;
+    auto & outputs = dag.getOutputs();
+    for (const auto & column : header)
+    {
+        const auto & input = dag.addInput(column.name, column.type);
+        auto it = values_by_name.find(column.name);
+        if (it == values_by_name.end())
+        {
+            outputs.push_back(&input);
+            continue;
+        }
+
+        const auto & constant = dag.addColumn(column.type->createColumnConst(1, *it->second), column.type, column.name);
+        outputs.push_back(&dag.materializeNode(constant));
+    }
+    return dag;
+}
+
 StorageObjectStorageSource::StorageObjectStorageSource(
     const StorageID & storage_id_,
     String name_,
@@ -292,13 +361,7 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
 {
-    auto path = object_info.getPath();
-    if (path.starts_with("/"))
-        path = path.substr(1);
-
-    std::string result = include_connection_info
-        ? fs::path(configuration.getDataSourceDescription()) / path
-        : fs::path(configuration.getNamespace()) / path;
+    std::string result = formatObjectPath(configuration, object_info.getPath(), include_connection_info);
 
     /// For web URL shards the same relative path can be produced by different expanded URL options
     /// (e.g. `http://{host1,host2}/data/**`). Including `read_source_index` keeps schema/count cache
@@ -313,6 +376,28 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
         result += fmt::format("#read_source_index={}", *object_info.relative_path_with_metadata.read_source_index);
 
     return result;
+}
+
+/// The object identifier already uses the full path, so files that share a base name in
+/// different directories do not collide. For general (non-data-lake) remote objects the path
+/// alone is not a stable identity - an object can be overwritten in place under the same path -
+/// so the ETag is folded in as a content-version token; a query after an overwrite then misses
+/// rather than reusing stale row-group information. This only holds when the ETag is a strong
+/// content identifier: a weak token (e.g. HDFS's second-precision `(mtime, size)`) can stay the
+/// same across a same-second, same-size overwrite and would let the cache serve stale row-group
+/// skip marks (missing rows). We therefore skip the cache unless `isEtagUsableAsCacheKey` holds,
+/// matching the filesystem/page/Parquet-metadata cache checks (fail-close). Data-lake data files
+/// are immutable, so the path is a stable identity on its own and no ETag is required (this also
+/// avoids disabling the cache for data lakes whose object metadata does not carry an ETag).
+std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
+{
+    String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
+    if (is_data_lake)
+        return identifier;
+    const auto & metadata = object_info.getObjectMetadata();
+    if (!metadata || !metadata->isEtagUsableAsCacheKey())
+        return std::nullopt;
+    return QueryConditionCache::makeFilePartName(identifier, metadata->etag);
 }
 
 std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
@@ -361,6 +446,18 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     std::unique_ptr<IObjectIterator> iterator;
     const auto & reading_path = configuration->getPathForRead();
+    /// An archive exposes `_path` and `_file` values for its entries, while this iterator usually
+    /// sees only the outer archive object. A known, non-glob archive member is an exception: its
+    /// virtual path is known before opening the archive, so filter it before probing a missing outer
+    /// archive. This only works when the outer archive paths are materialized locally - explicit keys
+    /// or a single brace expansion - so that the member name can be appended to each concrete path.
+    /// The outer path must not contain a general glob: that form goes through `GlobIterator`, which
+    /// builds filter values from the listed outer archive objects, not from the entry virtual paths,
+    /// so pushing an entry-level predicate there would wrongly discard every archive. Such archive
+    /// forms still need the regular filter step after `ArchiveIterator` has created entry object infos.
+    const bool is_explicit_archive_member = is_archive && !configuration->isPathInArchiveWithGlobs()
+        && (!reading_path.hasGlobs() || (!match_web_paths_only && hasExactlyOneBracketsExpansion(reading_path.path)));
+    const auto * path_filter_predicate = is_archive && !is_explicit_archive_member ? nullptr : predicate;
     /// `KeysIterator` carries only path strings and drops `read_source_index`. For web URL shards the
     /// same relative path can come from different expanded URL options (e.g. `http://{h1,h2}/data/**`),
     /// so losing the source index would make `WebObjectStorage::readObject` treat all shards as failover
@@ -369,27 +466,105 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     if (!match_web_paths_only && reading_path.hasGlobs() && hasExactlyOneBracketsExpansion(reading_path.path))
     {
         auto paths = expandSelectionGlob(reading_path.path);
+        ExpressionActionsPtr deferred_filter_actions;
+        std::vector<String> archive_member_names;
+
+        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(path_filter_predicate, virtual_columns, local_context, hive_columns))
+        {
+            Strings filter_paths;
+            filter_paths.reserve(paths.size());
+            for (const auto & path : paths)
+                filter_paths.push_back(joinPathUnderPrefix(configuration->getNamespace(), path));
+
+            if (is_explicit_archive_member)
+            {
+                for (auto & path : filter_paths)
+                    path += fmt::format("::{}", configuration->getPathInArchive());
+                archive_member_names.assign(paths.size(), configuration->getPathInArchive());
+            }
+
+            if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
+            {
+                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                VirtualColumnUtils::filterByPathOrFile(
+                    paths, filter_paths, actions, virtual_columns, hive_columns, local_context,
+                    /*format_settings=*/std::nullopt,
+                    is_explicit_archive_member ? &archive_member_names : nullptr);
+            }
+            else
+            {
+                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            }
+        }
+
         iterator = std::make_unique<KeysIterator>(
             paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, skip_object_metadata, with_tags,
-            file_progress_callback);
+            file_progress_callback, deferred_filter_actions, hive_columns, configuration->getNamespace(), local_context,
+            is_explicit_archive_member ? configuration->getPathInArchive() : String{});
     }
     else if (reading_path.hasGlobs())
     {
-        // Try extract _path values from filter, which will allow to use KeysIterator instead of GlobIterator
+        // Try extract _path values from filter, which will allow to use KeysIterator instead of GlobIterator.
+        /// Not for archives: their `_path` values are entry virtual paths (`<archive>::<member>`), which
+        /// are not object keys - they can neither be validated against the outer glob nor listed by
+        /// `KeysIterator`, so the extraction would drop every archive (or probe a bogus key when the
+        /// outer glob happens to match the full entry string). Archives keep `GlobIterator`, and the
+        /// entry-level predicate is applied after `ArchiveIterator` has created entry object infos.
         std::optional<Strings> paths;
-        if (!match_web_paths_only && filter_actions_dag && local_context->getSettingsRef()[Setting::s3_path_filter_limit])
+        if (!match_web_paths_only && !is_archive && filter_actions_dag && local_context->getSettingsRef()[Setting::s3_path_filter_limit])
             paths = VirtualColumnUtils::extractPathValuesFromFilter(
                 filter_actions_dag, local_context, local_context->getSettingsRef()[Setting::s3_path_filter_limit]);
 
-        // If paths is nullopt, use the glob iterator to scan all matching files.
-        // If paths contains a value, validate the extracted paths and use the key-based iterator
-        // (even if the result is empty, indicating no scanning is required).
-        if (!paths)
+        /// Validate that extracted paths match the glob pattern to prevent scanning unallowed data.
+        /// The extracted values are `_path` column values, so they need that column's formatter
+        /// inverted rather than a plain relative(). That inverse is not unique: under a non-empty
+        /// namespace a key that keeps a leading separator renders exactly like the same key without
+        /// it. When the glob accepts both spellings of a value there is no way to tell which object
+        /// was meant, and guessing would read the wrong one, so the extraction is given up on and
+        /// the listing decides - `GlobIterator` matches the keys as they really are.
+        std::optional<Strings> validated_paths;
+        if (paths)
+        {
+            re2::RE2 matcher(makeRegexpPatternFromGlobs(reading_path.path));
+            if (!matcher.ok())
+                throw Exception(
+                    ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", reading_path.path, matcher.error());
+
+            validated_paths.emplace();
+            for (const auto & path : paths.value())
+            {
+                std::optional<String> matched_key;
+                for (auto & candidate : candidateKeysUnderPrefix(configuration->getNamespace(), path))
+                {
+                    const auto & path_for_matching = match_web_paths_only ? getPathComponentForGlobMatching(candidate) : candidate;
+                    if (!RE2::FullMatch(path_for_matching, matcher))
+                        continue;
+
+                    if (matched_key)
+                    {
+                        matched_key.reset();
+                        validated_paths.reset();
+                        break;
+                    }
+                    matched_key = std::move(candidate);
+                }
+
+                if (!validated_paths)
+                    break;
+                if (matched_key)
+                    validated_paths->push_back(std::move(*matched_key));
+            }
+        }
+
+        // If there are no validated paths, use the glob iterator to scan all matching files.
+        // Otherwise use the key-based iterator (even if the list is empty, indicating no scanning
+        // is required).
+        if (!validated_paths)
             iterator = std::make_unique<GlobIterator>(
                 object_storage,
                 configuration,
-                predicate,
+                path_filter_predicate,
                 virtual_columns,
                 hive_columns,
                 local_context,
@@ -400,30 +575,20 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 file_progress_callback);
         else
         {
-            // Validate that extracted paths match the glob pattern to prevent scanning unallowed data
-            Strings validated_paths;
-            re2::RE2 matcher(makeRegexpPatternFromGlobs(reading_path.path));
-            if (matcher.ok())
-            {
-                for (const auto & path : paths.value())
-                {
-                    const auto relative_path = fs::relative(path, configuration->getNamespace()).string();
-                    const auto & path_for_matching = match_web_paths_only ? getPathComponentForGlobMatching(relative_path) : relative_path;
-                    if (RE2::FullMatch(path_for_matching, matcher))
-                        validated_paths.push_back(relative_path);
-                }
-            }
-            else
-                throw Exception(
-                    ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", reading_path.path, matcher.error());
-
+            /// The validated keys stand in for a listing: a listing never yields a key that does not exist,
+            /// so a candidate that names no object must be skipped, not probed with an exception. Otherwise
+            /// `WHERE _path = '<something that matches the glob but is not there>'` would throw where the
+            /// glob alone returns no rows, and a mixed `IN` would throw instead of returning the existing part.
+            /// The metadata is fetched here for the same reason even when the caller would defer it (cluster
+            /// mode): the probe is what tells a missing candidate apart, and a listing would have carried the
+            /// metadata anyway.
             iterator = std::make_unique<KeysIterator>(
-                validated_paths,
+                *validated_paths,
                 object_storage,
                 virtual_columns,
                 is_archive ? nullptr : read_keys,
-                query_settings.ignore_non_existent_file,
-                skip_object_metadata,
+                /*ignore_non_existent_files=*/true,
+                /*skip_object_metadata=*/false,
                 with_tags,
                 file_progress_callback);
         }
@@ -461,7 +626,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 *filter_actions_dag,
                 virtual_columns,
                 hive_columns,
-                configuration->getNamespace(),
+                configuration,
                 local_context,
                 file_progress_callback);
         }
@@ -469,14 +634,15 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     }
     else
     {
+        Strings keys;
         Strings paths;
+        ExpressionActionsPtr deferred_filter_actions;
 
-        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, local_context, hive_columns);
+        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(path_filter_predicate, virtual_columns, local_context, hive_columns);
         if (filter_dag)
         {
             const auto configuration_paths = configuration->getPaths();
 
-            std::vector<std::string> keys;
             keys.reserve(configuration_paths.size());
 
             for (const auto & path: configuration_paths)
@@ -486,27 +652,58 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
             paths.reserve(keys.size());
             for (const auto & key : keys)
-                paths.push_back(fs::path(configuration->getNamespace()) / key);
+                paths.push_back(formatObjectPath(*configuration, key, /*include_connection_info=*/false));
 
-            VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
-            auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-            VirtualColumnUtils::filterByPathOrFile(keys, paths, actions, virtual_columns, hive_columns, local_context);
-            paths = keys;
+            if (is_explicit_archive_member)
+            {
+                for (auto & path : paths)
+                    path += fmt::format("::{}", configuration->getPathInArchive());
+            }
+
+            std::vector<String> archive_member_names;
+            if (is_explicit_archive_member)
+                archive_member_names.assign(keys.size(), configuration->getPathInArchive());
+
+            /// Unlike `GlobIterator`, which applies its filter while listing objects (that is, when the
+            /// pipeline runs), the keys are pruned here, while the pipeline is being built. A set can
+            /// still be unbuilt at this point: `ReadFromObjectStorageStep::applyFilters` leaves the sets
+            /// of `globalIn` / `globalNotIn` alone so that `ReadFromRemote` can attach an external table
+            /// to them first, and plan optimization has since moved the subquery plan of such a set into
+            /// `CreatingSetsStep`, so `buildSetsForDAG` cannot build it here either - it only becomes
+            /// ready when the pipeline runs. Executing a not-ready set here throws "Not-ready Set is
+            /// passed as the second argument", so defer the filter to `KeysIterator::next` instead: it
+            /// runs when the pipeline runs, after `CreatingSetsStep` has built the set. The filter must
+            /// still be applied before the metadata probe in `next` (not merely left to the `Filter`
+            /// step above this source), because probing a filtered-out nonexistent key would throw
+            /// FILE_DOESNT_EXIST.
+            if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
+            {
+                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                VirtualColumnUtils::filterByPathOrFile(
+                    keys, paths, actions, virtual_columns, hive_columns, local_context,
+                    /*format_settings=*/std::nullopt,
+                    is_explicit_archive_member ? &archive_member_names : nullptr);
+            }
+            else
+            {
+                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            }
         }
         else
         {
             const auto configuration_paths = configuration->getPaths();
-            paths.reserve(configuration_paths.size());
+            keys.reserve(configuration_paths.size());
             for (const auto & path: configuration_paths)
             {
-                paths.emplace_back(path.path);
+                keys.emplace_back(path.path);
             }
         }
 
         iterator = std::make_unique<KeysIterator>(
-            paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
+            keys, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, /*skip_object_metadata=*/false, with_tags,
-            file_progress_callback);
+            file_progress_callback, deferred_filter_actions, hive_columns, configuration->getNamespace(), local_context,
+            is_explicit_archive_member ? configuration->getPathInArchive() : String{});
     }
 
     if (is_archive)
@@ -568,7 +765,7 @@ Chunk StorageObjectStorageSource::generate()
 
             const auto reading_path = configuration->getPathForRead().path;
 
-            if (!full_path.starts_with(reading_path))
+            if (!full_path.starts_with(reading_path) && !trySplitFullyQualifiedObjectPath(full_path))
                 full_path = fs::path(reading_path) / object_info->getPath();
 
             auto object_metadata = object_info->getObjectMetadata();
@@ -576,6 +773,32 @@ Chunk StorageObjectStorageSource::generate()
             chassert(object_metadata);
 
             const auto path = getUniqueStoragePathIdentifier(*configuration, *object_info, false);
+
+            ColumnPtr materialized_row_ids;
+            ColumnPtr materialized_last_updated_sequence_numbers;
+            /// Without an input format the chunk comes from the count-from-cache path, which reads no
+            /// file and therefore carries no row lineage columns.
+            if (const auto lineage_columns = reader.getInputFormat()
+                    ? getMaterializedRowLineageColumns(
+                          *object_info, read_from_format_info, object_info->getFileFormat().value_or(configuration->format))
+                    : Names{};
+                !lineage_columns.empty())
+            {
+                auto columns = chunk.detachColumns();
+                chassert(columns.size() >= lineage_columns.size());
+                const size_t first_lineage_column = columns.size() - lineage_columns.size();
+
+                for (size_t i = 0; i < lineage_columns.size(); ++i)
+                {
+                    if (lineage_columns[i] == "_row_id")
+                        materialized_row_ids = columns[first_lineage_column + i];
+                    else
+                        materialized_last_updated_sequence_numbers = columns[first_lineage_column + i];
+                }
+
+                columns.resize(first_lineage_column);
+                chunk.setColumns(std::move(columns), num_rows);
+            }
 
             /// The order is important, hive partition columns must be added before virtual columns
             /// because they are part of the schema
@@ -590,9 +813,16 @@ Chunk StorageObjectStorageSource::generate()
             }
 
             const String * iceberg_metadata_file_path = nullptr;
+            std::optional<UInt64> last_updated_sequence_number;
+            std::optional<UInt64> first_row_id;
 #if USE_AVRO
             if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
+            {
                 iceberg_metadata_file_path = &iceberg_info->info.data_object_file_path_key.serialize();
+                first_row_id = iceberg_info->info.first_row_id;
+                if (first_row_id.has_value())
+                    last_updated_sequence_number = iceberg_info->info.sequence_number;
+            }
 #endif
 
             std::optional<size_t> object_size;
@@ -618,6 +848,10 @@ Chunk StorageObjectStorageSource::generate()
                     .tags = &(object_metadata->tags),
                     .data_lake_snapshot_version = file_iterator->getSnapshotVersion(),
                     .iceberg_metadata_file_path = iceberg_metadata_file_path,
+                    .last_updated_sequence_number = last_updated_sequence_number,
+                    .first_row_id = first_row_id,
+                    .materialized_row_ids = materialized_row_ids,
+                    .materialized_last_updated_sequence_numbers = materialized_last_updated_sequence_numbers,
                 },
                 read_context,
                 format_settings);
@@ -684,7 +918,7 @@ Chunk StorageObjectStorageSource::generate()
             if (chunk_size && chunk.hasColumns())
             {
                 /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
-                if (dynamic_cast<const DeltaLakeMetadata *>(configuration->getExternalMetadata()))
+                if (std::dynamic_pointer_cast<const DeltaLakeMetadata>(configuration->getExternalMetadata()))
                 {
                     /// This is an awful temporary crutch,
                     /// which will be removed once DeltaKernel is used by default for DeltaLake.
@@ -969,6 +1203,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     std::shared_ptr<ISource> source;
     std::unique_ptr<ReadBuffer> read_buf;
 
+    Names row_lineage_columns;
+
     auto try_get_num_rows_from_cache = [&]() -> std::optional<size_t>
     {
         if (!schema_cache)
@@ -1034,6 +1270,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         const auto format_name = object_info->getFileFormat().value_or(configuration->format);
         const bool input_format_does_not_read_file = Poco::toLower(format_name) == "one";
 
+        row_lineage_columns = getMaterializedRowLineageColumns(*object_info, read_from_format_info, format_name);
+
         CompressionMethod compression_method = {};
         if (input_format_does_not_read_file)
         {
@@ -1069,6 +1307,18 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             initial_header = sample_header;
             schema_changed = true;
         }
+
+        for (const auto & column_name : row_lineage_columns)
+        {
+            if (!initial_header.has(column_name))
+                initial_header.insert({rowLineageColumnType()->createColumn(), rowLineageColumnType(), column_name});
+        }
+        std::vector<std::pair<String, Field>> identity_partition_columns;
+#if USE_AVRO
+        if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
+            identity_partition_columns = iceberg_info->info.identity_partition_columns;
+#endif
+
         /// Save stripped filters if we need to apply them as fallback FilterTransforms
         /// later in the pipeline when the file format doesn't support PREWHERE.
         FilterDAGInfoPtr stripped_row_level_filter;
@@ -1094,6 +1344,37 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     stripped_row_level_filter = format_filter_info->row_level_filter;
                 if (format_filter_info->prewhere_info)
                     stripped_prewhere_info = format_filter_info->prewhere_info;
+            }
+
+            auto row_level_filter = format_filter_info->row_level_filter;
+            auto prewhere_info = format_filter_info->prewhere_info;
+            bool filters_substituted = false;
+            /// A filter evaluated inside the reader must see the identity-partitioned columns of this
+            /// data file as the manifest defines them, because the file itself need not store them.
+            if (format_supports_prewhere && !identity_partition_columns.empty()
+                && (!schema_changed || configuration->getSchemaTransformer(context_, object_info) == nullptr))
+            {
+                if (row_level_filter && readsIdentityPartitionColumn(row_level_filter->actions, identity_partition_columns))
+                {
+                    auto substituted = std::make_shared<FilterDAGInfo>();
+                    substituted->actions
+                        = substituteIdentityPartitionColumns(row_level_filter->actions, identity_partition_columns);
+                    substituted->column_name = row_level_filter->column_name;
+                    substituted->do_remove_column = row_level_filter->do_remove_column;
+                    row_level_filter = std::move(substituted);
+                    filters_substituted = true;
+                }
+                if (prewhere_info && readsIdentityPartitionColumn(prewhere_info->prewhere_actions, identity_partition_columns))
+                {
+                    auto substituted = std::make_shared<PrewhereInfo>();
+                    substituted->prewhere_actions
+                        = substituteIdentityPartitionColumns(prewhere_info->prewhere_actions, identity_partition_columns);
+                    substituted->prewhere_column_name = prewhere_info->prewhere_column_name;
+                    substituted->remove_prewhere_column = prewhere_info->remove_prewhere_column;
+                    substituted->need_filter = prewhere_info->need_filter;
+                    prewhere_info = std::move(substituted);
+                    filters_substituted = true;
+                }
             }
 
             if (schema_changed)
@@ -1124,8 +1405,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     auto result = std::make_shared<FormatFilterInfo>(
                         format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
                         mapper,
-                        keep_in_reader ? format_filter_info->row_level_filter : nullptr,
-                        keep_in_reader ? format_filter_info->prewhere_info : nullptr);
+                        keep_in_reader ? row_level_filter : nullptr,
+                        keep_in_reader ? prewhere_info : nullptr);
                     /// `mapper` is scoped to the schema this specific file was written under, so it
                     /// maps field_id -> the column name *that file* used. Keep the current/query-side
                     /// mapper around too (see `current_schema_column_mapper` doc comment) for readers
@@ -1142,6 +1423,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     format_filter_info->context.lock(),
                     format_filter_info->column_mapper,
                     nullptr, nullptr);
+
+            if (filters_substituted)
+                return std::make_shared<FormatFilterInfo>(
+                    format_filter_info->filter_actions_dag,
+                    format_filter_info->context.lock(),
+                    format_filter_info->column_mapper,
+                    row_level_filter, prewhere_info);
 
             return format_filter_info;
         }();
@@ -1252,6 +1540,18 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
+        if (!identity_partition_columns.empty())
+        {
+            if (auto dag = buildIdentityPartitionColumnsDag(builder.getHeader(), identity_partition_columns))
+            {
+                auto actions = std::make_shared<ExpressionActions>(std::move(*dag));
+                builder.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<ExpressionTransform>(header, actions);
+                });
+            }
+        }
+
         configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
 
         if (object_info->data_lake_metadata
@@ -1300,6 +1600,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (schema_transform.has_value())
         {
+            for (const auto & column_name : row_lineage_columns)
+            {
+                const auto & input = schema_transform->addInput(column_name, rowLineageColumnType());
+                schema_transform->getOutputs().push_back(&input);
+            }
+
             auto schema_modifying_actions = std::make_shared<ExpressionActions>(std::move(schema_transform.value()));
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
@@ -1385,12 +1691,17 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
     /// Add ExtractColumnsTransform to extract requested columns/subcolumns
     /// from chunk read by IInputFormat.
+    NamesAndTypesList columns_to_extract = read_from_format_info.requested_columns;
+    for (const auto & column_name : row_lineage_columns)
+        columns_to_extract.emplace_back(column_name, rowLineageColumnType());
+
     builder.addSimpleTransform([&](const SharedHeader & header)
     {
-        return std::make_shared<ExtractColumnsTransform>(header, read_from_format_info.requested_columns);
+        return std::make_shared<ExtractColumnsTransform>(header, columns_to_extract);
     });
 
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+    pipeline->disableProfileEventUpdate();
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
     ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
@@ -1840,7 +2151,12 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     bool ignore_non_existent_files_,
     bool skip_object_metadata_,
     bool with_tags_,
-    std::function<void(FileProgress)> file_progress_callback_)
+    std::function<void(FileProgress)> file_progress_callback_,
+    ExpressionActionsPtr deferred_filter_actions_,
+    NamesAndTypesList hive_columns_,
+    String object_namespace_,
+    ContextPtr context_,
+    String archive_member_path_)
     : object_storage(object_storage_)
     , virtual_columns(virtual_columns_)
     , file_progress_callback(file_progress_callback_)
@@ -1848,6 +2164,11 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     , ignore_non_existent_files(ignore_non_existent_files_)
     , skip_object_metadata(skip_object_metadata_)
     , with_tags(with_tags_)
+    , deferred_filter_actions(std::move(deferred_filter_actions_))
+    , hive_columns(std::move(hive_columns_))
+    , object_namespace(std::move(object_namespace_))
+    , context(std::move(context_))
+    , archive_member_path(std::move(archive_member_path_))
 {
     if (read_keys_)
     {
@@ -1869,6 +2190,30 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
             return nullptr;
 
         auto key = keys[current_index];
+
+        /// The filter could not be applied when the iterator was created, because a set in it was not
+        /// ready yet (see `createFileIterator`); it is ready now, when the pipeline runs. Filter before
+        /// fetching the metadata: probing a filtered-out nonexistent key would throw FILE_DOESNT_EXIST.
+        if (deferred_filter_actions)
+        {
+            std::vector<String> filtered_keys({key});
+            std::vector<String> filter_paths({joinPathUnderPrefix(object_namespace, key)});
+            if (!archive_member_path.empty())
+                filter_paths.front() += fmt::format("::{}", archive_member_path);
+            std::vector<String> archive_member_names;
+            if (!archive_member_path.empty())
+                archive_member_names.push_back(archive_member_path);
+            VirtualColumnUtils::filterByPathOrFile(
+                filtered_keys, filter_paths, deferred_filter_actions, virtual_columns, hive_columns, context,
+                /*format_settings=*/std::nullopt,
+                archive_member_path.empty() ? nullptr : &archive_member_names);
+            if (filtered_keys.empty())
+            {
+                if (emit_profile_events)
+                    ProfileEvents::increment(ProfileEvents::ObjectStoragePredicateFilteredObjects);
+                continue;
+            }
+        }
 
         ObjectMetadata object_metadata{};
         if (!skip_object_metadata)

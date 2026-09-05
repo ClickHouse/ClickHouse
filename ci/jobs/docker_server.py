@@ -119,7 +119,9 @@ def docker_login(relogin: bool = True) -> None:
             "docker login --username 'robotclickhouse' --password-stdin",
             strict=True,
             stdin_str=Secret.Config(
-                "dockerhub_robot_password", type=Secret.Type.AWS_SSM_PARAMETER
+                "dockerhub_robot_password",
+                type=Secret.Type.AWS_SSM_PARAMETER,
+                region="us-east-1",
             ).get_value(),
             encoding="utf-8",
         )
@@ -235,7 +237,7 @@ def gen_tags(version_str: str, tag_type: str) -> List[str]:
 
 
 # `docker buildx build` resolves base/SBOM-scanner images such as
-# `docker/buildkit-syft-scanner` (pulled by `--sbom=true`) from docker.io, which
+# `docker/buildkit-syft-scanner` (pulled for the SBOM attestation) from docker.io, which
 # intermittently returns transient HTTP errors while resolving and while pushing
 # image layers, and the build itself hits `apt-get` package mirrors that occasionally
 # refuse connections. Retry the buildx commands only on genuine
@@ -247,7 +249,9 @@ BUILDX_RETRIES = 2
 BUILDX_RETRY_ERRORS = [
     # Docker registry (docker.io / registry-1.docker.io)
     "failed to do request",
-    "unexpected status from HEAD request",
+    # One containerd error, formatted `unexpected status from <method> request to <url>:
+    # <status>`, so the method is an interpolated field and not part of the failure.
+    "unexpected status from ",
     "500 Internal Server Error",
     "502 Bad Gateway",
     "503 Service Unavailable",
@@ -282,6 +286,32 @@ APT_MIRROR_ERRORS = [
     "Some index files failed to download",
 ]
 
+# `apt-get update` does not fail when a mirror withholds a suite's `InRelease`: it
+# warns (`W: Failed to fetch ... 503`, then `W: Some index files failed to download`),
+# carries on with whatever suites it did get and exits 0. So the `RUN` chain reaches
+# `apt-get install`, which dies resolving the packages against a partial index, and it
+# is that resolution error - naming no mirror, no URL and no `Failed to fetch` - that
+# buildx fences. `APT_MIRROR_ERRORS` matches none of it, which is why not one of the
+# 26 arm64 image builds that reded across the fleet inside the 00:00 UTC hour of
+# 2026-09-05 rebuilt against Canonical.
+#
+# Which of the three shapes apt reports depends only on what the missing suites were
+# providing, so all three have to be here: `wget` and `tzdata` came out as `Unable to
+# locate package`, `busybox`, `ca-certificates` and `locales` as `has no installation
+# candidate` because the pristine base image's `/var/lib/dpkg/status` still names them,
+# and a `wget` whose `libpsl5` had gone as `held broken packages`.
+APT_RESOLUTION_ERRORS = [
+    "Unable to locate package",
+    "has no installation candidate",
+    "Unable to correct problems, you have held broken packages",
+]
+# On its own a resolution error is also what a misspelled package name in one of these
+# Dockerfiles produces, and that must keep failing on the first attempt. What separates
+# the two is the `apt-get update` in the very same step: against a healthy mirror it
+# refreshes every suite silently, so this warning is the mirror's own signature and not
+# an inference from the base image's contents.
+APT_INDEX_WARNING = "Some index files failed to download"
+
 
 # `--progress=plain` prints the whole build, so a signature found anywhere in the
 # output says nothing about what stopped the build: `apt-get update` warns with
@@ -291,21 +321,50 @@ APT_MIRROR_ERRORS = [
 # stopped on, and apt's own `E:` severity, which distinguishes "could not get the
 # file" from a miss apt recovered from.
 BUILDX_FAILURE_FENCE = "------"
-BUILDX_SOLVE_ERROR = "ERROR: failed to solve:"
+# buildx has reworded this line: it used to read `ERROR: failed to solve: ...` and
+# since 0.23 reads `ERROR: failed to build: failed to solve: ...` (measured on 0.30.1).
+# Matching the whole phrase pinned the old wording, so `terminal_build_failure` found
+# no terminal step, every failure was classified as "not the mirror", and the fallback
+# below was dead code from the day it was added: on 2026-08-26 the arm64 server and
+# keeper images reded on master on a `503` from `us-east-1.ec2.ports.ubuntu.com`
+# without ever rebuilding against Canonical. Anchor on the two parts that did not
+# move - buildx starts its top-level errors at the beginning of the line with
+# `ERROR: `, and this one names the solve step - so a future infix cannot break it.
+BUILDX_ERROR_PREFIX = "ERROR: "
+BUILDX_SOLVE_ERROR = "failed to solve:"
+# Inside the fence, buildx repeats the failing step's command as a header before its
+# output. That is the recipe, not what happened: `RUN ... && apt-get install ...` names
+# apt, and a `RUN` that echoes or greps for one of the signatures below would match on
+# its own text alone. Only the output lines get a verdict.
+BUILDX_STEP_HEADER_PREFIX = " > "
 APT_ERROR_SEVERITY = "E: "
+
+
+def is_buildx_solve_error(line: str) -> bool:
+    """Is this buildx's own top-level "the build failed" line?
+
+    The step output that precedes it repeats the same text, so requiring the line to
+    *start* with `ERROR: ` is what keeps the per-step `#12 ERROR: ...` copy and the
+    fenced `61.2 E: ...` body from standing in for the terminal line.
+    """
+    return line.startswith(BUILDX_ERROR_PREFIX) and BUILDX_SOLVE_ERROR in line
 
 
 def terminal_build_failure(info: str) -> str:
     """Output of the step the build stopped on, fences included.
 
     A failed `docker buildx build --progress=plain` ends with the failing step's own
-    output fenced between `------` lines and then `ERROR: failed to solve: ...`.
-    Everything above that fence belongs to steps that succeeded. Empty when the shape
-    is absent - a timed-out or truncated log - so callers fail closed.
+    output fenced between `------` lines, then the offending `Dockerfile` lines, then a
+    top-level `ERROR: ... failed to solve: ...`. Everything above that fence belongs to
+    steps that succeeded, and everything below it is source, not output - so the block
+    ends at the closing fence, while the top-level error still has to be there as proof
+    that this is where the build stopped. Empty when the shape is absent - a timed-out
+    or truncated log - so callers fail closed.
     """
     lines = info.splitlines()
-    # Retries append their whole output, so only the last attempt is the terminal one.
-    ends = [i for i, line in enumerate(lines) if BUILDX_SOLVE_ERROR in line]
+    # Retries truncate the log, so a log with several attempts in it is one that was
+    # concatenated; either way the last solve error is the one that ended the build.
+    ends = [i for i, line in enumerate(lines) if is_buildx_solve_error(line)]
     if not ends:
         return ""
     end = ends[-1]
@@ -314,14 +373,55 @@ def terminal_build_failure(info: str) -> str:
     ]
     if len(fences) < 2:
         return ""
-    return "\n".join(lines[fences[-2] : end + 1])
+    return "\n".join(lines[fences[-2] : fences[-1] + 1])
 
 
 def is_apt_mirror_failure(info: str) -> bool:
     """Did the step that stopped the build fail because a mirror withheld a file?"""
     return any(
-        APT_ERROR_SEVERITY in line and any(error in line for error in APT_MIRROR_ERRORS)
+        not line.startswith(BUILDX_STEP_HEADER_PREFIX)
+        and APT_ERROR_SEVERITY in line
+        and any(error in line for error in APT_MIRROR_ERRORS)
         for line in terminal_build_failure(info).splitlines()
+    )
+
+
+def terminal_step_prefix(info: str) -> str:
+    """`--progress=plain` line prefix (`#8 `) of the step the build stopped on.
+
+    buildx tags every output line with the step it came from and announces the failure
+    as `#8 ERROR: process ... did not complete successfully`, which is the only place
+    the fenced block's step number is stated. Empty when that line is absent, so
+    callers fail closed.
+    """
+    prefix = ""
+    for line in info.splitlines():
+        if line.startswith("#") and line.partition(" ")[2].startswith(
+            BUILDX_ERROR_PREFIX
+        ):
+            prefix = line.partition(" ")[0] + " "
+    return prefix
+
+
+def is_apt_index_failure(info: str) -> bool:
+    """Did the step that stopped the build resolve packages against a partial index?
+
+    Both halves have to come from that one step: apt's `E:` resolution error inside the
+    terminal fenced block, and the warning that the step's own index refresh came back
+    incomplete, which apt prints far enough above the fence that only the step's
+    `#N ` prefix ties the two together.
+    """
+    if not any(
+        not line.startswith(BUILDX_STEP_HEADER_PREFIX)
+        and APT_ERROR_SEVERITY in line
+        and any(error in line for error in APT_RESOLUTION_ERRORS)
+        for line in terminal_build_failure(info).splitlines()
+    ):
+        return False
+    prefix = terminal_step_prefix(info)
+    return bool(prefix) and any(
+        line.startswith(prefix) and APT_INDEX_WARNING in line
+        for line in info.splitlines()
     )
 
 
@@ -399,7 +499,11 @@ def should_try_next_mirror(info: str) -> bool:
     has to reach the next mirror too - it is only reached once the build is failing
     anyway, and `buildx_timeout` keeps the extra attempt inside the job's own cap.
     """
-    return is_apt_mirror_failure(info) or is_buildx_timeout(info)
+    return (
+        is_apt_mirror_failure(info)
+        or is_apt_index_failure(info)
+        or is_buildx_timeout(info)
+    )
 
 
 def buildx_args(
@@ -409,15 +513,22 @@ def buildx_args(
     version: str,
     sha: str,
     action_url: str,
+    attest: bool,
 ) -> List[str]:
     args = [
-        "--provenance=true",
-        "--sbom=true",
         f"--platform=linux/{arch}",
         f"--label=build-url={action_url}",
         f"--label=com.clickhouse.build.githash={sha}",
         f"--label=com.clickhouse.build.version={version}",
     ]
+    # Attestations survive only in pushed manifests (the local docker exporter
+    # drops them), while the SBOM scan of a multi-GB image OOMs smaller runners,
+    # so generate them only for pushed images.
+    # The scanner is pinned because the floating stable-1 tag can silently move
+    # to a version whose scan of a multi-GB image exceeds the runner's memory.
+    if attest:
+        args.append("--provenance=true")
+        args.append("--attest=type=sbom,generator=docker/buildkit-syft-scanner:1.11")
     if direct_urls:
         args.append(f"--build-arg=DIRECT_DOWNLOAD_URLS='{' '.join(direct_urls)}'")
     elif urls:
@@ -491,6 +602,7 @@ def build_and_push_image(
                 version=version,
                 action_url=run_url,
                 sha=sha,
+                attest=push,
             )
         )
         if not push:
@@ -533,6 +645,19 @@ def build_and_push_image(
                 retry_errors=BUILDX_RETRY_ERRORS,
             )
             if build_result.is_ok() or not should_try_next_mirror(build_result.info):
+                if not build_result.is_ok() and not terminal_build_failure(
+                    build_result.info
+                ):
+                    # Fail-closed and silent is what let a reworded buildx error keep
+                    # this loop from ever running: say so, so the next log shows it.
+                    logging.info(
+                        "Image %s:%s for arch %s failed and no terminal build step "
+                        "could be identified in its output, so no apt mirror can be "
+                        "blamed for it; not trying another mirror",
+                        image.name,
+                        tag,
+                        arch,
+                    )
                 break
             logging.info(
                 "Image %s:%s for arch %s exhausted its retries on a failure the apt "

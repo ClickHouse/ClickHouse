@@ -1,7 +1,7 @@
 // SampleDatasetExplorer
 // A 3x2 grid of sample-dataset *categories*. Clicking a category expands it into
-// a grid of image cards for that category's child dataset pages, with an animated
-// (staggered fade/scale) transition between the two views.
+// a grid of image cards for that category's child dataset pages. The two views
+// swap instantly - the documentation has no motion anywhere.
 //
 // NOTE: Mintlify eval's ONLY the exported component function, so every constant
 // (ACCENT, CATEGORIES) and helper MUST live inside the component body — module-level
@@ -9,7 +9,7 @@
 
 export const SampleDatasetExplorer = ({ categories }) => {
   const ACCENT = '#FAFF69';
-  const assetBase = (typeof window !== 'undefined' && window.location.pathname.startsWith('/docs')) ? '/docs' : '';
+  const assetBase = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
   const withBase = (p) => p && p.startsWith('/') ? assetBase + p : p;
 
   // Each category: id, title (shown beneath the banner image), an icon used for
@@ -109,37 +109,27 @@ export const SampleDatasetExplorer = ({ categories }) => {
   const [selectedId, setSelectedId] = useState(null);
   const selected = cats.find((c) => c.id === selectedId) || null;
 
-  // Theme visibility is handled by explicit `.dark` descendant selectors in the
-  // <style> block below (Mintlify's class strategy — same approach as
-  // IntegrationGrid). Tailwind `dark:` utilities are NOT reliable here: they
-  // compile against the OS media query, so they'd ignore the in-app light/dark
-  // toggle. Note the reversed-colour scheme: light mode shows the *dark* (black)
-  // banner art, dark mode shows the *light* (yellow) art.
-  const Banner = ({ cat, className }) => (
-    <>
-      <img className={`sde-img-dark ${className || ''}`} src={withBase(cat.imgDark)} alt={cat.title} />
-      <img className={`sde-img-light ${className || ''}`} src={withBase(cat.imgLight)} alt={cat.title} />
-    </>
+  // The colour scheme is intentionally reversed: light mode shows the dark
+  // artwork and dark mode shows the light artwork. CSS keys directly off the
+  // docs theme class during SSR and only resolves the active custom-property
+  // URL, so a theme override cannot cause both variants to download.
+  const webpFor = (path) => withBase(path.replace(/\.jpg$/, '.webp'));
+  const ThemeImage = ({ item, className }) => (
+    <span
+      className={`sde-theme-image ${className || ''}`}
+      role="img"
+      aria-label={item.title}
+      style={{
+        '--sde-image-light-mode': `url("${webpFor(item.imgDark)}")`,
+        '--sde-image-dark-mode': `url("${webpFor(item.imgLight)}")`,
+      }}
+    />
   );
+  const Banner = ({ cat, className }) => <ThemeImage item={cat} className={className} />;
 
   return (
     <div className="sde-root my-8">
       <style dangerouslySetInnerHTML={{ __html: `
-        @keyframes sde-pop {
-          from { opacity: 0; transform: translateY(14px) scale(0.96); }
-          to   { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes sde-fade {
-          from { opacity: 0; }
-          to   { opacity: 1; }
-        }
-        .sde-view { animation: sde-fade 0.25s ease both; }
-        /* Reversed scheme: dark (black) art in light mode, light (yellow) art in dark mode.
-           Use explicit .dark selectors — Tailwind dark: utilities follow the OS here. */
-        .sde-root .sde-img-dark { display: block; }
-        .sde-root .sde-img-light { display: none; }
-        .dark .sde-root .sde-img-dark { display: none; }
-        .dark .sde-root .sde-img-light { display: block; }
         .sde-tile {
           display: block;
           width: 100%;
@@ -148,8 +138,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           background: transparent;
           text-align: left;
           cursor: pointer;
-          animation: sde-pop 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
-          transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
         }
         .sde-tile:hover { transform: translateY(-4px) scale(1.015); }
         .sde-tile:active { transform: translateY(-1px) scale(0.995); }
@@ -163,16 +151,20 @@ export const SampleDatasetExplorer = ({ categories }) => {
           border-radius: 8px;
           overflow: hidden;
           box-shadow: 0 1px 3px rgba(0,0,0,0.12);
-          transition: box-shadow 0.25s ease;
         }
         .dark .sde-root .sde-tile-media { border-color: #3c3c3c; }
         .sde-tile:hover .sde-tile-media { box-shadow: 0 12px 28px rgba(0,0,0,0.22); }
-        .sde-tile img {
+        .sde-theme-image {
+          display: block;
           width: 100%;
           height: 100%;
-          object-fit: cover;
-          margin: 0;
+          background-image: var(--sde-image-light-mode);
+          background-position: center;
+          background-size: cover;
           pointer-events: none;
+        }
+        .dark .sde-root .sde-theme-image {
+          background-image: var(--sde-image-dark-mode);
         }
         /* hover hint: translucent strip along the bottom of the image */
         .sde-tile-hint {
@@ -189,7 +181,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           backdrop-filter: blur(6px);
           -webkit-backdrop-filter: blur(6px);
           opacity: 0;
-          transition: opacity 0.25s ease;
           pointer-events: none;
         }
         .sde-tile:hover .sde-tile-hint { opacity: 1; }
@@ -217,7 +208,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           align-items: center;
           gap: 4px;
         }
-        .sde-child { animation: sde-pop 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
         .sde-back {
           display: inline-flex;
           align-items: center;
@@ -230,7 +220,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           opacity: 0.5;
           font-size: 0.875rem;
           font-weight: 500;
-          transition: opacity 0.2s ease;
         }
         .sde-back:hover { opacity: 1; }
         .sde-detail-title {
@@ -238,19 +227,17 @@ export const SampleDatasetExplorer = ({ categories }) => {
           font-weight: 600;
           line-height: 1.3;
           margin: 0 0 1.25rem 0;
-          animation: sde-pop 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
         }
       `}} />
 
       {!selected ? (
         <div className="sde-view">
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
-            {cats.map((cat, i) => (
+            {cats.map((cat) => (
               <button
                 key={cat.id}
                 type="button"
                 className="sde-tile"
-                style={{ animationDelay: `${i * 60}ms` }}
                 onClick={() => setSelectedId(cat.id)}
                 aria-label={`Explore ${cat.title} datasets`}
               >
@@ -287,16 +274,10 @@ export const SampleDatasetExplorer = ({ categories }) => {
           <h2 className="sde-detail-title">{selected.title}</h2>
 
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
-            {selected.datasets.map((ds, i) => (
-              <a
-                key={ds.href}
-                href={ds.href}
-                className="sde-child sde-tile"
-                style={{ animationDelay: `${i * 50}ms` }}
-              >
+            {selected.datasets.map((ds) => (
+              <a key={ds.href} href={withBase(ds.href)} className="sde-tile">
                 <span className="sde-tile-media">
-                  {ds.imgDark && <img className="sde-img-dark" src={withBase(ds.imgDark)} alt={ds.title} />}
-                  {ds.imgLight && <img className="sde-img-light" src={withBase(ds.imgLight)} alt={ds.title} />}
+                  {ds.imgDark && ds.imgLight && <ThemeImage item={ds} />}
                   <span className="sde-tile-hint">
                     <span className="sde-explore">
                       View dataset

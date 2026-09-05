@@ -20,6 +20,8 @@ doc_type: 'reference'
   配列型のデフォルト値を含む 1 行を返すには、[emptyArrayToSingle](/ja/reference/functions/regular-functions/array-functions#emptyArrayToSingle) でラップします。たとえば、`arrayJoin(emptyArrayToSingle(...))` のようにします。
 </Note>
 
+`unnest` (バージョン 26.5 以降) は、関数呼び出し形式 (`SELECT unnest(arr)`) における `arrayJoin` の大文字と小文字を区別しないエイリアスです。PostgreSQL のテーブルソース構文 (`FROM unnest(...)`、`CROSS JOIN UNNEST(...)`、および `LATERAL`) はサポートされていません。これらのクエリには [`ARRAY JOIN`](/ja/reference/statements/select/array-join) 句を使用してください。
+
 例えば：
 
 ```sql title="Query"

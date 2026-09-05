@@ -557,7 +557,7 @@ static bool hasDefault(const StorageSnapshotPtr & storage_snapshot, const NameAn
 static bool isSubcolumnOfAvailableColumn(
     const StorageSnapshotPtr & storage_snapshot,
     const NameAndTypePair & column,
-    const NamesAndTypesList & available_columns,
+    const NamesAndTypesList & requested_columns,
     const NameSet & additional_available_columns)
 {
     if (!column.isSubcolumn())
@@ -570,8 +570,10 @@ static bool isSubcolumnOfAvailableColumn(
     if (!column_in_storage || !column_in_storage->isSubcolumn())
         return false;
 
+    /// Both names must come from the table's metadata: a part's own column list can still hold the
+    /// pre-rename name, while evaluateMissingDefaults looks the parent up by its metadata name.
     auto parent_name = column_in_storage->getNameInStorage();
-    return available_columns.contains(parent_name) || additional_available_columns.contains(parent_name);
+    return requested_columns.contains(parent_name) || additional_available_columns.contains(parent_name);
 }
 
 static String removeTupleElementsFromSubcolumn(String subcolumn_name, const Names & tuple_elements)
@@ -598,6 +600,7 @@ void fillMissingColumns(
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
     StorageSnapshotPtr storage_snapshot,
+    const NameSet & missing_columns,
     bool share_nested_offsets,
     const NameSet & additional_available_columns)
 {
@@ -625,13 +628,15 @@ void fillMissingColumns(
             res_columns[i] = nullptr;
 
         /// Nothing to fill or default should be filled in evaluateMissingDefaults.
-        if (res_columns[i] || hasDefault(storage_snapshot, *requested_column))
+        /// But if the column was explicitly marked as missing (frozen default at
+        /// write time), fill with type-defaults even if a DEFAULT expression exists.
+        if (res_columns[i] || (hasDefault(storage_snapshot, *requested_column) && !missing_columns.contains(requested_column->getNameInStorage())))
             continue;
 
         /// Subcolumn missing from the part's (older) type but whose parent is available (read here
         /// or produced by an earlier step): defer to evaluateMissingDefaults instead of default-
         /// filling. Needs a storage_snapshot, i.e. a caller that runs that pass (not Memory engine).
-        if (isSubcolumnOfAvailableColumn(storage_snapshot, *requested_column, available_columns, additional_available_columns))
+        if (isSubcolumnOfAvailableColumn(storage_snapshot, *requested_column, requested_columns, additional_available_columns))
             continue;
 
         std::vector<ColumnPtr> current_offsets;

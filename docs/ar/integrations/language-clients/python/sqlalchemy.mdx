@@ -84,13 +84,17 @@ engine = create_engine(
 )
 ```
 
-في هذا الوضع، يجب أن تكون كل قيمة مربوطة من نوع SQLAlchemy متوافق مع ClickHouse. وتتحول قوائم `IN` المدعومة إلى معلمات ClickHouse من النوع `Array`. ويرفع المصرّف `CompileError` عندما يتعذر عليه استنتاج نوع متوافق أو معالجة قيمة مربوطة بأمان.
+في هذا الوضع، يجب أن تكون كل قيمة مقيّدة من نوع SQLAlchemy متوافق مع ClickHouse. وتتحول قوائم `IN` المدعومة إلى معلمات ClickHouse من النوع `Array`. ويرفع المصرّف `CompileError` عندما يتعذر عليه استنتاج نوع متوافق أو معالجة قيمة مقيّدة بأمان.
+
+يجب أن تكون أسماء الربط أسماء ClickHouse من نوع ASCII BareWord. تُرفض الأسماء التي تبدأ وتنتهي بـ `$` لأن المشغّل الأساسي يحجزها لمعلمات الاستعلام الثنائية الخام.
 
 <div id="sqlalchemy-core-queries">
   ## استعلامات Core
 </div>
 
-تدعم هذه اللهجة استعلامات `SELECT` في SQLAlchemy Core مع عمليات الربط، وعوامل التصفية، والترتيب، والحدود والإزاحات، و`DISTINCT`.
+تدعم هذه اللهجة استعلامات `SELECT` في SQLAlchemy Core مع عمليات الربط، وعوامل التصفية، والترتيب، والحدود والإزاحات، و`DISTINCT`، وعمليات select المركبة.
+
+تُترجم `union()` و`intersect()` و`except_()` في SQLAlchemy إلى `UNION DISTINCT` و`INTERSECT DISTINCT` و`EXCEPT DISTINCT` في ClickHouse. وتُترجم نظائرها `union_all()` و`intersect_all()` و`except_all()` إلى عوامل التشغيل المقابلة مع `ALL`. يحافظ هذا التعيين الصريح على دلالات التكرارات في SQLAlchemy بغض النظر عن الإعدادات الافتراضية لعمليات المجموعات في ClickHouse.
 
 ```python
 from sqlalchemy import MetaData, Table, select
@@ -120,6 +124,12 @@ stmt = delete(users).where(users.c.name.like("%temporary%"))
 with engine.connect() as conn:
     conn.execute(stmt)
 ```
+
+<div id="sqlalchemy-literal-rendering">
+  ### عرض القيم الحرفية
+</div>
+
+عندما يضمّن SQLAlchemy قيمة مقيّدة باستخدام `literal_binds` أو `literal_execute`، تستخدم اللهجة أسلوب الاقتباس في ClickHouse لأنواع السلاسل النصية العامة وأنواع ClickHouse. وينطبق ذلك أيضًا عند استخدام أغلفة `TypeDecorator` واختيارات `with_variant()`. تحتفظ قيم السلاسل النصية بعلامات النسبة المئوية والشرطات المائلة العكسية، حتى مع وجود مَعلَمات مقيّدة أخرى.
 
 <div id="sqlalchemy-json-subcolumns">
   ### الأعمدة الفرعية لـ JSON
@@ -200,6 +210,20 @@ stmt = (
 | `.ch_join(...)`                          | عمليات `JOIN` في ClickHouse مع خيارات `strictness` و`distribution` و`using` و`cross` |
 | `.cte(name, materialized=True)`          | `WITH name AS MATERIALIZED (...)`                                                    |
 
+تُعد `Select.with_hint()` في SQLAlchemy واجهة برمجة تطبيقات لتلميحات الجداول. لا تُنشئ لهجة ClickHouse تلميحات الجداول. يؤدي استخدام تلميح wildcard أو `clickhousedb` قابل للتطبيق إلى إصدار `SAWarning` مع إبقاء SQL المُولَّد دون تغيير. استخدم `final()` أو `sample()` أو `prewhere()` أو `limit_by()` لبنود ClickHouse هذه.
+
+تُعد `Select.with_statement_hint()` واجهة برمجة تطبيقات لتوجيه خام يُضاف في النهاية. وهي تُلحق النص المقدَّم بنهاية `SELECT` دون تحقق خاص بـ ClickHouse. يظل ذلك متاحًا لاستخدامه مع SQL ثابت وموثوق، مثل `SETTINGS max_threads=1`:
+
+```python
+stmt = select(events.c.id).with_statement_hint("SETTINGS max_threads=1")
+```
+
+بالنسبة إلى إعدادات ClickHouse، يُفضَّل استخدام خيارات التنفيذ كي يتعامل المشغّل معها بشكل منفصل عن نص SQL:
+
+```python
+stmt = select(events.c.id).execution_options(settings={"max_threads": 1})
+```
+
 على سبيل المثال، يمكن ربط `GLOBAL ANY LEFT JOIN` في ClickHouse دون الحاجة إلى تداخل `FromClause` مخصّص:
 
 ```python
@@ -231,7 +255,7 @@ stmt = select(
 )
 ```
 
-تُحوَّل بنية SQLAlchemy القياسية `values()` عند الترجمة إلى صياغة دالة الجدول `VALUES` في ClickHouse، بما في ذلك عند استخدامها في تعبير الجدول الشائع. يتطلب شكل CTE استخدام SQLAlchemy 2.0.42 أو إصدار أحدث، إذ أُضيفت `Values.cte()`.
+تُحوَّل بنية SQLAlchemy القياسية `values()` عند الترجمة إلى صياغة دالة الجدول `VALUES` في ClickHouse، بما في ذلك عند استخدامها في تعبير الجدول الشائع. يتطلب شكل تعبير الجدول الشائع استخدام SQLAlchemy 2.0.42 أو إصدار أحدث، إذ أُضيفت `Values.cte()`.
 
 <div id="sqlalchemy-materialized-ctes">
   ### تعبيرات الجدول الشائعة المُجسَّدة
@@ -310,6 +334,8 @@ with engine.connect() as conn:
 ```
 
 تحمل الأعمدة المسترجعة `server_default` لتعبيرات `DEFAULT`، وسمات خاصة بكل dialect مثل `clickhouse_codec` و`clickhouse_ttl` و`clickhouse_materialized` و`clickhouse_alias` إن وُجدت.
+
+تستخدم قيم السلاسل النصية في عبارات `DEFAULT` و`MATERIALIZED` و`ALIAS` و`TTL` إفلات السلاسل النصية في ClickHouse. وينطبق الإفلات نفسه على تعليقات الجداول والقواميس والأعمدة، بما في ذلك التعليقات التي يصدرها Alembic.
 
 تقبل وسائط مفاتيح MergeTree مثل `order_by` و`partition_by` و`primary_key` و`sample_by` و`ttl` أعمدة SQLAlchemy وتعبيرات SQL، بالإضافة إلى السلاسل النصية العادية.
 
