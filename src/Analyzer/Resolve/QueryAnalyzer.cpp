@@ -1331,14 +1331,25 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
     auto * union_node = cte_node->as<UnionNode>();
 
     bool is_materialized_cte = (query_node && query_node->isMaterialized()) || (union_node && union_node->isMaterialized());
-    if (is_materialized_cte && scope.context->getSettingsRef()[Setting::enable_materialized_cte])
+    if (is_materialized_cte)
     {
-        /// Create a TableNode with StorageDummy as placeholder. The subquery stays unresolved.
-        /// Resolution and real storage creation happen later in resolveQueryJoinTreeNode.
-        auto table_node = std::make_shared<TableNode>(full_name, cte_node, scope.context);
-        table_node->setAlias(full_name);
+        if (scope.context->getSettingsRef()[Setting::enable_materialized_cte])
+        {
+            /// Create a TableNode with StorageDummy as placeholder. The subquery stays unresolved.
+            /// Resolution and real storage creation happen later in resolveQueryJoinTreeNode.
+            auto table_node = std::make_shared<TableNode>(full_name, cte_node, scope.context);
+            table_node->setAlias(full_name);
 
-        cte_node = table_node;
+            cte_node = table_node;
+        }
+        else
+        {
+            LOG_WARNING(
+                getLogger("QueryAnalyzer"),
+                "CTE '{}' is declared as MATERIALIZED, but the setting 'enable_materialized_cte' is disabled: "
+                "the MATERIALIZED keyword is ignored and the CTE is inlined at each reference",
+                full_name);
+        }
     }
 
     return { .resolved_identifier = cte_node, .resolve_place = IdentifierResolvePlace::CTE };
