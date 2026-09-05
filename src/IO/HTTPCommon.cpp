@@ -1,7 +1,7 @@
 #include <IO/HTTPCommon.h>
 
+#include <IO/ReadHelpers.h>
 #include <Server/HTTP/HTTPServerResponse.h>
-#include <Poco/StreamCopier.h>
 #include <Common/Exception.h>
 
 #include "config.h"
@@ -76,15 +76,15 @@ bool isRetriableHTTPError(const Poco::Net::HTTPResponse::HTTPStatus http_status)
         non_retriable_errors.begin(), non_retriable_errors.end(), [&](const auto status) { return http_status != status; });
 }
 
-std::istream * receiveResponse(
+std::unique_ptr<HTTPResponseReadBuffer> receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, const bool allow_redirects)
 {
-    auto & istr = session.receiveResponse(response);
-    assertResponseIsOk(request.getURI(), response, istr, allow_redirects);
-    return &istr;
+    auto body = receiveHTTPResponse(session, response);
+    assertResponseIsOk(request.getURI(), response, *body, allow_redirects);
+    return body;
 }
 
-void assertResponseIsOk(const String & uri, Poco::Net::HTTPResponse & response, std::istream & istr, const bool allow_redirects)
+void assertResponseIsOk(const String & uri, Poco::Net::HTTPResponse & response, ReadBuffer & body, const bool allow_redirects)
 {
     auto status = response.getStatus();
 
@@ -98,10 +98,10 @@ void assertResponseIsOk(const String & uri, Poco::Net::HTTPResponse & response, 
             ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
             : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 
-        std::string body;
-        Poco::StreamCopier::copyToString(istr, body);
+        std::string body_text;
+        readStringUntilEOF(body_text, body);
 
-        throw HTTPException(code, uri, status, response.getReason(), body);
+        throw HTTPException(code, uri, status, response.getReason(), body_text);
     }
 }
 

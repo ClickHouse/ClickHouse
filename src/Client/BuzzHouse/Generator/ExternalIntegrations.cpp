@@ -11,6 +11,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
+#include <IO/HTTP/HTTPClientIO.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -1526,13 +1527,14 @@ bool DolorIntegration::httpPut(const String & path, const String & body)
     try
     {
         /// Send body
-        std::ostream & os = session.sendRequest(req);
-        os.write(body.data(), body.size());
+        auto request_body = DB::sendHTTPRequest(session, req);
+        request_body->write(body.data(), body.size());
+        request_body->finalize();
 
         /// Receive response
         Poco::Net::HTTPResponse res;
-        const auto & u = session.receiveResponse(res);
-        UNUSED(u);
+        const auto response_body = DB::receiveHTTPResponse(session, res);
+        UNUSED(response_body);
         if (res.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
         {
             return true;

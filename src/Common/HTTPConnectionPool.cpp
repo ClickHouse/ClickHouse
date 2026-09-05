@@ -17,12 +17,9 @@
 
 #include <IO/SocketPeerClosed.h>
 
-#include <Poco/Net/HTTPChunkedStream.h>
 #include <Poco/Net/HTTPClientSession.h>
-#include <Poco/Net/HTTPFixedLengthStream.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Timespan.h>
@@ -472,39 +469,9 @@ private:
             return now - Session::getLastRequest();
         }
 
-        void flushRequest() override
+        Poco::Net::HTTPClientSession::BodyInfo
+        sendRequestHeaders(Poco::Net::HTTPRequest & request, UInt64 * connect_time, UInt64 * first_byte_time) override
         {
-            if (bool(request_stream))
-            {
-                request_stream->flush();
-
-                if (auto * fixed_steam = dynamic_cast<Poco::Net::HTTPFixedLengthOutputStream *>(request_stream))
-                {
-                    request_stream_completed = fixed_steam->isComplete();
-                }
-                else if (auto * chunked_steam = dynamic_cast<Poco::Net::HTTPChunkedOutputStream *>(request_stream))
-                {
-                    chunked_steam->rdbuf()->close();
-                    request_stream_completed = chunked_steam->isComplete();
-                }
-                else if (auto * http_stream = dynamic_cast<Poco::Net::HTTPOutputStream *>(request_stream))
-                {
-                    request_stream_completed = http_stream->isComplete();
-                }
-                else
-                {
-                    request_stream_completed = false;
-                }
-            }
-            request_stream = nullptr;
-
-            Session::flushRequest();
-        }
-
-        std::ostream & sendRequest(Poco::Net::HTTPRequest & request, UInt64 * connect_time, UInt64 * first_byte_time) override
-        {
-            auto idle = idleTime();
-
             // Set data hooks for IO scheduling
             if (ResourceLink link = CurrentThread::getReadResourceLink())
                 Session::setReceiveDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIORead(), log, request.getMethod(), request.getURI()));
@@ -515,66 +482,15 @@ private:
             if (auto throttler = CurrentThread::getWriteThrottler())
                 Session::setSendThrottler(throttler);
 
-            std::ostream & result = Session::sendRequest(request, connect_time, first_byte_time);
-            chassert(result.exceptions() & std::ios::badbit);
-
-            request_stream = &result;
-            request_stream_completed = false;
-
-            response_stream = nullptr;
-            response_stream_completed = false;
-
-            return result;
-        }
-
-        std::istream & receiveResponse(Poco::Net::HTTPResponse & response) override
-        {
-            std::istream & result = Session::receiveResponse(response);
-            chassert(result.exceptions() & std::ios::badbit);
-
-            response_stream = &result;
-            response_stream_completed = false;
-
-            return result;
-        }
-
-        void reset() override
-        {
-            request_stream = nullptr;
-            request_stream_completed = false;
-
-            response_stream = nullptr;
-            response_stream_completed = false;
-
-            Session::reset();
+            return Session::sendRequestHeaders(request, connect_time, first_byte_time);
         }
 
         ~PooledConnection() override
         {
-            if (bool(response_stream))
-            {
-                if (auto * fixed_steam = dynamic_cast<Poco::Net::HTTPFixedLengthInputStream *>(response_stream))
-                {
-                    response_stream_completed = fixed_steam->isComplete();
-                }
-                else if (auto * chunked_steam = dynamic_cast<Poco::Net::HTTPChunkedInputStream *>(response_stream))
-                {
-                    response_stream_completed = chunked_steam->isComplete();
-                }
-                else if (auto * http_stream = dynamic_cast<Poco::Net::HTTPInputStream *>(response_stream))
-                {
-                    response_stream_completed = http_stream->isComplete();
-                }
-                else
-                {
-                    response_stream_completed = false;
-                }
-            }
             /// Unregister from live_connections first, before tearing down session internals,
             /// so that the async metrics thread cannot dereference a partially-destructed session.
             group->atConnectionDestroy(this);
 
-            response_stream = nullptr;
             Session::setSendDataHooks();
             Session::setReceiveDataHooks();
             Session::setSendThrottler();
@@ -664,9 +580,12 @@ private:
             }
         }
 
+        /// A connection can only be reused when both the request and the response of the last
+        /// exchange were transferred to the end: anything left unsent or unread would be taken
+        /// for a part of the next request or response.
         bool isCompleted() const
         {
-            return request_stream_completed && response_stream_completed;
+            return Session::isRequestBodyComplete() && Session::isResponseBodyComplete();
         }
 
         EndpointConnectionPool::WeakPtr pool;
@@ -675,12 +594,6 @@ private:
         bool isExpired = false;
 
         LoggerPtr log = getLogger("PooledConnection");
-
-        std::ostream * request_stream = nullptr;
-        std::istream * response_stream = nullptr;
-
-        bool request_stream_completed = true;
-        bool response_stream_completed = true;
     };
 
     using Connection = PooledConnection;

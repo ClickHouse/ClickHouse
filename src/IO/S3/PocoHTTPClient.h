@@ -14,7 +14,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/HTTPRequestThrottler.h>
-#include <IO/SessionAwareIOStream.h>
+#include <IO/StdStreamFromReadBuffer.h>
 #include <IO/S3Defines.h>
 
 #include <aws/core/client/ClientConfiguration.h>
@@ -130,11 +130,14 @@ public:
     {
     }
 
-    void SetResponseBody(Aws::IStream & incoming_stream, SessionPtr & session_) /// NOLINT
+    /// Takes the body of the response as a ReadBuffer, which reads from the socket of the
+    /// session. The buffer keeps the session alive, and is reachable through the `rdbuf` of the
+    /// stream, so that ClickHouse can read the body through the buffer while the AWS SDK, which
+    /// only accepts an `std::iostream`, can still parse it as a stream.
+    void SetResponseBody(std::unique_ptr<ReadBuffer> body, size_t body_size) /// NOLINT
     {
         body_stream = Aws::Utils::Stream::ResponseStream(
-            Aws::New<SessionAwareIOStream<SessionPtr>>("http result streambuf", session_, incoming_stream.rdbuf())
-        );
+            Aws::New<StdStreamFromReadBuffer>("http result streambuf", std::move(body), body_size));
     }
 
     void SetResponseBody(std::string & response_body) /// NOLINT

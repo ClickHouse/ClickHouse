@@ -393,7 +393,7 @@ StorageURLSource::StorageURLSource(
     const ReadFromFormatInfo & info,
     std::shared_ptr<IteratorWrapper> uri_iterator_,
     const std::string & http_method,
-    std::function<void(std::ostream &)> callback,
+    std::function<void(WriteBuffer &)> callback,
     const String & format_,
     const std::optional<FormatSettings> & format_settings_,
     String name_,
@@ -620,7 +620,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     ContextPtr context_,
     const URIParams & params,
     const String & http_method,
-    std::function<void(std::ostream &)> callback,
+    std::function<void(WriteBuffer &)> callback,
     const ConnectionTimeouts & timeouts,
     Poco::Net::HTTPBasicCredentials & credentials,
     const HTTPHeaderEntries & headers,
@@ -883,7 +883,7 @@ std::vector<std::pair<std::string, std::string>> IStorageURLBase::getReadURIPara
     return {};
 }
 
-std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
+std::function<void(WriteBuffer &)> IStorageURLBase::getReadPOSTDataCallback(
     const Names & /*column_names*/,
     const ColumnsDescription & /* columns_description */,
     const SelectQueryInfo & /*query_info*/,
@@ -1232,7 +1232,7 @@ public:
         ReadFromFormatInfo info_,
         const bool need_only_count_,
         std::vector<std::pair<std::string, std::string>> read_uri_params_,
-        std::function<void(std::ostream &)> read_post_data_callback_,
+        std::function<void(WriteBuffer &)> read_post_data_callback_,
         size_t max_block_size_,
         size_t num_streams_)
         : SourceStepWithFilter(std::make_shared<const Block>(std::move(sample_block)), column_names_, query_info_, storage_snapshot_, context_)
@@ -1255,7 +1255,7 @@ private:
     ReadFromFormatInfo info;
     const bool need_only_count;
     std::vector<std::pair<std::string, std::string>> read_uri_params;
-    std::function<void(std::ostream &)> read_post_data_callback;
+    std::function<void(WriteBuffer &)> read_post_data_callback;
 
     size_t max_block_size;
     size_t num_streams;

@@ -1,4 +1,6 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HostResolvePool.h>
@@ -251,18 +253,19 @@ static void echoRequest(String data, HTTPSession & session)
     {
         Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1"); // HTTP/1.1 is required for keep alive
         request.setContentLength(data.size());
-        std::ostream & ostream = session.sendRequest(request);
-        ostream << data;
+        auto request_body = DB::sendHTTPRequest(session, request);
+        DB::writeString(data, *request_body);
+        request_body->finalize();
     }
 
     {
-        std::stringstream result;
         Poco::Net::HTTPResponse response;
-        std::istream & istream = session.receiveResponse(response);
+        auto response_body = DB::receiveHTTPResponse(session, response);
         ASSERT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_OK);
 
-        stream_copy_n(istream, result);
-        ASSERT_EQ(data, result.str());
+        String result;
+        DB::readStringUntilEOF(result, *response_body);
+        ASSERT_EQ(data, result);
     }
 }
 
@@ -640,9 +643,9 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTP)
                              .withBypassProxy(true)
                              .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
                              .withOutCallback(
-                                 [&] (std::ostream & in)
+                                 [&] (DB::WriteBuffer & out)
                                  {
-                                     in << message;
+                                     DB::writeString(message, out);
                                  })
                              .withDelayInit(false)
                              .create(empty_creds);
@@ -899,8 +902,9 @@ TEST_F(ConnectionPoolTest, NoReceiveCall)
             auto data = String("Hello");
             Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1"); // HTTP/1.1 is required for keep alive
             request.setContentLength(data.size());
-            std::ostream & ostream = connection->sendRequest(request);
-            ostream << data;
+            auto request_body = DB::sendHTTPRequest(*connection, request);
+            DB::writeString(data, *request_body);
+            request_body->finalize();
         }
 
         connection->flushRequest();
