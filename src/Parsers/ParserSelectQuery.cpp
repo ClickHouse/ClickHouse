@@ -245,6 +245,83 @@ bool nextClauseCannotFollowQueryLevelOffset(IParser::Pos & pos, Expected & expec
     return false;
 }
 
+/// Parses the boundaries of a `LIMIT` range: `AFTER start_expr [ALL] [UNTIL end_expr]` or `UNTIL end_expr`.
+/// `AFTER` and `UNTIL` are contextual keywords, because an identifier with one of these names is still
+/// a valid row count (`WITH 2 AS after ... LIMIT after`). The word is read as a keyword only when a
+/// boundary expression follows it; since the expression parser accepts keywords as identifiers, a word
+/// that may follow a count (`LIMIT after BY x`, `LIMIT after SETTINGS ...`) selects the count reading as
+/// well. When both readings remain possible the keyword wins, so `LIMIT after(2)` is the range
+/// `LIMIT AFTER (2)`. Nothing is consumed when the count reading is selected.
+bool parseLimitRange(IParser::Pos & pos, Expected & expected, ASTPtr & limit_after, ASTPtr & limit_until, bool & limit_after_all)
+{
+    ParserKeyword s_after(Keyword::AFTER);
+    ParserKeyword s_until(Keyword::UNTIL);
+    ParserKeyword s_all(Keyword::ALL);
+    ParserExpressionWithOptionalAlias expression_p(false);
+
+    /// Words that may follow a `LIMIT` count: its alias, the rest of the `LIMIT` clause, and the clauses
+    /// and set operations that can come after it.
+    static const Keyword count_followers[] = {
+        Keyword::AS,
+        Keyword::BY,
+        Keyword::OFFSET,
+        Keyword::WITH_TIES,
+        Keyword::AFTER,
+        Keyword::UNTIL,
+        Keyword::FETCH,
+        Keyword::SETTINGS,
+        Keyword::FORMAT,
+        Keyword::INTO_OUTFILE,
+        Keyword::UNION,
+        Keyword::EXCEPT,
+        Keyword::INTERSECT,
+        Keyword::PARALLEL_WITH,
+    };
+
+    auto begin = pos;
+    bool has_after = s_after.ignore(pos, expected);
+    if (!has_after && !s_until.ignore(pos, expected))
+        return false;
+
+    for (auto keyword : count_followers)
+    {
+        if (ParserKeyword(keyword).checkWithoutMoving(pos, expected))
+        {
+            pos = begin;
+            return false;
+        }
+    }
+
+    ASTPtr start_expr;
+    ASTPtr end_expr;
+    bool start_all = false;
+
+    bool parsed = false;
+    if (has_after)
+    {
+        parsed = expression_p.parse(pos, start_expr, expected);
+        if (parsed)
+        {
+            start_all = s_all.ignore(pos, expected);
+            if (s_until.ignore(pos, expected))
+                parsed = expression_p.parse(pos, end_expr, expected);
+        }
+    }
+    else
+        parsed = expression_p.parse(pos, end_expr, expected);
+
+    if (!parsed)
+    {
+        pos = begin;
+        return false;
+    }
+
+    limit_after = std::move(start_expr);
+    limit_until = std::move(end_expr);
+    limit_after_all = start_all;
+    return true;
+}
+
 }
 
 
@@ -313,6 +390,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr distinct_on_expression_list;
     ASTPtr limit_offset;
     ASTPtr limit_length;
+    ASTPtr limit_after;
+    ASTPtr limit_until;
     ASTPtr top_length;
     ASTPtr settings;
 
@@ -604,72 +683,79 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         ParserToken s_comma(TokenType::Comma);
 
-        if (!exp_elem.parse(pos, limit_length, expected))
-            return false;
-
-        if (s_comma.ignore(pos, expected))
+        if (!parseLimitRange(pos, expected, limit_after, limit_until, select_query->limit_after_all))
         {
-            limit_offset = limit_length;
             if (!exp_elem.parse(pos, limit_length, expected))
                 return false;
 
-            if (s_with_ties.ignore(pos, expected))
+            if (s_comma.ignore(pos, expected))
+            {
+                limit_offset = limit_length;
+                if (!exp_elem.parse(pos, limit_length, expected))
+                    return false;
+
+                if (s_with_ties.ignore(pos, expected))
+                {
+                    limit_with_ties_occurred = true;
+                    select_query->limit_with_ties = true;
+                }
+            }
+            else if (s_offset.ignore(pos, expected))
+            {
+                if (!exp_elem.parse(pos, limit_offset, expected))
+                    return false;
+
+                has_offset_clause = true;
+
+                if (s_with_ties.ignore(pos, expected))
+                {
+                    limit_with_ties_occurred = true;
+                    select_query->limit_with_ties = true;
+                }
+            }
+            else if (s_with_ties.ignore(pos, expected))
             {
                 limit_with_ties_occurred = true;
                 select_query->limit_with_ties = true;
             }
-        }
-        else if (s_offset.ignore(pos, expected))
-        {
-            if (!exp_elem.parse(pos, limit_offset, expected))
-                return false;
 
-            has_offset_clause = true;
-
-            if (s_with_ties.ignore(pos, expected))
-            {
-                limit_with_ties_occurred = true;
-                select_query->limit_with_ties = true;
-            }
-        }
-        else if (s_with_ties.ignore(pos, expected))
-        {
-            limit_with_ties_occurred = true;
-            select_query->limit_with_ties = true;
-        }
-
-        if (limit_with_ties_occurred && distinct_on_expression_list)
-            throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
-
-        if (s_by.ignore(pos, expected))
-        {
-            /// WITH TIES was used alongside LIMIT BY
-            /// But there are other kind of queries like LIMIT n BY smth LIMIT m WITH TIES which are allowed.
-            /// So we have to ignore WITH TIES exactly in LIMIT BY state.
-            if (limit_with_ties_occurred)
+            if (limit_with_ties_occurred && distinct_on_expression_list)
                 throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
 
-            if (distinct_on_expression_list)
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Can not use DISTINCT ON alongside LIMIT BY");
-
-            limit_by_length = limit_length;
-            limit_by_offset = limit_offset;
-            limit_length = nullptr;
-            limit_offset = nullptr;
-
-            if (s_all.ignore(pos, expected))
+            if (s_by.ignore(pos, expected))
             {
-                select_query->limit_by_all = true;
-                limit_by_expression_list = make_intrusive<ASTExpressionList>();
+                /// WITH TIES was used alongside LIMIT BY
+                /// But there are other kind of queries like LIMIT n BY smth LIMIT m WITH TIES which are allowed.
+                /// So we have to ignore WITH TIES exactly in LIMIT BY state.
+                if (limit_with_ties_occurred)
+                    throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
+
+                if (distinct_on_expression_list)
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Can not use DISTINCT ON alongside LIMIT BY");
+
+                limit_by_length = limit_length;
+                limit_by_offset = limit_offset;
+                limit_length = nullptr;
+                limit_offset = nullptr;
+
+                if (s_all.ignore(pos, expected))
+                {
+                    select_query->limit_by_all = true;
+                    limit_by_expression_list = make_intrusive<ASTExpressionList>();
+                }
+                else
+                {
+                    if (!exp_list.parse(pos, limit_by_expression_list, expected))
+                        return false;
+                }
             }
-            else
-            {
-                if (!exp_list.parse(pos, limit_by_expression_list, expected))
-                    return false;
-            }
+
+            /// A range may follow the count (`LIMIT n AFTER ...`), but not a `LIMIT BY`.
+            if (limit_length)
+                parseLimitRange(pos, expected, limit_after, limit_until, select_query->limit_after_all);
         }
 
-        if (top_length && limit_length)
+        if (top_length && (limit_length || limit_after || limit_until))
             throw Exception(ErrorCodes::TOP_AND_LIMIT_TOGETHER, "Can not use TOP and LIMIT together");
     }
     else if (s_offset.ignore(pos, expected))
@@ -752,30 +838,36 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         limit_length = top_length;
 
     /// LIMIT length [WITH TIES] | LIMIT offset, length [WITH TIES]
+    /// Also handles LIMIT [n] AFTER / UNTIL after LIMIT BY.
     if (s_limit.ignore(pos, expected))
     {
-        if (!limit_by_length || limit_length)
+        if (!limit_by_length || limit_length || limit_after || limit_until)
             return false;
 
         ParserToken s_comma(TokenType::Comma);
 
-        if (!exp_elem.parse(pos, limit_length, expected))
-            return false;
-
-        if (s_comma.ignore(pos, expected))
+        if (!parseLimitRange(pos, expected, limit_after, limit_until, select_query->limit_after_all))
         {
-            limit_offset = limit_length;
             if (!exp_elem.parse(pos, limit_length, expected))
                 return false;
-        }
-        else if (s_offset.ignore(pos, expected))
-        {
-            if (!exp_elem.parse(pos, limit_offset, expected))
-                return false;
-        }
 
-        if (s_with_ties.ignore(pos, expected))
-            select_query->limit_with_ties = true;
+            if (s_comma.ignore(pos, expected))
+            {
+                limit_offset = limit_length;
+                if (!exp_elem.parse(pos, limit_length, expected))
+                    return false;
+            }
+            else if (s_offset.ignore(pos, expected))
+            {
+                if (!exp_elem.parse(pos, limit_offset, expected))
+                    return false;
+            }
+
+            if (s_with_ties.ignore(pos, expected))
+                select_query->limit_with_ties = true;
+
+            parseLimitRange(pos, expected, limit_after, limit_until, select_query->limit_after_all);
+        }
     }
 
     /// WITH TIES was used without ORDER BY
@@ -808,6 +900,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY, std::move(limit_by_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(limit_offset));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit_length));
+    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_AFTER, std::move(limit_after));
+    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_UNTIL, std::move(limit_until));
     select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings));
     select_query->setExpression(ASTSelectQuery::Expression::INTERPOLATE, std::move(interpolate_expression_list));
     return true;
@@ -3101,6 +3195,92 @@ ORDER BY n LIMIT -4 OFFSET -3 WITH TIES
 Without `WITH TIES`, the result would be `1, 1, 2, 2`. With `WITH TIES`, three extra rows with value `1` are included because they tie with the first selected row.
 
 This modifier can be combined with the [`ORDER BY ... WITH FILL`](/reference/statements/select/order-by#order-by-expr-with-fill-modifier) modifier.
+
+## LIMIT ... AFTER ... UNTIL (range by conditions) {#limit-after-until}
+
+You can limit the result to a *range* of rows between two boundary conditions:
+
+```sql
+LIMIT [n] AFTER start_expr [UNTIL end_expr]
+LIMIT [n] AFTER start_expr ALL [UNTIL end_expr]
+LIMIT [n] UNTIL end_expr
+```
+
+- `AFTER start_expr`: Start output from the first row where `start_expr` is true (that row is included).
+- `AFTER start_expr ALL`: Output the union of all matching ranges that start where `start_expr` is true, without duplicating rows when ranges overlap.
+- `UNTIL end_expr`: Stop before the first row where `end_expr` is true (that row is excluded).
+- `n`: Optional row count. Without `ALL` it is the maximum length of the single opened range. With `AFTER ... ALL` it is the length of *each* opened range, so the total result can exceed `n` (for example, `LIMIT 2 AFTER number IN (2, 6) ALL` can return up to four rows). To cap the total number of result rows, use the `limit` setting, which is applied as a global limit after the range.
+
+Stream order (the order rows are read) defines “first” match; use `ORDER BY` to control it.
+
+Without `ALL`, if the first `UNTIL` match appears before the first `AFTER` match, the result is empty. With `AFTER ... ALL`, later `AFTER` matches can still open new ranges.
+
+**Examples:**
+
+First 3 rows starting from the first row where `number >= 3`:
+
+```sql
+SELECT number FROM numbers(10) ORDER BY number LIMIT 3 AFTER number >= 3;
+```
+
+```response
+┌─number─┐
+│      3 │
+│      4 │
+│      5 │
+└────────┘
+```
+
+Rows from first row where `number >= 2` until (exclusive) first row where `number >= 6`:
+
+```sql
+SELECT number FROM numbers(10) ORDER BY number LIMIT 10 AFTER number >= 2 UNTIL number >= 6;
+```
+
+```response
+┌─number─┐
+│      2 │
+│      3 │
+│      4 │
+│      5 │
+└────────┘
+```
+
+Without `n`, all rows from the `AFTER` match to the end of the stream (or until `UNTIL`) are returned:
+
+```sql
+SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 7;
+```
+
+```response
+┌─number─┐
+│      7 │
+│      8 │
+│      9 │
+└────────┘
+```
+
+Emit 2 rows after every matching row, without duplicating overlaps:
+
+```sql
+SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 3, 6) ALL;
+```
+
+```response
+┌─number─┐
+│      2 │
+│      3 │
+│      4 │
+│      6 │
+│      7 │
+└────────┘
+```
+
+:::note
+- `WITH TIES`, fractional/negative `LIMIT`/`OFFSET`, and `OFFSET` are not supported together with `AFTER`/`UNTIL`.
+- Preliminary `LIMIT` pushdown is disabled when `AFTER`/`UNTIL` is used.
+- `AFTER` and `UNTIL` are recognized as keywords only when a boundary expression follows them, so an identifier named `after` or `until` still works as a row count (`LIMIT after`, `LIMIT after BY x`). When both readings are possible the keyword wins: `LIMIT after(2)` is the range `LIMIT AFTER (2)`; write `LIMIT (after(2))` to call a function named `after`.
+:::
 
 ## Considerations {#considerations}
 

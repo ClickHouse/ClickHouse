@@ -337,6 +337,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setIsGroupByWithGroupingSets(select_query_typed.group_by_with_grouping_sets);
     current_query_tree->setIsGroupByAll(select_query_typed.group_by_all);
     current_query_tree->setIsLimitByAll(select_query_typed.limit_by_all);
+    current_query_tree->setIsLimitAfterAll(select_query_typed.limit_after_all);
     /// order_by_all flag in AST is set w/o consideration of `enable_order_by_all` setting
     /// since SETTINGS section has not been parsed yet, - so, check the setting here
     bool order_by_all_enabled = select_query_typed.order_by_all && enable_order_by_all;
@@ -492,6 +493,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     auto select_limit_by = select_query_typed.limitBy();
     if (select_limit_by)
         current_query_tree->getLimitByNode() = buildExpressionList(select_limit_by, current_context);
+
+    auto select_limit_after = select_query_typed.limitAfter();
+    if (select_limit_after)
+        current_query_tree->getLimitAfter() = buildExpression(select_limit_after, current_context);
+
+    auto select_limit_until = select_query_typed.limitUntil();
+    if (select_limit_until)
+        current_query_tree->getLimitUntil() = buildExpression(select_limit_until, current_context);
 
     /// Combine limit expression with limit and offset settings into final limit expression
     /// `LIMIT` / `OFFSET` come straight from the SQL clauses. The `limit` / `offset` settings are no

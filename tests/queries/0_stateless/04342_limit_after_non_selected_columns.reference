@@ -1,0 +1,51 @@
+-- Regression: AFTER/UNTIL boundary expressions may reference columns not in the SELECT list.
+-- The analyzer-side preservation step must keep those columns alive through LimitRangeStep
+-- without dropping the selected output columns.
+
+-- { echo }
+
+-- AFTER references non-selected column y (analyzer).
+SELECT x FROM (SELECT number AS x, number * 2 AS y FROM numbers(10)) ORDER BY x LIMIT 3 AFTER y >= 10;
+5
+6
+7
+-- AFTER + UNTIL both reference non-selected column y (analyzer).
+SELECT x FROM (SELECT number AS x, number * 2 AS y FROM numbers(10)) ORDER BY x LIMIT AFTER y >= 10 UNTIL y >= 14;
+5
+6
+-- AFTER references non-selected column y, no count (analyzer).
+SELECT x FROM (SELECT number AS x, number * 2 AS y FROM numbers(10)) ORDER BY x LIMIT AFTER y >= 16;
+8
+9
+-- AFTER ALL references non-selected column y (analyzer).
+SELECT x FROM (SELECT number AS x, number * 2 AS y FROM numbers(10)) ORDER BY x LIMIT 2 AFTER y IN (6, 14) ALL;
+3
+4
+7
+8
+-- Multiple selected columns, boundary on a non-selected one (analyzer).
+SELECT x, x + 1 AS z FROM (SELECT number AS x, number * 2 AS y FROM numbers(10)) ORDER BY x LIMIT 3 AFTER y >= 10;
+5	6
+6	7
+7	8
+-- Same queries with legacy interpreter.
+SET enable_analyzer = 0;
+SELECT x FROM (SELECT number AS x, number * 2 AS y FROM numbers(10)) ORDER BY x LIMIT 3 AFTER y >= 10;
+5
+6
+7
+SELECT x FROM (SELECT number AS x, number * 2 AS y FROM numbers(10)) ORDER BY x LIMIT AFTER y >= 10 UNTIL y >= 14;
+5
+6
+SELECT x FROM (SELECT number AS x, number * 2 AS y FROM numbers(10)) ORDER BY x LIMIT AFTER y >= 16;
+8
+9
+SELECT x FROM (SELECT number AS x, number * 2 AS y FROM numbers(10)) ORDER BY x LIMIT 2 AFTER y IN (6, 14) ALL;
+3
+4
+7
+8
+SELECT x, x + 1 AS z FROM (SELECT number AS x, number * 2 AS y FROM numbers(10)) ORDER BY x LIMIT 3 AFTER y >= 10;
+5	6
+6	7
+7	8

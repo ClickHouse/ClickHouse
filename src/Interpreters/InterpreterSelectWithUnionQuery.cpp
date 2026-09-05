@@ -10,6 +10,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>

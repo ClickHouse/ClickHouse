@@ -1109,6 +1109,8 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
       * and also set the number of threads to 1.
       */
     if (main_query_node.hasLimit()
+        && !main_query_node.hasLimitAfter()
+        && !main_query_node.hasLimitUntil()
         && !main_query_node.isDistinct()
         && !main_query_node.isLimitWithTies()
         && !main_query_node.hasPrewhere()
@@ -1348,6 +1350,13 @@ void pushOrderByIntoView(
     if (outer->hasOffset())
         return;
 
+    /// `LIMIT n AFTER ... [UNTIL ...]` counts rows only from the boundary row onwards, and the
+    /// boundary is located on the coordinator over the ordered stream. Pushing `LIMIT_LENGTH` into
+    /// the view would keep the first n rows of every shard instead, so the boundary row may never
+    /// reach the coordinator and the range would return too few rows or none at all.
+    if (outer->hasLimitAfter() || outer->hasLimitUntil())
+        return;
+
     /// LIMIT ... WITH TIES decides ties globally after ordering. Pushing
     /// LIMIT_LENGTH into the view would truncate per-shard before the global
     /// tie set is known.
@@ -1415,8 +1424,10 @@ void pushOrderByIntoView(
     if (sel->qualify())
         return;
 
-    /// View must not already have ORDER BY/LIMIT
-    if (sel->orderBy() || sel->limitBy() || sel->limitLength() || sel->limitOffset())
+    /// View must not already have ORDER BY/LIMIT, including a `LIMIT [n] AFTER/UNTIL` range: the
+    /// injected `ORDER BY` would change which rows its boundaries select, and the injected
+    /// `LIMIT_LENGTH` would become the count of a range that had none.
+    if (sel->orderBy() || sel->limitBy() || sel->limitLength() || sel->limitOffset() || sel->limitAfter() || sel->limitUntil())
         return;
 
     /// View must not carry `LIMIT`/`OFFSET` through its own `SETTINGS` clause.

@@ -6,18 +6,11 @@
 #include <Interpreters/AggregatedDataVariants.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/RowsBeforeStepCounter.h>
+#include <Processors/Transforms/ChunkRowRange.h>
 
 
 namespace DB
 {
-
-/// Chunk-local half-open range of rows `[start, start + length)`.
-struct ChunkRowRange
-{
-    UInt64 start = 0;
-    UInt64 length = 0;
-};
-
 
 /// General `LIMIT BY` transform for input where equal grouping keys are not
 /// guaranteed to be contiguous.
