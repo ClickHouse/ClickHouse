@@ -237,7 +237,12 @@ class ReleaseInfo:
         return self
 
     def prepare(
-        self, commit_ref: str, release_type: str, dry_run: bool = False
+        self,
+        commit_ref: str,
+        release_type: str,
+        dry_run: bool = False,
+        skip_repo: bool = False,
+        skip_docker: bool = False,
     ) -> "ReleaseInfo":
         assert release_type in ("patch", "new")
         # `commit_ref` (the workflow `ref` input) is interpolated into git
@@ -352,10 +357,19 @@ class ReleaseInfo:
                     f"release tag [{released.split()[0]}]: either the ref targets a commit with a "
                     f"superseded release, or there is a bug in the release/versioning logic"
                 )
+        # skip-repo/skip-docker only re-publish an existing release, so reject them against a ref that resolves to a new (untagged) release.
+        assert self.is_tag_pushed or not (skip_repo or skip_docker), (
+            "skip-repo/skip-docker re-publish an existing release and must be "
+            "run against its release tag (recovery); the given ref resolves to "
+            "a new release. Pass the release tag as the ref."
+        )
         self.release_type = release_type
         return self
 
     def push_release_tag(self, dry_run: bool) -> None:
+        # A recovery finds the tag already published — nothing to do.
+        if self.is_tag_pushed:
+            return
         print(
             f"Create and push release tag [{self.release_tag}], commit [{self.commit_sha}]"
         )
@@ -383,6 +397,9 @@ class ReleaseInfo:
             print("WARNING: failed to create backport labels for the new branch")
 
     def push_new_release_branch(self, dry_run: bool) -> None:
+        # A recovery/rerun of an already-tagged release re-runs nothing here.
+        if self.is_tag_pushed:
+            return
         version = CHVersion.get_current_version()
         new_release_branch = self.release_branch
         version_after_release = copy(version)
@@ -421,6 +438,13 @@ class ReleaseInfo:
         )
 
     def update_version_and_contributors_list(self, dry_run: bool) -> None:
+        # A superseded (late) recovery must not rewrite the branch version backwards.
+        if self.release_type == "patch" and self.is_bump_landed:
+            print(
+                f"Branch {self.release_branch} already advanced past this release "
+                f"(late recovery) — skipping version bump"
+            )
+            return
         with checkout(self.commit_sha):
             version = CHVersion.get_current_version()
             if self.release_type == "patch":
@@ -848,19 +872,14 @@ def parse_args() -> argparse.Namespace:
         help="Initial step to prepare info like release branch, release tag, etc.",
     )
     parser.add_argument(
-        "--push-release-tag",
+        "--skip-repo",
         action="store_true",
-        help="Creates and pushes git tag",
+        help="Recovery run that only re-exports repo packages for an already-created release",
     )
     parser.add_argument(
-        "--push-new-release-branch",
+        "--skip-docker",
         action="store_true",
-        help="Creates and pushes new release branch and corresponding service gh tags for backports",
-    )
-    parser.add_argument(
-        "--create-bump-version-pr",
-        action="store_true",
-        help="Updates version, contributors list and creates PR",
+        help="Recovery run that only rebuilds docker images for an already-created release",
     )
     parser.add_argument(
         "--download-packages",
@@ -915,6 +934,8 @@ if __name__ == "__main__":
                 commit_ref=args.ref,
                 release_type=args.release_type,
                 dry_run=args.dry_run,
+                skip_repo=args.skip_repo,
+                skip_docker=args.skip_docker,
             )
 
     if args.download_packages:
@@ -927,24 +948,6 @@ if __name__ == "__main__":
                 version=release_info.version,
             )
             p.run()
-
-    if args.push_release_tag:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.PUSH_RELEASE_TAG
-        ) as release_info:
-            release_info.push_release_tag(dry_run=args.dry_run)
-
-    if args.push_new_release_branch:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.PUSH_NEW_RELEASE_BRANCH
-        ) as release_info:
-            release_info.push_new_release_branch(dry_run=args.dry_run)
-
-    if args.create_bump_version_pr:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.BUMP_VERSION
-        ) as release_info:
-            release_info.update_version_and_contributors_list(dry_run=args.dry_run)
 
     if args.create_gh_release:
         with ReleaseContextManager(
