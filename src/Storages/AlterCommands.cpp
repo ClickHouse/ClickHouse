@@ -1762,6 +1762,8 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
         if (!command.ignore)
             command.apply(metadata_copy, context, share_nested_offsets, &metadata.columns);
 
+    const bool columns_changed = metadata_copy.columns != metadata.columns;
+
     /// Changes in columns may lead to changes in keys expression.
     metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
     if (metadata_copy.primary_key.definition_ast != nullptr)
@@ -1777,18 +1779,16 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 
     /// And in partition key expression
     if (metadata_copy.partition_key.definition_ast != nullptr)
-    {
         metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
 
-        /// If partition key expression is changed, we also need to rebuild minmax_count_projection
-        if (metadata.minmax_count_projection && !blocksHaveEqualStructure(metadata_copy.partition_key.sample_block, metadata.partition_key.sample_block))
-        {
-            auto minmax_columns = metadata_copy.getColumnsRequiredForPartitionKey();
-            auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
-            FunctionNameNormalizer::visit(partition_key.get());
-            metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-                metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, &metadata_copy.partition_key, context));
-        }
+    /// Derived inputs and types can change even when the partition key output structure does not.
+    if (metadata_copy.minmax_count_projection && columns_changed)
+    {
+        auto minmax_columns = metadata_copy.getColumnsRequiredForPartitionKey();
+        auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
+        FunctionNameNormalizer::visit(partition_key.get());
+        metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
+            metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, &metadata_copy.partition_key, context));
     }
 
     // /// And in sample key expression
