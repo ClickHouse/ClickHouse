@@ -1,21 +1,21 @@
 ---
 slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
-title: 'OpenAPI de Managed Postgres'
-description: 'Gérez vos services Managed Postgres avec notre OpenAPI'
-keywords: ['managed postgres', 'openapi', 'API', 'curl', 'tutoriel', 'ligne de commande', 'query insights', 'requêtes lentes']
+title: 'OpenAPI de ClickHouse Managed Postgres'
+description: 'Gérez vos services ClickHouse Managed Postgres avec notre OpenAPI'
+keywords: ['managed postgres', 'openapi', 'API', 'curl', 'tutoriel', 'ligne de commande', 'query insights', 'requêtes lentes', 'journaux du serveur', 'journaux']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.openapi-beta" />
 
-Utilisez la [ClickHouse OpenAPI](/fr/products/cloud/features/admin-features/api/index) pour gérer par programmation
-vos services Managed Postgres, comme vous le feriez avec des services ClickHouse. La
-même API expose également un [endpoint Prometheus] pour collecter les métriques du service.
+Utilisez la [ClickHouse OpenAPI](/fr/products/cloud/features/admin-features/api/api-overview) pour gérer par programmation
+vos services ClickHouse Managed Postgres, comme vous le feriez avec des services ClickHouse. La
+même API expose également un [point de terminaison Prometheus] pour collecter les métriques du service.
 Vous connaissez déjà [OpenAPI] ? Récupérez vos [clés API] et accédez directement à la
-[référence de l’API Managed Postgres][pg-openapi]. Sinon, suivez ce guide pour une
+[référence de l’API ClickHouse Managed Postgres][pg-openapi]. Sinon, suivez ce guide pour une
 brève présentation.
 
 <div id="api-keys">
@@ -112,12 +112,15 @@ create_data='{
 }'
 ```
 
-Utilisez maintenant ces données pour créer une nouvelle instance ; notez que cela nécessite l’en-tête Content-Type :
+Utilisez maintenant ces données pour créer une nouvelle instance ; notez que cela nécessite l’en-tête Content-Type. Enregistrez la réponse : c’est la seule qui inclut l’identifiant d’authentification du service
+(la réponse de [réinitialisation du mot de passe] le renvoie également lorsque la requête
+ne fournit pas de mot de passe) :
 
 ```bash
-curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
+pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
     "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres" \
-    -d "$create_data" | jq
+    -d "$create_data")
+echo "$pg_created" | jq
 ```
 
 En cas de réussite, une nouvelle instance sera créée et ses informations seront renvoyées,
@@ -160,7 +163,8 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-Le résultat sera similaire au JSON renvoyé lors de la création, mais surveillez
+La sortie sera similaire au JSON renvoyé lors de la création, sans les
+identifiants, mais surveillez
 le `state` ; lorsqu&#39;il passe à `running`, le serveur est prêt :
 
 ```bash
@@ -173,15 +177,11 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 "running"
 ```
 
-Vous pouvez maintenant utiliser la propriété `connectionString` pour vous connecter, par exemple à l’aide de
-[psql] :
+Vous pouvez maintenant utiliser la propriété `connectionString` enregistrée à partir de la réponse de création
+pour vous connecter, par exemple à l’aide de [psql] :
 
 ```bash
-$ psql "$(
-    curl -s --user "$KEY_ID:$KEY_SECRET" \
-    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
-    | jq -r .result.connectionString
-)"
+$ psql "$(echo "$pg_created" | jq -r .result.connectionString)"
 
 psql (18.3)
 SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, compression: off, ALPN: postgresql)
@@ -225,9 +225,7 @@ Les données renvoyées doivent inclure les nouveaux tags :
       "value": "production"
     }
   ],
-  "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com:5432/postgres?channel_binding=require",
   "username": "postgres",
-  "password": "vV6cfEr2p_-TzkCDrZOx",
   "hostname": "my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com",
   "isPrimary": true,
   "state": "running"
@@ -304,7 +302,7 @@ En cas de succès, la réponse renverra le code d’état 200, par exemple :
   ## Monitoring
 </div>
 
-Deux endpoints compatibles avec Prometheus exposent des métriques de CPU, de mémoire, d’E/S, de connexion et de transaction pour les services Managed Postgres : l’un renvoie les métriques de tous les services de l’organisation, l’autre celles d’un seul service. Consultez la page [endpoint Prometheus] pour la configuration et la [référence des métriques] pour la liste complète des métriques.
+Deux points de terminaison compatibles avec Prometheus exposent des métriques de CPU, de mémoire, d’E/S, de connexion et de transaction pour les services ClickHouse Managed Postgres : l’un renvoie les métriques de tous les services de l’organisation, l’autre celles d’un seul service. Consultez la page [point de terminaison Prometheus] pour la configuration et la [référence des métriques] pour la liste complète des métriques.
 
 <div id="query-insights">
   ## Query insights
@@ -380,7 +378,7 @@ seul modèle de requête.
 </div>
 
 Fournissez un `queryId` issu de la réponse de la liste à la [slow pattern API] pour obtenir les métriques agrégées de ce modèle, ainsi que ses exécutions individuelles les plus récentes.
-Les champs `db_name`, `db_user` et `db_operation` qui identifient le modèle sont obligatoires :
+Les champs `db_name`, `db_user` et `db_operation` qui identifient le modèle sont obligatoires :
 
 ```bash
 QUERY_ID=-4748036479882663975
@@ -390,11 +388,11 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-La réponse contient le même agrégat que l’endpoint de liste sous
-`aggregate`, ainsi qu’un tableau `recentExecutions`. Chaque exécution inclut les
+La réponse contient le même agrégat que le point de terminaison de liste sous
+`aggregate`, ainsi qu&#39;un tableau `recentExecutions`. Chaque exécution inclut les
 compteurs complets par exécution — E/S des blocs partagés et temporaires, temps
 CPU utilisateur et système, workers parallèles, JIT et WAL — les mêmes compteurs que le
-[volet de détails] ventile dans la console :
+[volet de détails] ventile dans la console :
 
 ```json
 {
@@ -431,36 +429,90 @@ CPU utilisateur et système, workers parallèles, JIT et WAL — les mêmes comp
 }
 ```
 
-L’exemple tronque les deux objets pour plus de concision ; l’API renvoie le jeu complet
+L&#39;exemple tronque les deux objets pour plus de concision ; l&#39;API renvoie le jeu complet
 de compteurs documenté dans [per-execution counters].
 
-[ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/index "Cloud API"
+<div id="server-logs">
+  ## Journaux du serveur
+</div>
+
+Les journaux du serveur PostgreSQL affichés dans la visionneuse de journaux de la console cloud sont également
+accessibles par programmation. L&#39;[API des journaux] renvoie des entrées de journal individuelles pour un
+service sur une fenêtre temporelle. Comme pour Query insights, cette fenêtre est obligatoire ; transmettez donc
+`from_date` et `to_date` sous forme d&#39;horodatages RFC 3339. La plage ne doit pas dépasser
+30 jours et `to_date` doit être postérieur à `from_date` :
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/logs?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+Les entrées sont renvoyées de la plus récente à la plus ancienne ; inversez l’ordre avec `sort_order` (`asc` ou
+`desc`). Filtrez sur un seul niveau de gravité avec `severity` (par exemple `ERROR`,
+`WARNING` ou `LOG`), recherchez une sous-chaîne du corps du log sensible à la casse avec
+`body_contains`, et parcourez les résultats avec `limit` et `offset`.
+
+Chaque entrée contient son `timestamp`, sa `severity` et son `body` brut. Le corps est
+toujours une chaîne : les lignes de log structurées sont renvoyées encodées en JSON, les lignes simples
+telles quelles :
+
+```json
+{
+  "result": [
+    {
+      "timestamp": "2026-05-25T16:42:09.512844Z",
+      "severity": "ERROR",
+      "body": "{\"message\":\"deadlock detected\",\"detail\":\"Process 42 waits for ShareLock\"}"
+    },
+    {
+      "timestamp": "2026-05-25T16:41:58.004120Z",
+      "severity": "LOG",
+      "body": "connection received: host=10.0.0.7 port=54210 user=orders_service database=sales"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "requestId": "b0d5c3a1-9f2e-4a7c-8b1d-3e6f0a2c4d55",
+  "status": 200
+}
+```
+
+Le point de terminaison pagine les résultats à l&#39;aide de `limit` et `offset`, sans renvoyer le nombre total
+d&#39;entrées ; incrémentez `offset` jusqu&#39;à ce qu&#39;une page renvoie moins de `limit` entrées.
+
+[ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
 
 [OpenAPI]: https://www.openapis.org "Initiative OpenAPI"
 
 [API keys]: /products/cloud/features/admin-features/api/openapi "Gestion des clés API"
 
-[pg-openapi]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres "Spécification OpenAPI pour ClickHouse Cloud : Postgres"
+[pg-openapi]: /products/cloud/api-reference/postgres/postgres-service-create "Référence API ClickHouse Cloud : Postgres"
 
-[list API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceGetList "Récupérer la liste des services Postgres d’une organisation"
+[list API]: /products/cloud/api-reference/postgres/postgres-service-get-list "Récupérer la liste des services Postgres d'une organisation"
 
-[create API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceCreate "Créer un nouveau service Postgres"
+[create API]: /products/cloud/api-reference/postgres/postgres-service-create "Créer un nouveau service Postgres"
 
-[psql]: https://www.postgresql.org/docs/current/app-psql.html "PostgreSQL Docs : psql — terminal interactif PostgreSQL"
+[psql]: https://www.postgresql.org/docs/current/app-psql.html "PostgreSQL Docs : psql — terminal interactif PostgreSQL"
 
-[patch API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServicePatch "Mettre à jour un service PostgreSQL"
+[patch API]: /products/cloud/api-reference/postgres/postgres-service-patch "Mettre à jour un service PostgreSQL"
 
-[RFC 7396]: https://www.rfc-editor.org/rfc/rfc7396 "RFC 7396 : JSON Merge Patch"
+[RFC 7396]: https://www.rfc-editor.org/rfc/rfc7396 "RFC 7396 : JSON Merge Patch"
 
-[Postgres configuration]: https://www.postgresql.org/docs/18/runtime-config.html "PostgreSQL Docs : configuration du serveur"
+[Postgres configuration]: https://www.postgresql.org/docs/18/runtime-config.html "PostgreSQL Docs : configuration du serveur"
 
-[config API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceSetConfig "Mettre à jour la configuration d’un service Postgres"
+[config API]: /products/cloud/api-reference/postgres/postgres-instance-config-post "Mettre à jour la configuration d'un service Postgres"
 
-[delete API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceDelete "Supprimer un service PostgreSQL"
+[delete API]: /products/cloud/api-reference/postgres/postgres-service-delete "Supprimer un service PostgreSQL"
 
-[endpoint Prometheus]: /products/managed-postgres/monitoring/prometheus "Managed Postgres endpoint Prometheus"
+[password reset]: /products/cloud/api-reference/postgres/postgres-service-set-password "Réinitialiser le mot de passe du superutilisateur d'un service Postgres"
 
-[metrics reference]: /products/managed-postgres/monitoring/metrics "Référence des métriques de Managed Postgres"
+[Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "Point de terminaison Prometheus de ClickHouse Managed Postgres"
+
+[metrics reference]: /products/managed-postgres/monitoring/metrics "Référence des métriques de ClickHouse Managed Postgres"
 
 [Query Insights]: /products/managed-postgres/monitoring/query-insights "Query insights de Postgres"
 
@@ -468,6 +520,8 @@ de compteurs documenté dans [per-execution counters].
 
 [per-execution counters]: /products/managed-postgres/monitoring/query-insights#counters "Compteurs par exécution de Query insights"
 
-[slow patterns API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList "Lister les modèles de requêtes lentes Postgres"
+[slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Lister les modèles de requêtes lentes Postgres"
 
-[slow pattern API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet "Récupérer un modèle de requête lente Postgres avec les exécutions récentes"
+[slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "Obtenir un modèle de requête lente Postgres avec les exécutions récentes"
+
+[API des journaux]: /products/cloud/api-reference/postgres/postgres-logs-get-list "Lister les journaux du serveur Postgres"

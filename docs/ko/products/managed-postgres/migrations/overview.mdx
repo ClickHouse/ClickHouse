@@ -1,17 +1,17 @@
 ---
 slug: /cloud/managed-postgres/migrations/overview
 sidebarTitle: '개요'
-title: 'Managed Postgres 데이터 마이그레이션'
+title: 'ClickHouse Managed Postgres 데이터 마이그레이션'
 description: 'ClickHouse Managed Postgres로 데이터를 마이그레이션하는 4가지 경로를 비교하고, 원본 DB와 다운타임 요구 사항에 맞는 방법을 선택합니다.'
 keywords: ['Managed Postgres', '마이그레이션', 'Postgres 마이그레이션', 'ClickPipes', 'PeerDB', 'pg_dump', 'pg_restore', '논리적 복제']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-overview-beta" />
 
-Managed Postgres로 마이그레이션하는 경로는 4가지입니다. 어떤 경로가
+ClickHouse Managed Postgres로 마이그레이션하는 경로는 4가지입니다. 어떤 경로가
 적합한지는 지속적인 복제(CDC)가 필요한지, 어떤 원본에서
 마이그레이션하는지, 그리고 전환 과정에서 애플리케이션이 감내할 수 있는
 다운타임이 어느 정도인지에 따라 달라집니다.
@@ -79,4 +79,4 @@ Flexible Server, Neon, Crunchy Bridge, TimescaleDB 및 모든 범용 Postgres
   ## Supabase에서 마이그레이션하기
 </div>
 
-Supabase에서 마이그레이션하는 경우, 단계별 절차는 [Supabase to Managed Postgres migration guide](https://github.com/iskakaushik/supa-auth-migrate/blob/main/MIGRATION.md)를 참조하십시오.
+Supabase에서 마이그레이션하는 경우, 단계별 절차는 [Supabase to ClickHouse Managed Postgres migration guide](https://github.com/iskakaushik/supa-auth-migrate/blob/main/MIGRATION.md)를 참조하십시오.

@@ -1,0 +1,40 @@
+Index on an expression comparing to an empty string
+1
+1
+Name: idx
+Granules: 1/2
+Name: idx
+Granules: 1/2
+Index on an expression already written with empty
+1
+1
+Name: idx
+Granules: 1/2
+Index on an alias column comparing to an empty string
+1
+1
+Name: idx
+Granules: 1/2
+Name: idx
+Granules: 1/2
+Index on mapKeys of an alias column comparing to an empty string
+1
+1
+Name: idx
+Granules: 1/2
+Name: idx
+Granules: 1/2
+Index on mapValues of an alias column comparing to an empty string
+1
+1
+Name: idx
+Granules: 1/2
+Name: idx
+Granules: 1/2
+The same index for map element access
+1
+1
+Name: idx
+Granules: 1/2
+Name: idx
+Granules: 1/2

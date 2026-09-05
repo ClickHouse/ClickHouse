@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
 
 namespace DB
@@ -20,6 +21,16 @@ struct HasConstructorOfNumberOfElements<HashMapTable<Ts...>> : std::true_type
 
 template <typename Key, typename Cell, typename Hash, typename Grower, typename Allocator, template <typename...> typename ImplTable>
 struct HasConstructorOfNumberOfElements<TwoLevelHashMapTable<Key, Cell, Hash, Grower, Allocator, ImplTable>> : std::true_type
+{
+};
+
+template <typename... Ts>
+struct HasConstructorOfNumberOfElements<HashSetTable<Ts...>> : std::true_type
+{
+};
+
+template <typename... Ts>
+struct HasConstructorOfNumberOfElements<TwoLevelHashSetTable<Ts...>> : std::true_type
 {
 };
 

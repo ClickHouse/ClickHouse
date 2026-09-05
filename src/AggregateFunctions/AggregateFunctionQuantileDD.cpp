@@ -79,7 +79,7 @@ SELECT quantileDD(0.01, 0.75)(a), quantileDD(0.01, 0.75)(b) FROM example_table;
         )",
         R"(
 ┌─quantileDD(0.01, 0.75)(a)─┬─quantileDD(0.01, 0.75)(b)─┐
-│        2.974233423476717  │                      1.01 │
+│        2.9742334234767016 │                      1.01 │
 └───────────────────────────┴───────────────────────────┘
         )"
     }
@@ -93,7 +93,7 @@ SELECT quantileDD(0.01, 0.75)(a), quantileDD(0.01, 0.75)(b) FROM example_table;
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a sample with relative-error guarantees at different levels simultaneously.
 
-This function is equivalent to [`quantileDD`](/sql-reference/aggregate-functions/reference/quantileddsketch) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+This function is equivalent to [`quantileDD`](/reference/functions/aggregate-functions/quantileddsketch) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
     )";
     FunctionDocumentation::Syntax syntax_quantiles = R"(
 quantilesDD(relative_accuracy, level1, level2, ...)(expr)

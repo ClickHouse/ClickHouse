@@ -6,9 +6,14 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
@@ -17,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_USAGE_OF_INPUT;
+    extern const int BAD_ARGUMENTS;
 }
 
 String ASTInsertQuery::getDatabase() const
@@ -45,6 +51,167 @@ void ASTInsertQuery::setTable(const String & name)
     reset(table);
     if (!name.empty())
         set(table, make_intrusive<ASTIdentifier>(name));
+}
+
+void ASTInsertQuery::writeJSON(WriteBuffer & out) const
+{
+    /// Inline data (`INSERT INTO t VALUES (1)`, `INSERT ... FORMAT ... <payload>`) is represented as a
+    /// non-owning `data`..`end` view into the original query buffer and/or an external streaming `tail`
+    /// `ReadBuffer`. None of it is reproduced by `formatImpl` (which only prints `FORMAT <format>`/`VALUES`),
+    /// and `tail` cannot be serialized at all. Rather than emit lossy JSON, reject such queries.
+    if (data || tail)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "INSERT with inline data is not supported by parseQueryToJSON during AST JSON deserialization");
+
+    JSONObjectWriter w(out, "InsertQuery");
+
+    if (!table_id.database_name.empty())
+        w.writeString("database_name", table_id.database_name);
+    if (!table_id.table_name.empty())
+        w.writeString("table_name", table_id.table_name);
+
+    w.writeChild("database", database);
+    w.writeChild("table", table);
+
+    if (!format.empty())
+        w.writeString("format", format);
+
+    if (async_insert_flush)
+        w.writeBool("async_insert_flush", true);
+
+    w.writeChild("columns", columns);
+    w.writeChild("table_function", table_function);
+    w.writeChild("partition_by", partition_by);
+    w.writeChild("settings_ast", settings_ast);
+    w.writeChild("select", select);
+    w.writeChild("infile", infile);
+    w.writeChild("compression", compression);
+}
+
+void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    table_id.database_name = r.getString("database_name");
+    table_id.table_name = r.getString("table_name");
+
+    /// `database`/`table` are parser-produced identifiers; `getDatabase`/`getTable` read them via
+    /// `tryGetIdentifierNameInto`, so reject other node types here.
+    auto db_child = r.readIdentifierChild("database");
+    if (db_child)
+    {
+        database = db_child;
+        children.push_back(database);
+    }
+
+    auto tbl_child = r.readIdentifierChild("table");
+    if (tbl_child)
+    {
+        table = tbl_child;
+        children.push_back(table);
+    }
+
+    format = r.getString("format");
+    async_insert_flush = r.getBool("async_insert_flush");
+
+    /// `columns` is parser-produced as an `ASTExpressionList` (the INSERT column list).
+    /// `formatImpl` prints it and `processColumnTransformers` iterates `columns->children`,
+    /// so a non-`ASTExpressionList` from malformed `clickhouse_json` (e.g. a bare identifier)
+    /// would format as a column list while exposing an empty child list to execution. Reject it.
+    auto child = r.readChildOfType<ASTExpressionList>("columns");
+    if (child)
+    {
+        columns = child;
+        children.push_back(columns);
+    }
+
+    /// `table_function` is parser-owned as an `ASTFunction` (`INSERT INTO FUNCTION ...`).
+    /// `ClientBase::setInsertionTable` and `formatImpl` downcast it with `as<ASTFunction>()`,
+    /// so a non-`ASTFunction` from malformed `clickhouse_json` must be rejected here.
+    child = r.readChildOfType<ASTFunction>("table_function");
+    if (child)
+    {
+        table_function = child;
+        children.push_back(table_function);
+    }
+
+    child = r.readChild("partition_by");
+    if (child)
+    {
+        partition_by = child;
+        children.push_back(partition_by);
+    }
+
+    /// Query-local `SETTINGS` clauses are parsed as `ASTSetQuery`. `InterpreterSetQuery`,
+    /// `InsertQuerySettingsPushDownVisitor`, and `DDLTask` downcast `settings_ast` with
+    /// `as<ASTSetQuery>()`, so a non-`ASTSetQuery` from malformed `clickhouse_json` must be
+    /// rejected here instead of reaching those downcasts.
+    child = r.readChildOfType<ASTSetQuery>("settings_ast");
+    if (child)
+    {
+        settings_ast = child;
+        children.push_back(settings_ast);
+    }
+
+    /// `select` is parser-produced as an `ASTSelectWithUnionQuery` (`INSERT ... SELECT`). Insert
+    /// execution downcasts it (`applyTrivialInsertSelectOptimization`, the distributed-insert paths),
+    /// so reject any other node type from malformed `clickhouse_json` here.
+    child = r.readChildOfType<ASTSelectWithUnionQuery>("select");
+    if (child)
+    {
+        select = child;
+        children.push_back(select);
+    }
+
+    /// `FROM INFILE`/`COMPRESSION` are both string `ASTLiteral`s in the SQL grammar, and
+    /// `COMPRESSION` is only valid when `INFILE` is present. `formatImpl`, `ClientBase`,
+    /// `AsynchronousInsertQueue` and `getReadBufferFromASTInsertQuery` later downcast these
+    /// with `as<ASTLiteral &>()` and read them as strings, so a wrong node type or a
+    /// non-string literal from malformed `clickhouse_json` must be rejected at the boundary.
+    child = r.readChildOfType<ASTLiteral>("infile");
+    if (child)
+    {
+        if (child->as<ASTLiteral &>().value.getType() != Field::Types::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'infile' must be a string literal during AST JSON deserialization");
+        infile = child;
+        children.push_back(infile);
+    }
+
+    child = r.readChildOfType<ASTLiteral>("compression");
+    if (child)
+    {
+        if (!infile)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'compression' is only valid together with 'infile' during AST JSON deserialization");
+        if (child->as<ASTLiteral &>().value.getType() != Field::Types::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'compression' must be a string literal during AST JSON deserialization");
+        compression = child;
+        children.push_back(compression);
+    }
+
+    /// `partition_by` is parser-produced only in the `INSERT INTO FUNCTION` branch
+    /// (`ParserInsertQuery`); `formatImpl` hides it for ordinary inserts, but
+    /// `InterpreterInsertQuery::execute` still applies it, so an ordinary insert carrying a hidden
+    /// `partition_by` would execute against a clause the formatted SQL cannot show. Reject it.
+    if (partition_by && !table_function)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'partition_by' is only valid for INSERT INTO FUNCTION (requires 'table_function') during AST JSON deserialization");
+
+    /// The parser produces exactly one destination form: `INSERT INTO FUNCTION f(...)` (table_function)
+    /// or `INSERT INTO [db.]t` (the `database`/`table` identifiers; `table_id` is the normalized
+    /// equivalent populated later). `formatImpl` picks one by precedence (function > table_id >
+    /// database/table) while `getTable`/`getDatabase` and insertion context may read a different one,
+    /// so multiple forms would let the displayed target diverge from the executed one. Require exactly one.
+    const size_t destinations = (table_function ? 1 : 0)
+        + (table_id.empty() ? 0 : 1)
+        + ((database || table) ? 1 : 0);
+    if (destinations != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`InsertQuery` must specify exactly one destination form ('table_function', 'table_id', or 'database'/'table') during AST JSON deserialization");
+
+    /// In the `database`/`table` form, `formatImpl` requires a table (`chassert(table)`); a bare
+    /// `database` without a `table` is not a valid target.
+    if (database && !table)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`InsertQuery` 'database' requires a 'table' during AST JSON deserialization");
 }
 
 void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

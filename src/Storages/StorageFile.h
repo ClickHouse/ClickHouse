@@ -5,6 +5,8 @@
 #include <IO/Archives/IArchiveReader.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/ISource.h>
+#include <Processors/QueryPlan/LazilyReadFromFile.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/IStorage.h>
 #include <Storages/prepareReadingFromFormat.h>
@@ -127,12 +129,16 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
     bool supportsOptimizationToSubcolumns() const override { return false; }
+    /// Unlike `.null`/`.size0`, a tuple element is a real leaf in the file, so the format can serve
+    /// `t.x` on its own and prune on it.
+    bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     bool prefersLargeBlocks() const override;
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
+    size_t getMaxReadStreams(size_t num_streams, ContextPtr) override;
 
     bool supportsPartitionBy() const override { return true; }
 
@@ -157,10 +163,21 @@ public:
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
+    /// Lazy materialization (see LazilyReadFromFile): creates a source that reads only the
+    /// specified rows of the specified files, in the given file order, rows within a file in
+    /// ascending order. Fails close if a file does not match the captured generation token.
+    static std::shared_ptr<ISource> createLazyRowsSource(
+        std::shared_ptr<StorageFile> storage,
+        const ReadFromFormatInfo & info,
+        const ContextPtr & context,
+        size_t max_block_size,
+        std::vector<FileLazyMaterializingRows::FileRows> files);
+
 protected:
     friend class StorageFileSource;
     friend class StorageFileSink;
     friend class ReadFromFile;
+    friend class StorageFileLazyRowsSource;
 
 private:
     std::pair<ColumnsDescription, String> getTableStructureAndFormatFromFileDescriptor(std::optional<String> format, const ContextPtr & context);
@@ -231,10 +248,11 @@ public:
             const Strings & files_,
             std::optional<StorageFile::ArchiveInfo> archive_info_,
             const ActionsDAG::Node * predicate,
-            const NamesAndTypesList & virtual_columns,
-            const NamesAndTypesList & hive_columns,
+            const NamesAndTypesList & virtual_columns_,
+            const NamesAndTypesList & hive_columns_,
             const ContextPtr & context_,
-            bool distributed_processing_ = false);
+            bool distributed_processing_ = false,
+            String archive_member_path_ = {});
 
         String next();
 
@@ -262,6 +280,16 @@ private:
         std::atomic<size_t> index = 0;
 
         bool distributed_processing;
+
+        /// A `_path` / `_file` filter that could not be applied while the iterator was created,
+        /// because a set in it was not ready yet. It is applied in `next`, when the pipeline runs,
+        /// before a file is opened.
+        ExpressionActionsPtr deferred_filter_actions;
+        NamesAndTypesList virtual_columns;
+        NamesAndTypesList hive_columns;
+        /// A known archive member is part of the user-visible `_path` / `_file` value, although
+        /// this iterator must open the outer archive file.
+        const String archive_member_path;
     };
 
     using FilesIteratorPtr = std::shared_ptr<FilesIterator>;
@@ -275,7 +303,8 @@ private:
         std::unique_ptr<ReadBuffer> read_buf_,
         bool need_only_count_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
-        FormatFilterInfoPtr format_filter_info_);
+        FormatFilterInfoPtr format_filter_info_,
+        LazyFileRegistryPtr lazy_row_index_registry_ = nullptr);
 
     /**
       * If specified option --rename_files_after_processing and files created by TableFunctionFile
@@ -343,7 +372,69 @@ private:
     bool need_only_count = false;
     size_t total_rows_in_file = 0;
 
+    /// Lazy materialization: when set, a `__global_row_index` column is appended to every chunk
+    /// (the header must contain it), and every file is registered in the registry so that the
+    /// lazy branch can find it by index. See LazilyReadFromFile.
+    LazyFileRegistryPtr lazy_row_index_registry;
+    /// The registry index of the file currently being read. Assigned on the first chunk.
+    std::optional<UInt64> current_file_index;
+
     std::shared_lock<std::shared_timed_mutex> shared_lock;
+};
+
+class ReadFromFile : public SourceStepWithFilter
+{
+public:
+    std::string getName() const override { return "ReadFromFile"; }
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
+    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
+    bool canUpdatePrewhereInfoMultipleTimes() const override { return false; }
+
+    ReadFromFile(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
+        std::shared_ptr<StorageFile> storage_,
+        ReadFromFormatInfo info_,
+        const bool need_only_count_,
+        size_t max_block_size_,
+        size_t num_streams_)
+        : SourceStepWithFilter(std::make_shared<const Block>(info_.source_header), column_names_, query_info_, storage_snapshot_, context_)
+        , storage(std::move(storage_))
+        , info(std::move(info_))
+        , need_only_count(need_only_count_)
+        , max_block_size(max_block_size_)
+        , max_num_streams(num_streams_)
+    {
+    }
+
+    /// Lazy materialization support (see optimizeLazyMaterialization2).
+    bool canUseLazyMaterialization() const;
+
+    /// Reduces the set of columns this step reads to `required_names` (plus the columns the
+    /// PREWHERE / row-level filter needs, virtual columns and hive partition columns), makes the
+    /// step append a `__global_row_index` column to the output, and returns a step that lazily
+    /// reads the removed columns. Returns nullptr if there is nothing to defer.
+    std::unique_ptr<LazilyReadFromFile> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_names);
+
+    LazyFileRegistryPtr getLazyRowIndexRegistry() const { return lazy_row_index_registry; }
+
+private:
+    std::shared_ptr<StorageFile> storage;
+    ReadFromFormatInfo info;
+    const bool need_only_count;
+
+    size_t max_block_size;
+    const size_t max_num_streams;
+
+    std::shared_ptr<StorageFileSource::FilesIterator> files_iterator;
+
+    /// Lazy materialization: set iff keepOnlyRequiredColumnsAndCreateLazyReadStep was called.
+    LazyFileRegistryPtr lazy_row_index_registry;
+
+    void createIterator(const ActionsDAG::Node * predicate);
 };
 
 }

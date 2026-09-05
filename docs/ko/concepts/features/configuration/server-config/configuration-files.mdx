@@ -16,7 +16,7 @@ ClickHouse 서버는 XML 또는 YAML 구문의 설정 파일로 구성할 수 �
 대부분의 설치 방식에서 ClickHouse 서버는 `/etc/clickhouse-server/config.xml`을 기본 설정 파일로 사용해 실행되지만, 서버 시작 시 명령줄 옵션 `--config-file` 또는 `-C`를 사용하여 설정 파일 위치를 수동으로 지정할 수도 있습니다.
 추가 설정 파일은 기본 설정 파일을 기준으로 하는 `config.d/` 디렉터리(예: `/etc/clickhouse-server/config.d/`)에 둘 수 있습니다.
 이 디렉터리의 파일과 기본 설정은 ClickHouse 서버에 구성이 적용되기 전에 전처리 단계에서 병합됩니다.
-설정 파일은 알파벳순으로 병합됩니다.
+구성 조각은 전체 경로의 사전식 순서로 병합됩니다. 표준 `config.d/` 디렉터리의 파일은 파일명순 정렬과 동일합니다. 기존 `conf.d/` 디렉터리도 병합됩니다. `conf.d`는 `config.d`보다 먼저 정렬되므로 두 디렉터리가 모두 있으면 해당 조각이 먼저 처리됩니다.
 업데이트를 단순화하고 모듈화를 개선하려면 기본 `config.xml` 파일은 수정하지 않고, 추가 사용자 지정은 `config.d/`에 두는 것이 모범 사례입니다.
 ClickHouse Keeper 구성은 `/etc/clickhouse-keeper/keeper_config.xml`에 있습니다.
 마찬가지로 Keeper용 추가 설정 파일은 `/etc/clickhouse-keeper/keeper_config.d/`에 두어야 합니다.
@@ -174,18 +174,22 @@ YAML 설정 파일에서는 `clickhouse:`가 선택 사항이며, 없으면 파�
 
 파일 내용을 사용해 구성의 일부를 대체할 수도 있습니다. 이는 두 가지 방식으로 수행할 수 있습니다.
 
-* *값 치환*: 요소에 `incl` 속성이 있으면 해당 값이 참조된 파일의 내용으로 대체됩니다. 기본적으로 치환 값을 담은 파일의 경로는 `/etc/metrika.xml`입니다. 이 값은 서버 구성의 [`include_from`](/ko/reference/settings/server-settings/settings#include_from) 요소에서 변경할 수 있습니다. 치환 값은 이 파일의 `/clickhouse/substitution_name` 요소에 지정합니다. `incl`에 지정된 치환이 존재하지 않으면 로그에 기록됩니다. 누락된 치환에 대해 ClickHouse가 로그를 남기지 않도록 하려면 `optional="true"` 속성을 지정하십시오(예: [macros](/ko/reference/settings/server-settings/settings#macros) 설정).
+* *값 치환*: 요소에 `incl` 속성이 있으면 해당 값이 참조된 파일의 내용으로 대체됩니다. 치환 값을 담은 파일의 경로는 서버 구성의 [`include_from`](/ko/reference/settings/server-settings/settings/other#include_from) 요소에서 설정합니다. 기본 경로는 없으므로, 지정한 경우에만 치환 값을 읽습니다. 치환 값은 이 파일의 `/clickhouse/substitution_name` 요소에 지정합니다. `incl`에 지정된 치환이 존재하지 않으면 로그에 기록됩니다. 누락된 치환에 대해 ClickHouse가 로그를 남기지 않도록 하려면 `optional="true"` 속성을 지정하십시오(예: [macros](/ko/reference/settings/server-settings/settings/other#macros) 설정).
 * *요소 치환*: 전체 요소를 치환 값으로 바꾸려면 요소 이름으로 `include`를 사용하십시오. 요소 이름 `include`는 `from_zk = "/path/to/node"` 속성과 함께 사용할 수 있습니다. 이 경우 요소 값은 `/path/to/node`에 있는 ZooKeeper 노드의 내용으로 대체됩니다. 전체 XML 하위 트리를 ZooKeeper 노드에 저장한 경우에도 동일하게 작동하며, 해당 트리가 원본 요소에 완전히 삽입됩니다.
+
+<Note>
+  버전 26.8부터 변경됨: 이전 버전에서는 `include_from`을 지정하지 않았더라도 파일 `/etc/metrika.xml`이 존재하면 암묵적으로 사용되었습니다. 해당 파일에 의존하는 경우 `include_from`에 해당 경로를 명시적으로 지정하십시오. `include_from`은 각 구성 파일에서 개별적으로 읽힙니다. 즉, 기본 서버 구성과 별도로 로드되는 파일인 사용자&#39; 구성(예: 기본 파일에 포함되지 않은 경우의 `users.xml`) 및 XML 딕셔너리 구성에는 각각 자체 `include_from` 요소가 필요하며, 기본 서버 구성에만 지정해도 적용되지 않습니다.
+</Note>
 
 이에 대한 예시는 아래와 같습니다.
 
 ```xml
 <clickhouse>
-    <!-- `/profiles-in-zookeeper` ZK 경로에서 찾은 XML 서브트리를 `<profiles>` 요소에 추가합니다. -->
+    <!-- Appends XML subtree found at `/profiles-in-zookeeper` ZK path to `<profiles>` element. -->
     <profiles from_zk="/profiles-in-zookeeper" />
 
     <users>
-        <!-- `/users-in-zookeeper` ZK 경로에서 찾은 서브트리로 `include` 요소를 대체합니다. -->
+        <!-- Replaces `include` element with the subtree found at `/users-in-zookeeper` ZK path. -->
         <include from_zk="/users-in-zookeeper" />
         <include from_zk="/other-users-in-zookeeper" />
     </users>
@@ -198,8 +202,8 @@ YAML 설정 파일에서는 `clickhouse:`가 선택 사항이며, 없으면 파�
   ## 구성 암호화 및 숨기기
 </div>
 
-대칭 암호화를 사용해 구성 항목을 암호화할 수 있습니다. 예를 들어 평문 비밀번호 또는 개인 키를 암호화할 수 있습니다.
-이렇게 하려면 먼저 [암호화 코덱](/ko/reference/statements/create/table#encryption-codecs)을 구성한 다음, 암호화할 요소에 `encrypted_by` 속성을 추가하고 그 값으로 암호화 코덱 이름을 지정합니다.
+대칭 암호화를 사용해 구성 요소를 암호화할 수 있습니다. 예를 들어 평문 비밀번호 또는 개인 키를 암호화할 수 있습니다.
+이렇게 하려면 먼저 [암호화 코덱](/ko/reference/statements/create/table/codec#encryption-codecs)을 구성한 다음, 암호화할 요소에 `encrypted_by` 속성을 추가하고 그 값으로 암호화 코덱 이름을 지정합니다.
 
 속성 `from_zk`, `from_env`, `incl` 또는 요소 `include`와 달리, 전처리된 파일에서는 치환(즉, 암호화된 값의 복호화)이 수행되지 않습니다.
 복호화는 서버 프로세스의 런타임에서만 수행됩니다.
@@ -259,7 +263,7 @@ YAML 설정 파일에서는 `clickhouse:`가 선택 사항이며, 없으면 파�
 </clickhouse>
 ```
 
-암호화 키와 암호화된 값은 두 config 파일 중 어느 쪽에나 정의할 수 있습니다.
+암호화 키와 암호화된 값은 두 구성 파일 중 어느 쪽에나 정의할 수 있습니다.
 
 예시 `config.xml`은 다음과 같습니다:
 
@@ -290,7 +294,7 @@ YAML 설정 파일에서는 `clickhouse:`가 선택 사항이며, 없으면 파�
 </clickhouse>
 ```
 
-값을 암호화하려면 (예시) 프로그램인 `encrypt_decrypt`를 사용할 수 있습니다:
+값을 암호화하려면 (예시) 프로그램 `encrypt_decrypt`를 사용할 수 있습니다:
 
 ```bash
 ./encrypt_decrypt /etc/clickhouse-server/config.xml -e AES_128_GCM_SIV abcd
@@ -325,6 +329,7 @@ YAML 설정 파일에서는 `clickhouse:`가 선택 사항이며, 없으면 파�
 사용자 구성은 `config.xml` 및 `config.d/`와 마찬가지로 별도의 파일로 분리할 수 있습니다.
 디렉터리 이름은 `.xml` 접미사를 제거한 `users_config` 설정값에 `.d`를 덧붙여 정의합니다.
 기본적으로 `users_config`의 기본값이 `users.xml`이므로 `users.d` 디렉터리를 사용합니다.
+사용자 구성 조각은 전체 경로의 사전순으로 병합됩니다. 표준 `users.d/` 디렉터리의 파일에서는 파일 이름순으로 정렬하는 것과 동일합니다. 기존 `conf.d/` 디렉터리도 병합되며, `conf.d`가 `users.d`보다 앞에 정렬되므로 두 디렉터리가 모두 존재할 때는 해당 조각이 모두 먼저 처리됩니다.
 
 설정 파일은 먼저 설정을 고려하여 [병합](#merging)되며, 그 이후에 include가 처리된다는 점에 유의하십시오.
 

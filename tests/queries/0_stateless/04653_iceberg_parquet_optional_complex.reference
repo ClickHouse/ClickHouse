@@ -1,0 +1,114 @@
+--- half A: containers required in the Iceberg schema stay REQUIRED (parallel_encoding=0) ---
+leaf arr.list.element         maxdef=1 maxrep=1
+leaf m.key_value.key          maxdef=1 maxrep=1
+leaf m.key_value.value        maxdef=1 maxrep=1
+leaf st.a                     maxdef=0 maxrep=0
+leaf nst.list.element.b       maxdef=1 maxrep=1
+leaf ns.c                     maxdef=1 maxrep=0
+leaf nq.inner.list.element    maxdef=2 maxrep=1
+leaf sc                       maxdef=1 maxrep=0
+node arr              optional=False
+node arr.element      optional=False
+node m                optional=False
+node m.key            optional=False
+node m.value          optional=False
+node st               optional=False
+node nst              optional=False
+node nst.element      optional=False
+node nq               optional=True
+node nq.inner         optional=False
+node sc               optional=True
+data arr  [[1, 2], []]
+data m    [[('k', 1)], []]
+data st   [{'a': 7}, {'a': 8}]
+data nst  [[{'b': 3}], []]
+data ns   [{'c': 9}, {'c': 0}]
+data nq   [{'inner': [4]}, {'inner': []}]
+data sc   [5, None]
+--- half B: optional containers become OPTIONAL (parallel_encoding=0) ---
+leaf arr.list.element         maxdef=2 maxrep=1
+leaf m.key_value.key          maxdef=2 maxrep=1
+leaf m.key_value.value        maxdef=2 maxrep=1
+leaf st.a                     maxdef=1 maxrep=0
+leaf nst.list.element.b       maxdef=2 maxrep=1
+leaf ns.c                     maxdef=1 maxrep=0
+leaf nq.inner.list.element    maxdef=3 maxrep=1
+leaf sc                       maxdef=1 maxrep=0
+node arr              optional=True
+node arr.element      optional=False
+node m                optional=True
+node m.key            optional=False
+node m.value          optional=False
+node st               optional=True
+node nst              optional=False
+node nst.element      optional=True
+node nq               optional=True
+node nq.inner         optional=True
+node sc               optional=True
+data arr  [[1, 2], []]
+data m    [[('k', 1)], []]
+data st   [{'a': 7}, {'a': 8}]
+data nst  [[{'b': 3}], []]
+data ns   [{'c': 9}, {'c': 0}]
+data nq   [{'inner': [4]}, {'inner': []}]
+data sc   [5, None]
+--- half B: values round-trip through ClickHouse (parallel_encoding=0) ---
+[1,2]	{'k':1}	(7)	[(3)]	(9)	([4])	5
+[]	{}	(8)	[]	(0)	([])	\N
+--- half A: containers required in the Iceberg schema stay REQUIRED (parallel_encoding=1) ---
+leaf arr.list.element         maxdef=1 maxrep=1
+leaf m.key_value.key          maxdef=1 maxrep=1
+leaf m.key_value.value        maxdef=1 maxrep=1
+leaf st.a                     maxdef=0 maxrep=0
+leaf nst.list.element.b       maxdef=1 maxrep=1
+leaf ns.c                     maxdef=1 maxrep=0
+leaf nq.inner.list.element    maxdef=2 maxrep=1
+leaf sc                       maxdef=1 maxrep=0
+node arr              optional=False
+node arr.element      optional=False
+node m                optional=False
+node m.key            optional=False
+node m.value          optional=False
+node st               optional=False
+node nst              optional=False
+node nst.element      optional=False
+node nq               optional=True
+node nq.inner         optional=False
+node sc               optional=True
+data arr  [[1, 2], []]
+data m    [[('k', 1)], []]
+data st   [{'a': 7}, {'a': 8}]
+data nst  [[{'b': 3}], []]
+data ns   [{'c': 9}, {'c': 0}]
+data nq   [{'inner': [4]}, {'inner': []}]
+data sc   [5, None]
+--- half B: optional containers become OPTIONAL (parallel_encoding=1) ---
+leaf arr.list.element         maxdef=2 maxrep=1
+leaf m.key_value.key          maxdef=2 maxrep=1
+leaf m.key_value.value        maxdef=2 maxrep=1
+leaf st.a                     maxdef=1 maxrep=0
+leaf nst.list.element.b       maxdef=2 maxrep=1
+leaf ns.c                     maxdef=1 maxrep=0
+leaf nq.inner.list.element    maxdef=3 maxrep=1
+leaf sc                       maxdef=1 maxrep=0
+node arr              optional=True
+node arr.element      optional=False
+node m                optional=True
+node m.key            optional=False
+node m.value          optional=False
+node st               optional=True
+node nst              optional=False
+node nst.element      optional=True
+node nq               optional=True
+node nq.inner         optional=True
+node sc               optional=True
+data arr  [[1, 2], []]
+data m    [[('k', 1)], []]
+data st   [{'a': 7}, {'a': 8}]
+data nst  [[{'b': 3}], []]
+data ns   [{'c': 9}, {'c': 0}]
+data nq   [{'inner': [4]}, {'inner': []}]
+data sc   [5, None]
+--- half B: values round-trip through ClickHouse (parallel_encoding=1) ---
+[1,2]	{'k':1}	(7)	[(3)]	(9)	([4])	5
+[]	{}	(8)	[]	(0)	([])	\N

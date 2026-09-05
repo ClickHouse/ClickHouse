@@ -127,14 +127,6 @@ uid	name	u2.uid	u2.name
 Int16	String	Int16	String
 1231	Ksenia	1231	John
 6666		6666	Ksenia
-SELECT u1.uid, u1.spouse_name as name, u2.uid, u2.name
-FROM users u1 JOIN users u2 USING (name)
-ORDER BY u1.uid
-FORMAT TSVWithNamesAndTypes
-SETTINGS enable_analyzer = 0;
-uid	name	u2.uid	u2.name
-Int16	String	Int16	String
-1231	Ksenia	6666	Ksenia
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS tabc;
 DROP TABLE IF EXISTS ta;

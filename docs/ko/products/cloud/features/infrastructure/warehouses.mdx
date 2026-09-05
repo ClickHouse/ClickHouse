@@ -7,7 +7,7 @@ doc_type: '참고'
 ---
 
 import { Image } from "/snippets/ko/components/Image.jsx";
-import ScalePlanFeatureBadge from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="컴퓨트-컴퓨트 분리" />
 
@@ -20,7 +20,7 @@ import ScalePlanFeatureBadge from "/snippets/ko/components/ScalePlanFeatureBadge
 각 ClickHouse Cloud 서비스에는 다음이 포함됩니다:
 
 * 전용 CPU 및 메모리 클러스터를 갖춘 ClickHouse 컴퓨트 노드(이를 **레플리카**라고 함)
-* 서비스에 연결하기 위한 endpoint(또는 ClickHouse Cloud UI 콘솔을 통해 생성한 여러 endpoint)로, 로컬 및 서드파티 앱 연결에 사용됩니다(예: `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`)
+* 서비스에 연결하기 위한 엔드포인트(또는 ClickHouse Cloud UI 콘솔을 통해 생성한 여러 엔드포인트)로, 로컬 및 서드파티 앱 연결에 사용됩니다(예: `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`)
 * 서비스의 모든 데이터와 일부 메타데이터를 저장하는 객체 스토리지 폴더:
 
 <Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="ClickHouse Cloud의 단일 서비스" />
@@ -32,7 +32,7 @@ import ScalePlanFeatureBadge from "/snippets/ko/components/ScalePlanFeatureBadge
 단일 서비스만 사용하는 대신, 동일한 공유 스토리지에 액세스하는 여러 서비스를 생성할 수 있습니다. 이를 통해 데이터를 복제하지 않고도 특정 워크로드에 리소스를 전용 할당할 수 있습니다.
 이 개념을 **컴퓨트-컴퓨트 분리**라고 합니다.
 
-컴퓨트-컴퓨트 분리에서는 각 서비스가 자체 레플리카 세트와 endpoint를 가지지만, 동일한 객체 스토리지 폴더를 사용하고 같은 테이블, 뷰 등에 액세스합니다.
+컴퓨트-컴퓨트 분리에서는 각 서비스가 자체 레플리카 세트와 엔드포인트를 가지지만, 동일한 객체 스토리지 폴더를 사용하고 같은 테이블, 뷰 등에 액세스합니다.
 즉, 각 워크로드에 맞는 적절한 크기의 컴퓨트를 선택할 수 있습니다. 일부 워크로드는 소형 레플리카 1개만으로도 충분할 수 있지만, 다른 워크로드는 완전한 고가용성(HA)과 여러 레플리카에 걸친 수백 GB의 메모리가 필요할 수 있습니다.
 
 또한 컴퓨트-컴퓨트 분리를 사용하면 읽기 작업과 쓰기 작업을 분리하여 서로 간섭하지 않도록 할 수 있습니다:
@@ -47,7 +47,7 @@ import ScalePlanFeatureBadge from "/snippets/ko/components/ScalePlanFeatureBadge
   ## 웨어하우스란 무엇입니까?
 </div>
 
-ClickHouse Cloud에서 *웨어하우스* 는 동일한 데이터를 공유하는 **서비스** 집합입니다.
+ClickHouse Cloud에서 *웨어하우스*는 동일한 데이터를 공유하는 **서비스** 집합입니다.
 각 웨어하우스에는 기본 서비스(가장 먼저 생성된 서비스)와 하나 이상의 보조 서비스가 있습니다.
 예를 들어, 아래 스크린샷에서는 두 개의 서비스로 구성된 웨어하우스 &quot;DWH Prod&quot;를 확인할 수 있습니다.
 
@@ -93,7 +93,7 @@ ClickHouse Cloud에서 *웨어하우스* 는 동일한 데이터를 공유하는
 이렇게 하려면 ClickHouse Cloud 콘솔에서 액세스를 제한하려는 서비스의 서비스 탭으로 이동한 뒤 **설정**으로 이동하십시오.
 
 IP 필터링 설정은 각 서비스에 개별적으로 적용할 수 있으므로, 어떤 애플리케이션이 어떤 서비스에 액세스할 수 있는지 제어할 수 있습니다.
-이를 통해 사용자의 특정 서비스 사용을 제한할 수 있습니다.
+이를 통해 특정 서비스에 대한 액세스를 제한할 수 있습니다.
 
 아래 예시에서는 Alice가 웨어하우스의 서비스 2에 액세스하지 못하도록 제한되어 있습니다:
 
@@ -103,7 +103,7 @@ IP 필터링 설정은 각 서비스에 개별적으로 적용할 수 있으므�
 
 *그림 5 - 네트워크 액세스 제어 설정으로 인해 Alice는 서비스 2에 액세스할 수 없습니다*
 
-사용자가 *default* 사용자 대신 개별 사용자로 연결하는 경우에는 데이터에 대한 액세스를 제어하기 위해 ClickHouse 역할 및 권한 부여를 적용할 수도 있습니다.
+개별 사용자로 연결하는 경우에는 *default* 사용자 대신 데이터에 대한 액세스를 제어하기 위해 ClickHouse 역할 및 권한 부여를 적용할 수도 있습니다.
 
 <div id="read-vs-read-write">
   ### 읽기 전용 서비스와 읽기-쓰기 서비스
@@ -117,12 +117,12 @@ IP 필터링 설정은 각 서비스에 개별적으로 적용할 수 있으므�
   * 데이터를 외부로 내보낼 수 있습니다
 * **읽기 전용**
   * 데이터를 읽기만 할 수 있으며, ClickHouse에서 데이터를 쓰거나 수정할 수 없습니다
-  * system table 외부에서는 백그라운드 머지 작업을 수행하지 않으므로, 리소스를 읽기 쿼리에 온전히 사용할 수 있습니다
+  * 시스템 테이블 외부에서는 백그라운드 머지 작업을 수행하지 않으므로, 리소스를 읽기 쿼리에 온전히 사용할 수 있습니다
   * 여전히 데이터를 외부로 내보낼 수는 있지만(예: 테이블 함수 사용), ClickHouse 내부 데이터는 변경할 수 없습니다
   * 백그라운드 머지로 인해 활성 상태가 유지될 수 있는 읽기-쓰기 서비스와 달리, 지연 없이 유휴 상태로 전환됩니다
 
-중요한 읽기 workload를 쓰기/머지 오버헤드와 분리하기 위해 서비스를 읽기 전용으로 설정해야 할 때가 있습니다.
-이렇게 설정할 수 있는 대상은 두 번째 서비스와 그 이후에 추가로 생성하는 서비스이며, 첫 번째 서비스는 아래 그림과 같이 항상 읽기-쓰기입니다.
+중요한 읽기 워크로드를 쓰기/머지 오버헤드로부터 분리하기 위해 서비스를 읽기 전용으로 설정해야 할 때가 있습니다.
+이 설정은 두 번째 서비스와 그 이후에 추가로 생성하는 서비스에 적용할 수 있지만, 첫 번째 서비스는 아래 그림과 같이 항상 읽기-쓰기입니다.
 
 <Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="웨어하우스의 읽기-쓰기 및 읽기 전용 서비스" />
 
@@ -140,14 +140,13 @@ IP 필터링 설정은 각 서비스에 개별적으로 적용할 수 있으므�
   ## 스케일링
 </div>
 
-웨어하우스의 각 서비스는 다음 항목을 기준으로 workload에 맞게 조정할 수 있습니다:
+웨어하우스의 각 서비스는 독립적으로 스케일링됩니다. 레플리카 수와 크기를 조정하고, 수평 및 수직 자동 스케일링을 활성화하며, 비활성 상태일 때 자동 유휴 상태 전환을 구성할 수 있습니다.
 
-* 노드(레플리카) 수. 기본 서비스(웨어하우스에서 처음 생성된 서비스)는 2개 이상의 노드를 가져야 합니다. 각 보조 서비스는 1개 이상의 노드를 가질 수 있습니다.
-* 노드(레플리카) 크기
-* 서비스를 자동으로 스케일링할지 여부(수평 및 수직)
-* 비활성 상태일 때 서비스를 유휴 상태로 전환할지 여부
+기본 서비스를 포함한 서비스는 단일 레플리카로 실행할 수 있지만, 프로덕션 환경에서는 권장되지 않습니다. 고가용성을 위해 최소 2개의 레플리카를 사용하십시오. Scale 및 Enterprise tier에서는 지원팀에 문의하지 않아도 단일 레플리카 기본 및 보조 서비스를 사용할 수 있습니다. 표준 `1:4` 프로필을 사용하는 Scale 서비스와 Enterprise 서비스는 셀프서비스 수직 자동 스케일링을 지원하지만, 사용자 지정 프로필을 사용하는 Enterprise 서비스는 지원팀의 도움을 받아 수직 크기를 조정해야 합니다. Basic tier 서비스는 크기가 고정되어 있습니다. 자세한 내용은 [대규모 단일 레플리카 서비스](/ko/products/cloud/features/large-single-replica-services)를 참조하십시오.
 
-자세한 내용은 [&quot;자동 스케일링&quot;](/ko/products/cloud/features/autoscaling/overview) 페이지를 참조하십시오.
+웨어하우스 내 모든 서비스의 레플리카 수 합계는 기본적으로 50개로 제한됩니다. 자세한 내용은 [사용량 제한](/ko/products/cloud/guides/best-practices/usagelimits)을 참조하십시오. 제한을 늘리려면 [지원팀](https://clickhouse.com/support/program)에 문의하십시오.
+
+[예약 스케일링](/ko/products/cloud/features/autoscaling/scheduled-scaling)은 웨어하우스 내 개별 서비스에 적용할 수 있습니다. 웨어하우스 제한은 계속 적용되므로, 피크 시간대에 모든 서비스의 레플리카 수 합계가 웨어하우스 한도 내에 유지되도록 일정을 계획하십시오. 자세한 내용은 [자동 스케일링](/ko/products/cloud/features/autoscaling/overview)을 참조하십시오.
 
 <div id="changes-in-behavior">
   ## `clusterAllReplicas` 동작 변경 사항
@@ -163,10 +162,6 @@ IP 필터링 설정은 각 서비스에 개별적으로 적용할 수 있으므�
 SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 ```
 
-<Note>
-  보조 서비스 단일 노드 서비스는 수직 확장이 가능하지만, 기본 서비스 단일 노드 서비스는 수직 확장이 불가능합니다.
-</Note>
-
 <div id="limitations">
   ## 제한 사항
 </div>
@@ -178,7 +173,7 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 일부 워크로드는 특정 서비스로 격리할 수 없습니다. 한 서비스의 워크로드가 웨어하우스의 다른 서비스에 영향을 미치는 예외적인 경우가 있습니다. 예를 들면 다음과 같습니다:
 
 * **모든 읽기-쓰기 서비스는 기본적으로 백그라운드 머지 작업을 처리합니다.** ClickHouse에 데이터를 삽입할 때 데이터베이스는 먼저 데이터를 일부 스테이징 파티션에 삽입한 다음 백그라운드에서 머지를 수행합니다. 이러한 머지는 메모리와 CPU 리소스를 소모할 수 있습니다. 두 개의 읽기-쓰기 서비스가 동일한 스토리지를 공유하면 둘 다 백그라운드 작업을 수행합니다. 즉, Service 1에서 `INSERT` 쿼리가 실행되었더라도 머지 작업은 Service 2에서 완료될 수 있습니다.
-  읽기 전용 서비스는 백그라운드 머지를 실행하지 않으므로 이 작업에 리소스를 사용하지 않습니다. 지원팀을 통해 서비스에서 머지를 비활성화할 수도 있습니다.
+  읽기 전용 서비스는 백그라운드 머지를 실행하지 않습니다. 읽기-쓰기 서비스에서 머지를 비활성화하려면 [지원팀](https://clickhouse.com/support/program)에 문의하십시오.
 
 * **모든 읽기-쓰기 서비스는 S3Queue 테이블 엔진 삽입 작업을 수행합니다.** 읽기-쓰기 서비스에서 S3Queue 테이블을 생성하면, 웨어하우스의 다른 모든 읽기-쓰기 서비스도 S3에서 데이터를 읽고 데이터베이스에 데이터를 쓸 수 있습니다.
 
@@ -191,7 +186,7 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 
 * **ClickHouse 버전**: [업그레이드 일정](/ko/products/cloud/features/admin-features/upgrades)은 기본 서비스의 설정에 따라 결정됩니다. 보조 서비스는 기본 서비스와 별개의 릴리스 일정을 가질 수 없습니다.
 
-* **서비스가 기본적으로 유휴 상태이거나 중지되어 있으면 `CREATE`/`RENAME`/`DROP DATABASE` 쿼리가 차단될 수 있습니다.** 서비스가 유휴 상태이거나 중지된 상태에서 이러한 쿼리를 실행하면 쿼리가 응답 없이 대기할 수 있습니다. 이를 우회하려면 세션 수준 또는 개별 쿼리 수준에서 [`settings distributed_ddl_task_timeout=0`](/ko/reference/settings/session-settings#distributed_ddl_task_timeout)을 사용하여 데이터베이스 관리 쿼리를 실행할 수 있습니다.
+* **서비스가 기본적으로 유휴 상태이거나 중지되어 있으면 `CREATE`/`RENAME`/`DROP DATABASE` 쿼리가 차단될 수 있습니다.** 서비스가 유휴 상태이거나 중지된 상태에서 이러한 쿼리를 실행하면 쿼리가 응답 없이 대기할 수 있습니다. 이를 우회하려면 세션 수준 또는 개별 쿼리 수준에서 [`settings distributed_ddl_task_timeout=0`](/ko/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout)을 사용하여 데이터베이스 관리 쿼리를 실행할 수 있습니다.
 
 예시:
 
@@ -202,8 +197,6 @@ SETTINGS distributed_ddl_task_timeout=0
 
 서비스를 수동으로 중지한 경우, 쿼리를 실행하려면 다시 시작해야 합니다.
 
-* **레플리카 1개 기본 서비스** 현재 기본 동작에서는 보조 서비스는 레플리카를 1개까지 가질 수 있지만, 기본 서비스는 최소 2개여야 합니다.
-  레플리카 1개 기본 서비스를 사용하려면 지원팀에 문의하십시오. 이 동작은 2026년 2분기부터 기본으로 활성화될 예정입니다.
 * **기본 서비스 유휴 상태 전환**: 기본 서비스의 자동 유휴 상태 전환은 기본으로 활성화되어 있습니다.
 
 <div id="pricing">

@@ -1,6 +1,6 @@
 ---
 description: 'Documentation for Data Lakes'
-sidebarTitle: 'Data Lakes'
+sidebarTitle: 'Overview'
 slug: /sql-reference/datalakes
 title: 'Data Lakes'
 doc_type: 'reference'
@@ -32,6 +32,11 @@ AWS Glue Data Catalog can be used with Iceberg tables. You can use it with the `
 ## Iceberg REST Catalog {#iceberg-rest-catalog}
 
 The Iceberg REST Catalog can be used with Iceberg tables. You can use it with the `iceberg` table engine, or with the [DataLakeCatalog](/reference/engines/database-engines/datalake) database engine.
+
+## Snowflake Horizon Catalog {#snowflake-horizon-catalog}
+
+Snowflake Horizon Catalog exposes the Iceberg REST API for Snowflake-managed Iceberg tables.
+Use `DataLakeCatalog` with `catalog_type = 'horizon'`. See the [Horizon catalog guide](/guides/use-cases/data-warehousing/horizon-catalog).
 
 ## Unity Catalog {#unity-catalog}
 

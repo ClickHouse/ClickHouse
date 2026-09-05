@@ -36,3 +36,13 @@ SELECT 'Unix Timestamp with Milliseconds';
 SELECT parseDateTime64BestEffort('1640649600123', 3, 'UTC');
 SELECT parseDateTime64BestEffort('1640649600123', 1, 'UTC');
 SELECT parseDateTime64BestEffort('1640649600123', 6, 'UTC');
+
+SELECT 'Unix Timestamp with Microseconds';
+SELECT parseDateTime64BestEffort('1640649600123456', 6, 'UTC');
+SELECT parseDateTime64BestEffort('1640649600123456', 3, 'UTC');
+SELECT parseDateTime64BestEffort('1640649600123456', 9, 'UTC');
+
+SELECT 'Unix Timestamp with Nanoseconds';
+SELECT parseDateTime64BestEffort('1640649600123456789', 9, 'UTC');
+SELECT parseDateTime64BestEffort('1640649600123456789', 3, 'UTC');
+SELECT parseDateTime64BestEffort('1640649600123456789', 6, 'UTC');

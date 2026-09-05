@@ -13,7 +13,7 @@ integration:
 import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
 
 import { Image } from "/snippets/ko/components/Image.jsx";
-import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -21,60 +21,54 @@ QStudio는 무료 SQL GUI로, SQL 스크립트를 실행하고 테이블을 쉽�
 
 QStudio는 JDBC를 사용해 ClickHouse에 연결합니다.
 
-<div id="1-gather-your-clickhouse-details">
-  ## 1. ClickHouse 연결 정보를 준비합니다
-</div>
+<Steps>
+  <Step title="ClickHouse 세부 정보 수집하기" id="1-gather-your-clickhouse-details">
+    QStudio는 HTTP(S) 상의 JDBC를 사용해 ClickHouse에 연결합니다. 다음 정보가 필요합니다.
 
-QStudio는 HTTP(S) 기반 JDBC를 사용해 ClickHouse에 연결하므로 다음 정보가 필요합니다.
+    * 엔드포인트
+    * 포트 번호
+    * 사용자 이름
+    * 비밀번호
 
-* endpoint
-* 포트 번호
-* username
-* password
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="QStudio 다운로드하기" id="2-download-qstudio">
+    QStudio는 https://www.timestored.com/qstudio/download/ 에서 다운로드할 수 있습니다.
+  </Step>
 
-<div id="2-download-qstudio">
-  ## 2. QStudio 다운로드
-</div>
+  <Step title="데이터베이스 추가하기" id="3-add-a-database">
+    * QStudio를 처음 열면 메뉴에서 **Server-&gt;Add Server**를 클릭하거나 도구 모음의 서버 추가 버튼을 클릭하십시오.
+    * 그런 다음 세부 정보를 입력하십시오.
 
-QStudio는 https://www.timestored.com/qstudio/download/ 에서 다운로드할 수 있습니다.
+    <Image img="/images/integrations/sql-clients/qstudio-add-connection.webp" size="lg" border alt="ClickHouse 연결 설정을 보여주는 QStudio 데이터베이스 연결 구성 화면" />
 
-<div id="3-add-a-database">
-  ## 3. 데이터베이스 추가
-</div>
+    1. Server Type: ClickHouse.com
+    2. Host에는 반드시 https://를 포함해야 합니다
+       Host: https://abc.def.clickhouse.cloud
+       Port: 8443
+    3. Username: default
+       Password: `XXXXXXXXXXX`
+    4. Add를 클릭하십시오
 
-* QStudio를 처음 열면 메뉴에서 **Server-&gt;Add Server**를 클릭하거나 도구 모음의 서버 추가 버튼을 클릭하십시오.
-* 그런 다음 다음과 같이 설정하십시오:
+    QStudio가 ClickHouse JDBC 드라이버가 설치되어 있지 않다고 감지하면, 자동으로 다운로드할지 묻습니다.
+  </Step>
 
-<Image img="/images/integrations/sql-clients/qstudio-add-connection.webp" size="lg" border alt="ClickHouse 연결 설정을 보여주는 QStudio 데이터베이스 연결 구성 화면" />
+  <Step title="ClickHouse 쿼리하기" id="4-query-clickhouse">
+    * 쿼리 편집기를 열고 쿼리를 실행하십시오. 쿼리는 다음 방법으로 실행할 수 있습니다.
 
-1. Server Type: Clickhouse.com
-2. Host에는 반드시 https://를 포함해야 합니다
-   Host: https://abc.def.clickhouse.cloud
-   Port: 8443
-3. Username: default
-   Password: `XXXXXXXXXXX`
-4. Add를 클릭하십시오
+    * Ctrl + e - 강조 표시한 텍스트를 실행합니다
 
-QStudio가 ClickHouse JDBC 드라이버가 설치되지 않은 것을 감지하면, 해당 드라이버를 다운로드하도록 안내합니다:
+    * Ctrl + Enter - 현재 줄을 실행합니다
 
-<div id="4-query-clickhouse">
-  ## 4. ClickHouse에서 쿼리 실행
-</div>
+    * 예시 쿼리:
 
-* 쿼리 편집기를 열고 쿼리를 실행합니다. 쿼리는 다음 방법으로 실행할 수 있습니다.
-
-* Ctrl + e - 선택한 텍스트를 실행합니다
-
-* Ctrl + Enter - 현재 줄을 실행합니다
-
-* 쿼리 예시:
-
-<Image img="/images/integrations/sql-clients/qstudio-running-query.webp" size="lg" border alt="ClickHouse 데이터베이스에 대해 예시 SQL 쿼리를 실행하는 QStudio 인터페이스" />
+    <Image img="/images/integrations/sql-clients/qstudio-running-query.webp" size="lg" border alt="ClickHouse 데이터베이스에 대해 예시 SQL 쿼리를 실행하는 QStudio 인터페이스" />
+  </Step>
+</Steps>
 
 <div id="next-steps">
   ## 다음 단계
 </div>
 
-QStudio의 기능은 [QStudio](https://www.timestored.com/qstudio)에서, ClickHouse의 기능은 [ClickHouse documentation](/ko/)에서 확인할 수 있습니다.
+QStudio에서 제공하는 기능은 [QStudio](https://www.timestored.com/qstudio)에서, ClickHouse의 기능은 [ClickHouse 문서](/ko/)에서 확인하십시오.

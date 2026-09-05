@@ -51,8 +51,9 @@ function run_cancel_check()
     fi
 
     # SYNC waits for the query to actually terminate; bound it so a cancellation hang fails the
-    # test instead of hanging the runner.
-    timeout 60 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null" || echo "KILL timed out"
+    # test instead of hanging the runner. The bound must absorb a loaded sanitizer box (the flaky
+    # check runs many heavy tests at once and everything slows several-fold).
+    timeout 180 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null" || echo "KILL timed out"
 
     # Bound the wait for the client too: with a broken cancellation path the client never exits on
     # its own (the query may ignore max_execution_time as well), and an unbounded wait would hang

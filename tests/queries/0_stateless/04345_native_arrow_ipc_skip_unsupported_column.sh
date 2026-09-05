@@ -42,19 +42,14 @@ PY
 
 for NAME in list_view large_list_view run_end_encoded; do
     for FMT in Arrow ArrowStream; do
-        echo "--- ${NAME} / ${FMT}: SELECT a, c (unsupported middle column 'b' skipped) — native == library ---"
-        native=$(${CLICKHOUSE_LOCAL}  --query "SELECT a, c FROM file('${DATA_FILE}.${NAME}.${FMT}', '${FMT}', 'a Int32, c Int64') SETTINGS input_format_arrow_use_native_reader = 1")
-        library=$(${CLICKHOUSE_LOCAL} --query "SELECT a, c FROM file('${DATA_FILE}.${NAME}.${FMT}', '${FMT}', 'a Int32, c Int64') SETTINGS input_format_arrow_use_native_reader = 0")
-        if [ "$native" = "$library" ]; then echo "OK"; echo "$native"; else echo "MISMATCH"; fi
+        echo "--- ${NAME} / ${FMT}: SELECT a, c (unsupported middle column 'b' skipped) ---"
+        ${CLICKHOUSE_LOCAL} --query "SELECT a, c FROM file('${DATA_FILE}.${NAME}.${FMT}', '${FMT}', 'a Int32, c Int64')"
 
-        echo "--- ${NAME} / ${FMT}: SELECT b (requested) -> both readers reject the type ---"
-        for READER in 1 0; do
-            ${CLICKHOUSE_LOCAL} --query "
-                SELECT b FROM file('${DATA_FILE}.${NAME}.${FMT}', '${FMT}')
-                SETTINGS input_format_arrow_use_native_reader = ${READER},
-                         input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference = 0
-            " 2>&1 | grep -o "UNKNOWN_TYPE" | head -1
-        done
+        echo "--- ${NAME} / ${FMT}: SELECT b (requested) -> the reader rejects the type ---"
+        ${CLICKHOUSE_LOCAL} --query "
+            SELECT b FROM file('${DATA_FILE}.${NAME}.${FMT}', '${FMT}')
+            SETTINGS input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference = 0
+        " 2>&1 | grep -o "UNKNOWN_TYPE" | head -1
 
         rm -f "${DATA_FILE}.${NAME}.${FMT}"
     done

@@ -309,10 +309,14 @@ def run_stress_test(upgrade_check: bool = False) -> None:
 
     # Generate fatal.log from all server logs
     fatal_log = result_path / "fatal.log"
+    crash_evidence = False
     if server_log_path.exists():
         Shell.check(
             f"rg --text '\\s<Fatal>\\s' {server_log_path}/clickhouse-server*.log > {fatal_log}"
         )
+        # rg also exits non-zero when it did match but could not read some file of
+        # the glob, so key on the collected content rather than on its exit code.
+        crash_evidence = fatal_log.is_file() and fatal_log.stat().st_size > 0
 
     test_results, additional_logs = process_results(result_path, server_log_path)
 
@@ -325,7 +329,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         if not test_result.is_ok():
             failed_results.append(test_result)
 
-    if server_died:
+    if server_died or crash_evidence:
         # Build log pairs for each replica: (replica_name, server_err_log, stderr_log)
         # Main replica: all *.err.* logs without sc1/sc2 in name, paired with stderr.log
         # sc1/sc2: their dedicated server log + matching stderr log

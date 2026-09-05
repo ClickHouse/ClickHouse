@@ -1,7 +1,8 @@
 ---
 sidebarTitle: 'Introducción a las proyecciones'
+searchable: true
 title: 'Crea tu primera proyección'
-useCases: ['Real-time analytics', 'Data warehousing']
+useCases: ['Analítica en tiempo real', 'Data warehousing']
 products: ['Cloud']
 description: 'Aprende a usar las proyecciones en ClickHouse para almacenar una copia ordenada adicional de tus datos en la misma tabla, lo que permite búsquedas rápidas en columnas no incluidas en tu clave primaria.'
 ---
@@ -42,9 +43,7 @@ En esta guía de inicio rápido resolverás ese problema creando una **proyecci�
 Al final, entenderás cómo añadir y materializar una proyección, cómo ClickHouse la selecciona automáticamente y cuándo elegir proyecciones en lugar de vistas materializadas.
 
 <Steps titleSize="h3">
-  <Step>
-    ### Entiende por qué necesitas una proyección
-
+  <Step title="Entiende por qué necesitas una proyección" id="understand-why-you-need-a-projection">
     Tu tabla `uk_price_paid` está ordenada por `(postcode, addr1, addr2)`. Esto significa que ClickHouse puede omitir grandes bloques de datos cuando filtras por `postcode`, `addr1` o `addr2`, pero las consultas que filtran por `town` deben escanear cada una de las filas: los 30 millones.
 
     Una **proyección** almacena una copia adicional ordenada de (algunas o todas las) columnas *dentro de la misma tabla*. Cuando consultas la tabla, el optimizador de consultas comprueba automáticamente si leer desde la proyección implicaría menos gránulos que los datos base y, si es así, la utiliza de forma transparente.
@@ -58,9 +57,7 @@ Al final, entenderás cómo añadir y materializar una proyección, cómo ClickH
     Más información en la [documentación de referencia sobre proyecciones](/es/reference/statements/alter/projection).
   </Step>
 
-  <Step>
-    ### Agrega una proyección a tu tabla
-
+  <Step title="Agrega una proyección a tu tabla" id="add-a-projection-to-your-table">
     Define una proyección sobre `uk_price_paid` que almacene `town`, `date`, `price` y `type`, ordenados por `(town, date)`:
 
     ```sql
@@ -83,9 +80,7 @@ Al final, entenderás cómo añadir y materializar una proyección, cómo ClickH
     Deberías ver el bloque `PROJECTION uk_price_paid_by_town` en la salida.
   </Step>
 
-  <Step>
-    ### Materializar la proyección para los datos existentes
-
+  <Step title="Materializar la proyección para los datos existentes" id="materialize-the-projection-for-existing-data">
     Al igual que las vistas materializadas, una proyección recién añadida solo se aplica a las inserciones futuras. Para rellenarla con los 30 millones de filas que ya están en la tabla, materialícela explícitamente:
 
     ```sql
@@ -121,9 +116,7 @@ Al final, entenderás cómo añadir y materializar una proyección, cómo ClickH
     ```
   </Step>
 
-  <Step>
-    ### Consulta la tabla y observa el uso automático de la proyección
-
+  <Step title="Consulta la tabla y observa el uso automático de la proyección" id="query-the-table-and-observe-automatic-projection-usage">
     Ahora ejecuta una consulta con filtro por `town`, en la **misma tabla** que has consultado hasta ahora:
 
     ```sql
@@ -170,15 +163,11 @@ Al final, entenderás cómo añadir y materializar una proyección, cómo ClickH
     Esto obliga a realizar un escaneo completo de la tabla para que puedas ver la diferencia en el número de filas leídas.
   </Step>
 
-  <Step>
-    ### Comparación entre proyecciones y vistas materializadas
-
+  <Step title="Comparación entre proyecciones y vistas materializadas" id="compare-projections-to-materialized-views">
     Tanto las proyecciones como las vistas materializadas resuelven el mismo problema —lecturas más rápidas con patrones de acceso alternativos—, pero implican concesiones distintas. En resumen, las proyecciones son la mejor opción cuando solo necesitas un orden distinto para los mismos datos; las vistas materializadas son más flexibles cuando necesitas transformar, agregar o enrutar datos a un esquema diferente. Para una comparación detallada, consulta [Vistas materializadas frente a proyecciones](/es/concepts/features/projections/materialized-views-versus-projections).
   </Step>
 
-  <Step>
-    ### Observe la sobrecarga de almacenamiento
-
+  <Step title="Observe la sobrecarga de almacenamiento" id="observe-the-storage-overhead">
     Las proyecciones almacenan una segunda copia de las columnas seleccionadas dentro de la misma tabla, lo que incrementa el uso del disco. Consulta `system.parts` para ver el tamaño total de `uk_price_paid` (que ahora incluye los datos de la proyección):
 
     ```sql
@@ -211,7 +200,9 @@ Al final, entenderás cómo añadir y materializar una proyección, cómo ClickH
   </Step>
 </Steps>
 
-## Siguientes pasos
+<div id="next-steps">
+  ## Siguientes pasos
+</div>
 
 En esta guía de inicio rápido añadiste una proyección a `uk_price_paid` que almacena los datos ordenados por `(town, date)`, lo que permite búsquedas rápidas por localidad sin crear una tabla independiente. Aprendiste que el optimizador de consultas elige las proyecciones de forma transparente, que se mantienen sincronizadas con las mutaciones y que consumen espacio en disco a cambio de mejorar el rendimiento de lectura.
 

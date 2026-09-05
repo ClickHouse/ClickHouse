@@ -80,10 +80,16 @@ def kafka_create_topic(
 
 def kafka_delete_topic(admin_client, topic, max_retries=50):
     # Retry the delete RPC on transient broker/controller errors, like kafka_create_topic.
+    # UnknownTopicOrPartitionError means the topic is absent, which is the requested end
+    # state, so it is not retried; the listing loop below is what confirms it.
+    result = None
     retries = 0
     while True:
         try:
             result = admin_client.delete_topics([topic])
+            break
+        except kafka.errors.UnknownTopicOrPartitionError as e:
+            logging.debug(f"Topic {topic} is already absent: {e}")
             break
         except Exception as e:
             retries += 1
@@ -93,11 +99,12 @@ def kafka_delete_topic(admin_client, topic, max_retries=50):
             else:
                 raise
 
-    for topic, e in result.topic_error_codes:
-        if e == 0:
-            logging.debug(f"Topic {topic} deleted")
-        else:
-            logging.error(f"Failed to delete topic {topic}: {e}")
+    if result is not None:
+        for deleted_topic, e in result.topic_error_codes:
+            if e == 0:
+                logging.debug(f"Topic {deleted_topic} deleted")
+            else:
+                logging.error(f"Failed to delete topic {deleted_topic}: {e}")
 
     retries = 0
     while True:
@@ -145,15 +152,15 @@ def existing_kafka_topic(admin_client, topic_name, max_retries=50):
 
 
 def get_admin_client(kafka_cluster, retries=15):
-    # Broker may not be reachable yet; retry like get_kafka_producer() instead of
-    # raising NoBrokersAvailable on the first attempt.
+    # A broker that is not up yet surfaces as `NoBrokersAvailable` when the readiness
+    # probe is cluster-wide, and as `NodeNotReadyError` when it targets a specific node.
     errors = []
     for _ in range(retries):
         try:
             return KafkaAdminClient(
                 bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
             )
-        except kafka.errors.NoBrokersAvailable as e:
+        except (kafka.errors.NoBrokersAvailable, kafka.errors.NodeNotReadyError) as e:
             errors += [str(e)]
             time.sleep(1)
 

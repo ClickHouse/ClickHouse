@@ -30,12 +30,12 @@ La siguiente tabla muestra todos los tipos de datos admitidos por el formato Apa
 | `fixed(32)`                                 | [Int256/UInt256](/es/reference/data-types/int-uint)                                                | `fixed(32)`                   |
 | `record`                                    | [Tuple](/es/reference/data-types/tuple)                                                            | `record`                      |
 
-* `bytes` es el valor predeterminado y se controla mediante la configuración [`output_format_avro_string_column_pattern`](/es/reference/settings/formats#output_format_avro_string_column_pattern)
+* `bytes` es el valor predeterminado y se controla mediante la configuración [`output_format_avro_string_column_pattern`](/es/reference/settings/formats/output-format#output_format_avro_string_column_pattern)
 
 **  El [tipo Variant](/es/reference/data-types/variant) acepta implícitamente `null` como valor de un campo, por lo que, por ejemplo, `union(T1, T2, null)` de Avro se convertirá en `Variant(T1, T2)`.
 Como resultado, al generar Avro desde ClickHouse, siempre tenemos que incluir el tipo `null` en el conjunto de tipos de `union` de Avro, ya que durante la inferencia del esquema no sabemos si algún valor es realmente `null`.
 
-*** [Tipos lógicos de Avro](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+*** [Tipos lógicos de Avro](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
 
 Tipos de datos lógicos de Avro no compatibles:
 

@@ -1,0 +1,53 @@
+bare column policy (was crash)
+1	1
+3	1
+filter column not in select list
+1
+3
+expression policy
+2	0
+3	1
+4	0
+compound policy
+1	1
+name clash with real __row_policy_filter column
+1	1	x
+3	1	z
+no optimizations, different policies per child
+1	1
+2	0
+3	1
+3	1
+4	0
+no optimizations, single column
+1
+2
+3
+3
+4
+no leaked predicate column in the plan
+0
+query alias equal to helper name
+1
+0
+1
+1
+0
+query alias equal to helper name, no optimizations
+1
+0
+1
+1
+0
+quoted column equal to predicate name, filters on a>1 not the column
+2	0
+3	0
+quoted column, single column
+2
+3
+quoted column, no optimizations
+2
+3
+quoted string column equal to predicate name
+2	r
+3	s

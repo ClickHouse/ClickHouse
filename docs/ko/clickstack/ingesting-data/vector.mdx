@@ -30,9 +30,7 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
     이 가이드는 Managed ClickStack 서비스를 이미 생성하고 서비스 자격 증명을 기록해 두었다고 가정합니다. 아직 완료하지 않으셨다면, Vector 구성 단계가 나타날 때까지 Managed ClickStack의 [시작하기](/ko/clickstack/getting-started/managed) 가이드를 따라 진행하십시오.
 
     <Steps>
-      <Step>
-        ### 데이터베이스 및 테이블 생성
-
+      <Step title="데이터베이스 및 테이블 생성" id="create-a-database-table">
         Vector에서 데이터를 수집하기 전에 테이블(table)과 스키마(schema)가 미리 정의되어 있어야 합니다.
 
         먼저 데이터베이스(database)를 생성합니다. 이 작업은 [ClickHouse Cloud 콘솔](/ko/products/cloud/features/sql-console-features/sql-console)에서 수행할 수 있습니다.
@@ -72,9 +70,7 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
         </Info>
       </Step>
 
-      <Step>
-        ### Vector 구성에 ClickHouse 싱크 추가
-
+      <Step title="Vector 구성에 ClickHouse 싱크 추가" id="add-clickhouse-sink-to-config">
         기존 파이프라인에서 이벤트를 수신할 수 있도록 `inputs` 필드를 업데이트하여 Vector 구성에 ClickHouse 싱크를 추가하십시오.
 
         이 구성은 상위 Vector 파이프라인이 이미 **대상 ClickHouse 스키마(schema)에 맞게 데이터를 준비해 두었다**고 가정합니다. 즉, 필드가 파싱되고, 이름이 올바르게 지정되며, 삽입에 적합한 유형으로 지정되어 있어야 합니다. 원시 로그 라인을 ClickStack에 적합한 스키마로 파싱하고 정규화하는 전체 과정은 아래의 [**Nginx 예시**](#example-dataset-with-vector)를 참조하십시오.
@@ -107,17 +103,13 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
         </Note>
       </Step>
 
-      <Step>
-        ### ClickStack UI로 이동
-
+      <Step title="ClickStack UI로 이동" id="navigate-to-clickstack-ui">
         Managed ClickStack 서비스로 이동한 다음 왼쪽 메뉴에서 &quot;ClickStack&quot;을 선택합니다. 이미 온보딩을 완료했다면 새 탭에서 ClickStack UI가 열리고 자동으로 인증됩니다. 아직 완료하지 않았다면 온보딩을 진행하면서 입력 소스로 Vector를 선택한 후 “Launch ClickStack”을 선택합니다.
 
         <Image img="/images/clickstack/launch-clickstack-vector.webp" alt="Vector용 ClickStack 실행" size="lg" />
       </Step>
 
-      <Step>
-        ### 데이터 소스 생성
-
+      <Step title="데이터 소스 생성" id="create-a-datasource-managed">
         로그 데이터 소스를 생성하세요. 아직 데이터 소스가 없으면 처음 로그인할 때 데이터 소스를 만들라는 안내가 표시됩니다. 이미 있다면 Team Settings로 이동해 새 데이터 소스를 추가하세요.
 
         <Image img="/images/clickstack/create-vector-datasource.webp" alt="데이터 소스 생성 - vector" size="lg" />
@@ -131,9 +123,7 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
         다른 옵션은 [구성 참고](/ko/clickstack/managing/config)를 참조하십시오.
       </Step>
 
-      <Step>
-        ### 데이터 탐색
-
+      <Step title="데이터 탐색" id="explore-the-data-managed">
         로그 보기로 이동하여 데이터를 탐색하고 ClickStack 사용을 시작하세요.
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="CLickStack의 Nginx 로그" size="lg" />
@@ -143,9 +133,7 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
 
   <Tab title="오픈 소스 ClickStack">
     <Steps>
-      <Step>
-        ### 데이터베이스와 테이블 생성
-
+      <Step title="데이터베이스 및 테이블 생성" id="create-a-database-table-oss">
         Vector를 사용해 데이터를 수집하려면 미리 테이블(table)과 스키마(schema)를 정의해야 합니다.
 
         먼저 데이터베이스를 생성하십시오. [ClickHouse Web 사용자 인터페이스](/ko/concepts/features/interfaces/http#web-ui)에서 생성할 수 있습니다: [http://localhost:8123/play](http://localhost:8123/play). 기본 사용자 이름과 비밀번호 `api:api`를 사용하세요.
@@ -158,7 +146,7 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
         CREATE DATABASE IF NOT EXISTS logs
         ```
 
-        데이터용 테이블(table)을 생성합니다. 이는 데이터의 출력 스키마와 일치해야 합니다. 아래 예시는 일반적인 Nginx 구조를 가정합니다. 데이터에 맞게 조정하되, [스키마 모범 사례](/ko/concepts/best-practices/select-data-type)를 따르십시오. 또한 [프라이머리 키(Primary key)의 개념](/ko/concepts/core-concepts/primary-indexes)을 충분히 숙지할 것을 **강력히 권장**하며, [여기](/ko/clickstack/managing/performance-tuning#choosing-a-primary-key)에 설명된 지침에 따라 프라이머리 키를 선택하십시오.
+        데이터를 위한 테이블을 생성합니다. 이는 데이터의 출력 스키마와 일치해야 합니다. 아래 예시는 일반적인 Nginx 구조를 가정합니다. 데이터에 맞게 조정하되, [스키마 모범 사례](/ko/concepts/best-practices/select-data-type)를 따르십시오. 또한 [프라이머리 키(Primary key) 개념](/ko/concepts/core-concepts/primary-indexes)을 충분히 숙지하고, [여기](/ko/clickstack/managing/performance-tuning#choosing-a-primary-key)에 설명된 지침에 따라 프라이머리 키를 선택할 것을 **강력히 권장**합니다.
 
         ```sql
         CREATE TABLE logs.nginx_logs
@@ -183,13 +171,11 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
         <Info>
           **Nginx 기본 키(primary key)**
 
-          위 기본 키(primary key)는 ClickStack UI에서 Nginx 로그를 조회할 때의 일반적인 액세스 패턴을 기준으로 한 것이지만, 프로덕션 환경에서는 워크로드에 따라 조정이 필요할 수 있습니다.
+          위의 기본 키(primary key)는 ClickStack UI에서 Nginx 로그에 대해 일반적인 액세스 패턴을 기준으로 한 것이지만, 프로덕션 환경에서는 워크로드에 따라 조정해야 할 수 있습니다.
         </Info>
       </Step>
 
-      <Step>
-        ### Vector 구성에 ClickHouse 싱크 추가
-
+      <Step title="Vector 구성에 ClickHouse 싱크 추가" id="add-clickhouse-config-to-sink-oss">
         Vector에서 ClickStack으로 수집할 때는 collector가 노출하는 OTLP endpoint를 거치지 않고 ClickHouse로 직접 전송해야 합니다.
 
         기존 파이프라인에서 이벤트를 받도록 `inputs` 필드를 업데이트해 ClickHouse 싱크를 포함하도록 Vector 구성을 수정하세요.
@@ -224,17 +210,13 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
         </Note>
       </Step>
 
-      <Step>
-        ### ClickStack UI로 이동
-
+      <Step title="ClickStack UI로 이동" id="navigate-to-clickstack-ui-oss">
         [http://localhost:8080](http://localhost:8080)에서 ClickStack UI에 접속하세요. 온보딩을 완료하지 않았다면 사용자를 생성하세요.
 
         <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="ClickStack 로그인" size="lg" />
       </Step>
 
-      <Step>
-        ### 데이터 소스 생성
-
+      <Step title="데이터 소스 생성" id="create-a-datasource-oss">
         Team Settings로 이동해 새 데이터 소스를 추가합니다.
 
         <Image img="/images/clickstack/create-vector-datasource-oss.webp" alt="데이터 소스 생성 - vector" size="lg" />
@@ -248,12 +230,10 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
         다른 옵션은 [구성 참고](/ko/clickstack/managing/config)를 참조하십시오.
       </Step>
 
-      <Step>
-        ### 데이터 살펴보기
+      <Step title="데이터 탐색" id="explore-the-data-oss">
+        로그 보기로 이동하여 데이터를 탐색하고 ClickStack 사용을 시작하세요.
 
-        로그 보기로 이동해 데이터를 살펴보고 ClickStack 사용을 시작하십시오.
-
-        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="ClickStack의 Nginx 로그" size="lg" />
+        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="CLickStack의 Nginx 로그" size="lg" />
       </Step>
     </Steps>
   </Tab>
@@ -270,21 +250,15 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
     다음 가이드는 Managed ClickStack 서비스를 이미 생성하고 서비스 자격 증명을 기록해 두었다고 가정합니다. 아직 완료하지 않으셨다면, Vector 구성 단계가 나타날 때까지 Managed ClickStack의 [시작하기](/ko/clickstack/getting-started/managed) 가이드를 따르십시오.
 
     <Steps>
-      <Step>
-        ### Vector 설치
-
+      <Step title="Vector 설치" id="installing-vector">
         <InstallingVector />
       </Step>
 
-      <Step>
-        ### 샘플 데이터 다운로드
-
+      <Step title="샘플 데이터 다운로드" id="download-the-sample-data">
         <VectorSampleData />
       </Step>
 
-      <Step>
-        ### 데이터베이스 및 테이블 생성
-
+      <Step title="데이터베이스 및 테이블 생성" id="create-database-table-nginx-managed">
         Vector는 데이터 수집 전에 테이블과 스키마가 미리 정의되어 있어야 합니다.
 
         먼저 데이터베이스를 생성하십시오. 이는 [ClickHouse Cloud 콘솔](/ko/products/cloud/features/sql-console-features/sql-console)에서 수행할 수 있습니다.
@@ -324,9 +298,7 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
         </Info>
       </Step>
 
-      <Step>
-        ### Vector 구성 복사
-
+      <Step title="Vector 구성 복사" id="copy-vector-configuration">
         Vector 구성을 복사한 뒤 `CLICKHOUSE_ENDPOINT`와 `CLICKHOUSE_PASSWORD`를 설정하여 `nginx.yaml` 파일을 만드세요.
 
         ```yaml
@@ -346,7 +318,7 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
             source: |
               . = parse_json!(to_string!(.message))
               ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
-              # ClickHouse 호환 DateTime 포맷
+              # ClickHouse-friendly DateTime format
               .time_local = format_timestamp!(ts, format: "%F %T")
 
         sinks:
@@ -370,9 +342,7 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
         </Note>
       </Step>
 
-      <Step>
-        ### Vector 시작
-
+      <Step title="Vector 시작" id="start-vector">
         다음 명령으로 Vector를 시작합니다. 그에 앞서 파일 오프셋을 기록할 데이터 디렉터리를 먼저 생성하십시오.
 
         ```bash
@@ -381,17 +351,13 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
         ```
       </Step>
 
-      <Step>
-        ### ClickStack UI로 이동
-
+      <Step title="ClickStack UI로 이동" id="navigate-to-clickstack-ui-nginx-managed">
         Managed ClickStack 서비스로 이동한 다음 왼쪽 메뉴에서 &quot;ClickStack&quot;을 선택합니다. 이미 온보딩을 완료했다면 새 탭에서 ClickStack UI가 열리며 자동으로 인증됩니다. 아직 완료하지 않았다면 온보딩을 진행한 뒤 입력 source로 Vector를 선택하고 “Launch ClickStack”을 선택합니다.
 
         <Image img="/images/clickstack/launch-clickstack-vector.webp" alt="Vector용 ClickStack 실행" size="lg" />
       </Step>
 
-      <Step>
-        ### 데이터 소스 생성
-
+      <Step title="데이터 소스 생성" id="create-a-datasource-nginx-managed">
         로그 데이터 소스를 생성합니다. 데이터 소스가 없으면 처음 로그인할 때 생성하라는 안내가 표시됩니다. 그렇지 않으면 Team Settings로 이동해 새 데이터 소스를 추가하세요.
 
         <Image img="/images/clickstack/create-vector-datasource.webp" alt="데이터 소스 생성 - vector" size="lg" />
@@ -424,9 +390,7 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
         다른 옵션은 [구성 참고](/ko/clickstack/managing/config)를 참조하십시오.
       </Step>
 
-      <Step>
-        ### 데이터 탐색
-
+      <Step title="데이터 탐색" id="explore-the-data-nginx-managed">
         데이터를 탐색하고 ClickStack 사용을 시작하려면 `October 20th, 2025`의 Search view로 이동하십시오.
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="HyperDX UI" size="lg" />
@@ -438,21 +402,15 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
     이 가이드는 [시작하기 가이드](/ko/clickstack/getting-started/oss)를 통해 ClickStack Open Source를 설정했다고 가정합니다.
 
     <Steps>
-      <Step>
-        ### Vector 설치하기
-
+      <Step title="Vector 설치하기" id="installing-vector-oss">
         <InstallingVector />
       </Step>
 
-      <Step>
-        ### 샘플 데이터 다운로드하기
-
+      <Step title="샘플 데이터 다운로드" id="download-the-sample-data-oss">
         <VectorSampleData />
       </Step>
 
-      <Step>
-        ### 데이터베이스 및 테이블 생성
-
+      <Step title="데이터베이스 및 테이블 생성" id="create-a-database-table-nginx-oss">
         Vector에서 데이터를 수집하기 전에 테이블과 스키마를 먼저 정의해야 합니다.
 
         먼저 데이터베이스를 생성합니다. [ClickHouse Web UI](/ko/concepts/features/interfaces/http#web-ui)의 [http://localhost:8123/play](http://localhost:8123/play)에서 생성할 수 있습니다. 기본 사용자 이름과 비밀번호 `api:api`를 사용하세요.
@@ -488,15 +446,13 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
         ```
 
         <Info>
-          **Nginx 프라이머리 키(primary key)**
+          **Nginx 기본 키(primary key)**
 
-          위의 프라이머리 키(primary key)는 ClickStack UI에서 Nginx 로그에 대한 일반적인 액세스 패턴을 기준으로 한 것이지만, 프로덕션 환경의 워크로드에 따라 조정해야 할 수 있습니다.
+          위의 기본 키(primary key)는 Nginx 로그에 대해 ClickStack UI에서 일반적인 액세스 패턴을 기준으로 한 것이며, 프로덕션 환경에서는 워크로드에 따라 조정이 필요할 수 있습니다.
         </Info>
       </Step>
 
-      <Step>
-        ### Vector 구성 복사
-
+      <Step title="Vector 구성 복사" id="copy-vector-configuration-nginx-oss">
         Vector에서 ClickStack으로 데이터를 수집할 때는 collector가 노출하는 OTLP 엔드포인트를 거치지 않고 ClickHouse로 직접 전송해야 합니다.
 
         Vector 구성을 복사하고 `nginx.yaml` 파일을 생성하세요.
@@ -518,7 +474,7 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
             source: |
               . = parse_json!(to_string!(.message))
               ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
-              # ClickHouse 호환 DateTime 포맷
+              # ClickHouse-friendly DateTime format
               .time_local = format_timestamp!(ts, format: "%F %T")
 
         sinks:
@@ -542,9 +498,7 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
         </Note>
       </Step>
 
-      <Step>
-        ### Vector 시작
-
+      <Step title="Vector 시작" id="start-vector-oss-nginx">
         다음 명령을 실행하여 Vector를 시작합니다.
 
         ```bash
@@ -553,9 +507,7 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
         ```
       </Step>
 
-      <Step>
-        ### 데이터 소스 생성
-
+      <Step title="데이터 소스 생성" id="create-a-datasource-nginx-oss">
         `Team -> Sources`에서 로그 데이터 소스를 생성합니다
 
         <Image img="/images/clickstack/create-vector-datasource-oss.webp" alt="데이터 소스 생성 - vector" size="lg" />
@@ -583,23 +535,19 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
         )
         ```
 
-        구조화된 필드에서 로그 한 줄을 재구성합니다.
+        구조화된 필드로부터 로그 라인을 재구성합니다.
 
         다른 옵션은 [구성 참고](/ko/clickstack/managing/config)를 참조하십시오.
       </Step>
 
-      <Step>
-        ### ClickStack UI로 이동
-
+      <Step title="ClickStack UI로 이동" id="navigate-to-clickstack-ui-nginx-oss">
         [http://localhost:8080](http://localhost:8080)에서 ClickStack UI에 접속하세요. 온보딩을 완료하지 않았다면 사용자를 생성하세요.
 
         <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="ClickStack 로그인" size="lg" />
       </Step>
 
-      <Step>
-        ### 데이터 탐색
-
-        데이터를 탐색하고 ClickStack 사용을 시작하려면 `October 20th, 2025`의 Search view로 이동하세요.
+      <Step title="데이터 탐색" id="explore-the-data-nginx-oss">
+        데이터를 탐색하고 ClickStack 사용을 시작하려면 `October 20th, 2025`의 Search view로 이동하십시오.
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="HyperDX UI" size="lg" />
       </Step>

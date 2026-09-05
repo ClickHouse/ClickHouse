@@ -1,12 +1,12 @@
 #pragma once
 
-#include <absl/container/inlined_vector.h>
 #include <algorithm>
 #include <memory>
 #include <set>
 
 #include <Core/Defines.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/InlineVector.h>
 #include <Parsers/TokenIterator.h>
 #include <base/types.h>
 #include <Common/Exception.h>
@@ -74,7 +74,7 @@ std::vector<HighlightedRange> expandHighlights(const std::set<HighlightedRange> 
   */
 struct Expected
 {
-    absl::InlinedVector<const char *, 7> variants;
+    InlineVector<const char *, 7> variants;
     const char * max_parsed_pos = nullptr;
 
     bool enable_highlighting = false;

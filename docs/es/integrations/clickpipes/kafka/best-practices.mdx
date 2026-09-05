@@ -28,7 +28,24 @@ Para obtener más información sobre la compresión de mensajes en Kafka, le rec
   ## Semántica de entrega
 </div>
 
-ClickPipes for Kafka proporciona semántica de entrega `at-least-once` (uno de los enfoques más utilizados). Nos gustaría conocer tus comentarios sobre la semántica de entrega a través de nuestro [formulario de contacto](https://clickhouse.com/company/contact?loc=clickpipes). Si necesitas semántica exactly-once, te recomendamos usar nuestro sink oficial [`clickhouse-kafka-connect`](https://clickhouse.com/blog/real-time-event-streaming-with-kafka-connect-confluent-cloud-clickhouse).
+ClickPipes para Kafka garantiza la entrega al menos una vez de forma predeterminada y realiza el seguimiento del progreso de la ingestión mediante los offsets del grupo de consumidores de Kafka. También admite opcionalmente semántica de exactamente una vez, en la que cada registro de Kafka se inserta en ClickHouse exactamente una vez, incluso tras reinicios de pods, reequilibrios de consumidores y errores de inserción.
+
+Para garantizar la entrega exactamente una vez, ClickPipes registra el progreso de cada partición en su almacén de estado interno mediante dos valores:
+
+* **Marca de agua** — el offset hasta el que se confirma que todos los registros de la partición se han insertado en ClickHouse. Al reiniciarse, ClickPipes descarta cualquier registro que esté en esa marca o por debajo de ella, por lo que los datos ya insertados nunca se vuelven a enviar.
+* **Rangos pendientes** — los rangos de offsets de los bloques de inserción enviados a ClickHouse pero aún no confirmados. Tras un error, ClickPipes reproduce exactamente esos rangos.
+
+Cada bloque de inserción abarca un rango contiguo de offsets e incluye un [token de deduplicación](/es/concepts/features/operations/insert/deduplicating-inserts-on-retries) determinista con el formato `topic:partition:firstOffset-lastOffset`. Durante la reproducción, ClickPipes vuelve a generar el mismo rango de offsets y, por tanto, el mismo token, de modo que ClickHouse rechaza el duplicado. Como el token depende únicamente del rango de offsets, una reproducción se deduplica incluso cuando el bloque reconstruido no es idéntico byte a byte.
+
+<Note>
+  **Ventana de deduplicación**
+
+  La deduplicación de tokens está limitada por [`replicated_deduplication_window`](/es/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) de la tabla de destino (los 10.000 bloques de inserción más recientes de forma predeterminada) y [`replicated_deduplication_window_seconds`](/es/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) (una hora de forma predeterminada). Las canalizaciones de alto rendimiento pueden agotar rápidamente la ventana basada en el número de bloques, por lo que recomendamos verificar y, si es necesario, aumentar ambos ajustes en la tabla de destino para cubrir el mayor retraso de reproducción previsto. Los datos reproducidos después de que su token haya salido de la ventana pueden volver a insertarse, por lo que en ese caso no se garantiza la entrega exactamente una vez.
+</Note>
+
+La principal contrapartida es el tamaño de las partes. Los bloques de inserción más grandes generan menos [partes](/es/concepts/core-concepts/parts), pero de mayor tamaño, en ClickHouse, lo que reduce la sobrecarga de las combinaciones. ClickPipes mantiene en memoria las filas de una partición mientras crea un bloque, por lo que el tamaño de parte que puede alcanzar depende de la memoria disponible para la canalización; cuando la memoria es limitada, crea bloques más pequeños y la tabla acumula más partes. Asignar más memoria a la canalización permite crear bloques más grandes y, por tanto, menos partes.
+
+Una canalización funciona mejor cuando el número de particiones se aproxima al número de «workers» internos de inserción, ya que cada worker gestiona aproximadamente una partición y dispone de la holgura de memoria necesaria para crear bloques grandes. Tanto el número de workers como la memoria disponible escalan con el tamaño y el número de réplicas, que se configuran en **Configuración** -&gt; **Configuración avanzada** -&gt; **Escalado**.
 
 <div id="authentication">
   ## Autenticación

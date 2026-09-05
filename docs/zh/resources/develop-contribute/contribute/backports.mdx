@@ -47,7 +47,7 @@ ClickHouse 版本遵循 `YY.M.patch.build-type` 方案，其中 `YY` 表示两�
 
 长期目标是将这套实现提炼为一个独立的开源 Python 工具，供其他项目采用。目标设计如下：
 
-* **可配置** — 所有策略参数 (符合条件的标签、延迟窗口、过旧拉取请求阈值、滚动发布期间的行为等) 都在配置文件中定义，使该工具无需修改代码即可适配任何项目的回移需求。
+* **可配置** — 所有策略参数 (符合条件的标签、延迟窗口、过旧拉取请求阈值等) 都在配置文件中定义，使该工具无需修改代码即可适配任何项目的回移需求。
 * **可分发** — 打包为可从 PyPI 安装的自包含 Python wheel，不依赖 ClickHouse 的 CI 基础设施。
 * **可编程** — 为拉取请求、标签和发布分支提供清晰的对象模型，使用户能够基于核心引擎编写自定义工作流脚本。
 
@@ -61,15 +61,13 @@ ClickHouse 版本遵循 `YY.M.patch.build-type` 方案，其中 `YY` 表示两�
 * 带有各种回移标签组合的拉取请求，
 * 带有 `release` 标签并指向发布分支的发布 PR。
 
-这样一来，测试就可以在不影响生产状态的情况下，针对一个真实但可丢弃的仓库，覆盖完整的自动化流程——标签检测、cherry-pick 分支创建、冲突处理、回移 PR 创建、指派逻辑、跳过 rolling-out 状态以及延迟策略。相同的基础设施还可在策略变更部署前复用于回归测试。
+这样一来，测试就可以在不影响生产状态的情况下，针对一个真实但可丢弃的仓库，覆盖完整的自动化流程——标签检测、cherry-pick 分支创建、冲突处理、回移 PR 创建、指派逻辑以及延迟策略。相同的基础设施还可在策略变更部署前复用于回归测试。
 
 <div id="active-release-branches">
   ## 活跃的发布分支
 </div>
 
 活跃的发布分支，是指其对应的发布 PR (带有 `release` 标签) 在 GitHub 上仍处于打开状态的分支。回移自动化会在每次运行时动态发现这些分支，因此当切出新版本或旧版本到达生命周期终点时，无需修改配置。
-
-在新版本部署期间，发布分支可能处于 **rolling-out** 状态 (即其发布 PR 带有 `rolling-out` 标签) 。为避免增加滚动发布的复杂性，处于 rolling-out 状态的分支会暂停常规回移。特定版本标签 (例如 `v25.3-must-backport`) 会覆盖这一行为，即使在滚动发布期间也会强制执行回移。
 
 特定版本标签会设定该 PR 必须到达的*最早*发布版本：它会被回移到该发布版本**以及之后每一个较新的活跃发布分支**，而不只是标签中指定的那个版本。例如，合并到 development 分支的某个 PR 如果带有 `v25.3-must-backport` 标签，就会被回移到 `25.3`，以及之后每一个活跃发布版本 (`25.4`、`25.5`、……)。如果同时存在多个特定版本标签，则以最低版本为准，因为它已经涵盖了所有较新的版本。
 
@@ -96,17 +94,16 @@ ClickHouse 版本遵循 `YY.M.patch.build-type` 方案，其中 `YY` 表示两�
 
 原始 PR 上的标签决定是否进行回移，以及回移到哪些位置。
 
-| 标签                                                | 作用                                                                                                                             |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `pr-must-backport`                                | 回移到所有活跃的发布分支 (跳过标记为 `rolling-out` 的分支)                                                                                         |
-| `pr-must-backport-force`                          | 回移到所有活跃的发布分支，忽略 `rolling-out` 限制                                                                                               |
-| `pr-critical-bugfix`                              | 自动触发 `pr-must-backport` (通过 `pr_labels_and_category.py` 中的 `AUTO_BACKPORT`)                                                    |
-| `v{VER}-must-backport` (例如 `v25.3-must-backport`) | 回移到该发布分支 **以及所有更新的活跃发布分支** —— 该版本号标记了此 PR 必须到达的*最旧*发布版本，即使所命名的发布版本本身已经结束生命周期也是如此。若存在多个此类标签，以最低版本为准。会覆盖这些分支的 `rolling-out` 跳过规则 |
-| `pr-backports-created`                            | 当所有必需的回移 PR 都已创建时由机器人设置；如果某个 cherry-pick PR 被重新打开，则会被清除                                                                        |
-| `pr-cherrypick`                                   | 用于标记由机器人创建的 cherry-pick PR                                                                                                     |
-| `pr-backport`                                     | 用于标记由机器人创建的回移 PR                                                                                                               |
-| `do not test`                                     | 用于标记 cherry-pick PR，以便 CI 不会在其上运行                                                                                              |
-| `rolling-out`                                     | 设置在 **发布 PR** 上，表示其分支当前正在滚动发布；常规回移会跳过该分支                                                                                       |
+| 标签                                                | 作用                                                                                                  |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `pr-must-backport`                                | 回移到所有活跃的发布分支                                                                                        |
+| `pr-must-backport-force`                          | 回移到所有活跃的发布分支 (等同于 `pr-must-backport`)                                                               |
+| `pr-critical-bugfix`                              | 自动触发 `pr-must-backport` (通过 `pr_labels_and_category.py` 中的 `AUTO_BACKPORT`)                         |
+| `v{VER}-must-backport` (例如 `v25.3-must-backport`) | 回移到该发布分支 **以及所有更新的活跃发布分支** —— 该版本号标记了此 PR 必须到达的*最旧*发布版本，即使所命名的发布版本本身已经结束生命周期也是如此。若存在多个此类标签，以最低版本为准。 |
+| `pr-backports-created`                            | 当所有必需的回移 PR 都已创建时由机器人设置；如果某个 cherry-pick PR 被重新打开，则会被清除                                             |
+| `pr-cherrypick`                                   | 用于标记由机器人创建的 cherry-pick PR                                                                          |
+| `pr-backport`                                     | 用于标记由机器人创建的回移 PR                                                                                    |
+| `do not test`                                     | 用于标记 cherry-pick PR，以便 CI 不会在其上运行                                                                   |
 
 <div id="branch-and-pr-naming">
   ### 分支和 PR 命名
@@ -140,14 +137,8 @@ ClickHouse 版本遵循 `YY.M.patch.build-type` 方案，其中 `YY` 表示两�
 * 合并时间晚于任一发布分支上找到的最早提交日期，且
 * 在过去 90 天内有更新 (以提高搜索查询效率) 。
 
-<div id="rolling-out-branch-handling">
-  #### 3. `rolling-out` 分支处理
-</div>
-
-当发布 PR 带有 `rolling-out` 标签时，通用的回移标签 (`pr-must-backport`、`pr-critical-bugfix`) 会跳过该分支。机器人会关闭此前为该分支创建的所有 cherry-pick 或回移 PR，并附上说明性注释。特定版本的标签 (例如 `v25.3-must-backport`) 始终会覆盖这一行为——对于指定的 release，以及它扩展到的每个更新且仍处于活动状态的发布分支，都是如此。`pr-must-backport-force` 会绕过对所有分支的 `rolling-out` 检查。
-
 <div id="cherry-pick-stage">
-  #### 4. Cherry-pick 阶段 (`ReleaseBranch.create_cherrypick`)
+  #### 3. Cherry-pick 阶段 (`ReleaseBranch.create_cherrypick`)
 </div>
 
 对于每一组尚未存在 cherry-pick PR 的 (原始 PR、发布分支) 组合：
@@ -163,36 +154,36 @@ ClickHouse 版本遵循 `YY.M.patch.build-type` 方案，其中 `YY` 表示两�
 7. 此时**不会**设置受分配人；只有在检测到冲突时才会添加。
 
 <div id="auto-merge-conflict-free-cherry-pick-prs">
-  #### 5. 无冲突的 cherry-pick PR 自动合并
+  #### 4. 自动合并无冲突的 cherry-pick PR
 </div>
 
-如果 cherry-pick PR 可合并 (无冲突) ，机器人会通过 GitHub API 自动合并它，并立即进入回移阶段。
+如果 cherry-pick PR 可合并 (无冲突) ，机器人会通过 GitHub API 自动将其合并，并立即进入回移阶段。
 
 <div id="backport-stage">
-  #### 6. 回移阶段 (`ReleaseBranch.create_backport`)
+  #### 5. 回移阶段 (`ReleaseBranch.create_backport`)
 </div>
 
 在 cherry-pick PR 合并后：
 
 1. 检出并拉取 backport 分支。
-2. 找到 release branch 与 backport 分支之间的 merge-base。
-3. 执行 `git reset --soft` 回退到该 merge-base，将所有 cherry-pick 过的提交 squash 为一个提交。
+2. 找到发布分支与 backport 分支之间的 merge-base。
+3. 使用 `git reset --soft` 重置到该 merge-base，将所有 cherry-picked 提交压缩为一个。
 4. 使用回移 PR 的标题作为提交消息进行提交。
-5. 强制推送 backport 分支，并创建一个以实际 release branch 为目标分支的回移 PR。
-6. 为该 PR 添加 `pr-backport` label (如适用，还需添加 `pr-bugfix` / `pr-critical-bugfix`) 。
-7. 将该 PR 分配给原始 PR 的作者、合并者以及现有受分配人 (不包括机器人账户) 。
+5. 强制推送 backport 分支，并创建一个以实际发布分支为目标的回移 PR。
+6. 为该 PR 添加 `pr-backport` 标签 (以及在适用时添加 `pr-bugfix` / `pr-critical-bugfix`) 。
+7. 将该 PR 分配给原始 PR 的作者、合并者和现有受分配人 (不包括机器人账户) 。
 
 <div id="completion">
-  #### 7. 完成
+  #### 6. 完成
 </div>
 
-当某个原始 PR 对应的所有发布分支都已完成回移后，机器人会在该原始 PR 上添加 `pr-backports-created`。
+当某个原始 PR 对应的所有发布分支都已完成回移时，机器人会为该原始 PR 添加 `pr-backports-created`。
 
 <div id="pre-check">
-  #### 8. 预检查
+  #### 7. 前置检查
 </div>
 
-在开始处理某个 PR 之前，`ReleaseBranch.pre_check` 会运行 `git merge-base --is-ancestor`，以确认该合并提交尚未包含在发布分支的历史中。如果已经包含，则该 PR 会被视为已回移并跳过。
+在开始对 PR 进行任何处理之前，`ReleaseBranch.pre_check` 会运行 `git merge-base --is-ancestor`，以验证该合并提交是否已经在发布分支的可达范围内。如果是，则该 PR 会被视为已回移并跳过。
 
 <div id="stale-cherry-pick-pr-handling">
   ### 长时间未处理的 Cherry-pick PR 处理

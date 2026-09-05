@@ -12,10 +12,11 @@ sys.path.append(".")
 
 from ci.praktika.cidb import CIDB
 from ci.praktika.gh import GH
+from ci.praktika.git import Git
 from ci.praktika.interactive import UserPrompt
 from ci.praktika.issue import Issue, IssueLabels, TestCaseIssueCatalog
 from ci.praktika.result import Result
-from ci.praktika.utils import Shell
+from ci.praktika.utils import Shell, Utils
 from ci.settings.settings import CI_DB_READ_URL, CI_DB_READ_USER, TEST_FAILURE_PATTERNS
 
 
@@ -392,11 +393,26 @@ class CommitStatusCheck:
 
     @staticmethod
     def get_ci_praktika_result(pr_number, commit_sha):
+        # Reports live under the normalized workflow name, both as a path prefix
+        # and in the result file name:
+        #   PRs/<pr>/<sha>/<workflow>/result_<workflow>.json
+        #   REFs/master/<sha>/<workflow>/result_<workflow>.json
         if pr_number != 0:
-            report_url = f"https://s3.amazonaws.com/clickhouse-test-reports/PRs/{pr_number}/{commit_sha}/result_pr.json"
+            workflow = Utils.normalize_string("PR")
+            ref_prefix = f"PRs/{pr_number}"
         else:
-            report_url = f"https://s3.amazonaws.com/clickhouse-test-reports/REFs/master/{commit_sha}/result_masterci.json"
-        _ = Shell.check(f"curl {report_url} -o /tmp/result_pr.json > /dev/null 2>&1")
+            workflow = Utils.normalize_string("MasterCI")
+            ref_prefix = "REFs/master"
+        report_url = (
+            f"https://s3.amazonaws.com/clickhouse-test-reports/"
+            f"{ref_prefix}/{commit_sha}/{workflow}/result_{workflow}.json"
+        )
+        # -f so a missing report fails here instead of downloading the S3 error
+        # body and blowing up later in Result.from_file with an opaque parse error.
+        if not Shell.check(
+            f"curl -f {report_url} -o /tmp/result_pr.json > /dev/null 2>&1"
+        ):
+            raise RuntimeError(f"Failed to fetch CI report from {report_url}")
         return Result.from_file("/tmp/result_pr.json")
 
     @staticmethod
@@ -418,7 +434,7 @@ class CommitStatusCheck:
         if commit_status_data.state in (Result.GHStatus.SUCCESS,):
             pass
         elif commit_status_data.state in (Result.GHStatus.FAILURE,):
-            if commit_status_data.description == "tests failed":
+            if commit_status_data.description.startswith("tests failed"):
                 print(
                     f"\nCH Sync failed for commit, description: {commit_status_data.description}"
                 )
@@ -551,9 +567,10 @@ class CommitStatusCheck:
     @staticmethod
     def get_sync_pr_result(sync_pr_number, sync_sha):
         """Fetch the CI result for a sync PR via the S3 proxy."""
+        workflow = Utils.normalize_string("PR")
         report_url = (
             f"{S3_PROXY_BASE_URL}/{S3_PRIVATE_REPORT_BUCKET}"
-            f"/PRs/{sync_pr_number}/{sync_sha}/result_pr.json"
+            f"/PRs/{sync_pr_number}/{sync_sha}/{workflow}/result_{workflow}.json"
         )
         if not Shell.check(
             f"curl -f {report_url} -o /tmp/result_sync_pr.json > /dev/null 2>&1"
@@ -563,7 +580,6 @@ class CommitStatusCheck:
         return Result.from_file("/tmp/result_sync_pr.json")
 
 
-issues_created = 0
 ci_start_time = None
 create_infrastructure_issue = False
 
@@ -892,112 +908,114 @@ def main():
     global ci_start_time
     ci_start_time = workflow_result.start_time
 
-    known_failures, unknown_failures, not_finished_jobs, new_issues_count = (
-        process_workflow_failures(
-            workflow_result,
-            PUBLIC_REPO,
-            pr_number,
-            head_sha,
-            allow_infra_issues=create_infrastructure_issue,
-        )
+    known_failures, unknown_failures, not_finished_jobs, _ = process_workflow_failures(
+        workflow_result,
+        PUBLIC_REPO,
+        pr_number,
+        head_sha,
+        allow_infra_issues=create_infrastructure_issue,
     )
-    pre_existing_issues_count = len(known_failures) - new_issues_count
-    global issues_created
-    issues_created += new_issues_count
 
     print_failure_summary(known_failures, unknown_failures, not_finished_jobs)
 
     if is_master_commit:
         sys.exit(0)
 
-    # Process sync PR failures if sync CI failed with test failures
+    # Process the sync PR result regardless of the "CH Inc sync" commit status as stress test failures are ignored by it.
     sync_known_failures = []
     sync_unknown_failures = []
-    if (
-        sync_status
-        and sync_status.state == Result.GHStatus.FAILURE
-        and sync_status.description == "tests failed"
-    ):
-        print("\n=== Processing Sync PR (CH Inc sync) failures ===")
+    sync_not_finished = []
+    sync_checked = False
+    sync_status_text = (
+        f"{sync_status.state} - {sync_status.description}" if sync_status else "unknown"
+    )
+    print(
+        f"\n=== Processing Sync PR ({CheckStatuses.CH_INC_SYNC}: {sync_status_text}) ==="
+    )
 
-        # Check proxy connectivity before proceeding
-        process_sync = False
-        while True:
-            if Shell.check(
-                f"curl -sf --connect-timeout 5 {S3_PROXY_BASE_URL} -o /dev/null 2>&1"
-            ):
-                process_sync = True
-                break
-            print(
-                f"WARNING: S3 proxy at {S3_PROXY_BASE_URL} is not reachable. "
-                "Connect to VPN/Tailscale to access sync PR results."
-            )
-            answer = UserPrompt.select_from_menu(
-                [
-                    ("Skip sync PR processing", "skip"),
-                    ("Retry (after connecting to VPN)", "retry"),
-                ],
-                question="S3 proxy is not available",
-            )
-            if answer[1] == "skip":
-                print("Skipping sync PR processing")
-                break
+    # Check proxy connectivity before proceeding
+    process_sync = False
+    while True:
+        if Shell.check(
+            f"curl -sf --connect-timeout 5 {S3_PROXY_BASE_URL} -o /dev/null 2>&1"
+        ):
+            process_sync = True
+            break
+        print(
+            f"WARNING: S3 proxy at {S3_PROXY_BASE_URL} is not reachable. "
+            "Connect to VPN/Tailscale to access sync PR results."
+        )
+        answer = UserPrompt.select_from_menu(
+            [
+                ("Skip sync PR processing", "skip"),
+                ("Retry (after connecting to VPN)", "retry"),
+            ],
+            question="S3 proxy is not available",
+        )
+        if answer[1] == "skip":
+            print("Skipping sync PR processing")
+            break
 
-        if process_sync:
-            sync_pr_info = CommitStatusCheck.get_sync_pr_info(pr_number)
-            if sync_pr_info:
-                sync_pr_num, sync_sha = sync_pr_info
-                print(
-                    f"Sync PR: {SYNC_REPO}#{sync_pr_num} (sha: {sync_sha[:12]})"
+    if process_sync:
+        sync_pr_info = CommitStatusCheck.get_sync_pr_info(pr_number)
+        if sync_pr_info:
+            sync_pr_num, sync_sha = sync_pr_info
+            print(f"Sync PR: {SYNC_REPO}#{sync_pr_num} (sha: {sync_sha[:12]})")
+            sync_workflow_result = CommitStatusCheck.get_sync_pr_result(
+                sync_pr_num, sync_sha
+            )
+            if sync_workflow_result:
+                sync_workflow_result = (
+                    sync_workflow_result.to_failed_results_with_flat_leaves()
                 )
-                sync_workflow_result = CommitStatusCheck.get_sync_pr_result(
-                    sync_pr_num, sync_sha
+                (
+                    sync_known_failures,
+                    sync_unknown_failures,
+                    sync_not_finished,
+                    _,
+                ) = process_workflow_failures(
+                    sync_workflow_result,
+                    SYNC_REPO,
+                    sync_pr_num,
+                    sync_sha,
+                    allow_infra_issues=create_infrastructure_issue,
                 )
-                if sync_workflow_result:
-                    sync_workflow_result = (
-                        sync_workflow_result.to_failed_results_with_flat_leaves()
-                    )
-                    (
-                        sync_known_failures,
-                        sync_unknown_failures,
-                        sync_not_finished,
-                        _,
-                    ) = process_workflow_failures(
-                        sync_workflow_result,
-                        SYNC_REPO,
-                        sync_pr_num,
-                        sync_sha,
-                        allow_infra_issues=create_infrastructure_issue,
-                    )
-                    print_failure_summary(
-                        sync_known_failures,
-                        sync_unknown_failures,
-                        sync_not_finished,
-                        label="Sync",
-                    )
-                else:
-                    print("WARNING: Could not fetch sync PR result - skipping")
+                sync_checked = True
+                print_failure_summary(
+                    sync_known_failures,
+                    sync_unknown_failures,
+                    sync_not_finished,
+                    label="Sync",
+                )
             else:
-                print("WARNING: Could not find sync PR - skipping")
+                print("WARNING: Could not fetch sync PR result - skipping")
+        else:
+            print("WARNING: Could not find sync PR - skipping")
 
-    question = "CI status:\n"
-    if unknown_failures or issues_created > 0 or pre_existing_issues_count > 0:
+    public_failed = known_failures or unknown_failures
+    sync_failed = sync_known_failures or sync_unknown_failures
+    if public_failed or sync_failed or not_finished_jobs or sync_not_finished:
+        summary = "CI status:\n"
         if not_finished_jobs:
-            question += f" - {len(not_finished_jobs)} not finished job{'s' if len(not_finished_jobs) != 1 else ''}\n"
+            summary += f" - {len(not_finished_jobs)} not finished job{'s' if len(not_finished_jobs) != 1 else ''}\n"
         if unknown_failures:
-            question += f" - {len(unknown_failures)} unknown failure{'s' if len(unknown_failures) != 1 else ''}\n"
+            summary += f" - {len(unknown_failures)} unknown failure{'s' if len(unknown_failures) != 1 else ''}\n"
         if known_failures:
-            question += f" - {len(known_failures)} known failure{'s' if len(known_failures) != 1 else ''}\n"
-        question += " - all other checks passed\n"
-        question += f" - Sync status: {sync_status.state}, description: {sync_status.description}\n"
-        if sync_known_failures or sync_unknown_failures:
-            question += f" - Sync failures: {len(sync_known_failures)} known, {len(sync_unknown_failures)} unknown\n"
+            summary += f" - {len(known_failures)} known failure{'s' if len(known_failures) != 1 else ''}\n"
+        summary += " - all other public checks passed\n"
+        summary += f" - Sync status: {sync_status_text}\n"
+        if sync_not_finished:
+            summary += f" - Sync not finished: {len(sync_not_finished)} job{'s' if len(sync_not_finished) != 1 else ''}\n"
+        if sync_failed:
+            summary += f" - Sync failures: {len(sync_known_failures)} known, {len(sync_unknown_failures)} unknown\n"
+    elif sync_checked:
+        summary = "All checks passed! Congratulations!\n"
     else:
-        question = "All checks passed! Congratulations!\n"
+        summary = "All public checks passed, sync PR was not checked\n"
+    print(f"\n{summary}")
 
-    if unknown_failures or known_failures:
-        question += "\nDo you want to update PR CI comment?"
-        if not UserPrompt.confirm(question):
+    if public_failed:
+        if not UserPrompt.confirm("Do you want to update PR CI comment?"):
             sys.exit(0)
 
         try:
@@ -1040,63 +1058,8 @@ def main():
         mergeable_check_status, sha=head_sha
     )
 
-    # `gh pr merge --auto` calls the `enablePullRequestAutoMerge` mutation,
-    # which the repo disables in favor of a merge queue on `master`. Call
-    # `enqueuePullRequest` directly: it is the mutation the "Merge when ready"
-    # button on github.com uses.
-    pr_node_id = Shell.get_output(
-        f"gh pr view {pr_number} --json id --jq '.id' --repo ClickHouse/ClickHouse"
-    ).strip()
-    if not pr_node_id:
-        print(f"ERROR: Failed to fetch node ID for PR #{pr_number}")
+    if not Git.enqueue_pull_request(pr_number, "ClickHouse/ClickHouse"):
         sys.exit(1)
-
-    enqueue_cmd = (
-        "gh api graphql "
-        "-f 'query=mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id})"
-        "{mergeQueueEntry{position state}}}' "
-        f"-f id={pr_node_id}"
-    )
-    returncode, stdout, stderr = Shell.get_res_stdout_stderr(enqueue_cmd, verbose=True)
-    # GitHub rejects `enqueuePullRequest` with "Pull request is already in the
-    # queue" when the PR is already queued - e.g. the "Merge when ready" button
-    # was clicked on github.com, or a previous run of this tool already enqueued
-    # it. That is the desired end state, so treat it as success instead of
-    # bailing out with an error.
-    already_queued = "already in the queue" in (stdout + stderr).lower()
-    if returncode != 0 and not already_queued:
-        # Surface the real gh output so auth/permission/validation/rate-limit
-        # failures stay diagnosable, as the previous verbose Shell.check did.
-        if stdout:
-            print(stdout)
-        if stderr:
-            print(stderr)
-        print(
-            f"ERROR: Failed to add PR #{pr_number} to the merge queue. "
-            f"This often happens when mergeStateStatus is UNKNOWN "
-            f"(GitHub is still computing mergeability after a recent push) "
-            f"or the PR is not yet eligible (failing required checks, "
-            f"missing approvals, out of date with base). "
-            f"Retry manually:\n  {enqueue_cmd}"
-        )
-        sys.exit(1)
-    if already_queued:
-        print(f"PR #{pr_number} is already in the merge queue")
-
-    # Give GitHub a moment to update the PR's merge state, then verify it
-    # actually landed in the queue.
-    time.sleep(5)
-    merge_status = Shell.get_output(
-        f"gh pr view {pr_number} --json mergeStateStatus --jq '.mergeStateStatus' --repo ClickHouse/ClickHouse"
-    )
-    if merge_status == "QUEUED":
-        print(f"OK: PR #{pr_number} added to the merge queue")
-    else:
-        print(
-            f"WARNING: PR #{pr_number} enqueue mutation succeeded but "
-            f"mergeStateStatus is {merge_status} (expected QUEUED). "
-            f"Check the PR on github.com."
-        )
 
 
 if __name__ == "__main__":

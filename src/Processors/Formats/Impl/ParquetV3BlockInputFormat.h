@@ -50,6 +50,8 @@ public:
 
     void resetParser() override;
 
+    void resetReadBuffer() override;
+
     String getName() const override { return "ParquetV3BlockInputFormat"; }
 
     const BlockMissingValues * getMissingValues() const override;

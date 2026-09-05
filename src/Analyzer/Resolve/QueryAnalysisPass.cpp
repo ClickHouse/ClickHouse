@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
@@ -5,7 +6,7 @@
 namespace DB
 {
 
-QueryAnalysisPass::QueryAnalysisPass(QueryTreeNodePtr table_expression_, bool only_analyze_)
+QueryAnalysisPass::QueryAnalysisPass(TableExpressionNodePtr table_expression_, bool only_analyze_)
     : table_expression(std::move(table_expression_))
     , only_analyze(only_analyze_)
 {}
