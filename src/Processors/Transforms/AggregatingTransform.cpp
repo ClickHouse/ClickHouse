@@ -1301,6 +1301,7 @@ ProcessorMemoryStats AggregatingTransform::getMemoryStats() const
 
     ProcessorMemoryStats res;
     res.spillable_memory_bytes = variants.memoryUsage();
+    res.need_reserved_memory_bytes = variants.isTwoLevel() ? /* negligible */ 0 : res.spillable_memory_bytes;
     return res;
 }
 
