@@ -2659,7 +2659,9 @@ void registerStorageRemote(StorageFactory & factory)
         /// These access checks validate the user-supplied definition and must run when it is first
         /// introduced: a `CREATE`, a user `ATTACH` query that carries a full definition, or a backup
         /// `RESTORE` (which brings in a new definition under the restoring user). When the table is
-        /// loaded from already-validated metadata that lives on this server (server startup),
+        /// loaded from already-validated metadata that lives on this server (server startup, or a
+        /// `Replicated` database replaying a definition it stored in Keeper, which shares `args.mode`
+        /// with an ordinary secondary-replica `CREATE` and so is carried on the context instead),
         /// re-running them is unnecessary. The inference still runs unconditionally when the structure
         /// was omitted, because then it is the only source of the table's columns.
         ///
@@ -2689,14 +2691,16 @@ void registerStorageRemote(StorageFactory & factory)
         /// they cannot access. Any other failure means the target could not be analyzed (and therefore
         /// cannot be read either, so there is nothing to leak), so the restore proceeds with the columns
         /// carried in the backup metadata.
-        const bool loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+        const bool loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode)
+            || args.query.attach_short_syntax
+            || args.getLocalContext()->isRecoveryFromStoredMetadata();
 
         ColumnsDescription columns = args.columns;
 
         /// The table-function target must be analyzed under the user's context whenever the definition is
         /// freshly introduced (`CREATE`, a full-definition `ATTACH`, or backup `RESTORE`) and can route
         /// back to a local shard; only loads of already-validated stored metadata (server startup, short
-        /// `ATTACH`) skip it.
+        /// `ATTACH`, `Replicated` database recovery) skip it.
         const bool analyze_table_function_target
             = has_local_shard && parsed.remote_table_function_ptr && !loading_from_existing_metadata;
 
