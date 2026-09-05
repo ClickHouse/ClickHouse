@@ -36,6 +36,21 @@ node3 = cluster.add_instance(
     macros={"shard": "shard2", "replica": "1"},
     with_zookeeper=True,
 )
+# `logs_to_keep` used to be 64-bit, so a config an older server accepted may hold a value above
+# `UInt32::max`. A dedicated node, because the config default is read once per server lifetime and
+# would leak into every other test on the node.
+node_logs_to_keep_overflow = cluster.add_instance(
+    "node_logs_to_keep_overflow",
+    main_configs=[
+        "configs/config.xml",
+        "configs/database_replicated_settings_overflow.xml",
+    ],
+    user_configs=["configs/users.xml"],
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    macros={"shard": "shard1", "replica": "1"},
+    stay_alive=True,
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -186,6 +201,93 @@ def test_database_replicated_settings_zero_logs_to_keep(started_cluster):
         + r"'{shard}', '{replica}') "
         + "SETTINGS logs_to_keep=0"
     )
+
+def test_logs_to_keep_from_config_is_clamped(started_cluster):
+    db_name = "test_" + get_random_string()
+
+    # The out-of-range config default must not prevent creating a database (which on a restart is
+    # exactly the metadata replay path); the effective value is clamped to `UInt32::max` and written
+    # to Keeper as such.
+    node_logs_to_keep_overflow.query(
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/test/{db_name}', "
+        + r"'{shard}', '{replica}')"
+    )
+
+    logs_to_keep_in_keeper = node_logs_to_keep_overflow.query(
+        f"SELECT value FROM system.zookeeper WHERE path = '/test/{db_name}' AND name = 'logs_to_keep'"
+    ).strip()
+    assert logs_to_keep_in_keeper == "4294967295"
+
+    assert node_logs_to_keep_overflow.contains_in_log(
+        "exceeds the maximum of 4294967295"
+    )
+
+    node_logs_to_keep_overflow.query(f"DROP DATABASE {db_name}")
+
+
+def test_logs_to_keep_replay_of_out_of_range_metadata(started_cluster):
+    node = node_logs_to_keep_overflow
+    db_name = "test_" + get_random_string()
+    metadata_file = f"/var/lib/clickhouse/metadata/{db_name}.sql"
+
+    # An older server accepted `logs_to_keep` above `UInt32::max` and wrote it into the database
+    # definition. Every path that writes the file now validates the value, so the legacy state is
+    # fabricated by editing the file directly - the same state an upgrade would find on disk.
+    node.query(
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/test/{db_name}', "
+        + r"'{shard}', '{replica}') "
+        + "SETTINGS logs_to_keep = 1000"
+    )
+    db_uuid = node.query(
+        f"SELECT uuid FROM system.databases WHERE name = '{db_name}'"
+    ).strip()
+
+    node.query(f"DETACH DATABASE {db_name}")
+
+    # A full-syntax ATTACH carries a user-written definition, so an out-of-range value is rejected
+    # the same way CREATE rejects it, not clamped. The rejection leaves the database detached.
+    assert "BAD_ARGUMENTS" in node.query_and_get_error(
+        f"ATTACH DATABASE {db_name} UUID '{db_uuid}' ENGINE=Replicated('/test/{db_name}', "
+        + r"'{shard}', '{replica}') "
+        + "SETTINGS logs_to_keep = 9999999999"
+    )
+
+    # 9999999999 rather than the 10000000000 this node's config holds, so the log assertion below
+    # cannot match the warnings caused by the config default. The `grep` guards against the stored
+    # formatting of the SETTINGS clause drifting away from the `sed` pattern.
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"sed -i 's/logs_to_keep = 1000/logs_to_keep = 9999999999/' {metadata_file}"
+            f" && grep -q 9999999999 {metadata_file}",
+        ],
+        user="root",
+    )
+
+    # The short syntax replays the metadata file: the value is clamped with a warning and the file
+    # stays intact, so the warning repeats on every replay rather than disappearing after one.
+    node.query(f"ATTACH DATABASE {db_name}")
+    assert node.contains_in_log(
+        "`logs_to_keep` of a Replicated database is 9999999999"
+    )
+    node.exec_in_container(
+        ["bash", "-c", f"grep -q 9999999999 {metadata_file}"], user="root"
+    )
+
+    # Server startup replays the same file through a different path (an internal query with the full
+    # definition, not the short syntax), and it must clamp too: rejecting would leave a server that
+    # is healthy today unable to load the database after an upgrade.
+    node.restart_clickhouse()
+    assert (
+        node.query(
+            f"SELECT count() FROM system.databases WHERE name = '{db_name}'"
+        ).strip()
+        == "1"
+    )
+
+    node.query(f"DROP DATABASE {db_name} SYNC")
+
 
 def test_create_database_replicated_with_default_args(started_cluster):
     db_name = "test_" + get_random_string()

@@ -254,6 +254,46 @@ GTEST_TEST(SettingFieldTimespan, SecondsParseFromStringChecksTheRange)
     ASSERT_THROW(seconds.parseFromString("1e30"), DB::Exception);
 }
 
+GTEST_TEST(SettingFieldNonZeroUInt32, RejectsZeroAndOutOfRange)
+{
+    /// In-range values, including both boundaries, are kept exactly.
+    ASSERT_EQ(SettingFieldNonZeroUInt32{}.value, 1u);
+    ASSERT_EQ(SettingFieldNonZeroUInt32(Field(UInt64(1))).value, 1u);
+    ASSERT_EQ(SettingFieldNonZeroUInt32(Field(UInt64(4294967295))).value, 4294967295u);
+
+    /// Zero violates the non-zero half of the type.
+    ASSERT_THROW(SettingFieldNonZeroUInt32(Field(UInt64(0))), DB::Exception);
+
+    /// Out-of-range values are rejected instead of wrapping mod 2^32. Before the check, 2^32 + 4
+    /// wrapped to 4 - for `logs_to_keep` of a Replicated database that made the cleanup thread
+    /// delete almost the whole DDL log.
+    ASSERT_THROW(SettingFieldNonZeroUInt32(Field(UInt64(4294967300ULL))), DB::Exception);
+    ASSERT_THROW(SettingFieldNonZeroUInt32(Field(Float64(5e9))), DB::Exception);
+
+    /// The same holds when the value arrives as a string, whether inside a Field or not. This is
+    /// the path a plain `SettingFieldUInt32` wraps on, because its parse does not check overflow.
+    ASSERT_THROW(SettingFieldNonZeroUInt32(Field(String("10000000000"))), DB::Exception);
+    ASSERT_THROW(SettingFieldNonZeroUInt32(Field(String("0"))), DB::Exception);
+    ASSERT_EQ(SettingFieldNonZeroUInt32(Field(String("4294967295"))).value, 4294967295u);
+
+    SettingFieldNonZeroUInt32 setting;
+    ASSERT_THROW(setting = Field(UInt64(4294967300ULL)), DB::Exception);
+    ASSERT_THROW(setting = Field(String("10000000000")), DB::Exception);
+    ASSERT_THROW(setting.parseFromString("4294967300"), DB::Exception);
+    ASSERT_THROW(setting.parseFromString("0"), DB::Exception);
+
+    /// Size suffixes still work on the checked path.
+    setting.parseFromString("1K");
+    ASSERT_EQ(setting.value, 1000u);
+
+    /// Like every other setting field type, construction from a Field leaves the field unchanged;
+    /// only assignment marks it changed.
+    ASSERT_FALSE(SettingFieldNonZeroUInt32(Field(UInt64(5))).changed);
+    SettingFieldNonZeroUInt32 assigned;
+    assigned = Field(UInt64(5));
+    ASSERT_TRUE(assigned.changed);
+}
+
 GTEST_TEST(SettingsTier, GetTierDecodesEveryEncoding)
 {
     using Flags = BaseSettingsHelpers::Flags;

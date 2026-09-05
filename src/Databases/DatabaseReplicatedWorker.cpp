@@ -19,6 +19,9 @@
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTRenameQuery.h>
 
+#include <algorithm>
+#include <limits>
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -202,7 +205,9 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     /// substitute metadata from the recreated database during recovery.
     Coordination::Stat max_log_ptr_stat;
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr", &max_log_ptr_stat));
-    logs_to_keep = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
+    /// `logs_to_keep` used to be 64-bit, so Keeper may contain values > `UInt32::max`. Clamp them to `UInt32::max`.
+    UInt64 keeper_logs_to_keep = parse<UInt64>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
+    logs_to_keep = static_cast<UInt32>(std::min(static_cast<UInt64>(std::numeric_limits<UInt32>::max()), keeper_logs_to_keep));
 
     UInt64 digest = 0;
     String digest_str;
@@ -227,7 +232,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
               our_log_ptr, max_log_ptr, local_digest, digest);
 
     bool is_new_replica = our_log_ptr == 0;
-    bool lost_according_to_log_ptr = our_log_ptr + logs_to_keep < max_log_ptr;
+    bool lost_according_to_log_ptr = isBeyondRetention(our_log_ptr, max_log_ptr, logs_to_keep);
     bool lost_according_to_digest = database->db_settings[DatabaseReplicatedSetting::check_consistency] && local_digest != digest;
 
     if (is_new_replica || lost_according_to_log_ptr || lost_according_to_digest)
@@ -795,7 +800,13 @@ bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name,
 {
     UInt32 entry_number = DDLTaskBase::getLogEntryNumber(entry_name);
     UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
-    return entry_number + logs_to_keep < max_log_ptr;
+    return isBeyondRetention(entry_number, max_log_ptr, logs_to_keep);
+}
+
+bool DatabaseReplicatedDDLWorker::isBeyondRetention(UInt32 entry_number, UInt32 max_log_ptr, UInt32 logs_to_keep)
+{
+    /// Overflow safe check that `entry_number` entry is far enough from the current head of the log.
+    return (entry_number < max_log_ptr) && (max_log_ptr - entry_number) > logs_to_keep;
 }
 
 bool DatabaseReplicatedDDLWorker::checkParentTableExists(const UUID & uuid) const

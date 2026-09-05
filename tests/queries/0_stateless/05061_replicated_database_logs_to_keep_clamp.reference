@@ -1,0 +1,5 @@
+log entries: 6
+full-syntax attach with an out-of-range value: BAD_ARGUMENTS
+attached: 1
+log entries after cleanup with an out-of-range value: 6
+log entries after cleanup with 4: 5

@@ -57,6 +57,7 @@ private:
 
     DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool dry_run) override;
     bool canRemoveQueueEntry(const String & entry_name, const Coordination::Stat & stat) override;
+    static bool isBeyondRetention(UInt32 entry_number, UInt32 max_log_ptr, UInt32 logs_to_keep);
 
     bool checkParentTableExists(const UUID & uuid) const;
 

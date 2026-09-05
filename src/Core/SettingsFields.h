@@ -641,6 +641,25 @@ private:
     void checkValueNonZero() const;
 };
 
+/// For quantities that are bounded by a 32-bit counter, where a wider value could only ever be
+/// narrowed on use. Unlike `SettingFieldUInt32`, an out-of-range value is rejected rather than
+/// silently wrapped: `readIntText` defaults to `DO_NOT_CHECK_OVERFLOW`, so `SettingFieldUInt32`
+/// turns "10000000000" into 1410065408, which is exactly the wrap this type exists to prevent.
+struct SettingFieldNonZeroUInt32 : public SettingFieldUInt32
+{
+public:
+    explicit SettingFieldNonZeroUInt32(UInt32 x = 1);
+    explicit SettingFieldNonZeroUInt32(const Field & f);
+
+    SettingFieldNonZeroUInt32 & operator=(UInt32 x);
+    SettingFieldNonZeroUInt32 & operator=(const Field & f);
+
+    void parseFromString(const String & str);
+
+private:
+    void checkValueNonZero() const;
+};
+
 bool stringToBool(const String & str);
 
 }
