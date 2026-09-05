@@ -13,7 +13,6 @@
 #include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/ColumnConst.h>
 #include <IO/WriteBufferFromString.h>
@@ -468,12 +467,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
-    const FilterDAGInfoPtr & row_level_filter,
-    const PrewhereInfoPtr & prewhere_info,
     const PrewhereExprSteps & mutation_steps,
-    const IndexReadTasks & index_read_tasks,
-    const ExpressionActionsSettings & actions_settings,
-    const MergeTreeReaderSettings & reader_settings,
+    const PrewhereExprInfo & prewhere_actions,
     bool with_subcolumns)
 {
     MergeTreeReadTaskColumns result;
@@ -542,20 +537,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     for (const auto & step : mutation_steps)
         add_step(*step);
 
-    if (prewhere_info || row_level_filter || !index_read_tasks.empty())
-    {
-        auto prewhere_actions = MergeTreeSelectProcessor::getPrewhereActions(
-            row_level_filter,
-            prewhere_info,
-            index_read_tasks,
-            actions_settings,
-            reader_settings.enable_multiple_prewhere_read_steps,
-            reader_settings.force_short_circuit_execution,
-            &storage_snapshot->metadata->getColumns());
-
-        for (const auto & step : prewhere_actions.steps)
-            add_step(*step);
-    }
+    for (const auto & step : prewhere_actions.steps)
+        add_step(*step);
 
     /// Remove columns read in prewehere from the list of columns to read.
     Names post_column_names;
@@ -579,12 +562,8 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
         data_part_info_for_reader,
         storage_snapshot,
         required_columns,
-        /*row_level_filter=*/ nullptr,
-        /*prewhere_info=*/ nullptr,
         mutation_steps,
-        /*index_read_tasks*/ {},
-        /*actions_settings=*/ {},
-        /*reader_settings=*/ MergeTreeReaderSettings::createFromSettings(),
+        /*prewhere_actions=*/ {},
         storage_snapshot->storage.supportsSubcolumns());
 }
 
