@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromSelector.h>
 
+#include <DataTypes/IDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -15,6 +16,21 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
+    bool clipTimestampRangeToStorageType(TimestampType & min_time, TimestampType & max_time, const DataTypePtr & timestamp_data_type)
+    {
+        WhichDataType which_data_type{timestamp_data_type};
+        if (!(which_data_type.isDateTime() || which_data_type.isUInt32()))
+            return true;
+
+        if (max_time < TimestampType{0})
+            return false;
+
+        if (min_time < TimestampType{0})
+            min_time = TimestampType{0};
+
+        return true;
+    }
+
     SQLQueryPiece fromRangeSelector(std::string_view instant_selector_text,
                                     const Node * node,
                                     ConverterContext & context)
@@ -37,6 +53,9 @@ namespace
 
         TimestampType min_time = node_range.start_time - node_range.window + 1;
         TimestampType max_time = node_range.end_time;
+
+        if (!clipTimestampRangeToStorageType(min_time, max_time, context.timestamp_data_type))
+            return SQLQueryPiece{node, ResultType::RANGE_VECTOR, StoreMethod::EMPTY};
 
         builder.from_table_function = makeASTFunction(
             "timeSeriesSelector",

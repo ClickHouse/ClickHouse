@@ -76,6 +76,36 @@ def test_insert_with_metrics_metadata():
     ) == TSV([["100"]])
 
 
+def test_promql_at_timestamp_with_supported_timestamp_types():
+    timestamp_types = [
+        ("u32", "UInt32", "4294967196", "0", "0"),
+        ("datetime", "DateTime", "toDateTime(4294967196)", "toDateTime(0)", "0"),
+        ("datetime64", "DateTime64(3)", "toDateTime64(-100, 3)", "toDateTime64(0, 3)", "1"),
+    ]
+
+    for suffix, timestamp_type, wrapped_timestamp, epoch_timestamp, expected_negative_count in timestamp_types:
+        table_name = f"prometheus_{suffix}"
+        try:
+            node.query(
+                f"CREATE TABLE {table_name} (time_series Array(Tuple({timestamp_type}, Float64))) ENGINE=TimeSeries"
+            )
+            node.query(
+                f"INSERT INTO {table_name} (metric_name, tags, time_series) VALUES"
+                f" ('metric', {{'job': 'test'}}, [({wrapped_timestamp}, 1), ({epoch_timestamp}, 2)])"
+            )
+
+            assert node.query(
+                f"SELECT count() FROM prometheusQuery({table_name}, 'metric @ -100', 0)"
+            ) == TSV([[expected_negative_count]])
+
+            # The default five-minute lookback crosses the Unix epoch at @ 100.
+            assert node.query(
+                f"SELECT count() FROM prometheusQuery({table_name}, 'metric @ 100', 0)"
+            ) == TSV([["1"]])
+        finally:
+            node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+
 def insert_time_series():
     """Helper for the SELECT tests: a series with its family's metadata, a series whose family has no
     metadata, and a metadata-only family with no series."""
