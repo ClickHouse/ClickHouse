@@ -416,6 +416,24 @@ TEST(RequestQueue, FairToLasSwapPreservesCorrection)
     EXPECT_EQ(f.attainedOf(a), 100);                     // corrected cost preserved across the swap, not 10
 }
 
+/// las: the lazy pop-time re-key must see a query's REAL service (attained + pending correction), not
+/// just attained_cost. A query that badly under-estimated a finished request has a large pending
+/// correction; its next request must be re-keyed to its true (higher) level and deferred behind a
+/// genuinely lighter query, not run ahead of it. Regression for the re-key ignoring cost_correction.
+TEST(RequestQueue, LasRekeySeesPendingCorrection)
+{
+    Fixture f(SchedulerAlgorithm::Las);
+    auto * a = f.makeQuery();
+    auto * c = f.makeQuery();
+    f.enqueue(1, a, 10);   // A: enqueued first, keyed at level(attained=0)
+    f.enqueue(2, c, 10);   // C: keyed at level(attained=0); ties with A → A sorts first by seq
+    // A's finished request really cost far more than estimated → big pending correction on A.
+    f.addCorrection(a, /*real=*/64 * 1024 * 1024, /*estimate=*/10);
+    // With the fix A's front request re-keys to its true (high) level and defers, so C (truly
+    // least-attained) is served first; without it A would pop first on the level-0 seq tie.
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{2, 1}));
+}
+
 /// Cancellation from the middle works for both algorithms; counters update.
 TEST(RequestQueue, CancelFromMiddle)
 {

@@ -327,7 +327,14 @@ public:
             auto * ctx = request->scheduling_context;
             if (ctx)
             {
-                double real_level = levelOf(ctx->getResourceState(leaf).attained_cost);
+                // Re-key against the query's REAL cumulative service: attained_cost plus the pending
+                // real-vs-estimate correction not yet folded into it (peeked here, consumed below at
+                // the charge — same non-mutating peek `fair` uses for its weight-lowering threshold).
+                // Without the correction, a query that badly under-estimated a finished request would
+                // be re-keyed one estimate too low and could run ahead of a genuinely lighter query,
+                // breaking least-attained-service ordering on the first request after an estimate error.
+                auto & state = ctx->getResourceState(leaf);
+                double real_level = levelOf(state.attained_cost + state.cost_correction.load(std::memory_order_relaxed));
                 if (real_level > request->scheduling_key.first)
                 {
                     requests.erase(it);
