@@ -899,69 +899,8 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                 auto extractor_it = nested_extractors.find(search_nested);
                 if (extractor_it == nested_extractors.end())
                 {
-                    /// Collect the requested subcolumns into a single `Nested` type and reshape the decoded
-                    /// column to it, so `Nested::flatten` (used by the extractor) recognises and splits it
-                    /// — mirroring how the library reader reads the field with this type hint.
-                    NamesAndTypesList nested_columns;
-                    for (const auto & name_and_type : header.getNamesAndTypesList())
-                    {
-                        /// A dotted name that is a decoded field itself is read from that field, so it is
-                        /// no sibling of this root and must not shape the type the root is reshaped to.
-                        String lookup = name_and_type.name;
-                        if (case_insensitive)
-                            boost::to_lower(lookup);
-                        if (name_to_index.contains(lookup))
-                            continue;
-
-                        if (name_and_type.name.starts_with(nested_table_name + "."))
-                        {
-                            nested_columns.push_back(name_and_type);
-                            continue;
-                        }
-                        if (!case_insensitive)
-                            continue;
-
-                        /// Siblings of one root may each spell it differently. `Nested::collect` groups
-                        /// by the literal root name, so give them all this root's spelling.
-                        const String root = Nested::extractTableName(name_and_type.name);
-                        if (root.size() < name_and_type.name.size() && boost::to_lower_copy(root) == search_nested)
-                            nested_columns.emplace_back(
-                                nested_table_name + name_and_type.name.substr(root.size()), name_and_type.type);
-                    }
-
                     auto & src = decoded[nested_it->second];
                     ColumnWithTypeAndName nested_column(src.column, src.type, nested_table_name);
-
-                    /// A top-level struct goes to the extractor as-is, which unwraps and flattens it
-                    /// internally. Skip the reshape only for that shape: on a scalar-subcolumn set
-                    /// `Nested::collect` yields the leaf type, so casting a whole struct to it throws
-                    /// `toInt32(Tuple)`. Every other root (Array, Map, ...) still needs the reshape.
-                    if (!typeid_cast<const DataTypeTuple *>(removeNullable(nested_column.type).get()))
-                    {
-                        /// `Nested::flatten` cannot split a `Nullable(Tuple)`, and casting one onto the
-                        /// non-nullable Nested tuple fails on struct-level nulls, so unwrap first,
-                        /// then reshape to the collected Nested type.
-                        if (const auto * arr_type = typeid_cast<const DataTypeArray *>(nested_column.type.get());
-                            arr_type && typeid_cast<const DataTypeTuple *>(removeNullable(arr_type->getNestedType()).get()))
-                        {
-                            const auto & arr_col = assert_cast<const ColumnArray &>(*nested_column.column);
-                            auto unwrapped = Nested::unwrapNullableTuple(
-                                {arr_col.getDataPtr(), arr_type->getNestedType(), nested_table_name});
-                            nested_column.column = ColumnArray::create(unwrapped.column, arr_col.getOffsetsPtr());
-                            nested_column.type = std::make_shared<DataTypeArray>(unwrapped.type);
-                        }
-
-                        const auto collected = Nested::collect(nested_columns);
-                        if (!collected.empty())
-                        {
-                            const DataTypePtr & nested_table_type = collected.front().type;
-                            if (case_insensitive)
-                                nested_column.type = alignStructFieldNamesCaseInsensitive(nested_column.type, nested_table_type);
-                            nested_column = realignStructFieldsToRequested(std::move(nested_column), nested_table_type);
-                            nested_column.column = castColumn(nested_column, nested_table_type);
-                            nested_column.type = nested_table_type;
-                        }
-                    }
 
                     auto block = std::make_shared<Block>(Block({std::move(nested_column)}));
                     auto helper = std::make_shared<NestedColumnExtractHelper>(*block, case_insensitive);

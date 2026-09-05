@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstring>
 #include <memory>
 
@@ -9,15 +10,12 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeNested.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnConst.h>
@@ -130,57 +128,6 @@ std::string extractTableName(const std::string & nested_name)
 }
 
 
-/// Distributes a parent struct null map onto one Tuple element. The result type depends only on the
-/// element's declared type, never on the null map contents, so an empty sample block plans what a
-/// null-carrying block yields. The setting is applied later, by the terminal policy, not here.
-static std::pair<ColumnPtr, DataTypePtr> distributeParentNullMapToElement(
-    const ColumnPtr & elem_col,
-    const DataTypePtr & elem_type,
-    const ColumnPtr & parent_null_map_ptr,
-    bool parent_has_nulls)
-{
-    if (elem_type->canBeInsideNullable())
-        return {ColumnNullable::create(elem_col, parent_null_map_ptr), makeNullable(elem_type)};
-
-    /// A non-nullable `LowCardinality(T)` cannot sit inside `Nullable`; it represents NULL only once
-    /// promoted to `LowCardinality(Nullable(T))`. Promoting before the null-free early return below
-    /// keeps the result type driven by the declared schema rather than by the null map contents.
-    if (elem_type->lowCardinality() && removeLowCardinality(elem_type)->canBeInsideNullable())
-    {
-        auto mutable_col = assert_cast<const ColumnLowCardinality &>(*elem_col).cloneNullable();
-        if (parent_has_nulls)
-        {
-            const auto & null_map = assert_cast<const ColumnUInt8 &>(*parent_null_map_ptr).getData();
-            applyParentNullMapToExtractedSubcolumn(*mutable_col, null_map, 0, 0);
-        }
-        return {std::move(mutable_col), makeNullableOrLowCardinalityNullableSafe(elem_type)};
-    }
-
-    if (!parent_has_nulls)
-        return {elem_col, elem_type};
-
-    if (canContainNull(*elem_type))
-    {
-        /// Nullable / Variant / Dynamic / LowCardinality(Nullable): mark the parent-NULL rows in the
-        /// element's own null representation.
-        const auto & null_map = assert_cast<const ColumnUInt8 &>(*parent_null_map_ptr).getData();
-        auto mutable_col = IColumn::mutate(elem_col);
-        applyParentNullMapToExtractedSubcolumn(*mutable_col, null_map, 0, 0);
-        return {std::move(mutable_col), elem_type};
-    }
-
-    /// Array, Map, etc. cannot represent NULL. Keep the type; filter out the parent-NULL rows and
-    /// expand back so those positions carry type defaults (a no-op type-wise, so schema planning is
-    /// stable).
-    const auto & nm = assert_cast<const ColumnUInt8 &>(*parent_null_map_ptr).getData();
-    IColumn::Filter keep_mask(nm.size());
-    for (size_t j = 0; j < nm.size(); ++j)
-        keep_mask[j] = !nm[j];
-    auto mutable_col = IColumn::mutate(elem_col->filter(keep_mask, -1));
-    mutable_col->expand(keep_mask, /*inverted=*/false);
-    return {std::move(mutable_col), elem_type};
-}
-
 ColumnWithTypeAndName unwrapNullableTuple(const ColumnWithTypeAndName & column)
 {
     const auto * type_nullable = typeid_cast<const DataTypeNullable *>(column.type.get());
@@ -191,27 +138,59 @@ ColumnWithTypeAndName unwrapNullableTuple(const ColumnWithTypeAndName & column)
     if (!tuple_type)
         return column;
 
-    /// An empty `Nullable(Tuple())` has no elements to descend into; `ColumnTuple::create` rejects an
-    /// empty column list, so just drop the outer `Nullable` and return a plain empty `Tuple()`.
-    if (tuple_type->getElements().empty())
-        return {ColumnTuple::create(column.column->size()), std::make_shared<DataTypeTuple>(DataTypes{}), column.name};
-
     const auto & col_nullable = assert_cast<const ColumnNullable &>(*column.column);
 
     const auto & null_map_data = col_nullable.getNullMapData();
     bool has_nulls = !memoryIsZero(null_map_data.data(), 0, null_map_data.size());
 
-    /// Propagate the struct null map to each Tuple element (schema-driven; see the helper above).
+    if (!has_nulls)
+    {
+        /// No actual nulls — just strip the Nullable wrapper.
+        return {col_nullable.getNestedColumnPtr(), type_nullable->getNestedType(), column.name};
+    }
+
+    /// Propagate the struct null map to each Tuple element.
     const auto & inner_tuple = assert_cast<const ColumnTuple &>(col_nullable.getNestedColumn());
     const auto & null_map_ptr = col_nullable.getNullMapColumnPtr();
     Columns new_elements;
     DataTypes new_types;
     for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
     {
-        auto [c, t] = distributeParentNullMapToElement(
-            inner_tuple.getColumnPtr(i), tuple_type->getElement(i), null_map_ptr, has_nulls);
-        new_elements.push_back(std::move(c));
-        new_types.push_back(std::move(t));
+        auto elem_col = inner_tuple.getColumnPtr(i);
+        auto elem_type = tuple_type->getElement(i);
+        if (elem_type->isNullable())
+        {
+            /// Element already Nullable — merge null maps (struct null OR element null).
+            const auto & existing = assert_cast<const ColumnNullable &>(*elem_col);
+            auto merged = ColumnUInt8::create(null_map_ptr->size());
+            const auto & s = assert_cast<const ColumnUInt8 &>(*null_map_ptr).getData();
+            const auto & e = existing.getNullMapData();
+            auto & m = merged->getData();
+            for (size_t j = 0; j < s.size(); ++j)
+                m[j] = s[j] | e[j];
+            new_elements.push_back(ColumnNullable::create(existing.getNestedColumnPtr(), std::move(merged)));
+            new_types.push_back(elem_type);
+        }
+        else if (elem_type->canBeInsideNullable())
+        {
+            new_elements.push_back(ColumnNullable::create(elem_col, null_map_ptr));
+            new_types.push_back(std::make_shared<DataTypeNullable>(elem_type));
+        }
+        else
+        {
+            /// Array, Map, etc. — replace values at null positions with type defaults.
+            const auto & nm = col_nullable.getNullMapData();
+            auto mutable_col = elem_col->cloneEmpty();
+            for (size_t j = 0; j < elem_col->size(); ++j)
+            {
+                if (nm[j])
+                    mutable_col->insertDefault();
+                else
+                    mutable_col->insertFrom(*elem_col, j);
+            }
+            new_elements.push_back(std::move(mutable_col));
+            new_types.push_back(elem_type);
+        }
     }
 
     auto result_type = tuple_type->hasExplicitNames() ? std::make_shared<DataTypeTuple>(std::move(new_types), tuple_type->getElementNames())
@@ -678,73 +657,6 @@ bool isSubcolumnOfNested(const String & column_name, const ColumnsDescription & 
 
 }
 
-/// Type of the element `Nested::flatten` would name `<parent>.<element_name>`. Only declared element
-/// names are candidates, since a virtual subcolumn name such as `null` is never a flattened column,
-/// and the lookup goes through `type` rather than its unwrapped form so that a nullable ancestor
-/// still promotes the element.
-static DataTypePtr tryGetDeclaredElementType(
-    const DataTypePtr & type, std::string_view element_name, bool case_insensitive)
-{
-    const DataTypePtr unwrapped = removeNullable(type);
-    const auto * type_tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get());
-    if (!type_tuple || !type_tuple->hasExplicitNames())
-        return nullptr;
-
-    /// `Block::findByName` takes the FIRST case-insensitive match, so scan in declaration order.
-    for (const auto & declared_name : type_tuple->getElementNames())
-        if (case_insensitive ? boost::iequals(declared_name, element_name) : declared_name == element_name)
-            return type->tryGetSubcolumnType(declared_name);
-
-    return nullptr;
-}
-
-/// Declared type of `subcolumn_path` inside `root_type`. Each component is resolved on its own, the
-/// way `extractColumn` cuts the flattened name at the first dot, so it can only match the element the
-/// extractor selects.
-static DataTypePtr resolveDeclaredSubcolumnType(
-    const DataTypePtr & root_type, const String & subcolumn_path, bool case_insensitive)
-{
-    DataTypePtr current = root_type;
-    for (std::string_view rest = subcolumn_path; !rest.empty() && current;)
-    {
-        const auto [head, tail] = Nested::splitName(rest);
-        current = tryGetDeclaredElementType(current, head, case_insensitive);
-        rest = tail;
-    }
-    return current;
-}
-
-/// A `Nullable(Tuple(...))` element looks identical whether the wrapping was synthesized from an
-/// outer struct null map or declared in the schema, so `declared_subcolumn_type` is the arbiter and
-/// not the null map: `Nullable` keeps it nullable, a plain `Tuple` drops the wrapper. Dropping
-/// materializes type defaults first, since `ColumnNullable` may hold anything under a NULL row.
-static ColumnWithTypeAndName applyExtractedSubcolumnNullablePolicy(
-    ColumnWithTypeAndName column, const DataTypePtr & declared_subcolumn_type)
-{
-    const auto * type_nullable = typeid_cast<const DataTypeNullable *>(column.type.get());
-    if (!type_nullable)
-        return column;
-
-    const auto & nested_type = type_nullable->getNestedType();
-    if (!isTuple(nested_type))
-        return column;
-
-    /// Genuine schema-level `Nullable(Tuple)` descendant (or synthetic with the setting on): the
-    /// declared subcolumn type is `Nullable`, so keep the column nullable regardless of the setting.
-    if (declared_subcolumn_type)
-    {
-        if (declared_subcolumn_type->isNullable())
-            return column;
-    }
-    else if (canExtractedSubcolumnsBeInsideNullable(nested_type))
-    {
-        return column;
-    }
-
-    const auto & col_nullable = assert_cast<const ColumnNullable &>(*column.column);
-    return {col_nullable.getNestedColumnWithDefaultOnNull(), nested_type, column.name};
-}
-
 NestedColumnExtractHelper::NestedColumnExtractHelper(const Block & block_, bool case_insentive_)
     : block(block_)
     , case_insentive(case_insentive_)
@@ -755,71 +667,32 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(co
     if (block.has(column_name, case_insentive))
         return {block.getByName(column_name, case_insentive)};
 
-    auto nested_names = Nested::splitName(column_name);
+    const auto nested_names = Nested::splitName(column_name);
+    const auto * root = block.findByName(nested_names.first, case_insentive);
+    if (!root)
+        return {};
+
+    String subcolumn_name = nested_names.second;
     if (case_insentive)
     {
-        boost::to_lower(nested_names.first);
-        boost::to_lower(nested_names.second);
+        /// The root is `Block::findByName`'s first case-insensitive match, so map the requested
+        /// spelling to a declared one in that same first-match order.
+        const auto declared_names = root->type->getSubcolumnNames();
+        const auto declared_it = std::find_if(
+            declared_names.begin(),
+            declared_names.end(),
+            [&](const auto & declared_name) { return boost::iequals(declared_name, subcolumn_name); });
+        if (declared_it == declared_names.end())
+            return {};
+        subcolumn_name = *declared_it;
     }
-    if (!block.has(nested_names.first, case_insentive))
+
+    auto subcolumn_type = root->type->tryGetSubcolumnType(subcolumn_name);
+    if (!subcolumn_type)
         return {};
 
-    const auto & root_column = block.getByName(nested_names.first, case_insentive);
-
-    /// Arbiter for the terminal `applyExtractedSubcolumnNullablePolicy`, computed from the declared
-    /// type here rather than there because only this scope has the root column.
-    const DataTypePtr declared_subcolumn_type
-        = resolveDeclaredSubcolumnType(root_column.type, nested_names.second, case_insentive);
-
-    if (!nested_tables.contains(nested_names.first))
-    {
-        /// `Nested::flatten` only descends into a plain `Tuple`, so a `Nullable(Tuple(...))` parent
-        /// (e.g. from the Arrow reader) would drop the subcolumn and yield defaults. Unwrap to
-        /// Tuple(Nullable(...)) first, propagating the struct null map to each element.
-        ColumnsWithTypeAndName columns = {Nested::unwrapNullableTuple(root_column)};
-        nested_tables[nested_names.first] = std::make_shared<Block>(Nested::flatten(columns));
-    }
-
-    return extractColumn(column_name, nested_names.first, nested_names.second, declared_subcolumn_type);
-}
-
-std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(
-    const String & original_column_name,
-    const String & column_name_prefix,
-    const String & column_name_suffix,
-    const DataTypePtr & declared_subcolumn_type)
-{
-    auto table_iter = nested_tables.find(column_name_prefix);
-    if (table_iter == nested_tables.end())
-    {
-        return {};
-    }
-
-    auto & nested_table = table_iter->second;
-    auto nested_names = Nested::splitName(column_name_suffix);
-    auto new_column_name_prefix = Nested::concatenateName(column_name_prefix, nested_names.first);
-    if (nested_names.second.empty())
-    {
-        if (auto * column_ref = nested_table->findByName(new_column_name_prefix, case_insentive))
-        {
-            ColumnWithTypeAndName column = *column_ref;
-            if (case_insentive)
-                column.name = original_column_name;
-            return {applyExtractedSubcolumnNullablePolicy(std::move(column), declared_subcolumn_type)};
-        }
-
-        return {};
-    }
-
-    if (!nested_table->has(new_column_name_prefix, case_insentive))
-    {
-        return {};
-    }
-
-    ColumnsWithTypeAndName columns = {Nested::unwrapNullableTuple(nested_table->getByName(new_column_name_prefix, case_insentive))};
-    Block sub_block(columns);
-    nested_tables[new_column_name_prefix] = std::make_shared<Block>(Nested::flatten(sub_block));
-    return extractColumn(original_column_name, new_column_name_prefix, nested_names.second, declared_subcolumn_type);
+    return ColumnWithTypeAndName{
+        root->type->getSubcolumn(subcolumn_name, root->column), std::move(subcolumn_type), column_name};
 }
 
 DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements)

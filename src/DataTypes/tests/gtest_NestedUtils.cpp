@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnTuple.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <Common/FieldVisitorToString.h>
@@ -74,8 +73,8 @@ GTEST_TEST(NestedUtils, extractSubcolumnFromNullableTuplePreservesTypeOnEmptyBlo
 
     NestedColumnExtractHelper extractor(block, /*case_insentive_=*/false);
 
-    /// Extracting the TUPLE element t.a stays plain Tuple(x UInt32, y String) with the setting off
-    /// (default-row semantics on parent NULL), NOT nullable leaves.
+    /// Extracting the TUPLE element t.a stays plain Tuple(x UInt32, y String) with the setting off,
+    /// NOT nullable leaves.
     auto col_a = extractor.extractColumn("t.a");
     ASSERT_TRUE(col_a.has_value());
     ASSERT_EQ(col_a->type->getName(), "Tuple(x UInt32, y String)");
@@ -96,9 +95,9 @@ GTEST_TEST(NestedUtils, extractSubcolumnFromNullableTuplePreservesTypeOnEmptyBlo
     ASSERT_EQ(col_b->type->getName(), "Nullable(String)");
 }
 
-/// Data-carrying counterpart of the previous test: the parent-NULL row of an extracted plain Tuple
-/// must hold type defaults, not whatever the child columns happen to carry under a NULL.
-GTEST_TEST(NestedUtils, extractTupleElementFromNullableTupleWithNullRowGivesDefaults)
+/// Extracting an element of a NULL-carrying parent must give the same column as extracting it from
+/// an empty one gives a type: a null map in the data cannot change the shape of the result.
+GTEST_TEST(NestedUtils, extractSubcolumnFromNullableTupleWithNullRowKeepsPlannedType)
 {
     DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
     DataTypePtr string_type = std::make_shared<DataTypeString>();
@@ -109,9 +108,6 @@ GTEST_TEST(NestedUtils, extractTupleElementFromNullableTupleWithNullRowGivesDefa
         DataTypes{inner_tuple, string_type}, Strings{"a", "b"});
     DataTypePtr nullable_tuple = std::make_shared<DataTypeNullable>(outer_tuple);
 
-    /// The NULL row's nested payload is deliberately non-default ((99,'zz'),'Z'): `ColumnNullable`
-    /// does not guarantee the payload under a NULL row is the type default, so only a
-    /// default-materializing unwrap makes row 1 read as (0,'').
     auto column = nullable_tuple->createColumn();
     column->insert(Tuple{Tuple{UInt64(10), String("aa")}, String("B")});
     column->insert(Tuple{Tuple{UInt64(99), String("zz")}, String("Z")});
@@ -126,20 +122,27 @@ GTEST_TEST(NestedUtils, extractTupleElementFromNullableTupleWithNullRowGivesDefa
     ASSERT_TRUE(col_a.has_value());
     ASSERT_EQ(col_a->type->getName(), "Tuple(x UInt32, y String)");
     ASSERT_EQ(col_a->column->size(), 2u);
-
     Field row0;
     Field row1;
     col_a->column->get(0, row0);
     col_a->column->get(1, row1);
     ASSERT_EQ(applyVisitor(FieldVisitorToString(), row0), "(10, 'aa')");
-    /// Parent-NULL row must be the tuple default, not garbage.
-    ASSERT_EQ(applyVisitor(FieldVisitorToString(), row1), "(0, '')");
+    /// A `Tuple` cannot represent NULL itself, so the parent-NULL row keeps the payload the parent
+    /// holds under it. What that row contains is `NullableSubcolumnCreator`'s contract, identical to
+    /// the one a direct `SELECT t.a` gets, and not something this class decides.
+    ASSERT_EQ(applyVisitor(FieldVisitorToString(), row1), "(99, 'zz')");
+
+    /// The parent NULL reaches a scalar leaf as a real NULL.
+    auto col_ax = extractor.extractColumn("t.a.x");
+    ASSERT_TRUE(col_ax.has_value());
+    ASSERT_EQ(col_ax->type->getName(), "Nullable(UInt32)");
+    ASSERT_FALSE(col_ax->column->isNullAt(0));
+    ASSERT_TRUE(col_ax->column->isNullAt(1));
 }
 
 /// An element DECLARED `Nullable(Tuple(...))` is genuinely nullable, so its real NULL rows must
 /// survive extraction even with `allow_nullable_tuple_in_extracted_subcolumns` off (its default
-/// here), unlike a synthetic wrapping from an outer struct null map, which the setting governs.
-/// The declared subcolumn type of the root, not the null map contents, tells the two apart.
+/// here), unlike a wrapping synthesized from an outer struct null map, which the setting governs.
 GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullable)
 {
     DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
@@ -172,9 +175,8 @@ GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullable)
     ASSERT_FALSE(col_a->column->isNullAt(2));
 }
 
-/// Readers lowercase the requested name before it reaches the extractor, while the declared-type
-/// lookup matches case-sensitively, so a mixed-case declared element (`A`) requested as `a` must
-/// still be found, or the genuinely nullable descendant is wrongly treated as synthetic.
+/// Readers lowercase the requested name before it reaches the extractor, while subcolumn names are
+/// case-sensitive, so a mixed-case declared element (`A`) requested as `a` must still be found.
 GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullableCaseInsensitive)
 {
     DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
@@ -206,8 +208,7 @@ GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullableCase
 }
 
 /// Mirror of the previous test for the opposite spelling: `StorageHive::read` does NOT lowercase the
-/// request, so a non-lowercased suffix (`A`) reaches the lookup against a declared lowercase `a`.
-/// The fallback must fold BOTH sides, not just the declared name.
+/// request, so a non-lowercased suffix (`A`) reaches the resolver against a declared lowercase `a`.
 GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullableCaseInsensitiveRawSpelling)
 {
     DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
@@ -238,10 +239,9 @@ GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullableCase
     ASSERT_FALSE(col_a->column->isNullAt(2));
 }
 
-/// An empty Nullable(Tuple()) has no elements to descend into. ColumnTuple::create rejects an empty
-/// column list, so unwrapping such a parent must not construct one; extracting a missing subcolumn
-/// like `t.x` must simply return no column instead of raising a LOGICAL_ERROR. Regression for the
-/// `Nullable(Tuple())` + missing-columns Arrow/ORC read reported on PR #109741.
+/// An empty Nullable(Tuple()) has no elements, so extracting `t.x` must simply return no column
+/// rather than raising. Regression for the `Nullable(Tuple())` + missing-columns Arrow/ORC read
+/// reported on PR #109741.
 GTEST_TEST(NestedUtils, extractSubcolumnFromEmptyNullableTupleDoesNotThrow)
 {
     DataTypePtr empty_tuple = std::make_shared<DataTypeTuple>(DataTypes{});
@@ -297,9 +297,7 @@ GTEST_TEST(NestedUtils, convertToSubcolumnsPrefersColumnOverSubcolumn)
 }
 
 /// A `LowCardinality(T)` element cannot sit inside `Nullable`, so the parent struct null map has to
-/// go into its dictionary as `LowCardinality(Nullable(T))`. That is the same policy the direct
-/// subcolumn path applies via `makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe`, and
-/// `applyParentNullMapToExtractedSubcolumn` accepts exactly that representation.
+/// go into its dictionary as `LowCardinality(Nullable(T))`.
 GTEST_TEST(NestedUtils, extractLowCardinalityLeafFromNullableTupleBecomesLowCardinalityNullable)
 {
     DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
@@ -350,8 +348,7 @@ GTEST_TEST(NestedUtils, extractLowCardinalityLeafFromNullableTupleBecomesLowCard
 }
 
 /// Element names only have to be unique case-sensitively, so under case-insensitive extraction one
-/// request matches both `A` and `a`. The column comes from `Block::findByName`'s first such match,
-/// so the declared type must be resolved in that same order to describe the same element.
+/// request matches both `A` and `a`. Declaration order decides, as it does for a block column.
 GTEST_TEST(NestedUtils, extractCaseCollidingElementPairsColumnWithItsOwnDeclaredType)
 {
     DataTypePtr nullable_uint = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>());
@@ -379,7 +376,7 @@ GTEST_TEST(NestedUtils, extractCaseCollidingElementPairsColumnWithItsOwnDeclared
     ASSERT_TRUE(col.has_value());
 
     /// `A` wins the case-insensitive lookup, so the extracted type must be `A`'s nullable one and
-    /// its real NULL row must stay NULL, rather than being unwrapped using `a`'s non-nullable type.
+    /// its real NULL row must stay NULL, rather than `a`'s non-nullable one.
     ASSERT_EQ(col->type->getName(), "Nullable(Tuple(b Nullable(UInt32)))");
     ASSERT_EQ(col->column->size(), 3u);
     ASSERT_FALSE(col->column->isNullAt(0));

@@ -92,19 +92,20 @@ SELECT `c0.a`, isNull(`c0.a`), `c0.c` FROM file(currentDatabase() || '_04401_ci.
 (10)	0	p
 \N	1	q
 (30)	0	r
--- Only a top-level struct may skip the Nested reshape. A Map root still needs it: with the requested
--- structure naming just the subcolumn, skipping the reshape makes the extractor find no column and
--- `input_format_arrow_allow_missing_columns` then yields a silent empty array instead of this error.
+-- A Map root is addressed the same way, so its virtual `keys`/`values` subcolumns are readable
+-- whether or not the requested structure happens to name both of them.
 INSERT INTO FUNCTION file(currentDatabase() || '_04401_map.arrow', 'Arrow') SELECT map('a', 1, 'b', 2) AS m;
 SELECT `m.keys`, `m.values` FROM file(currentDatabase() || '_04401_map.arrow', 'Arrow');
 ['a','b']	[1,2]
-SELECT `m.keys` FROM file(currentDatabase() || '_04401_map.arrow', 'Arrow', '`m.keys` Array(String)'); -- { serverError TYPE_MISMATCH }
+SELECT `m.keys` FROM file(currentDatabase() || '_04401_map.arrow', 'Arrow', '`m.keys` Array(String)');
+['a','b']
 INSERT INTO FUNCTION file(currentDatabase() || '_04401_map.arrowstream', 'ArrowStream') SELECT map('a', 1, 'b', 2) AS m;
 SELECT `m.keys`, `m.values` FROM file(currentDatabase() || '_04401_map.arrowstream', 'ArrowStream');
 ['a','b']	[1,2]
-SELECT `m.keys` FROM file(currentDatabase() || '_04401_map.arrowstream', 'ArrowStream', '`m.keys` Array(String)'); -- { serverError TYPE_MISMATCH }
+SELECT `m.keys` FROM file(currentDatabase() || '_04401_map.arrowstream', 'ArrowStream', '`m.keys` Array(String)');
+['a','b']
 -- Sibling subcolumns whose requested root spellings differ are the same root under case-insensitive
--- matching, so the reshaped type has to cover all of them, not just the first spelling.
+-- matching, and each is resolved against that root on its own.
 INSERT INTO FUNCTION file(currentDatabase() || '_04401_cisib.arrow', 'Arrow')
 SELECT CAST([(1, 'a'), (2, 'b')], 'Array(Tuple(x UInt32, y String))') AS c0;
 SELECT `C0.x`, `c0.y` FROM file(currentDatabase() || '_04401_cisib.arrow', 'Arrow', '`C0.x` Array(UInt32), `c0.y` Array(String)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
@@ -123,22 +124,58 @@ INSERT INTO FUNCTION file(currentDatabase() || '_04401_coll.arrow', 'Arrow')
 SELECT CAST([('nested-x', 'nested-y')], 'Array(Tuple(x String, y String))') AS c0, [7]::Array(UInt32) AS `c0.x`;
 SELECT `c0.x`, `c0.y` FROM file(currentDatabase() || '_04401_coll.arrow', 'Arrow', '`c0.x` Array(UInt32), `c0.y` Array(String)');
 [7]	['nested-y']
--- A tuple element name may itself contain a dot, so `c0.a.b` is both the element `a.b` and the path
--- from `a` to `b`. The extractor always cuts at the first dot and takes the path, so the declared
--- type used as the nullability arbiter has to be resolved the same way; a full-path subcolumn lookup
--- binds to the element instead and its non-nullable type then collapses the genuine NULL.
+-- A tuple element name may itself contain a dot, so `c0.a.b` names both the element `a.b` and the
+-- path from `a` to `b`. Reading the flattened name must pick whichever of the two a direct
+-- `SELECT c0.<name>` picks, which is the declared element.
 INSERT INTO FUNCTION file(currentDatabase() || '_04401_dot.arrow', 'Arrow')
 SELECT c0 FROM values('c0 Tuple(`a.b` UInt32, a Tuple(b Nullable(Tuple(v UInt32))), c String)', (tuple(1, tuple(tuple(10)), 'p')), (tuple(2, tuple(NULL), 'q')), (tuple(3, tuple(tuple(30)), 'r')));
-SELECT `c0.a.b`, isNull(`c0.a.b`), `c0.c` FROM file(currentDatabase() || '_04401_dot.arrow', 'Arrow', '`c0.a.b` Nullable(Tuple(v UInt32)), `c0.c` String') ORDER BY `c0.c`;
-(10)	0	p
-\N	1	q
-(30)	0	r
--- Only the exact lowercase `null` is reserved as an element name, so `Null` is legal. Under
--- case-insensitive matching the request `c0.null` matches both that element and the parent's virtual
--- null-map subcolumn; the latter is never a flattened column, so it must not supply the declared type.
+SELECT `c0.a.b`, `c0.c` FROM file(currentDatabase() || '_04401_dot.arrow', 'Arrow', '`c0.a.b` UInt32, `c0.c` String') ORDER BY `c0.c`;
+1	p
+2	q
+3	r
+SELECT c0.`a.b`, c0.c FROM file(currentDatabase() || '_04401_dot.arrow', 'Arrow', 'c0 Tuple(`a.b` UInt32, a Tuple(b Nullable(Tuple(v UInt32))), c String)') ORDER BY c0.c;
+1	p
+2	q
+3	r
+-- Only the exact lowercase `null` is reserved as an element name, so `Null` is legal, and a request
+-- for either it or the parent's virtual null-map subcolumn resolves the same way a direct
+-- `SELECT c0.<name>` does: exactly for `Null`, and to the null map for `null`.
 INSERT INTO FUNCTION file(currentDatabase() || '_04401_nullname.arrow', 'Arrow')
 SELECT c0 FROM values('c0 Nullable(Tuple(`Null` Nullable(Tuple(v UInt32)), c String))', (tuple(tuple(10), 'p')), (tuple(NULL, 'q')), (tuple(tuple(30), 'r')));
-SELECT `c0.null`, isNull(`c0.null`), `c0.c` FROM file(currentDatabase() || '_04401_nullname.arrow', 'Arrow', '`c0.null` Nullable(Tuple(v UInt32)), `c0.c` Nullable(String)') ORDER BY `c0.c` SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
+SELECT `c0.Null`, isNull(`c0.Null`), `c0.c` FROM file(currentDatabase() || '_04401_nullname.arrow', 'Arrow', '`c0.Null` Nullable(Tuple(v UInt32)), `c0.c` Nullable(String)') ORDER BY `c0.c`;
 (10)	0	p
 \N	1	q
 (30)	0	r
+SELECT c0.`Null`, isNull(c0.`Null`), c0.c FROM file(currentDatabase() || '_04401_nullname.arrow', 'Arrow', 'c0 Nullable(Tuple(`Null` Nullable(Tuple(v UInt32)), c String))') ORDER BY c0.c;
+(10)	0	p
+\N	1	q
+(30)	0	r
+SELECT `c0.null`, `c0.c` FROM file(currentDatabase() || '_04401_nullname.arrow', 'Arrow', '`c0.null` UInt8, `c0.c` Nullable(String)') ORDER BY `c0.c` SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
+0	p
+0	q
+0	r
+SELECT c0.null, c0.c FROM file(currentDatabase() || '_04401_nullname.arrow', 'Arrow', 'c0 Nullable(Tuple(`Null` Nullable(Tuple(v UInt32)), c String))') ORDER BY c0.c;
+0	p
+0	q
+0	r
+-- The flattened read and the direct subcolumn read go through the same function, so they agree on
+-- the reported case too.
+SELECT `s.v` FROM file(currentDatabase() || '_04401.arrow', 'Arrow', '`s.v` Int32');
+42
+SELECT s.v FROM file(currentDatabase() || '_04401.arrow', 'Arrow', 's Nullable(Tuple(v Int32))');
+42
+-- A struct-NULL row in an Arrow file may carry non-default child values. The flattened read of a
+-- shape that cannot represent NULL itself reports exactly what the direct subcolumn read reports;
+-- `tupleElement` over the whole struct is a different path and reports type defaults there.
+INSERT INTO FUNCTION file(currentDatabase() || '_04401_hidden.arrow', 'Arrow')
+SELECT id, if(id = 2, NULL, p)::Nullable(Tuple(a Tuple(x UInt32), arr Array(UInt32), m Map(String, String))) AS n
+FROM values('id UInt8, p Tuple(a Tuple(x UInt32), arr Array(UInt32), m Map(String, String))', (1, tuple(tuple(10), [1], map('k1', 'v1'))), (2, tuple(tuple(99), [3], map('k2', 'v2'))));
+SELECT id, `n.a`, `n.arr`, `n.m` FROM file(currentDatabase() || '_04401_hidden.arrow', 'Arrow', 'id UInt8, `n.a` Tuple(x UInt32), `n.arr` Array(UInt32), `n.m` Map(String, String)') ORDER BY id;
+1	(10)	[1]	{'k1':'v1'}
+2	(99)	[3]	{'k2':'v2'}
+SELECT id, n.a, n.arr, n.m FROM file(currentDatabase() || '_04401_hidden.arrow', 'Arrow', 'id UInt8, n Nullable(Tuple(a Tuple(x UInt32), arr Array(UInt32), m Map(String, String)))') ORDER BY id;
+1	(10)	[1]	{'k1':'v1'}
+2	(99)	[3]	{'k2':'v2'}
+SELECT id, tupleElement(materialize(n), 'a'), tupleElement(materialize(n), 'arr'), tupleElement(materialize(n), 'm') FROM file(currentDatabase() || '_04401_hidden.arrow', 'Arrow', 'id UInt8, n Nullable(Tuple(a Tuple(x UInt32), arr Array(UInt32), m Map(String, String)))') ORDER BY id;
+1	(10)	[1]	{'k1':'v1'}
+2	(0)	[]	{}

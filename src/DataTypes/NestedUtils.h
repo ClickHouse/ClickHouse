@@ -98,8 +98,7 @@ namespace Nested
     /// Unwrap Nullable(Tuple(...)) into Tuple(...) by propagating the struct-level null map
     /// to each element. Scalar elements become Nullable(T), already-Nullable elements get merged
     /// null maps, and non-nullable-compatible elements (Array, Map) get defaults at null positions.
-    /// Element types are schema-driven, so they do not depend on the null map contents; only the
-    /// per-row null materialization is skipped when there are no actual nulls.
+    /// When there are no actual nulls, simply strips the Nullable wrapper.
     /// Used by format readers (Arrow, ORC) to convert Nullable struct elements for Nested flattening.
     ColumnWithTypeAndName unwrapNullableTuple(const ColumnWithTypeAndName & column);
 
@@ -117,22 +116,16 @@ namespace Nested
 }
 
 /// Use this class to extract element columns from columns of nested type in a block, e.g. named Tuple.
-/// It can extract a column from a multiple nested type column, e.g. named Tuple in named Tuple
-/// Keeps some intermediate data to avoid rebuild them multi-times.
+/// The requested name is cut at the first dot: the head names a block column and the tail is a
+/// subcolumn of its type, so the result is whatever `SELECT <head>.<tail>` yields for that column.
 class NestedColumnExtractHelper
 {
 public:
     explicit NestedColumnExtractHelper(const Block & block_, bool case_insentive_);
     std::optional<ColumnWithTypeAndName> extractColumn(const String & column_name);
 private:
-    std::optional<ColumnWithTypeAndName> extractColumn(
-        const String & original_column_name,
-        const String & column_name_prefix,
-        const String & column_name_suffix,
-        const DataTypePtr & declared_subcolumn_type);
     const Block & block;
     bool case_insentive;
-    std::map<String, BlockPtr> nested_tables;
 };
 
 /// Returns type of scalars of Array of arbitrary dimensions and takes into account Tuples of Nested.
