@@ -125,6 +125,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt64 processing_threads_num;
     extern const ObjectStorageQueueSettingsBool parallel_inserts;
     extern const ObjectStorageQueueSettingsUInt64 buckets;
+    extern const ObjectStorageQueueSettingsUInt64 buckets_per_partition;
     extern const ObjectStorageQueueSettingsUInt64 tracked_file_ttl_sec;
     extern const ObjectStorageQueueSettingsUInt64 tracked_files_limit;
     extern const ObjectStorageQueueSettingsString last_processed_path;
@@ -1867,6 +1868,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::tracked_file_ttl_sec] = table_metadata.tracked_files_ttl_sec;
     settings[ObjectStorageQueueSetting::tracked_files_limit] = table_metadata.tracked_files_limit;
     settings[ObjectStorageQueueSetting::buckets] = table_metadata.buckets;
+    settings[ObjectStorageQueueSetting::buckets_per_partition] = table_metadata.buckets_per_partition;
 
     auto cleanup_interval_ms = metadata->getCleanupIntervalMS();
     settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = static_cast<UInt32>(cleanup_interval_ms.first);

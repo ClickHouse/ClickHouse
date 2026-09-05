@@ -58,6 +58,7 @@ namespace ErrorCodes
     DECLARE(String, partition_regex, "", "Regex to extract named capture groups from filename. All named groups are captured. Use partition_component to specify which group is the partition key. Example: '(?P<hostname>[^_]+)_(?P<timestamp>[^_]+)_(?P<sequence>\\d+)'", 0) \
     DECLARE(String, partition_component, "", "Name of the capture group from partition_regex to use as partition key. Required when using partitioning_mode='regex'. Example: 'hostname'", 0) \
     DECLARE(ObjectStorageQueueBucketingMode, bucketing_mode, ObjectStorageQueueBucketingMode::PATH, "Bucketing strategy for Ordered mode parallel processing: PATH (hash full file path, default), PARTITION (hash partition key, requires partitioning_mode != NONE)", 0) \
+    DECLARE(UInt64, buckets_per_partition, 1, "In Ordered mode with bucketing_mode='partition', spread each partition's files across this many buckets to increase processing parallelism while keeping per-partition ordering. Requires bucketing_mode='partition'. Default 1 (each partition maps to a single bucket, i.e. no sub-sharding). Fixed at table creation.", 0) \
     DECLARE(UInt32, after_processing_retries, 10, "Number of retries for the after_processing action before giving up", 0) \
     DECLARE(String, after_processing_move_uri, "", "S3 bucket URL to move processed files to", 0) \
     DECLARE(String, after_processing_move_prefix, "", "Path prefix to move processed files to", 0) \

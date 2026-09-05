@@ -130,6 +130,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , use_persistent_processing_nodes(use_persistent_processing_nodes_)
     , persistent_processing_node_ttl_seconds(persistent_processing_nodes_ttl_seconds_)
     , buckets_num(table_metadata_.getBucketsNum())
+    , buckets_per_partition(table_metadata_.getBucketsPerPartition())
     , log(getLogger(fmt::format(
         "StorageObjectStorageQueue({}{})",
         zookeeper_name_ == zkutil::DEFAULT_ZOOKEEPER_NAME ? "" : zookeeper_name_ + ":",
@@ -253,6 +254,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 file_status,
                 bucket_info,
                 buckets_num,
+                buckets_per_partition,
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
@@ -281,17 +283,18 @@ bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
 
 ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(const std::string & path) const
 {
-    return getBucketForPath(path, buckets_num, bucketing_mode, partitioning_mode, filename_parser.get());
+    return getBucketForPath(path, buckets_num, buckets_per_partition, bucketing_mode, partitioning_mode, filename_parser.get());
 }
 
 ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(
     const std::string & path,
     size_t buckets_num,
+    size_t buckets_per_partition,
     ObjectStorageQueueBucketingMode bucketing_mode,
     ObjectStorageQueuePartitioningMode partitioning_mode,
     const ObjectStorageQueueFilenameParser * parser)
 {
-    return ObjectStorageQueueOrderedFileMetadata::getBucketForPath(path, buckets_num, bucketing_mode, partitioning_mode, parser);
+    return ObjectStorageQueueOrderedFileMetadata::getBucketForPath(path, buckets_num, buckets_per_partition, bucketing_mode, partitioning_mode, parser);
 }
 
 std::optional<std::string> ObjectStorageQueueMetadata::getStartAfterForListing() const
@@ -621,6 +624,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     std::make_shared<ObjectStorageQueueIFileMetadata::FileStatus>(table_metadata.last_processed_path),
                     /* bucket_info */nullptr,
                     buckets_num,
+                    table_metadata.getBucketsPerPartition(),
                     table_metadata.loading_retries,
                     noop,
                     /* use_persistent_processing_nodes */false, /// Processing nodes will not be created.

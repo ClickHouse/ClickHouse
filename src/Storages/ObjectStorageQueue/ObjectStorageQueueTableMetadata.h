@@ -36,6 +36,7 @@ struct ObjectStorageQueueTableMetadata
     std::atomic<UInt64> tracked_files_limit;
     std::atomic<UInt64> tracked_files_ttl_sec;
     std::atomic<UInt64> buckets;
+    std::atomic<UInt64> buckets_per_partition;
 
     bool processing_threads_num_changed = false;
 
@@ -60,6 +61,7 @@ struct ObjectStorageQueueTableMetadata
         , tracked_files_limit(other.tracked_files_limit.load())
         , tracked_files_ttl_sec(other.tracked_files_ttl_sec.load())
         , buckets(other.buckets.load())
+        , buckets_per_partition(other.buckets_per_partition.load())
     {
     }
 
@@ -97,6 +99,7 @@ struct ObjectStorageQueueTableMetadata
             "columns",
             "mode",
             "buckets",
+            "buckets_per_partition",
             "last_processed_path",
             "bucketing_mode",
             "partitioning_mode",
@@ -119,6 +122,8 @@ struct ObjectStorageQueueTableMetadata
             return buckets;
         return processing_threads_num;
     }
+
+    size_t getBucketsPerPartition() const { return buckets_per_partition; }
 
     bool hasTrackedFilesLimit() const { return tracked_files_limit || tracked_files_ttl_sec; }
 

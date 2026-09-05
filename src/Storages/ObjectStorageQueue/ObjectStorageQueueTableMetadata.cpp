@@ -21,6 +21,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsString last_processed_path;
     extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
     extern const ObjectStorageQueueSettingsObjectStorageQueueBucketingMode bucketing_mode;
+    extern const ObjectStorageQueueSettingsUInt64 buckets_per_partition;
     extern const ObjectStorageQueueSettingsObjectStorageQueuePartitioningMode partitioning_mode;
     extern const ObjectStorageQueueSettingsString partition_regex;
     extern const ObjectStorageQueueSettingsString partition_component;
@@ -77,6 +78,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     , tracked_files_limit(engine_settings[ObjectStorageQueueSetting::tracked_files_limit])
     , tracked_files_ttl_sec(engine_settings[ObjectStorageQueueSetting::tracked_file_ttl_sec])
     , buckets(engine_settings[ObjectStorageQueueSetting::buckets])
+    , buckets_per_partition(engine_settings[ObjectStorageQueueSetting::buckets_per_partition])
 {
     processing_threads_num_changed = engine_settings[ObjectStorageQueueSetting::processing_threads_num].changed;
     if (!processing_threads_num_changed && engine_settings[ObjectStorageQueueSetting::processing_threads_num] <= 1)
@@ -100,6 +102,25 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "bucketing_mode='partition' requires partitioning_mode to be set to 'hive' or 'regex'");
     }
+
+    if (buckets_per_partition == 0)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Setting `buckets_per_partition` cannot be set to zero");
+    }
+
+    if (buckets_per_partition > 1 && bucketing_mode != "partition")
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Setting `buckets_per_partition` > 1 requires bucketing_mode='partition'");
+    }
+
+    if (buckets_per_partition > getBucketsNum())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Setting `buckets_per_partition` ({}) cannot be greater than the number of buckets ({})",
+            buckets_per_partition.load(), getBucketsNum());
+    }
 }
 
 String ObjectStorageQueueTableMetadata::toString() const
@@ -111,6 +132,7 @@ String ObjectStorageQueueTableMetadata::toString() const
     json.set("tracked_files_ttl_sec", tracked_files_ttl_sec.load());
     json.set("processing_threads_num", processing_threads_num.load());
     json.set("buckets", buckets.load());
+    json.set("buckets_per_partition", buckets_per_partition.load());
     json.set("format_name", format_name);
     json.set("columns", columns);
     json.set("last_processed_file", last_processed_path);
@@ -210,6 +232,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , tracked_files_limit(getOrDefault(json, "tracked_files_limit", "s3queue_", 0ULL))
     , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0ULL)))
     , buckets(getOrDefault(json, "buckets", "", 0ULL))
+    , buckets_per_partition(getOrDefault(json, "buckets_per_partition", "", 1ULL))
 {
     validateMode(mode);
 }
@@ -344,6 +367,15 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
                 "Existing table metadata in ZooKeeper differs in processing buckets. "
                 "Stored in ZooKeeper: {}, local: {}",
                 from_zk.getBucketsNum(), getBucketsNum());
+        }
+
+        if (buckets_per_partition != from_zk.buckets_per_partition)
+        {
+            throw Exception(
+                ErrorCodes::METADATA_MISMATCH,
+                "Existing table metadata in ZooKeeper differs in buckets_per_partition setting. "
+                "Stored in ZooKeeper: {}, local: {}",
+                from_zk.buckets_per_partition.load(), buckets_per_partition.load());
         }
     }
 

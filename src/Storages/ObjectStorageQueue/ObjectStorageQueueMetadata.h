@@ -165,12 +165,14 @@ public:
     bool useBucketsForProcessing() const;
     /// Get number of buckets in case of bucket-based processing.
     size_t getBucketsNum() const { return buckets_num; }
+    size_t getBucketsPerPartition() const { return buckets_per_partition; }
     ObjectStorageQueueBucketingMode getBucketingMode() const { return bucketing_mode; }
     /// Get bucket by file path in case of bucket-based processing.
     Bucket getBucketForPath(const std::string & path) const;
     static Bucket getBucketForPath(
         const std::string & path,
         size_t buckets_num,
+        size_t buckets_per_partition,
         ObjectStorageQueueBucketingMode bucketing_mode,
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser);
@@ -255,6 +257,7 @@ private:
     std::unordered_map<String, PipelineLagWatermarks> pipeline_lag_watermarks;
 
     size_t buckets_num;
+    const size_t buckets_per_partition;
     std::unique_ptr<ThreadFromGlobalPool> update_registry_thread;
 
     LoggerPtr log;
