@@ -436,7 +436,14 @@ def md_message(text: str) -> str:
     if len(text) > MSG_HEAD_LEN + MSG_TAIL_LEN:
         elided = len(text) - MSG_HEAD_LEN - MSG_TAIL_LEN
         text = f"{text[:MSG_HEAD_LEN]}...(+{elided} chars elided)...{text[-MSG_TAIL_LEN:]}"
-    return f"`{text}`"
+    # A span closes on the first backtick run as long as its opener, and a
+    # backslash does not escape inside one, so the fence has to be longer than
+    # every run here; a run at either end needs the space the renderer strips.
+    fence = "`"
+    while fence in text:
+        fence += "`"
+    pad = " " if text.startswith("`") or text.endswith("`") else ""
+    return f"{fence}{pad}{text}{pad}{fence}"
 
 
 def strip_build_dir(path: str) -> str:
