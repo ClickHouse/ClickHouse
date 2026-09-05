@@ -1406,10 +1406,37 @@ void MutationsInterpreter::prepare(bool dry_run)
                 /// column derived from it stale. `TTLTransform` recomputes those, but only the ones
                 /// that are in the block, so they have to be read and written here - and this command
                 /// is the one that repairs a part no later merge is going to touch.
+                NameSet recomputed_columns;
+                NameSet columns_read_to_recompute;
                 for (const auto & column : columns_desc)
-                    if (available_columns_set.contains(column.name)
-                        && !materialized_dependencies.findColumnsToRecalculate(column.name, new_updated_columns).empty())
-                        dependencies.emplace(column.name, ColumnDependency::TTL_TARGET);
+                {
+                    if (!available_columns_set.contains(column.name))
+                        continue;
+
+                    const auto & columns_to_read
+                        = materialized_dependencies.findColumnsToRecalculate(column.name, new_updated_columns);
+                    if (columns_to_read.empty())
+                        continue;
+
+                    recomputed_columns.insert(column.name);
+                    columns_read_to_recompute.insert(columns_to_read.begin(), columns_to_read.end());
+                }
+
+                for (const auto & name : recomputed_columns)
+                    dependencies.emplace(name, ColumnDependency::TTL_TARGET);
+
+                /// The expression of a recomputed column also reads columns no TTL touches - `y` of
+                /// `m MATERIALIZED x + y`. Without them in the block `TTLTransform` cannot evaluate the
+                /// expression and skips the column, so the command would rewrite it with the stale value.
+                for (const auto & name : columns_read_to_recompute)
+                    if (!recomputed_columns.contains(name) && !new_updated_columns.contains(name))
+                        dependencies.emplace(name, ColumnDependency::TTL_EXPRESSION);
+
+                /// The recompute changes these columns as surely as the TTL changes its own target, so
+                /// the closure below has to be keyed on them too: a skip index, a projection or a
+                /// statistic reading a recomputed column is rebuilt, and the columns it reads next to
+                /// that one enter the block instead of being filled with a type default.
+                new_updated_columns.insert(recomputed_columns.begin(), recomputed_columns.end());
 
                 auto all_columns_vec = all_columns.getNames();
                 auto all_columns_set = NameSet(all_columns_vec.begin(), all_columns_vec.end());
