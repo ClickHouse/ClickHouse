@@ -81,7 +81,7 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(re)
+                                            | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -120,7 +120,7 @@ ALTER TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(re)
+                                            | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -160,9 +160,12 @@ ALTER TABLE table DROP INDEX text_idx;
   The separators can be specified using an optional parameter, for example, `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
   Note that each string can consist of multiple characters (`', '` in the example).
   The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
-- `splitByRegexp(re)` splits strings along a user-defined regular expression separator `re` (see function [splitByRegexp](/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)).
-  The `re` argument is mandatory, for example, `tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')`.
-  Unlike the fixed separator strings of `splitByString`, a regular expression separator can preserve tokens containing special characters (such as `C++` or `C#`) which the other tokenizers would split apart.
+- `splitByRegexp(regexp[, match_tokens])` splits strings according to a user-defined regular expression `regexp`.
+  The `regexp` argument is mandatory, for example, `tokenizer = splitByRegexp('[a-zA-Z]+[0-9]')`.
+  The optional `match_tokens` argument (`false` by default; `0`/`1` are also accepted) controls what `regexp` represents:
+  - with `match_tokens = false` (the default), `regexp` represents separators: the tokens are the (non-empty) pieces of text between successive matches (same semantics as function [splitByRegexp](/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)).
+  - with `match_tokens = true`, `regexp` is matched directly instead: each match contributes at most one token - its first capture group, or the whole match if `regexp` has no capture group - and everything outside the matches is discarded. For example, `tokenizer = splitByRegexp('tag:(\w+)', true)` indexes `hello` and `world` from `tag:hello tag:world`, dropping the `tag:` prefix. Matching uses [RE2](https://github.com/google/re2), the same engine every regex-based function in ClickHouse uses; only the first capture group is ever used, so further groups merely constrain what matches. A capture group that did not participate in the match, or that matched an empty string, contributes no token, and scanning always resumes after the whole match rather than after the captured span (so matches never overlap).
+  With `match_tokens = true`, note that search needles in text search functions are tokenized with the index's own tokenizer, so a plain string needle that does not itself match `regexp` yields no tokens and therefore no results. Needles passed as arrays to text search functions are not tokenized, and are therefore recommended for use with regexp tokenizers.
 - `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). ASCII alphanumeric characters and underscores form tokens with connectors (ASCII `:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters, including [CJK](https://en.wikipedia.org/wiki/CJK_characters) characters, become single-character tokens.
 - `chinese[(granularity)]` segments Chinese text into words using a dictionary and a hidden Markov model (the algorithm follows [jieba](https://github.com/fxsjy/jieba); the embedded dictionary and model data are derived from [cppjieba](https://github.com/yanyiwu/cppjieba)). Unlike `asciiCJK`, which treats every non-ASCII character as a single-character token, `chinese` groups consecutive Chinese characters into words (for example `北京大学` becomes one token `北京大学` rather than four single-character tokens). This yields more meaningful tokens for Chinese text and higher search quality. For general/mixed text, please use `asciiCJK`, for Chinese-only text, please use `chinese`. The optional `granularity` argument is either `'coarse_grained'` (the default if not specified) or `'fine_grained'`. The latter additionally enumerates overlapping sub-words for example `北京邮电大学` also yields `北京`, `邮电`, `大学`. Fine-grained tokenization improves recall at the cost of a larger index.
   Search a `chinese` text index with [hasAnyTokens](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/reference/functions/regular-functions/string-search-functions#hasAllTokens) (which tokenize the needle with the `chinese` tokenizer), not `hasToken` (which splits on ASCII separators only).

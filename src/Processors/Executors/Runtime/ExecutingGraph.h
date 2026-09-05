@@ -164,7 +164,8 @@ private:
     /// register it in the processors map. Does not create edges — that is done separately by addEdges.
     Node & addNode(ProcessorPtr processor);
     Node & addNode(Processors::iterator processor_iter);
-    std::pair<const Node *, std::unordered_set<const void *>> removeNode(ProcessorPtr processor);
+    Node * getNodeToRemove(const ProcessorPtr & processor) const;
+    void removeNode(Node & node);
 
     /// Add single edge to edges list. Check processor is known.
     Edge & addEdge(Edges & edges, Edge edge, const IProcessor * from, const IProcessor * to);
@@ -177,7 +178,7 @@ private:
         bool empty() const { return back.empty() && direct.empty(); }
     };
     NewEdges addEdges(Node & node);
-    std::unordered_set<const void *> removeAffectedEdges(Node & node, const std::unordered_set<const Node *> & removed_nodes);
+    void removeAffectedEdges(Node & node, const std::unordered_set<Node *> & removed_nodes);
 
     /// Update graph after processor `node` returned UpdatePipeline status.
     /// All new nodes and nodes with updated ports are pushed into stack.
@@ -194,13 +195,8 @@ private:
     };
     std::unordered_map<ProcessorPtr, std::shared_ptr<PendingRemovalGroup>> removed_processors;
 
-    struct RemoveGroupResult
-    {
-        std::unordered_set<const Node *> removed_nodes;
-        std::unordered_set<const void *> removed_edges;
-    };
-    RemoveGroupResult removePendingGroup(PendingRemovalGroup & group, Processors & delayed_destruction);
-    RemoveGroupResult removeReadyGroups(Processors & delayed_destruction);
+    void removePendingGroup(PendingRemovalGroup & group, Processors & delayed_destruction);
+    void removeReadyGroups(Processors & delayed_destruction);
     std::shared_ptr<PendingRemovalGroup> findGroupReadyForRemoval();
     void accountFinishedProcessorInGroup(const ProcessorPtr & processor);
 

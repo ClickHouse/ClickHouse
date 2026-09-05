@@ -19,7 +19,7 @@ NOT_IMPLEMENTED
 --- EXPLAIN WHATIF: no indexes ---
 (none):
   status:       not_applicable
-  reason:       No hypothetical indexes defined for this table. Use CREATE HYPOTHETICAL INDEX to define one.
+  reason:       No hypothetical indexes or projections defined for this table. Use CREATE HYPOTHETICAL INDEX or CREATE HYPOTHETICAL PROJECTION to define one.
 --- EXPLAIN WHATIF: minmax applicable ---
 With idx_a_minmax (minmax, hypothetical):
   status:       applicable

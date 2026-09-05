@@ -1,0 +1,174 @@
+-- canary: variant A (partial pushdown) fires for case 1\'s query
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    Sorting
+      Aggregating
+        JoinLogical (Local HashJoin  swapped)
+          BuildRuntimeFilter (Build runtime join filter on __table2.k)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.t_corr_right_multi)
+          GatherExchange
+            Aggregating
+              Expression
+                ReadFromMergeTree (ParallelRead default.t_corr_left)
+-- canary: variant B (full pushdown) fires for case 13\'s query (single Aggregating, below the join)
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    Sorting
+      JoinLogical (Local HashJoin  swapped)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.t_corr_right_multi)
+        MergingAggregated
+          GatherExchange
+            Aggregating
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (ParallelRead default.t_corr_left)
+-- 1. INNER ALL with fan-out (variant A, push-left)
+0	10	450
+1	20	920
+2	30	1410
+3	10	480
+4	10	490
+5	10	500
+0	10	450
+1	20	920
+2	30	1410
+3	10	480
+4	10	490
+5	10	500
+-- 2. LEFT ALL with unmatched left rows (keys 6-9)
+0	10	450
+1	20	920
+2	30	1410
+3	10	480
+4	10	490
+5	10	500
+6	10	510
+7	10	520
+8	10	530
+9	10	540
+0	10	450
+1	20	920
+2	30	1410
+3	10	480
+4	10	490
+5	10	500
+6	10	510
+7	10	520
+8	10	530
+9	10	540
+-- 3. multi-key ON
+0	10
+1	10
+2	10
+3	10
+0	10
+1	10
+2	10
+3	10
+-- 4. expression key
+0	10
+1	10
+2	10
+3	10
+4	10
+0	10
+1	10
+2	10
+3	10
+4	10
+-- 4b. expression key on the other side (the pushed side groups by a plain column)
+2	10
+3	10
+4	10
+5	10
+6	10
+2	10
+3	10
+4	10
+5	10
+6	10
+-- 5. residual condition
+0	4
+1	10
+2	16
+3	4
+4	9
+0	4
+1	10
+2	16
+3	4
+4	9
+-- 6. aggregate battery
+0	10	450	0	45	10	5
+1	10	460	1	46	10	5
+2	10	470	2	47	10	5
+3	10	480	3	48	10	5
+4	10	490	4	49	10	5
+5	10	500	5	50	10	5
+6	10	510	6	51	10	5
+7	10	520	7	52	10	5
+8	10	530	8	53	10	5
+9	10	540	9	54	10	5
+0	10	450	0	45	10	5
+1	10	460	1	46	10	5
+2	10	470	2	47	10	5
+3	10	480	3	48	10	5
+4	10	490	4	49	10	5
+5	10	500	5	50	10	5
+6	10	510	6	51	10	5
+7	10	520	7	52	10	5
+8	10	530	8	53	10	5
+9	10	540	9	54	10	5
+-- 7. GROUP BY keys from both sides
+0	n_0	10
+1	n_1	10
+2	n_2	10
+3	n_3	10
+4	n_4	10
+5	n_5	10
+6	n_6	10
+7	n_7	10
+8		10
+9		10
+0	n_0	10
+1	n_1	10
+2	n_2	10
+3	n_3	10
+4	n_4	10
+5	n_5	10
+6	n_6	10
+7	n_7	10
+8		10
+9		10
+-- 8. LEFT SEMI, variant A (join key not a GROUP BY key)
+0	40
+1	40
+0	40
+1	40
+-- 9. LEFT ANTI, variant A (join key not a GROUP BY key)
+0	10
+1	10
+0	10
+1	10
+-- 10. LEFT ANY, variant A (per-key-unique right side, GROUP BY key from it)
+0	n_0	10
+1	n_1	10
+2	n_2	10
+3	n_3	10
+4	n_4	10
+5	n_5	10
+6	n_6	10
+7	n_7	10
+8		10
+9		10
+0	n_0	10
+1	n_1	10
+2	n_2	10
+3	n_3	10
+4	n_4	10
+5	n_5	10
+6	n_6	10
+7	n_7	10
+8		10
+9		10
