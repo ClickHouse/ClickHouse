@@ -720,6 +720,31 @@ void generateManifestFile(
     writer.close();
 }
 
+// Avro uses zigzag encoding for integers to efficiently represent small negative
+// numbers. Positive n maps to 2n, negative n maps to 2(-n)-1, keeping small
+// magnitudes compact regardless of sign. The value is then serialized as a
+// variable-length base-128 integer (little-endian), where the high bit of each
+// byte signals whether more bytes follow.
+// See: https://avro.apache.org/docs/1.11.1/specification/#binary-encoding
+static void writeAvroLong(WriteBuffer & out, int64_t val)
+{
+    uint64_t n = (static_cast<uint64_t>(val) << 1) ^ static_cast<uint64_t>(val >> 63);
+    while (n & ~0x7fULL)
+    {
+        char c = static_cast<char>((n & 0x7f) | 0x80);
+        out.write(&c, 1);
+        n >>= 7;
+    }
+    char c = static_cast<char>(n);
+    out.write(&c, 1);
+}
+
+static void writeAvroBytes(WriteBuffer & out, const String & s)
+{
+    writeAvroLong(out, static_cast<int64_t>(s.size()));
+    out.write(s.data(), s.size());
+}
+
 void generateManifestList(
     const Iceberg::IcebergPathResolver & path_resolver,
     Poco::JSON::Object::Ptr metadata,
@@ -758,6 +783,38 @@ void generateManifestList(
         schema_representation = manifest_list_v1_schema;
     else
         schema_representation = manifest_list_v2_schema;
+
+    // For empty manifest list (e.g. TRUNCATE), write a valid Avro container
+    // file manually so we can embed the full schema JSON with field-ids intact,
+    // without triggering the DataFileWriter constructor's eager writeHeader()
+    // which commits encoder state before we can override avro.schema.
+    if (manifest_entry_names.empty() && !use_previous_snapshots)
+    {
+        // For an empty manifest list (e.g. after TRUNCATE), we write a minimal valid
+        // Avro Object Container File manually rather than using avro::DataFileWriter.
+        // The reason: DataFileWriter calls writeHeader() eagerly in its constructor,
+        // committing the binary encoder state. Post-construction setMetadata() calls
+        // corrupt StreamWriter::next_ causing a NULL dereference on close(). Writing
+        // the OCF header directly ensures the full schema JSON (with Iceberg field-ids)
+        // is embedded intact — the Avro C++ library strips unknown field properties
+        // like field-id during schema node serialization.
+        // Avro OCF format: [magic(4)] [metadata_map] [sync_marker(16)] [no data blocks]
+        buf.write("Obj\x01", 4);
+
+        writeAvroLong(buf, 2);  // 2 metadata entries
+        writeAvroBytes(buf, "avro.codec");
+        writeAvroBytes(buf, "null");
+        writeAvroBytes(buf, "avro.schema");
+        writeAvroBytes(buf, schema_representation);  // full JSON with field-ids intact
+
+        writeAvroLong(buf, 0);  // end of metadata map
+
+        static const char sync_marker[16] = {};
+        buf.write(sync_marker, 16);
+
+        buf.finalize();
+        return;
+    }
 
     auto schema = avro::compileJsonSchemaFromString(schema_representation); // NOLINT
 
@@ -1267,7 +1324,7 @@ bool IcebergStorageSink::initializeMetadata()
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
     std::vector<Int64> manifest_entry_sizes;
 
-    auto cleanup = [&] (bool retry_because_of_metadata_conflict)
+    auto cleanup = [&] (bool retry_because_of_metadata_conflict, bool remove_objects = true)
     {
         auto best_effort_remove = [&](const String & path)
         {
@@ -1281,25 +1338,28 @@ bool IcebergStorageSink::initializeMetadata()
             }
         };
 
-        if (!retry_because_of_metadata_conflict)
+        if (remove_objects)
         {
-            for (const auto & [_, writer] : writer_per_partition_key)
+            if (!retry_because_of_metadata_conflict)
             {
-                try
+                for (const auto & [_, writer] : writer_per_partition_key)
                 {
-                    writer.clearAllDataFiles();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(log, "Best-effort cleanup of data files failed");
+                    try
+                    {
+                        writer.clearAllDataFiles();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, "Best-effort cleanup of data files failed");
+                    }
                 }
             }
+
+            for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
+                best_effort_remove(manifest_filename_in_storage);
+
+            best_effort_remove(storage_manifest_list_name);
         }
-
-        for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
-            best_effort_remove(manifest_filename_in_storage);
-
-        best_effort_remove(storage_manifest_list_name);
 
         if (retry_because_of_metadata_conflict)
         {
@@ -1362,7 +1422,7 @@ bool IcebergStorageSink::initializeMetadata()
             }
         }
     };
-
+    bool commit_result_unknown = false;
     try
     {
         for (const auto & [partition_key, writer] : writer_per_partition_key)
@@ -1476,13 +1536,15 @@ bool IcebergStorageSink::initializeMetadata()
             if (catalog)
             {
                 auto catalog_filename = resolver.resolveForCatalog(metadata_info.path);
-
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
+                commit_result_unknown = true;
                 if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
                 {
+                    commit_result_unknown = false;
                     cleanup(true);
                     return false;
                 }
+                commit_result_unknown = false;
             }
         }
 
@@ -1491,7 +1553,7 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (...)
     {
-        cleanup(false);
+        cleanup(false, /*remove_objects =*/!commit_result_unknown);
         throw;
     }
     return true;

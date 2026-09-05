@@ -37,7 +37,6 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
-#include <limits>
 #include <unordered_set>
 
 namespace DB::ErrorCodes
@@ -426,23 +425,26 @@ static bool writeMetadataFiles(
     const bool use_version_hint = data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint];
 
     auto cleanup = [object_storage, &delete_files, &data_files, &path_resolver, manifest_entries_in_storage,
-                    storage_manifest_list_name]()
+                    storage_manifest_list_name](bool remove_objects = true)
     {
-        try
+        if (remove_objects)
         {
-            for (const auto & [_, data_file] : delete_files.files_by_partition)
-                object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(data_file.path)));
-            for (const auto & [_, data_file] : data_files.files_by_partition)
-                object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(data_file.path)));
+            try
+            {
+                for (const auto & [_, data_file] : delete_files.files_by_partition)
+                    object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(data_file.path)));
+                for (const auto & [_, data_file] : data_files.files_by_partition)
+                    object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(data_file.path)));
 
-            for (const auto & manifest_filename_in_storage : *manifest_entries_in_storage)
-                object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
+                for (const auto & manifest_filename_in_storage : *manifest_entries_in_storage)
+                    object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
-            object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
-        }
-        catch (...)
-        {
-            LOG_DEBUG(getLogger("IcebergMutations"), "Iceberg cleanup failed");
+                object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+            }
+            catch (...)
+            {
+                LOG_DEBUG(getLogger("IcebergMutations"), "Iceberg cleanup failed");
+            }
         }
     };
 
@@ -495,6 +497,7 @@ static bool writeMetadataFiles(
         }
     };
 
+    bool commit_result_unknown = false;
     try
     {
         write_manifest_entries(delete_files, Iceberg::FileContentType::POSITION_DELETE, delete_sample_block);
@@ -552,16 +555,19 @@ static bool writeMetadataFiles(
         {
             auto catalog_filename = path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
+            commit_result_unknown = true;
             if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
             {
+                commit_result_unknown = false;
                 cleanup();
                 return false;
             }
+            commit_result_unknown = false;
         }
     }
     catch (...)
     {
-        cleanup();
+        cleanup(/*remove_objects =*/!commit_result_unknown);
         throw;
     }
     return true;

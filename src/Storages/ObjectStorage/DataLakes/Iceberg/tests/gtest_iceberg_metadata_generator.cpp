@@ -122,6 +122,17 @@ TEST(IcebergMetadataGenerator, ReplaceOperationIsPreserved)
         Iceberg::f_replace);
 }
 
+/// TRUNCATE commits a metadata-only snapshot that adds nothing and removes everything, so it must be
+/// labelled `delete` rather than falling through to `append` on its zeroed counters.
+TEST(IcebergMetadataGenerator, DeleteOperationForTruncate)
+{
+    auto metadata = makeMinimalV2Metadata();
+    EXPECT_EQ(
+        snapshotOperation(
+            metadata, /*added_delete_files=*/ 0, /*num_deleted_rows=*/ 0, MetadataGenerator::SnapshotOperation::Delete),
+        Iceberg::f_delete);
+}
+
 /// snapshots / metadata-log / snapshot-log are optional per the Iceberg spec, so external
 /// engines may produce empty-table metadata that omits any of them. generateNextMetadata must
 /// seed them rather than abort: a missing snapshots throws Poco::InvalidAccessException (empty
