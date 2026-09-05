@@ -254,9 +254,9 @@ void SettingsConstraints::check(const Settings & current_settings, SettingsChang
     checkOrClamp(current_settings, changes, THROW_ON_VIOLATION, source);
 }
 
-void SettingsConstraints::checkResetToDefault(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const
+void SettingsConstraints::checkResetToDefault(const Settings & current_settings, const Settings & after_reset, const std::vector<String> & names, SettingSource source) const
 {
-    /// A reset of a built-in setting is equivalent to assigning its declared default. The regular
+    /// A reset of a built-in setting is equivalent to assigning the value it lands on. The regular
     /// check also deliberately permits a reset that does not change the value.
     ///
     /// A `merge_tree_`-prefixed name is not a `Settings` setting, but it names a `MergeTreeSettings` one,
@@ -267,7 +267,11 @@ void SettingsConstraints::checkResetToDefault(const Settings & current_settings,
     {
         if (settingIsBuiltin(name))
         {
-            check(current_settings, SettingChange{name, settingDefaultValue(name)}, source);
+            /// `after_reset` holds the value a `Settings` setting lands on, which an active `compatibility`
+            /// may derive. A `merge_tree_`-prefixed name is a custom setting there and is absent once reset,
+            /// so what it lands on is the declared `MergeTreeSettings` default.
+            const Field value = Settings::hasBuiltin(name) ? after_reset.get(name) : settingDefaultValue(name);
+            check(current_settings, SettingChange{name, value}, source);
             continue;
         }
 

@@ -3659,10 +3659,18 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingS
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
-void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source)
+void Context::checkSettingsConstraintsForSettingsReset(const ContextPtr & reset_target, const SettingsChanges & changes, const std::vector<String> & names, SettingSource source)
 {
+    if (names.empty())
+        return;
+    /// The default a reset restores depends on the active `compatibility`, which the same statement
+    /// may change directly or by switching the profile, so it has to be observed.
+    auto after_reset = Context::createCopy(reset_target);
+    after_reset->applySettingsChanges(changes);
+    after_reset->resetSettingsToDefaultValueRespectingCompatibility(names);
+
     SharedLockGuard lock(mutex);
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, names, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, after_reset->getSettingsRef(), names, source);
 }
 
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
@@ -3694,6 +3702,20 @@ void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
         for (const auto & equivalent_name : settingEquivalentNames(name))
             settings->setDefaultValue(equivalent_name);
     }
+}
+
+void Context::resetSettingsToDefaultValueRespectingCompatibility(const std::vector<String> & names)
+{
+    if (names.empty())
+        return;
+    std::lock_guard lock(mutex);
+    for (const String & name : names)
+        settings->setDefaultValueRespectingCompatibility(name);
+    /// A reset can move a setting the same way an assignment can, so the invariants the assignment
+    /// path establishes have to be re-established here too.
+    applySettingsQuirks(*settings);
+    adjustSettingsForMakeDistributedPlan(*settings);
+    contextSanityClampSettingsWithLock(*this, *settings, lock);
 }
 
 std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfilesWithLock() const

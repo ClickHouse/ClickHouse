@@ -3017,7 +3017,7 @@ void ClientBase::processParsedSingleQuery(
                 if (change.name != "profile")
                     client_context->applySettingChange(change);
             }
-            client_context->resetSettingsToDefaultValue(set_query->default_settings);
+            client_context->resetSettingsToDefaultValueRespectingCompatibility(set_query->default_settings);
 
             /// Query parameters inside SET queries should be also saved on the client side
             ///  to override their previous definitions set with --param_* arguments
