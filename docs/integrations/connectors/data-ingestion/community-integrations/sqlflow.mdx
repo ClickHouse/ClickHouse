@@ -1,28 +1,28 @@
 ---
-sidebarTitle: 'SQLFlow'
+sidebarTitle: 'sqlflow'
 keywords: ['clickhouse', 'sqlflow', 'duckdb', 'kafka', 'streaming', 'stream processing', 'sink', 'data ingestion', 'integrate', 'websocket']
 slug: /integrations/sqlflow
-description: 'Stream Kafka, WebSocket and webhook data into ClickHouse, transformed with DuckDB SQL, using SQLFlow'
-title: 'SQLFlow and ClickHouse'
+description: 'Stream Kafka, WebSocket and webhook data into ClickHouse, transformed with DuckDB SQL, using sqlflow'
+title: 'sqlflow and ClickHouse'
 doc_type: 'guide'
 ---
 
 import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
 
-<a href="https://github.com/turbolytics/sql-flow" target="_blank">SQLFlow</a> is an open-source (MIT) stream processing engine. It consumes a stream — Kafka, a WebSocket, or webhooks — runs DuckDB SQL over each micro-batch, and inserts the result into a ClickHouse table. A pipeline is a single YAML file, and SQLFlow ships as one binary and one Docker image, so there is no cluster to run.
+<a href="https://github.com/turbolytics/sql-flow" target="_blank">sqlflow</a> is an open-source (MIT) stream processing engine. It consumes a stream — Kafka, a WebSocket, or webhooks — runs DuckDB SQL over each micro-batch, and inserts the result into a ClickHouse table. A pipeline is a single YAML file, and sqlflow ships as one binary and one Docker image, so there is no cluster to run.
 
 This page covers the ClickHouse sink: connecting to ClickHouse Cloud and self-hosted ClickHouse, which types map, an end-to-end example on the NYC taxi sample dataset, and the limits that were measured rather than assumed.
 
 ## Prerequisites {#prerequisites}
 
-- SQLFlow **v1.0.4** or later. Earlier v1.0.x releases have data-fidelity problems in this path — see the version matrix — so upgrade rather than work around them.
+- sqlflow **v1.0.4** or later. Earlier v1.0.x releases have data-fidelity problems in this path — see the version matrix — so upgrade rather than work around them.
 - ClickHouse Cloud, or self-hosted ClickHouse. Tested against 24.8 and 26.8; no minimum below that has been established.
 - A Kafka broker the pipeline can reach, for the Kafka source used in the example. The WebSocket and webhook sources need no broker.
-- Docker is the simplest install — `turbolytics/sql-flow` is published multi-arch for `linux/amd64` and `linux/arm64`. SQLFlow can also be built from source; it needs Go, a C toolchain, and `libduckdb` present at runtime.
+- Docker is the simplest install — `turbolytics/sql-flow` is published multi-arch for `linux/amd64` and `linux/arm64`. sqlflow can also be built from source; it needs Go, a C toolchain, and `libduckdb` present at runtime.
 
 ### Version matrix {#version-matrix}
 
-| SQLFlow       | ClickHouse Cloud | ClickHouse open source | Notes |
+| sqlflow       | ClickHouse Cloud | ClickHouse open source | Notes |
 | ------------- | ---------------- | ---------------------- | ----- |
 | 1.0.4+        | ✅ tested on 26.2 | ✅ tested on 24.8 and 26.8 | Recommended |
 | 1.0.3         | ✅               | ✅                     | Kafka offsets could be committed ahead of what was inserted, so a crash lost those rows silently; a timestamp passed as a *string* is shifted by the host's UTC offset |
@@ -33,7 +33,7 @@ Every row below 1.0.4 has a data-fidelity defect in this path. Upgrade rather th
 
 ## Setup {#setup}
 
-SQLFlow connects with a single DSN. The scheme selects the protocol and whether TLS is used; the port defaults from the scheme if omitted.
+sqlflow connects with a single DSN. The scheme selects the protocol and whether TLS is used; the port defaults from the scheme if omitted.
 
 | Scheme                          | Protocol | TLS | Default port | Use for |
 | ------------------------------- | -------- | --- | ------------ | ------- |
@@ -42,7 +42,7 @@ SQLFlow connects with a single DSN. The scheme selects the protocol and whether 
 | `natives://`                    | native   | yes | 9440         | ClickHouse Cloud over the native protocol |
 | `tcp://`, `native://`           | native   | no  | 9000         | Self-hosted, native protocol |
 
-The target table must already exist. SQLFlow does not create tables and does not evolve schemas: it names the columns in its `INSERT` from the column names its SQL produces, so **the columns your handler SQL emits must match the table's column names**. Use aliases in the SQL to rename.
+The target table must already exist. sqlflow does not create tables and does not evolve schemas: it names the columns in its `INSERT` from the column names its SQL produces, so **the columns your handler SQL emits must match the table's column names**. Use aliases in the SQL to rename.
 
 ### Connect to ClickHouse Cloud {#connect-to-clickhouse-cloud}
 
@@ -82,19 +82,19 @@ export SQLFLOW_CLICKHOUSE_DSN='clickhouse://default:<password>@clickhouse.intern
 
 If you have put TLS in front of the HTTP interface, use `clickhouses://` exactly as for Cloud. For the native protocol use `tcp://` (9000) or `natives://` (9440).
 
-When SQLFlow runs in Docker, `localhost` inside the container is the container itself, not your machine. Put SQLFlow and ClickHouse on the same Docker network and use the ClickHouse container's name as the host.
+When sqlflow runs in Docker, `localhost` inside the container is the container itself, not your machine. Put sqlflow and ClickHouse on the same Docker network and use the ClickHouse container's name as the host.
 
 ## Authentication {#authentication}
 
 Username and password are carried in the DSN and, with `clickhouses://` or `natives://`, are sent over TLS. The server certificate is verified against the system trust store; there is no option to skip verification.
 
 - **Special characters in the password.** The DSN is parsed as a URL, so `/`, `#` and `?` must be percent-encoded (`%2F`, `%23`, `%3F`); left raw they produce a confusing `invalid port ":p" after host`. `@` and `:` are handled correctly either way.
-- **Cloud IP access lists.** If your service restricts source IPs, the address SQLFlow connects from has to be on the list.
+- **Cloud IP access lists.** If your service restricts source IPs, the address sqlflow connects from has to be on the list.
 - **Not supported:** mutual TLS / client certificates, and custom CA bundles. Use username and password.
 
 ## Example: streaming the NYC taxi dataset from Kafka {#example-nyc-taxi}
 
-This walks the [NYC taxi sample dataset](/get-started/sample-datasets/nyc-taxi) through Kafka into ClickHouse, transformed by SQLFlow on the way. It reproduces on Cloud or self-hosted; only the DSN changes.
+This walks the [NYC taxi sample dataset](/get-started/sample-datasets/nyc-taxi) through Kafka into ClickHouse, transformed by sqlflow on the way. It reproduces on Cloud or self-hosted; only the DSN changes.
 
 ### 1. Create the target table {#example-create-table}
 
@@ -316,7 +316,7 @@ GROUP BY lang ORDER BY posts DESC LIMIT 5;
 
 ## Type mapping {#type-mapping}
 
-SQLFlow hands each batch to ClickHouse as rows built from the Arrow table DuckDB produces, so what matters is the Arrow type each SQL column ends up with. Cast in the handler SQL to control it.
+sqlflow hands each batch to ClickHouse as rows built from the Arrow table DuckDB produces, so what matters is the Arrow type each SQL column ends up with. Cast in the handler SQL to control it.
 
 | DuckDB SQL type (cast to)              | ClickHouse column types that accept it |
 | -------------------------------------- | -------------------------------------- |
@@ -328,13 +328,13 @@ SQLFlow hands each batch to ClickHouse as rows built from the Arrow table DuckDB
 | `DATE`                                 | `Date`, `Date32` |
 | `BLOB`                                 | `String` |
 | `VARCHAR` holding the textual form     | `UUID`, `IPv4`, `Decimal(P, S)` — the driver parses the string |
-| `LIST` of any of the above, nested     | `Array(T)`, `Array(Array(T))` — SQLFlow 1.0.3+ |
+| `LIST` of any of the above, nested     | `Array(T)`, `Array(Array(T))` — sqlflow 1.0.3+ |
 | `NULL` in any column                   | `NULL` in a `Nullable(T)` column; the column default otherwise. A null list becomes `[]`. |
 
 Values are matched to columns **by name**, not by position.
 
 <Note>
-**Prefer `CAST(ts AS TIMESTAMP)` over passing timestamps as strings.** A `VARCHAR` such as `'2026-09-01 12:00:00'` is accepted by a `DateTime` column and, from SQLFlow 1.0.4, read as UTC; a string carrying an explicit offset such as `'… +09:00'` is honoured as written. On 1.0.3 a zone-less string is interpreted in the SQLFlow host's local time zone instead, so a process in UTC−4 stores `16:00:00`. Casting in the handler SQL is unambiguous on every version.
+**Prefer `CAST(ts AS TIMESTAMP)` over passing timestamps as strings.** A `VARCHAR` such as `'2026-09-01 12:00:00'` is accepted by a `DateTime` column and, from sqlflow 1.0.4, read as UTC; a string carrying an explicit offset such as `'… +09:00'` is honoured as written. On 1.0.3 a zone-less string is interpreted in the sqlflow host's local time zone instead, so a process in UTC−4 stores `16:00:00`. Casting in the handler SQL is unambiguous on every version.
 </Note>
 
 <Note>
@@ -347,19 +347,19 @@ Values are matched to columns **by name**, not by position.
 - **No table creation or schema evolution.** The table must exist, and a column the handler emits that the table lacks fails the batch (see [Troubleshooting](#troubleshooting)). Columns the handler omits take the table's `DEFAULT`.
 - **At-least-once delivery.** Kafka offsets are committed after the `INSERT` is acknowledged. A crash between the two replays the batch, so duplicates are possible. If that matters, use `ReplacingMergeTree` with a key that identifies the row, or an idempotent insert pattern.
 - **One connection, one `INSERT` per batch.** There is no parallel writer. Throughput is governed by `batch_size`; see below.
-- **Streaming aggregation** (tumbling windows) is supported: a managed table is polled on an interval and its closed windows are published to their own sink. What counts as "closed" is the SQL you write, which is evaluated against wall-clock time rather than an event-time watermark. Consult the SQLFlow documentation before relying on it for late-arriving data.
+- **Streaming aggregation** (tumbling windows) is supported: a managed table is polled on an interval and its closed windows are published to their own sink. What counts as "closed" is the SQL you write, which is evaluated against wall-clock time rather than an event-time watermark. Consult the sqlflow documentation before relying on it for late-arriving data.
 
 ## Performance {#performance}
 
-Measured with the example above — one million 17-column rows, one SQLFlow process, Kafka co-located with SQLFlow:
+Measured with the example above — one million 17-column rows, one sqlflow process, Kafka co-located with sqlflow:
 
 | Target                                     | Rows/second |
 | ------------------------------------------ | ----------- |
-| Self-hosted ClickHouse, SQLFlow and Kafka on the same Docker network | ~65,000 |
-| Self-hosted ClickHouse, SQLFlow on the host reaching Kafka through Docker's port forwarding | ~50,000 |
+| Self-hosted ClickHouse, sqlflow and Kafka on the same Docker network | ~65,000 |
+| Self-hosted ClickHouse, sqlflow on the host reaching Kafka through Docker's port forwarding | ~50,000 |
 | ClickHouse Cloud (us-east-2), from a laptop over the public internet | 14,000 – 31,000 across runs on different days |
 
-Two things those rows say. Docker Desktop's host-to-container port forwarding costs about 20%, so benchmark from inside the network. And the Cloud spread is the network between the laptop and the service, not SQLFlow: measured back to back, `batch_size` 20,000 and 50,000 came within 6% of each other. Run SQLFlow near the service — same region, ideally same VPC — for numbers closer to the self-hosted figure.
+Two things those rows say. Docker Desktop's host-to-container port forwarding costs about 20%, so benchmark from inside the network. And the Cloud spread is the network between the laptop and the service, not sqlflow: measured back to back, `batch_size` 20,000 and 50,000 came within 6% of each other. Run sqlflow near the service — same region, ideally same VPC — for numbers closer to the self-hosted figure.
 
 `batch_size` is the lever on a nearby target:
 
@@ -384,11 +384,11 @@ The credentials in the DSN are wrong, or a special character in the password was
 
 ### `column "<name>" is not present in the table <table>` {#trouble-column}
 
-The handler SQL produced a column the target table does not have. SQLFlow inserts by column name, so either alias the column in the SQL to match the table, drop it from the `SELECT`, or add it to the table.
+The handler SQL produced a column the target table does not have. sqlflow inserts by column name, so either alias the column in the SQL to match the table, drop it from the `SELECT`, or add it to the table.
 
 ### `clickhouse sink: column "<name>": unsupported arrow type <type>` {#trouble-type}
 
-The column's Arrow type has no ClickHouse mapping — a struct or map value, or an array on SQLFlow earlier than 1.0.3. Cast or flatten in the handler SQL; see [Type mapping](#type-mapping).
+The column's Arrow type has no ClickHouse mapping — a struct or map value, or an array on sqlflow earlier than 1.0.3. Cast or flatten in the handler SQL; see [Type mapping](#type-mapping).
 
 ### `converting float64 to Decimal(10, 2) is unsupported` {#trouble-decimal}
 
@@ -396,7 +396,7 @@ A `DOUBLE` was sent to a `Decimal` column. Cast to a string instead: `CAST(amoun
 
 ### Timestamps are stored a few hours off {#trouble-timezone}
 
-On SQLFlow 1.0.3, a timestamp passed as a string was interpreted in the host's local time zone before being stored as UTC; the offset you see equals the SQLFlow host's UTC offset, which is how to recognise this case. Upgrade to 1.0.4, or cast in the handler SQL: `CAST(ts AS TIMESTAMP)`.
+On sqlflow 1.0.3, a timestamp passed as a string was interpreted in the host's local time zone before being stored as UTC; the offset you see equals the sqlflow host's UTC offset, which is how to recognise this case. Upgrade to 1.0.4, or cast in the handler SQL: `CAST(ts AS TIMESTAMP)`.
 
 ### The pipeline runs but rows never appear {#trouble-no-rows}
 
@@ -404,5 +404,5 @@ A batch is executed and inserted when `batch_size` messages have arrived, or whe
 
 ## Further reading {#further-reading}
 
-- <a href="https://github.com/turbolytics/sql-flow" target="_blank">SQLFlow on GitHub</a> — configuration reference, all sources and sinks, error policies, windowing.
-- <a href="https://sql-flow.com" target="_blank">sql-flow.com</a> — tutorials, including a longer ClickHouse walkthrough.
+- <a href="https://github.com/turbolytics/sql-flow" target="_blank">sqlflow on GitHub</a> — configuration reference, all sources and sinks, error policies, windowing.
+- <a href="https://turbolytics.io/docs/sqlflow" target="_blank">sqlflow documentation</a> — tutorials, including a <a href="https://turbolytics.io/docs/sqlflow/tutorials/clickhouse-sink" target="_blank">longer ClickHouse walkthrough</a>.
