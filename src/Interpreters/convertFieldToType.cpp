@@ -32,6 +32,10 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/DateLUT.h>
 
+#include <base/wide_integer_to_string.h>
+
+#include <cmath>
+
 
 namespace DB
 {
@@ -43,6 +47,8 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int DECIMAL_OVERFLOW;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+    extern const int CANNOT_CONVERT_TYPE;
 }
 
 
@@ -225,8 +231,221 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
     return result;
 }
 
+/// Bounds of the numeric domain for a Field being coerced into a temporal column
+/// (mirror MAX_TIME_TIMESTAMP / MAX_DATETIME_TIMESTAMP / MAX_DATE32_TIMESTAMP in
+/// Functions/DateTimeTransforms.h and the day-number maxima in Common/DateLUTImpl.h).
+constexpr Int64 MAX_TIME_TIMESTAMP_FIELD = 3599999;      /// 999:59:59
+constexpr Int64 MAX_DATETIME_TIMESTAMP_FIELD = 0xFFFFFFFF;
+constexpr Int64 DATE_DAY_NUM_MAX_FIELD = DATE_LUT_MAX_DAY_NUM;               /// 0xFFFF, 2149-06-06
+constexpr Int64 DATE_MAX_TIMESTAMP_FIELD = 0xFFFFFFFF;                       /// MAX_DATETIME_TIMESTAMP
+constexpr Int64 DATE32_DAY_NUM_MIN_FIELD = DATE_LUT_MIN_EXTEND_DAY_NUM;      /// first extended day num
+constexpr Int64 DATE32_DAY_NUM_MAX_FIELD = DATE_LUT_MAX_EXTEND_DAY_NUM;      /// last extended day num
+constexpr Int64 DATE32_MAX_TIMESTAMP_FIELD = 253402300799LL;                 /// MAX_DATE32_TIMESTAMP, 9999-12-31
 
-Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
+/// Clamp an in-bounds numeric value to a time_t (mirrors saturateToRange in FunctionsConversion.h):
+/// the value is proven inside [min_bound, max_bound] with accurate comparisons before the narrowing
+/// cast, so it never wraps (unsigned/wide above INT64_MAX) or is undefined (float out of time_t range).
+/// Every caller rejects a non-finite value before reaching this point.
+template <typename T>
+Int64 clampToTimestamp(const T & value, Int64 min_bound, Int64 max_bound)
+{
+    if (accurate::greaterOp(value, max_bound))
+        return max_bound;
+    if (accurate::lessOp(value, min_bound))
+        return min_bound;
+    return static_cast<Int64>(value);
+}
+
+/// Coerce a numeric value into the seconds domain of a Time or DateTime column: a non-finite value is
+/// rejected, `throw` raises on out-of-range, and the other modes clamp to [min_bound, max_bound].
+/// Returns the target's canonical Field type (Int64 signed / UInt64 unsigned) so a clamped value still
+/// compares equal to the serializer's read-back in getPartitionIDFromQuery.
+template <typename T>
+Field coerceNumericValueToDateTimeOrTime(
+    const T & value, Int64 min_bound, Int64 max_bound, bool signed_target,
+    FormatSettings::DateTimeOverflowBehavior overflow_behavior, const char * type_name)
+{
+    /// A non-finite value is not out of range but unrepresentable, so no mode may clamp it. The CAST
+    /// path rejects it the same way, and materialization must not diverge from CAST.
+    if constexpr (is_floating_point<T>)
+        if (!isFinite(value))
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unexpected inf or nan to integer conversion");
+
+    const bool over_max = accurate::greaterOp(value, max_bound);
+    const bool under_min = accurate::lessOp(value, min_bound);
+
+    if (over_max || under_min)
+    {
+        if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                "Value {} is out of bounds of type {}", value, type_name);
+
+        /// Saturate / ignore: clamp into the representable range.
+        const Int64 clamped = over_max ? max_bound : min_bound;
+        return signed_target ? Field(clamped) : Field(static_cast<UInt64>(clamped));
+    }
+
+    /// In range: return the value in the target's canonical Field representation.
+    const Int64 in_range = clampToTimestamp(value, min_bound, max_bound);
+    return signed_target ? Field(in_range) : Field(static_cast<UInt64>(in_range));
+}
+
+/// An exact target rejects any float a temporal integer cannot hold exactly (fractional or non-finite),
+/// matching convertNumericType<integer> rather than truncating. Integral floats pass through and are then
+/// range-checked by date_time_overflow_behavior.
+bool floatRejectedByExactContract(Float64 value, bool exact)
+{
+    return exact && (!isFinite(value) || value != std::trunc(value));
+}
+
+/// Dispatch every numeric Field type evaluateConstantExpression can produce (integer, float, wide
+/// integer) to coerceNumericValueToDateTimeOrTime. `exact` rejects an inexact float as Null.
+Field coerceNumericFieldToDateTimeOrTime(
+    const Field & src, Int64 min_bound, Int64 max_bound,
+    FormatSettings::DateTimeOverflowBehavior overflow_behavior, const char * type_name, bool exact)
+{
+    /// A signed target (Time, min_bound < 0) is backed by Int32; an unsigned one (DateTime) by UInt32.
+    const bool signed_target = min_bound < 0;
+    auto run = [&](const auto & value) -> Field
+    {
+        return coerceNumericValueToDateTimeOrTime(value, min_bound, max_bound, signed_target, overflow_behavior, type_name);
+    };
+
+    switch (src.getType())
+    {
+        case Field::Types::UInt64: return run(src.safeGet<UInt64>());
+        case Field::Types::Int64:  return run(src.safeGet<Int64>());
+        case Field::Types::Float64:
+        {
+            const Float64 value = src.safeGet<Float64>();
+            if (floatRejectedByExactContract(value, exact))
+                return {};
+            return run(value);
+        }
+        case Field::Types::UInt128: return run(src.safeGet<UInt128>());
+        case Field::Types::Int128:  return run(src.safeGet<Int128>());
+        case Field::Types::UInt256: return run(src.safeGet<UInt256>());
+        case Field::Types::Int256:  return run(src.safeGet<Int256>());
+        default: return {}; /// non-numeric: let the caller fall through to its existing handling
+    }
+}
+
+/// Coerce a numeric value into a Date day-number Field, mirroring ToDateTransformFromSecondsOrDays:
+/// [0, 0xFFFF] is a day number, anything larger is a unix timestamp. Returns a UInt64 Field, Date's
+/// canonical representation.
+template <typename T>
+Field coerceNumericToDateField(const T & value, const DateLUTImpl & time_zone, FormatSettings::DateTimeOverflowBehavior overflow)
+{
+    const bool throw_mode = overflow == FormatSettings::DateTimeOverflowBehavior::Throw;
+    /// Only reached under `throw`; the saturating modes clamp at the call sites below.
+    auto out_of_bounds = [&]() -> Field
+    {
+        throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", value);
+    };
+
+    if constexpr (is_floating_point<T>)
+        if (!isFinite(value))
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unexpected inf or nan to integer conversion");
+
+    if (accurate::lessOp(value, 0))
+        return throw_mode ? out_of_bounds() : Field(static_cast<UInt64>(0));
+
+    /// Above the day-number domain: treat as a unix timestamp (matches the CAST "a bit weird" behavior).
+    if (accurate::greaterOp(value, DATE_DAY_NUM_MAX_FIELD))
+    {
+        if (throw_mode && accurate::greaterOp(value, DATE_MAX_TIMESTAMP_FIELD))
+            return out_of_bounds();
+        const Int64 ts = clampToTimestamp(value, 0, DATE_MAX_TIMESTAMP_FIELD);
+        return Field(static_cast<UInt64>(time_zone.toDayNum(ts).toUnderType()));
+    }
+
+    /// In the day-number domain (0 .. 0xFFFF): the value is itself the day number.
+    return Field(static_cast<UInt64>(value));
+}
+
+/// Coerce a numeric value into a Date32 day-number Field, mirroring ToDate32TransformFromSecondsOrDays:
+/// [DATE_LUT_MIN_EXTEND_DAY_NUM, DATE_LUT_MAX_EXTEND_DAY_NUM] is a signed day number, anything larger
+/// is a unix timestamp. Returns an Int64 Field, Date32's canonical representation.
+template <typename T>
+Field coerceNumericToDate32Field(const T & value, const DateLUTImpl & time_zone, FormatSettings::DateTimeOverflowBehavior overflow)
+{
+    const bool throw_mode = overflow == FormatSettings::DateTimeOverflowBehavior::Throw;
+
+    /// A non-finite value is unrepresentable rather than out of range, so no mode may clamp it.
+    if constexpr (is_floating_point<T>)
+        if (!isFinite(value))
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unexpected inf or nan to integer conversion");
+
+    if (accurate::lessOp(value, DATE32_DAY_NUM_MIN_FIELD))
+    {
+        if (throw_mode)
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", value);
+        return Field(static_cast<Int64>(DATE32_DAY_NUM_MIN_FIELD));
+    }
+
+    /// Above the extended day-number domain: treat as a unix timestamp. The predicate is strict, like
+    /// ToDate32TransformFromSecondsOrDays, so the boundary day number itself stays a day number.
+    if (accurate::greaterOp(value, DATE32_DAY_NUM_MAX_FIELD))
+    {
+        if (throw_mode && accurate::greaterOp(value, DATE32_MAX_TIMESTAMP_FIELD))
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", value);
+        const Int64 ts = clampToTimestamp(value, 0, DATE32_MAX_TIMESTAMP_FIELD);
+        return Field(static_cast<Int64>(time_zone.toDayNum(ts).toUnderType()));
+    }
+
+    /// In the extended day-number domain: the value is itself the (signed) day number.
+    return Field(static_cast<Int64>(value));
+}
+
+/// Dispatch every numeric Field type evaluateConstantExpression can produce (integer, float, wide
+/// integer) to coerceNumericToDate/coerceNumericToDate32. `exact` rejects an inexact float as Null.
+Field coerceNumericFieldToDateOrDate32(const Field & src, bool is_date32, FormatSettings::DateTimeOverflowBehavior overflow, bool exact)
+{
+    const auto & time_zone = DateLUT::instance();
+    auto run = [&](const auto & value) -> Field
+    {
+        return is_date32 ? coerceNumericToDate32Field(value, time_zone, overflow)
+                         : coerceNumericToDateField(value, time_zone, overflow);
+    };
+
+    switch (src.getType())
+    {
+        case Field::Types::UInt64: return run(src.safeGet<UInt64>());
+        case Field::Types::Int64:  return run(src.safeGet<Int64>());
+        case Field::Types::Float64:
+        {
+            const Float64 value = src.safeGet<Float64>();
+            if (floatRejectedByExactContract(value, exact))
+                return {};
+            return run(value);
+        }
+        case Field::Types::UInt128: return run(src.safeGet<UInt128>());
+        case Field::Types::Int128:  return run(src.safeGet<Int128>());
+        case Field::Types::UInt256: return run(src.safeGet<UInt256>());
+        case Field::Types::Int256:  return run(src.safeGet<Int256>());
+        default: return {}; /// non-numeric: let the caller fall through to its existing handling
+    }
+}
+
+/// The numeric Field types evaluateConstantExpression can hand to the temporal coercion helpers above.
+bool isNumericFieldForTemporalCoercion(const Field & src)
+{
+    switch (src.getType())
+    {
+        case Field::Types::UInt64:
+        case Field::Types::Int64:
+        case Field::Types::Float64:
+        case Field::Types::UInt128:
+        case Field::Types::Int128:
+        case Field::Types::UInt256:
+        case Field::Types::Int256:
+            return true;
+        default:
+            return false;
+    }
+}
+
+Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats, bool temporal_numeric_is_offset)
 {
     if (from_type_hint && from_type_hint->equals(type))
     {
@@ -389,41 +608,58 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return dynamic_cast<const IDataTypeEnum &>(type).castToValue(src);
         }
 
-        if (which_type.isDate() && src.getType() == Field::Types::UInt64)
+        const bool overflow_ignore = format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore;
+
+        /// Temporal types are integer-backed, so an exact target cannot accept a non-integral float.
+        const bool exact = strict || !convert_inexact_floats;
+
+        /// Take the plain storage-type arm instead of the overflow-aware coerce helpers. Required for an
+        /// exact target in ignore mode (an out-of-storage value must stay Null so convertFieldToTypeOrThrow
+        /// raises ARGUMENT_OUT_OF_BOUND, and an in-storage value must stay verbatim to remain addressable),
+        /// and unconditionally for a frame offset, which is a distance and never a temporal point.
+        const bool ignore_exact_target = (overflow_ignore && exact) || temporal_numeric_is_offset;
+
+        if (which_type.isDate() && isNumericFieldForTemporalCoercion(src))
         {
-            /// Date is UInt16 under the hood; range-check so out-of-range integers
-            /// don't get silently truncated by the Date serializer downstream.
-            return convertNumericType<UInt16>(src, type, strict, convert_inexact_floats);
+            if (ignore_exact_target)
+                return convertNumericType<UInt16>(src, type, strict, convert_inexact_floats);
+            return coerceNumericFieldToDateOrDate32(src, /*is_date32=*/false, format_settings.date_time_overflow_behavior, exact);
         }
 
-        if (which_type.isDateTime() && src.getType() == Field::Types::UInt64)
+        if (which_type.isDateTime() && isNumericFieldForTemporalCoercion(src))
         {
-            /// `DateTime` stores `UInt32` under the hood, so `UInt64` is the canonical `Field` type and no conversion is needed.
-            return src;
+            if (ignore_exact_target)
+                return convertNumericType<UInt32>(src, type, strict, convert_inexact_floats);
+            return coerceNumericFieldToDateTimeOrTime(
+                src, 0, MAX_DATETIME_TIMESTAMP_FIELD, format_settings.date_time_overflow_behavior, "DateTime", exact);
         }
 
-        if (which_type.isTime() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
+        if (which_type.isTime() && isNumericFieldForTemporalCoercion(src))
         {
-            /// `Time` stores `Int32` under the hood; convert through `Int32` to produce the canonical
-            /// `Int64` `Field` matching what `Time` part loading produces, and to range-check the input
-            /// so out-of-range integers are not silently truncated by the `Time` serializer downstream.
-            return convertNumericType<Int32>(src, type, strict, convert_inexact_floats);
+            if (ignore_exact_target)
+                return convertNumericType<Int32>(src, type, strict, convert_inexact_floats);
+            return coerceNumericFieldToDateTimeOrTime(
+                src, -MAX_TIME_TIMESTAMP_FIELD, MAX_TIME_TIMESTAMP_FIELD, format_settings.date_time_overflow_behavior, "Time", exact);
         }
 
-        if (which_type.isDate32() && (src.getType() == Field::Types::Int64 || src.getType() == Field::Types::UInt64))
+        if (which_type.isDate32() && isNumericFieldForTemporalCoercion(src))
         {
-            /// `Date32` stores an `Int32` day number under the hood (the canonical `Field` type is `Int64`),
-            /// but only `[DATE_LUT_MIN_EXTEND_DAY_NUM, DATE_LUT_MAX_EXTEND_DAY_NUM]` = `[0000-01-01, 9999-12-31]`
-            /// is representable. Reject day numbers outside that window so exact `IN` constants and the
-            /// `VALUES` expression fallback cannot materialize impossible `Date32` values.
-            Field converted = convertNumericType<Int64>(src, type, strict, convert_inexact_floats);
-            if (!converted.isNull())
+            if (ignore_exact_target)
             {
-                const Int64 day_num = converted.safeGet<Int64>();
-                if (day_num < DATE_LUT_MIN_EXTEND_DAY_NUM || day_num > DATE_LUT_MAX_EXTEND_DAY_NUM)
-                    return {};
+                Field converted = convertNumericType<Int32>(src, type, strict, convert_inexact_floats);
+                /// A frame offset is a distance, so the whole `Int32` storage range is meaningful. A temporal
+                /// point is not: only `[0000-01-01, 9999-12-31]` is representable, and an out-of-window day
+                /// number must stay Null so the constant matches nothing instead of reaching a raw numeric
+                /// consumer as an impossible date.
+                if (!temporal_numeric_is_offset && !converted.isNull())
+                {
+                    const Int64 day_num = converted.safeGet<Int64>();
+                    if (day_num < DATE32_DAY_NUM_MIN_FIELD || day_num > DATE32_DAY_NUM_MAX_FIELD)
+                        return {};
+                }
+                return converted;
             }
-            return converted;
+            return coerceNumericFieldToDateOrDate32(src, /*is_date32=*/true, format_settings.date_time_overflow_behavior, exact);
         }
 
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
@@ -488,14 +724,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             }
 
             return DecimalField<Time64>(DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, 1), scale_to);
-        }
-
-        /// For toDate('xxx') in 1::Int64. Date is UInt16 under the hood;
-        /// range-check so out-of-range integers don't get silently truncated
-        /// by the Date serializer downstream.
-        if (which_type.isDate() && src.getType() == Field::Types::Int64)
-        {
-            return convertNumericType<UInt16>(src, type, strict, convert_inexact_floats);
         }
 
         if (which_type.isDateTime64()
@@ -596,7 +824,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
-                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict, convert_inexact_floats, temporal_numeric_is_offset);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     // See the comment for Tuples below.
@@ -628,7 +856,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             for (size_t i = 0; i < dst_tuple_size; ++i)
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
-                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict, convert_inexact_floats, temporal_numeric_is_offset);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     /*
@@ -820,12 +1048,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
                 Tuple updated_entry(2);
 
-                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict, convert_inexact_floats, temporal_numeric_is_offset);
 
                 if (updated_entry[0].isNull() && !canContainNull(key_type))
                     have_unconvertible_element = true;
 
-                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict, convert_inexact_floats, temporal_numeric_is_offset);
                 if (updated_entry[1].isNull() && !canContainNull(value_type))
                     have_unconvertible_element = true;
 
@@ -974,7 +1202,7 @@ Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type,
     }
 }
 
-Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
+Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats, bool temporal_numeric_is_offset)
 {
     checkStackSize();
 
@@ -985,7 +1213,7 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
         return from_value;
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&to_type))
-        return convertFieldToType(from_value, *low_cardinality_type->getDictionaryType(), from_type_hint, format_settings, strict, convert_inexact_floats);
+        return convertFieldToType(from_value, *low_cardinality_type->getDictionaryType(), from_type_hint, format_settings, strict, convert_inexact_floats, temporal_numeric_is_offset);
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&to_type))
     {
         const IDataType & nested_type = *nullable_type->getNestedType();
@@ -996,13 +1224,13 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
 
         if (from_type_hint && from_type_hint->equals(nested_type))
             return from_value;
-        return convertFieldToTypeImpl(from_value, nested_type, from_type_hint, format_settings, strict, convert_inexact_floats);
+        return convertFieldToTypeImpl(from_value, nested_type, from_type_hint, format_settings, strict, convert_inexact_floats, temporal_numeric_is_offset);
     }
-    return convertFieldToTypeImpl(from_value, to_type, from_type_hint, format_settings, strict, convert_inexact_floats);
+    return convertFieldToTypeImpl(from_value, to_type, from_type_hint, format_settings, strict, convert_inexact_floats, temporal_numeric_is_offset);
 }
 
 
-Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool convert_inexact_floats)
+Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool convert_inexact_floats, bool temporal_numeric_is_offset)
 {
     bool is_null = from_value.isNull();
     if (is_null && !canContainNull(to_type))
@@ -1016,7 +1244,7 @@ Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_t
     /// string literal (e.g. `DROP PARTITION '0.1'`) is still parsed into the target type by string
     /// deserialization before this exactness check and rounds there - a pre-existing string-parsing
     /// behavior shared with string-to-float comparisons, unchanged by this fix. See the header.
-    Field converted = convertFieldToType(from_value, to_type, from_type_hint, format_settings, /*strict=*/false, convert_inexact_floats);
+    Field converted = convertFieldToType(from_value, to_type, from_type_hint, format_settings, /*strict=*/false, convert_inexact_floats, temporal_numeric_is_offset);
 
     if (!is_null && converted.isNull())
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,

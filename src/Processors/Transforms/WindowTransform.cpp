@@ -384,7 +384,8 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         {
             window_description.frame.begin_offset = convertFieldToTypeOrThrow(
                 window_description.frame.begin_offset,
-                *entry.type, nullptr, {}, /*convert_inexact_floats=*/true);
+                *entry.type, nullptr, {}, /*convert_inexact_floats=*/true,
+                /*temporal_numeric_is_offset=*/true);
 
             if (accurateLess(window_description.frame.begin_offset, Field(0)))
             {
@@ -398,7 +399,8 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         {
             window_description.frame.end_offset = convertFieldToTypeOrThrow(
                 window_description.frame.end_offset,
-                *entry.type, nullptr, {}, /*convert_inexact_floats=*/true);
+                *entry.type, nullptr, {}, /*convert_inexact_floats=*/true,
+                /*temporal_numeric_is_offset=*/true);
 
             if (accurateLess(window_description.frame.end_offset, Field(0)))
             {

@@ -1,0 +1,71 @@
+-- throw: out-of-range numeric casts must raise VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+1900-01-01
+-- throw: huge finite floats must raise a clean error, not narrow to garbage
+-- non-finite floats are rejected as unconvertible, whatever the overflow mode is
+-- throw: in-range numeric casts must still succeed
+2023-11-14 22:13:20
+2024-10-04
+2024-10-04
+-- throw: accurateCastOrNull must never raise; only accurateCast does
+\N
+\N
+\N
+00:01:40	1970-01-01 00:01:40
+-- throw: the values() table function does not see the session setting (known boundary)
+3599999
+-- saturate: out-of-range numeric casts must clamp to the boundary
+2106-02-07 06:28:15
+2106-02-07 06:28:15
+2106-02-07 06:28:15
+1970-01-01 00:00:00
+2106-02-07
+1970-01-01
+9999-12-31
+-- saturate: sources above INT64_MAX / float extremes must clamp to the max, not wrap negative
+999:59:59
+999:59:59
+2106-02-07 06:28:15
+2106-02-07 06:28:15
+2106-02-07
+9999-12-31
+9999-12-31
+3599999
+-3599999
+3599999
+3599999
+3599999
+-3599999
+2106-02-07 06:28:15
+2106-02-07 06:28:15
+1970-01-01 00:00:00
+999:59:59
+2106-02-07 06:28:15
+2106-02-07 06:28:15
+-- saturate: UInt256 / Int128 / BFloat16 -> DateTime and Time clamp on their own dispatch alternatives
+2106-02-07 06:28:15
+3599999
+2106-02-07 06:28:15
+3599999
+1970-01-01 00:00:00
+-3599999
+2106-02-07 06:28:15
+3599999
+-3599999
+-- saturate: NaN is unconvertible for every target, not silently narrowed
+-- ignore (default): out-of-range numeric casts keep the legacy behavior
+2106-02-07 06:28:15
+2106-02-07 06:28:15
+2106-02-07
+9999-12-31
+-- ignore: sources above INT64_MAX / float extremes must also clamp, not wrap negative
+999:59:59
+2106-02-07 06:28:15
+-- ignore: narrow signed Int32 -> Time must clamp too, not store the raw out-of-range value
+3599999
+-3599999
+-- ignore: UInt32 and wide integer types -> DateTime/Time must clamp too, not truncate on the generic path
+3599999
+3599999
+2106-02-07 06:28:15
+2106-02-07 06:28:15
+-- ignore: NaN is unconvertible here too, not fall through to a narrowing cast

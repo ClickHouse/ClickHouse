@@ -495,7 +495,24 @@ case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
                     {
                         switch (settings.date_time_overflow_behavior)
                         {
-                            GENERATE_OVERFLOW_MODE_CASE(Throw, DateTimeAccurateOrNullConvertStrategyAdditions)
+                            /// Deliberately Ignore even when the caller asks for Throw: `accurateCastOrNull` must
+                            /// return NULL, and a Throw transform raises from inside the vectorised loop where the
+                            /// OrNull strategy cannot turn the error into one. Rejecting an out-of-range value is
+                            /// the accurate precheck's job in `Transformer::vector`. Longhand so this shows.
+                            case FormatSettings::DateTimeOverflowBehavior::Throw:
+                                result_column = ConvertImpl<
+                                    LeftDataType,
+                                    RightDataType,
+                                    FunctionCastName,
+                                    FormatSettings::DateTimeOverflowBehavior::Ignore>::
+                                    execute(
+                                        arguments,
+                                        result_type,
+                                        input_rows_count,
+                                        BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
+                                        settings,
+                                        DateTimeAccurateOrNullConvertStrategyAdditions());
+                                break;
                             GENERATE_OVERFLOW_MODE_CASE(Ignore, DateTimeAccurateOrNullConvertStrategyAdditions)
                             GENERATE_OVERFLOW_MODE_CASE(Saturate, DateTimeAccurateOrNullConvertStrategyAdditions)
                         }

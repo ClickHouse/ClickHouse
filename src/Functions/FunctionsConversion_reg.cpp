@@ -1116,7 +1116,8 @@ Converts the argument to the Date data type. This is a MySQL compatibility alias
     /// toDate32 documentation
     FunctionDocumentation::Description description_toDate32 = R"(
 Converts the argument to the [Date32](/reference/data-types/date32) data type.
-If the value is outside the `[0000-01-01, 9999-12-31]` range, `toDate32` returns the border values supported by [Date32](/reference/data-types/date32).
+A number outside the `[0000-01-01, 9999-12-31]` range follows the [`date_time_overflow_behavior`](/operations/settings/formats#date_time_overflow_behavior) setting: the default `ignore` and `saturate` return the border values supported by [Date32](/reference/data-types/date32), while `throw` raises an exception. Other out-of-range sources return the border values regardless of the setting.
+Non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception in every mode.
 If the argument is of type [`Date`](/reference/data-types/date), it's bounds are taken into account.
     )";
     FunctionDocumentation::Syntax syntax_toDate32 = "toDate32(expr)";
@@ -1162,7 +1163,7 @@ toTypeName(value): Date32
     FunctionDocumentation::Description description_toTime = R"(
 Converts an input value to type [Time](/reference/data-types/time).
 Supports conversion from String, FixedString, DateTime, DateTime64, or numeric types representing seconds since midnight.
-Numeric values outside of the range of the type (`-999:59:59` to `999:59:59`, that is `-3599999` to `3599999` seconds) are saturated to the range boundaries, and non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
+A numeric value outside of the range of the type (`-999:59:59` to `999:59:59`, that is `-3599999` to `3599999` seconds) follows the [`date_time_overflow_behavior`](/operations/settings/formats#date_time_overflow_behavior) setting: the default `ignore` and `saturate` clamp to the range boundaries, while `throw` raises an exception. Non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception in every mode.
 
 :::note Legacy `toTime`
 Before v25.5, `toTime` was a different function, which converted a date with time to a fixed date (`1970-01-02`) while preserving the
@@ -1309,10 +1310,10 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
     /// toDateTime32 documentation
     FunctionDocumentation::Description description_toDateTime32 = R"(
 Converts an input value to type `DateTime`.
-Supports conversion from `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64`, or numeric types (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `BFloat16`, `Float32`, `Float64`). `Decimal` and `Time64` values are not supported and result in an exception; the `Time` type and wide integer types such as `(U)Int128`/`(U)Int256` wrap around instead of saturating.
+Supports conversion from `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64`, or numeric types (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `(U)Int128`, `(U)Int256`, `BFloat16`, `Float32`, `Float64`). `Decimal` and `Time64` values are not supported and result in an exception. A `Time` value is read as its number of seconds, so it is not clamped to the clock range.
 `DateTime32` is an alias of `DateTime` and supports dates from `1970-01-01 00:00:00` to `2106-02-07 06:28:15`.
-When converting from a string or from one of the saturating numeric types listed above, values outside of this range are saturated to the range boundaries. Non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
-Conversions from other date and time types such as `Date32` or `DateTime64` follow the `date_time_overflow_behavior` setting: the default `ignore` mode may produce wrapped-around values, `saturate` clamps them to the range boundaries, and `throw` throws an exception.
+When converting from a string, a value outside of this range is saturated to the range boundaries.
+Conversions from a number, or from another date and time type such as `Date32` or `DateTime64`, follow the [`date_time_overflow_behavior`](/operations/settings/formats#date_time_overflow_behavior) setting: `throw` raises an exception, while `saturate` clamps to the range boundaries. The default `ignore` mode also clamps a number, but may produce wrapped-around values for the other source types. Non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception in every mode.
     )";
     FunctionDocumentation::Syntax syntax_toDateTime32 = "toDateTime32(x[, timezone])";
     FunctionDocumentation::Arguments arguments_toDateTime32 = {
