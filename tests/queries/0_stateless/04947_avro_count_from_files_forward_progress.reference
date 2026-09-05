@@ -1,0 +1,27 @@
+--- a corrupted block header is rejected instead of counted
+optimize_count_from_files = 1
+1
+1
+1
+optimize_count_from_files = 0
+1
+1
+1
+--- a negative declared count is rejected at the header, not at the payload
+1
+1
+1
+1
+--- valid input still counts every row, including rows that occupy no payload bytes
+optimize_count_from_files = 1
+5000
+1000
+200000
+optimize_count_from_files = 0
+5000
+1000
+200000
+--- reading valid input is unchanged, at several block sizes
+5000	16876015480804349662
+5000	16876015480804349662
+5000	16876015480804349662

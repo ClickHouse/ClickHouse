@@ -179,9 +179,8 @@ private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;
 
-    bool supportsCountRows() const override { return true; }
-    size_t countRows(size_t max_block_size) override;
-
+    /// No count shortcut: the row count comes from the block header, so counting without decoding
+    /// the payload cannot tell a declared count from the rows actually present.
     std::unique_ptr<avro::DataFileReaderBase> file_reader_ptr;
     std::unique_ptr<AvroDeserializer> deserializer_ptr;
     FormatSettings format_settings;
