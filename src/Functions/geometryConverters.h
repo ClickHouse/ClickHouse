@@ -571,4 +571,58 @@ static void callOnTwoGeometryDataTypes(DataTypePtr left_type, DataTypePtr right_
     });
 }
 
+/// Kind name that the areal predicates (`polygonsIntersect`, `polygonsWithin`) refuse at ANY
+/// argument position, or `nullptr` when the pair is accepted. Both a `Point` and the one-dimensional
+/// kinds are refused: `boost::geometry::intersects` / `within` are defined here for areal geometries
+/// only.
+template <typename Point, typename LeftConverter, typename RightConverter>
+constexpr const char * arealPredicateRejectedKindName()
+{
+    if constexpr (std::is_same_v<ColumnToPointsConverter<Point>, LeftConverter>
+                  || std::is_same_v<ColumnToPointsConverter<Point>, RightConverter>)
+        return "Point";
+    else if constexpr (
+        std::is_same_v<ColumnToLineStringsConverter<Point>, LeftConverter>
+        || std::is_same_v<ColumnToLineStringsConverter<Point>, RightConverter>)
+        return "LineString";
+    else if constexpr (
+        std::is_same_v<ColumnToMultiLineStringsConverter<Point>, LeftConverter>
+        || std::is_same_v<ColumnToMultiLineStringsConverter<Point>, RightConverter>)
+        return "MultiLineString";
+    else if constexpr (
+        std::is_same_v<ColumnToMultiPointsConverter<Point>, LeftConverter>
+        || std::is_same_v<ColumnToMultiPointsConverter<Point>, RightConverter>)
+        return "MultiPoint";
+    else
+        return nullptr;
+}
+
+/// Rejects from the argument TYPES alone what `arealPredicateRejectedKindName` refuses, plus
+/// whatever `callOnGeometryDataType` itself refuses to dispatch (a non-geometry argument, a
+/// WKB-encoded `String` payload).
+///
+/// Called from `getReturnTypeImpl`, so the rejection happens during analysis, uniformly with every
+/// other function -- and, unlike a rejection raised from `executeImpl`, it cannot be turned into a
+/// silent `0` by anything that removes rows: skip-index or primary-key pruning, `PREWHERE`, an empty
+/// part. That property is what `Common/GeoBbox.h` relies on to prune granules for these predicates
+/// without having to restate their accepted domain.
+template <typename Point>
+void checkArealPredicateArgumentTypes(const DataTypePtr & left_type, const DataTypePtr & right_type, const String & function_name)
+{
+    callOnTwoGeometryDataTypes<Point>(
+        left_type,
+        right_type,
+        [&](const auto & left, const auto & right)
+        {
+            using LeftConverter = typename std::decay_t<decltype(left)>::Type;
+            using RightConverter = typename std::decay_t<decltype(right)>::Type;
+
+            constexpr const char * rejected = arealPredicateRejectedKindName<Point, LeftConverter, RightConverter>();
+            if constexpr (rejected != nullptr)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be {}", function_name, rejected);
+        });
+}
+
+
 }

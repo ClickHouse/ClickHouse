@@ -1,0 +1,7 @@
+=== every row group pruned ===
+0
+ParquetPrunedRowGroups: 2 (increment)
+=== sibling: polygonsIntersectCartesian(geometry, 1) ===
+Code: 36
+=== sibling: polygonsIntersectCartesian(geometry, [[(10., 10.), (11., 10.), (11., 11.), (10., 10.)]]) ===
+Code: 43

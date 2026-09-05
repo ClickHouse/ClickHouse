@@ -52,8 +52,9 @@ public:
         return 2;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        checkArealPredicateArgumentTypes<Point>(arguments[0], arguments[1], getName());
         return std::make_shared<DataTypeUInt8>();
     }
 
