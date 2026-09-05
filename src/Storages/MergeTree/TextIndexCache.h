@@ -53,6 +53,7 @@ public:
     static UInt128 hash(Args... args)
     {
         SipHash hasher;
+        hasher.update(UInt8{0}); /// Token postings, including negative cache entries.
         (hasher.update(args),...);
         return hasher.get128();
     }
@@ -73,14 +74,42 @@ public:
         set(key, notFoundEntry());
     }
 
+    void setPatternBypass(UInt128 key)
+    {
+        set(key, patternBypassEntry());
+    }
+
     static bool isNotFound(const MappedPtr & entry)
     {
         return entry == notFoundEntry();
     }
 
+    static bool isPatternBypass(const MappedPtr & entry)
+    {
+        return entry == patternBypassEntry();
+    }
+
+    static UInt128 hashPatternBypass(const String & index_id, UInt128 patterns_hash, UInt64 max_postings_to_read)
+    {
+        SipHash hasher;
+        hasher.update(UInt8{1}); /// Pattern bypass entries must not alias arbitrary token bytes.
+        hasher.update(index_id);
+        hasher.update(patterns_hash);
+        hasher.update(max_postings_to_read);
+        return hasher.get128();
+    }
+
 private:
     static const MappedPtr & notFoundEntry()
     {
+        static const auto entry = std::make_shared<TokenPostingsInfo>();
+        return entry;
+    }
+
+    static const MappedPtr & patternBypassEntry()
+    {
+        /// An empty TokenPostingsInfo has a nonzero weight, so sentinel entries
+        /// remain bounded by both the byte and entry-count cache limits.
         static const auto entry = std::make_shared<TokenPostingsInfo>();
         return entry;
     }

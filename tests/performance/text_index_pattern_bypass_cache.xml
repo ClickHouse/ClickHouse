@@ -1,0 +1,45 @@
+<test>
+  <settings>
+    <use_text_index_like_evaluation_by_dictionary_scan>1</use_text_index_like_evaluation_by_dictionary_scan>
+    <text_index_like_min_pattern_length>1</text_index_like_min_pattern_length>
+    <text_index_like_max_postings_to_read>5</text_index_like_max_postings_to_read>
+    <use_skip_indexes>1</use_skip_indexes>
+    <use_skip_indexes_on_data_read>1</use_skip_indexes_on_data_read>
+    <query_plan_direct_read_from_text_index>1</query_plan_direct_read_from_text_index>
+    <use_query_condition_cache>0</use_query_condition_cache>
+    <max_threads>1</max_threads>
+    <max_threads_for_indexes>1</max_threads_for_indexes>
+  </settings>
+
+  <create_query>
+    CREATE TABLE text_index_pattern_bypass_cache
+    (
+      part UInt8,
+      id UInt64,
+      message String,
+      INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, dictionary_block_size = 64)
+    )
+    ENGINE = MergeTree
+    PARTITION BY part
+    ORDER BY id
+  </create_query>
+
+  <fill_query>
+    INSERT INTO text_index_pattern_bypass_cache
+    SELECT
+      number % 64,
+      number,
+      concat(
+        'p',
+        char(97 + intDiv(number, 64) % 26),
+        char(97 + intDiv(intDiv(number, 64), 26) % 26))
+    FROM numbers(64 * 676 * 7)
+  </fill_query>
+
+  <query>SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%' SETTINGS use_text_index_pattern_bypass_cache = 0</query>
+  <query>SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%' SETTINGS use_text_index_pattern_bypass_cache = 1</query>
+  <query>SELECT count() FROM text_index_pattern_bypass_cache WHERE message ILIKE '%PA%' SETTINGS use_text_index_pattern_bypass_cache = 0</query>
+  <query>SELECT count() FROM text_index_pattern_bypass_cache WHERE message ILIKE '%PA%' SETTINGS use_text_index_pattern_bypass_cache = 1</query>
+
+  <drop_query>DROP TABLE text_index_pattern_bypass_cache</drop_query>
+</test>

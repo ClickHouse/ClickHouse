@@ -108,6 +108,7 @@ public:
     std::string getDescription() const override;
 
     bool hasSearchPatterns() const;
+    UInt128 getSearchPatternsHash() const { return search_patterns_hash; }
     const std::vector<String> & getAllSearchTokens() const { return all_search_tokens; }
     const std::unordered_map<UInt128, TextSearchQueryPtr> & getAllSearchQueries() const { return all_search_queries; }
     TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
@@ -216,6 +217,8 @@ private:
     std::vector<String> all_search_tokens;
     /// Search queries from all RPN elements
     std::unordered_map<UInt128, TextSearchQueryPtr> all_search_queries;
+    /// Stable hash of the set of search queries containing patterns.
+    UInt128 search_patterns_hash{};
     /// Mapping from virtual column (optimized for direct read from text index) to search query.
     std::unordered_map<String, TextSearchQueryPtr> virtual_column_to_search_query;
     /// If global mode is All, then we can exit analysis earlier if any token is missing in granule.

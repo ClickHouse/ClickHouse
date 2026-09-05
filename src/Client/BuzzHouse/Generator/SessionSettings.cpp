@@ -1903,6 +1903,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_text_index_header_cache", trueOrFalseSetting},
     {"use_text_index_like_evaluation_by_dictionary_scan", trueOrFalseSetting},
     {"use_text_index_negative_tokens_cache", trueOrFalseSetting},
+    {"use_text_index_pattern_bypass_cache", trueOrFalseSetting},
     {"use_text_index_postings_cache", trueOrFalseSetting},
     {"use_text_index_tokens_cache", trueOrFalseSetting},
     {"use_uncompressed_cache", trueOrFalseSettingNoOracle},
