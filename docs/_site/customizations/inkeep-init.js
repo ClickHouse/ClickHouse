@@ -3,7 +3,7 @@
 
   // Inkeep search integration (official @inkeep/cxkit-mintlify package).
   //
-  // Replaces Mintlify's native search with Inkeep's search-only modal. The
+  // Replaces Mintlify's native search with Inkeep's search and chat modal. The
   // cxkit-mintlify bundle automatically wires itself to Mintlify's search
   // entry points — it opens the modal on:
   //   • clicks on #search-bar-entry / #search-bar-entry-mobile (navbar), and
@@ -11,10 +11,9 @@
   //   • the ⌘K / Ctrl+K hotkey
   //
   // We use Inkeep.ModalSearchAndChat — it is the ONLY component that installs
-  // the native-search auto-hook (ModalSearch/SearchBar do not) — and force it
-  // search-only with `defaultView: 'search'` + `canToggleView: false`. That
-  // hides the chat toggle and the "Ask AI" card, so Inkeep does search only;
-  // "Ask AI" is handled by Kapa (see kapa-init.js).
+  // the native-search auto-hook (ModalSearch/SearchBar do not). It opens in
+  // search view by default, with the "Ask AI" card and view toggle available
+  // for switching to chat.
 
   // Inkeep integration API keys. These are client-side/public keys (they ship
   // in the browser bundle), so committing them is expected. Staging covers any
@@ -164,9 +163,8 @@
 
     var initialQuery = new URLSearchParams(window.location.search).get('q') || '';
     var settings = {
-      // Open straight to the search view. (canToggleView is honored by
-      // SearchBar/ChatButton but NOT by ModalSearchAndChat, so we hide the
-      // chat affordances via CSS below instead.)
+      // Open straight to the search view while keeping the "Ask AI" card and
+      // view toggle available for switching to chat.
       defaultView: 'search',
       // A URL such as /docs/?q=MergeTree opens the modal and runs the search
       // immediately, matching the old Docusaurus search-page behavior.
@@ -175,6 +173,7 @@
       },
       baseSettings: {
         apiKey: INKEEP_API_KEY,
+        aiApiBaseUrl: 'https://aiml-ragapi-public.us-east-2.aws.clickhouse-dev.com',
         primaryBrandColor: '#fdff75',
         organizationDisplayName: 'ClickHouse',
         // Route each search result into a custom tab by its URL. The cxkit
@@ -230,17 +229,8 @@
             },
           },
         },
-        // Make the modal search-only: hide the Search/Ask AI view toggle and
-        // the "Ask AI — Start conversation" card. Inkeep renders inside a
-        // shadow root, so we inject CSS via theme.styles (which mounts inside
-        // that shadow root). "Ask AI" stays exclusively on Kapa.
         theme: {
           styles: [
-            {
-              key: 'hide-inkeep-ai-chat',
-              type: 'style',
-              value: '.ikp-view_toggle, .ikp-ai-ask-ai-trigger { display: none !important; }',
-            },
             {
               key: 'dark-search-overlay',
               type: 'style',
@@ -255,6 +245,9 @@
         },
       },
       searchSettings: {
+        // `aiApiBaseUrl` is also the fallback search backend. Keep search on
+        // Inkeep while routing only AI chat to the ClickHouse endpoint above.
+        searchApiBaseUrl: 'https://api.inkeep.com',
         placeholder: 'Search ClickHouse docs...',
         defaultQuery: initialQuery,
         // Wait 300ms after the last keystroke before firing a search request,
