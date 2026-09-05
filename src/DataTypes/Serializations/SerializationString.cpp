@@ -29,6 +29,30 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
+/// Guards a size stream against requesting an unbounded String data allocation.
+static constexpr UInt64 MAX_TOTAL_STRING_SIZE = 1ULL << 48;
+
+/// The size of a string comes from the data, so it has to be validated before it is used to resize anything.
+/// `format_binary_max_string_size` is a user-facing limit that can be disabled by setting it to `0`,
+/// while `MAX_STRING_SIZE` is a hard limit that is always enforced.
+static void checkStringSize(UInt64 size, const FormatSettings & settings)
+{
+    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
+            "format_binary_max_string_size",
+            size,
+            settings.binary.max_binary_string_size);
+
+    if (size > SerializationString::MAX_STRING_SIZE)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too large string size: {}. The maximum is: {}.",
+            size,
+            SerializationString::MAX_STRING_SIZE);
+}
+
 void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const String & s = field.safeGet<String>();
@@ -49,13 +73,7 @@ void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, co
 {
     UInt64 size;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_STRING_SIZE,
-            "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
-            "format_binary_max_string_size",
-            size,
-            settings.binary.max_binary_string_size);
+    checkStringSize(size, settings);
 
     field = String();
     String & s = field.safeGet<String>();
@@ -88,13 +106,7 @@ void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr,
 
     UInt64 size;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_STRING_SIZE,
-            "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
-            "format_binary_max_string_size",
-            size,
-            settings.binary.max_binary_string_size);
+    checkStringSize(size, settings);
 
     size_t old_chars_size = data.size();
     size_t offset = old_chars_size + size;
@@ -641,15 +653,25 @@ void serializeStringSizes(const IColumn & column, WriteBuffer & ostr, UInt64 off
 void appendStringSizesToColumnStringOffsets(ColumnString & column_string, const UInt64 * sizes, size_t start, size_t rows)
 {
     auto & offsets = column_string.getOffsets();
-    IColumn::Offset prev_offset = offsets.empty() ? 0 : offsets.back();
 
     offsets.reserve(offsets.size() + rows);
 
+    /// The sizes come from a separate stream, so nothing bounds them by the data that follows them and
+    /// their sum can overflow the offsets. A 128-bit accumulator cannot overflow, so one check of the
+    /// total is enough: below it every offset is exact.
+    unsigned __int128 offset = offsets.empty() ? 0 : offsets.back();
     for (size_t i = 0; i < rows; ++i)
     {
-        prev_offset += sizes[start + i];
-        offsets.push_back(prev_offset);
+        offset += sizes[start + i];
+        offsets.push_back(static_cast<IColumn::Offset>(offset));
     }
+
+    if (unlikely(offset > MAX_TOTAL_STRING_SIZE))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Total size of String column is too large: the sizes stream declares more than {} bytes, "
+            "most likely the data is corrupted",
+            MAX_TOTAL_STRING_SIZE);
 }
 
 }
@@ -826,11 +848,23 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     auto & mutable_string_column = assert_cast<ColumnString &>(*mutable_column);
     auto & offsets = mutable_string_column.getOffsets();
     size_t prev_last_offset = offsets.back();
-    size_t bytes_to_skip = 0;
     const auto & sizes_data = assert_cast<const ColumnUInt64 &>(*string_state->size_column).getData();
     size_t prev_size = sizes_data.size() - num_read_rows;
+
+    /// The skipped prefix comes from the same untrusted sizes stream: an unchecked sum can wrap around
+    /// and skip a wrong number of bytes instead of rejecting the corrupted data.
+    unsigned __int128 bytes_to_skip_total = 0;
     for (size_t i = prev_size; i != prev_size + rows_offset; ++i)
-        bytes_to_skip += sizes_data[i];
+        bytes_to_skip_total += sizes_data[i];
+
+    if (unlikely(bytes_to_skip_total > MAX_TOTAL_STRING_SIZE))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Total size of String column is too large: the sizes stream declares more than {} bytes, "
+            "most likely the data is corrupted",
+            MAX_TOTAL_STRING_SIZE);
+
+    const size_t bytes_to_skip = static_cast<size_t>(bytes_to_skip_total);
 
     appendStringSizesToColumnStringOffsets(mutable_string_column, sizes_data.data(), prev_size + rows_offset, num_read_rows - rows_offset);
     size_t bytes_to_read = offsets.back() - prev_last_offset;
