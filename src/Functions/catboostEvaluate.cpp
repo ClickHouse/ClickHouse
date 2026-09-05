@@ -223,7 +223,7 @@ communicate using a HTTP interface. By default, port `9012` is used. A different
 
 See [Training and applying models](https://catboost.ai/docs/features/training.html#training) for how to train catboost models from a training data set.
 
-The model file must be located inside the [`user_files`](/reference/settings/server-settings/settings/user#user_files_path) directory, like for the [`file`](/sql-reference/functions/files#file) function.
+The model file must be located inside the [`user_files`](/reference/settings/server-settings/settings/user#user_files_path) directory, like for the [`file`](/reference/functions/regular-functions/files#file) function.
 )";
     FunctionDocumentation::Syntax syntax = "catboostEvaluate(path_to_model, feature_1[, feature_2, ..., feature_n])";
     FunctionDocumentation::Arguments arguments = {

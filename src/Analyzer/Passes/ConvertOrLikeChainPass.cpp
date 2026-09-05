@@ -65,8 +65,10 @@ bool isExpressionNonDeterministic(const QueryTreeNodePtr & node)
     if (!node)
         return false;
 
+    /// Only check ORDINARY functions for determinism, WINDOW/AGGREGATE functions need
+    /// to have their children checked instead, so we fall through to the recursive check.
     if (auto * function = node->as<FunctionNode>())
-        if (function->isResolved())
+        if (function->isOrdinaryFunction())
             if (auto func = function->getFunctionOrThrow(); !func->isDeterministicInScopeOfQuery())
                 return true;
 
@@ -225,7 +227,7 @@ struct PatternInfo
     bool allRegexpsHaveNoEmbeddedNul() const
     {
         for (const auto & p : patterns)
-            if (p.regexp.find('\0') != String::npos)
+            if (p.regexp.contains('\0'))
                 return false;
         return true;
     }

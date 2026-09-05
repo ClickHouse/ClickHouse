@@ -433,8 +433,7 @@ inline String parsePaddingToken(const String & raw_value, TokenizerMode mode, st
     {
         const UInt32 code_point = parse_number(0x10FFFF);
 
-        /// Surrogates are not Unicode scalar values and have no UTF-8 encoding.
-        if (code_point >= 0xD800 && code_point <= 0xDFFF)
+        if (UTF8::isSurrogateCodePoint(code_point))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "NaiveBayes: {} for 'codepoint' mode must not be a UTF-16 surrogate (0xD800-0xDFFF), got '{}'",

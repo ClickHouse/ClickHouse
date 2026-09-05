@@ -1,0 +1,11 @@
+IN (subquery) stays an IN and keeps its set
+keeps the set
+the explicit rewrite still turns IN into a JOIN
+rewritten to join
+distributed result matches single-node
+1000	6993000
+1000	6993000
+99000
+99000
+the query distributes
+distributes

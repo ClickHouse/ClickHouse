@@ -30,17 +30,17 @@ keywords: ['native protocol', 'tcp protocol', 'client-server', 'protocol specifi
   ## Hello
 </div>
 
-[client Hello](/ko/resources/develop-contribute/native-protocol/client#hello)에 대한 응답입니다.
+[클라이언트 Hello](/ko/resources/develop-contribute/native-protocol/client#hello)에 대한 응답입니다.
 
-| field             | 유형      | 값               | 설명             |
-| ----------------- | ------- | --------------- | -------------- |
-| name              | String  | `Clickhouse`    | 서버 이름          |
-| version&#95;major | UVarInt | `21`            | 서버 메이저 버전      |
-| version&#95;minor | UVarInt | `12`            | 서버 마이너 버전      |
-| revision          | UVarInt | `54452`         | 서버 리비전         |
-| tz                | String  | `Europe/Moscow` | 서버 시간대         |
-| display&#95;name  | String  | `Clickhouse`    | UI에 표시되는 서버 이름 |
-| version&#95;patch | UVarInt | `3`             | 서버 패치 버전       |
+| field             | 유형      | 값                            | 설명             |
+| ----------------- | ------- | ---------------------------- | -------------- |
+| name              | String  | `ClickHouse`                 | 서버 이름          |
+| version&#95;major | UVarInt | `21`                         | 서버 메이저 버전      |
+| version&#95;minor | UVarInt | `12`                         | 서버 마이너 버전      |
+| revision          | UVarInt | `54452`                      | 서버 리비전         |
+| tz                | String  | `Europe/Moscow`              | 서버 시간대         |
+| display&#95;name  | String  | `<display_name-or-hostname>` | UI에 표시되는 서버 이름 |
+| version&#95;patch | UVarInt | `3`                          | 서버 패치 버전       |
 
 <div id="exception">
   ## 예외

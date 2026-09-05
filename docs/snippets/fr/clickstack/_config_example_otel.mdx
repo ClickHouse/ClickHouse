@@ -2,7 +2,7 @@
 title: Exemple de configuration OTel
 ---
 
-Un exemple de cette configuration est présenté ci-dessous (les variables d&#39;environnement seront préremplies si vous copiez depuis l&#39;UI) :
+Remplacez les placeholders endpoint et password par les identifiants générés par ClickStack :
 
 ```yaml
 receivers:
@@ -34,10 +34,6 @@ connectors:
         statement: route() where IsMatch(attributes["rr-web.event"], ".*")
         pipelines: [logs/out-rrweb]
 exporters:
-  debug:
-    verbosity: detailed
-    sampling_initial: 5
-    sampling_thereafter: 200
   clickhouse/rrweb:
     database: default
     endpoint: <clickhouse_cloud_endpoint>

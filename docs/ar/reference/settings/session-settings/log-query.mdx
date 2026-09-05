@@ -28,7 +28,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 لضبط تسجيل خيوط الاستعلام.
 
-تُسجَّل خيوط الاستعلام في جدول [system.query&#95;thread&#95;log](/ar/reference/system-tables/query_thread_log). ولا يسري مفعول هذا الإعداد إلا إذا كانت قيمة [log&#95;queries](/ar/reference/settings/session-settings/log-queries#log_queries) هي true. وتُسجَّل خيوط الاستعلام التي يشغّلها ClickHouse عند تفعيل هذا الإعداد وفقًا للقواعد المحددة في مَعلمة تهيئة الخادم [query&#95;thread&#95;log](/ar/reference/settings/server-settings/settings#query_thread_log).
+تُسجَّل خيوط الاستعلام في جدول [system.query&#95;thread&#95;log](/ar/reference/system-tables/query_thread_log). ولا يسري مفعول هذا الإعداد إلا إذا كانت قيمة [log&#95;queries](/ar/reference/settings/session-settings/log-queries#log_queries) هي true. وتُسجَّل خيوط الاستعلام التي يشغّلها ClickHouse عند تفعيل هذا الإعداد وفقًا للقواعد المحددة في مَعلمة تهيئة الخادم [query&#95;thread&#95;log](/ar/reference/settings/server-settings/settings/query#query_thread_log).
 
 القيم الممكنة:
 
@@ -49,7 +49,7 @@ log_query_threads=1
 
 إعداد لتسجيل عروض الاستعلامات.
 
-عندما يكون هذا الإعداد مفعّلًا ويحتوي استعلام يُشغِّله ClickHouse على عروض مرتبطة به (عروض مُجسَّدة أو عروض حية)، تُسجَّل هذه العروض في مَعلمة تهيئة الخادم [query&#95;views&#95;log](/ar/reference/settings/server-settings/settings#query_views_log).
+عندما يكون هذا الإعداد مفعّلًا ويحتوي استعلام يُشغِّله ClickHouse على عروض مرتبطة به (عروض مُجسَّدة أو عروض حية)، تُسجَّل هذه العروض في مَعلمة تهيئة الخادم [query&#95;views&#95;log](/ar/reference/settings/server-settings/settings/query#query_views_log).
 
 مثال:
 

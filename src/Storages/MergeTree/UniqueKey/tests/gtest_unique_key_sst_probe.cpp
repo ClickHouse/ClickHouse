@@ -35,12 +35,18 @@
 
 #include <algorithm>
 #include <cstring>
-#include <mutex>
 #include <filesystem>
-#include <fstream>
-#include <random>
 #include <string>
 #include <vector>
+
+#include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
+#include <IO/WriteBufferFromFile.h>
+
+#if USE_SSL
+#include <Disks/DiskEncrypted.h>
+#include <IO/FileEncryptionCommon.h>
+#endif
 
 
 using namespace DB;
@@ -77,16 +83,6 @@ namespace
             disk = std::make_shared<DiskLocal>("test_disk", tmp_path.string());
             volume = std::make_shared<SingleDiskVolume>("test_volume", disk);
             storage = std::make_shared<DataPartStorageOnDiskFull>(volume, "", "part");
-
-            /// `Context::setTemporaryStoragePath` throws if called twice, so set
-            /// it only if no other fixture in this binary already configured the
-            /// shared temporary storage (e.g. the UNIQUE KEY probe suite).
-            if (!getContext().context->getSharedTempDataOnDisk())
-            {
-                auto shared_tmp = std::filesystem::temp_directory_path() / "ck_uk_gtest_tmp";
-                std::filesystem::create_directories(shared_tmp);
-                getMutableContext().context->setTemporaryStoragePath(shared_tmp.string() + "/", 0);
-            }
         }
 
         void TearDown() override
@@ -167,8 +163,8 @@ namespace
 /// Smoke: write 10K sorted UInt64 keys, read back via `SstFileReader`,
 /// every key resolves to its expected row_number. One smoke test gates
 /// the wrapper layer end-to-end; the rest of this file pins our own
-/// SST-write contracts (atomic rename, empty short-circuit, value
-/// encoding, unsorted-path sort, memory-limit, corruption rebuild).
+/// SST-write contracts (empty short-circuit, value encoding,
+/// unsorted-path sort, corruption rebuild).
 TEST_F(SSTFixture, RoundTrip10K)
 {
     constexpr size_t N = 10'000;
@@ -252,8 +248,9 @@ TEST_F(SSTFixture, CorruptionRebuild)
     EXPECT_TRUE(sstIteratorContains(reader, encoded[0]));
 }
 
-/// Empty-input short-circuit: zero keys → no `.sst` produced, no `.tmp`
-/// residue. Pins `finalizeToStorage`'s empty-input contract.
+/// Empty-input short-circuit: zero keys → the output stream is never
+/// opened, so no `.sst` is produced. Pins `finalizeToStorage`'s
+/// empty-input contract.
 TEST_F(SSTFixture, EmptyInputProducesNoFile)
 {
     auto block = makeUInt64Block({});
@@ -583,6 +580,94 @@ TEST_F(SSTFixture, WriteDenseIndexDescPrefixFallsBackToUnsorted)
     EXPECT_EQ(observed_keys, sorted);
 }
 
+/// Mid-stream failure: out-of-order keys make the second `SstFileWriter::Put`
+/// return an error. The exception must propagate cleanly, and the writer
+/// destructor — run during stack unwinding with a partially-written
+/// `WriteBuffer` — must not abort.
+TEST_F(SSTFixture, MidStreamFailurePropagatesCleanly)
+{
+    /// Descending keys: second Put violates the strictly-increasing invariant.
+    auto cols = makeUInt64Columns({10, 5});
+    VectorWithMemoryTracking<String> encoded;
+    UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, 256, encoded);
+    ASSERT_EQ(encoded.size(), 2u);
+
+    EXPECT_THROW(
+    {
+        SSTIndexWriter writer(*storage, getContext().context);
+        writer.addEncoded(encoded[0], 0);
+        writer.addEncoded(encoded[1], 1); /// out-of-order → throws
+    }, DB::Exception);
+
+    /// The destructor must have removed the abandoned partial SST file.
+    EXPECT_FALSE(std::filesystem::exists(finalPath()));
+}
+
+#if USE_SSL
+/// Exercise `SSTIndexWriter` through `DiskEncrypted` (non-trivial `WriteBuffer`),
+/// then round-trip: decrypt → `SstFileReader` validates keys and row numbers.
+TEST_F(SSTFixture, WriteThroughEncryptedDiskAdapter)
+{
+    /// Build an encrypted disk wrapping a local disk.
+    std::filesystem::path enc_root = tmp_path / "enc_root";
+    std::filesystem::create_directories(enc_root);
+    auto local_disk = std::make_shared<DiskLocal>("enc_local", enc_root.string());
+
+    auto enc_settings = std::make_unique<DiskEncryptedSettings>();
+    enc_settings->wrapped_disk = local_disk;
+    enc_settings->current_algorithm = FileEncryption::Algorithm::AES_128_CTR;
+    const String key = "1234567890123456";
+    enc_settings->current_key = key;
+    enc_settings->current_key_fingerprint = FileEncryption::calculateKeyFingerprint(key);
+    enc_settings->all_keys[enc_settings->current_key_fingerprint] = key;
+    auto enc_disk = std::make_shared<DiskEncrypted>("enc_disk", std::move(enc_settings));
+
+    auto enc_volume = std::make_shared<SingleDiskVolume>("enc_volume", enc_disk);
+    auto enc_storage = std::make_shared<DataPartStorageOnDiskFull>(enc_volume, "", "enc_part");
+
+    /// Write a small sorted SST through the encrypted-disk adapter.
+    std::vector<UInt64> keys{100, 200, 300, 400, 500};
+    auto block = makeUInt64Block(keys);
+
+    UInt64 written = SSTIndexWriter::writeFromBlock(
+        *enc_storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
+    ASSERT_EQ(written, keys.size());
+
+    /// The file exists on the underlying local disk (encrypted on disk).
+    std::string enc_final_path = enc_storage->getFullPath() + "/" + SSTIndexWriter::FILE_NAME;
+    ASSERT_TRUE(std::filesystem::exists(enc_final_path));
+
+    /// Read the decrypted SST content through the storage adapter and dump
+    /// to a plain temp file so `SstFileReader` can open it.
+    auto read_buf = enc_storage->readFile(SSTIndexWriter::FILE_NAME, ReadSettings{}, {});
+    String decrypted;
+    readStringUntilEOF(decrypted, *read_buf);
+    read_buf.reset();
+
+    std::filesystem::path plain_path = tmp_path / "decrypted.sst";
+    {
+        WriteBufferFromFile wb(plain_path.string());
+        wb.write(decrypted.data(), decrypted.size());
+        wb.finalize();
+    }
+
+    /// Verify the round-trip: keys and row numbers must be correct.
+    rocksdb::SstFileReader reader(makeReaderOptions());
+    ASSERT_TRUE(reader.Open(plain_path.string()).ok());
+
+    auto cols = makeUInt64Columns(keys);
+    VectorWithMemoryTracking<String> encoded;
+    UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, /*max_size=*/256, encoded);
+    for (size_t i = 0; i < keys.size(); ++i)
+    {
+        std::string value;
+        ASSERT_TRUE(sstIteratorContains(reader, encoded[i], &value))
+            << "missing key at row " << i;
+        EXPECT_EQ(decodeRowNumberBE(value), static_cast<UInt32>(i));
+    }
+}
+#endif // USE_SSL
+
 #endif  // USE_ROCKSDB
 
 /// ---------------------------------------------------------------------------
@@ -617,8 +702,7 @@ TEST(UniqueKeyNoRocksDB, StaticWritersThrowSupportIsDisabled)
 {
     auto tmp_path = std::filesystem::temp_directory_path()
         / ("gtest_unique_key_no_rocksdb_"
-           + std::to_string(::testing::UnitTest::GetInstance()->random_seed())
-           + "_" + std::to_string(reinterpret_cast<uintptr_t>(&tmp_path)));
+           + std::to_string(::testing::UnitTest::GetInstance()->random_seed()));
     std::filesystem::remove_all(tmp_path);
     std::filesystem::create_directories(tmp_path / "part");
     auto disk = std::make_shared<DiskLocal>("test_disk", tmp_path.string());
@@ -656,8 +740,7 @@ TEST(UniqueKeyNoRocksDB, ConstructorThrowsSupportIsDisabled)
 {
     auto tmp_path = std::filesystem::temp_directory_path()
         / ("gtest_unique_key_no_rocksdb_ctor_"
-           + std::to_string(::testing::UnitTest::GetInstance()->random_seed())
-           + "_" + std::to_string(reinterpret_cast<uintptr_t>(&tmp_path)));
+           + std::to_string(::testing::UnitTest::GetInstance()->random_seed()));
     std::filesystem::remove_all(tmp_path);
     std::filesystem::create_directories(tmp_path / "part");
     auto disk = std::make_shared<DiskLocal>("test_disk", tmp_path.string());
@@ -679,8 +762,7 @@ TEST(UniqueKeyNoRocksDB, WriteDenseIndexOnInsertThrowsSupportIsDisabled)
 {
     auto tmp_path = std::filesystem::temp_directory_path()
         / ("gtest_unique_key_no_rocksdb_insert_"
-           + std::to_string(::testing::UnitTest::GetInstance()->random_seed())
-           + "_" + std::to_string(reinterpret_cast<uintptr_t>(&tmp_path)));
+           + std::to_string(::testing::UnitTest::GetInstance()->random_seed()));
     std::filesystem::remove_all(tmp_path);
     std::filesystem::create_directories(tmp_path / "part");
     auto disk = std::make_shared<DiskLocal>("test_disk", tmp_path.string());

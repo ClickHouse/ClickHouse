@@ -7,6 +7,8 @@ keywords: ['ClickHouse Cloud', '兼容性']
 doc_type: 'guide'
 ---
 
+import CloudUnsupportedFeatures from '/snippets/zh/_cloud_unsupported_features.mdx';
+
 本指南概述了 ClickHouse Cloud 在功能和运维方面的预期表现。虽然 ClickHouse Cloud 基于开源发行版 ClickHouse，但在架构和实现上可能存在一些差异。作为背景资料，你可能会对这篇介绍[我们如何构建 ClickHouse Cloud](https://clickhouse.com/blog/building-clickhouse-cloud-from-scratch-in-a-year)的博文感兴趣。
 
 <div id="clickhouse-cloud-architecture">
@@ -48,7 +50,7 @@ ClickHouse Cloud 默认是一项高可用且具备副本能力的服务，构建
 
 `Replicated*` 引擎也会转换为对应的 `Shared*` 引擎。你可以在 `SHOW CREATE TABLE` 中看到这种替换：即使你的语句中指定的是普通变体，显示结果中仍会报告 `Shared*` 引擎。
 
-以下引擎也受支持，并会按原样使用：
+以下表引擎也受支持，并会按原样使用。受支持的 `MySQL` 表引擎不同于不受支持的 `MySQL` 数据库引擎：
 
 * URL
 * View
@@ -57,6 +59,7 @@ ClickHouse Cloud 默认是一项高可用且具备副本能力的服务，构建
 * Null
 * Buffer
 * Memory
+* `IcebergS3` 和 `IcebergAzure`
 * Deltalake
 * Hudi
 * MySQL
@@ -66,6 +69,8 @@ ClickHouse Cloud 默认是一项高可用且具备副本能力的服务，构建
 * PostgreSQL
 * S3
 * Kafka
+
+可在部分 ClickHouse Cloud 服务上启用 Experimental `PaimonS3` 和 `PaimonAzure` 表引擎。请联系 Support 确认可用性。
 
 <div id="interfaces">
   ### 接口
@@ -85,6 +90,8 @@ ClickHouse Cloud 支持 HTTPS、原生接口以及 [MySQL wire 协议](/zh/conce
 
 我们支持在云环境中通过联邦 ClickHouse 查询实现跨集群通信，也支持与外部自管理 ClickHouse 集群进行通信。ClickHouse Cloud 目前支持使用以下集成引擎的联邦查询：
 
+* `IcebergS3` 和 `IcebergAzure`
+* `PaimonS3` 和 `PaimonAzure` (实验性；请联系 Support 了解可用性)
 * Deltalake
 * Hudi
 * MySQL
@@ -128,7 +135,7 @@ ClickHouse Cloud 中的用户自定义函数目前处于[Public Beta](/zh/refere
   ### 命名集合
 </div>
 
-ClickHouse Cloud 目前暂不支持[命名集合](/zh/concepts/features/configuration/server-config/named-collections)。
+部分 ClickHouse Cloud 服务支持启用通过 DDL 创建的[命名集合](/zh/concepts/features/configuration/server-config/named-collections)。请联系 Support 确认可用性。由于用户无法修改 ClickHouse Cloud 中的服务器配置文件，因此无法使用在配置文件中定义的命名集合。
 
 <div id="operational-defaults-and-considerations">
   ## 运行默认值与注意事项
@@ -151,9 +158,7 @@ MergeTree 表的 `max_parts_in_total` 设置默认值已从 100,000 下调至 10
 </div>
 
 将此服务器级设置从默认的 `100` 提高到 `1000`，以支持更高的并发能力。
-这样一来，所提供的各层级服务可支持的并发查询数将为 `副本数量 * 1,000`。
-对于仅限单个副本的基础版服务，可支持 `1000` 个并发查询；对于 Scale 和 Enterprise，
-则可支持 `1000+` 个并发查询，具体取决于配置的副本数量。
+这样一来，服务可支持的并发查询数将为 `副本数量 * 1,000`。无论属于哪个层级，单副本服务最多支持 `1000` 个并发查询。Scale 和 Enterprise 层级上的多副本服务每个副本最多支持 `1000` 个并发查询。
 
 <div id="max_table_size_to_drop-1000000000000">
   #### `max_table_size_to_drop: 1,000,000,000,000`
@@ -172,6 +177,12 @@ ClickHouse Cloud 已针对变化较大的工作负载进行了优化，因此目
 </div>
 
 在创建 ClickHouse 服务时，我们会创建一个默认数据库，以及具有该数据库广泛权限的 `default` 用户。该初始用户可以创建其他用户，并为其分配对此数据库的权限。除此之外，目前暂不支持通过 Kerberos、LDAP 或 SSL X.509 证书身份验证在数据库内启用以下安全功能。
+
+<div id="list-of-unsupported-features">
+  ## 不支持的功能列表
+</div>
+
+<CloudUnsupportedFeatures />
 
 <div id="roadmap">
   ## 路线图

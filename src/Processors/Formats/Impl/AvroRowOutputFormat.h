@@ -60,6 +60,13 @@ private:
     /// path it picks Avro `string` vs `bytes` for a String column from the source logical type.
     SchemaWithSerializeFn createSchemaWithSerializeFn(const DataTypePtr & data_type, size_t & type_name_increment, const String & column_name, const String & column_path);
 
+    /// Same, but for a site that owns a field (top-level column, tuple field, array element, map
+    /// value). A complex container is never wrapped in Nullable, so its Iceberg optionality is not
+    /// recoverable from the type: consult the per-path metadata and add the `["null", T]` union an
+    /// optional field needs. A schema that is already a union or null carries its own optionality,
+    /// so the union is added exactly once per path.
+    SchemaWithSerializeFn createFieldSchemaWithSerializeFn(const DataTypePtr & data_type, size_t & type_name_increment, const String & column_name, const String & column_path);
+
     /// Sets the Iceberg `field-id` on every Avro record field, descending through union
     /// (Nullable/Variant), array and map wrappers so nested records also get ids. No-op without a mapper.
     void setIcebergFieldIds(const avro::NodePtr & node, const String & path);

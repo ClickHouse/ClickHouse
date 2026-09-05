@@ -3,6 +3,7 @@
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 
@@ -95,11 +96,26 @@ public:
     /// Probably for overflow function in the future.
     using ColumnResult = ColumnVectorOrDecimal<ResultT>;
 
-    explicit MovingImpl(const DataTypePtr & data_type_, UInt64 window_size_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<Data, MovingImpl<T, LimitNumElements, Data>>({data_type_}, {}, createResultType(data_type_))
+    explicit MovingImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 window_size_ = std::numeric_limits<UInt64>::max())
+        : IAggregateFunctionDataHelper<Data, MovingImpl<T, LimitNumElements, Data>>({data_type_}, parameters_, createResultType(data_type_))
         , window_size(window_size_) {}
 
     String getName() const override { return Data::name; }
+
+    /// The window size accepts both Int64 and UInt64, so the printed type name needs the type
+    /// suffix to round-trip: without it 42::Int64 reparses as UInt64.
+    bool shouldPrintParametersWithTypes() const override { return true; }
+
+    /// The window size only affects finalization, not the serialized state, so parameterized and
+    /// parameterless states share one representation and stay Merge-/CAST-compatible.
+    DataTypePtr getNormalizedStateType() const override
+    {
+        DataTypes normalized_argument_types;
+        normalized_argument_types.reserve(this->argument_types.size());
+        for (const auto & arg : this->argument_types)
+            normalized_argument_types.emplace_back(arg->getNormalizedType());
+        return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), normalized_argument_types, Array{});
+    }
 
     static DataTypePtr createResultType(const DataTypePtr & argument)
     {
@@ -228,14 +244,14 @@ template <typename T, typename LimitNumberOfElements> using MovingSumTemplate = 
 template <typename T, typename LimitNumberOfElements> using MovingAvgTemplate = typename MovingAvg<T, LimitNumberOfElements>::Function;
 
 template <template <typename, typename> class Function, typename HasLimit, typename DecimalArg, typename ... TArgs>
-inline AggregateFunctionPtr createAggregateFunctionMovingImpl(const std::string & name, const DataTypePtr & argument_type, TArgs ... args)
+inline AggregateFunctionPtr createAggregateFunctionMovingImpl(const std::string & name, const DataTypePtr & argument_type, const Array & parameters, TArgs ... args)
 {
     AggregateFunctionPtr res;
 
     if constexpr (DecimalArg::value)
-        res.reset(createWithDecimalType<Function, HasLimit>(*argument_type, argument_type, std::forward<TArgs>(args)...));
+        res.reset(createWithDecimalType<Function, HasLimit>(*argument_type, argument_type, parameters, std::forward<TArgs>(args)...));
     else
-        res.reset(createWithNumericType<Function, HasLimit>(*argument_type, argument_type, std::forward<TArgs>(args)...));
+        res.reset(createWithNumericType<Function, HasLimit>(*argument_type, argument_type, parameters, std::forward<TArgs>(args)...));
 
     if (!res)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
@@ -279,13 +295,13 @@ AggregateFunctionPtr createAggregateFunctionMoving(
     if (!limit_size)
     {
         if (isDecimal(argument_type))
-            return createAggregateFunctionMovingImpl<Function, std::false_type, std::true_type>(name, argument_type);
-        return createAggregateFunctionMovingImpl<Function, std::false_type, std::false_type>(name, argument_type);
+            return createAggregateFunctionMovingImpl<Function, std::false_type, std::true_type>(name, argument_type, parameters);
+        return createAggregateFunctionMovingImpl<Function, std::false_type, std::false_type>(name, argument_type, parameters);
     }
 
     if (isDecimal(argument_type))
-        return createAggregateFunctionMovingImpl<Function, std::true_type, std::true_type>(name, argument_type, max_elems);
-    return createAggregateFunctionMovingImpl<Function, std::true_type, std::false_type>(name, argument_type, max_elems);
+        return createAggregateFunctionMovingImpl<Function, std::true_type, std::true_type>(name, argument_type, parameters, max_elems);
+    return createAggregateFunctionMovingImpl<Function, std::true_type, std::false_type>(name, argument_type, parameters, max_elems);
 }
 
 }
@@ -333,9 +349,9 @@ SELECT
 FROM t;
         )",
         R"(
-┌─I──────────┬─F───────────────────────────────┬─D──────────────────────┐
-│ [1,3,7,14] │ [1.1,3.3000002,7.7000003,15.47] │ [1.10,3.30,7.70,15.47] │
-└────────────┴─────────────────────────────────┴────────────────────────┘
+┌─I──────────┬─F───────────────────────────────────────────────────────────────────────────┬─D───────────────────┐
+│ [1,3,7,14] │ [1.100000023841858,3.3000000715255737,7.700000166893005,15.470000147819519] │ [1.1,3.3,7.7,15.47] │
+└────────────┴─────────────────────────────────────────────────────────────────────────────┴─────────────────────┘
         )"
     },
     {
@@ -348,9 +364,9 @@ SELECT
 FROM t;
         )",
         R"(
-┌─I──────────┬─F───────────────────────────────┬─D──────────────────────┐
-│ [1,3,6,11] │ [1.1,3.3000002,6.6000004,12.17] │ [1.10,3.30,6.60,12.17] │
-└────────────┴─────────────────────────────────┴────────────────────────┘
+┌─I──────────┬─F────────────────────────────────────────────────────────────────────────────┬─D───────────────────┐
+│ [1,3,6,11] │ [1.100000023841858,3.3000000715255737,6.6000001430511475,12.170000076293945] │ [1.1,3.3,6.6,12.17] │
+└────────────┴──────────────────────────────────────────────────────────────────────────────┴─────────────────────┘
         )"
     }
     };
@@ -415,9 +431,9 @@ SELECT
 FROM t;
         )",
         R"(
-┌─I───────────────┬─F───────────────────────────────────────────────────────────────────────────┬─D─────────────────────┐
-│ [0.5,1.5,3,5.5] │ [0.550000011920929,1.6500000357627869,3.3000000715255737,6.085000038146973] │ [0.55,1.65,3.30,6.08] │
-└─────────────────┴─────────────────────────────────────────────────────────────────────────────┴───────────────────────┘
+┌─I───────────────┬─F───────────────────────────────────────────────────────────────────────────┬─D────────────────────┐
+│ [0.5,1.5,3,5.5] │ [0.550000011920929,1.6500000357627869,3.3000000715255737,6.085000038146973] │ [0.55,1.65,3.3,6.08] │
+└─────────────────┴─────────────────────────────────────────────────────────────────────────────┴──────────────────────┘
         )"
     }
     };

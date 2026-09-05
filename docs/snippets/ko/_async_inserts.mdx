@@ -10,7 +10,7 @@ ClickHouse의 비동기 삽입은 클라이언트 측 배칭이 어렵거나 적
 
 비동기 삽입은 들어오는 데이터를 인메모리 버퍼에 기록한 뒤, 구성 가능한 임계값에 따라 스토리지에 플러시함으로써 배칭 책임을 클라이언트에서 서버로 옮깁니다. 이 방식은 파트 생성 오버헤드를 크게 줄이고, CPU 사용량을 낮추며, 높은 동시성에서도 수집이 효율적으로 유지되도록 합니다.
 
-핵심 동작은 [`async_insert`](/ko/reference/settings/session-settings#async_insert) 설정으로 제어됩니다.
+핵심 동작은 [`async_insert`](/ko/reference/settings/session-settings/async-insert#async_insert) 설정으로 제어됩니다.
 
 <Frame>
   <img src="/images/bestpractices/async_inserts.webp" alt="비동기 삽입" />
@@ -20,9 +20,9 @@ ClickHouse의 비동기 삽입은 클라이언트 측 배칭이 어렵거나 적
 
 활성화되면 (`async_insert = 1`) 삽입은 버퍼링되며, 다음 플러시 조건 중 하나를 충족할 때만 디스크에 기록됩니다:
 
-* 버퍼가 지정된 데이터 크기에 도달하는 경우([`async_insert_max_data_size`](/ko/reference/settings/session-settings#async_insert_max_data_size), 기본값 100 MiB)
-* 시간 임계값이 경과하는 경우([`async_insert_busy_timeout_ms`](/ko/reference/settings/session-settings#async_insert_busy_timeout_max_ms), 기본값 200 ms 또는 Cloud에서는 1000 ms)
-* 삽입 쿼리 수가 최대치까지 누적되는 경우([`async_insert_max_query_number`](/ko/reference/settings/session-settings#async_insert_max_query_number), 기본값 450)
+* 버퍼가 지정된 데이터 크기에 도달하는 경우([`async_insert_max_data_size`](/ko/reference/settings/session-settings/async-insert#async_insert_max_data_size), 기본값 100 MiB)
+* 시간 임계값이 경과하는 경우([`async_insert_busy_timeout_ms`](/ko/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms), 기본값 200 ms 또는 Cloud에서는 1000 ms)
+* 삽입 쿼리 수가 최대치까지 누적되는 경우([`async_insert_max_query_number`](/ko/reference/settings/session-settings/async-insert#async_insert_max_query_number), 기본값 450)
 
 가장 먼저 도달한 임계값이 플러시를 트리거합니다.
 
@@ -32,7 +32,7 @@ ClickHouse의 비동기 삽입은 클라이언트 측 배칭이 어렵거나 적
   ### 반환 모드 선택
 </div>
 
-비동기 삽입의 동작은 [`wait_for_async_insert`](/ko/reference/settings/session-settings#wait_for_async_insert) 설정으로 더 세밀하게 조정할 수 있습니다.
+비동기 삽입의 동작은 [`wait_for_async_insert`](/ko/reference/settings/session-settings/wait-for#wait_for_async_insert) 설정으로 더 세밀하게 조정할 수 있습니다.
 
 이 값을 1(기본값)로 설정하면 ClickHouse는 데이터가 디스크에 성공적으로 플러시된 후에만 삽입을 승인합니다. 이렇게 하면 강력한 내구성이 보장되고 오류 처리도 단순해집니다. 즉, 플러시 중 문제가 발생하면 해당 오류가 클라이언트에 반환됩니다. 이 모드는 대부분의 프로덕션 환경, 특히 삽입 실패를 신뢰성 있게 추적해야 하는 경우에 권장됩니다.
 
@@ -50,9 +50,9 @@ ClickHouse의 비동기 삽입은 클라이언트 측 배칭이 어렵거나 적
   ### 적응형 비동기 삽입
 </div>
 
-ClickHouse는 버전 24.2부터 기본적으로 적응형 플러시 타임아웃([`async_insert_use_adaptive_busy_timeout`](/ko/reference/settings/session-settings#async_insert_use_adaptive_busy_timeout))을 사용합니다. 고정된 플러시 인터벌 대신, 유입되는 데이터 속도에 따라 타임아웃이 최소값([`async_insert_busy_timeout_min_ms`](/ko/reference/settings/session-settings#async_insert_busy_timeout_min_ms), 기본값 50 ms)과 최대값([`async_insert_busy_timeout_max_ms`](/ko/reference/settings/session-settings#async_insert_busy_timeout_max_ms), 기본값 200 ms, Cloud에서는 1000 ms) 사이에서 동적으로 조정됩니다.
+ClickHouse는 버전 24.2부터 기본적으로 적응형 플러시 타임아웃([`async_insert_use_adaptive_busy_timeout`](/ko/reference/settings/session-settings/async-insert#async_insert_use_adaptive_busy_timeout))을 사용합니다. 고정된 플러시 인터벌 대신, 유입되는 데이터 속도에 따라 타임아웃이 최소값([`async_insert_busy_timeout_min_ms`](/ko/reference/settings/session-settings/async-insert#async_insert_busy_timeout_min_ms), 기본값 50 ms)과 최대값([`async_insert_busy_timeout_max_ms`](/ko/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms), 기본값 200 ms, Cloud에서는 1000 ms) 사이에서 동적으로 조정됩니다.
 
-데이터가 자주 들어오면 더 빨리 플러시되어 엔드 투 엔드 지연 시간이 줄어들도록 타임아웃이 최소값에 가깝게 유지됩니다. 데이터가 희소하면 더 큰 배치를 모을 수 있도록 최대값 쪽으로 증가합니다. 이는 특히 기본 모드(`wait_for_async_insert=1`)에서 유용합니다. 고정된 높은 타임아웃을 사용하면 플러시할 데이터가 이미 준비되어 있어도 클라이언트가 전체 인터벌 동안 대기해야 하기 때문입니다.
+데이터가 자주 들어오면 더 빨리 플러시되어 엔드투엔드 지연 시간이 줄어들도록 타임아웃이 최소값에 가깝게 유지됩니다. 데이터가 희소하면 더 큰 배치를 모을 수 있도록 최대값에 가까워집니다. 이는 특히 기본 모드(`wait_for_async_insert=1`)에서 유용합니다. 고정된 높은 타임아웃을 사용하면 플러시할 데이터가 이미 준비되어 있어도 클라이언트가 전체 인터벌 동안 대기해야 하기 때문입니다.
 
 <div id="error-handling">
   ### 오류 처리
@@ -60,7 +60,7 @@ ClickHouse는 버전 24.2부터 기본적으로 적응형 플러시 타임아웃
 
 스키마 검증과 데이터 파싱은 삽입이 수신될 때가 아니라 버퍼가 플러시될 때 수행됩니다. 삽입 쿼리의 행 중 하나라도 파싱 또는 유형 오류가 있으면 **해당 쿼리의 데이터는 전혀 플러시되지 않으며** 쿼리의 전체 payload가 거부됩니다. 기본 모드(`wait_for_async_insert=1`)에서는 오류가 클라이언트에 반환됩니다. fire-and-forget 모드에서는 오류가 서버 로그와 [`system.asynchronous_inserts`](/ko/reference/system-tables/asynchronous_inserts) 테이블에 기록됩니다.
 
-각 플러시는 버퍼 내에서 서로 다른 각 파티션 키 값마다 최소 1개의 파트를 생성합니다. 파티션 키가 없는 테이블에서도 버퍼링된 데이터가 [`max_insert_block_size`](/ko/reference/settings/session-settings#max_insert_block_size) (기본값 약 100만 행)를 초과하면 한 번의 플러시로 여러 파트가 생성될 수 있습니다.
+각 플러시는 버퍼 내에서 서로 다른 각 파티션 키 값마다 최소 1개의 파트를 생성합니다. 파티션 키가 없는 테이블에서도 버퍼링된 데이터가 [`max_insert_block_size`](/ko/reference/settings/session-settings/max-insert#max_insert_block_size) (기본값 약 100만 행)를 초과하면 한 번의 플러시로 여러 파트가 생성될 수 있습니다.
 
 <Note>
   비동기 삽입을 사용하더라도 파티셔닝 키의 cardinality가 높으면 [&quot;too many parts&quot;](/ko/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) 오류가 발생할 수 있습니다.
@@ -70,9 +70,11 @@ ClickHouse는 버전 24.2부터 기본적으로 적응형 플러시 타임아웃
   ### 중복 제거 및 안정성
 </div>
 
-기본적으로 ClickHouse는 동기 삽입에 대해 자동 중복 제거를 수행하므로, 장애 상황에서 재시도해도 안전합니다. 하지만 비동기 삽입에서는 명시적으로 활성화하지 않는 한 이 기능이 비활성화됩니다(종속된 materialized view가 있는 경우에는 활성화하지 마십시오 — [issue 참조](https://github.com/ClickHouse/ClickHouse/issues/66003)).
+버전 26.2부터 ClickHouse는 비동기 삽입과 동기 삽입 모두에 자동 중복 제거를 수행합니다. 따라서 중복 제거 로그를 유지하는 테이블에서는 안전하게 재시도할 수 있습니다. `*ReplicatedMergeTree` 엔진은 기본적으로 중복 제거 로그를 유지하며, 일반 `MergeTree` 테이블에서는 `non_replicated_deduplication_window`을 양수로 설정해야 합니다. 두 삽입 유형 모두 기본값이 `enable`인 [`deduplicate_insert`](/ko/reference/settings/session-settings/deduplicate-insert#deduplicate_insert)로 제어됩니다. 종속 materialized view도 지원됩니다.
 
-실제로 중복 제거가 활성화되어 있으면, 예를 들어 timeout이나 네트워크 연결 끊김으로 인해 동일한 삽입을 다시 시도하더라도 ClickHouse가 중복 데이터를 안전하게 무시할 수 있습니다. 이렇게 하면 멱등성을 유지하고 데이터가 두 번 기록되는 것을 방지할 수 있습니다.
+실제로 타임아웃이나 네트워크 연결 끊김 등으로 동일한 삽입을 재시도하더라도 ClickHouse는 중복 삽입을 안전하게 무시할 수 있습니다. 이를 통해 멱등성을 유지하고 데이터가 중복으로 기록되는 것을 방지할 수 있습니다. 비동기 삽입에서는 중복 제거가 플러시된 배치가 아니라 사용자 쿼리별로 작동하므로, 중복 쿼리 때문에 함께 배치 처리된 다른 쿼리가 폐기되지 않습니다.
+
+자세한 내용과 비동기 삽입 시 materialized view에 적용되는 한 가지 제한 사항은 [재시도 시 삽입 중복 제거](/ko/concepts/features/operations/insert/deduplicating-inserts-on-retries#deduplication-for-asynchronous-inserts)를 참조하십시오.
 
 <div id="enabling-asynchronous-inserts">
   ### 비동기 삽입 활성화

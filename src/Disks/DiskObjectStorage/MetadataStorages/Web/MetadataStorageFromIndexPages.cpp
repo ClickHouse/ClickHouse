@@ -57,7 +57,7 @@ namespace
     /// references; unrecognized entities are left untouched.
     std::string decodeHTMLEntities(const std::string & input)
     {
-        if (input.find('&') == std::string::npos)
+        if (!input.contains('&'))
             return input;
 
         std::string result;

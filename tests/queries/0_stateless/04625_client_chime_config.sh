@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long
-# `long` (matching 04312_client_chime_on_slow_query_92718, which uses the same
-# `script -qc` pty mechanism) keeps this out of the `Fast test (arm_darwin)`
-# run: BSD `script` on macOS does not honour the GNU `-qc "cmd" file` form, so
-# the pty-attached client never runs and no `BEL` is captured there.
+# Tags: no-darwin
+# - no-darwin - darwin does not support "script -qc"
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

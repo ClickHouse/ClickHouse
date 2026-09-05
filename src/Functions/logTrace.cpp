@@ -58,7 +58,12 @@ namespace
 REGISTER_FUNCTION(LogTrace)
 {
     FunctionDocumentation::Description description = R"(
-Emits a trace log message to the server log for each [Block](/development/architecture/#block).
+Emits a trace log message to the server log.
+
+The function accepts a constant argument only, so the call is evaluated during query analysis and replaced
+by its result. The message is therefore emitted once while the query is analyzed, and not once per processed
+[Block](/resources/develop-contribute/introduction/architecture#block): the number of rows and the setting `max_block_size` have no effect
+on how many messages appear in the log.
     )";
     FunctionDocumentation::Syntax syntax = "logTrace(message)";
     FunctionDocumentation::Arguments arguments = {

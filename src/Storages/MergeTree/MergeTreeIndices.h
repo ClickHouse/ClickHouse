@@ -20,6 +20,7 @@ namespace DB
 
 class IDataPartStorage;
 class IMergeTreeDataPart;
+class IMergeTreeDataPartInfoForReader;
 
 namespace Internal
 {
@@ -108,7 +109,7 @@ struct IMergeTreeIndexGranule
     ///
     /// See also:
     /// - IMergeTreeIndex::getSubstreams()
-    /// - IMergeTreeIndex::getDeserializedFormat()
+    /// - IMergeTreeIndex::getPhysicalFormat()
     /// - MergeTreeDataMergerMutator::collectFilesToSkip()
     /// - MergeTreeDataMergerMutator::collectFilesForRenames()
     virtual void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
@@ -263,15 +264,61 @@ struct IMergeTreeIndex
     /// Reimplement if you want new index format.
     ///
     /// NOTE: In case getSubstreams() is reimplemented,
-    /// getDeserializedFormat() should be reimplemented too,
+    /// getPhysicalFormat() should be reimplemented too,
     /// and check all previous extensions for substreams too
     /// (to avoid breaking backward compatibility).
     virtual MergeTreeIndexSubstreams getSubstreams() const { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}; }
 
-    /// Returns substreams and version for deserialization. @storage is consulted so that packed
-    /// substreams (whose virtual filenames are not in @checksums) can still be discovered via
-    /// the skp_idx.packed overlay. Passing null disables the archive check.
-    virtual MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const;
+    /// Two distinct questions are asked about a part's copy of an index, and they must not be conflated:
+    ///
+    /// - getPhysicalFormat(): what is ON DISK? Discovers the substreams and format version actually
+    ///   present in the part, including legacy layouts. Callers that manipulate the files or their
+    ///   cache entries (e.g. evicting index marks) need this, even for an index we refuse to read.
+    /// - getDeserializedFormat(): may this part's copy of the index be DESERIALIZED? Physical
+    ///   discovery plus usability checks. Every read path must use this one.
+    ///
+    /// Mutate decides whether to carry a part's existing index files forward from file existence
+    /// (IMergeTreeDataPart::hasSecondaryIndex), not from this verdict. Merge's two text-index sites
+    /// (MergeTask::MergeTextIndexStage::prepare and MergeTask::addBuildTextIndexesStep) do consult
+    /// it, so a part's stale text index is rebuilt during the merge rather than carried forward.
+    ///
+    /// @part's storage is consulted so that packed substreams (whose virtual filenames are not in
+    /// checksums.txt) can still be discovered via the skp_idx.packed overlay.
+    ///
+    /// The physical question needs only the checksums and the storage, so it is answered without a part:
+    /// it is also asked from ~IMergeTreeDataPart, where the part can no longer be shared.
+    virtual MergeTreeIndexFormat getPhysicalFormat(
+        const MergeTreeDataPartChecksums & checksums,
+        const IDataPartStorage & storage,
+        const std::string & relative_path_prefix) const;
+    MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const;
+    MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPartInfoForReader & part_info, const std::string & relative_path_prefix) const;
+
+    /// Deliberately NON-virtual: the usability checks below must not be bypassable by a format
+    /// override. Reimplement getPhysicalFormat() instead.
+    MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPartInfoForReader & part_info, const std::string & relative_path_prefix) const;
+    MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const;
+
+    /// True when @part's recorded physical types for the columns this index requires are
+    /// representation-compatible with the types the current metadata snapshot declares, i.e. when
+    /// the granules on disk decode identically under the new types AND still mean the same thing:
+    /// for an expression index a timezone change, or UInt8 -> Bool, leaves the bytes alone but alters
+    /// what the expression computes from them. The part-side types come from the part's own column
+    /// list rather than from its interned ColumnsDescription, whose key equality is
+    /// IDataType::equals() and therefore erases exactly those attributes. Ask this only about a part
+    /// that HAS the index on disk: a required column whose type the part does not record is refused,
+    /// because such a part can still carry the index's granules.
+    bool isPartTypeCompatible(const IMergeTreeDataPartInfoForReader & part_info) const;
+    bool isPartTypeCompatible(const IMergeTreeDataPart & part) const;
+
+    /// Union of every checksummed or packed on-disk version present (unlike
+    /// `getDeserializedFormat`, which returns only the preferred readable layout and reports
+    /// nothing once a required system column is invalidated). Mutation cleanup uses this so a
+    /// stale legacy substream on a mixed-format part is skipped/stripped, not hardlinked forward.
+    virtual MergeTreeIndexSubstreams getAllSubstreamsInPart(
+        const MergeTreeDataPartChecksums & checksums,
+        const std::string & relative_path_prefix,
+        const IDataPartStorage * storage) const;
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 

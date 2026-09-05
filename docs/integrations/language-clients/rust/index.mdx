@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'Overview'
+sidebarTitle: 'Rust'
 keywords: ['clickhouse', 'rs', 'rust', 'cargo', 'crate', 'http', 'client', 'connect', 'integrate']
 slug: /integrations/rust
 description: 'The official Rust client for connecting to ClickHouse.'
@@ -39,12 +39,12 @@ See also: [crates.io page](https://crates.io/crates/clickhouse).
 
 ## Cargo features {#cargo-features}
 
-* `lz4` (enabled by default) — enables `Compression::Lz4` and `Compression::Lz4Hc(_)` variants. If enabled, `Compression::Lz4` is used by default for all queries except for `WATCH`.
+* `lz4` (enabled by default) — enables `Compression::Lz4` and `Compression::Lz4Hc(_)` variants. If enabled, `Compression::Lz4` is used by default for all queries except for `WATCH`, which only ClickHouse older than v26.9 accepts.
 * `native-tls` — supports urls with the `HTTPS` schema via `hyper-tls`, which links against OpenSSL.
 * `rustls-tls` — supports urls with the `HTTPS` schema via `hyper-rustls`, which doesn't link against OpenSSL.
 * `inserter` — enables `client.inserter()`.
 * `test-util` — adds mocks. See [the example](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs). Use it only in `dev-dependencies`.
-* `watch` — enables `client.watch` functionality. See the corresponding section for details.
+* `watch` — enables `client.watch` functionality. It issues a `WATCH` query, which was removed in ClickHouse v26.9 together with `WINDOW VIEW`, so it only works against older servers.
 * `uuid` — adds `serde::uuid` to work with [uuid](https://docs.rs/uuid) crate.
 * `time` — adds `serde::time` to work with [time](https://docs.rs/time) crate.
 
@@ -168,7 +168,7 @@ insert.end().await?;
 
 * If `end()` isn't called, the `INSERT` is aborted.
 * Rows are being sent progressively as a stream to spread the network load.
-* ClickHouse inserts batches atomically only if all rows fit in the same partition and their number is less [`max_insert_block_size`](/reference/settings/session-settings/max-insert#max_insert_block_size).
+* ClickHouse inserts batches atomically only if all rows fit in the same partition and their number is less [`max_insert_block_size`](/reference/settings/session-settings#max_insert_block_size).
 
 ### Async insert (server-side batching) {#async-insert-server-side-batching}
 
@@ -501,7 +501,7 @@ struct MyRow {
 * `Variant`, `Dynamic`, (new) `JSON` data types aren't supported yet.
 
 ## Mocking {#mocking}
-The crate provides utils for mocking CH server and testing DDL, `SELECT`, `INSERT` and `WATCH` queries. The functionality can be enabled with the `test-util` feature. Use it **only** as a dev-dependency.
+The crate provides utils for mocking CH server and testing DDL, `SELECT`, `INSERT` and `WATCH` queries (`WATCH` is only accepted by ClickHouse older than v26.9). The functionality can be enabled with the `test-util` feature. Use it **only** as a dev-dependency.
 
 See [the example](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs).
 

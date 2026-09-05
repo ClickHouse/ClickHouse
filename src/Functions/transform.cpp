@@ -994,44 +994,53 @@ Requirements:
     {
         "transform(T, Array(T), Array(U), U) -> U",
         R"(
+CREATE TABLE hits (SearchEngineID UInt8, Referer String) ENGINE = Memory;
+
+INSERT INTO hits VALUES
+    (2, 'http://yandex.ru/search'),
+    (2, 'http://yandex.ru/news'),
+    (2, 'http://mail.yandex.ru/'),
+    (3, 'http://google.ru/search'),
+    (4, 'http://duckduckgo.com/'),
+    (0, 'http://vkontakte.ru/feed'),
+    (0, '');
+
 SELECT
 transform(SearchEngineID, [2, 3], ['Yandex', 'Google'], 'Other') AS title,
 count() AS c
-FROM test.hits
+FROM hits
 WHERE SearchEngineID != 0
 GROUP BY title
-ORDER BY c DESC
+ORDER BY c DESC, title
         )",
         R"(
-┌─title─────┬──────c─┐
-│ Yandex    │ 498635 │
-│ Google    │ 229872 │
-│ Other     │ 104472 │
-└───────────┴────────┘
+┌─title──┬─c─┐
+│ Yandex │ 3 │
+│ Google │ 1 │
+│ Other  │ 1 │
+└────────┴───┘
         )"
     },
     {
         "transform(T, Array(T), Array(T)) -> T",
         R"(
+-- Without a default, a domain that is not listed is returned unchanged.
 SELECT
 transform(domain(Referer), ['yandex.ru', 'google.ru', 'vkontakte.ru'], ['www.yandex', 'example.com', 'vk.com']) AS s, count() AS c
-FROM test.hits
+FROM hits
 GROUP BY domain(Referer)
-ORDER BY count() DESC
+ORDER BY count() DESC, s
 LIMIT 10
         )",
         R"(
-┌─s──────────────┬───────c─┐
-│                │ 2906259 │
-│ www.yandex     │  867767 │
-│ ███████.ru     │  313599 │
-│ mail.yandex.ru │  107147 │
-│ ██████.ru      │  100355 │
-│ █████████.ru   │   65040 │
-│ news.yandex.ru │   64515 │
-│ ██████.net     │   59141 │
-│ example.com    │   57316 │
-└────────────────┴─────────┘
+┌─s──────────────┬─c─┐
+│ www.yandex     │ 2 │
+│                │ 1 │
+│ duckduckgo.com │ 1 │
+│ example.com    │ 1 │
+│ mail.yandex.ru │ 1 │
+│ vk.com         │ 1 │
+└────────────────┴───┘
         )"
     }
     };

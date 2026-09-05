@@ -1,15 +1,15 @@
 {
-  "group": "自备 Cloud",
+  "group": "Bring Your Own Cloud",
   "pages": [
     {
-      "group": "概览",
+      "group": "Overview",
       "pages": [
-        "zh/products/bring-your-own-cloud/overview/overview",
+        "zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
         "zh/products/bring-your-own-cloud/overview/architecture"
       ]
     },
     {
-      "group": "配置",
+      "group": "Configuration",
       "pages": [
         "zh/products/bring-your-own-cloud/configuration/configurations",
         "zh/products/bring-your-own-cloud/configuration/connect",
@@ -17,12 +17,11 @@
       ]
     },
     {
-      "group": "上手引导",
+      "group": "Onboarding",
       "pages": [
-        "zh/products/bring-your-own-cloud/onboarding/aws",
         "zh/products/bring-your-own-cloud/onboarding/standard",
         {
-          "group": "自定义",
+          "group": "Customization",
           "pages": [
             "zh/products/bring-your-own-cloud/onboarding/customization-aws",
             "zh/products/bring-your-own-cloud/onboarding/customization-gcp"
@@ -31,17 +30,37 @@
         {
           "group": "Network",
           "pages": [
+            "zh/products/bring-your-own-cloud/onboarding/network",
             "zh/products/bring-your-own-cloud/onboarding/network-aws",
-            "zh/products/bring-your-own-cloud/onboarding/network-gcp"
-          ],
-          "root": "zh/products/bring-your-own-cloud/onboarding/network"
+            "zh/products/bring-your-own-cloud/onboarding/network-gcp",
+            "zh/products/bring-your-own-cloud/onboarding/network-azure"
+          ]
         },
-        "zh/products/bring-your-own-cloud/onboarding/new-region",
-        "zh/products/bring-your-own-cloud/onboarding/azure-private-preview"
+        "zh/products/bring-your-own-cloud/onboarding/new-region"
       ]
     },
     {
-      "group": "参考文档",
+      "group": "Connector",
+      "pages": [
+        "zh/products/bring-your-own-cloud/connector/overview",
+        "zh/products/bring-your-own-cloud/connector/onboarding",
+        "zh/products/bring-your-own-cloud/connector/architecture",
+        "zh/products/bring-your-own-cloud/connector/support-sessions",
+        "zh/products/bring-your-own-cloud/connector/configuration",
+        "zh/products/bring-your-own-cloud/connector/operations",
+        {
+          "group": "Reference",
+          "pages": [
+            "zh/products/bring-your-own-cloud/connector/reference/cli",
+            "zh/products/bring-your-own-cloud/connector/reference/configuration",
+            "zh/products/bring-your-own-cloud/connector/reference/faq",
+            "zh/products/bring-your-own-cloud/connector/reference/privilege-model"
+          ]
+        }
+      ]
+    },
+    {
+      "group": "Reference",
       "pages": [
         "zh/products/bring-your-own-cloud/reference/network-security",
         "zh/products/bring-your-own-cloud/reference/privilege",
@@ -50,8 +69,8 @@
         "zh/products/bring-your-own-cloud/reference/billable-aws-services",
         "zh/products/bring-your-own-cloud/reference/cost-model-aws",
         "zh/products/bring-your-own-cloud/reference/aws-service-limits",
-        "zh/products/bring-your-own-cloud/reference/faq",
-        "zh/products/bring-your-own-cloud/reference/faq-aws"
+        "zh/products/bring-your-own-cloud/reference/security-shared-responsibility",
+        "zh/products/bring-your-own-cloud/reference/faq"
       ]
     }
   ]

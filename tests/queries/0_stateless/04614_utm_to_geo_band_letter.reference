@@ -1,0 +1,44 @@
+-- round trip through the band letter matches the input (within 1e-6 degrees)
+1
+1
+-- the band letter and the equivalent is_north flag give the same result
+1
+1
+-- the hemisphere boundary: band N is northern, band M is southern
+N	1
+M	1
+-- the band letter can be given as a String literal and is case-insensitive
+1
+1
+1
+-- vectorized over a table with band letters
+1
+1
+1
+-- error handling: the band letter must be a single letter in C..X excluding I and O
+-- the integer flag still works and still rejects values other than 0 or 1
+1
+-- NULL rows propagate to NULL instead of failing the band validation
+1	\N
+0	1
+1	\N
+0	1
+1	\N
+0	1
+Nullable(Tuple(longitude Float64, latitude Float64))
+-- NULL propagation works for the other arguments and for the integer flag too
+1
+0
+1
+0
+1
+0
+\N
+-- non-NULL rows of a Nullable band column are still validated
+-- Variant and Dynamic band arguments still dispatch through the default adaptors
+1
+1
+1
+1
+1	\N
+0	1

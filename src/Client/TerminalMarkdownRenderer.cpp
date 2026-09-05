@@ -90,7 +90,7 @@ bool isMdxImport(std::string_view line)
     line = trimView(line);
     if (!line.starts_with("import "))
         return false;
-    return line.find(" from '") != std::string_view::npos || line.find(" from \"") != std::string_view::npos || line.starts_with("import '")
+    return line.contains(" from '") || line.contains(" from \"") || line.starts_with("import '")
         || line.starts_with("import \"");
 }
 
@@ -201,6 +201,11 @@ struct DocSnippet
 };
 
 const DocSnippet DOC_SNIPPETS[] = {
+    {"_snippet_dictionary_in_cloud.mdx", R"DOCS_MD(<Tip>
+If you are using a dictionary with ClickHouse Cloud please use the DDL query option to create your dictionaries, and create your dictionary as user `default`.
+Also, verify the list of supported dictionary sources in the [Cloud Compatibility guide](/products/cloud/guides/cloud-compatibility).
+</Tip>)DOCS_MD"},
+
     {"_when-to-use-json.mdx", R"DOCS_MD(## When to use the `JSON` Type {#when-to-use-json-type}
 
 The `JSON` type is designed for querying, filtering, and aggregating specific fields within JSON objects that have dynamic or unpredictable structures. It achieves this by splitting JSON objects into separate sub-columns, which dramatically reduces data read and speeds up queries on selected fields compared to alternatives like `Map` or parsing strings.
@@ -1418,12 +1423,12 @@ private:
             }
 
             /// Table: a row of cells followed by a separator row.
-            if (line.find('|') != std::string_view::npos && i + 1 < lines.size() && isTableSeparator(lines[i + 1]))
+            if (line.contains('|') && i + 1 < lines.size() && isTableSeparator(lines[i + 1]))
             {
                 std::vector<std::string_view> rows;
                 rows.push_back(line);
                 i += 2; /// skip the header and the separator
-                while (i < lines.size() && !isBlank(lines[i]) && lines[i].find('|') != std::string_view::npos
+                while (i < lines.size() && !isBlank(lines[i]) && lines[i].contains('|')
                        && !stripCR(lines[i]).substr(leadingSpaces(lines[i])).starts_with("```"))
                 {
                     rows.push_back(stripCR(lines[i]));
@@ -1499,7 +1504,7 @@ private:
                     std::string_view pl = stripCR(lines[i]);
                     if (startsNewBlock(pl))
                         break;
-                    if (pl.find('|') != std::string_view::npos && i + 1 < lines.size() && isTableSeparator(lines[i + 1]))
+                    if (pl.contains('|') && i + 1 < lines.size() && isTableSeparator(lines[i + 1]))
                         break;
                     if (!paragraph.empty())
                         paragraph += ' ';

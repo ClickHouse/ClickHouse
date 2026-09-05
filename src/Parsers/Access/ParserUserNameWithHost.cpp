@@ -1,3 +1,4 @@
+#include <Common/StringUtils.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
@@ -7,7 +8,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IParserBase.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
 
 
@@ -65,7 +65,7 @@ bool parseUserNameWithHost(
                 return false;
             }
 
-            boost::algorithm::trim(host_pattern);
+            host_pattern = trim(host_pattern, isWhitespaceASCII);
 
             if (host_pattern.empty() || host_pattern == "%")
                 ast = make_intrusive<ASTUserNameWithHost>(std::move(name_ast));
