@@ -1082,8 +1082,8 @@ TEST(RemoveSettingsFromQuery, ToleratesSettingsSlotDesyncedFromChildren)
         /// slot dangling - a use-after-free, not the desync we mean to test. Keep an owning `ASTPtr` for
         /// every erased settings node alive for the whole test body so the slot stays valid-but-desynced.
         std::vector<ASTPtr> kept_alive;
+        std::vector<IAST *> desynced_owners;
         std::vector<IAST *> nodes{ast.get()};
-        bool desynced = false;
         while (!nodes.empty())
         {
             auto * node = nodes.back();
@@ -1113,39 +1113,52 @@ TEST(RemoveSettingsFromQuery, ToleratesSettingsSlotDesyncedFromChildren)
                         }),
                     node->children.end());
                 if (node->children.size() < before)
-                    desynced = true;
+                    desynced_owners.push_back(node);
             }
 
             for (const auto & child : node->children)
                 if (child)
                     nodes.push_back(child.get());
         }
-        ASSERT_TRUE(desynced) << "setup: SETTINGS node was not in children to begin with for: " << query;
+        ASSERT_FALSE(desynced_owners.empty()) << "setup: SETTINGS node was not in children for: " << query;
 
-        /// Must not throw (before the fix this aborted with "AST subtree not found in children"), and the
-        /// safety setting must still be gone.
+        /// Must not throw: before the fix this aborted with "AST subtree not found in children".
         EXPECT_NO_THROW(removeSettingsFromQuery(ast, safety_settings)) << "query: " << query;
+
+        /// Assert on the carrier's own slot, not through the tree: the desynced node is no longer in
+        /// `children`, so the `settingNamePresent` walk below cannot see it and would pass even if the
+        /// transform had left the slot set. The owner formatters print from that slot, so a slot left
+        /// set-but-emptied re-serializes as a bare `SETTINGS` and the fuzzer skips the query instead of
+        /// running it under the caps - which the re-parse at the end of the loop catches too.
+        for (auto * owner : desynced_owners)
+        {
+            if (auto * insert_query = owner->as<ASTInsertQuery>())
+                EXPECT_EQ(nullptr, insert_query->settings_ast) << "INSERT slot not detached for: " << query;
+            else if (auto * storage = owner->as<ASTStorage>())
+                EXPECT_EQ(nullptr, storage->settings) << "storage slot not detached for: " << query;
+            else if (auto * query_with_output = dynamic_cast<ASTQueryWithOutput *>(owner))
+                EXPECT_EQ(nullptr, query_with_output->settings_ast) << "query slot not detached for: " << query;
+        }
+
         for (const auto & name : safety_settings)
             EXPECT_FALSE(settingNamePresent(ast, name))
                 << "safety setting '" << name << "' survived for: " << query;
+
+        const String formatted = ast->formatWithSecretsOneLine();
+        ParserQuery reparser(formatted.data() + formatted.size());
+        EXPECT_NE(nullptr, parseQuery(reparser, formatted, "", 0, 0, 0)) << "did not re-parse: " << formatted;
     }
 }
 
 /// An ASTStorage `settings` slot that is NOT backed by an owning child in `storage->children` must be
-/// cleared without ever being dereferenced - the fail-closed case. Liveness is proved only through the
-/// slot's designated owner (`storage->children`): the bare `ASTSetQuery *` has no other owner in
-/// production, so a slot missing from `children` has lost its keep-alive and may be dangling.
-///
-/// Judging liveness by pointer-value reachability from the root instead is unsound: `QueryFuzzer::
-/// fuzzMain` mutates the tree in place and keeps allocating before the strip runs, so a freed slot's
-/// address can be reused by an unrelated live node, making an address-membership test report the
-/// dangling slot as "live" and dereference freed memory. This test pins the sound contract - a slot
-/// reachable from the root through some OTHER owner (not `storage->children`) is still treated as not
-/// live and cleared, never stripped in place - which discriminates the owning-child proof from any
-/// address-reachability proof. The node is kept alive elsewhere in the tree here only so the test
-/// itself constructs no use-after-free; the transform must reach the same clear-without-deref result by
-/// pointer value alone. In production `children` is the sole owner, so an unbacked slot always means
-/// freed and clearing loses no real settings.
+/// cleared without ever being dereferenced - the fail-closed case. Only an owning child proves the slot
+/// is that same live node; an address-reachability test does not, because a freed node's address can be
+/// handed to an unrelated live one. So a slot still owned somewhere else is treated as unprovable and
+/// cleared, never stripped in place, which is what this pins - together with its cost: the clause goes
+/// whole, taking a surviving engine setting with it. The cost is not hypothetical, because an unbacked
+/// slot is unprovable rather than provably freed: a caller can own the node outside `children`, as this
+/// setup does. Losing the clause is the safe direction. The transform must reach that result by pointer
+/// value alone; the node is kept alive here only so the test itself constructs no use-after-free.
 TEST(RemoveSettingsFromQuery, ClearsStorageSettingsSlotNotBackedByAnOwningChild)
 {
     static constexpr std::string_view safety_settings[] = {
@@ -1190,12 +1203,22 @@ TEST(RemoveSettingsFromQuery, ClearsStorageSettingsSlotNotBackedByAnOwningChild)
     EXPECT_NO_THROW(removeSettingsFromQuery(ast, safety_settings)) << "query: " << query;
 
     /// Fail-closed: the slot is cleared (not stripped in place), so the surrounding CREATE never
-    /// re-serializes a possibly-dangling pointer. The safety cap is gone from the output either way.
-    /// (An address-reachability proof would instead have kept the slot and left `index_granularity`,
-    /// dereferencing what production cannot prove is live - the unsound path this asserts against.)
+    /// re-serializes a pointer it cannot prove live. The whole clause goes with it - the safety cap and
+    /// the surviving engine setting alike - which an address-reachability proof would have avoided only
+    /// by dereferencing that pointer.
     EXPECT_EQ(nullptr, create->storage->settings) << "unbacked storage SETTINGS slot was not cleared";
     const String formatted = ast->formatWithSecretsOneLine();
     EXPECT_EQ(String::npos, formatted.find("max_rows_to_read")) << "safety cap survived in output: " << formatted;
+    EXPECT_EQ(String::npos, formatted.find("index_granularity"))
+        << "cleared slot still serialized an engine setting: " << formatted;
+
+    /// The node the slot pointed at must come out untouched: a slot with no owning child is never written
+    /// through, only cleared. Production reaches this branch with a pointer that may already be freed, so
+    /// this is the observable half of "not dereferenced" that a test can assert without itself
+    /// constructing a use-after-free. It stays out of the tree and is never re-serialized (above).
+    const auto & detached = moved->as<ASTSetQuery &>();
+    EXPECT_TRUE(detached.changes.tryGet("max_rows_to_read")) << "the unbacked node was stripped in place";
+    EXPECT_TRUE(detached.changes.tryGet("index_granularity")) << "the unbacked node was stripped in place";
     ParserQuery reparser(formatted.data() + formatted.size());
     ASTPtr reparsed = parseQuery(reparser, formatted, "", 0, 0, 0);
     EXPECT_NE(nullptr, reparsed) << "did not re-parse: " << formatted;

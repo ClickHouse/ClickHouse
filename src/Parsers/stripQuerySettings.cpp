@@ -71,18 +71,9 @@ void detachChild(IAST & owner, T *& field)
 }
 
 /// Return the owning `ASTPtr` in `owner.children` whose target is `raw` (as an `ASTSetQuery`), or null
-/// if none. This is the only sound liveness proof for a bare-pointer SETTINGS slot: an owning child
-/// *is* the node's keep-alive, so a match guarantees `raw` still points at that exact live node. It
-/// compares pointer values only (`child.get() == raw`) and never dereferences `raw`.
-///
-/// Why not judge liveness by pointer-value reachability from the root: `QueryFuzzer::fuzzMain` mutates
-/// the tree in place and keeps allocating (`make_intrusive`) before this strip runs, so if the last
-/// owning `ASTPtr` for the slot was dropped, the allocator can hand its freed address to an unrelated
-/// new node. Any address-membership test - whether against a whole-tree address set or an owning-ptr
-/// address set - then reports that dangling slot as "live" (the reused address is owned by a live
-/// pointer), and we would dereference a freed `ASTSetQuery *` or mutate whichever node reused it. Only
-/// an owning reference to the *same* node proves it was never freed, so we tie the proof to the slot's
-/// designated owner, `children`, and fail closed otherwise.
+/// if none. An owning child *is* the node's keep-alive, so a match proves `raw` still points at that
+/// exact live node, while an address-only test proves nothing: a freed node's address can be handed to
+/// an unrelated live one. Compares pointer values only (`child.get() == raw`), never dereferences `raw`.
 ASTPtr findOwningChild(const IAST & owner, const IAST * raw)
 {
     if (raw == nullptr)
@@ -175,20 +166,14 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                 /// applySettingsFromQuery moves the non-engine settings from the storage clause onto the
                 /// context, so it must be stripped (and pruned to avoid a bare `SETTINGS`).
                 ///
-                /// `storage->settings` is a bare `ASTSetQuery *` whose only owner is `storage->children`.
-                /// A fuzzer-mutated child list can drop that owning intrusive_ptr while leaving the slot
-                /// set, so the pointer may be dangling; dereferencing it would be a use-after-free.
-                ///
-                /// Prove liveness through the slot's designated owner: look for an owning `ASTPtr` in
-                /// `storage->children` that points at the same node. An owning child *is* the node's
-                /// keep-alive, so a match guarantees the slot is the same live node (address reuse cannot
-                /// spoof it - see findOwningChild). Strip that live node in place, which preserves its
-                /// surviving engine settings (e.g. `index_granularity`), then detach if it empties. If no
-                /// owning child backs the slot, it has no live owner (in production `children` is the sole
-                /// owner, so this means freed); fail closed and clear the slot WITHOUT dereferencing it,
-                /// or the surrounding `ASTStorage::formatImpl` would serialize `*storage->settings` and
-                /// touch the dangling pointer. A cleared slot only ever discards a dead node, which
-                /// carries no surviving settings to lose.
+                /// `storage->settings` is a bare `ASTSetQuery *` whose designated owner is
+                /// `storage->children` (see ASTStorage::normalizeChildrenOrder), and a fuzzer-mutated child
+                /// list can drop that owning intrusive_ptr while leaving the slot set. An owning child there
+                /// proves the slot is still that same live node, so strip through it, preserving surviving
+                /// engine settings (e.g. `index_granularity`), and detach if it empties. Without one the slot
+                /// is unprovable rather than provably freed - a caller may hold the node alive outside
+                /// `children` - so clear it unread: dropping a desynced clause whole is the safe direction,
+                /// since `ASTStorage::formatImpl` would otherwise serialize `*storage->settings`.
                 if (storage->settings)
                 {
                     if (auto owning = findOwningChild(*storage, storage->settings))
