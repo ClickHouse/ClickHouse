@@ -3,6 +3,8 @@
 #include <memory>
 
 #include <Access/AccessChangesNotifier.h>
+#include <Access/EffectiveAccessRightsCache.h>
+#include <Access/ImplicitExpansionSettings.h>
 #include <Access/MultipleAccessStorage.h>
 #include <Access/Common/AuthenticationType.h>
 #include <Common/SettingsChanges.h>
@@ -34,6 +36,7 @@ namespace DB
 {
 class ContextAccess;
 class ContextAccessParams;
+class AccessRights;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
 class EnabledRoles;
@@ -51,7 +54,6 @@ class SettingsProfileElements;
 class ClientInfo;
 class ExternalAuthenticators;
 struct Settings;
-
 
 /// Manages access control entities.
 class AccessControl : public MultipleAccessStorage
@@ -210,6 +212,18 @@ public:
     void setTableEnginesRequireGrant(bool enable) { table_engines_require_grant = enable; }
     bool doesTableEnginesRequireGrant() const { return table_engines_require_grant; }
 
+    /// Reads the settings the implicit expansion of access rights depends on
+    /// (see ContextAccess::addImplicitAccessRights) as one snapshot.
+    ImplicitExpansionSettings getImplicitExpansionSettings() const
+    {
+        ImplicitExpansionSettings settings;
+        settings.select_from_system_db_requires_grant = select_from_system_db_requires_grant;
+        settings.select_from_information_schema_requires_grant = select_from_information_schema_requires_grant;
+        settings.user_query_log_enabled = user_query_log_enabled;
+        settings.table_engines_require_grant = table_engines_require_grant;
+        return settings;
+    }
+
     /// Enable/disable the IMPERSONATE feature (EXECUTE AS target_user).
     void setImpersonateUserAllowed(bool allow) { allow_impersonate_user = allow; }
     bool isImpersonateUserAllowed() const { return allow_impersonate_user; }
@@ -226,6 +240,25 @@ public:
     std::shared_ptr<const EnabledRolesInfo> getEnabledRolesInfo(
         const std::vector<UUID> & current_roles,
         const std::vector<UUID> & current_roles_with_admin_option) const;
+
+    /// Returns the effective access rights (of the user and their enabled roles, including implicit
+    /// grants) previously calculated for exactly these snapshots and settings, or nullopt if not
+    /// calculated yet. All sessions of the same user with the same enabled roles share one calculation.
+    std::optional<EffectiveAccessRightsCache::Result> findEffectiveAccessRights(
+        const UUID & user_id,
+        const UserPtr & user,
+        const std::shared_ptr<const EnabledRolesInfo> & roles_info,
+        const ImplicitExpansionSettings & settings) const;
+
+    /// Caches the effective access rights calculated from these snapshots and settings
+    /// for other sessions to reuse.
+    void storeEffectiveAccessRights(
+        const UUID & user_id,
+        const UserPtr & user,
+        const std::shared_ptr<const EnabledRolesInfo> & roles_info,
+        const ImplicitExpansionSettings & settings,
+        const std::shared_ptr<const AccessRights> & access,
+        const std::shared_ptr<const AccessRights> & access_with_implicit) const;
 
     std::shared_ptr<const EnabledRowPolicies> getEnabledRowPolicies(
         const UUID & user_id,
@@ -290,6 +323,7 @@ private:
     std::unique_ptr<RowPolicyCache> row_policy_cache;
     std::unique_ptr<QuotaCache> quota_cache;
     std::unique_ptr<SettingsProfilesCache> settings_profiles_cache;
+    std::unique_ptr<EffectiveAccessRightsCache> effective_access_rights_cache;
     std::unique_ptr<ExternalAuthenticators> external_authenticators;
     std::unique_ptr<CustomSettingsPrefixes> custom_settings_prefixes;
     std::unique_ptr<AccessChangesNotifier> changes_notifier;
