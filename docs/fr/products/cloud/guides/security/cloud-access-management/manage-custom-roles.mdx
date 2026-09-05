@@ -82,9 +82,17 @@ Outre les permissions de la console, les rôles personnalisés peuvent inclure d
 
 Lorsque vous ajoutez des permissions sur les données à un rôle personnalisé, ClickHouse Cloud crée un rôle correspondant dans chaque service sélectionné, avec le préfixe `cloud:`. Par exemple, un rôle personnalisé nommé `readonly` apparaît dans la base de données sous le nom `cloud:readonly`. Les membres du rôle personnalisé reçoivent ces permissions de base de données lorsqu&#39;ils se connectent au service via l&#39;authentification sans mot de passe de la console SQL.
 
-<Info>
-  Les rôles attribués manuellement dans la base de données à l&#39;aide de la [convention de nommage `sql-console-role:<email>`](/fr/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) prévalent sur les rôles attribués via la console.
-</Info>
+<Tip>
+  Les rôles de base de données gérés par Cloud remplacent les rôles [`sql-console-role:<email>`](/fr/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) attribués manuellement, qui ne sont pas compatibles avec l&#39;[authentification JWT](/fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
+
+<div id="manage-database-roles-prerequisites">
+  ### Prérequis
+</div>
+
+Les rôles personnalisés de base de données d&#39;un service dépendent de l&#39;[authentification JWT](/fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) et ne sont pas appliqués lorsqu&#39;elle est désactivée. Avant d&#39;ajouter des permissions sur les données à un rôle, accédez au service, ouvrez `Settings`, puis recherchez la carte `JWT authentication` dans la section `Security`. Assurez-vous que le bouton bascule `SQL Console` est activé.
+
+<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="Carte d'authentification JWT avec le bouton bascule SQL Console activé" size="lg" force />
 
 <Steps>
   <Step title="Ajouter des permissions sur les données à un rôle" id="add-data-permissions">
@@ -92,17 +100,17 @@ Lorsque vous ajoutez des permissions sur les données à un rôle personnalisé,
   </Step>
 
   <Step title="Sélectionner le service" id="select-data-permissions-service">
-    Sélectionnez le service auquel s&#39;appliquent les permissions. Ajoutez d&#39;autres services pour appliquer les permissions à plusieurs services.
+    Sélectionnez le service auquel s&#39;appliquent les permissions. Ajoutez d&#39;autres services pour appliquer les mêmes permissions `Read-only` ou `Admin` à plusieurs services.
   </Step>
 
   <Step title="Choisir le niveau d'accès" id="choose-data-access-level">
-    Sélectionnez l&#39;accès `Read-only`, `Admin` ou `Custom`. Avec l&#39;accès `Custom`, définissez des permissions d&#39;accès aux données spécifiques à l&#39;aide d&#39;instructions ClickHouse [`GRANT`](/fr/reference/statements/grant).
+    Sélectionnez l&#39;accès `Read-only`, `Admin` ou `Custom`. Avec l&#39;accès `Custom`, définissez des permissions d&#39;accès aux données spécifiques à l&#39;aide d&#39;instructions ClickHouse [`GRANT`](/fr/reference/statements/grant). L&#39;accès `Custom` ne peut être sélectionné que lorsque les permissions ciblent un seul service ; pour définir des permissions personnalisées pour plusieurs services, ajoutez une permission `Data` distincte pour chaque service.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="Boîte de dialogue de création d'un rôle avec des permissions sur les données définies par des instructions GRANT personnalisées" size="md" />
   </Step>
 
   <Step title="Créer le rôle" id="create-role-with-data-permissions">
-    Cliquez sur `Create role`. Les rôles de base de données sont créés dans les services sélectionnés.
+    Cliquez sur `Create role`. Les rôles de base de données sont créés dans les services sélectionnés. La propagation des rôles vers un service peut prendre jusqu&#39;à 10 minutes, mais les utilisateurs auxquels le rôle est affecté reçoivent immédiatement ses permissions lorsqu&#39;ils interrogent le service.
   </Step>
 </Steps>
 
@@ -110,7 +118,7 @@ Lorsque vous ajoutez des permissions sur les données à un rôle personnalisé,
   ### Vérifier les rôles de base de données
 </div>
 
-Les rôles gérés via la console sont créés dans la base de données avec le préfixe `cloud:` et le type de stockage `cloud`. Pour les afficher, interrogez la table `system.roles` du service :
+Les rôles gérés via la console sont créés dans la base de données avec le préfixe `cloud:` et le type de stockage `cloud`, et peuvent mettre jusqu’à 10 minutes à apparaître après leur création. Pour les afficher, interrogez la table `system.roles` du service :
 
 ```sql
 SELECT * FROM system.roles;

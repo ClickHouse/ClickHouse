@@ -4,6 +4,7 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperIO.h>
 
 #include <gtest/gtest.h>
 
@@ -104,4 +105,19 @@ TEST(ZooKeeperTest, Create2ResponseWireRoundTrip)
     EXPECT_EQ(decoded.path_created, original.path_created);
     EXPECT_EQ(decoded.zstat, original.zstat);
     EXPECT_EQ(decoded.zstat.dataLength, 13);
+}
+
+TEST(ZooKeeperTest, MultiRequestRejectsCloseSubrequest)
+{
+    WriteBufferFromOwnString out;
+    Coordination::write(OpNum::Close, out);
+    Coordination::write(false, out);
+    Coordination::write(-1, out);
+    Coordination::write(OpNum::Error, out);
+    Coordination::write(true, out);
+    Coordination::write(-1, out);
+
+    auto request = ZooKeeperRequestFactory::instance().get(OpNum::Multi);
+    ReadBufferFromString in(out.str());
+    EXPECT_THROW(request->readImpl(in), Coordination::Exception);
 }

@@ -16,12 +16,14 @@ void registerStatements()
     registerStatementColumnsTransformers(factory);
     registerStatementCreate(factory);
     registerStatementCreateFunction(factory);
+    registerStatementCreateHandler(factory);
     registerStatementDelete(factory);
     registerStatementDescribeTable(factory);
     registerStatementDrop(factory);
     registerStatementExists(factory);
     registerStatementExplain(factory);
     registerStatementHypotheticalIndex(factory);
+    registerStatementHypotheticalProjection(factory);
     registerStatementIn(factory);
     registerStatementInsert(factory);
     registerStatementKillQuery(factory);
@@ -40,7 +42,6 @@ void registerStatements()
     registerStatementUnion(factory);
     registerStatementUpdate(factory);
     registerStatementUse(factory);
-    registerStatementWatch(factory);
     registerStatementWith(factory);
     registerStatementCheckGrant(factory);
     registerStatementExecuteAs(factory);

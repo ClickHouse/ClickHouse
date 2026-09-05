@@ -1,65 +1,42 @@
 #pragma once
 
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/parseQuery.h>
-#include <IO/WriteBufferFromString.h>
+#include <base/types.h>
+
 
 namespace DB
 {
 
-/** From position in (possible multiline) query, get line number and column number in line.
-  * Used in syntax error message.
+/** Parses one KQL statement starting at `pos` and returns it as a ClickHouse AST.
+  *
+  * `pos` is advanced past the statement that was consumed, so a script such as
+  * `T | take 3; SET dialect = 'clickhouse'` leaves the `SET` for the next call.
+  * `let` statements are not statements in that sense: they bind names for the tabular
+  * expression that follows and are consumed together with it.
+  *
+  * Throws `Exception` on any problem - there is no `try` variant, because callers that
+  * need to turn a parse failure into a message (the interactive client) already catch,
+  * and `src/Parsers` is not allowed to.
   */
-
-class IParser;
-
-/// Parse query or set 'out_error_message'.
-ASTPtr tryParseKQLQuery(
-    IParser & parser,
-    const char * & _out_query_end, // query start as input parameter, query end as output
+ASTPtr parseKQLQuery(
+    const char *& pos,
     const char * end,
-    std::string & out_error_message,
-    int * out_error_code,
-    bool hilite,
-    const std::string & description,
-    bool allow_multi_statements,
-    size_t max_query_size,
-    size_t max_parser_depth,
-    size_t max_parser_backtracks,
-    bool skip_insignificant = true);
-
-
-/// Parse query or throw an exception with error message.
-ASTPtr parseKQLQueryAndMovePosition(
-    IParser & parser,
-    const char * & pos,                /// Moved to end of parsed fragment.
-    const char * end,
-    const std::string & description,
     bool allow_multi_statements,
     size_t max_query_size,
     size_t max_parser_depth,
     size_t max_parser_backtracks);
 
-ASTPtr parseKQLQuery(
-    IParser & parser,
-    const char * begin,
+/** Parses the statement at `pos` only if it has the `SET name = ...` shape that
+  * `parseKQLQuery` recognizes as its `SET` fast path; returns `nullptr` otherwise.
+  *
+  * This exists for the `allow_experimental_kusto_dialect` gate: a session already in
+  * `dialect = 'kusto'` must be able to run `SET dialect = 'clickhouse'` (or turn the
+  * gate back on) even when the gate is off, or it could never leave the dialect.
+  * Throws only when the statement looks like a `SET` but does not parse as one.
+  */
+ASTPtr tryParseKQLSetStatement(
+    const char *& pos,
     const char * end,
-    const std::string & description,
-    size_t max_query_size,
-    size_t max_parser_depth,
-    size_t max_parser_backtracks);
-
-ASTPtr parseKQLQuery(
-    IParser & parser,
-    const std::string & query,
-    const std::string & query_description,
-    size_t max_query_size,
-    size_t max_parser_depth,
-    size_t max_parser_backtracks);
-
-ASTPtr parseKQLQuery(
-    IParser & parser,
-    const std::string & query,
     size_t max_query_size,
     size_t max_parser_depth,
     size_t max_parser_backtracks);

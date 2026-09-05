@@ -116,6 +116,32 @@ ClickHouse 会在解析查询时，根据运算符的优先级、先后顺序和
 
 `a ILIKE b` —— 即 `ilike(a, b)` 函数。
 
+<div id="match-function">
+  ### match 函数
+</div>
+
+`a REGEXP b`：`match(a, b)` 函数。
+
+`a ~ b`：`match(a, b)` 函数 (PostgreSQL 风格的正则表达式匹配) 。
+
+<div id="notmatch-function">
+  ### notMatch 函数
+</div>
+
+`a !~ b` – `notMatch(a, b)` 函数 (检查 `a` 是否与正则表达式 `b` 不匹配) 。
+
+<div id="matchcaseinsensitive-function">
+  ### matchCaseInsensitive 函数
+</div>
+
+`a ~* b` – `matchCaseInsensitive(a, b)` 函数 (执行不区分大小写的正则表达式匹配) 。
+
+<div id="notmatchcaseinsensitive-function">
+  ### notMatchCaseInsensitive 函数
+</div>
+
+`a !~* b` – `notMatchCaseInsensitive(a, b)` 函数 (检查 `a` 是否不匹配正则表达式 `b`，且不区分大小写) 。
+
 <div id="between-function">
   ### BETWEEN 函数
 </div>
