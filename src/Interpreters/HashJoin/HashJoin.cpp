@@ -1013,21 +1013,17 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             columns = block_to_save.getColumns();
 
         doDebugAsserts();
-        data->columns.emplace_back(std::move(columns), std::move(selector), std::move(row_store));
-        auto * stored_columns = &data->columns.back();
+        /// Register the block and account for it while a local list still owns it: `splice` cannot throw,
+        /// so `data->columns`, `data->allocated_size` and `data->rows_to_join` always describe the same set
+        /// of stored blocks. Same ordering as `tryRerangeRightTableDataImpl`; a list node keeps its address.
+        StoredBlocksList new_block;
+        new_block.emplace_back(std::move(columns), std::move(selector), std::move(row_store));
+        auto * stored_columns = &new_block.back();
         size_t data_allocated_bytes = stored_columns->allocatedBytes();
-        try
-        {
-            stored_columns->block_no = data->stored_columns_index->add(stored_columns);
-            data->allocated_size += data_allocated_bytes;
-            /// `data->columns`, `data->allocated_size` and `data->rows_to_join` describe the same set of stored blocks.
-            data->rows_to_join += rows;
-        }
-        catch (...)
-        {
-            data->columns.pop_back();
-            throw;
-        }
+        stored_columns->block_no = data->stored_columns_index->add(stored_columns);
+        data->allocated_size += data_allocated_bytes;
+        data->rows_to_join += rows;
+        data->columns.splice(data->columns.end(), new_block);
         doDebugAsserts();
 
         bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);

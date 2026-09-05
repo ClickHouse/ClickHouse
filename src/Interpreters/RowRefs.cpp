@@ -294,21 +294,16 @@ UInt32 StoredColumnsIndex::add(const StoredBlock * block)
     std::lock_guard guard(mutex);
     if (blocks.size() > RowRef::BLOCK_NO_MASK)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many stored blocks in HashJoin: {}", blocks.size());
+    fiu_do_on(FailPoints::stored_columns_index_throw_on_add,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while registering a stored block");
+    });
+    /// `blocks` and `row_stores` are indexed by the same block number, so grow both before either is
+    /// appended to: the appends are then non-allocating and cannot leave the two different lengths.
+    blocks.reserve(blocks.size() + 1);
+    row_stores.reserve(row_stores.size() + 1);
     blocks.push_back(block);
-    try
-    {
-        fiu_do_on(FailPoints::stored_columns_index_throw_on_add,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while registering a stored block");
-        });
-        row_stores.push_back(block->row_store.get());
-    }
-    catch (...)
-    {
-        /// `blocks` and `row_stores` are indexed by the same block number.
-        blocks.pop_back();
-        throw;
-    }
+    row_stores.push_back(block->row_store.get());
     ++blocks_generation; /// Invalidate any previously built emit table (StorageJoin can insert between joins).
     return static_cast<UInt32>(blocks.size() - 1);
 }
