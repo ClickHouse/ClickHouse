@@ -3315,7 +3315,11 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
                         if (!mat_subquery_is_resolved)
                         {
-                            ctes_in_resolve_process.insert(resolved_identifier_node);
+                            /// Not `resolved_identifier_node`: the guard only sees the map node.
+                            auto cte_map_node = findCTENodeInScopes(materialized_cte_ptr->cte_name, scope);
+
+                            if (cte_map_node)
+                                ctes_in_resolve_process.insert(cte_map_node);
 
                             IdentifierResolveScope & mat_subquery_scope = createIdentifierResolveScope(mat_subquery, &scope);
                             mat_subquery_scope.subquery_depth = scope.subquery_depth + 1;
@@ -3325,7 +3329,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                             else
                                 resolveUnion(mat_subquery, mat_subquery_scope);
 
-                            ctes_in_resolve_process.erase(resolved_identifier_node);
+                            if (cte_map_node)
+                                ctes_in_resolve_process.erase(cte_map_node);
 
                             const bool mat_subquery_is_correlated = mat_subquery->as<QueryNode>()
                                 ? mat_subquery->as<QueryNode>()->isCorrelated()
@@ -5182,6 +5187,18 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
     array_join_nodes = std::move(array_join_column_expressions);
 }
 
+QueryTreeNodePtr QueryAnalyzer::findCTENodeInScopes(const std::string & cte_name, IdentifierResolveScope & scope)
+{
+    for (auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
+    {
+        auto it = current_scope->cte_name_to_query_node.find(cte_name);
+        if (it != current_scope->cte_name_to_query_node.end())
+            return it->second;
+    }
+
+    return {};
+}
+
 void QueryAnalyzer::checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope)
 {
     Names column_names;
@@ -6019,16 +6036,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
 
                     /// Prevent recursive CTE references during subquery resolution.
                     const auto & cte_name = materialized_cte_ptr->cte_name;
-                    QueryTreeNodePtr cte_map_node;
-                    for (auto * s = &scope; s; s = s->parent_scope)
-                    {
-                        auto it = s->cte_name_to_query_node.find(cte_name);
-                        if (it != s->cte_name_to_query_node.end())
-                        {
-                            cte_map_node = it->second;
-                            break;
-                        }
-                    }
+                    auto cte_map_node = findCTENodeInScopes(cte_name, scope);
 
                     if (cte_map_node)
                         ctes_in_resolve_process.insert(cte_map_node);
@@ -6077,7 +6085,17 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     /// Resolve this clone's own subquery copy for correct EXPLAIN output,
                     /// then reuse the existing storage.
                     auto & subquery = table_node->getMaterializedCTESubquery();
+
+                    /// This copy's body is unresolved, so it still needs the self-reference guard.
+                    auto cte_map_node = findCTENodeInScopes(materialized_cte_ptr->cte_name, scope);
+
+                    if (cte_map_node)
+                        ctes_in_resolve_process.insert(cte_map_node);
+
                     resolveExpressionNode(subquery, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
+
+                    if (cte_map_node)
+                        ctes_in_resolve_process.erase(cte_map_node);
 
                     table_node->updateStorage(materialized_cte_ptr->storage, scope.context);
                     verifyMaterializedCTESubqueryMatchesStorage(
