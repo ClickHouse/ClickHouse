@@ -427,6 +427,11 @@ if (UNIX AND NOT APPLE AND NOT USE_MUSL)
     target_link_libraries(llvm-min-tblgen PRIVATE pthread dl)
 endif()
 
+# musl: executables need explicit CRT objects because of -nostartfiles.
+if (USE_MUSL)
+    target_sources(llvm-min-tblgen PRIVATE ${MUSL_CRT_START_OBJECTS} ${MUSL_CRT_END_OBJECTS})
+endif()
+
 #
 # Generate GenVT.inc using llvm-min-tblgen (needed for CodeGenTypes which llvm-tblgen uses)
 # This must be done before building llvm-tblgen
@@ -571,6 +576,11 @@ target_compile_definitions(llvm-tblgen PRIVATE ${LLVM_COMPILE_DEFINITIONS})
 # musl has these in libc, so no separate libraries needed
 if (UNIX AND NOT APPLE AND NOT USE_MUSL)
     target_link_libraries(llvm-tblgen PRIVATE pthread dl)
+endif()
+
+# musl: executables need explicit CRT objects because of -nostartfiles.
+if (USE_MUSL)
+    target_sources(llvm-tblgen PRIVATE ${MUSL_CRT_START_OBJECTS} ${MUSL_CRT_END_OBJECTS})
 endif()
 
 # End of native tablegen build block

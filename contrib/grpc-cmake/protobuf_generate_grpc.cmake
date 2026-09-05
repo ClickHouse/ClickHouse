@@ -22,8 +22,10 @@ protobuf_generate_grpc_cpp(<SRCS> <HDRS>
 # This function is a modified version of the function PROTOBUF_GENERATE_CPP() copied from https://github.com/Kitware/CMake/blob/master/Modules/FindProtobuf.cmake.
 function(PROTOBUF_GENERATE_GRPC_CPP SRCS HDRS)
 
-  # ClickHouse build: Use the native plugins when cross-compiling or using musl
-  if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
+  # ClickHouse build: use the native-build plugins only when actually cross-compiling
+  # (host != target), matching the native-build guard in the root CMakeLists.txt. A
+  # native musl host build produces no native/ subtree; its static tools run natively.
+  if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
     set(NATIVE_gRPC_CPP_PLUGIN "${PROJECT_BINARY_DIR}/native/contrib/grpc-cmake/grpc_cpp_plugin")
     set(NATIVE_gRPC_PYTHON_PLUGIN "${PROJECT_BINARY_DIR}/native/contrib/grpc-cmake/grpc_python_plugin")
     set(NATIVE_protoc "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")

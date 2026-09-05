@@ -52,10 +52,10 @@ endif()
 # file and CMAKE_BUILD_TYPE=Release. Now that we build in-process, we have to
 # strip those flags explicitly. We keep:
 #   * --gcc-toolchain= / --no-default-config (toolchain bits from cmake/linux/toolchain-*.cmake)
-#   * -isystem +<path> / -nostdlibinc (musl header paths and the glibc-header
-#     opt-out added by the USE_MUSL toolchain — the runtime objects are linked
-#     into every musl executable and must honor the same "musl headers only"
-#     contract as the rest of the build)
+#   * -isystem +<path> (musl/sysroot header paths added by the USE_MUSL toolchain)
+#   * -nostdlibinc (the same toolchain drops the sysroot glibc headers from the default
+#     search path; without it the sanitizer platform-limits files could silently read glibc
+#     declarations for anything musl does not provide)
 #   * -march= / -mcpu= / -mtune= (target microarchitecture from cmake/cpu_features.cmake)
 #   * -mpclmul / -maltivec (explicit ISA features added by cmake/cpu_features.cmake)
 # The --target= flag is applied automatically by cmake from CMAKE_<LANG>_COMPILER_TARGET.
@@ -237,6 +237,11 @@ target_compile_options(clang_rt_builtins PRIVATE
     -fvisibility=hidden
     -fomit-frame-pointer
     -nostdinc++
+    # Never instrument the builtins: they are called from arbitrary contexts,
+    # including libc startup and sanitizer-runtime internals. Also marks the
+    # target for the top-level FUZZER loop, which skips targets carrying
+    # -fno-sanitize=all instead of appending -fsanitize=fuzzer-no-link.
+    -fno-sanitize=all
     # Suppress all warnings — these are external sources we don't audit.
     -w
 )
@@ -313,11 +318,26 @@ set(SANITIZER_COMMON_FLAGS
     -funwind-tables
     -fno-stack-protector
     -fvisibility=hidden
+    # A sanitizer runtime must never itself be instrumented: it would recurse
+    # into itself, and its early-init code runs before instrumentation runtimes
+    # exist. This also marks the target for the top-level FUZZER loop, which
+    # skips targets carrying -fno-sanitize=all instead of appending
+    # -fsanitize=fuzzer-no-link (that would override this flag and re-enable
+    # SanitizerCoverage).
+    -fno-sanitize=all
     # Suppress all warnings — these are external sources we don't audit.
     -w
 )
 
 set(SANITIZER_COMMON_DEFS HAVE_RPC_XDR_H=0)
+
+# Static musl: REAL() binds to renamed __real_* libc symbols at link time
+# instead of dlsym() (see lib/interception/interception.h and the renaming
+# step at the bottom of this file). A compile flag rather than a DEF so it
+# reaches every runtime target, including the ones without SANITIZER_COMMON_DEFS.
+if (USE_MUSL)
+    list(APPEND SANITIZER_COMMON_FLAGS -DSANITIZER_STATIC_LIBC_INTERCEPTION=1)
+endif()
 
 #
 # add_compiler_rt_runtime(<NAME> SOURCE_DIR <dir> SOURCES <files...>
@@ -421,6 +441,7 @@ if (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
         C_STANDARD 11 CXX_STANDARD 17
         ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
     _register_compiler_rt_target(clang_rt_asan)
+    set(_interceptor_runtime clang_rt_asan)
 
     # asan_static — separate archive.
     set(_asan_static_full "${ASAN_DIR}/${ASAN_STATIC_SOURCES}")
@@ -490,6 +511,7 @@ if (SANITIZE STREQUAL "memory")
     set_target_properties(clang_rt_msan PROPERTIES
         ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
     _register_compiler_rt_target(clang_rt_msan)
+    set(_interceptor_runtime clang_rt_msan)
 
     add_library(clang_rt_msan_cxx STATIC "${MSAN_DIR}/${MSAN_CXX_SOURCES}")
     target_include_directories(clang_rt_msan_cxx PRIVATE ${SANITIZER_INCLUDE_DIRS})
@@ -564,6 +586,7 @@ if (SANITIZE STREQUAL "thread")
     set_target_properties(clang_rt_tsan PROPERTIES
         ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
     _register_compiler_rt_target(clang_rt_tsan)
+    set(_interceptor_runtime clang_rt_tsan)
 
     add_library(clang_rt_tsan_cxx STATIC "${TSAN_DIR}/${TSAN_CXX_SOURCES}")
     target_include_directories(clang_rt_tsan_cxx PRIVATE ${SANITIZER_INCLUDE_DIRS})
@@ -631,17 +654,16 @@ endif()
 # ============================================================
 #
 if (ENABLE_XRAY)
-    # XRay archive: common runtime + all three modes (FDR, basic, profiling) +
-    # per-arch trampolines + sanitizer_common (XRay reuses sanitizer_common's
-    # allocator and printing helpers).
+    # XRay archive: common runtime + per-arch trampolines + sanitizer_common
+    # (XRay reuses sanitizer_common's allocator and printing helpers).
     #
-    # Bundle list mirrors the OBJECT_LIBS for clang_rt.xray (STATIC) in
-    # contrib/llvm-project/compiler-rt/lib/xray/CMakeLists.txt:
-    #   RTXray (= XRAY_SOURCES + ${arch}_SOURCES) + RTXrayFDR + RTXrayBASIC +
-    #   RTXrayPROFILING + RTSanitizerCommon[+Libc].
-    # Upstream additionally builds clang_rt.xray-fdr/-basic/-profiling as
-    # separate archives so an application can link only the modes it uses;
-    # ClickHouse always wants all of them, so we collapse into one archive.
+    # The logging modes (FDR, basic, profiling) are deliberately NOT bundled:
+    # ClickHouse compiles with -fxray-modes=none (see
+    # cmake/xray_instrumentation.cmake) and drives instrumentation through
+    # custom handlers only. This archive is linked --whole-archive (the
+    # runtime's init lives in a preinit_array entry nothing references), so
+    # bundling a mode would run its static initializers in every executable;
+    # xray_fdr_logging's initializer crashes at startup on musl.
     set(_xray_arch_cpp "")
     set(_xray_arch_asm "")
     if     (ARCH_AMD64)
@@ -665,8 +687,7 @@ if (ENABLE_XRAY)
     endif()
 
     set(_xray_combined_full "")
-    foreach (s ${XRAY_COMMON_SOURCES} ${XRAY_FDR_SOURCES} ${XRAY_BASIC_SOURCES}
-                ${XRAY_PROFILING_SOURCES} ${_xray_arch_cpp} ${_xray_arch_asm})
+    foreach (s ${XRAY_COMMON_SOURCES} ${_xray_arch_cpp} ${_xray_arch_asm})
         list(APPEND _xray_combined_full "${XRAY_DIR}/${s}")
     endforeach()
     foreach (s ${SANITIZER_COMMON_SOURCES} ${SANITIZER_COMMON_LIBC_SOURCES})
@@ -730,5 +751,100 @@ if ($CACHE{WITH_COVERAGE})
             COMPILER_RT_HAS_FCNTL_LCK=1
             COMPILER_RT_HAS_FLOCK=1
             COMPILER_RT_HAS_UNAME=1
+    )
+endif()
+
+#
+# ============================================================
+# 9. Static libc interception (musl)
+# ============================================================
+#
+# In a static binary there is no dlsym() for the sanitizer runtime to find the
+# real libc functions behind its interceptors. The runtimes above are compiled
+# with SANITIZER_STATIC_LIBC_INTERCEPTION: REAL(func) binds to __real_<func> at
+# link time, and (since there is no dynamic loader to patch call sites) the
+# runtime also defines the bare intercepted name (e.g. `close`) itself, so that
+# any reference to it - from application code or from musl internals - resolves
+# to the interceptor at static link time. Here a copy of the musl archive is
+# produced with the same names renamed to __real_<func>, so musl's own
+# definitions stop competing with the runtime's and are only reachable through
+# REAL(func). The renamed names are the union of two signals extracted from the
+# runtime: its weak undefined __real_<func> references (every REAL(func) use)
+# and its own strongly-defined bare names that also exist in musl. Most
+# functions are covered by both (a normal INTERCEPTOR defines the bare name and
+# uses REAL()), but a few are covered by only one side: TSan's
+# setjmp/sigsetjmp on aarch64 are strongly defined without ever going through
+# REAL() (an internal ASSIGN_REAL(setjmp, _setjmp) reuses another symbol's real
+# pointer), while their _setjmp/__sigsetjmp counterparts are the reverse - used
+# via REAL() in InitializeLongjmpXorKey through a bare DECLARE_REAL with no
+# matching strong definition of their own. Missing either signal either leaves
+# REAL(func) null or leaves musl's copy of the bare name in the archive to
+# collide with the runtime's own definition at link time. References inside
+# musl are renamed too, so libc-internal calls bypass the interceptors - the
+# same binding behaviour as dynamic musl, where libc-internal calls are
+# non-interposable.
+#
+# That "libc-internal calls bypass interceptors" behaviour is wrong for the
+# plain allocation primitives (malloc/calloc/realloc/free and friends):
+# unlike a purely-internal helper (e.g. printf calling strlen), the pointer
+# they return escapes to the application - getline/getdelim allocate their
+# buffer via musl's own internal realloc() call and hand it to the caller,
+# who then frees it through the ordinary, interposed free(). Renaming these
+# two references independently isn't possible (objcopy --redefine-syms
+# renames every occurrence of a symbol name across the whole archive,
+# definitions and call sites alike, with no way to rename musl's own
+# malloc.c but leave getdelim.c's call to realloc alone), so instead these
+# names are excluded from renaming entirely: TSan's runtime already strongly
+# defines the bare names and never calls REAL() for any of them (it manages
+# its own memory via direct mmap, not musl's allocator), so leaving musl's
+# copies unrenamed means their defining objects are simply never extracted
+# from the archive (nothing needs them - TSan's own definition already
+# satisfies the bare name), while every musl-internal call site - getdelim,
+# strdup, asprintf, realpath, or anything else - keeps resolving to the same
+# interposed allocator the application will later call to free() the result.
+# The linked libc is switched to the renamed archive in
+# cmake/linux/default_libs.cmake (MUSL_LIBC_TARGET).
+if (USE_MUSL AND _interceptor_runtime)
+    set(_musl_renames "${CMAKE_CURRENT_BINARY_DIR}/musl_interceptor_renames.txt")
+    set(_musl_intercepted "${CMAKE_CURRENT_BINARY_DIR}/libmusl_intercepted.a")
+    set(_musl_real_refs "${CMAKE_CURRENT_BINARY_DIR}/musl_real_refs.o")
+    # The runtime's REAL() pointers reference __real_<func> weakly, and weak
+    # references do not extract archive members. musl_real_refs.o carries a
+    # strong reference to every renamed function so that the linker pulls them
+    # in; the section itself is dropped again by --gc-sections.
+    add_custom_command(
+        OUTPUT "${_musl_intercepted}" "${_musl_real_refs}"
+        COMMAND sh -c "set -e;\
+            nm='${CMAKE_NM}';\
+            $nm $<TARGET_FILE:${_interceptor_runtime}> | awk '$1 == \"w\" && $2 ~ /^__real_/ {print $2}' | sed -e 's/^__real_//' > real_refs.txt;\
+            $nm --defined-only $<TARGET_FILE:${_interceptor_runtime}> | awk '$2 == \"T\" {print $3}' > strong_defs.txt;\
+            cat real_refs.txt strong_defs.txt | sort -u > intercepted.txt;\
+            $nm --defined-only $<TARGET_FILE:musl> | awk '{print $NF}' | sort -u > musl_defined.txt;\
+            comm -12 intercepted.txt musl_defined.txt | grep -vx -E 'malloc|calloc|realloc|reallocarray|free|posix_memalign|aligned_alloc|valloc|pvalloc|memalign' > names.txt;\
+            sed -e 's/.*/& __real_&/' names.txt > ${_musl_renames};\
+            { echo '.section .rodata.musl_real_refs,\"a\"'; sed -e 's/.*/.quad __real_&/' names.txt; } > musl_real_refs.s;\
+            ${CMAKE_C_COMPILER} --target=${CMAKE_C_COMPILER_TARGET} -c musl_real_refs.s -o ${_musl_real_refs}"
+        COMMAND ${CMAKE_OBJCOPY} --redefine-syms=${_musl_renames} $<TARGET_FILE:musl> ${_musl_intercepted}
+        DEPENDS musl ${_interceptor_runtime}
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+        COMMENT "Renaming intercepted libc functions to __real_* in the musl archive"
+        VERBATIM
+    )
+    # The custom target only materializes the rule; it is deliberately NOT wired
+    # into musl_intercepted via add_dependencies - that would form a target-level
+    # cycle through global-libs (every static library links it). Consumers reach
+    # the rule through the file-level dependency on the archive.
+    add_custom_target(musl-intercepted-archive DEPENDS "${_musl_intercepted}")
+    add_library(musl_intercepted STATIC IMPORTED GLOBAL)
+    # Carry over musl's usage requirements: consumers get the headers and
+    # definitions from the interface of this target, not from `musl`.
+    get_target_property(_musl_includes musl INTERFACE_INCLUDE_DIRECTORIES)
+    get_target_property(_musl_definitions musl INTERFACE_COMPILE_DEFINITIONS)
+    set_target_properties(musl_intercepted PROPERTIES
+        IMPORTED_LOCATION "${_musl_intercepted}"
+        INTERFACE_LINK_LIBRARIES "${_musl_real_refs}"
+        INTERFACE_INCLUDE_DIRECTORIES "${_musl_includes}"
+        INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_musl_includes}"
+        INTERFACE_COMPILE_DEFINITIONS "${_musl_definitions}"
     )
 endif()

@@ -60,6 +60,7 @@ add_contrib (google-protobuf-cmake google-protobuf)
 add_contrib (grpc-cmake grpc)
 add_contrib (compiler-rt-cmake llvm-project)
 add_contrib (libllvmlibc-cmake llvm-project)
+add_contrib (optimized-routines-cmake optimized-routines)
 add_contrib (llvm-project-cmake llvm-project)
 
 enable_dummy_launchers_if_needed()

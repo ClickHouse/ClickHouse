@@ -369,7 +369,6 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_FREEBSD = "amd_freebsd"
     PPC64LE = "ppc64le"
     AMD_COMPAT = "amd_compat"
-    AMD_MUSL = "amd_musl"
     RISCV64 = "riscv64"
     S390X = "s390x"
     LOONGARCH64 = "loongarch64"
@@ -500,7 +499,6 @@ class ArtifactNames:
     CH_AMD_FREEBSD = "CH_ARM_FREEBSD_BIN"
     CH_PPC64LE = "CH_PPC64LE_BIN"
     CH_AMD_COMPAT = "CH_AMD_COMPAT_BIN"
-    CH_AMD_MUSL = "CH_AMD_MUSL_BIN"
     CH_RISCV64 = "CH_RISCV64_BIN"
     CH_S390X = "CH_S390X_BIN"
     CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
@@ -633,7 +631,6 @@ class ArtifactConfigs:
             ArtifactNames.CH_AMD_FREEBSD,
             ArtifactNames.CH_PPC64LE,
             ArtifactNames.CH_AMD_COMPAT,
-            ArtifactNames.CH_AMD_MUSL,
             ArtifactNames.CH_RISCV64,
             ArtifactNames.CH_S390X,
             ArtifactNames.CH_LOONGARCH64,

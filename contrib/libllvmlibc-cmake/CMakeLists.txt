@@ -30,7 +30,11 @@ set(SRCS
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/fmodl.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/frexp.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/frexpl.cpp"
-    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/hypot.cpp"
+    # hypot deliberately omitted: llvm-libc's is a correctly-rounded
+    # digit-recurrence loop that ignores LIBC_MATH_HAS_SKIP_ACCURATE_PASS and
+    # measures ~22x slower than the platform one (91 ns vs 4.2 ns per call on
+    # Neoverse-V2); the libc hypot (musl, or glibc in dynamic builds) wins the
+    # link instead.
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/ldexp.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/ldexpf.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/ldexpl.cpp"
@@ -62,6 +66,9 @@ set(SRCS
 # there and let the interceptor wrap the system memmem, as before this PR.
 if (NOT SANITIZE)
     list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/string/memmem.cpp")
+    # x86_64-only strong memchr/strlen (the file is empty on other arches, where
+    # the Arm Optimized Routines already provide vectorized versions).
+    list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/string/str_functions.cpp")
 endif ()
 
 set(LIBC_NAMESPACE "__llvm_libc")

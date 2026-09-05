@@ -1,75 +1,40 @@
-import argparse
+import json
 from pathlib import Path
 
-from pip._vendor.packaging.version import Version
-
-from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
-IMAGE_UBUNTU = "clickhouse/test-old-ubuntu"
-IMAGE_CENTOS = "clickhouse/test-old-centos"
-DOWNLOAD_RETRIES_COUNT = 5
-
 temp_path = Path(f"{Utils.cwd()}/ci/tmp")
 
+# The release binary is statically linked against the bundled musl, so the glibc
+# symbol-version audit and the "does it start on an ancient distribution" checks
+# that this job used to run are settled at link time (see the `readelf` assertion
+# in the build job). What remains worth checking at runtime is rseq: the bundled
+# libc registers a per-thread rseq area with the kernel itself, and `sched_getcpu`
+# (hence the per-CPU counters) falls back to a slower path when that fails. The
+# warning in `system.warnings` is the observable signal, so exercise both sides:
+# registration succeeds regardless of the distribution's own libc, and a kernel
+# that refuses the syscall is reported.
+RSEQ_WARNING_QUERY = "select count() from system.warnings where message like '%rseq%'"
 
-def process_glibc_check():
-    # See https://sourceware.org/glibc/wiki/Glibc%20Timeline
-    if Utils.is_amd():
-        max_glibc_version = "2.4"
-    elif Utils.is_arm():
-        max_glibc_version = "2.18"  # because of build with newer sysroot?
-    else:
-        raise RuntimeError("Can't determine max glibc version")
+# Docker seccomp profile that makes the `rseq` syscall fail with ENOSYS, which is
+# what a pre-4.18 kernel or a restrictive sandbox looks like to the process.
+SECCOMP_NO_RSEQ = {
+    "defaultAction": "SCMP_ACT_ALLOW",
+    "syscalls": [{"names": ["rseq"], "action": "SCMP_ACT_ERRNO", "errnoRet": 38}],
+}
 
-    commands = (
-        [
-            f"readelf -s --wide {temp_path}/clickhouse | grep '@GLIBC_' > {temp_path}/glibc.log",
-            # FIXME: odbc bridge is not present in the deb package
-            # f"readelf -s --wide {temp_path}/clickhouse-odbc-bridge | grep '@GLIBC_' >> {temp_path}/glibc.log",
-            # FIXME: library bridge is not present in the deb package
-            # f"readelf -s --wide {temp_path}/clickhouse-library-bridge | grep '@GLIBC_' >> {temp_path}/glibc.log",
-        ],
+
+def rseq_check(image: str, expect_rseq: bool, extra_args: str = "") -> str:
+    condition = "count()" if expect_rseq else "not(count())"
+    return (
+        f"docker run --rm --volume={temp_path}/clickhouse:/clickhouse {extra_args} {image} "
+        f'/clickhouse local --query "select throwIf({condition}) from ({RSEQ_WARNING_QUERY})"'
     )
-
-    for command in commands:
-        Shell.check(command, verbose=True, strict=True)
-
-    ok = True
-    with open(f"{temp_path}/glibc.log", "r", encoding="utf-8") as log:
-        for line in log:
-            if line.strip():
-                columns = line.strip().split(" ")
-                symbol_with_glibc = columns[-2]  # sysconf@GLIBC_2.2.5
-                _, version = symbol_with_glibc.split("@GLIBC_")
-                if version == "PRIVATE":
-                    print(f"FAILED: PRIVATE version: {symbol_with_glibc}")
-                    ok = False
-                elif Version(version) > Version(max_glibc_version):
-                    print(
-                        f"FAILED: version is more than max version [{max_glibc_version}]: [{symbol_with_glibc}]"
-                    )
-                    ok = False
-    return ok
-
-
-def parse_args():
-    parser = argparse.ArgumentParser("Check compatibility with old distributions")
-    parser.add_argument("--check-name", required=False)
-    return parser.parse_args()
 
 
 def main():
     stopwatch = Utils.Stopwatch()
-
-    check_name = Info().job_name
-    assert check_name
-    check_glibc = True
-    # currently hardcoded to x86, don't enable for AARCH64
-    check_old_distributions = (
-        "aarch64" not in check_name.lower() and "arm" not in check_name.lower()
-    )
 
     for package in temp_path.iterdir():
         if package.suffix == ".deb":
@@ -83,43 +48,19 @@ def main():
         verbose=True,
         strict=True,
     )
-    # Shell.check(f"chmod +x {temp_path}/clickhouse", verbose=True, strict=True)
+
+    seccomp_profile = temp_path / "seccomp_no_rseq.json"
+    seccomp_profile.write_text(json.dumps(SECCOMP_NO_RSEQ), encoding="utf-8")
 
     test_results = []
 
-    if check_glibc:
+    if Utils.is_amd():
+        # No aarch64 image exists for this release; on amd64 it shows that the
+        # registration does not depend on the distribution's glibc (2.15 here).
         test_results.append(
             Result.from_commands_run(
-                name="glibc version",
-                command=process_glibc_check,
-            )
-        )
-
-    if check_old_distributions:
-        test_results.append(
-            Result.from_commands_run(
-                name="ubuntu12",
-                command=[
-                    f"docker run --volume={temp_path}/clickhouse:/clickhouse ubuntu:12.04 /clickhouse local --query 'select 1'",
-                ],
-                with_info=True,
-            )
-        )
-        test_results.append(
-            Result.from_commands_run(
-                name="ubuntu12 (rseq unavailable)",
-                command=[f"""
-                docker run --volume={temp_path}/clickhouse:/clickhouse ubuntu:12.04 /clickhouse local --query "select throwIf(not(count())) from system.warnings where message like '%rseq%'"
-                """.strip()],
-                with_info=True,
-            )
-        )
-        test_results.append(
-            Result.from_commands_run(
-                name="centos5",
-                command=[
-                    f"docker run --volume={temp_path}/clickhouse:/clickhouse centos:5 /clickhouse local --query 'select 1'"
-                ],
+                name="ubuntu12 (rseq available)",
+                command=[rseq_check("ubuntu:12.04", expect_rseq=True)],
                 with_info=True,
             )
         )
@@ -127,18 +68,20 @@ def main():
     test_results.append(
         Result.from_commands_run(
             name="ubuntu22 (rseq available)",
-            command=[f"""
-            docker run --volume={temp_path}/clickhouse:/clickhouse ubuntu:22.04 /clickhouse local --query "select throwIf(count()) from system.warnings where message like '%rseq%'"
-            """.strip()],
+            command=[rseq_check("ubuntu:22.04", expect_rseq=True)],
             with_info=True,
         )
     )
     test_results.append(
         Result.from_commands_run(
-            name="ubuntu22 (rseq off)",
-            command=[f"""
-            docker run --volume={temp_path}/clickhouse:/clickhouse -e GLIBC_TUNABLES=glibc.pthread.rseq=0 ubuntu:22.04 /clickhouse local --query "select throwIf(not(count())) from system.warnings where message like '%rseq%'"
-            """.strip()],
+            name="ubuntu22 (rseq blocked by seccomp)",
+            command=[
+                rseq_check(
+                    "ubuntu:22.04",
+                    expect_rseq=False,
+                    extra_args=f"--security-opt seccomp={seccomp_profile}",
+                )
+            ],
             with_info=True,
         )
     )

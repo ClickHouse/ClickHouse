@@ -109,7 +109,7 @@ if (NOT ENABLE_XRAY)
     set (ENABLE_XRAY 0)
 endif()
 
-if (NOT ((ARCH_AMD64 OR ARCH_AARCH64) AND OS_LINUX) OR SANITIZE OR USE_MUSL)
+if (NOT ((ARCH_AMD64 OR ARCH_AARCH64) AND OS_LINUX) OR SANITIZE)
     message (STATUS "Not using LLVM XRay, only Linux on amd64 and aarch64 is supported without sanitizers")
     set (ENABLE_XRAY 0)
 endif()
@@ -642,6 +642,30 @@ if (NOT OS_ANDROID AND OS_LINUX AND NOT ARCH_S390X AND NOT SANITIZE AND NOT ENAB
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie -Wl,-no-pie")
 endif ()
 
+if (USE_MUSL)
+    # Executables are linked with -nostartfiles (see cmake/linux/default_libs.cmake), so
+    # musl's CRT objects are added to each of them explicitly. PIE builds (sanitizers and
+    # builds without ThinLTO, see above) become static-PIE and need the self-relocating
+    # rcrt1 instead of crt1.
+    # The link order invariant is crt1.o -> crti.o -> [program objects] -> crtn.o: crti.o
+    # opens the .init/.fini prologues and crtn.o closes them, so any object that contributes
+    # .init/.fini section fragments must land between the two. The objects are split into
+    # a start list (prepended before the program objects) and an end list (appended last).
+    # Note that CMake groups $<TARGET_OBJECTS:...> sources together on the link line ahead
+    # of the target's own objects, so the source-list position alone cannot bracket the
+    # program objects; the hard guarantee is that crti.o immediately precedes crtn.o and
+    # nothing else in the build emits .init/.fini fragments (clang only ever emits
+    # .init_array/.fini_array), which keeps _init/_fini well-formed.
+    if (SANITIZE OR ENABLE_POSITION_INDEPENDENT_BINARY)
+        set (MUSL_CRT_START_OBJECTS $<TARGET_OBJECTS:musl-rcrt1> $<TARGET_OBJECTS:musl-crti>)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-pie")
+    else ()
+        set (MUSL_CRT_START_OBJECTS $<TARGET_OBJECTS:musl-crt1> $<TARGET_OBJECTS:musl-crti>)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+    endif ()
+    set (MUSL_CRT_END_OBJECTS $<TARGET_OBJECTS:musl-crtn>)
+endif ()
+
 if (ENABLE_TESTS)
     message (STATUS "Unit tests are enabled")
 else()
@@ -694,9 +718,12 @@ endif ()
 macro (clickhouse_add_executable target)
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
-    # Note: for musl builds (-nostartfiles), the CRT startup files are added to every
-    # executable through the link flags, see cmake/linux/default_libs.cmake.
-    add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
+    # if USE_MUSL is on, also include musl CRT objects because we link with -nostartfiles.
+    if (USE_MUSL)
+        add_executable (${target} ${MUSL_CRT_START_OBJECTS} ${ARGN} $<TARGET_OBJECTS:clickhouse_malloc> ${MUSL_CRT_END_OBJECTS})
+    else ()
+        add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
+    endif ()
 
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
@@ -778,7 +805,16 @@ if (FUZZER)
         if (NOT(target STREQUAL "_fuzzer" OR target STREQUAL "_fuzzer_no_main" OR target MATCHES ".*isal.*"))
             get_target_property(target_type ${target} TYPE)
             if (NOT(target_type STREQUAL "INTERFACE_LIBRARY" OR target_type STREQUAL "UTILITY"))
-                target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
+                # Targets compiled with -fno-sanitize=all must never be instrumented:
+                # a later -fsanitize=fuzzer-no-link overrides it and re-enables
+                # SanitizerCoverage. That is fatal for the in-tree libc and sanitizer
+                # runtimes (musl, clang_rt_*): their startup code (rcrt1 self-relocation,
+                # __init_libc) runs before relocations are applied and before any
+                # coverage runtime exists, so every executable crashes at startup.
+                get_target_property(target_compile_options ${target} COMPILE_OPTIONS)
+                if (NOT target_compile_options MATCHES "-fno-sanitize=all")
+                    target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
+                endif()
             endif()
             if (target_type STREQUAL "EXECUTABLE" AND target MATCHES ".+_fuzzer")
                 message(STATUS "${target} instrumented with fuzzer")
@@ -816,7 +852,6 @@ if (NATIVE_BUILD_TARGETS
     AND NOT(
         CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
         AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
-        AND NOT USE_MUSL
     )
 )
     message (STATUS "Building native targets: ${NATIVE_BUILD_TARGETS}")

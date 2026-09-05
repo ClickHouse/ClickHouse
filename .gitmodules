@@ -411,18 +411,21 @@
 [submodule "contrib/mapbox-geometry"]
 	path = contrib/mapbox-geometry
 	url = https://github.com/ClickHouse/geometry.hpp
-[submodule "contrib/zxc"]
-	path = contrib/zxc
-	url = https://github.com/ClickHouse/zxc
 [submodule "contrib/libucontext"]
 	path = contrib/libucontext
 	url = https://github.com/kaniini/libucontext
+[submodule "contrib/zxc"]
+	path = contrib/zxc
+	url = https://github.com/ClickHouse/zxc
 [submodule "contrib/Jieba-CPP"]
 	path = contrib/Jieba-CPP
 	url = https://github.com/amosbird/Jieba-CPP
 [submodule "contrib/MeCab"]
 	path = contrib/MeCab
 	url = https://github.com/taku910/mecab
+[submodule "contrib/optimized-routines"]
+	path = contrib/optimized-routines
+	url = https://github.com/ARM-software/optimized-routines
 [submodule "contrib/substrait"]
 	path = contrib/substrait
 	url = https://github.com/substrait-io/substrait.git
