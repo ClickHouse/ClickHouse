@@ -1,0 +1,27 @@
+distinct, in order
+00
+3FF8000000000000
+8000000000000000
+distinct, by hash
+00
+3FF8000000000000
+8000000000000000
+distinct of an array of floats, in order
+00
+3FF8000000000000
+8000000000000000
+limit by, in order
+00
+3FF8000000000000
+8000000000000000
+limit by, by hash
+00
+3FF8000000000000
+8000000000000000
+group by
+00
+3FF8000000000000
+8000000000000000
+the sorted variant is still used for an integer key
+DistinctSortedStreamTransform
+LimitBySortedStreamTransform
