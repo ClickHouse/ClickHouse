@@ -2237,6 +2237,70 @@ struct ConvertImpl
             return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToTimeImpl<date_time_overflow_behavior>>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
+        /// Conversion of Time64 to Time: both store local seconds since midnight, so drop the fractional part.
+        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
+            && std::is_same_v<ToDataType, DataTypeTime>)
+        {
+            using ColVecFrom = typename FromDataType::ColumnType;
+            using ColVecTo = typename ToDataType::ColumnType;
+
+            constexpr bool accurate_cast = std::is_same_v<Additions, AccurateConvertStrategyAdditions>;
+            constexpr bool accurate_cast_or_null = std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>;
+
+            const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
+            auto col_to = ColVecTo::create();
+            auto & vec_to = col_to->getData();
+            const auto & vec_from = col_from->getData();
+            vec_to.resize(input_rows_count);
+
+            ColumnUInt8::MutablePtr col_null_map_to;
+            if constexpr (accurate_cast_or_null)
+                col_null_map_to = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
+
+            const auto scale_mult = DecimalUtils::scaleMultiplier<Time64>(col_from->getScale());
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                const Int64 raw = vec_from[i].value;
+                const bool fractional = (raw % scale_mult) != 0;
+                /// Round toward negative infinity, like TransformDateTime64.
+                Int64 whole = raw / scale_mult;
+                if (raw < 0 && fractional)
+                    --whole;
+                const bool in_range = whole >= -MAX_TIME_TIMESTAMP && whole <= MAX_TIME_TIMESTAMP;
+
+                if constexpr (accurate_cast)
+                {
+                    /// Accurate semantics do not depend on date_time_overflow_behavior.
+                    if (fractional || !in_range)
+                        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Time64 value {} cannot be converted to Time exactly", raw);
+                    vec_to[i] = static_cast<Int32>(whole);
+                }
+                else if constexpr (accurate_cast_or_null)
+                {
+                    if (fractional || !in_range)
+                    {
+                        vec_to[i] = 0;
+                        col_null_map_to->getData()[i] = 1;
+                    }
+                    else
+                        vec_to[i] = static_cast<Int32>(whole);
+                }
+                else
+                {
+                    if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+                    {
+                        if (!in_range) [[unlikely]]
+                            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", whole);
+                    }
+                    vec_to[i] = static_cast<Int32>(std::clamp<Int64>(whole, -MAX_TIME_TIMESTAMP, MAX_TIME_TIMESTAMP));
+                }
+            }
+
+            if constexpr (accurate_cast_or_null)
+                return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
+            else
+                return col_to;
+        }
         /// Conversion of Date or DateTime to DateTime64: add zero sub-second part.
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeDate>

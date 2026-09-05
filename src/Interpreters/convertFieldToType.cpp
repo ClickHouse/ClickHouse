@@ -43,6 +43,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int DECIMAL_OVERFLOW;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 
@@ -225,6 +226,16 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
     return result;
 }
 
+
+/// Look through LowCardinality/Nullable on a source type hint: a non-NULL value of a wrapped type arrives as a plain Field.
+const IDataType * unwrapSourceTypeHint(const IDataType * hint)
+{
+    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(hint))
+        hint = low_cardinality->getDictionaryType().get();
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(hint))
+        hint = nullable->getNestedType().get();
+    return hint;
+}
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
@@ -490,6 +501,35 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return DecimalField<Time64>(DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, 1), scale_to);
         }
 
+        /// Constant Time64 -> Time: gated on the source hint, Decimal64 is also the Field storage for Decimal64/DateTime64.
+        if (which_type.isTime() && src.getType() == Field::Types::Decimal64)
+        {
+            const IDataType * time64_hint = unwrapSourceTypeHint(from_type_hint);
+            if (time64_hint && WhichDataType(*time64_hint).isTime64())
+            {
+                static constexpr Int64 max_time_seconds = 3599999; /// 999:59:59, == MAX_TIME_TIMESTAMP
+                const auto & from_field = src.safeGet<Decimal64>();
+                const Int64 scale_multiplier = from_field.getScaleMultiplier().value;
+                const Int64 raw = from_field.getValue().value;
+                /// Round toward negative infinity, like TransformDateTime64.
+                Int64 whole = raw / scale_multiplier;
+                if (raw < 0 && raw % scale_multiplier != 0)
+                    --whole;
+                const bool out_of_range = whole < -max_time_seconds || whole > max_time_seconds;
+
+                /// Strict callers (IN-set construction) must reject values not exactly representable as Time.
+                if (strict && (raw % scale_multiplier != 0 || out_of_range))
+                    return {};
+
+                if (out_of_range && format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Time", whole);
+
+                const Int64 clamped = std::min<Int64>(std::max<Int64>(whole, -max_time_seconds), max_time_seconds);
+                /// Through the Int64 -> Time path, so the produced Field matches the integer branch above.
+                return convertNumericType<Int32>(Field(clamped), type, strict, convert_inexact_floats);
+            }
+        }
+
         /// For toDate('xxx') in 1::Int64. Date is UInt16 under the hood;
         /// range-check so out-of-range integers don't get silently truncated
         /// by the Date serializer downstream.
@@ -592,11 +632,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             size_t src_arr_size = src_arr.size();
 
             const auto & element_type = *(type_array->getNestedType());
+            /// Propagate the element source type for hint-dependent conversions (e.g. Time64 -> Time).
+            const auto * from_array_hint = typeid_cast<const DataTypeArray *>(from_type_hint);
+            const IDataType * element_from_hint = from_array_hint ? from_array_hint->getNestedType().get() : nullptr;
             bool have_unconvertible_element = false;
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
-                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                res[i] = convertFieldToType(src_arr[i], element_type, element_from_hint, format_settings, strict, convert_inexact_floats);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     // See the comment for Tuples below.
@@ -623,12 +666,17 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                     dst_tuple_size,
                     src_tuple_size);
 
+            const auto * from_tuple_hint = typeid_cast<const DataTypeTuple *>(unwrapSourceTypeHint(from_type_hint));
+            if (from_tuple_hint && from_tuple_hint->getElements().size() != dst_tuple_size)
+                from_tuple_hint = nullptr;
+
             Tuple res(dst_tuple_size);
             bool have_unconvertible_element = false;
             for (size_t i = 0; i < dst_tuple_size; ++i)
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
-                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                const IDataType * element_from_hint = from_tuple_hint ? from_tuple_hint->getElements()[i].get() : nullptr;
+                res[i] = convertFieldToType(src_tuple[i], element_type, element_from_hint, format_settings, strict, convert_inexact_floats);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     /*
@@ -804,6 +852,10 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const auto & key_type = *type_map->getKeyType();
             const auto & value_type = *type_map->getValueType();
 
+            const auto * from_map_hint = typeid_cast<const DataTypeMap *>(from_type_hint);
+            const IDataType * key_from_hint = from_map_hint ? from_map_hint->getKeyType().get() : nullptr;
+            const IDataType * value_from_hint = from_map_hint ? from_map_hint->getValueType().get() : nullptr;
+
             const auto & map = src.safeGet<Map>();
             size_t map_size = map.size();
 
@@ -820,12 +872,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
                 Tuple updated_entry(2);
 
-                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[0] = convertFieldToType(key, key_type, key_from_hint, format_settings, strict, convert_inexact_floats);
 
                 if (updated_entry[0].isNull() && !canContainNull(key_type))
                     have_unconvertible_element = true;
 
-                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[1] = convertFieldToType(value, value_type, value_from_hint, format_settings, strict, convert_inexact_floats);
                 if (updated_entry[1].isNull() && !canContainNull(value_type))
                     have_unconvertible_element = true;
 
