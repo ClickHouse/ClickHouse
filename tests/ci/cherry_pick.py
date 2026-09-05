@@ -500,7 +500,8 @@ close it.
         # generates, i.e. a release branch commit merged with the original PR's
         # first parent. Anything else was hand-edited.
         first_parent = git_runner(f"git rev-parse {self.pr.merge_commit_sha}^1")
-        base_parents = git_runner(f"git rev-parse {remote_backport}^@").split()
+        base = git_runner(f"git rev-parse {remote_backport}")
+        base_parents = git_runner(f"git rev-parse {base}^@").split()
         if len(base_parents) != 2 or base_parents[1] != first_parent:
             logging.info(
                 "Retry of cherry-pick PR #%s skipped: its base %s is not a "
@@ -508,6 +509,14 @@ close it.
                 self.cherrypick_pr.number,
                 remote_backport,
                 first_parent,
+            )
+            return False
+        if git_runner(f"git rev-parse {base}^{{tree}}") != git_runner(
+            f"git rev-parse {base_parents[0]}^{{tree}}"
+        ):
+            logging.info(
+                "Retry of cherry-pick PR #%s skipped: its base tree was edited",
+                self.cherrypick_pr.number,
             )
             return False
         if not Shell.check(
@@ -621,8 +630,16 @@ close it.
             )
             return False
 
-        for branch in (self.cherrypick_branch, self.backport_branch):
-            git_runner(f"{GIT_PREFIX} push -f {self.REMOTE} {branch}:{branch}")
+        # Protect the exact refs inspected above, including against a human push
+        # during the merge. Publish both refs together or leave both untouched.
+        git_runner(
+            f"{GIT_PREFIX} push --atomic "
+            f"--force-with-lease=refs/heads/{self.cherrypick_branch}:{head} "
+            f"--force-with-lease=refs/heads/{self.backport_branch}:{base} "
+            f"{self.REMOTE} "
+            f"{self.cherrypick_branch}:refs/heads/{self.cherrypick_branch} "
+            f"{self.backport_branch}:refs/heads/{self.backport_branch}"
+        )
         self.cherrypick_pr.create_issue_comment(
             f"The `{self.name}` branch moved since this cherry-pick was created "
             f"(now at {release_head[:12]}). Re-tried the merge against it and it "
