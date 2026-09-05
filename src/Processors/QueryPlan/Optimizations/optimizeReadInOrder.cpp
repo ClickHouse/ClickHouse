@@ -246,7 +246,9 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
     {
         const auto * node = stack.top();
         stack.pop();
-        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        if (node->type == ActionsDAG::ActionType::ALIAS)
+            stack.push(node->children.front());
+        else if (node->type == ActionsDAG::ActionType::FUNCTION)
         {
             const auto & name = node->function_base->getName();
             if (name == "and")
