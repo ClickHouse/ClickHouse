@@ -1004,4 +1004,9 @@ SerializationPtr SerializationNullable::create(const SerializationPtr & nested_,
     return ISerialization::pooled(getHash(nested_, use_default_null_map_), [&] { return new SerializationNullable(nested_, use_default_null_map_); });
 }
 
+bool SerializationNullable::isNullMapSubcolumn(const SubstreamPath & path)
+{
+    return !path.empty() && (path.back().type == Substream::NullMap || path.back().type == Substream::SparseNullMap);
+}
+
 }

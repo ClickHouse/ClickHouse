@@ -887,7 +887,7 @@ std::pair<std::string_view, std::string_view> splitSubcolumnName(std::string_vie
 
 }
 
-std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
+std::unique_ptr<IDataType::SubcolumnInfo> DataTypeDynamic::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
 {
     auto [type_subcolumn_name, subcolumn_nested_name] = splitSubcolumnName(subcolumn_name);
     /// Check if requested subcolumn is a valid data type.
@@ -901,8 +901,9 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
 
     const auto & dynamic_serialization = assert_cast<const SerializationDynamic &>(*removeNamedSerialization(data.serialization));
     auto subcolumn_serialization = dynamic_serialization.createSerializationForType(subcolumn_type);
-    std::unique_ptr<SubstreamData> res = std::make_unique<SubstreamData>(subcolumn_serialization);
-    res->type = subcolumn_type;
+    auto res = std::make_unique<SubcolumnInfo>();
+    res->data = SubstreamData(subcolumn_serialization);
+    res->data.type = subcolumn_type;
     std::optional<ColumnVariant::Discriminator> discriminator;
     ColumnPtr null_map_for_variant_from_shared_variant;
     if (data.column)
@@ -918,7 +919,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
         if (it != variant_info.variant_name_to_discriminator.end())
         {
             discriminator = it->second;
-            res->column = variant_column.getVariantPtrByGlobalDiscriminator(*discriminator);
+            res->data.column = variant_column.getVariantPtrByGlobalDiscriminator(*discriminator);
         }
         /// Otherwise if there is data in shared variant try to find requested type there.
         else if (!shared_variant.empty())
@@ -955,7 +956,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
                 }
             }
 
-            res->column = std::move(subcolumn);
+            res->data.column = std::move(subcolumn);
             null_map_for_variant_from_shared_variant = std::move(null_map_column);
         }
     }
@@ -971,24 +972,34 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Dynamic type doesn't have subcolumn '{}'", subcolumn_name);
             return nullptr;
         }
-        res->type = std::make_shared<DataTypeUInt8>();
+        res->data.type = std::make_shared<DataTypeUInt8>();
     }
-    else if (!subcolumn_nested_name.empty())
+
+    /// The variant the subcolumn resolved to, which is what a read of it traverses.
+    res->substreams_path.emplace_back(ISerialization::Substream::DynamicData);
+    res->substreams_path.emplace_back(is_null_map_subcolumn ? ISerialization::Substream::VariantElementNullMap : ISerialization::Substream::VariantElement);
+    res->substreams_path.back().variant_element_name = subcolumn_type->getName();
+
+    if (!is_null_map_subcolumn && !subcolumn_nested_name.empty())
     {
-        res = getSubcolumnData(subcolumn_nested_name, *res, initial_array_level, throw_if_null);
-        if (!res)
+        auto nested_info = getSubcolumnInfo(subcolumn_nested_name, res->data, initial_array_level, throw_if_null);
+        if (!nested_info)
         {
             if (throw_if_null)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Expected getSubcolumnData() to throw for subcolumn '{}' in throw_if_null mode",
+                    "Expected getSubcolumnInfo() to throw for subcolumn '{}' in throw_if_null mode",
                     subcolumn_name);
             return nullptr;
         }
+
+        res->data = std::move(nested_info->data);
+        res->substreams_path.insert(
+            res->substreams_path.end(), nested_info->substreams_path.begin(), nested_info->substreams_path.end());
     }
 
-    res->serialization = SerializationDynamicElement::create(
-        res->serialization,
+    res->data.serialization = SerializationDynamicElement::create(
+        res->data.serialization,
         dynamic_serialization.createSerializationForType(ColumnDynamic::getSharedVariantDataType()),
         subcolumn_type->getName(),
         String(subcolumn_nested_name),
@@ -996,7 +1007,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
     /// Make resulting subcolumn Nullable only if type subcolumn can be inside Nullable or can be LowCardinality(Nullable()).
     bool make_subcolumn_nullable = canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(subcolumn_type);
     if (!is_null_map_subcolumn && make_subcolumn_nullable)
-        res->type = makeNullableOrLowCardinalityNullableSafe(res->type);
+        res->data.type = makeNullableOrLowCardinalityNullableSafe(res->data.type);
 
     if (data.column)
     {
@@ -1022,7 +1033,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
                     make_subcolumn_nullable,
                     nullptr,
                     variant_column.getNumVariants());
-            res->column = creator->create(res->column);
+            res->data.column = creator->create(res->data.column);
         }
         /// Check if requested type was extracted from shared variant. In this case we should use
         /// VariantSubcolumnCreator to create full subcolumn from variant according to created null map.
@@ -1030,13 +1041,13 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
         {
             if (is_null_map_subcolumn)
             {
-                res->column = null_map_for_variant_from_shared_variant;
+                res->data.column = null_map_for_variant_from_shared_variant;
             }
             else
             {
                 SerializationVariantElement::VariantSubcolumnCreator creator(
                     null_map_for_variant_from_shared_variant, "", 0, 0, make_subcolumn_nullable, null_map_for_variant_from_shared_variant);
-                res->column = creator.create(res->column);
+                res->data.column = creator.create(res->data.column);
             }
         }
         /// Provided Dynamic column doesn't have subcolumn of this type, just create column filled with default values.
@@ -1045,13 +1056,13 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
             /// Fill null map with 1 when there is no such Dynamic subcolumn.
             auto column = ColumnUInt8::create();
             assert_cast<ColumnUInt8 &>(*column).getData().resize_fill(data.column->size(), 1);
-            res->column = std::move(column);
+            res->data.column = std::move(column);
         }
         else
         {
-            auto column = res->type->createColumn();
+            auto column = res->data.type->createColumn();
             column->insertManyDefaults(data.column->size());
-            res->column = std::move(column);
+            res->data.column = std::move(column);
         }
     }
 
