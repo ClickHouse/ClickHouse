@@ -280,15 +280,11 @@ constexpr auto MERGING_AGGREGATED_MANIFEST = StepManifest<MergingAggregatedStep,
         field("overflow_row", WireFieldClass::Logical, &MergingAggregatedWire::overflow_row),
         field("group_by_sort_description", WireFieldClass::Logical, &MergingAggregatedWire::group_by_sort_description),
         field("should_produce_results_in_order_of_bucket_number", WireFieldClass::Physical, &MergingAggregatedWire::should_produce_results_in_order_of_bucket_number),
-        field("memory_bound_merging_of_aggregation_results_enabled", WireFieldClass::Physical, &MergingAggregatedWire::memory_bound_merging_of_aggregation_results_enabled),
-        field("hash_table_stats_key", WireFieldClass::Physical, &MergingAggregatedWire::hash_table_stats_key))
+        field("memory_bound_merging_of_aggregation_results_enabled", WireFieldClass::Physical, &MergingAggregatedWire::memory_bound_merging_of_aggregation_results_enabled))
     .settings(
         setting(QueryPlanSerializationSetting::max_block_size, WireFieldClass::Physical, &MergingAggregatedWire::max_block_size),
         setting(QueryPlanSerializationSetting::aggregation_in_order_max_block_bytes, WireFieldClass::Physical, &MergingAggregatedWire::aggregation_in_order_max_block_bytes),
         setting(QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization, WireFieldClass::Physical, &MergingAggregatedWire::min_hit_rate_to_use_consecutive_keys_optimization),
-        setting(QueryPlanSerializationSetting::collect_hash_table_stats_during_aggregation, WireFieldClass::Physical, &MergingAggregatedWire::collect_hash_table_stats_during_aggregation),
-        setting(QueryPlanSerializationSetting::max_entries_for_hash_table_stats, WireFieldClass::Physical, &MergingAggregatedWire::max_entries_for_hash_table_stats),
-        setting(QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation, WireFieldClass::Physical, &MergingAggregatedWire::max_size_to_preallocate_for_aggregation),
         setting(QueryPlanSerializationSetting::distributed_aggregation_memory_efficient, WireFieldClass::Physical, &MergingAggregatedWire::distributed_aggregation_memory_efficient),
         setting(QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte, WireFieldClass::Physical, &MergingAggregatedWire::serialize_string_in_memory_with_zero_byte),
         setting(QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation, WireFieldClass::Physical, &MergingAggregatedWire::enable_packed_string_keys_in_aggregation));
@@ -322,14 +318,10 @@ MergingAggregatedWire MergingAggregatedStep::toWire() const
     wire.group_by_sort_description = group_by_sort_description;
     wire.should_produce_results_in_order_of_bucket_number = should_produce_results_in_order_of_bucket_number;
     wire.memory_bound_merging_of_aggregation_results_enabled = memory_bound_merging_of_aggregation_results_enabled;
-    wire.hash_table_stats_key = params.stats_collecting_params.key;
 
     wire.max_block_size = max_block_size;
     wire.aggregation_in_order_max_block_bytes = memory_bound_merging_max_block_bytes;
     wire.min_hit_rate_to_use_consecutive_keys_optimization = params.min_hit_rate_to_use_consecutive_keys_optimization;
-    wire.collect_hash_table_stats_during_aggregation = params.stats_collecting_params.isCollectionAndUseEnabled();
-    wire.max_entries_for_hash_table_stats = params.stats_collecting_params.max_entries_for_hash_table_stats;
-    wire.max_size_to_preallocate_for_aggregation = params.stats_collecting_params.max_size_to_preallocate;
     wire.distributed_aggregation_memory_efficient = memory_efficient_aggregation;
     wire.serialize_string_in_memory_with_zero_byte = params.serialize_string_with_zero_byte;
     wire.enable_packed_string_keys_in_aggregation = params.enable_packed_string_keys;

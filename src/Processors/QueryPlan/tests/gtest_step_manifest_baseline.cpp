@@ -225,17 +225,13 @@ format 1 introduced_in 12
   field group_by_sort_description Logical SortDescription
   field should_produce_results_in_order_of_bucket_number Physical bool
   field memory_bound_merging_of_aggregation_results_enabled Physical bool
-  field hash_table_stats_key Physical UInt64
   setting max_block_size Physical UInt64
   setting aggregation_in_order_max_block_bytes Physical UInt64
   setting min_hit_rate_to_use_consecutive_keys_optimization Physical Float32
-  setting collect_hash_table_stats_during_aggregation Physical bool
-  setting max_entries_for_hash_table_stats Physical UInt64
-  setting max_size_to_preallocate_for_aggregation Physical UInt64
   setting distributed_aggregation_memory_efficient Physical bool
   setting serialize_string_in_memory_with_zero_byte Physical bool
   setting enable_packed_string_keys_in_aggregation Physical bool
-  initializers 000000000000000000
+  initializers 0000000000000000
 name NegativeLimit introduced_in 1 full_digest always logical_digest always
 format 1 introduced_in 12
   field limit Logical UInt64

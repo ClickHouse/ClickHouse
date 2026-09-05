@@ -91,15 +91,10 @@ struct MergingAggregatedWire
     SortDescription group_by_sort_description;
     bool should_produce_results_in_order_of_bucket_number = false;
     bool memory_bound_merging_of_aggregation_results_enabled = false;
-    /// The key of the hash table statistics; 0 when collection is off.
-    UInt64 hash_table_stats_key = 0;
 
     UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
     UInt64 aggregation_in_order_max_block_bytes = 50000000;
     Float32 min_hit_rate_to_use_consecutive_keys_optimization = 0.5;
-    bool collect_hash_table_stats_during_aggregation = true;
-    UInt64 max_entries_for_hash_table_stats = 10000;
-    UInt64 max_size_to_preallocate_for_aggregation = 100000000;
     bool distributed_aggregation_memory_efficient = true;
     bool serialize_string_in_memory_with_zero_byte = true;
     bool enable_packed_string_keys_in_aggregation = true;
