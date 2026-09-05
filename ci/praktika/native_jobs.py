@@ -496,6 +496,14 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             info=message,
         )
 
+    if env.RUN_ID:
+        # Resolved here, in the first job of the run, so that every job
+        # inherits one value with this environment. A rerun runs this job
+        # again and reads back the same `created_at`.
+        env.WORKFLOW_START_TIME = GH.get_workflow_run_created_at()
+        print(f"NOTE: Workflow run started at [{env.WORKFLOW_START_TIME}]")
+        env.dump()
+
     # refresh PR data
     if env.PR_NUMBER > 0:
         title, body, labels = GH.get_pr_title_body_labels()
