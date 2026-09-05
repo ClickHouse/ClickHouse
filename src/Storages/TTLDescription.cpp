@@ -1015,9 +1015,9 @@ void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expres
 /// `TTLDeleteAlgorithm::execute` sizes its loop by `block.rows()` and reads `timestamps[i]`. With a
 /// multi-element array a row is judged by an earlier row's timestamp - so rows whose own TTL is far in
 /// the future are deleted - and with an empty array the read goes past the end of the column, letting
-/// garbage decide deletion. Even `allow_suspicious_ttl_expressions` must not allow that; only loading
-/// already stored metadata does, because a rejection there fails the whole load rather than the one
-/// table.
+/// garbage decide deletion. Even `allow_suspicious_ttl_expressions` must not allow that. Loading already
+/// stored metadata is the one place that has to accept it, because a rejection there fails the whole load
+/// rather than the one table; `buildExpression` below then stops such a TTL before it ever executes.
 ///
 /// The built DAG only carries an `ARRAY_JOIN` node when `ActionsVisitor` recognised the literal name
 /// `arrayJoin`, which it does not do for the `unnest` alias when `normalize_function_names = 0` left
@@ -1025,9 +1025,12 @@ void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expres
 /// that throws `FUNCTION_IS_SPECIAL` on every later TTL evaluation). The AST is therefore checked as
 /// well, by canonical function name, so the verdict does not depend on that setting or on the
 /// spelling of the alias.
+///
+/// Either argument may be null: the check on a stored expression runs before that expression is built,
+/// and a stored `GROUP BY ... SET` assignment has no AST to check.
 void checkTTLExpressionPreservesRowCount(const ExpressionActionsPtr & expression, const ASTPtr & ast, std::string_view expression_kind)
 {
-    if (expression->hasArrayJoin() || expressionContainsArrayJoin(ast))
+    if ((expression && expression->hasArrayJoin()) || expressionContainsArrayJoin(ast))
         throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
             "TTL {}expression cannot contain arrayJoin, because it changes the number of rows",
             expression_kind);
@@ -1209,8 +1212,30 @@ static void checkTTLGroupBySetForAggregateFunctions(
     }
 }
 
+/// A stored TTL is screened again here, every time it is turned back into a runnable expression.
+///
+/// `TTLValidationMode::Attach` cannot reject it while the metadata is being read - a rejection there
+/// fails the whole load rather than the one table, so the server would not start after an upgrade and a
+/// replica could not read the metadata another replica wrote - so a TTL stored before the `CREATE`-time
+/// check existed still loads. It must not then execute: it deletes rows whose own TTL is far in the
+/// future and reads past the end of the expression column for an empty array. `buildExpression` and
+/// `buildWhereExpression` are the only way a consumer gets a runnable expression out of a stored
+/// description (`TTLTransform`, `TTLCalcTransform`, `TTLDeleteFilterTransform` and
+/// `MergeTreeDataWriter::updateTTL` all go through them), so failing here turns the silent row loss into
+/// a failed INSERT or TTL merge. The table still attaches, so `ALTER TABLE ... REMOVE TTL` or a
+/// `MODIFY TTL` to a sane expression repairs it.
 ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) const
 {
+    checkTTLExpressionPreservesRowCount(/*expression=*/ nullptr, expression_ast, /*expression_kind=*/ "");
+
+    /// A `GROUP BY ... SET` assignment is stored as prebuilt `ExpressionActions` and not as an AST, so it
+    /// is screened through the built expression, and it is screened here, because setting up the
+    /// `TTLAggregationAlgorithm` that executes it goes through this function too. A spelling that
+    /// `ActionsVisitor` does not recognise as `arrayJoin` is not built as an `ARRAY_JOIN` node at all and
+    /// throws `FUNCTION_IS_SPECIAL` when executed, which already fails closed.
+    for (const auto & set_part : set_parts)
+        checkTTLExpressionPreservesRowCount(set_part.expression, /*ast=*/ nullptr, /*expression_kind=*/ "GROUP BY SET ");
+
     auto ast = expression_ast->clone();
     return buildExpressionAndSets(ast, expression_source_columns, context);
 }
@@ -1219,6 +1244,8 @@ ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & contex
 {
     if (where_expression_ast)
     {
+        checkTTLExpressionPreservesRowCount(/*expression=*/ nullptr, where_expression_ast, /*expression_kind=*/ "WHERE ");
+
         auto ast = where_expression_ast->clone();
         return buildExpressionAndSets(ast, where_expression_source_columns, context);
     }
