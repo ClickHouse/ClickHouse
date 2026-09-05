@@ -14,6 +14,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Common/quoteString.h>
 #include <fmt/ranges.h>
 
@@ -220,8 +221,8 @@ Field decodePartitionDecimalByType(const String & bytes, const IDataType & type)
 
 }
 
-PruningReturnStatus ManifestFilesPruner::canBePruned(
-    const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const
+PruningReturnStatus ManifestFilesPruner::canBePrunedByPartition(
+    const ProcessedManifestFileEntryPtr & entry) const
 {
     const auto & partition_value = entry->parsed_entry->partition_key_value;
 
@@ -256,6 +257,21 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
         }
     }
 
+    return PruningReturnStatus::NOT_PRUNED;
+}
+
+PruningReturnStatus ManifestFilesPruner::canBePruned(
+    const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const
+{
+    auto partition_status = canBePrunedByPartition(entry);
+    if (partition_status == PruningReturnStatus::PARTITION_PRUNED)
+        return partition_status;
+    return canBePrunedByMinMax(entry, entry_hyperrectangles);
+}
+
+PruningReturnStatus ManifestFilesPruner::canBePrunedByMinMax(
+    const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const
+{
     for (const auto & [column_id, key_condition] : min_max_key_conditions)
     {
         std::optional<NameAndTypePair> name_and_type;
@@ -290,6 +306,44 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
     }
 
     return PruningReturnStatus::NOT_PRUNED;
+}
+
+std::optional<String> ManifestFilesPruner::partitionFilterHash() const
+{
+    if (!partition_key_condition.has_value())
+        return std::nullopt;
+
+    /// Preserve the complete RPN structure instead of rewriting Boolean subexpressions.
+    /// Non-partition atoms are already `UNKNOWN` in this condition. Only cache atoms
+    /// whose printed form contains their complete bounds: notably, `IN` prints a set's
+    /// cardinality, not its values, and must never be used as a cache key.
+    WriteBufferFromOwnString buf;
+    for (const auto & element : partition_key_condition->getRPN())
+    {
+        if (!element.monotonic_functions_chain.empty())
+            return std::nullopt;
+        switch (element.function)
+        {
+            case KeyCondition::RPNElement::FUNCTION_AND:
+            case KeyCondition::RPNElement::FUNCTION_OR:
+            case KeyCondition::RPNElement::FUNCTION_NOT:
+            case KeyCondition::RPNElement::FUNCTION_UNKNOWN:
+            case KeyCondition::RPNElement::ALWAYS_TRUE:
+            case KeyCondition::RPNElement::ALWAYS_FALSE:
+                break;
+            case KeyCondition::RPNElement::FUNCTION_IN_RANGE:
+            case KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE:
+            case KeyCondition::RPNElement::FUNCTION_IS_NULL:
+            case KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL:
+                if (element.key_columns.size() != 1)
+                    return std::nullopt;
+                break;
+            default:
+                return std::nullopt;
+        }
+        writeStringBinary(element.toString(partition_key->column_names), buf);
+    }
+    return buf.str();
 }
 }
 

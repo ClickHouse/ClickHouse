@@ -90,6 +90,7 @@ public:
         IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
         Int64 inherited_snapshot_id,
+        Int64 table_snapshot_id,
         std::optional<UInt64> inherited_first_row_id,
         DB::ContextPtr context,
         std::shared_ptr<const ActionsDAG> filter_dag_,
@@ -126,6 +127,7 @@ private:
         IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
         Int64 inherited_snapshot_id,
+        Int64 table_snapshot_id,
         std::optional<UInt64> inherited_first_row_id,
         DB::ContextPtr context,
         Int32 manifest_schema_id,
@@ -136,7 +138,8 @@ private:
         std::shared_ptr<const ActionsDAG> filter_dag,
         Int32 table_snapshot_schema_id);
 
-    ProcessedManifestFileEntryPtr processRow(size_t row_index);
+    ProcessedManifestFileEntryPtr processRow(size_t row_index, bool partition_already_checked);
+    void publishCandidateRowsIfComplete();
 
     /// Constant properties of this manifest file
     const std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer;
@@ -146,6 +149,7 @@ private:
     // always zero in case of format version 1
     const Int64 inherited_sequence_number;
     const Int64 inherited_snapshot_id;
+    const Int64 table_snapshot_id;
     std::vector<std::optional<UInt64>> entry_first_row_ids;
     const DB::ContextPtr context;
     const Int32 manifest_schema_id;
@@ -160,6 +164,20 @@ private:
     std::atomic<bool> fully_initialized{false};
     std::atomic<size_t> active_fetchers{0};
 
+    /// Complete snapshot/manifest partition index. On a miss, row indexes are
+    /// accumulated while the manifest is scanned and published only after all
+    /// rows finish successfully. On a hit, current_row_index addresses this
+    /// compact vector instead of all manifest rows.
+    /// The cached vector holds partition survivors only; min-max pruning is re-evaluated
+    /// per query, so sharing one entry between data and delete iterators with the same
+    /// partition predicate is safe.
+    String candidate_cache_key;
+    std::shared_ptr<const std::vector<size_t>> cached_candidate_rows;
+    std::shared_ptr<std::vector<size_t>> candidate_rows_being_built;
+    std::mutex candidate_rows_mutex;
+    std::atomic<size_t> processed_rows{0};
+    std::atomic<bool> candidate_rows_published{false};
+
     /// Cached results accumulated during iteration
     mutable SharedMutex files_mutex;
     std::shared_ptr<std::vector<ProcessedManifestFileEntryPtr>> data_files_without_deleted TSA_GUARDED_BY(files_mutex);
@@ -172,8 +190,9 @@ private:
 
     /// Cache of pruners by schema_id to avoid recreation on each row
     mutable std::mutex pruners_mutex;
-    std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> pruners_by_schema_id;
-    const ManifestFilesPruner * getOrCreatePruner(Int32 schema_id);
+    mutable std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> pruners_by_schema_id;
+    const ManifestFilesPruner * getOrCreatePruner(Int32 schema_id) const;
+
 };
 
 using ManifestIteratorPtr = std::shared_ptr<ManifestFileIterator>;

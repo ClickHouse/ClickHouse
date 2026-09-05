@@ -16,6 +16,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergManifestPruneCache.h>
+#include <Common/ProfileEvents.h>
 
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -44,12 +46,41 @@ namespace ProfileEvents
 {
 extern const Event IcebergPartitionPrunedFiles;
 extern const Event IcebergMinMaxIndexPrunedFiles;
+extern const Event IcebergManifestPruneCacheHits;
+extern const Event IcebergManifestPruneCacheMisses;
+extern const Event IcebergManifestPruneCacheWeightLost;
 };
+
+namespace CurrentMetrics
+{
+extern const Metric IcebergManifestPruneCacheBytes;
+extern const Metric IcebergManifestPruneCacheFiles;
+}
+
+namespace
+{
+DB::Iceberg::ManifestPruneCachePtr getPruneCache()
+{
+    static auto cache = std::make_shared<DB::Iceberg::ManifestPruneCache>("SLRU", 64 * 1024 * 1024, 10000, 0.5);
+    return cache;
+}
+}
 
 namespace DB::Iceberg
 {
 
 using namespace DB;
+
+ManifestPruneCachePtr getGlobalPruneCache()
+{
+    return getPruneCache();
+}
+
+void clearGlobalPruneCache()
+{
+    if (auto cache = getPruneCache())
+        cache->clear();
+}
 
 namespace
 {
@@ -339,6 +370,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number_,
     Int64 inherited_snapshot_id_,
+    Int64 table_snapshot_id_,
     std::optional<UInt64> inherited_first_row_id_,
     DB::ContextPtr context_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
@@ -443,6 +475,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         schema_processor,
         inherited_sequence_number_,
         inherited_snapshot_id_,
+        table_snapshot_id_,
         inherited_first_row_id_,
         context_,
         manifest_schema_id,
@@ -462,6 +495,7 @@ ManifestFileIterator::ManifestFileIterator(
     IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number_,
     Int64 inherited_snapshot_id_,
+    Int64 table_snapshot_id_,
     std::optional<UInt64> inherited_first_row_id_,
     DB::ContextPtr context_,
     Int32 manifest_schema_id_,
@@ -477,6 +511,7 @@ ManifestFileIterator::ManifestFileIterator(
     , path_resolver(path_resolver_)
     , inherited_sequence_number(inherited_sequence_number_)
     , inherited_snapshot_id(inherited_snapshot_id_)
+    , table_snapshot_id(table_snapshot_id_)
     , context(context_)
     , manifest_schema_id(manifest_schema_id_)
     , common_partition_specification(std::move(common_partition_specification_))
@@ -490,6 +525,29 @@ ManifestFileIterator::ManifestFileIterator(
     , filter_dag(std::move(filter_dag_))
     , schema_processor_ptr(&schema_processor)
 {
+    const auto partition_filter = filter_dag && partition_key_description.has_value()
+        ? getOrCreatePruner(manifest_schema_id)->partitionFilterHash() : std::nullopt;
+    if (partition_filter)
+    {
+        candidate_cache_key = path_resolver.getTableRoot() + "#" + path_to_manifest_file.serialize()
+            + "#snapshot=" + std::to_string(table_snapshot_id)
+            + "#partition=" + *partition_filter
+            + "#manifest_schema=" + std::to_string(manifest_schema_id)
+            + "#table_schema=" + std::to_string(table_snapshot_schema_id)
+            + "#sequence=" + std::to_string(inherited_sequence_number);
+        if (auto cached = getPruneCache()->get(candidate_cache_key))
+        {
+            cached_candidate_rows = cached->candidate_row_indexes;
+            ProfileEvents::increment(ProfileEvents::IcebergManifestPruneCacheHits);
+        }
+        else
+        {
+            candidate_rows_being_built = std::make_shared<std::vector<size_t>>();
+            candidate_rows_being_built->reserve(std::min(total_rows, size_t{64}));
+            ProfileEvents::increment(ProfileEvents::IcebergManifestPruneCacheMisses);
+        }
+    }
+
     if (!inherited_first_row_id_.has_value())
         return;
 
@@ -507,7 +565,7 @@ ManifestFileIterator::ManifestFileIterator(
     }
 }
 
-ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
+ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index, bool partition_already_checked)
 {
     auto parsed_entry = manifest_file_deserializer->getParsedManifestFileEntry(row_index);
 
@@ -611,7 +669,36 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     PruningReturnStatus pruning_status = PruningReturnStatus::NOT_PRUNED;
     if (filter_dag)
     {
-        /// Compute per-column hyperrectangles for DATA files
+        const ManifestFilesPruner * current_pruner = getOrCreatePruner(entry->resolved_schema_id);
+
+        // A candidate-cache hit already proved the partition predicate for
+        // this row. A miss evaluates it once while building the complete
+        // candidate-row vector for later point literals in this partition.
+        if (!partition_already_checked && partition_key_description.has_value())
+        {
+            pruning_status = current_pruner->canBePrunedByPartition(entry);
+            if (pruning_status == PruningReturnStatus::PARTITION_PRUNED)
+            {
+                ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles);
+                insertRowToLogTable(
+                    context,
+                    [&] { return manifest_file_deserializer->getContent(row_index); },
+                    DB::IcebergMetadataLogLevel::ManifestFileEntry,
+                    path_resolver.getTableRoot(),
+                    path_to_manifest_file,
+                    row_index,
+                    pruning_status);
+                return nullptr;
+            }
+            if (candidate_rows_being_built)
+            {
+                std::lock_guard lock(candidate_rows_mutex);
+                candidate_rows_being_built->push_back(row_index);
+            }
+        }
+
+        // Min-max pruning: depends on the point literal, evaluated per query
+        // on the (few) entries that survived partition pruning.
         std::unordered_map<Int32, DB::Range> hyperrectangles;
         if (parsed_entry->content_type == FileContentType::DATA)
         {
@@ -686,10 +773,8 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
             }
 
             addRowLineageHyperrectangles(hyperrectangles, *entry);
+            pruning_status = current_pruner->canBePrunedByMinMax(entry, hyperrectangles);
         }
-
-        const ManifestFilesPruner * current_pruner = getOrCreatePruner(entry->resolved_schema_id);
-        pruning_status = current_pruner->canBePruned(entry, hyperrectangles);
     }
     insertRowToLogTable(
         context,
@@ -699,6 +784,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         path_to_manifest_file,
         row_index,
         pruning_status);
+
     switch (pruning_status)
     {
         case PruningReturnStatus::NOT_PRUNED: {
@@ -732,7 +818,26 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     return entry;
 }
 
-const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema_id)
+void ManifestFileIterator::publishCandidateRowsIfComplete()
+{
+    if (!candidate_rows_being_built || processed_rows.load() != total_rows)
+        return;
+
+    bool expected = false;
+    if (!candidate_rows_published.compare_exchange_strong(expected, true))
+        return;
+
+    std::shared_ptr<const std::vector<size_t>> completed;
+    {
+        std::lock_guard lock(candidate_rows_mutex);
+        completed = candidate_rows_being_built;
+    }
+    auto value = std::make_shared<ManifestPruneCacheValue>();
+    value->candidate_row_indexes = std::move(completed);
+    getPruneCache()->set(candidate_cache_key, std::move(value));
+}
+
+const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema_id) const
 {
     std::lock_guard lock(pruners_mutex);
     auto it = pruners_by_schema_id.find(schema_id);
@@ -760,13 +865,18 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::next()
     {
         active_fetchers.fetch_add(1);
         SCOPE_EXIT(active_fetchers.fetch_sub(1););
-        size_t row_index = current_row_index.fetch_add(1);
-        if (row_index >= total_rows)
+        const size_t candidate_index = current_row_index.fetch_add(1);
+        const size_t rows_to_process = cached_candidate_rows ? cached_candidate_rows->size() : total_rows;
+        if (candidate_index >= rows_to_process)
         {
             fully_initialized.store(true);
+            publishCandidateRowsIfComplete();
             return nullptr;
         }
-        auto entry = processRow(row_index);
+        const size_t row_index = cached_candidate_rows ? (*cached_candidate_rows)[candidate_index] : candidate_index;
+        auto entry = processRow(row_index, cached_candidate_rows != nullptr);
+        if (candidate_rows_being_built && processed_rows.fetch_add(1) + 1 == total_rows)
+            publishCandidateRowsIfComplete();
         if (entry)
             return entry;
     }
