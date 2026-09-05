@@ -1,0 +1,13 @@
+one ALTER TABLE child on the view:
+ACCESS_DENIED
+ALTER VIEW MODIFY QUERY
+no ALTER grant at all:
+ACCESS_DENIED
+whole ALTER TABLE group on the view:
+OK
+one ALTER TABLE child on the database:
+ACCESS_DENIED
+whole ALTER TABLE group on the database:
+OK
+the granted privilege still works:
+OK
