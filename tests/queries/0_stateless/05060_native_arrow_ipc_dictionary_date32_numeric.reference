@@ -1,0 +1,28 @@
+--- Arrow: numeric targets return the raw day number ---
+2932996	[2932996,18263]	(2932996)	{'k':2932996}
+2932996	[2932996,18263]
+--- Arrow: Decimal target ---
+2932996
+--- Arrow: Date32 target still rejects the out-of-range day ---
+VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+--- Arrow: Nested subcolumn target n.d Array(Int32) ---
+[3000000,19000]
+[3000000]
+--- Arrow: dictionary-encoded Nested column, subcolumn target n.d Array(Int32) ---
+[3000000,19000]
+[3000000]
+[3000000,19000]
+--- ArrowStream: numeric targets return the raw day number ---
+2932996	[2932996,18263]	(2932996)	{'k':2932996}
+2932996	[2932996,18263]
+--- ArrowStream: Decimal target ---
+2932996
+--- ArrowStream: Date32 target still rejects the out-of-range day ---
+VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+--- ArrowStream: Nested subcolumn target n.d Array(Int32) ---
+[3000000,19000]
+[3000000]
+--- ArrowStream: dictionary-encoded Nested column, subcolumn target n.d Array(Int32) ---
+[3000000,19000]
+[3000000]
+[3000000,19000]

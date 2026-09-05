@@ -1,0 +1,40 @@
+=== Arrow
+--- nullable field: one row is null through the index, another points at the null entry ---
+x	LowCardinality(Nullable(String))
+\N	LowCardinality(Nullable(String))
+\N	LowCardinality(Nullable(String))
+y	LowCardinality(Nullable(String))
+--- nullable field: no row points at the null entry ---
+x	LowCardinality(Nullable(String))
+\N	LowCardinality(Nullable(String))
+y	LowCardinality(Nullable(String))
+--- non-nullable field: no row points at the null entry ---
+x	LowCardinality(String)
+y	LowCardinality(String)
+x	LowCardinality(String)
+--- non-nullable field read as String ---
+x
+y
+x
+--- non-nullable field: a row points at the null entry, rejected ---
+INCORRECT_DATA
+=== ArrowStream
+--- nullable field: one row is null through the index, another points at the null entry ---
+x	LowCardinality(Nullable(String))
+\N	LowCardinality(Nullable(String))
+\N	LowCardinality(Nullable(String))
+y	LowCardinality(Nullable(String))
+--- nullable field: no row points at the null entry ---
+x	LowCardinality(Nullable(String))
+\N	LowCardinality(Nullable(String))
+y	LowCardinality(Nullable(String))
+--- non-nullable field: no row points at the null entry ---
+x	LowCardinality(String)
+y	LowCardinality(String)
+x	LowCardinality(String)
+--- non-nullable field read as String ---
+x
+y
+x
+--- non-nullable field: a row points at the null entry, rejected ---
+INCORRECT_DATA

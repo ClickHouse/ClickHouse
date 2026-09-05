@@ -30,6 +30,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Core/UUID.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
@@ -111,9 +112,14 @@ void ArrowIPCBlockInputFormat::collectDictionaryFields(const ArrowIPC::ArrowFiel
     {
         if (field.dictionary)
         {
-            /// The dictionary batch carries the plain value column: same type, but not dictionary-encoded.
+            /// The dictionary batch carries the plain value column: same type, but not dictionary-encoded,
+            /// and nullable whatever the field declares. `Field.nullable` describes the encoded array — the
+            /// index validity — while the dictionary values are an array of their own that may hold null
+            /// entries; a field applies its own nullability when it materializes them (see
+            /// `RecordBatchDecoder::decodeDictionary`). Fields sharing a dictionary id may thus differ in it.
             ArrowIPC::ArrowField value_field = field;
             value_field.dictionary.reset();
+            value_field.nullable = true;
             const Int64 id = field.dictionary->id;
             auto it = dictionary_value_fields.find(id);
             if (it == dictionary_value_fields.end())
@@ -355,17 +361,6 @@ void checkDictionaryUnique(const ColumnPtr & values)
         }
     }
 }
-
-/// Collects every Arrow dictionary id used anywhere in `field`'s type subtree (the field itself or a
-/// dictionary nested inside its Array/Map/Tuple/Union children). Used to decide which DictionaryBatch
-/// bodies a subset read actually needs.
-void collectDictionaryIdsInSubtree(const ArrowIPC::ArrowField & field, UnorderedSetWithMemoryTracking<Int64> & out)
-{
-    if (field.dictionary)
-        out.insert(field.dictionary->id);
-    for (const auto & child : field.type.children)
-        collectDictionaryIdsInSubtree(child, out);
-}
 }
 
 void ArrowIPCBlockInputFormat::prepareReader()
@@ -375,7 +370,7 @@ void ArrowIPCBlockInputFormat::prepareReader()
     /// `Nested`/struct subcolumn of it (a header column `name.sub` keeps the field `name`) — mirroring how
     /// `buildChunk` maps columns. This depends only on the header, so compute it before reading the file:
     /// the file reader uses it below to skip the dictionaries of unrequested columns. Names are lower-cased
-    /// when case-insensitive matching is on, matching the lookup in `decodeColumns`.
+    /// when case-insensitive matching is on, matching the lookup in `decodeBatch`.
     const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
     auto normalize = [&](String s) -> String { if (case_insensitive) boost::to_lower(s); return s; };
     requested_top_level_fields.clear();
@@ -421,31 +416,14 @@ void ArrowIPCBlockInputFormat::prepareReader()
     collectDictionaryFields(arrow_schema->fields);
     decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
 
-    /// Collect the dictionary ids the requested columns actually reference, so the stream reader can skip
-    /// the DictionaryBatch bodies of dictionaries used only by unrequested columns. (The file reader has
-    /// already computed and used this set above, before decoding its dictionaries up front; recomputing it
-    /// here is cheap and keeps the stream path — whose dictionaries are decoded lazily while reading —
-    /// correct.)
-    computeReachableDictionaryIds();
+    /// Collect the dictionaries the requested columns reference and the field positions each one's values
+    /// are decoded for; the stream reader skips the DictionaryBatch bodies of dictionaries used only by
+    /// unrequested columns. (The file reader has already computed and used this above, before
+    /// decoding its dictionaries up front; recomputing it here is cheap and keeps the stream path — whose
+    /// dictionaries are decoded lazily while reading — correct.)
+    dictionary_uses = decoder->collectDictionaryUses(&requested_top_level_fields, &requested_field_target_types);
 
     prepared = true;
-}
-
-void ArrowIPCBlockInputFormat::computeReachableDictionaryIds()
-{
-    const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
-    reachable_dictionary_ids.clear();
-    for (const auto & field : arrow_schema->fields)
-    {
-        String name = field.name;
-        if (case_insensitive)
-            boost::to_lower(name);
-        /// A top-level field is kept iff its normalized name is requested — the same condition
-        /// `decodeColumns` uses to decide whether to decode or skip it. Every dictionary in a kept field's
-        /// subtree is reachable; dictionaries referenced only by skipped fields are not.
-        if (requested_top_level_fields.contains(name))
-            collectDictionaryIdsInSubtree(field, reachable_dictionary_ids);
-    }
 }
 
 void ArrowIPCBlockInputFormat::prepareStreamReader()
@@ -523,8 +501,8 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
         collectDictionaryFields(arrow_schema->fields);
         /// Subset reads: only the dictionaries the requested columns reference are decoded; the bodies of
         /// dictionaries used solely by unrequested top-level fields are skipped (see the loop below).
-        computeReachableDictionaryIds();
         auto temp_decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
+        dictionary_uses = temp_decoder->collectDictionaryUses(&requested_top_level_fields, &requested_field_target_types);
         for (const auto & block : footer.dictionary_blocks)
         {
             seekable->seek(block.offset, SEEK_SET);
@@ -543,7 +521,7 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
             /// iteration seeks to the following block, so the unread body is harmless. Check this before any
             /// body-length/data validation so a missing/corrupt unrequested dictionary cannot fail a
             /// projected read.
-            if (!reachable_dictionary_ids.contains(id))
+            if (!dictionary_uses.contains(id))
                 continue;
             /// The footer block fixes this message's body size; a message claiming a different (e.g. huge)
             /// body length is corrupt and would otherwise force reading past the footer-declared boundary.
@@ -552,29 +530,52 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
                     ErrorCodes::INCORRECT_DATA,
                     "Arrow IPC dictionary batch body length {} does not match the footer block length {}",
                     msg.body_length, block.body_length);
-            /// `DictionaryBatch.data` is optional in the FlatBuffer schema; reject a missing one rather
-            /// than dereferencing null below.
-            if (!dict_batch->data())
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch has no data");
-            auto field_it = dictionary_value_fields.find(id);
-            if (field_it == dictionary_value_fields.end())
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow file dictionary batch for unknown id {}", id);
-
-            /// Reject a batch declaring buffers/nodes beyond its single value field before materializing the
-            /// body, so surplus buffers are never read or decompressed only to be ignored.
-            const ArrowIPC::ArrowFields value_fields{field_it->second};
-            temp_decoder->validateBatchLayout(*dict_batch->data(), value_fields);
-            message_reader->readBody(*dict_batch->data(), msg.body_length, body_buffer);
-            auto decoded = temp_decoder->decodeColumns(*dict_batch->data(), body_buffer, value_fields);
-            checkDictionaryUnique(decoded.at(0).column);
-            dictionaries.set(id, decoded.at(0).column, dict_batch->isDelta());
-            /// A delta batch merges into the existing dictionary; re-validate the merged values. The
-            /// per-batch check above only proves the delta is internally unique, but a unique delta can
-            /// still repeat a value already present in the base dictionary, which would violate the
-            /// LowCardinality dictionary uniqueness invariant the non-delta path enforces.
-            if (dict_batch->isDelta())
-                checkDictionaryUnique(dictionaries.get(id));
+            decodeDictionaryBatch(*temp_decoder, *dict_batch, msg.body_length);
         }
+    }
+}
+
+void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
+    ArrowIPC::RecordBatchDecoder & batch_decoder, const ArrowIPC::flatbuf::DictionaryBatch & dict_batch, Int64 body_length)
+{
+    const Int64 id = dict_batch.id();
+    /// `DictionaryBatch.data` is optional in the FlatBuffer schema; reject a missing one rather than
+    /// dereferencing null below.
+    if (!dict_batch.data())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch has no data");
+    auto field_it = dictionary_value_fields.find(id);
+    if (field_it == dictionary_value_fields.end())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch for unknown dictionary id {}", id);
+    const ArrowIPC::ArrowField & value_field = field_it->second;
+
+    /// Reject a batch declaring buffers/nodes beyond its single value field before materializing the body,
+    /// so surplus buffers are never read or decompressed only to be ignored.
+    const ArrowIPC::ArrowFields value_fields{value_field};
+    batch_decoder.validateBatchLayout(*dict_batch.data(), value_fields);
+    message_reader->readBody(*dict_batch.data(), body_length, body_buffer);
+
+    /// Decode the values once for each position of a field encoding this dictionary, so every field gets
+    /// the decoding it would get for inline values in a record batch. The registered type must describe the
+    /// registered column: the raw-byte rewrite the record-batch columns go through reinterprets
+    /// fixed_size_binary values under an IPv6 / big-integer hint and re-declares values the decoder already
+    /// converted or read raw, so `decodeDictionary` later builds its `LowCardinality` from a consistent
+    /// (values, type) pair.
+    for (const ArrowIPC::DictionaryUse & use : dictionary_uses.at(id))
+    {
+        auto decoded = batch_decoder.decodeDictionaryValues(
+            *dict_batch.data(), body_buffer, value_field, use, &requested_field_target_types);
+        ColumnWithTypeAndName values(decoded.column, decoded.type, value_field.name);
+        if (use.hint)
+            reinterpretRawByteColumns(values, use.hint);
+
+        checkDictionaryUnique(values.column);
+        dictionaries.set(id, use.position, values.column, values.type, dict_batch.isDelta());
+        /// A delta batch merges into the existing dictionary; re-validate the merged values. The per-batch
+        /// check above only proves the delta is internally unique, but a unique delta can still repeat a
+        /// value already present in the base dictionary, which would violate the LowCardinality dictionary
+        /// uniqueness invariant the non-delta path enforces.
+        if (dict_batch.isDelta())
+            checkDictionaryUnique(dictionaries.get(id, use.position).column);
     }
 }
 
@@ -615,12 +616,8 @@ MutableColumnPtr reinterpretFixedStringLeaf(const ColumnFixedString & fixed, con
         return out;
     }
 
-    size_t width = 0;
-    if (which.isIPv6() || which.isInt128() || which.isUInt128())
-        width = 16;
-    else if (which.isInt256() || which.isUInt256())
-        width = 32;
-    else
+    const size_t width = ArrowIPC::rawByteWidth(which);
+    if (width == 0)
         return nullptr;
 
     require(width);
@@ -637,69 +634,46 @@ MutableColumnPtr reinterpretFixedStringLeaf(const ColumnFixedString & fixed, con
     return out;
 }
 
-/// Reinterpret the raw bytes of a variable-width binary column (`ColumnString`) as an IPv6 or big integer,
-/// matching the library reader's `readIPv6ColumnFromBinaryData` / `readColumnWithBigNumberFromBinaryData`.
-/// `null_map` (may be null) marks rows skipped in the width check and defaulted in the output. Returns
-/// nullptr when the target is not one of those types, or when any non-null row is not exactly the target
-/// width - in that case the column is left as String for the subsequent cast (matching the library, which
-/// falls back to text parsing rather than failing).
-MutableColumnPtr reinterpretStringLeaf(const ColumnString & str, const NullMap * null_map, const DataTypePtr & to_no_null)
-{
-    const WhichDataType which(to_no_null);
-    size_t width = 0;
-    if (which.isIPv6() || which.isInt128() || which.isUInt128())
-        width = 16;
-    else if (which.isInt256() || which.isUInt256())
-        width = 32;
-    else
-        return nullptr;
-
-    const size_t rows = str.size();
-    for (size_t i = 0; i < rows; ++i)
-    {
-        if (null_map && (*null_map)[i])
-            continue;
-        if (str.getDataAt(i).size() != width)
-            return nullptr;
-    }
-
-    auto out = to_no_null->createColumn();
-    out->reserve(rows);
-    for (size_t i = 0; i < rows; ++i)
-    {
-        if (null_map && (*null_map)[i])
-        {
-            out->insertDefault();
-            continue;
-        }
-        const auto ref = str.getDataAt(i);
-        out->insertData(ref.data(), ref.size());
-    }
-    return out;
-}
-
 /// Recursively rewrite the raw-byte leaves (fixed_size_binary / binary) of a decoded column into the
 /// UUID / IPv6 / big-integer types the requested `to_type` asks for, descending through Nullable, Array,
 /// Tuple and Map so nested shapes convert too. Anything not recognised is returned unchanged for the
 /// subsequent `castColumn`. Returns the (possibly rewritten) column and its new type.
+/// The walk follows the decoded (source) shape and resolves each level's requested type with the same
+/// hint helpers the decoder's recursion uses (`arrayElementHint`, `tupleElementHint`, `mapEntriesHint`,
+/// `stripHint`): the decoder converts binary leaves under those rules — by tuple element name, through
+/// `Nullable`/`LowCardinality` wrappers — so this rewrite must resolve targets identically, or a
+/// converted leaf (physically typed, still declared by its Arrow type) would reach `castColumn`
+/// unreconciled.
+/// `ancestor_nulls` (may be null) marks rows that are null at an enclosing Nullable level: the Arrow spec
+/// leaves the bytes of such rows undefined, so the leaf width sniff must not let them force the String
+/// fallback (and text-parsing of the whole column in the cast); their values decode as type defaults.
+/// Only row-aligned levels propagate it — an Array/Map child lives in a different row space.
 std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
-    const ColumnPtr & col, const DataTypePtr & from_type, const DataTypePtr & to_type)
+    const ColumnPtr & col, const DataTypePtr & from_type, const DataTypePtr & to_type,
+    const NullMap * ancestor_nulls, bool case_insensitive)
 {
-    const DataTypePtr to_no_null = removeNullable(to_type);
     const DataTypePtr from_no_null = removeNullable(from_type);
+
+    const auto * from_arr = typeid_cast<const DataTypeArray *>(from_no_null.get());
+    const auto * from_tup = typeid_cast<const DataTypeTuple *>(from_no_null.get());
+    const auto * from_map = typeid_cast<const DataTypeMap *>(from_no_null.get());
 
     /// Schema inference can wrap a composite in Nullable (e.g. `Nullable(Tuple(...))`). The composite
     /// recursion below matches on the unwrapped column, so peel a Nullable column wrapper here first and
     /// restore it afterwards (dropping it if the reinterpreted composite cannot itself be Nullable).
-    const bool composite_target = typeid_cast<const DataTypeArray *>(to_no_null.get())
-        || typeid_cast<const DataTypeTuple *>(to_no_null.get())
-        || typeid_cast<const DataTypeMap *>(to_no_null.get());
-    if (composite_target)
+    if (from_arr || from_tup || from_map)
     {
         if (const auto * col_nullable = typeid_cast<const ColumnNullable *>(col.get()))
         {
-            auto [new_nested, new_nested_type] = reinterpretRawBytes(col_nullable->getNestedColumnPtr(), from_no_null, to_no_null);
-            if (new_nested.get() == col_nullable->getNestedColumnPtr().get())
+            /// The peeled wrapper's nulls make the rows under them invisible for every row-aligned
+            /// descendant; compose them into the inherited set.
+            NullMap combined_storage;
+            const NullMap * combined = ArrowIPC::unionNullMaps(col_nullable->getNullMapData(), ancestor_nulls, combined_storage);
+            auto [new_nested, new_nested_type]
+                = reinterpretRawBytes(col_nullable->getNestedColumnPtr(), from_no_null, to_type, combined, case_insensitive);
+            /// A leaf the decoder already converted comes back with the same column but a new type, so
+            /// change detection must look at both.
+            if (new_nested.get() == col_nullable->getNestedColumnPtr().get() && new_nested_type.get() == from_no_null.get())
                 return {col, from_type};
             if (new_nested->canBeInsideNullable())
                 return {ColumnNullable::create(new_nested, col_nullable->getNullMapColumnPtr()),
@@ -708,101 +682,142 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
         }
     }
 
-    if (const auto * to_arr = typeid_cast<const DataTypeArray *>(to_no_null.get()))
+    if (from_arr)
     {
-        const auto * from_arr = typeid_cast<const DataTypeArray *>(from_no_null.get());
-        const auto * col_arr = typeid_cast<const ColumnArray *>(col.get());
-        if (!from_arr || !col_arr)
+        const DataTypePtr elem_target = ArrowIPC::arrayElementHint(to_type);
+        if (!elem_target)
             return {col, from_type};
-        auto [new_data, new_data_type] = reinterpretRawBytes(col_arr->getDataPtr(), from_arr->getNestedType(), to_arr->getNestedType());
-        if (new_data.get() == col_arr->getDataPtr().get())
+        const auto & col_arr = assert_cast<const ColumnArray &>(*col);
+        auto [new_data, new_data_type] = reinterpretRawBytes(
+            col_arr.getDataPtr(), from_arr->getNestedType(), elem_target, /*ancestor_nulls=*/nullptr, case_insensitive);
+        if (new_data.get() == col_arr.getDataPtr().get() && new_data_type.get() == from_arr->getNestedType().get())
             return {col, from_type};
-        auto new_arr = ColumnArray::create(IColumn::mutate(std::move(new_data)), IColumn::mutate(col_arr->getOffsetsPtr()));
+        /// The immutable factory shares both children; `IColumn::mutate` here would deep-clone the
+        /// (possibly unchanged and shared) element column just to rewrap it.
+        auto new_arr = ColumnArray::create(new_data, col_arr.getOffsetsPtr());
         return {std::move(new_arr), std::make_shared<DataTypeArray>(new_data_type)};
     }
 
-    if (const auto * to_tup = typeid_cast<const DataTypeTuple *>(to_no_null.get()))
+    if (from_tup)
     {
-        const auto * from_tup = typeid_cast<const DataTypeTuple *>(from_no_null.get());
-        const auto * col_tup = typeid_cast<const ColumnTuple *>(col.get());
-        if (!from_tup || !col_tup)
-            return {col, from_type};
-        const auto & to_elems = to_tup->getElements();
+        const auto & col_tup = assert_cast<const ColumnTuple &>(*col);
         const auto & from_elems = from_tup->getElements();
-        if (to_elems.size() != from_elems.size() || col_tup->tupleSize() != to_elems.size())
-            return {col, from_type};
-        Columns new_cols(to_elems.size());
-        DataTypes new_types(to_elems.size());
+        const auto & from_names = from_tup->getElementNames();
+        Columns new_cols(from_elems.size());
+        DataTypes new_types(from_elems.size());
         bool changed = false;
-        for (size_t i = 0; i < to_elems.size(); ++i)
+        for (size_t i = 0; i < from_elems.size(); ++i)
         {
-            auto [c, t] = reinterpretRawBytes(col_tup->getColumnPtr(i), from_elems[i], to_elems[i]);
-            if (c.get() != col_tup->getColumnPtr(i).get())
-                changed = true;
-            new_cols[i] = std::move(c);
-            new_types[i] = std::move(t);
+            /// Resolve the element's target exactly as the decoder did when it decoded this element: by
+            /// name for a named target Tuple (so reordered or subset targets pair correctly), by position
+            /// for an unnamed one. An element the request does not mention stays as decoded.
+            const DataTypePtr elem_target = ArrowIPC::tupleElementHint(to_type, from_names[i], i, case_insensitive);
+            if (elem_target)
+            {
+                auto [c, t] = reinterpretRawBytes(col_tup.getColumnPtr(i), from_elems[i], elem_target, ancestor_nulls, case_insensitive);
+                changed |= c.get() != col_tup.getColumnPtr(i).get() || t.get() != from_elems[i].get();
+                new_cols[i] = std::move(c);
+                new_types[i] = std::move(t);
+            }
+            else
+            {
+                new_cols[i] = col_tup.getColumnPtr(i);
+                new_types[i] = from_elems[i];
+            }
         }
         if (!changed)
             return {col, from_type};
         DataTypePtr new_tuple_type = from_tup->hasExplicitNames()
-            ? std::make_shared<DataTypeTuple>(new_types, from_tup->getElementNames())
+            ? std::make_shared<DataTypeTuple>(new_types, from_names)
             : std::make_shared<DataTypeTuple>(new_types);
         return {ColumnTuple::create(new_cols), std::move(new_tuple_type)};
     }
 
-    if (const auto * to_map = typeid_cast<const DataTypeMap *>(to_no_null.get()))
+    if (from_map)
     {
-        const auto * from_map = typeid_cast<const DataTypeMap *>(from_no_null.get());
-        const auto * col_map = typeid_cast<const ColumnMap *>(col.get());
-        if (!from_map || !col_map)
+        const DataTypePtr entries_target = ArrowIPC::mapEntriesHint(to_type);
+        if (!entries_target)
             return {col, from_type};
+        const auto & col_map = assert_cast<const ColumnMap &>(*col);
         /// A Map is physically an Array(Tuple(key, value)); recurse into that shape so raw-byte keys/values
         /// convert, then rewrap.
         auto from_nested = std::make_shared<DataTypeArray>(
             std::make_shared<DataTypeTuple>(DataTypes{from_map->getKeyType(), from_map->getValueType()}));
-        auto to_nested = std::make_shared<DataTypeArray>(
-            std::make_shared<DataTypeTuple>(DataTypes{to_map->getKeyType(), to_map->getValueType()}));
-        auto [new_nested, new_nested_type] = reinterpretRawBytes(col_map->getNestedColumnPtr(), from_nested, to_nested);
-        if (new_nested.get() == col_map->getNestedColumnPtr().get())
+        auto to_nested = std::make_shared<DataTypeArray>(entries_target);
+        auto [new_nested, new_nested_type]
+            = reinterpretRawBytes(col_map.getNestedColumnPtr(), from_nested, to_nested, ancestor_nulls, case_insensitive);
+        if (new_nested.get() == col_map.getNestedColumnPtr().get() && new_nested_type.get() == from_nested.get())
             return {col, from_type};
         const auto & new_tuple = assert_cast<const DataTypeTuple &>(*assert_cast<const DataTypeArray &>(*new_nested_type).getNestedType());
         auto new_map_type = std::make_shared<DataTypeMap>(new_tuple.getElement(0), new_tuple.getElement(1));
         return {ColumnMap::create(new_nested), std::move(new_map_type)};
     }
 
-    const WhichDataType which(to_no_null);
-    const bool raw_target = which.isUUID() || which.isIPv6()
-        || which.isInt128() || which.isUInt128() || which.isInt256() || which.isUInt256();
-    if (!raw_target)
-        return {col, from_type};
+    /// Leaf. The target is the innermost requested type, `Nullable`/`LowCardinality`-transparent like
+    /// every decoder hint (`LowCardinality(IPv6)` requests the same raw bytes as `IPv6`; the later cast
+    /// restores the wrappers).
+    const DataTypePtr to_leaf = ArrowIPC::stripHint(to_type);
 
     const auto * nullable = typeid_cast<const ColumnNullable *>(col.get());
     const IColumn & nested = nullable ? nullable->getNestedColumn() : *col;
     const NullMap * null_map = nullable ? &nullable->getNullMapData() : nullptr;
+    /// A rewritten leaf keeps the source column's Nullable wrapper; the request's own wrappers are
+    /// restored by the later cast.
+    const auto with_source_nullability = [&](DataTypePtr type) -> DataTypePtr
+    {
+        return nullable ? std::make_shared<DataTypeNullable>(std::move(type)) : type;
+    };
+
+    /// A `date32` under a Decimal hint was read as the raw day number (`date32_as_number` in the
+    /// decoder), and no `Date32` -> Decimal cast exists; re-declare the (physically `Int32`) column as
+    /// `Int32` so the ordinary Int -> Decimal cast finishes the conversion.
+    if (WhichDataType(from_no_null).isDate32() && isDecimal(to_leaf))
+        return {col, with_source_nullability(std::make_shared<DataTypeInt32>())};
+
+    const WhichDataType which(to_leaf);
+    const bool raw_target = which.isUUID() || ArrowIPC::rawByteWidth(which) != 0;
+    if (!raw_target)
+        return {col, from_type};
+
+    /// The decoder already converts a variable binary leaf whose type hint reaches it (mask-aware, so
+    /// it also covers invisibility this phase cannot see: dropped struct null maps, masked list
+    /// ranges); only the declared type needs reconciling then.
+    if (nested.getDataType() == to_leaf->getTypeId())
+    {
+        if (from_no_null->equals(*to_leaf))
+            return {col, from_type};
+        return {col, with_source_nullability(to_leaf)};
+    }
+
+    /// The leaf's undefined rows are those null at its own level or at any enclosing level; both must be
+    /// exempt from the width sniff and decode as defaults.
+    NullMap combined_storage;
+    if (null_map)
+        null_map = ArrowIPC::unionNullMaps(*null_map, ancestor_nulls, combined_storage);
+    else
+        null_map = ancestor_nulls;
 
     MutableColumnPtr typed;
     if (const auto * fixed = typeid_cast<const ColumnFixedString *>(&nested))
-        typed = reinterpretFixedStringLeaf(*fixed, to_no_null);
+        typed = reinterpretFixedStringLeaf(*fixed, to_leaf);
     else if (const auto * str = typeid_cast<const ColumnString *>(&nested))
-        typed = reinterpretStringLeaf(*str, null_map, to_no_null);
+        typed = ArrowIPC::reinterpretStringLeaf(*str, null_map, to_leaf);
     if (!typed)
         return {col, from_type};
 
     ColumnPtr result = std::move(typed);
-    DataTypePtr result_type = to_no_null;
     if (nullable)
-    {
         result = ColumnNullable::create(result, nullable->getNullMapColumnPtr());
-        result_type = std::make_shared<DataTypeNullable>(to_no_null);
-    }
-    return {std::move(result), std::move(result_type)};
+    return {std::move(result), with_source_nullability(to_leaf)};
 }
 
 }
 
-void ArrowIPCBlockInputFormat::reinterpretRawByteColumns(ColumnWithTypeAndName & column, const DataTypePtr & to_type)
+void ArrowIPCBlockInputFormat::reinterpretRawByteColumns(ColumnWithTypeAndName & column, const DataTypePtr & to_type) const
 {
-    auto [new_column, new_type] = reinterpretRawBytes(column.column, column.type, to_type);
+    auto [new_column, new_type] = reinterpretRawBytes(
+        column.column, column.type, to_type, /*ancestor_nulls=*/nullptr,
+        format_settings.arrow.case_insensitive_column_matching);
     column.column = std::move(new_column);
     column.type = std::move(new_type);
 }
@@ -932,6 +947,10 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                         const DataTypePtr & nested_table_type = collected.front().type;
                         if (case_insensitive)
                             nested_column.type = alignStructFieldNamesCaseInsensitive(nested_column.type, nested_table_type);
+                        /// The decoder may have converted raw-byte leaves under the flattened subcolumns'
+                        /// type hints; reconcile the declared types (and convert leaves the hints did not
+                        /// reach) before the cast, exactly as the non-nested path does.
+                        reinterpretRawByteColumns(nested_column, nested_table_type);
                         nested_column = realignStructFieldsToRequested(std::move(nested_column), nested_table_type);
                         nested_column.column = castColumn(nested_column, nested_table_type);
                         nested_column.type = nested_table_type;
@@ -1074,34 +1093,12 @@ Chunk ArrowIPCBlockInputFormat::readStream()
                 /// never used, so skip its body instead of decoding (and possibly failing/allocating on) it.
                 /// Check this before validating `data` so a missing/corrupt unrequested dictionary cannot fail
                 /// a projected read.
-                if (!reachable_dictionary_ids.contains(id))
+                if (!dictionary_uses.contains(id))
                 {
                     message_reader->skipBody(msg.body_length);
                     continue;
                 }
-                /// `DictionaryBatch.data` is optional in the FlatBuffer schema; reject a missing one rather
-                /// than dereferencing null below.
-                if (!dict_batch->data())
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch has no data");
-                auto field_it = dictionary_value_fields.find(id);
-                if (field_it == dictionary_value_fields.end())
-                    throw Exception(
-                        ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch for unknown dictionary id {}", id);
-
-                /// Reject a batch declaring buffers/nodes beyond its single value field before materializing
-                /// the body, so surplus buffers are never read or decompressed only to be ignored.
-                const ArrowIPC::ArrowFields value_fields{field_it->second};
-                decoder->validateBatchLayout(*dict_batch->data(), value_fields);
-                message_reader->readBody(*dict_batch->data(), msg.body_length, body_buffer);
-                auto decoded = decoder->decodeColumns(*dict_batch->data(), body_buffer, value_fields);
-                checkDictionaryUnique(decoded.at(0).column);
-                dictionaries.set(id, decoded.at(0).column, dict_batch->isDelta());
-                /// A delta batch merges into the existing dictionary; re-validate the merged values. The
-                /// per-batch check above only proves the delta is internally unique, but a unique delta can
-                /// still repeat a value already present in the base dictionary, which would violate the
-                /// LowCardinality dictionary uniqueness invariant the non-delta path enforces.
-                if (dict_batch->isDelta())
-                    checkDictionaryUnique(dictionaries.get(id));
+                decodeDictionaryBatch(*decoder, *dict_batch, msg.body_length);
                 continue;
             }
             case ArrowIPC::flatbuf::MessageHeader_Schema:
@@ -1178,6 +1175,7 @@ void ArrowIPCBlockInputFormat::resetParser()
     geo_columns.clear();
     message_reader.reset();
     dictionary_value_fields.clear();
+    dictionary_uses.clear();
     dictionaries.clear();
     record_batch_blocks.clear();
     record_batch_current = 0;
