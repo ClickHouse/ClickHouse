@@ -1,166 +1,202 @@
 ---
 sidebarTitle: '용어집'
-description: '이 페이지에는 ClickHouse와 관련해 자주 사용되는 단어와 구문, 그리고 그 정의가 정리되어 있습니다.'
+description: '트랜잭션 데이터베이스와 다른 동작에 중점을 둔 데이터베이스 개념 및 ClickHouse 용어의 정의입니다.'
 title: '용어집'
 slug: /concepts/glossary
 keywords: ['용어집', '정의', '용어']
+mode: 'wide'
 doc_type: 'reference'
 ---
 
 {/* no-glossary */}
 
-<div id="atomicity">
-  ## 원자성
-</div>
+import { Glossary } from '/snippets/ko/components/Glossary/Glossary.jsx'
 
-원자성은 트랜잭션(일련의 데이터베이스 작업)을 하나의 불가분한 단위로 처리하도록 보장합니다. 즉, 트랜잭션에 포함된 모든 작업이 모두 수행되거나, 하나도 수행되지 않습니다. 원자적 트랜잭션의 예로는 한 은행 계좌에서 다른 계좌로 돈을 이체하는 경우를 들 수 있습니다. 이체 과정의 어느 한 단계라도 실패하면 트랜잭션 전체가 실패하고, 돈은 첫 번째 계좌에 그대로 남습니다. 원자성은 돈이 사라지거나 새로 생기는 일이 없도록 보장합니다.
+데이터베이스 개념과 ClickHouse 용어를 설명하고, 익숙한 데이터베이스 용어가 ClickHouse에서 어떻게 다른지 소개합니다.
 
-<div id="block">
-  ## 블록
-</div>
+export const glossaryMetadata = {
+  delete: { learnMore: '/deletes/overview' },
+  deduplication: { aliases: ['중복 행', '고유 제약 조건'], learnMore: '/guides/developer/deduplication' },
+  dictionary: { learnMore: '/dictionary' },
+  'distributed-table': { learnMore: '/engines/table-engines/special/distributed' },
+  final: { aliases: ['여전히 중복 항목이 표시됨', '쿼리 시 머지'], code: true, learnMore: '/sql-reference/statements/select/from#final-modifier' },
+  granule: { learnMore: '/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design' },
+  'incremental-materialized-view': { aliases: ['삽입 트리거'], learnMore: '/materialized-view/incremental-materialized-view' },
+  json: { code: true, learnMore: '/sql-reference/data-types/newjson' },
+  'materialized-view': { aliases: ['MV', '저장된 쿼리', '삽입 트리거', '동적 테이블', '동적 테이블들'], learnMore: '/materialized-views' },
+  merge: { learnMore: '/merges' },
+  mergetree: { code: true, learnMore: '/engines/table-engines/mergetree-family/mergetree' },
+  mutation: { aliases: ['ALTER UPDATE', 'ALTER DELETE', 'MERGE 문'], learnMore: '/concepts/best-practices/avoid-mutations' },
+  'nullable-column': { aliases: ['NULL', 'NULL과 기본값'], learnMore: '/sql-reference/data-types/nullable' },
+  parts: { learnMore: '/concepts/core-concepts/parts' },
+  partition: { aliases: ['PARTITION BY', '파티션 프루닝'], learnMore: '/partitions' },
+  'partitioning-key': { learnMore: '/concepts/core-concepts/partitions' },
+  'primary-key': { aliases: ['ORDER BY', '정렬 키', '고유 키', '고유 제약 조건'], learnMore: '/concepts/core-concepts/primary-indexes' },
+  projection: { aliases: ['projection과 materialized view 비교', '대체 정렬'], learnMore: '/data-modeling/projections' },
+  'refreshable-materialized-view': { aliases: ['예약된 materialized view', 'materialized view 갱신', '예약된 쿼리', '예약된 쿼리들'], learnMore: '/materialized-view/refreshable-materialized-view' },
+  replacingmergetree: { aliases: ['업서트', '중복 제거', '여전히 중복 항목이 있음', 'MERGE 문'], code: true, learnMore: '/guides/replacing-merge-tree' },
+  'secondary-index': { learnMore: '/optimize/skipping-indexes' },
+  'skipping-index': { learnMore: '/optimize/skipping-indexes' },
+  'sorting-key': { aliases: ['ORDER BY', '프라이머리 키', '디스크상 순서', '클러스터링 키', '클러스터링 컬럼', '클러스터된 테이블', 'CLUSTER BY'], learnMore: '/concepts/best-practices/choosing-a-primary-key' },
+  'sparse-index': { learnMore: '/guides/clickhouse/data-modelling/sparse-primary-indexes' },
+  'table-engine': { learnMore: '/engines/table-engines' },
+  transaction: { learnMore: '/guides/developer/transactional' },
+  ttl: { aliases: ['만료', '보존 기간', '데이터 보존'], code: true, learnMore: '/concepts/features/operations/delete/ttl' },
+  update: { aliases: ['행 UPDATE', '경량 업데이트'], legacyIds: ['lightweight-update'], learnMore: '/updating-data/overview' },
+  upsert: { aliases: ['ON CONFLICT', '삽입 또는 UPDATE', 'MERGE 문'], learnMore: '/guides/replacing-merge-tree' },
+  warehouse: { aliases: ['컴퓨트-컴퓨트 분리', '가상 웨어하우스', '가상 웨어하우스들'], learnMore: '/cloud/reference/warehouses' },
+}
 
-블록은 데이터 처리와 저장을 위한 논리적 단위입니다. 각 블록에는 함께 처리되는 열 지향 데이터가 포함되어 있어 쿼리 실행 성능을 높입니다. ClickHouse는 데이터를 블록 단위로 처리해 캐시 미스를 줄이고 벡터화 실행을 지원함으로써 CPU 코어를 효율적으로 활용합니다. ClickHouse는 LZ4, ZSTD, Delta와 같은 다양한 압축 알고리즘을 사용해 블록 내 데이터를 압축합니다.
+<Glossary metadata={glossaryMetadata}>
+  ## 원자성(Atomicity)
 
-<div id="cluster">
+  원자성(Atomicity)이란 연산이 전부 반영되거나 전혀 반영되지 않는 두 가지 상태로만 관측되는 것을 의미합니다. ClickHouse에서는 하나의 `MergeTree` 계열 테이블의 단일 파티션에 대한 삽입은 해당 행들이 하나의 블록으로 기록될 때 원자적입니다. 여러 파티션에 걸친 삽입은 파티션마다 개별적으로 원자적이며, 분산 테이블에 대한 삽입은 세그먼트마다 개별적으로 원자적입니다. 다중 문(multi-statement) 트랜잭션은 아직 실험적이며 사용에 제약이 있습니다.
+
+  ## 블록(Block)
+
+  블록(block)은 쿼리 처리와 데이터 전송에 사용되는, 자기 기술적(self-describing)인 열 지향 행 배치(batch)입니다. 블록은 런타임 및 wire 단위이며, 데이터 파트와 그래뉼은 이와 별개의 저장 및 인덱싱 개념입니다. 블록 단위로 컬럼 값을 처리하면 벡터화 실행이 가능해집니다.
+
   ## 클러스터
-</div>
 
-데이터를 저장하고 처리하기 위해 함께 작동하는 노드(서버)들의 집합입니다.
+  데이터를 저장하고 처리하기 위해 함께 동작하는 노드(서버)의 모음입니다.
 
-<div id="cmek">
   ## CMEK
-</div>
 
-고객 관리형 암호화 키(CMEK)를 사용하면 고객이 자체 키 관리 서비스(KMS) 키로 ClickHouse 디스크 데이터 키를 암호화하여 저장된 데이터를 보호할 수 있습니다.
+  ClickHouse Cloud에서 고객 관리형 암호화 키(CMEK)를 사용하면 고객의 키 관리 서비스(KMS) 키로 저장 데이터(data at rest)에 사용되는 데이터 암호화 키(DEK)를 보호할 수 있습니다.
 
-<div id="dictionary">
+  ## 삭제
+
+  `MergeTree` 계열 테이블에서 행 삭제는 `DELETE FROM`으로 행을 삭제됨으로 표시하는 것, `ALTER TABLE ... DELETE`로 영향을 받는 데이터 파트를 재작성하는 것, 또는 파티션 전체를 효율적으로 제거하는 것을 의미할 수 있습니다. 경량한 삭제는 백그라운드 머지 과정에서 데이터가 물리적으로 제거되기 전까지 이후 쿼리에서 해당 행을 숨깁니다.
+
+  ## 중복 제거
+
+  ClickHouse에서 중복 제거(deduplication)는 여러 가지 서로 다른 메커니즘을 가리킬 수 있습니다. 행 버전 중복 제거에서는 `ReplacingMergeTree`와 같은 엔진이 정렬 키(sorting key)를 기준으로 중복 버전을 식별하고, 파티션 내에서 백그라운드 머지가 수행될 때 이를 정리합니다. 복제된 테이블 엔진은 이와 별개로, 재시도된 삽입 블록을 블록 식별자를 기준으로 중복 제거할 수 있습니다.
+
   ## 딕셔너리
-</div>
 
-딕셔너리는 다양한 유형의 참고 목록에 유용한 키-값 쌍 매핑입니다. 쿼리에서 딕셔너리를 효율적으로 활용할 수 있게 해주는 강력한 기능이며, 많은 경우 참고 테이블에 `JOIN`을 사용하는 것보다 더 효율적입니다.
+  딕셔너리는 인메모리 또는 외부 소스의 참조 데이터에 키-값 방식으로 액세스할 수 있게 해줍니다. 키 기반 조회가 가능한 경우, 딕셔너리 함수나 딕셔너리에 대한 직접 `JOIN`을 사용하면 참조 테이블을 반복해서 스캔하지 않아도 됩니다.
 
-<div id="distributed-table">
   ## 분산 테이블
-</div>
 
-ClickHouse의 분산 테이블은 데이터를 자체적으로 저장하지 않고, 클러스터 내 여러 서버에 걸친 분산 쿼리 처리를 위해 통합된 보기를 제공하는 특수한 유형의 테이블입니다.
+  ClickHouse의 분산 테이블은 데이터를 직접 저장하지 않고, 클러스터 내 여러 서버에 걸친 분산 쿼리 처리를 위한 통합 뷰를 제공하는 특수한 유형의 테이블입니다.
 
-<div id="granule">
-  ## 그래뉼
-</div>
+  ## `FINAL`
 
-그래뉼은 비압축 블록 내의 행 묶음입니다. 데이터를 읽을 때 ClickHouse는 개별 행이 아니라 그래뉼 단위로 접근하므로, 분석 워크로드에서 데이터를 더 빠르게 처리할 수 있습니다. 그래뉼에는 기본적으로 8192개의 행이 포함됩니다. 프라이머리 인덱스에는 그래뉼마다 하나의 항목이 있습니다.
+  `FINAL`은 저장된 파트를 물리적으로 머지하지 않고, 데이터를 읽는 동안 엔진의 머지 시점 변환을 적용하는 쿼리 수정자입니다. `ReplacingMergeTree`와 같은 엔진에서 백그라운드 머지가 완료되기 전에도 정합성이 맞춰진 결과를 반환할 수 있지만, 그 대가로 쿼리 시점에 추가적인 컴퓨트와 메모리를 소모합니다.
 
-<div id="incremental-materialized-view">
+  ## Granule
+
+  그래뉼은 ClickHouse가 프라이머리 인덱스 프루닝을 위해 읽어들이는 가장 작은 논리적 행 그룹입니다. 기본적으로 최대 8,192개의 행을 포함하지만, 적응형 인덱스 세분화 수준(adaptive index granularity)이 적용되면 더 작은 그래뉼이 생성될 수 있습니다. 프라이머리 인덱스는 일반적으로 그래뉼마다 하나의 항목을 저장합니다.
+
   ## 증분형 materialized view
-</div>
 
-ClickHouse에서 증분형 materialized view는 삽입 시점에 데이터를 처리하고 집계하는 materialized view의 한 유형입니다. 새 데이터가 원본 테이블에 삽입되면 materialized view는 새로 삽입된 블록에 대해서만 미리 정의된 SQL 집계 쿼리를 실행하고, 집계된 결과를 대상 테이블에 기록합니다.
+  증분형 materialized view는 원본 테이블에 데이터가 삽입될 때 해당 쿼리를 실행하고 그 결과를 대상 테이블에 기록합니다. 원본 테이블의 현재 전체 상태가 아니라 새로 삽입된 블록만 처리하며, 조인된 오른쪽 테이블이 변경되더라도 다시 트리거되지 않습니다.
 
-<div id="lightweight-update">
-  ## 경량 업데이트
-</div>
+  ## `JSON`
 
-ClickHouse의 경량 업데이트는 표준 SQL UPDATE 구문을 사용해 테이블의 행을 업데이트할 수 있는 실험적 기능입니다. 기존 뮤테이션처럼 전체 컬럼이나 데이터 파트를 다시 쓰는 대신, 업데이트된 컬럼과 행만 포함하는 &quot;패치 파트&quot;를 생성합니다. 이러한 업데이트는 패치 적용을 통해 SELECT 쿼리에 즉시 반영되지만, 물리적 데이터는 이후 머지 과정에서만 업데이트됩니다.
+  `JSON` 타입은 행마다 경로와 타입이 달라질 수 있는 반정형 문서를 저장합니다. ClickHouse는 발견된 경로를 서브컬럼으로 저장하므로 쿼리에서 개별 필드를 효율적으로 읽을 수 있습니다. 스키마가 안정적이라면 타입이 지정된 컬럼이나 `Tuple`과 같은 구조적 타입을 사용하십시오.
 
-<div id="mark-file">
-  ## 마크 파일
-</div>
+  ## 마크 파일(Mark file)
 
-ClickHouse의 마크 파일은 &quot;마크&quot;, 즉 ClickHouse가 데이터 파일에 저장된 특정 데이터 범위의 위치를 빠르게 찾는 데 도움이 되는 인덱스 항목을 저장하는 파일입니다.
+  mark 파일에는 압축된 컬럼 데이터에서 그래뉼의 위치를 찾는 데 사용되는 오프셋이 저장됩니다. 각 mark는 압축 파일 내의 오프셋과 이에 대응하는 압축 해제된 블록 내의 오프셋을 함께 기록하므로, ClickHouse는 컬럼 전체를 읽지 않고도 원하는 그래뉼로 바로 이동할 수 있습니다.
 
-<div id="materialized-view">
-  ## materialized view
-</div>
+  ## Materialized view
 
-ClickHouse의 materialized view는 소스 테이블에 데이터가 삽입될 때 자동으로 쿼리를 실행하여, 변환되거나 집계된 결과를 더 빠르게 조회할 수 있도록 별도의 대상 테이블에 저장하는 메커니즘입니다.
+  ClickHouse에는 두 가지 materialized view 모델이 있습니다. 증분형 materialized view는 새로 삽입된 block을 처리하는 삽입 시점 트리거처럼 동작하는 반면, 갱신 가능 materialized view는 전체 데이터셋을 대상으로 쿼리를 주기적으로 다시 실행합니다. 다른 데이터베이스에서 이름이 비슷한 기능은 이 두 동작을 함께 제공하기도 하므로, 항상 일대일로 대응되지는 않습니다.
 
-<div id="mergetree">
-  ## MergeTree
-</div>
+  ## 머지
 
-ClickHouse의 MergeTree는 높은 데이터 수집 속도와 대용량 데이터 처리를 위해 설계된 테이블 엔진입니다. ClickHouse의 핵심 스토리지 엔진으로서 열 지향 스토리지, 사용자 지정 파티셔닝, 희소 프라이머리 인덱스, 백그라운드 데이터 머지 지원 등의 기능을 제공합니다.
+  ClickHouse의 머지는 동일한 파티션 내에서 크기가 작은 불변 데이터 파트를 더 큰 파트로 병합하는 백그라운드 스토리지 작업입니다. 테이블 엔진에 따라 머지는 행을 집계(aggregate)하거나 축약(collapse)하거나 대체할 수도 있습니다. 이는 트랜잭션 SQL `MERGE` 문과는 다릅니다.
 
-<div id="mutation">
-  ## 뮤테이션
-</div>
+  ## `MergeTree`
 
-ClickHouse에서 뮤테이션은 일반적으로 ALTER TABLE ... UPDATE 또는 ALTER TABLE ... DELETE 같은 명령으로 테이블(table)의 기존 데이터를 수정하거나 삭제하는 작업을 의미합니다. 뮤테이션은 행(row)을 제자리에서 직접 수정하는 대신, 변경의 영향을 받는 전체 데이터 파트를 재작성하는 비동기식 백그라운드 프로세스로 구현됩니다.
+  ClickHouse의 `MergeTree`는 높은 데이터 수집 속도와 대용량 데이터를 처리하도록 설계된 테이블 엔진입니다. ClickHouse의 핵심 저장 엔진으로, 열 지향 저장, 사용자 정의 파티셔닝, 희소 프라이머리 인덱스, 백그라운드 데이터 머지 지원 등의 기능을 제공합니다.
 
-<div id="on-the-fly-mutation">
-  ## 온더플라이 뮤테이션
-</div>
+  ## 뮤테이션(Mutation)
 
-ClickHouse의 온더플라이 뮤테이션은 업데이트나 삭제가 뮤테이션 제출 직후 백그라운드 뮤테이션 프로세스가 완료되기를 기다리지 않고도, 이후의 SELECT 쿼리에서 즉시 반영되도록 하는 메커니즘입니다.
+  `MergeTree` 계열 테이블에서 뮤테이션(mutation)은 `ALTER TABLE ... UPDATE`나 `ALTER TABLE ... DELETE`와 같은 명령어로 기존 데이터를 수정하거나 삭제합니다. OLTP의 행 단위 UPDATE와 달리 영향을 받는 데이터 파트를 재작성하며, 일반적으로 비동기로 진행됩니다. 파트는 준비되는 대로 대체되므로 이 작업은 테이블 전체를 아우르는 원자적 트랜잭션이 아닙니다.
 
-<div id="parts">
+  ## 널 허용(Nullable) 컬럼
+
+  `0`이나 빈 문자열과 같은 값을 포함한 `T` 타입의 일반 값과 `NULL`을 구분하려면 컬럼에 `Nullable(T)`를 사용해야 합니다. ClickHouse는 별도의 null 마스크를 저장하므로 저장 공간과 처리 비용이 추가로 발생합니다. 따라서 널 허용 컬럼은 기본 선택지로 쓰기보다는, 값이 없다는 사실 자체에 의미가 있는 경우에 사용하십시오.
+
+  ## 즉시 적용 뮤테이션(On-the-fly mutation)
+
+  뮤테이션과 이후의 읽기 모두에 대해 `apply_mutations_on_fly`가 활성화되어 있으면, ClickHouse는 `SELECT` 쿼리 실행 중에 대기 중인 UPDATE 또는 삭제 작업을 적용하므로, 저장된 파트가 재작성되기 전에도 그 결과를 확인할 수 있습니다. 뮤테이션 자체는 여전히 백그라운드에서 비동기로 구체화됩니다.
+
   ## 파트
-</div>
 
-디스크에 있는 물리적 파일로, 테이블 데이터의 일부를 저장합니다. 이는 파티션과는 다릅니다. 파티션은 파티션 키를 사용해 생성되는 테이블 데이터의 논리적 구분입니다.
+  데이터 파트(data part)는 테이블 행의 일부를 담고 있는, 스토리지상의 불변(immutable) 파일 집합입니다. 파트는 삽입 시 생성되며, 하나의 파티션 내에서 백그라운드 머지를 통해 결합됩니다. 데이터를 논리적으로 묶은 단위인 파티션과 달리, 파트는 ClickHouse가 관리하는 물리적 저장 단위입니다.
 
-<div id="partitioning-key">
+  ## 파티션
+
+  파티션은 `MergeTree` 계열 테이블에서 데이터 파트를 논리적으로 묶은 단위입니다. 파티셔닝은 주로 데이터 그룹 단위의 삭제, 이동, 보존 정책 적용과 같은 데이터 관리 작업을 위해 사용됩니다. 파티션 프루닝은 일부 파티션만 선택하는 쿼리에 도움이 될 수 있지만, 쿼리 성능에는 일반적으로 정렬 키와 프라이머리 키(primary key)가 더 중요합니다.
+
   ## 파티셔닝 키
-</div>
 
-ClickHouse에서 파티셔닝 키는 테이블 생성 시 `PARTITION BY` 절에 정의하는 SQL 표현식입니다. 이 키는 데이터가 디스크에서 파티션으로 논리적으로 어떻게 그룹화되는지를 결정합니다. 파티셔닝 키의 각 고유 값은 하나의 물리적 파티션을 형성하므로, 전체 파티션의 삭제, 이동, 아카이브와 같은 데이터 관리 작업을 효율적으로 수행할 수 있습니다.
+  파티셔닝 키는 테이블의 `PARTITION BY` 절에 지정된 표현식입니다. 동일한 partition ID를 생성하는 행은 동일한 논리적 파티션에 속하며, 삽입 작업이 나뉘어 수행되면 해당 파티션 안에 서로 다른 data part가 생성될 수 있습니다. 이러한 그룹화 덕분에 파티션 전체를 삭제, 이동 또는 아카이브하는 작업이 가능해집니다.
 
-<div id="primary-key">
-  ## 기본 키
-</div>
+  ## 기본 키(Primary key)
 
-ClickHouse에서 기본 키(primary key)는 데이터가 디스크에 저장되는 순서를 결정하고, 쿼리 필터링을 더 빠르게 수행할 수 있도록 희소 인덱스(sparse index)를 구축하는 데 사용됩니다. 기존 데이터베이스와 달리 ClickHouse의 기본 키는 고유성을 강제하지 않으므로 여러 행이 동일한 기본 키 값을 가질 수 있습니다.
+  많은 트랜잭션 데이터베이스의 프라이머리 키와 달리, ClickHouse의 프라이머리 키는 행 단위 고유성 제약 조건이 아닙니다. 프라이머리 키는 ClickHouse가 읽기 과정에서 그래뉼을 건너뛸 수 있도록 돕는 희소 프라이머리 인덱스(sparse primary index)의 컬럼을 정의합니다. 기본적으로 `ORDER BY`로 정의된 정렬 키(sorting key)와 일치하며, 별도로 정의할 경우 정렬 키의 접두사(prefix)여야 합니다.
 
-<div id="projection">
-  ## 프로젝션
-</div>
+  ## 프로젝션(Projection)
 
-ClickHouse의 프로젝션은 숨겨진 테이블로, 자동으로 유지되며 데이터를 다른 순서로 저장하거나 미리 계산된 집계 결과를 저장해 쿼리 속도를 높입니다. 특히 기본 기본 키에 포함되지 않은 컬럼을 필터링하는 쿼리에서 효과적입니다.
+  프로젝션은 테이블 데이터를 다른 정렬 순서, 컬럼의 부분 집합 또는 미리 계산된 집계 형태로 자동 유지 관리하는 표현입니다. ClickHouse는 원본 테이블을 쿼리할 때 이를 자동으로 선택할 수 있습니다. 프로젝션은 저장된 데이터를 중복 저장하고 쓰기 부담을 늘릴 수 있으나, `_part_offset` 프로젝션을 사용하면 기반 테이블에서 추가 읽기를 수행하는 대신 저장 공간을 절약할 수 있습니다.
 
-<div id="refreshable-materialized-view">
   ## 갱신 가능 구체화 뷰
-</div>
 
-갱신 가능 구체화 뷰는 전체 데이터셋을 대상으로 쿼리를 주기적으로 다시 실행하고, 그 결과를 대상 테이블에 저장하는 materialized view의 한 유형입니다. 증분형 materialized view와 달리 갱신 가능 구체화 뷰는 일정에 따라 갱신되며, JOIN과 UNION을 포함한 복잡한 쿼리도 제약 없이 지원할 수 있습니다.
+  갱신 가능 구체화 뷰(refreshable materialized view)는 정해진 일정에 따라 전체 데이터셋을 대상으로 쿼리를 주기적으로 다시 실행하고, 저장된 결과를 대체하거나 추가합니다. 증분형 materialized view와 달리 삽입되는 블록마다 트리거되지 않으며, 복잡한 쿼리도 사용할 수 있습니다. `SELECT` 결과를 구체화하는 예약 쿼리를 대체할 수 있지만, 임의의 DDL 또는 DML SQL 문을 실행하기 위한 범용 스케줄러는 아닙니다.
 
-<div id="replica">
+  ## `ReplacingMergeTree`
+
+  `ReplacingMergeTree`는 동일한 정렬 키(sorting key)를 가진 여러 버전의 행을 받아들이고 백그라운드 머지 과정에서 그중 한 버전만 남기는 방식으로 UPDATE와 업서트를 구현합니다. 중복 제거는 삽입 시점의 고유성 보장이 아니라 최종적으로 수렴하는 방식이므로, `FINAL`이나 이에 상응하는 쿼리 로직을 사용하거나 해당 파트가 머지되기 전까지는 쿼리 결과에 여러 버전이 나타날 수 있습니다.
+
   ## 레플리카
-</div>
 
-ClickHouse 데이터베이스에 저장된 데이터의 복사본입니다. 이중화와 안정성을 위해 동일한 데이터의 레플리카를 원하는 수만큼 둘 수 있습니다. 레플리카는 ReplicatedMergeTree 테이블 엔진과 함께 사용되며, 이를 통해 ClickHouse는 서로 다른 서버에 있는 여러 데이터 복사본의 동기화 상태를 유지할 수 있습니다.
+  레플리카는 가용성과 쿼리 처리 용량을 위해 다른 레플리카와 동일한 논리적 테이블 데이터를 유지하거나 해당 데이터에 액세스하는 서버 또는 컴퓨트 인스턴스입니다. `ReplicatedMergeTree`에서는 각 레플리카가 데이터의 독립적인 사본을 유지하는 반면, `SharedMergeTree`를 사용하는 ClickHouse Cloud 레플리카는 객체 스토리지를 공유합니다.
 
-<div id="shard">
-  ## 세그먼트
-</div>
+  ## 보조 인덱스(Secondary index)
 
-데이터의 일부입니다. ClickHouse에서는 데이터에 대해 항상 최소 1개의 세그먼트가 있습니다. 데이터를 여러 서버에 분할하지 않으면 데이터는 하나의 세그먼트에 저장됩니다. 데이터를 여러 서버에 걸쳐 세그먼트 분할하면 단일 서버의 용량을 초과할 때 부하를 분산하는 데 사용할 수 있습니다.
+  ClickHouse에서 일반적인 보조 인덱스(secondary index)에 가장 가까운 개념은 대체로 데이터 스키핑 인덱스(data skipping index)입니다. B-tree를 통해 개별 행을 찾는 방식이 아니라, 그래뉼 그룹에 대한 메타데이터(metadata)를 저장해 두어 일치하는 값이 있을 수 없는 블록(block)은 ClickHouse가 읽지 않도록 합니다.
 
-<div id="skipping-index">
-  ## 스킵 인덱스
-</div>
+  ## 세그먼트(Shard)
 
-스킵 인덱스는 여러 개의 연속된 그래뉼 수준에 소량의 메타데이터를 저장하여 ClickHouse가 관련 없는 행을 스캔하지 않도록 합니다. 스킵 인덱스는 프로젝션보다 가벼운 대안입니다.
+  샤드는 분산 배포 환경에서 하나의 서버 또는 레플리카 그룹에 할당된 테이블 데이터의 논리적 부분 집합입니다. 샤딩은 데이터와 쿼리 작업을 여러 서버로 분산하며, 레플리카는 각 샤드 내 데이터에 대한 이중화된 액세스 또는 병렬 액세스를 제공합니다.
 
-<div id="sorting-key">
-  ## 정렬 키
-</div>
+  ## 스키핑 인덱스
 
-ClickHouse에서 정렬 키(sorting key)는 디스크에 저장된 행의 물리적 순서를 결정합니다. 기본 키(primary key)를 지정하지 않으면 ClickHouse는 정렬 키를 기본 키로 사용합니다. 둘 다 지정한 경우 기본 키는 정렬 키의 접두어여야 합니다.
+  데이터 스키핑 인덱스(data skipping index)는 연속된 하나 이상의 그래뉼에 대한 압축된 메타데이터를 저장하므로, ClickHouse가 쿼리와 일치할 수 없는 블록을 읽지 않도록 해줍니다. 이 인덱스는 인덱싱된 값이 테이블의 정렬 순서와 연관되어 있을 때 가장 효과적이며, 일치하는 값이 대부분의 인덱싱된 블록에 나타난다면 이점이 거의 없을 수 있습니다.
 
-<div id="sparse-index">
-  ## 희소 인덱스
-</div>
+  ## 정렬 키(Sorting key)
 
-프라이머리 인덱스가 단일 행이 아니라 여러 행의 그룹마다 하나의 항목을 포함하는 인덱싱 유형입니다. 행 그룹에 해당하는 이 항목을 마크라고 합니다. 희소 인덱스를 사용하면 ClickHouse는 먼저 쿼리와 일치할 가능성이 있는 행 그룹을 식별한 다음, 실제 일치 여부를 찾기 위해 이를 개별적으로 처리합니다. 따라서 프라이머리 인덱스는 메모리에 적재할 수 있을 만큼 작습니다.
+  `MergeTree` 계열 테이블에서 `ORDER BY` 절은 정렬 키(sorting key), 즉 각 data part 내부의 물리적 행 순서를 정의합니다. 이는 다른 분석 데이터베이스의 클러스터링 컬럼이나 클러스터링 키와 비슷한 역할을 하지만, ClickHouse는 이를 사용해 정해진 사전식(lexicographic) 행 순서를 유지합니다. 별도의 프라이머리 키를 지정하지 않으면 정렬 키가 곧 프라이머리 키가 됩니다. 두 키는 서로 관련이 있지만 반드시 동일해야 하는 것은 아닙니다.
 
-<div id="table-engine">
+  ## 희소 인덱스(Sparse index)
+
+  희소 프라이머리 인덱스는 행마다 하나의 항목을 저장하는 대신 각 그래뉼에 대한 키 값을 저장합니다. ClickHouse는 이러한 항목을 사용해 후보 그래뉼을 식별한 다음 해당 그래뉼의 행을 읽습니다. 인덱스 크기는 행 수가 아니라 그래뉼 수에 비례하므로, 대개 메모리에 상주시킬 수 있을 만큼 작습니다.
+
   ## 테이블 엔진
-</div>
 
-ClickHouse의 테이블 엔진은 데이터가 어떻게 기록되고 저장되며 액세스되는지를 결정합니다. MergeTree는 가장 일반적으로 사용되는 테이블 엔진으로, 대량의 데이터를 빠르게 삽입할 수 있으며 삽입된 데이터는 백그라운드에서 처리됩니다.
+  ClickHouse의 테이블 엔진은 데이터가 어떻게 기록되고 저장되며 액세스되는지를 결정합니다. `MergeTree`는 가장 널리 사용되는 테이블 엔진으로, 대량의 데이터를 빠르게 삽입할 수 있으며 삽입된 데이터는 백그라운드에서 처리됩니다.
 
-<div id="ttl">
-  ## TTL
-</div>
+  ## 트랜잭션(Transaction)
 
-Time To Live(TTL)은 일정 시간이 지나면 컬럼(column)이나 행(row)을 자동으로 이동, 삭제 또는 롤업하는 ClickHouse 기능입니다. 이를 통해 더 이상 자주 액세스할 필요가 없는 데이터를 삭제, 이동 또는 보관하여 스토리지를 더욱 효율적으로 관리할 수 있습니다.
+  ClickHouse에서 트랜잭션 보장의 범위는 일반적인 OLTP 데이터베이스와 다릅니다. 조건을 충족하는 삽입은 블록 또는 파티션 수준에서 원자적으로 처리되지만, `COMMIT`과 `ROLLBACK`을 사용하는 전통적인 다중 구문 트랜잭션은 아직 실험적 기능이며 제약이 많습니다.
+
+  ## `TTL`
+
+  `TTL` 규칙은 표현식이 조건을 충족하면 데이터를 이동, 삭제 또는 롤업합니다. 만료는 즉시 적용되지 않습니다. ClickHouse는 일반적으로 백그라운드 머지 중에 만료된 데이터에 대한 작업을 수행하므로, 머지가 해당 파트를 처리하기 전까지 만료된 행이 디스크에 남아 있고 쿼리 결과로 반환될 수 있습니다.
+
+  ## 업데이트
+
+  ClickHouse는 빈번한 제자리(in-place) 행 UPDATE보다는 불변이면서 추가(append) 작업이 많은 데이터에 최적화되어 있습니다. UPDATE는 일반적으로 특수 테이블 엔진을 사용해 새 버전을 삽입하는 방식으로 모델링하거나, 영향을 받는 데이터 파트를 재작성하는 뮤테이션으로 수행합니다.
+
+  ## 업서트(Upsert)
+
+  `MergeTree` 계열 테이블은 트랜잭션 방식의 `INSERT ... ON CONFLICT` 업서트를 지원하지 않습니다. 업서트는 일반적으로 `ReplacingMergeTree`와 같은 엔진에 더 새로운 버전의 행을 삽입하는 방식으로 구현합니다. 이전 버전은 백그라운드 머지 과정에서 정리되므로, 머지가 이루어지기 전까지는 쿼리에 `FINAL` 또는 이에 상응하는 로직이 필요할 수 있습니다.
+
+  ## 웨어하우스(Warehouse)
+
+  ClickHouse Cloud에서 warehouse는 동일한 데이터를 공유하면서도 컴퓨트 resource와 endpoint는 독립적으로 갖는 service의 집합입니다. warehouse가 하나의 컴퓨트 cluster를 의미하는 시스템에서는 개별 ClickHouse service가 이에 더 가까운 개념이며, ClickHouse의 warehouse는 여러 service를 묶는 단위입니다.
+</Glossary>

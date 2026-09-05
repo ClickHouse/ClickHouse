@@ -82,9 +82,17 @@ Além das permissões do console, as funções personalizadas podem incluir perm
 
 Quando você adiciona permissões de dados a uma função personalizada, o ClickHouse Cloud cria uma função correspondente em cada serviço selecionado, com o prefixo `cloud:`. Por exemplo, uma função personalizada chamada `readonly` aparece no banco de dados como `cloud:readonly`. Os membros da função personalizada recebem essas permissões de banco de dados ao se conectarem ao serviço por meio da autenticação sem senha do SQL Console.
 
-<Info>
-  As funções atribuídas manualmente no banco de dados usando a [convenção de nomenclatura `sql-console-role:<email>`](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) têm precedência sobre as funções atribuídas pelo console.
-</Info>
+<Tip>
+  As funções de banco de dados gerenciadas pelo Cloud substituem as funções [`sql-console-role:<email>`](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) atribuídas manualmente, que não são compatíveis com a [autenticação JWT](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
+
+<div id="manage-database-roles-prerequisites">
+  ### Pré-requisitos
+</div>
+
+As funções de banco de dados personalizadas em um serviço dependem da [autenticação JWT](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) e não são aplicadas enquanto ela estiver desabilitada. Antes de adicionar permissões de dados a uma função, navegue até o serviço, abra `Settings` e localize o cartão `JWT authentication` na seção `Security`. Certifique-se de que o controle `SQL Console` esteja habilitado.
+
+<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="Cartão de autenticação JWT com o controle SQL Console habilitado" size="lg" force />
 
 <Steps>
   <Step title="Adicionar permissões de dados a uma função" id="add-data-permissions">
@@ -92,17 +100,17 @@ Quando você adiciona permissões de dados a uma função personalizada, o Click
   </Step>
 
   <Step title="Selecionar o serviço" id="select-data-permissions-service">
-    Selecione o serviço ao qual as permissões se aplicam. Adicione outros serviços para aplicar permissões a vários serviços.
+    Selecione o serviço ao qual as permissões se aplicam. Adicione outros serviços para aplicar as mesmas permissões `Read-only` ou `Admin` a vários serviços.
   </Step>
 
   <Step title="Escolher o nível de acesso" id="choose-data-access-level">
-    Selecione o acesso `Read-only`, `Admin` ou `Custom`. Com o acesso `Custom`, defina permissões específicas de acesso a dados usando instruções [`GRANT`](/pt-BR/reference/statements/grant) do ClickHouse.
+    Selecione o acesso `Read-only`, `Admin` ou `Custom`. Com o acesso `Custom`, defina permissões específicas de acesso a dados usando instruções [`GRANT`](/pt-BR/reference/statements/grant) do ClickHouse. O acesso `Custom` só pode ser selecionado quando as permissões se aplicarem a um único serviço; para definir permissões personalizadas para vários serviços, adicione uma permissão `Data` separada para cada serviço.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="Caixa de diálogo de criação de nova função com permissões de dados definidas por instruções GRANT personalizadas" size="md" />
   </Step>
 
   <Step title="Criar a função" id="create-role-with-data-permissions">
-    Clique em `Create role`. As funções de banco de dados são criadas nos serviços selecionados.
+    Clique em `Create role`. As funções de banco de dados são criadas nos serviços selecionados. As funções podem levar até 10 minutos para serem propagadas para um serviço, mas os usuários aos quais a função foi atribuída recebem suas permissões imediatamente ao consultar o serviço.
   </Step>
 </Steps>
 
@@ -110,7 +118,7 @@ Quando você adiciona permissões de dados a uma função personalizada, o Click
   ### Verificar funções de banco de dados
 </div>
 
-As funções gerenciadas pelo console são criadas no banco de dados com o prefixo `cloud:` e o tipo de armazenamento `cloud`. Para listá-las, consulte a tabela `system.roles` no service:
+As funções gerenciadas pelo console são criadas no banco de dados com o prefixo `cloud:` e o tipo de armazenamento `cloud`, e podem levar até 10 minutos para aparecer após a criação. Para listá-las, consulte a tabela `system.roles` no serviço:
 
 ```sql
 SELECT * FROM system.roles;

@@ -1,0 +1,9 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- Enable server-side AST fuzzer oracle (TLP WHERE + NoREC) -->
+            <ast_fuzzer_runs>1</ast_fuzzer_runs>
+            <ast_fuzzer_oracle>1</ast_fuzzer_oracle>
+        </default>
+    </profiles>
+</clickhouse>

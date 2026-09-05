@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "はじめに",
+      "group": "Introduction",
       "pages": [
         "ja/resources/develop-contribute/introduction/developer-instruction",
         "ja/resources/develop-contribute/introduction/architecture"
       ]
     },
     {
-      "group": "ビルド",
+      "group": "Building",
       "pages": [
         "ja/resources/develop-contribute/build/build",
         "ja/resources/develop-contribute/build/build-osx",
@@ -21,7 +21,7 @@
       ]
     },
     {
-      "group": "ネイティブプロトコル",
+      "group": "Native protocol",
       "pages": [
         "ja/resources/develop-contribute/native-protocol/basics",
         "ja/resources/develop-contribute/native-protocol/client",
@@ -31,7 +31,7 @@
       ]
     },
     {
-      "group": "コントリビューション",
+      "group": "Contributing",
       "pages": [
         "ja/resources/develop-contribute/contribute/tests",
         "ja/resources/develop-contribute/contribute/continuous-integration",
@@ -44,7 +44,7 @@
       ]
     },
     {
-      "group": "インテグレーション開発",
+      "group": "Integration development",
       "pages": [
         "ja/resources/develop-contribute/integrations/index",
         "ja/resources/develop-contribute/integrations/building-integrations",
@@ -53,13 +53,13 @@
       ]
     },
     {
-      "group": "ロードマップ",
+      "group": "Roadmap",
       "pages": [
         "ja/resources/develop-contribute/roadmap"
       ]
     }
   ],
   "icon": "/images/icons/icon-contribute.svg",
-  "item": "開発とコントリビューション",
+  "item": "Development & contributing",
   "root": "ja/resources/develop-contribute/index"
 }

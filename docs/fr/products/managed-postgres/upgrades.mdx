@@ -3,15 +3,17 @@ slug: /cloud/managed-postgres/upgrades
 sidebarTitle: 'Mises à niveau'
 title: 'Mises à niveau'
 description: 'Fonctionnement des mises à niveau de version de PostgreSQL dans ClickHouse Managed Postgres'
-keywords: ['mises à niveau de ClickHouse Managed Postgres', 'version de Postgres', 'mise à niveau mineure', 'mise à niveau majeure', 'fenêtre de maintenance']
+keywords: ['mises à niveau de ClickHouse Managed Postgres', 'version de Postgres', 'mise à niveau mineure', 'mise à niveau majeure', 'fenêtre de maintenance', 'mises à niveau planifiées']
 doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import { ScalePlanFeatureBadge } from "/snippets/fr/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
 
-ClickHouse Managed Postgres gère les mises à niveau de version de PostgreSQL pour que vos instances restent sécurisées et à jour. Les mises à niveau mineures comme les mises à niveau de version majeure sont prises en charge avec une interruption minimale.
+ClickHouse Managed Postgres gère les mises à niveau de version de PostgreSQL pour que vos instances restent sécurisées et à jour. Les mises à niveau de version mineures comme les mises à niveau de version majeure sont prises en charge avec une interruption minimale.
 
 <div id="maintenance-updates">
   ## Mises à jour de maintenance
@@ -27,14 +29,112 @@ Ces opérations sont effectuées par basculement et n’entraînent généraleme
 
 Pour les instances avec des [standbys](/fr/products/managed-postgres/high-availability) activés, la mise à niveau est d’abord appliquée au standby, puis un basculement est effectué afin de minimiser l’indisponibilité.
 
-<div id="maintenance-windows">
-  ## Fenêtres de maintenance
+<div id="scheduled-upgrades">
+  ## Mises à niveau planifiées
 </div>
 
-La fenêtre de maintenance par défaut est le dimanche, de 14:00 à 16:00 UTC.
-L’indisponibilité prévue est inférieure à 1 minute au cours de cette fenêtre.
+<ScalePlanFeatureBadge feature="Mises à niveau planifiées" linking_verb_are="true" />
 
-Pour les organizations du niveau Enterprise, ClickHouse Managed Postgres prend en charge les fenêtres de maintenance afin que les mises à niveau et les autres opérations de maintenance puissent être planifiées au moment le moins perturbant pour votre charge de travail. La prise en charge dans l’UI et l’API pour configurer les fenêtres de maintenance sera bientôt disponible. En attendant, contactez le [support](https://clickhouse.com/support/program) pour définir une fenêtre de maintenance pour votre instance.
+Par défaut, la maintenance est appliquée à votre instance dès qu&#39;une nouvelle version est disponible.
+Avec les **mises à niveau planifiées**, vous choisissez un créneau de deux heures en UTC durant lequel cette
+maintenance peut être appliquée, afin que le bref basculement ait lieu au moment le moins
+perturbant pour votre charge de travail. L&#39;interruption prévue est inférieure à une minute pendant ce créneau.
+
+Avec le plan Enterprise, vous pouvez également limiter les mises à niveau à certains
+[jours de la semaine](#days-of-the-week). Avec le plan Scale, vous choisissez uniquement la période,
+et les mises à niveau peuvent être appliquées n&#39;importe quel jour au cours de celle-ci.
+
+<div id="configure-a-schedule">
+  ### Configurer une planification
+</div>
+
+<Steps>
+  <Step title="Ouvrir les paramètres de l’instance" id="open-settings">
+    Sélectionnez votre instance, puis **Settings** dans le menu de gauche, et faites défiler jusqu’à la
+    section **Configuration**.
+  </Step>
+
+  <Step title="Ouvrir le panneau des mises à niveau planifiées" id="open-flyout">
+    Dans la sous-section **Mises à niveau planifiées**, sélectionnez **Configurer la planification**. Si une planification
+    est déjà définie, la planification actuelle s’affiche et le bouton devient **Modifier la planification**.
+  </Step>
+
+  <Step title="Choisir une période" id="pick-time-period">
+    Sélectionnez l’une des douze périodes UTC de deux heures dans la liste **Période (UTC)**. La sélection d’une période
+    est obligatoire.
+  </Step>
+
+  <Step title="Restreindre les jours si nécessaire" id="pick-days">
+    Avec le plan Enterprise, sélectionnez un ou plusieurs jours sous **Day(s) of the week**. Ne sélectionnez aucun
+    jour pour autoriser les mises à niveau n’importe quel jour pendant la période sélectionnée.
+  </Step>
+
+  <Step title="Enregistrer" id="save">
+    Sélectionnez **Save**. La planification prend effet immédiatement et s’affiche dans la
+    sous-section **Mises à niveau planifiées**, par exemple
+    `Scheduled upgrades: Sat, Sun at 12:00 a.m. - 2:00 a.m. UTC`.
+  </Step>
+</Steps>
+
+Vous devez disposer de l’autorisation `control-plane:postgres-service:manage` sur l’instance pour modifier
+sa planification. Les commandes sont également désactivées lorsqu’une instance est arrêtée ou est encore
+en cours de provisionnement.
+
+<div id="time-periods">
+  ### Périodes horaires
+</div>
+
+Les créneaux durent deux heures et sont toujours exprimés en UTC ; il n&#39;est pas possible de sélectionner un fuseau horaire local. Les créneaux disponibles sont :
+
+| Première moitié de la journée (UTC) | Seconde moitié de la journée (UTC) |
+| ----------------------------------- | ---------------------------------- |
+| 00:00 - 02:00                       | 12:00 - 14:00                      |
+| 02:00 - 04:00                       | 14:00 - 16:00                      |
+| 04:00 - 06:00                       | 16:00 - 18:00                      |
+| 06:00 - 08:00                       | 18:00 - 20:00                      |
+| 08:00 - 10:00                       | 20:00 - 22:00                      |
+| 10:00 - 12:00                       | 22:00 - 00:00                      |
+
+Les heures de début personnalisées, les durées de créneau personnalisées et plusieurs créneaux par instance ne sont pas pris en charge.
+
+<div id="days-of-the-week">
+  ### Jours de la semaine
+</div>
+
+<EnterprisePlanFeatureBadge feature="Limiter les mises à niveau à certains jours de la semaine" />
+
+La sélection des jours est facultative :
+
+* **Aucun jour sélectionné** — les mises à niveau peuvent être appliquées n’importe quel jour au cours de la période choisie.
+* **Un ou plusieurs jours sélectionnés** — les mises à niveau ne sont appliquées que ces jours-là, au cours de la
+  période choisie. Sélectionner les sept jours revient à n’en sélectionner aucun.
+
+<div id="schedule-scope">
+  ### Champ d’application d’une planification
+</div>
+
+Une planification régit uniquement la **maintenance de la plateforme** : les mises à niveau de versions mineures, les
+mises à jour de fonctionnalités du service géré et les correctifs du système d’exploitation décrits dans
+[Mises à jour de maintenance](#maintenance-updates).
+
+Les modifications que vous initiez vous-même ne sont pas reportées à ce créneau et sont appliquées dès
+que vous les effectuez. Cela inclut la [mise à l’échelle](/fr/products/managed-postgres/scaling) d’une instance,
+le redimensionnement du stockage et la modification des [paramètres de configuration](/fr/products/managed-postgres/settings).
+
+<Note>
+  Les mises à niveau planifiées sont effectuées dans la mesure du possible. La maintenance peut être appliquée en dehors de votre créneau lorsqu’elle est
+  nécessaire au bon fonctionnement de votre instance — par exemple lorsque l’utilisation du disque atteint 95 % — ou pour des
+  correctifs de sécurité critiques et des corrections de vulnérabilités. Vous serez informé de ces exceptions si
+  nécessaire.
+</Note>
+
+<div id="read-replicas">
+  ### Répliques de lecture
+</div>
+
+Les [répliques de lecture](/fr/products/managed-postgres/read-replicas) suivent la planification de leur
+instance principale et ne disposent pas de leur propre planification. La section **Mises à niveau planifiées**
+ne s&#39;affiche donc pas pour elles.
 
 <div id="major-version-upgrades">
   ## Mises à niveau de version majeure
