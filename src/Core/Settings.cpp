@@ -4475,7 +4475,9 @@ Possible values:
 If the setting is set to `0`, the table function does not make Nullable columns and inserts default values instead of NULL. This is also applicable for NULL values inside arrays.
 )", 0) \
     DECLARE(Bool, external_table_strict_query, false, R"(
-If it is set to true, transforming expression to local filter is forbidden for queries to external tables.
+If it is set to true, a filter on the columns of an external table (`MySQL`, `PostgreSQL`, `SQLite`, `ODBC`, `JDBC`) that cannot be pushed down to the external database is rejected with an exception instead of being applied locally after the data is fetched.
+
+Only filters that reference the external table are checked. A predicate that references only other tables joined in the surrounding query is evaluated after the join and is not affected. With the old analyzer (`enable_analyzer = 0`) every outer filter is checked.
 )", 0) \
     \
     DECLARE(Bool, allow_hyperscan, true, R"(
