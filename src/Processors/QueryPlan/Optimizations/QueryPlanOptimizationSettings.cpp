@@ -29,6 +29,7 @@ namespace Setting
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool distributed_plan_optimize_exchanges;
+    extern const SettingsBool cascades_aggregation_pushdown;
     extern const SettingsBool enable_cascades_optimizer;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool enable_join_runtime_filters;
@@ -320,6 +321,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     exact_rows_before_limit = from[Setting::exact_rows_before_limit];
 
     enable_cascades_optimizer = from[Setting::enable_cascades_optimizer];
+    cascades_aggregation_pushdown = from[Setting::cascades_aggregation_pushdown];
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization] && from[Setting::allow_experimental_analyzer];
     optimize_lazy_materialization_for_object_storage = from[Setting::query_plan_optimize_lazy_materialization_for_object_storage];

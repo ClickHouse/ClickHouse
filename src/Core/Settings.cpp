@@ -9149,6 +9149,10 @@ Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distri
 Enable the Cascades cost-based optimizer for distributed query plans.
 Takes effect only together with `make_distributed_plan = 1`: the setting alone does not change single-node query planning.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, cascades_aggregation_pushdown, true, R"(
+Consider pushing partial aggregation below a join (eager aggregation) as a cost-based alternative in the Cascades optimizer.
+Takes effect only together with `enable_cascades_optimizer = 1` and `make_distributed_plan = 1`.
+)", BETA) \
     DECLARE(Bool, enable_join_runtime_filters, true, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
 )", BETA) \
