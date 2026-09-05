@@ -1,0 +1,11 @@
+-- TRUNCATE DATABASE ON CLUSTER, without DROP DATABASE
+necessary to have the grant DROP DATABASE
+1
+-- TRUNCATE ALL TABLES FROM ON CLUSTER, without DROP DATABASE
+necessary to have the grant DROP DATABASE
+3
+-- TRUNCATE DATABASE ON CLUSTER, with DROP DATABASE but readonly
+Cannot execute query in readonly mode
+1
+-- TRUNCATE DATABASE ON CLUSTER, with DROP DATABASE
+0
