@@ -545,8 +545,8 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         modified_client_info.current_roles = std::move(current_role_names);
     }
 
-    if (extension)
-        modified_client_info.collaborate_with_initiator = true;
+    /// Never inherited: a stale `true` would point the remote at a coordinator this connection lacks.
+    modified_client_info.collaborate_with_initiator = extension.has_value();
 
     // Collect all roles granted on this node and pass those to the remote node
     Strings local_granted_roles;
