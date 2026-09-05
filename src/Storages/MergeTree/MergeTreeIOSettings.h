@@ -63,6 +63,8 @@ struct MergeTreeReaderSettings
     bool is_compressed = true;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
+    /// Folded into every query condition cache key, see `queryConditionCacheSettingsSalt`.
+    UInt64 query_condition_cache_settings_salt = 0;
     /// Force reading complete granules, even when the readers could read incomplete granules.
     bool force_read_complete_granules = false;
     bool use_deserialization_prefixes_cache = false;
