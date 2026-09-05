@@ -2228,7 +2228,7 @@ import TabItem from '@theme/TabItem';
 
 # DeltaLake table engine
 
-This engine provides an integration with existing [Delta Lake](https://github.com/delta-io/delta) tables in S3, GCP and Azure storage and supports both reads and writes (from v25.10).
+This engine provides an integration with existing [Delta Lake](https://github.com/delta-io/delta) tables in S3, GCP and Azure storage and supports both reads and writes (writes for S3 and GCS from v25.10, for Azure from v26.9).
 
 ## Create a DeltaLake table {#create-table}
 
@@ -2352,7 +2352,8 @@ Delta Lake writes are a Beta feature disabled by default and must be enabled wit
 
 :::note
 Writing using the table engine is supported only through delta kernel.
-Writes to Azure are not yet supported but work for S3 and GCS.
+Writes work for S3 and GCS, and for Azure from version 26.9.
+Azure workload identity authentication (`extra_credentials(client_id = ..., tenant_id = ...)`) is not supported by delta kernel.
 :::
 
 ### Data cache {#data-cache}
@@ -2401,7 +2402,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides a read-only integration with existing Delta Lake tables stored in Amazon S3 or S3-compatible object storage.",
+            .description = "Provides an integration with existing Delta Lake tables stored in Amazon S3 or S3-compatible object storage, supporting both reads and writes.",
             .syntax = "ENGINE = DeltaLakeS3(url [, access_key_id, secret_access_key])",
             .related = {"DeltaLake"}});
 #    endif
@@ -2439,7 +2440,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides a read-only integration with existing Delta Lake tables stored in Microsoft Azure Blob Storage.",
+            .description = "Provides an integration with existing Delta Lake tables stored in Microsoft Azure Blob Storage, supporting both reads and writes (writes from version 26.9).",
             .syntax = "ENGINE = DeltaLakeAzure(connection_string | storage_account_url, container_name, blobpath)",
             .related = {"DeltaLake"}});
 #    endif

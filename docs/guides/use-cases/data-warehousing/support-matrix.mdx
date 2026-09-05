@@ -72,7 +72,7 @@ ClickHouse integrates with four open table formats: [Apache Iceberg](/reference/
 </Tab>
 <Tab title="Delta Lake">
 
-From version 25.6, ClickHouse reads Delta Lake tables using the Delta Lake Rust kernel, providing broader feature support; however, known issues occur when accessing data in Azure Blob Storage. For this reason the Kernel is disabled when reading data on Azure Blob Storage. We indicate below which features require this kernel.
+From version 25.6, ClickHouse reads Delta Lake tables using the Delta Lake Rust kernel, providing broader feature support (enabled for Azure Blob Storage from version 26.4). We indicate below which features require this kernel.
 
 | Feature | ClickHouse Cloud | Self-managed | Notes |
 |---------|:-:|:-:|-------|
@@ -97,7 +97,7 @@ From version 25.6, ClickHouse reads Delta Lake tables using the Delta Lake Rust 
 | Change data feed | ✅ Beta | ✅ Beta | Requires the Delta Kernel. |
 | Virtual columns | ✅ | ✅ | `_path`, `_file`, `_size`, `_time`, `_etag`. See [Virtual columns](/reference/functions/table-functions/deltalake#virtual-columns). |
 | **Write features** | | | |
-| `INSERT` | ✅ Beta | ✅ Beta | Requires the Delta Kernel. Writes are supported for S3 and GCS; Azure writes aren't supported. Requires `allow_delta_lake_writes = 1` from v26.7; on earlier versions, use `allow_experimental_delta_lake_writes = 1`. See [Delta Lake writes](/reference/functions/table-functions/deltalake#inserting-data). |
+| `INSERT` | ✅ Beta | ✅ Beta | Requires the Delta Kernel. Writes are supported for S3 and GCS, and for Azure from v26.9. Requires `allow_delta_lake_writes = 1` from v26.7; on earlier versions, use `allow_experimental_delta_lake_writes = 1`. See [Delta Lake writes](/reference/functions/table-functions/deltalake#inserting-data). |
 | `DELETE` / `UPDATE` / `MERGE` | ❌ | ❌ | Not supported |
 | Create empty table | ❌ | ❌ | The `CREATE TABLE` operation assumes that the Delta Lake table already exists on object storage. |
 | **Caching** | | | |
