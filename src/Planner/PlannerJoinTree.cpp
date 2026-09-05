@@ -2798,9 +2798,48 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         if (select_query_options.only_analyze)
         {
             auto projection_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
+
+            /// This header must keep a projected constant as a ColumnConst, because real execution
+            /// emits one and a reader built from a header that dropped it expects fewer columns.
+            const QueryTreeNodes * projection_nodes = nullptr;
+            if (query_node)
+                projection_nodes = &query_node->getProjection().getNodes();
+
+            /// A projection is constant not only as a folded ConstantNode but also when it evaluates
+            /// to a constant column while referencing a source column (identity(0) returns its
+            /// constant argument unchanged; ignore(s) always returns 0), so evaluate it.
             Block source_header;
-            for (auto & projection_column : projection_columns)
-                source_header.insert(ColumnWithTypeAndName(projection_column.type, projection_column.name));
+            for (size_t i = 0; i < projection_columns.size(); ++i)
+            {
+                const auto & projection_column = projection_columns[i];
+                ColumnPtr column;
+                if (projection_nodes && i < projection_nodes->size())
+                {
+                    /// A prepared set for an IN or a subquery is not registered in this context yet,
+                    /// and building the DAG without it throws. Registering does not execute the set,
+                    /// so this stays analyze-only.
+                    collectSets((*projection_nodes)[i], *planner_context);
+                    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+                    auto [projection_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+                        (*projection_nodes)[i], {}, planner_context, empty_correlated_columns_set);
+                    /// Correlated projections carry PLACEHOLDER nodes that never fold to a constant.
+                    if (!correlated_subtrees.notEmpty() && projection_dag.getOutputs().size() == 1)
+                    {
+                        Block input_header;
+                        for (const auto * input : projection_dag.getInputs())
+                            input_header.insert(ColumnWithTypeAndName(
+                                input->result_type->createColumn(), input->result_type, input->result_name));
+                        auto evaluated = projection_dag.updateHeader(input_header).safeGetByPosition(0).column;
+                        if (evaluated && isColumnConst(*evaluated))
+                            column = projection_column.type->createColumnConst(0, (*evaluated)[0]);
+                    }
+                }
+
+                if (column)
+                    source_header.insert(ColumnWithTypeAndName(column, projection_column.type, projection_column.name));
+                else
+                    source_header.insert(ColumnWithTypeAndName(projection_column.type, projection_column.name));
+            }
 
             auto read_nothing = std::make_unique<ReadNothingStep>(std::make_shared<const Block>(source_header));
             read_nothing->setStepDescription("Read from NullSource");
