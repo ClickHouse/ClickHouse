@@ -26,6 +26,9 @@ public:
 
     const SortDescription & getSortDescription() const override { return sort_description; }
 
+    /// How many leading `ORDER BY` keys the output is still sorted by.
+    size_t getPreservedSortPrefixSize() const;
+
 private:
     void updateOutputHeader() override;
 

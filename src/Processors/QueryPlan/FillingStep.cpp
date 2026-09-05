@@ -14,14 +14,42 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static ITransformingStep::Traits getTraits()
+/// A generated row defaults every `ORDER BY` key that is neither filled nor part of the filling
+/// sorting prefix. That breaks the order only for a key which some filled key follows: past the last
+/// filled key a comparison never reaches it, because a generated row already differs from its
+/// neighbours on a filled key. The keys ahead of the first such key keep their order.
+static size_t preservedSortPrefixSize(const SortDescription & sort_description, bool use_with_fill_by_sorting_prefix)
+{
+    size_t begin = 0;
+    if (use_with_fill_by_sorting_prefix)
+        while (begin < sort_description.size() && !sort_description[begin].with_fill)
+            ++begin;
+
+    size_t last_with_fill = begin;
+    for (size_t i = begin; i < sort_description.size(); ++i)
+        if (sort_description[i].with_fill)
+            last_with_fill = i;
+
+    for (size_t i = begin; i < last_with_fill; ++i)
+        if (!sort_description[i].with_fill)
+            return i;
+
+    return sort_description.size();
+}
+
+static bool sortingIsPreserved(const SortDescription & sort_description, bool use_with_fill_by_sorting_prefix)
+{
+    return preservedSortPrefixSize(sort_description, use_with_fill_by_sorting_prefix) == sort_description.size();
+}
+
+static ITransformingStep::Traits getTraits(bool preserves_sorting)
 {
     return ITransformingStep::Traits
     {
         {
             .returns_single_stream = true,
             .preserves_number_of_streams = true,
-            .preserves_sorting = true,
+            .preserves_sorting = preserves_sorting,
         },
         {
             .preserves_number_of_rows = false,
@@ -35,12 +63,20 @@ FillingStep::FillingStep(
     SortDescription fill_description_,
     InterpolateDescriptionPtr interpolate_description_,
     bool use_with_fill_by_sorting_prefix_)
-    : ITransformingStep(input_header_, std::make_shared<const Block>(FillingTransform::transformHeader(*input_header_, sort_description_)), getTraits())
+    : ITransformingStep(
+          input_header_,
+          std::make_shared<const Block>(FillingTransform::transformHeader(*input_header_, sort_description_)),
+          getTraits(sortingIsPreserved(sort_description_, use_with_fill_by_sorting_prefix_)))
     , sort_description(std::move(sort_description_))
     , fill_description(std::move(fill_description_))
     , interpolate_description(interpolate_description_)
     , use_with_fill_by_sorting_prefix(use_with_fill_by_sorting_prefix_)
 {
+}
+
+size_t FillingStep::getPreservedSortPrefixSize() const
+{
+    return preservedSortPrefixSize(sort_description, use_with_fill_by_sorting_prefix);
 }
 
 void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)

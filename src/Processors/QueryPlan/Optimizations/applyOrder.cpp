@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/NegativeLimitByStep.h>
@@ -151,6 +152,26 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
     {
         if (transforming->getDataStreamTraits().preserves_sorting)
             return std::move(*properties);
+
+        /// The trait is all-or-nothing, but filling breaks the order only from one `ORDER BY` key on, so
+        /// the keys ahead of it are still sorted. A collated key stays in: it is ordered by its collation,
+        /// which only a consumer that needs equal values to be adjacent has to reject.
+        if (const auto * filling_step = typeid_cast<const FillingStep *>(transforming))
+        {
+            const auto & filling_description = filling_step->getSortDescription();
+            const size_t preserved = std::min(filling_step->getPreservedSortPrefixSize(), properties->sort_description.size());
+
+            SortDescription prefix;
+            for (size_t i = 0; i < preserved; ++i)
+            {
+                if (properties->sort_description[i].column_name != filling_description[i].column_name)
+                    break;
+                prefix.push_back(properties->sort_description[i]);
+            }
+
+            if (!prefix.empty())
+                return {std::move(prefix), properties->sort_scope};
+        }
     }
 
     if (auto * union_step = typeid_cast<UnionStep *>(parent->step.get()))
