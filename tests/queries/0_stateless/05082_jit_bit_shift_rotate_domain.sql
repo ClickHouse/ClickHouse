@@ -4,7 +4,7 @@
 
 DROP TABLE IF EXISTS t_jit_bit_shift;
 -- `c128` and `c8` are `c0` at the other two widths the arms below need (`230` wraps to `-26` in Int8).
-CREATE TABLE t_jit_bit_shift (c0 UInt8, c128 Int128, c8 Int8) ENGINE = Memory;
+CREATE TABLE t_jit_bit_shift (c0 UInt8, c128 UInt128, c8 Int8) ENGINE = Memory;
 INSERT INTO t_jit_bit_shift VALUES (7, 7, 7), (127, 127, 127), (230, 230, -26);
 
 -- `bitNot` is the compilable child that makes the shape compilable at all: a lone shift over a
@@ -77,17 +77,27 @@ SELECT (SELECT groupArray(bitRotateLeft(bitNot(c0), materialize(toInt8(-1)))) FR
             SETTINGS compile_expressions = 0);
 
 -- A native-width count still compiles for each of the four functions: unsigned for the shifts,
--- which decline a signed count by type, and signed for the rotates, which do not. A shift also
--- keeps compiling a big-integer first argument.
+-- which decline a signed count by type, and signed for the rotates, which do not. Both shifts also
+-- keep compiling a big-integer first argument, and two more instantiations the value rows above rely
+-- on stay compiled: a count wider than the first argument, and a signed first argument.
 SELECT bitShiftLeft(bitNot(c0), materialize(toUInt8(3))) FROM t_jit_bit_shift
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0,
              log_comment = '05082_shl' FORMAT Null;
+SELECT bitShiftLeft(bitNot(c0), materialize(toUInt16(3))) FROM t_jit_bit_shift
+    SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0,
+             log_comment = '05082_shl_wide' FORMAT Null;
 SELECT bitShiftLeft(bitNot(c128), materialize(toUInt8(3))) FROM t_jit_bit_shift
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0,
              log_comment = '05082_shl_big' FORMAT Null;
 SELECT bitShiftRight(bitNot(c0), materialize(toUInt8(3))) FROM t_jit_bit_shift
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0,
              log_comment = '05082_shr' FORMAT Null;
+SELECT bitShiftRight(bitNot(c8), materialize(toUInt16(3))) FROM t_jit_bit_shift
+    SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0,
+             log_comment = '05082_shr_wide' FORMAT Null;
+SELECT bitShiftRight(bitNot(c128), materialize(toUInt8(3))) FROM t_jit_bit_shift
+    SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0,
+             log_comment = '05082_shr_big' FORMAT Null;
 SELECT bitRotateLeft(bitNot(c0), materialize(toInt8(3))) FROM t_jit_bit_shift
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0,
              log_comment = '05082_rotl' FORMAT Null;
@@ -102,16 +112,17 @@ SELECT bitCount(bitNot(c0)) FROM t_jit_bit_shift
 
 SYSTEM FLUSH LOGS query_log;
 
--- Comparing the five shapes with the control instead of pinning a literal keeps this row green in a
--- build with no embedded compiler, where all six are 0.
+-- Comparing the eight shapes with the control instead of pinning a literal keeps this row green in a
+-- build with no embedded compiler, where all nine are 0.
 WITH shapes AS
 (
     SELECT log_comment, argMax(ProfileEvents['CompiledFunctionExecute'] > 0, event_time_microseconds) AS compiled
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-      AND log_comment IN ('05082_shl', '05082_shl_big', '05082_shr', '05082_rotl', '05082_rotr', '05082_control')
+      AND log_comment IN ('05082_shl', '05082_shl_wide', '05082_shl_big', '05082_shr', '05082_shr_wide',
+                          '05082_shr_big', '05082_rotl', '05082_rotr', '05082_control')
     GROUP BY log_comment
 )
-SELECT count() = 6 AND uniqExact(compiled) = 1 FROM shapes;
+SELECT count() = 9 AND uniqExact(compiled) = 1 FROM shapes;
 
 DROP TABLE t_jit_bit_shift;
