@@ -15,6 +15,8 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesCache.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -130,4 +132,31 @@ GTEST_TEST(DataTypesBinaryEncoding, EncodeAndDecode)
     check(DataTypeFactory::instance().get("JSON"));
     check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10)"));
     check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10, max_dynamic_types=10, a.b.c UInt32, SKIP a.c, b.g String, SKIP l.d.f)"));
+}
+
+GTEST_TEST(DataTypesCache, GetSerializationFromDeepType)
+{
+    DataTypePtr type = std::make_shared<DataTypeUInt8>();
+    for (size_t i = 0; i < 301; ++i)
+        type = std::make_shared<DataTypeArray>(type);
+
+    EXPECT_NE(getDataTypesCache().getSerialization(type->getName(), type), nullptr);
+}
+
+GTEST_TEST(DataTypesCache, SerializeDeepDynamicValue)
+{
+    Field field = UInt64(1);
+    for (size_t i = 0; i < 301; ++i)
+        field = Array{std::move(field)};
+
+    for (size_t max_dynamic_types : {0, 1})
+    {
+        auto type = std::make_shared<DataTypeDynamic>(max_dynamic_types);
+        auto column = type->createColumn();
+        column->insert(field);
+
+        WriteBufferFromOwnString ostr;
+        EXPECT_NO_THROW(type->getDefaultSerialization()->serializeBinary(*column, 0, ostr, {}));
+        EXPECT_NO_THROW(type->getDefaultSerialization()->serializeForHashCalculation(*column, 0, ostr));
+    }
 }

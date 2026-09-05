@@ -1,0 +1,12 @@
+<test>
+    <create_query>CREATE TABLE test_dynamic_field_serialization_cache (data JSON(max_dynamic_paths=0)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part=1, min_rows_for_wide_part=1, dynamic_serialization_version='v3', object_serialization_version='v3', object_shared_data_serialization_version='map_with_buckets', object_shared_data_serialization_version_for_zero_level_parts='map_with_buckets'</create_query>
+
+    <fill_query>INSERT INTO test_dynamic_field_serialization_cache SELECT concat('{{"items":[{{"value":', ['"alpha"', '42', '[1,2,3]', '{{"nested":"x"}}'][number % 4 + 1], ',"name":"first","description":"first item","category":"a","count":1,"timestamp":1001,"enabled":true,"score":1.25}},{{"value":', ['"beta"', '43', '[4,5,6]', '{{"nested":"y"}}'][number % 4 + 1], ',"name":"second","description":"second item","category":"b","count":2,"timestamp":1002,"enabled":false,"score":2.5}},{{"value":', ['"gamma"', '44', '[7,8,9]', '{{"nested":"z"}}'][number % 4 + 1], ',"name":"third","description":"third item","category":"c","count":3,"timestamp":1003,"enabled":true,"score":3.75}},{{"value":', ['"delta"', '45', '[10,11,12]', '{{"nested":"w"}}'][number % 4 + 1], ',"name":"fourth","description":"fourth item","category":"d","count":4,"timestamp":1004,"enabled":false,"score":5.0}}]}}') FROM numbers(100000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_dynamic_field_serialization_cache FINAL</fill_query>
+
+    <!-- Reading one nested subcolumn from `Array(JSON)` reconstructs the complete shared-data path
+         and deserializes every inner `Dynamic` field. -->
+    <query>SELECT data.items[].value FROM test_dynamic_field_serialization_cache FORMAT Null SETTINGS max_threads=16</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_dynamic_field_serialization_cache</drop_query>
+</test>
