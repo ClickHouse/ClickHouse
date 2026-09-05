@@ -960,11 +960,9 @@ void ProjectionsDescription::replace(ProjectionDescription && projection)
 VectorWithMemoryTracking<String> ProjectionsDescription::getAllRegisteredNames() const
 {
     VectorWithMemoryTracking<String> names;
-    names.reserve(map.size() + unavailable.size());
+    names.reserve(map.size());
     for (const auto & pair : map)
         names.push_back(pair.first);
-    for (const auto & name : getUnavailableNames())
-        names.push_back(name);
     return names;
 }
 
