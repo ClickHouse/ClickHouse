@@ -26,13 +26,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
-template <typename Consumer>
-void enumerateJSONValues(
-    const ColumnObject & column_object,
-    const DataTypeObject & type_object,
-    Consumer & consumer,
-    size_t start_row = 0,
-    size_t num_rows = std::numeric_limits<size_t>::max())
+struct JSONValueEnumerationState
 {
     struct PathInfo
     {
@@ -48,38 +42,74 @@ void enumerateJSONValues(
         SerializationPtr cached_dynamic_serialization{};
     };
 
-    const auto & typed_path_types = type_object.getTypedPaths();
-    const auto & typed_path_columns = column_object.getTypedPaths();
-    const auto & dynamic_path_columns = column_object.getDynamicPaths();
-    VectorWithMemoryTracking<PathInfo> sorted_paths;
-    sorted_paths.reserve(typed_path_types.size() + dynamic_path_columns.size());
-
-    for (const auto & [path, type] : typed_path_types)
+    struct ObjectPlan
     {
-        const auto & column = typed_path_columns.at(path);
-        const auto value_type = removeNullableOrLowCardinalityNullable(type);
-        const bool is_dynamic = DB::isDynamic(value_type);
-        sorted_paths.push_back({
-            path,
-            value_type,
-            is_dynamic ? String{} : value_type->getName(),
-            column.get(),
-            type->getDefaultSerialization(),
-            is_dynamic,
-            canContainNull(*type)});
+        ColumnPtr column;
+        DataTypePtr type;
+        VectorWithMemoryTracking<PathInfo> paths;
+    };
+
+    UnorderedMapWithMemoryTracking<const ColumnObject *, ObjectPlan> object_plans;
+    UnorderedMapWithMemoryTracking<String, SerializationPtr> serializations;
+    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<MutableColumnPtr>> shared_columns;
+    size_t shared_value_depth = 0;
+    const FormatSettings format_settings;
+};
+
+template <typename Consumer>
+void enumerateJSONValues(
+    const ColumnObject & column_object,
+    const DataTypeObject & type_object,
+    Consumer & consumer,
+    size_t start_row = 0,
+    size_t num_rows = std::numeric_limits<size_t>::max())
+{
+    using PathInfo = JSONValueEnumerationState::PathInfo;
+    auto & state = consumer.getEnumerationState();
+    auto prepare_paths = [&]
+    {
+        const auto & typed_path_types = type_object.getTypedPaths();
+        const auto & typed_path_columns = column_object.getTypedPaths();
+        const auto & dynamic_path_columns = column_object.getDynamicPaths();
+        VectorWithMemoryTracking<PathInfo> sorted_paths;
+        sorted_paths.reserve(typed_path_types.size() + dynamic_path_columns.size());
+
+        for (const auto & [path, type] : typed_path_types)
+        {
+            const auto & column = typed_path_columns.at(path);
+            const auto value_type = removeNullableOrLowCardinalityNullable(type);
+            const bool is_dynamic = DB::isDynamic(value_type);
+            sorted_paths.push_back({
+                path,
+                value_type,
+                is_dynamic ? String{} : value_type->getName(),
+                column.get(),
+                type->getDefaultSerialization(),
+                is_dynamic,
+                canContainNull(*type)});
+        }
+
+        for (const auto & [path, column] : dynamic_path_columns)
+            sorted_paths.push_back({path, nullptr, {}, column.get(), nullptr, true, false});
+
+        std::sort(sorted_paths.begin(), sorted_paths.end(), [](const PathInfo & lhs, const PathInfo & rhs) { return lhs.path < rhs.path; });
+        return sorted_paths;
+    };
+
+    JSONValueEnumerationState::ObjectPlan temporary_plan;
+    /// Deserialized shared columns can change their paths and dynamic variants between values.
+    auto & plan = state.shared_value_depth ? temporary_plan : state.object_plans[&column_object];
+    if (plan.type.get() != &type_object)
+    {
+        plan.column = column_object.getPtr();
+        plan.type = type_object.getPtr();
+        plan.paths = prepare_paths();
     }
-
-    for (const auto & [path, column] : dynamic_path_columns)
-        sorted_paths.push_back({path, nullptr, {}, column.get(), nullptr, true, false});
-
-    std::sort(sorted_paths.begin(), sorted_paths.end(), [](const PathInfo & lhs, const PathInfo & rhs) { return lhs.path < rhs.path; });
-
-    UnorderedMapWithMemoryTracking<String, SerializationPtr> serializations_cache;
-    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> shared_columns_cache;
+    auto & serializations_cache = state.serializations;
 
     const auto & shared_data_offsets = column_object.getSharedDataOffsets();
     const auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
-    const FormatSettings format_settings;
+    const auto & format_settings = state.format_settings;
     using PreparedPath = typename Consumer::PreparedPath;
 
     auto consume_shared = [&](std::string_view path, std::string_view value_data, const PreparedPath * prepared_path = nullptr)
@@ -165,14 +195,16 @@ void enumerateJSONValues(
         if (!has_cached_type && !consumer.shouldConsumeValue(*prepared_path, *type))
             return;
 
-        auto [column_it, inserted] = shared_columns_cache.try_emplace(*type_name);
-        if (inserted)
-            column_it->second = type->createColumn();
-
-        auto & temporary_column = *column_it->second;
-        serialization->deserializeBinary(temporary_column, buffer, format_settings);
-        consumer.consumeValue(*prepared_path, *type, *type_name, *serialization, temporary_column, 0, true, format_settings);
-        temporary_column.popBack(1);
+        auto & available_columns = state.shared_columns[*type_name];
+        auto column = available_columns.empty() ? type->createColumn() : std::move(available_columns.back());
+        if (!available_columns.empty())
+            available_columns.pop_back();
+        serialization->deserializeBinary(*column, buffer, format_settings);
+        ++state.shared_value_depth;
+        consumer.consumeValue(*prepared_path, *type, *type_name, *serialization, *column, 0, true, format_settings);
+        --state.shared_value_depth;
+        column->popBack(1);
+        available_columns.push_back(std::move(column));
     };
 
     auto consume_path = [&](PathInfo & entry, const auto & prepared_path, size_t row)
@@ -230,7 +262,7 @@ void enumerateJSONValues(
     chassert(start_row <= shared_data_offsets.size());
     const size_t end_row = start_row + std::min(num_rows, shared_data_offsets.size() - start_row);
 
-    for (auto & path : sorted_paths)
+    for (auto & path : plan.paths)
     {
         const auto * prepared_path = consumer.preparePath(path.path, path.is_dynamic ? nullptr : path.type.get());
         if (!prepared_path)
