@@ -1,0 +1,8 @@
+-- the legal forms write the current moment
+1	1
+1	1
+-- the illegal forms are errors
+Code: 36. The argument of '$currentDate' must be true or {"$type": "date"}
+Code: 48. The 'timestamp' type of '$currentDate' is not supported, only 'date' is
+Code: 36. The argument of '$currentDate' must be true or {"$type": "date"}
+Code: 36. The argument of '$currentDate' must be true or {"$type": "date"}

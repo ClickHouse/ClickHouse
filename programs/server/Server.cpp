@@ -152,6 +152,7 @@
 #include <Common/JemallocCacheArena.h>
 #include <Common/JemallocMergeTreeArena.h>
 
+#include <Server/MongoHandlerFactory.h>
 #include "config.h"
 #include <Common/config_version.h>
 
@@ -544,6 +545,8 @@ namespace ProfileEvents
     extern const Event InterfaceMySQLReceiveBytes;
     extern const Event InterfacePostgreSQLSendBytes;
     extern const Event InterfacePostgreSQLReceiveBytes;
+    extern const Event InterfaceMongoSendBytes;
+    extern const Event InterfaceMongoReceiveBytes;
 }
 
 namespace fs = std::filesystem;
@@ -3954,6 +3957,14 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             return TCPServerConnectionFactory::Ptr(
                 new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"), ProfileEvents::InterfaceInterserverReceiveBytes, ProfileEvents::InterfaceInterserverSendBytes)
             );
+        if (type == "mongo")
+        {
+#if USE_MONGODB && USE_RAPIDJSON
+            return TCPServerConnectionFactory::Ptr(new MongoHandlerFactory(*this, ProfileEvents::InterfaceMongoReceiveBytes, ProfileEvents::InterfaceMongoSendBytes));
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mongo protocol is disabled because ClickHouse has been built without the MongoDB or the rapidjson library");
+#endif
+        }
 
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol configuration error, unknown protocol name '{}'", type);
     };
@@ -4354,6 +4365,35 @@ void Server::createServers(
                          socket,
                          makeServerParams(server_settings),
                          connection_filter));
+#endif
+            });
+        }
+
+        if (server_type.shouldStart(ServerType::Type::MONGO))
+        {
+            port_name = "mongo_port";
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            {
+#if USE_MONGODB && USE_RAPIDJSON
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
+                socket.setReceiveTimeout(Poco::Timespan());
+                socket.setSendTimeout(settings[Setting::send_timeout]);
+                return ProtocolServerAdapter(
+                    listen_host,
+                    port_name,
+                    "Mongo compatibility protocol: " + address.toString(),
+                    std::make_unique<TCPServer>(
+                        new MongoHandlerFactory(*this, ProfileEvents::InterfaceMongoReceiveBytes, ProfileEvents::InterfaceMongoSendBytes),
+                        server_pool,
+                        socket,
+                        makeServerParams(server_settings),
+                        connection_filter));
+#else
+                /// The port is a known setting in every build, so a configuration that asks for the
+                /// endpoint must not start a server that silently never listens on it.
+                UNUSED(port);
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mongo protocol is disabled because ClickHouse has been built without the MongoDB or the rapidjson library");
 #endif
             });
         }
