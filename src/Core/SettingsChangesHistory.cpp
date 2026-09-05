@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"cascades_aggregation_pushdown", false, true, "New setting to consider pushing partial aggregation below a join (eager aggregation) in the Cascades optimizer."},
             {"optimize_read_in_reverse_order_final", false, true, "New setting to enable the read-in-order optimization when reading in reverse order of the sorting key with the `FINAL` modifier from `ReplacingMergeTree` tables."},
             {"ast_fuzzer_oracle", false, false, "New setting to enable correctness oracle checks in the server-side AST fuzzer."},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
@@ -50,6 +51,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_sharding_aggregator", false, false, "Obsolete setting, the sharded aggregator has been removed in favor of the adaptive aggregator (`enable_adaptive_aggregator`)."},
             {"allow_preliminary_distinct_abandoning", false, true, "New setting that lets the preliminary `DISTINCT` give up deduplicating mostly-unique input, because the final `DISTINCT` deduplicates its output again."},
             {"query_plan_fuse_filter_into_array_join", false, true, "New optimization to fuse a filter on ARRAY JOINed columns into the ARRAY JOIN step, enabled by default."},
+            {"iceberg_file_entries_queue_size", 100, 100, "New setting for the previously hardcoded capacity of the queue between the Iceberg data manifest decode tasks and the query."},
+            {"iceberg_manifest_decode_concurrency", 2, 4, "New setting bounding how many Iceberg manifest files are decoded concurrently, for delete and data manifests alike. It replaces `iceberg_delete_manifest_decode_concurrency` (kept as an alias). `2` approximates the pre-26.9 data path, which decoded one manifest at a time with the next one's fetch already in flight; under `compatibility` at or below 26.8 the delete decode therefore also runs at 2 rather than its released default of 4, preserving the older data-path memory envelope at the cost of some delete-decode overlap."},
             {"query_plan_lower_array_join_function", false, false, "New optimization to lower an arrayJoin function into a real ARRAY JOIN step; disabled by default."},
             {"adaptive_aggregator_freeze_threshold_bytes", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."},
             {"allow_experimental_ai_functions", false, false, "The setting is obsolete, AI functions are beta now and enabled by default."},

@@ -18,6 +18,7 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 
@@ -105,6 +106,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
+    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
     auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
         time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
@@ -186,6 +188,9 @@ void StoragePrometheusQuery::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
+    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.evaluation_settings.time_series_storage_id, context));
+    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
+
     LOG_INFO(log, "Building SQL to evaluate promql: {}", *config.promql_query);
     PrometheusQueryToSQL::Converter converter{config.promql_query, config.evaluation_settings};
     ASTPtr select_query = converter.getSQL();

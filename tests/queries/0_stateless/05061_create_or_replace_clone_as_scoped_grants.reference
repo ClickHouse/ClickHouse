@@ -1,0 +1,10 @@
+-- [SELECT on the source, ALTER DELETE and INSERT on the target] the clone must succeed:
+succeeded
+1
+2
+3
+-- [no ALTER DELETE or INSERT on the target] the clone must be denied:
+ACCESS_DENIED
+-- the denied clone left the table empty and no temporary table behind:
+0
+0
