@@ -20,9 +20,14 @@ SELECT 'the column really is sparse';
 SELECT serialization_kind FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_sparse_nondeterministic' AND column = 's' AND active;
 
+-- Stored sparse is not the same as reaching the function sparse, and a step that materialized it
+-- first would leave every assertion below unchanged. This reports the representation the function
+-- is actually handed.
+SELECT DISTINCT dumpColumnStructure(s) LIKE 'UInt64, Sparse(%' FROM t_sparse_nondeterministic;
+
 SELECT 'generators that never read their argument';
--- These opt out of the sparse handling entirely, so the column is not materialized on their behalf.
 SELECT uniqExact(generateUUIDv4(s)) FROM t_sparse_nondeterministic;
+SELECT uniqExact(generateUUIDv7(s)) FROM t_sparse_nondeterministic;
 SELECT uniqExact(rand(s)) > 900 FROM t_sparse_nondeterministic;
 SELECT count() BETWEEN 400 AND 600 FROM t_sparse_nondeterministic WHERE rand(s) % 2 = 0;
 
