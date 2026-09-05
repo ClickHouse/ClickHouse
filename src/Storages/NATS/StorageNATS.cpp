@@ -357,8 +357,23 @@ bool StorageNATS::subscribeConsumers()
             /// only reaches the consumers that are in the pool at that moment: a direct `SELECT`
             /// holds one out of the pool and hands it back subscribed whenever it found it that
             /// way. What such a consumer buffered belongs to the window when the table was not
-            /// streaming - messages published while the materialized view was detached - so it is
-            /// dropped here rather than inserted into the views by the cycles that follow.
+            /// streaming - messages published while the materialized view was detached - and must
+            /// not be inserted into the views by the cycles that follow. Clearing the queue alone
+            /// does not guarantee that: `onMsg` keeps appending from the NATS client thread, and
+            /// `subscribe` does nothing for a consumer that is subscribed already, so the live
+            /// subscription is replaced the way `unsubscribeConsumers` would have replaced it. The
+            /// queue is finished before the drain inside `unsubscribe` delivers what the
+            /// subscription still holds, so nothing from that window can land behind the cleanup,
+            /// and a JetStream message goes back to the broker while the subscription it arrived
+            /// on is still alive, so it is redelivered at once rather than after the ACK deadline.
+            if (consumer->isSubscribed())
+            {
+                consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
+                consumer->unsubscribe();
+            }
+
+            /// What an unsubscribed consumer still holds are leftovers of a subscription that is
+            /// already gone, which can only be thrown away.
             consumer->dropBuffered();
             consumer->subscribe();
             ++num_initialized;
