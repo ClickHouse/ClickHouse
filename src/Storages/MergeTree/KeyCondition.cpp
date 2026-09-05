@@ -4,6 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -34,6 +35,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSet.h>
@@ -2516,13 +2518,94 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
     }
 }
 
+/// True when casting the KEY into `set_element_type` -- the direction runtime membership takes --
+/// can map two distinct key values onto one set value silently. Detects only the classes below, and
+/// the caller consults it only where the forward `canBeSafelyCast` was rejected.
+static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const DataTypePtr & set_element_type)
+{
+    auto key_unwrapped = removeLowCardinalityAndNullable(key_type);
+    auto set_unwrapped = removeLowCardinalityAndNullable(set_element_type);
+
+    auto key_which = WhichDataType(key_unwrapped);
+    auto set_which = WhichDataType(set_unwrapped);
+
+    /// A shape mismatch is not itself a collapse, so it falls through rather than declining.
+    if (key_which.isArray() && set_which.isArray())
+        return keyToSetConversionMayCollapse(
+            assert_cast<const DataTypeArray &>(*key_unwrapped).getNestedType(),
+            assert_cast<const DataTypeArray &>(*set_unwrapped).getNestedType());
+
+    if (key_which.isMap() && set_which.isMap())
+    {
+        const auto & key_map = assert_cast<const DataTypeMap &>(*key_unwrapped);
+        const auto & set_map = assert_cast<const DataTypeMap &>(*set_unwrapped);
+        return keyToSetConversionMayCollapse(key_map.getKeyType(), set_map.getKeyType())
+            || keyToSetConversionMayCollapse(key_map.getValueType(), set_map.getValueType());
+    }
+
+    if (key_which.isTuple() && set_which.isTuple())
+    {
+        const auto & key_elements = assert_cast<const DataTypeTuple &>(*key_unwrapped).getElements();
+        const auto & set_elements = assert_cast<const DataTypeTuple &>(*set_unwrapped).getElements();
+        if (key_elements.size() != set_elements.size())
+            return false;
+
+        for (size_t i = 0; i < key_elements.size(); ++i)
+            if (keyToSetConversionMayCollapse(key_elements[i], set_elements[i]))
+                return true;
+
+        return false;
+    }
+
+    /// A text key is equality-preserving only against the same text type: `FixedString` padding and
+    /// text-to-numeric parsing both merge distinct keys.
+    if (key_which.isStringOrFixedString() && !key_unwrapped->equals(*set_unwrapped))
+        return true;
+
+    /// A temporal target that cannot represent a component the key carries merges every key sharing
+    /// the surviving component, and no round-trip check rejects it.
+    if (key_which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64()
+        && set_which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64())
+    {
+        auto carries_date = [](const WhichDataType & which)
+        { return which.isDateOrDate32() || which.isDateTimeOrDateTime64(); };
+        auto carries_time_of_day = [](const WhichDataType & which)
+        { return which.isTimeOrTime64() || which.isDateTimeOrDateTime64(); };
+
+        if ((carries_date(key_which) && !carries_date(set_which))
+            || (carries_time_of_day(key_which) && !carries_time_of_day(set_which)))
+            return true;
+    }
+
+    /// A scaled key is cast through `DecimalUtils::convertToImpl`, which rejects only on range
+    /// overflow, so each branch below loses a different part of the value silently.
+    if (auto key_scale = tryGetDecimalScale(*key_unwrapped))
+    {
+        /// Coarser target scale divides the extra digits away.
+        if (auto set_scale = tryGetDecimalScale(*set_unwrapped))
+        {
+            if (*key_scale > *set_scale)
+                return true;
+        }
+        /// An integer target keeps only the whole part; at scale 0 that division is the identity.
+        else if (set_which.isInteger() && *key_scale > 0)
+            return true;
+        /// A float target loses mantissa precision at any scale.
+        else if (set_which.isFloat())
+            return true;
+    }
+
+    return false;
+}
+
 static bool tryPrepareSetColumnsForIndex(
     Columns & set_columns,
     DataTypes & set_types,
     const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
     const DataTypes & data_types,
     const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
-    size_t args_count)
+    size_t args_count,
+    bool & set_is_approximate)
 {
     Columns new_columns;
     DataTypes new_types;
@@ -2559,6 +2642,7 @@ static bool tryPrepareSetColumnsForIndex(
 
     IColumn::Filter filter(transformed_set_columns.front()->size(), 1);
     bool filter_used = false;
+    bool any_column_conversion_is_approximate = false;
 
     for (size_t indexes_mapping_index = 0; indexes_mapping_index < indexes_mapping.size(); ++indexes_mapping_index)
     {
@@ -2605,6 +2689,7 @@ static bool tryPrepareSetColumnsForIndex(
         /// `Nothing` is another representation of an all-NULL literal array and is handled below.
         const NullMap * source_null_map = nullptr;
         const bool source_is_nothing = WhichDataType(*set_element_type).isNothing();
+        bool conversion_preserves_equality = false;
 
         if (isNullableOrLowCardinalityNullable(set_element_type))
         {
@@ -2615,6 +2700,18 @@ static bool tryPrepareSetColumnsForIndex(
             }
 
             set_element_type = removeNullable(set_element_type);
+
+            /// Membership is decided by casting the KEY into the set's type, while the set index is
+            /// built by casting set values into the KEY's type. The atom is exact only when neither
+            /// direction can lose a match.
+            conversion_preserves_equality = canBeSafelyCast(set_element_type, key_column_type)
+                && !keyToSetConversionMayCollapse(key_column_type, set_element_type);
+
+            /// A key-to-set cast that maps two distinct keys onto one set value makes the pruning set
+            /// an UNDER-approximation, which `relaxed` cannot repair: it only ever forces
+            /// `can_be_false = true` and never widens `can_be_true`.
+            if (keyToSetConversionMayCollapse(key_column_type, set_element_type))
+                return false;
 
             const auto * source_nullable_column = typeid_cast<const ColumnNullable *>(transformed_set_columns[set_element_index].get());
             if (!source_nullable_column)
@@ -2645,6 +2742,9 @@ static bool tryPrepareSetColumnsForIndex(
                 filter[i] = 0;
         }
 
+        if (source_null_map && !conversion_preserves_equality)
+            any_column_conversion_is_approximate = true;
+
         if (key_is_nullable && (source_null_map || source_is_nothing))
         {
             auto null_map = ColumnUInt8::create();
@@ -2667,6 +2767,12 @@ static bool tryPrepareSetColumnsForIndex(
     {
         for (size_t set_element_index = 0; set_element_index < transformed_set_columns.size(); ++set_element_index)
             set_columns[set_element_index] = transformed_set_columns[set_element_index]->filter(filter, 0);
+
+        /// An empty set is exact by construction, and `extractPlainRanges` gives up its size-0 fast
+        /// paths on any relaxed atom. Emptiness is only settled here, once the filter shared by every
+        /// column has been applied.
+        if (any_column_conversion_is_approximate && !set_columns.front()->empty())
+            set_is_approximate = true;
     }
     else
     {
@@ -2746,8 +2852,9 @@ bool KeyCondition::tryPrepareSetIndexForIn(
         }
     }
 
+    bool set_is_approximate = false;
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count, set_is_approximate))
         return false;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
@@ -2772,7 +2879,11 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     ///    For partition pruning we may transform set elements via functions from the key expression,
     ///    which relaxes the predicate. Example: `PARTITION BY toDate(ts)` allows turning
     ///    `ts NOT IN ('2026-02-03 19:00:00')` into `toDate(ts) NOT IN ('2026-02-03')`, which is not equivalent.
-    if (adjusted_indexes_mapping.size() < set_types.size())
+    ///
+    /// - `set_is_approximate`
+    ///    The source-to-key conversion is not equality-preserving, so the set is a superset image of
+    ///    the predicate.
+    if (adjusted_indexes_mapping.size() < set_types.size() || set_is_approximate)
         out.relaxed = true;
 
     return true;
@@ -2849,8 +2960,9 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     Columns set_columns = {array_elements};
     DataTypes set_types = {array_nested_type};
 
+    bool set_is_approximate = false;
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count, set_is_approximate))
         return false;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
@@ -2876,7 +2988,11 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     ///    which relaxes the predicate. Example: `PARTITION BY toDate(ts)` allows turning
     ///    `has([toDateTime('2026-02-03 19:00:00')], ts)` into `has([toDate('2026-02-03')], toDate(ts))`,
     ///    which is not equivalent.
-    if (adjusted_indexes_mapping.size() < set_types.size())
+    ///
+    /// - `set_is_approximate`
+    ///    The source-to-key conversion is not equality-preserving, so the set is a superset image of
+    ///    the predicate.
+    if (adjusted_indexes_mapping.size() < set_types.size() || set_is_approximate)
         out.relaxed = true;
 
     return true;
