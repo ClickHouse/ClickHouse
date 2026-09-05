@@ -4566,6 +4566,10 @@ Reject patterns which will likely be expensive to evaluate with hyperscan (due t
 )", 0) \
     DECLARE(Bool, allow_simdjson, true, R"(
 Allow using simdjson library in 'JSON*' functions if AVX2 instructions are available. If disabled rapidjson will be used.
+
+:::note
+simdjson supports only valid UTF-8, as the JSON specification requires. Values containing invalid UTF-8 cannot be parsed unless this setting is disabled.
+:::
 )", 0) \
     DECLARE(Bool, allow_introspection_functions, false, R"(
 Enables or disables [introspection functions](/reference/functions/regular-functions/introspection) for query profiling.

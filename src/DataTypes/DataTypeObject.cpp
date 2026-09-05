@@ -1010,6 +1010,12 @@ SELECT json FROM test;
 
 It is possible to cast various types using the special syntax `::JSON`.
 
+<Note>
+By default the simdjson parser is used, and it supports only valid UTF-8. Casting a value which contains
+invalid UTF-8 raises `INCORRECT_DATA`. Set [`allow_simdjson`](/reference/settings/session-settings/allow#allow_simdjson)
+to `0` to fall back to rapidjson, which parses such values.
+</Note>
+
 #### CAST from `String` to `JSON` {#cast-from-string-to-json}
 
 ```sql title="Query"
