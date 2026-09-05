@@ -140,6 +140,8 @@ public:
     bool getFinal() const noexcept { return final; }
     void setFinal(bool new_value);
     void setProduceResultsInBucketOrder(bool new_value) { should_produce_results_in_order_of_bucket_number = new_value; }
+    /// Re-bases the aggregation onto a new input with a different key set; aggregates unchanged.
+    void rebaseOntoInput(const SharedHeader & new_input_header, Names new_keys);
     size_t getMaxBlockSize() const noexcept { return max_block_size; }
     size_t getMaxBlockSizeForAggregationInOrder() const noexcept { return aggregation_in_order_max_block_bytes; }
     size_t getMergeThreads() const noexcept { return merge_threads; }
