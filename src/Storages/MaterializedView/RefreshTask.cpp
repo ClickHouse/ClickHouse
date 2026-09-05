@@ -1344,7 +1344,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             });
 
             /// Carry the refresh query's normalized hash so that `NORMALIZED_QUERY_HASH` quotas account
-            /// the refresh write (`WRITTEN_BYTES` pre-check and `CountingTransform`) to the refresh
+            /// the refresh write (`WRITTEN_ROWS`/`WRITTEN_BYTES` pre-check and `CountingTransform`) to the refresh
             /// pattern's bucket instead of the shared hash-0 bucket.
             refresh_context->setNormalizedQueryHash(normalized_query_hash);
             refresh_context->setProgressCallback([this](const Progress & prog)

@@ -60,6 +60,7 @@ The resource consumption calculated for each interval is output to the server lo
         <query_selects>100</query_selects>
         <query_inserts>100</query_inserts>
         <written_bytes>5000000</written_bytes>
+        <written_rows>100000</written_rows>
         <errors>100</errors>
         <result_rows>1000000000</result_rows>
         <read_rows>100000000000</read_rows>
@@ -106,6 +107,8 @@ Here are the amounts that can be restricted:
 `read_bytes` - The total size read from tables for running the query on all remote servers.
 
 `written_bytes` - The total size of a writing operation. 
+
+`written_rows` - The total number of rows written by `INSERT` queries.
 
 `execution_time` – The total query execution time, in seconds (wall time).
 
