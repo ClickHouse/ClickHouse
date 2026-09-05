@@ -42,7 +42,11 @@ PrettyBlockOutputFormat::PrettyBlockOutputFormat(
             readable_number_tip = true;
     }
     format_settings.pretty_format = true;
+    /// Pretty renders nested values with default JSON settings, independent of output_format_json_*.
+    /// type_json_skip_null_typed_paths is an exception: it decides which JSON paths exist at all.
+    const bool skip_null_typed_paths = format_settings.json.type_json_skip_null_typed_paths;
     format_settings.json = FormatSettings::JSON{};
+    format_settings.json.type_json_skip_null_typed_paths = skip_null_typed_paths;
     format_settings.json.pretty_print_indent_multiplier = 1;
 
     use_nbsp_for_padding = format_settings.pretty.use_nbsp_for_padding
