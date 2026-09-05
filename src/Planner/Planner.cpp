@@ -126,6 +126,7 @@ namespace Setting
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_group_by_top_k_optimization;
     extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
+    extern const SettingsBool group_by_top_k_optimization_shared_boundary;
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool extremes;
     extern const SettingsBool force_aggregation_in_order;
@@ -831,6 +832,7 @@ void applyTopKPushdownToPartialAggregation(
             .nulls_directions = std::move(nulls_directions),
             .key_columns = sort_description.size(),
             .observation_rows = settings[Setting::group_by_top_k_optimization_observation_rows],
+            .shared_boundary = settings[Setting::group_by_top_k_optimization_shared_boundary],
         });
 }
 

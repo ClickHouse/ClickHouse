@@ -183,6 +183,7 @@ public:
             std::vector<int> nulls_directions;      /// per-column NULLS/NaNs directions
             size_t key_columns = 0;                 /// leading GROUP BY columns the heap ranks on
             UInt64 observation_rows = 65536;        /// rows before the pure-overhead freeze check; 0 disables it (see the group_by_top_k_optimization_* settings)
+            bool shared_boundary = true;            /// let the per-thread sets skip against the tightest boundary published by any thread
         };
         std::optional<TopKParams> top_k;
 
@@ -498,6 +499,11 @@ private:
     /// Types of aggregate function states (DataTypeAggregateFunction), one per aggregate.
     const DataTypes aggregate_state_types;
     Params params;
+
+    /// The tightest top-K skip boundary any aggregation thread has published; shared by the
+    /// per-thread heaps of this aggregation (see `SharedTopKBoundary`). Mutable because the
+    /// execution paths that publish and read it are `const`.
+    mutable SharedTopKBoundary top_k_shared_boundary;
 
     AggregatedDataVariants::Type method_chosen;
 
