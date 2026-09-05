@@ -12,6 +12,11 @@ from typing import Dict, List
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika import Secret
+from ci.praktika.docker import (
+    BUILDX_TRANSIENT_ERRORS,
+    is_apt_mirror_failure,
+    terminal_build_failure,
+)
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -236,128 +241,9 @@ def gen_tags(version_str: str, tag_type: str) -> List[str]:
     return tags
 
 
-# `docker buildx build` resolves base/SBOM-scanner images such as
-# `docker/buildkit-syft-scanner` (pulled for the SBOM attestation) from docker.io, which
-# intermittently returns transient HTTP errors while resolving and while pushing
-# image layers, and the build itself hits `apt-get` package mirrors that occasionally
-# refuse connections. Retry the buildx commands only on genuine
-# registry/network/mirror *failure* signatures. None of these strings appear in
-# normal `--progress=plain` output (unlike progress text such as "resolve image
-# config"), so a real Dockerfile/build error (RUN/COPY/package install) still fails
-# fast on the first attempt. The count is bounded by the job budget below.
+# One invocation is retried this many times against the same mirror, on the
+# signatures in `BUILDX_TRANSIENT_ERRORS`. The count is bounded by the job budget below.
 BUILDX_RETRIES = 2
-BUILDX_RETRY_ERRORS = [
-    # Docker registry (docker.io / registry-1.docker.io)
-    "failed to do request",
-    # One containerd error, formatted `unexpected status from <method> request to <url>:
-    # <status>`, so the method is an interpolated field and not part of the failure.
-    "unexpected status from ",
-    "500 Internal Server Error",
-    "502 Bad Gateway",
-    "503 Service Unavailable",
-    "504 Gateway Timeout",
-    "429 Too Many Requests",
-    # Network / TLS
-    "TLS handshake timeout",
-    "i/o timeout",
-    "connection reset by peer",
-    "connection refused",
-    "unexpected EOF",
-    # apt-get package mirrors
-    "Failed to fetch",
-    "Connection failed",
-    "Connection timed out",
-]
-
-# A single apt mirror can stay broken for longer than `BUILDX_RETRIES` attempts
-# take: on 2026-08-21 `us-east-1.ec2.ports.ubuntu.com` answered `503` and served
-# ~20 kB/s for half an hour, which is long enough to exhaust every retry and red
-# the arm64 server image on master. When the retries against one mirror are used
-# up on an apt *download* failure, the whole build is repeated against the next
-# mirror in `apt_mirror_variants` instead of failing the check. These signatures
-# say "this mirror did not hand over the file"; a broken package name, an
-# unsatisfiable dependency or any other genuine packaging error produces none of
-# them and still fails right away.
-APT_MIRROR_ERRORS = [
-    # `apt-get install` could not download a .deb, and the summary line after it
-    "Failed to fetch",
-    "Unable to fetch some archives",
-    # `apt-get update` could not refresh the package lists
-    "Some index files failed to download",
-]
-
-
-# `--progress=plain` prints the whole build, so a signature found anywhere in the
-# output says nothing about what stopped the build: `apt-get update` warns with
-# `W: Failed to fetch ...` and carries on, and the step that actually failed can be a
-# later `wget` or `dpkg` with a genuine packaging error. Two things narrow the match
-# to the failure itself - the fenced context block that buildx prints for the step it
-# stopped on, and apt's own `E:` severity, which distinguishes "could not get the
-# file" from a miss apt recovered from.
-BUILDX_FAILURE_FENCE = "------"
-# buildx has reworded this line: it used to read `ERROR: failed to solve: ...` and
-# since 0.23 reads `ERROR: failed to build: failed to solve: ...` (measured on 0.30.1).
-# Matching the whole phrase pinned the old wording, so `terminal_build_failure` found
-# no terminal step, every failure was classified as "not the mirror", and the fallback
-# below was dead code from the day it was added: on 2026-08-26 the arm64 server and
-# keeper images reded on master on a `503` from `us-east-1.ec2.ports.ubuntu.com`
-# without ever rebuilding against Canonical. Anchor on the two parts that did not
-# move - buildx starts its top-level errors at the beginning of the line with
-# `ERROR: `, and this one names the solve step - so a future infix cannot break it.
-BUILDX_ERROR_PREFIX = "ERROR: "
-BUILDX_SOLVE_ERROR = "failed to solve:"
-# Inside the fence, buildx repeats the failing step's command as a header before its
-# output. That is the recipe, not what happened: `RUN ... && apt-get install ...` names
-# apt, and a `RUN` that echoes or greps for one of the signatures below would match on
-# its own text alone. Only the output lines get a verdict.
-BUILDX_STEP_HEADER_PREFIX = " > "
-APT_ERROR_SEVERITY = "E: "
-
-
-def is_buildx_solve_error(line: str) -> bool:
-    """Is this buildx's own top-level "the build failed" line?
-
-    The step output that precedes it repeats the same text, so requiring the line to
-    *start* with `ERROR: ` is what keeps the per-step `#12 ERROR: ...` copy and the
-    fenced `61.2 E: ...` body from standing in for the terminal line.
-    """
-    return line.startswith(BUILDX_ERROR_PREFIX) and BUILDX_SOLVE_ERROR in line
-
-
-def terminal_build_failure(info: str) -> str:
-    """Output of the step the build stopped on, fences included.
-
-    A failed `docker buildx build --progress=plain` ends with the failing step's own
-    output fenced between `------` lines, then the offending `Dockerfile` lines, then a
-    top-level `ERROR: ... failed to solve: ...`. Everything above that fence belongs to
-    steps that succeeded, and everything below it is source, not output - so the block
-    ends at the closing fence, while the top-level error still has to be there as proof
-    that this is where the build stopped. Empty when the shape is absent - a timed-out
-    or truncated log - so callers fail closed.
-    """
-    lines = info.splitlines()
-    # Retries truncate the log, so a log with several attempts in it is one that was
-    # concatenated; either way the last solve error is the one that ended the build.
-    ends = [i for i, line in enumerate(lines) if is_buildx_solve_error(line)]
-    if not ends:
-        return ""
-    end = ends[-1]
-    fences = [
-        i for i, line in enumerate(lines[:end]) if line.strip() == BUILDX_FAILURE_FENCE
-    ]
-    if len(fences) < 2:
-        return ""
-    return "\n".join(lines[fences[-2] : fences[-1] + 1])
-
-
-def is_apt_mirror_failure(info: str) -> bool:
-    """Did the step that stopped the build fail because a mirror withheld a file?"""
-    return any(
-        not line.startswith(BUILDX_STEP_HEADER_PREFIX)
-        and APT_ERROR_SEVERITY in line
-        and any(error in line for error in APT_MIRROR_ERRORS)
-        for line in terminal_build_failure(info).splitlines()
-    )
 
 
 def apt_mirror_variants(apt_mirror_region: str) -> List[List[str]]:
@@ -387,7 +273,12 @@ BUILDX_TIMEOUT_MESSAGE = "ERROR: docker buildx timed out"
 # as clickhouse_proc.py's _TIMEOUT_KILL_DIAG.
 BUILDX_TIMEOUT_KILL_DIAG = "sending signal KILL to command"
 # Both sentinels must go to stderr: Shell.run matches retry_errors against stderr only.
-BUILDX_RETRY_ERRORS += [BUILDX_TIMEOUT_MESSAGE, BUILDX_TIMEOUT_KILL_DIAG]
+# A new list rather than `+=`: these two are this job's own, and `BUILDX_TRANSIENT_ERRORS`
+# is shared with the image build job.
+BUILDX_RETRY_ERRORS = list(BUILDX_TRANSIENT_ERRORS) + [
+    BUILDX_TIMEOUT_MESSAGE,
+    BUILDX_TIMEOUT_KILL_DIAG,
+]
 BUILDX_TIMEOUT_KILL_AFTER = 120
 # A per-invocation bound does not bound the job: main() loops over os variants and tags,
 # so the invocation count is not fixed. Keep back this much of the cap for recording a

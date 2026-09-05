@@ -4,6 +4,7 @@ import json
 import os
 import platform
 import sys
+import time
 import traceback
 from pathlib import Path
 
@@ -31,6 +32,15 @@ if "." not in sys.path:
 
 assert Settings.CI_CONFIG_RUNS_ON
 
+# Every image is built inside this one budget, so `Docker.build` is given what is left
+# of it and sizes its own bounds from that.
+DOCKER_BUILD_JOB_TIMEOUT_S = int(5.5 * 3600)
+# Cleanup is best effort and runs inside the reserve the build ladder keeps back for
+# recording a result, so the phase is bounded as a whole: a bounded call spends its own
+# timeout plus `_terminate`'s grace, which per-command bounds cannot cap. Worst case is
+# this budget plus one grace, 360s, leaving the reserve the ladder's kill and the upload.
+DOCKER_CLEANUP_BUDGET_S = 240
+
 
 _workflow_config_job = Job.Config(
     name=Settings.CI_CONFIG_JOB_NAME,
@@ -46,21 +56,21 @@ _workflow_config_job = Job.Config(
 _docker_build_manifest_job = Job.Config(
     name=Settings.DOCKER_BUILD_MANIFEST_JOB_NAME,
     runs_on=Settings.DOCKER_MERGE_RUNS_ON,
-    timeout=int(5.5 * 3600),
+    timeout=DOCKER_BUILD_JOB_TIMEOUT_S,
     command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_MANIFEST_JOB_NAME}'",
 )
 
 _docker_build_amd_linux_job = Job.Config(
     name=Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME,
     runs_on=Settings.DOCKER_BUILD_AMD_RUNS_ON,
-    timeout=int(5.5 * 3600),
+    timeout=DOCKER_BUILD_JOB_TIMEOUT_S,
     command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME}'",
 )
 
 _docker_build_arm_linux_job = Job.Config(
     name=Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
     runs_on=Settings.DOCKER_BUILD_ARM_RUNS_ON,
-    timeout=int(5.5 * 3600),
+    timeout=DOCKER_BUILD_JOB_TIMEOUT_S,
     command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME}'",
 )
 
@@ -86,6 +96,7 @@ def _is_praktika_job(job_name):
 
 def _build_dockers(workflow, job_name):
     print(f"Start [{job_name}], workflow [{workflow.name}]")
+    started = time.monotonic()
     dockers = workflow.dockers
     ready = []
     results = []
@@ -167,6 +178,10 @@ def _build_dockers(workflow, job_name):
                     amd_only=amd_only,
                     arm_only=arm_only,
                     disable_push=Info().is_local_run,
+                    job_timeout=DOCKER_BUILD_JOB_TIMEOUT_S,
+                    # Read per image, not once: what is left of the budget is what the
+                    # images already built have not used.
+                    elapsed=time.monotonic() - started,
                 )
             )
             if results[-1].is_ok():
@@ -194,15 +209,17 @@ def _build_dockers(workflow, job_name):
 
 
 def _clean_buildx_volumes():
-    Shell.check("docker buildx rm --all-inactive --force", verbose=True)
-    Shell.check(
+    started = time.monotonic()
+    for command in (
+        "docker buildx rm --all-inactive --force",
         "docker ps -a --filter name=buildx_buildkit -q | xargs -r docker rm -f",
-        verbose=True,
-    )
-    Shell.check(
         "docker volume ls -q | grep buildx_buildkit | xargs -r docker volume rm",
-        verbose=True,
-    )
+    ):
+        left = int(DOCKER_CLEANUP_BUDGET_S - (time.monotonic() - started))
+        if left < 1:
+            print(f"Out of cleanup budget, skipping: [{command}]")
+            continue
+        Shell.check(command, verbose=True, timeout=left)
 
 
 def _submodule_auth_env(workflow) -> dict:
@@ -1079,6 +1096,9 @@ if __name__ == "__main__":
             Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME,
         ):
             result = _build_dockers(workflow, job_name)
+            # Before cleanup, not after: cleanup can wedge on the same buildkit the build
+            # did, and then the shaped result would never reach disk.
+            result.dump()
             _clean_buildx_volumes()
         elif job_name == Settings.CI_CONFIG_JOB_NAME:
             result = _config_workflow(workflow, job_name)

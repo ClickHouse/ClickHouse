@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from shlex import quote
-from threading import Event, Thread
+from threading import Event, Lock, Thread
 from types import SimpleNamespace
 from typing import Any, Dict, Iterator, List, Optional, Type, TypeVar, Union
 
@@ -169,6 +169,18 @@ class ContextManager:
             os.chdir(old_pwd)
 
 
+# A process killed by a bound exits by signal, and a bare -15 says nothing about which
+# bound reached it or whether an outer retry ladder should treat it as retryable. These
+# two go into the log and into stderr so a caller can tell the two cases apart. Same
+# discrimination as `timeout --verbose`'s "sending signal TERM to command" diagnostic.
+SHELL_TOTAL_TIMEOUT_MESSAGE = "ERROR: command exceeded its total timeout"
+SHELL_IDLE_TIMEOUT_MESSAGE = "ERROR: command produced no output within its idle timeout"
+
+# `_terminate` grants up to 100s of grace at 5s intervals before SIGKILL, so a caller that
+# joins for less than that can return while the process group is still alive.
+SHELL_TERMINATE_MAX_S = 120
+
+
 class Shell:
     @classmethod
     def get_output_or_raise(cls, command, verbose=False):
@@ -281,39 +293,95 @@ class Shell:
         return not failed
 
     @classmethod
-    def _check_timeout(cls, timeout, process, finished) -> None:
-        if not timeout:
-            return
-        # Waits on the caller being done with the process, not on the leader exiting: a background
-        # descendant holding stdout keeps the reader threads blocked past the leader's exit, and
-        # that group is exactly what the timeout has to reach.
-        if finished.wait(timeout):
-            return
-        print(
-            f"WARNING: Timeout exceeded [{timeout}], sending SIGTERM to process group [{process.pid}]"
-        )
+    def _terminate(cls, process) -> None:
+        # A group we are not permitted to signal is treated as alive: calling it dead
+        # stops enforcing the bound, while a signal it rejects costs nothing.
         try:
             os.killpg(process.pid, signal.SIGTERM)
         except ProcessLookupError:
             print("Process already terminated.")
             return
+        except PermissionError:
+            pass
 
         time_wait = 0
         wait_interval = 5
 
-        # Wait for process to terminate
-        while process.poll() is None and time_wait < 100:
+        # Waits on the GROUP, not on the leader: a descendant that survives SIGTERM keeps
+        # the inherited pipes open, and that is what blocks the caller's reader threads.
+        while time_wait < 100:
+            try:
+                os.killpg(process.pid, 0)
+            except ProcessLookupError:
+                return
+            except PermissionError:
+                pass
             print("Waiting for process to exit...")
             time.sleep(wait_interval)
             time_wait += wait_interval
 
-        # Force kill if still running
-        if process.poll() is None:
-            print("WARNING: Process still running after SIGTERM, sending SIGKILL")
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                print("Process already terminated.")
+        print("WARNING: Process still running after SIGTERM, sending SIGKILL")
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            print("Process already terminated.")
+        except PermissionError:
+            print("WARNING: Not permitted to signal the process group; it is left running")
+
+    @classmethod
+    def _check_timeout(cls, timeout, idle_timeout, process, finished, state) -> None:
+        """Kill the process group once a bound expires, recording which one did it.
+
+        One thread evaluates both bounds. Two threads cannot: `_terminate` spends up to
+        100s between SIGTERM and SIGKILL, and a second watchdog firing inside that window
+        would overwrite the cause of a kill that has already happened, turning a
+        retryable idle expiry into a terminal one.
+        """
+        if not timeout and not idle_timeout:
+            return
+        # Both bounds are anchored on the process, not on this thread: measuring the total
+        # one from here would grant it however long the thread took to be scheduled, and
+        # would make an `idle == timeout` pair resolve by that latency instead of by rule.
+        start = state["started"]
+        while True:
+            now = time.monotonic()
+            deadlines = []
+            if timeout:
+                deadlines.append(("total", start + timeout))
+            if idle_timeout:
+                deadlines.append(("idle", state["last_output"] + idle_timeout))
+            passed = [(name, at) for name, at in deadlines if at <= now]
+            if passed:
+                # Decided under the lock the caller sets `finished` under, so a command
+                # finishing as its deadline passes gets one outcome, not both. Nothing
+                # blocking belongs inside: across `_terminate` it would stall the caller.
+                with state["arbiter"]:
+                    # Nothing to kill and nothing to report once the caller is done with the
+                    # process, whatever the clock says.
+                    if finished.is_set():
+                        return
+                    # `min` keeps the first of equal keys, and `total` is listed first, so a
+                    # child that never wrote anything is reported as the total expiry it is.
+                    cause = min(passed, key=lambda item: item[1])[0]
+                    # Recorded before terminating: the readers unblock when the child
+                    # closes its pipes, so the caller can read `state` mid-`_terminate`.
+                    state["expired"] = cause
+                break
+            # Recomputed every iteration: arriving output moves the idle deadline later.
+            # Waits on the caller being done with the process, not on the leader exiting: a background
+            # descendant holding stdout keeps the reader threads blocked past the leader's exit, and
+            # that group is exactly what the timeout has to reach.
+            if finished.wait(min(at for _, at in deadlines) - now):
+                return
+        if cause == "total":
+            print(
+                f"WARNING: Timeout exceeded [{timeout}], sending SIGTERM to process group [{process.pid}]"
+            )
+        else:
+            print(
+                f"WARNING: No output for [{idle_timeout}]s, sending SIGTERM to process group [{process.pid}]"
+            )
+        cls._terminate(process)
 
     @classmethod
     def run(
@@ -325,6 +393,7 @@ class Shell:
         dry_run=False,
         stdin_str=None,
         timeout=None,
+        idle_timeout=None,
         retries=1,
         retry_errors: Union[List[str], str] = "",
         on_retry=None,
@@ -347,6 +416,7 @@ class Shell:
         log_file = log_file or "/dev/null"
         proc = None
         err_output = []
+        returncode = 1
         delay = 1
 
         for retry in range(retries):
@@ -375,12 +445,29 @@ class Shell:
 
                     # Start the timeout thread if specified
                     finished = Event()
-                    if timeout:
+                    watchdog = None
+                    watchdog_expired = False
+                    started = time.monotonic()
+                    watchdog_state = {
+                        "started": started,
+                        "last_output": started,
+                        "expired": None,
+                        "arbiter": Lock(),
+                    }
+                    if timeout or idle_timeout:
                         t = Thread(
-                            target=cls._check_timeout, args=(timeout, proc, finished)
+                            target=cls._check_timeout,
+                            args=(
+                                timeout,
+                                idle_timeout,
+                                proc,
+                                finished,
+                                watchdog_state,
+                            ),
                         )
                         t.daemon = True
                         t.start()
+                        watchdog = t
 
                     # Write stdin if provided
                     if stdin_str:
@@ -390,6 +477,7 @@ class Shell:
                     # Process both stdout and stderr in real-time
                     def stream_output(stream, output_fp, output=None):
                         for line in iter(stream.readline, ""):
+                            watchdog_state["last_output"] = time.monotonic()
                             if verbose:
                                 sys.stdout.write(line)
                             output_fp.write(line)
@@ -421,15 +509,40 @@ class Shell:
                     finally:
                         # Only here: the readers return when the last writer closes the pipe, so
                         # setting this at the leader's exit would retire the watchdog while a
-                        # descendant it must still reach keeps this call blocked.
-                        finished.set()
+                        # descendant it must still reach keeps this call blocked. Under the
+                        # arbiter, so a watchdog mid-decision either sees this or wins outright.
+                        with watchdog_state["arbiter"]:
+                            finished.set()
 
-                if proc.returncode == 0:
+                    if watchdog is not None:
+                        # Joined until the kill it started has finished: the grace waits on the
+                        # whole group, so returning earlier would hand the caller a live group.
+                        # Joining before reading is also what makes the cause observable at all.
+                        watchdog.join(SHELL_TERMINATE_MAX_S)
+                        if watchdog_state["expired"]:
+                            watchdog_expired = True
+                            message = (
+                                SHELL_TOTAL_TIMEOUT_MESSAGE
+                                if watchdog_state["expired"] == "total"
+                                else SHELL_IDLE_TIMEOUT_MESSAGE
+                            )
+                            print(message)
+                            # The readers have joined, so this is the only writer left.
+                            log_fp.write(message + "\n")
+                            err_output.append(message + "\n")
+
+                # A bound that fired is authoritative: a command that traps SIGTERM and
+                # exits 0 has not finished, whatever it reported.
+                returncode = (
+                    1 if (watchdog_expired and proc.returncode == 0) else proc.returncode
+                )
+
+                if returncode == 0:
                     return 0
 
                 if verbose and retries > 1:
                     print(
-                        f"Retry {retry+1}/{retries}: command failed, exit code: {proc.returncode}"
+                        f"Retry {retry+1}/{retries}: command failed, exit code: {returncode}"
                     )
 
                 if not retry_errors:
@@ -480,16 +593,16 @@ class Shell:
 
         if verbose:
             print(
-                f"ERROR: command failed after {retry+1}/{retries} attempt(s), exit code: {proc.returncode}"
+                f"ERROR: command failed after {retry+1}/{retries} attempt(s), exit code: {returncode}"
             )
 
         if strict:
             err = "\n   ".join(err_output).strip()
             raise RuntimeError(
-                f"command failed, exit code {proc.returncode},\nstderr:\n>>>\n{err}\n<<<"
+                f"command failed, exit code {returncode},\nstderr:\n>>>\n{err}\n<<<"
             )
 
-        return proc.returncode
+        return returncode
 
     @classmethod
     def run_async(

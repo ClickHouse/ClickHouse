@@ -918,6 +918,8 @@ class Result(MetaClasses.Serializable):
         workdir=None,
         command_args=None,
         command_kwargs=None,
+        timeout=None,
+        idle_timeout=None,
         retries=1,
         retry_errors: Union[List[str], str] = "",
         env=None,
@@ -934,6 +936,12 @@ class Result(MetaClasses.Serializable):
         :param fail_fast: Whether to stop execution if one command fails.
         :param command_args: Positional arguments for the callable command.
         :param command_kwargs: Keyword arguments for the callable command.
+        :param timeout: Seconds one attempt may run in total before its process group is
+            killed. Shell command(s) only.
+        :param idle_timeout: Seconds one attempt may run without writing a line before its
+            process group is killed. Bounds a command that stops making progress without
+            exiting, which a total bound can only catch by being small enough to also kill
+            slow healthy runs. Shell command(s) only.
         :param retries: The number of times to retry the command if it fails.
         :param retry_errors: The errors to retry on. Support for shell command(s) only.
         :param env: Optional environment dict for shell commands (e.g. the job
@@ -997,6 +1005,8 @@ class Result(MetaClasses.Serializable):
                         command_,
                         verbose=True,
                         log_file=log_file,
+                        timeout=timeout,
+                        idle_timeout=idle_timeout,
                         retries=retries,
                         retry_errors=retry_errors,
                         env=env,
