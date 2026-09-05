@@ -74,7 +74,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
-#include <Storages/StorageProxy.h>
+#include <Storages/StorageTableProxy.h>
 #include <Storages/StorageQueryRunner.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
@@ -1373,7 +1373,9 @@ void InterpreterSystemQuery::restoreReplica()
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
 
-    const StoragePtr table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+    /// `SYSTEM RESTORE REPLICA` is an access to the table it names, so resolve a lazily loaded table's
+    /// stand-in instead of refusing the table as not replicated.
+    const StoragePtr table_ptr = resolveLazyTable(DatabaseCatalog::instance().getTable(table_id, getContext()));
 
     auto * const table_replicated_ptr = dynamic_cast<StorageReplicatedMergeTree *>(table_ptr.get());
 
@@ -1448,7 +1450,10 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         return nullptr;
     }
 
-    if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
+    /// Resolve a lazily loaded table's stand-in to find out what it stands in for, instead of refusing
+    /// the command for a table that is replicated. Only the classification needs the resolved storage:
+    /// the catalog entry to detach and re-attach below is still the stand-in.
+    if (!dynamic_cast<const StorageReplicatedMergeTree *>(resolveLazyTable(table).get()))
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), replica.getNameForLogs());
@@ -1627,7 +1632,10 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
         for (auto it = elem.second->getTablesIterator(getContext()); it->isValid(); it->next())
         {
-            if (dynamic_cast<const StorageReplicatedMergeTree *>(it->table().get()))
+            /// A lazily loaded table that nothing has accessed yet has started no replication to
+            /// restart, and loading every table in the catalog to find that out is exactly what
+            /// `lazy_load_tables` is for avoiding, so only the loaded stand-ins are resolved here.
+            if (dynamic_cast<const StorageReplicatedMergeTree *>(resolveLazyTableIfLoaded(it->table()).get()))
             {
                 if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_RESTART_REPLICA, elem.first, it->name()))
                 {
@@ -1731,7 +1739,12 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
             DatabasePtr & database = elem.second;
             for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
-                if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(iterator->table().get()))
+                /// Resolve a lazily loaded table's stand-in: this guard is what keeps the drop from
+                /// destroying the ZooKeeper metadata of a live local table, and a table that nothing has
+                /// accessed holds no session in ZooKeeper, so the `is_active` check below would not catch
+                /// it either. Loading tables here is the price of not silently skipping one.
+                const auto local_table = resolveLazyTable(iterator->table());
+                if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(local_table.get()))
                 {
                     /// getReplicaPath() is built from getZooKeeperPath(), which strips only a single trailing
                     /// slash, so a table created from "/a///" metadata keeps "/a//replicas/..." and would slip
@@ -1776,7 +1789,11 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
 
 bool InterpreterSystemQuery::dropStorageReplica(const String & query_replica, const StoragePtr & storage)
 {
-    auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(storage.get());
+    /// `SYSTEM DROP REPLICA` must remove the replica from every table it is addressed to, so resolve a
+    /// lazily loaded table's stand-in rather than take it for a table that has no replica to drop -
+    /// which is a refused command for a single table, and a silently skipped table for a whole database.
+    const auto resolved_storage = resolveLazyTable(storage);
+    auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(resolved_storage.get());
     if (!storage_replicated)
         return false;
 
@@ -2184,10 +2201,11 @@ bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sy
         if (i >= 100)
             throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Materialized view targets form a cycle or a very long chain");
 
-        /// With `lazy_load_tables` the catalog holds a stand-in until the table is first accessed, and a
-        /// stand-in is not a `StorageReplicatedMergeTree`: without resolving it first, this command would
-        /// report a replicated table as not replicated. `SYSTEM SYNC REPLICA` is an access to the table.
-        if (auto * proxy = dynamic_cast<StorageProxy *>(table.get()))
+        /// Without resolving the stand-in first, this command would report a lazily loaded replicated
+        /// table as not replicated. `SYSTEM SYNC REPLICA` is an access to the table, so loading it is
+        /// what the user asked for. Resolved here rather than through `resolveLazyTable` because a
+        /// stand-in of a materialized view's target table has to be resolved on the next turn as well.
+        if (const auto * proxy = dynamic_cast<const StorageTableProxy *>(table.get()))
             table = proxy->getNested();
         else if (auto * storage_mv = dynamic_cast<StorageMaterializedView *>(table.get()))
             table = storage_mv->getTargetTable();
