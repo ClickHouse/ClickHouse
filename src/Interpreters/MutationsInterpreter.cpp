@@ -1300,9 +1300,17 @@ void MutationsInterpreter::prepare(bool dry_run)
             }
             for (const auto & stat_column_name: command.statistics_columns)
             {
-                /// Skipped only while executing, so an already-queued mutation drains instead of
-                /// retrying forever. Validation still reaches the throw below.
-                if (!dry_run && columns_desc.has(stat_column_name) && !columns_desc.hasPhysical(stat_column_name))
+                /// A column that is not physically stored has no data in any block, so there is
+                /// nothing to build.
+                /// While executing, always skip it: the column may have become non-physical after
+                /// the mutation was queued, and the mutation has to drain instead of retrying
+                /// forever. While validating a statement the user is issuing right now, only a
+                /// grandfathered definition - one that still carries statistics - is skipped;
+                /// naming a plain `ALIAS` or `EPHEMERAL` column is simply a wrong argument and
+                /// reaches the throw below.
+                if (columns_desc.has(stat_column_name)
+                    && !columns_desc.hasPhysical(stat_column_name)
+                    && (!dry_run || !columns_desc.get(stat_column_name).statistics.empty()))
                 {
                     LOG_WARNING(logger, "Column {} is not physically stored, skipping statistics materialization", stat_column_name);
                     continue;
