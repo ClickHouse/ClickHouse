@@ -8,6 +8,10 @@
 #include <Common/isValidUTF8.h>
 #include <Common/likePatternToRegexp.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -17,6 +21,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/PreparedSets.h>
@@ -949,6 +954,107 @@ static String serializeFieldAsText(const Field & value, const DataTypePtr & type
     return buf.str();
 }
 
+static bool hasStableJSONAllValuesSerialization(const DataTypePtr & type)
+{
+    /// `Time` and implicit `DateTime` time zones use `session_timezone`,
+    /// which can differ between index creation and query execution.
+    bool result = true;
+    auto check = [&](const IDataType & current_type)
+    {
+        if (WhichDataType(current_type).isTime())
+            result = false;
+        else if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(&current_type))
+            result &= date_time->hasExplicitTimeZone();
+        else if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(&current_type))
+            result &= date_time64->hasExplicitTimeZone();
+    };
+
+    check(*type);
+    type->forEachChild(check);
+    return result;
+}
+
+static bool hasContextIndependentJSONAllValuesSerialization(const DataTypePtr & type)
+{
+    bool result = true;
+    auto check = [&](const IDataType & current_type)
+    {
+        const WhichDataType which(current_type);
+        if (current_type.getName() == "Bool"
+            || which.isDateTimeOrDateTime64()
+            || which.isTime()
+            || which.isDecimal()
+            || which.isInterval())
+            result = false;
+    };
+
+    check(*type);
+    type->forEachChild(check);
+    return result;
+}
+
+static bool hasKnownJSONAllValuesSerialization(const DataTypePtr & type)
+{
+    bool result = true;
+    auto check = [&](const IDataType & current_type)
+    {
+        result &= !isDynamic(current_type) && !isObject(current_type);
+    };
+
+    check(*type);
+    type->forEachChild(check);
+    return result;
+}
+
+/// Match a JSON subcolumn against a `JSONAllValues` index without accepting casts that can change
+/// the indexed representation. A cast from a statically typed value to `String` is safe when its
+/// serialization is stable because `JSONAllValues` uses the same `serializeText` representation.
+static bool matchesNodeToJSONAllValuesIndex(
+    const RPNBuilderTreeNode & node,
+    const Block & header)
+{
+    if (node.isFunction())
+    {
+        auto function = node.toFunctionNode();
+        const auto function_name = function.getFunctionName();
+        if ((function_name == "CAST" || function_name == "_CAST") && function.getArgumentsSize() == 2)
+        {
+            auto argument = function.getArgumentAt(0);
+            if (!tryMatchJSONSubcolumnToIndex(argument.getColumnName(), header, "JSONAllValues"))
+                return false;
+
+            const auto * node_dag = node.getDAGNode();
+            const auto * argument_dag = argument.getDAGNode();
+            if (!node_dag || !argument_dag)
+                return false;
+
+            const auto & result_type = node_dag->result_type;
+            const auto & argument_type = argument_dag->result_type;
+
+            if (!hasKnownJSONAllValuesSerialization(argument_type) || !hasStableJSONAllValuesSerialization(argument_type))
+                return false;
+
+            /// Removing `Nullable` can throw on NULL rows that the index would otherwise skip.
+            if (isNullableOrLowCardinalityNullable(argument_type) && !isNullableOrLowCardinalityNullable(result_type))
+                return false;
+
+            const auto result_type_without_wrappers = removeLowCardinalityAndNullable(result_type);
+            const auto argument_type_without_wrappers = removeLowCardinalityAndNullable(argument_type);
+            if (result_type_without_wrappers->getTypeId() == TypeIndex::String)
+                return hasContextIndependentJSONAllValuesSerialization(argument_type);
+
+            return result_type_without_wrappers->getName() == argument_type_without_wrappers->getName();
+        }
+    }
+
+    const auto * node_dag = node.getDAGNode();
+    return node_dag
+        && !isVariant(node_dag->result_type)
+        && hasKnownJSONAllValuesSerialization(node_dag->result_type)
+        && hasStableJSONAllValuesSerialization(node_dag->result_type)
+        && tryMatchJSONSubcolumnToIndex(node.getColumnName(), header, "JSONAllValues").has_value();
+}
+
 static void validateRegexpPatterns(const Array & patterns, const Settings & settings)
 {
     VectorWithMemoryTracking<std::string_view> needles;
@@ -1001,19 +1107,102 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         direct_read_mode = getHintOrNoneMode();
         candidate_for_exact_mode = false;
     }
-    else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues"))
+    else if (matchesNodeToJSONAllValuesIndex(index_column_node, header))
     {
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
         candidate_for_exact_mode = false;
         bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
+        const auto * key_dag = index_column_node.getDAGNode();
+
+        if (!key_dag)
+            return false;
+
+        const auto & key_type = key_dag->result_type;
+        if (function_name == "hasAny" || function_name == "hasAll")
+            return false;
+
+        if (is_special_text_index_function && WhichDataType(removeLowCardinalityAndNullable(key_type)).isArray())
+            return false;
 
         /// Convert non-string values to their text representation to match the format produced by `JSONAllValues`.
         /// Keep array values as-is for special text index functions.
-        if (!is_special_text_index_function && !WhichDataType(value_type).isStringOrFixedString())
+        if (!is_special_text_index_function)
         {
-            value_field = serializeFieldAsText(value_field, value_type);
-            value_type = std::make_shared<DataTypeString>();
+            if ((function_name == "startsWith" || function_name == "endsWith")
+                && !WhichDataType(removeLowCardinalityAndNullable(key_type)).isStringOrFixedString())
+                return false;
+
+            DataTypePtr target_type;
+
+            if (function_name == "equals")
+            {
+                if (!hasKnownJSONAllValuesSerialization(key_type))
+                    return false;
+                target_type = key_type;
+            }
+            else if (function_name == "has")
+            {
+                const auto * key_array = typeid_cast<const DataTypeArray *>(key_type.get());
+                if (!key_array)
+                    return false;
+                target_type = key_array->getNestedType();
+                if (!hasKnownJSONAllValuesSerialization(target_type) || !hasStableJSONAllValuesSerialization(target_type))
+                    return false;
+            }
+
+            if (target_type)
+            {
+                const auto target_type_without_wrappers = removeLowCardinalityAndNullable(target_type);
+                const auto value_type_without_wrappers = removeLowCardinalityAndNullable(value_type);
+                if (target_type_without_wrappers->getName() != value_type_without_wrappers->getName())
+                {
+                    if (function_name != "equals"
+                        || !target_type_without_wrappers->isValueRepresentedByNumber()
+                        || !value_type_without_wrappers->isValueRepresentedByNumber())
+                        return false;
+
+                    /// Exact numeric conversion lets the probe use the typed path's serialization.
+                    value_field = tryConvertFieldToType(
+                        value_field, *target_type_without_wrappers, value_type_without_wrappers.get(), {}, true);
+                    if (value_field.isNull())
+                        return false;
+
+                    value_type = target_type_without_wrappers;
+                }
+            }
+
+            if (function_name == "has")
+            {
+                switch (tokenizer->getType())
+                {
+                    case ITokenizer::Type::SplitByNonAlpha:
+                    case ITokenizer::Type::Ngrams:
+                    case ITokenizer::Type::SplitByString:
+                        break;
+                    default:
+                        return false;
+                }
+
+                Field serialized_value = value_field;
+                if (!WhichDataType(value_type).isStringOrFixedString())
+                    serialized_value = serializeFieldAsText(value_field, value_type);
+
+                const auto value_tokens = stringToTokens(serialized_value);
+                const auto array_tokens = stringToTokens(Field(serializeFieldAsText(
+                    Field(Array{value_field}), std::make_shared<DataTypeArray>(value_type))));
+                /// `JSONAllValues` stores the serialized array, not each element separately.
+                /// For context-free tokenizers, every element probe token must survive that serialization.
+                if (!std::ranges::all_of(value_tokens, [&](const auto & token)
+                    { return std::ranges::find(array_tokens, token) != array_tokens.end(); }))
+                    return false;
+            }
+
+            if (!WhichDataType(value_type).isStringOrFixedString())
+            {
+                value_field = serializeFieldAsText(value_field, value_type);
+                value_type = std::make_shared<DataTypeString>();
+            }
         }
     }
 
@@ -1806,9 +1995,14 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     auto has_index = [&](const RPNBuilderTreeNode & node)
     {
-        return hasIndexForColumn(node.getColumnName())
-            || hasIndexForMapElementValue(node)
-            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
+        if (hasIndexForColumn(node.getColumnName()) || hasIndexForMapElementValue(node))
+            return true;
+
+        if (!matchesNodeToJSONAllValuesIndex(node, header))
+            return false;
+
+        const auto * node_dag = node.getDAGNode();
+        return node_dag && hasContextIndependentJSONAllValuesSerialization(node_dag->result_type);
     };
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
