@@ -27,6 +27,23 @@ std::chrono::milliseconds saturatedMilliseconds(T milliseconds)
     return std::chrono::milliseconds(static_cast<Int64>(milliseconds));
 }
 
+/// Same clamp for a microsecond-typed timeout, for a wait whose resolution must stay below a
+/// millisecond. wait_for still multiplies microseconds by 1'000 to reach nanoseconds, so the value has
+/// to be capped before it becomes a std::chrono::microseconds. The comparisons are signedness-agnostic,
+/// so an unsigned count that already lost the sign of a negative timeout (a negative Int64 widened to
+/// UInt64) compares above the cap and becomes the one-year bound rather than overflowing.
+inline constexpr Int64 MAX_WAIT_TIMEOUT_MICROSECONDS = MAX_WAIT_TIMEOUT_MILLISECONDS * 1000;
+
+template <std::integral T>
+std::chrono::microseconds saturatedMicroseconds(T microseconds)
+{
+    if (std::cmp_greater(microseconds, MAX_WAIT_TIMEOUT_MICROSECONDS))
+        return std::chrono::microseconds(MAX_WAIT_TIMEOUT_MICROSECONDS);
+    if (std::cmp_less(microseconds, 0))
+        return std::chrono::microseconds(0);
+    return std::chrono::microseconds(static_cast<Int64>(microseconds));
+}
+
 /// Same clamp for a seconds-typed timeout. A seconds value must be capped before it becomes a
 /// std::chrono::seconds, because wait_for still converts seconds to nanoseconds (x 1'000'000'000);
 /// values above ~9.2e9 seconds overflow that Int64 conversion. We must not pre-multiply seconds by

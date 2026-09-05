@@ -47,6 +47,41 @@ GTEST_TEST(SaturatedMilliseconds, PassesThroughInRangeValues)
     ASSERT_LT(ns.count(), std::numeric_limits<Int64>::max());
 }
 
+/// saturatedMicroseconds is the microsecond-typed sibling, for waits that must keep sub-millisecond
+/// resolution (the thread pool's `wait_microseconds`, fed by `lock_acquire_timeout`). A negative Int64
+/// microsecond setting reaches the pool widened to UInt64, so the unsigned form must clamp too.
+GTEST_TEST(SaturatedMicroseconds, ClampsHugePositiveToOneYear)
+{
+    const auto max = std::chrono::microseconds(MAX_WAIT_TIMEOUT_MICROSECONDS);
+
+    ASSERT_EQ(saturatedMicroseconds(std::numeric_limits<Int64>::max()), max);
+    ASSERT_EQ(saturatedMicroseconds(std::numeric_limits<UInt64>::max()), max);
+    ASSERT_EQ(saturatedMicroseconds(MAX_WAIT_TIMEOUT_MICROSECONDS + 1), max);
+    // -1e17 microseconds (lock_acquire_timeout = -1e11 seconds) widened to UInt64: the exact value that
+    // overflowed the microseconds->nanoseconds conversion inside ThreadPoolImpl::scheduleImpl.
+    ASSERT_EQ(saturatedMicroseconds(static_cast<UInt64>(Int64(-100000000000000000LL))), max);
+}
+
+GTEST_TEST(SaturatedMicroseconds, ClampsNegativeToZero)
+{
+    ASSERT_EQ(saturatedMicroseconds(Int64(-1)), std::chrono::microseconds(0));
+    ASSERT_EQ(saturatedMicroseconds(std::numeric_limits<Int64>::min()), std::chrono::microseconds(0));
+    ASSERT_EQ(saturatedMicroseconds(Int64(-100000000000000000LL)), std::chrono::microseconds(0));
+}
+
+GTEST_TEST(SaturatedMicroseconds, PassesThroughInRangeValues)
+{
+    ASSERT_EQ(saturatedMicroseconds(Int64(0)), std::chrono::microseconds(0));
+    // Sub-millisecond waits must survive: this is why the pool cannot reuse the millisecond clamp.
+    ASSERT_EQ(saturatedMicroseconds(Int64(1)), std::chrono::microseconds(1));
+    ASSERT_EQ(saturatedMicroseconds(Int64(120000000)), std::chrono::microseconds(120000000));
+    ASSERT_EQ(saturatedMicroseconds(MAX_WAIT_TIMEOUT_MICROSECONDS), std::chrono::microseconds(MAX_WAIT_TIMEOUT_MICROSECONDS));
+
+    const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(saturatedMicroseconds(std::numeric_limits<UInt64>::max()));
+    ASSERT_GT(ns.count(), 0);
+    ASSERT_LT(ns.count(), std::numeric_limits<Int64>::max());
+}
+
 /// saturatedSeconds is the seconds-typed sibling for timeouts kept in seconds (a UInt64 seconds
 /// setting must be capped before it becomes a std::chrono::seconds, because wait_for still turns
 /// seconds into nanoseconds; values above the cap would overflow that x 1'000'000'000 conversion).

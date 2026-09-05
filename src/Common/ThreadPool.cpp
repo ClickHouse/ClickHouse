@@ -10,6 +10,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/noexcept_scope.h>
 #include <Common/logger_useful.h>
+#include <Common/saturatedDuration.h>
 #include <base/scope_guard.h>
 
 #include <map>
@@ -467,7 +468,13 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         /// Wait for available threads or timeout
         if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set. Even if the value is zero.
         {
-            if (!job_finished.wait_for(lock, std::chrono::microseconds(*wait_microseconds), pred))
+            /// The timeout is user-controlled: it comes from settings such as `lock_acquire_timeout`, whose
+            /// Int64 microsecond value reaches this uint64_t parameter unchanged, so a negative setting
+            /// arrives here as a huge unsigned count. `wait_for` turns the duration into nanoseconds
+            /// (x 1'000) on top of `steady_clock::now()`, which overflows for any count of that size.
+            /// Clamping caps such a count at one year, i.e. it keeps behaving as "wait until a thread
+            /// frees up", which is what an out-of-range timeout asks for once its sign is gone.
+            if (!job_finished.wait_for(lock, DB::saturatedMicroseconds(*wait_microseconds), pred))
                 return on_error(fmt::format("no free thread (timeout={})", *wait_microseconds));
         }
         else
