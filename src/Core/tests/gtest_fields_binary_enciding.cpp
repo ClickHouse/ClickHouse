@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <Common/FieldBinaryEncoding.h>
+#include <Common/FieldVisitorWriteBinary.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 
@@ -20,6 +21,15 @@ static void check(const Field & field)
     Field decoded_field = decodeField(istr);
     ASSERT_TRUE(istr.eof());
     ASSERT_EQ(field, decoded_field);
+}
+
+static void checkWriteBinarySize(const Field & field)
+{
+    String serialized;
+    WriteBufferFromString out(serialized);
+    writeFieldBinary(field, out);
+    out.finalize();
+    ASSERT_EQ(getFieldBinarySize(field), serialized.size());
 }
 
 GTEST_TEST(FieldBinaryEncoding, EncodeAndDecode)
@@ -63,3 +73,32 @@ GTEST_TEST(FieldBinaryEncoding, EncodeAndDecode)
     }));
 }
 
+GTEST_TEST(FieldBinaryEncoding, WriteBinarySize)
+{
+    checkWriteBinarySize(Null());
+    checkWriteBinarySize(true);
+    checkWriteBinarySize(UInt64(42));
+    checkWriteBinarySize(Int64(-42));
+    checkWriteBinarySize(UInt128(42));
+    checkWriteBinarySize(Int128(-42));
+    checkWriteBinarySize(UInt256(42));
+    checkWriteBinarySize(Int256(-42));
+    checkWriteBinarySize(UUID(42));
+    checkWriteBinarySize(IPv4(42));
+    checkWriteBinarySize(IPv6(42));
+    checkWriteBinarySize(Float64(42.42));
+    checkWriteBinarySize(String("Hello, World!"));
+    checkWriteBinarySize(Array({Field(UInt64(42)), Field(UInt64(43))}));
+    checkWriteBinarySize(Tuple({Field(UInt64(42)), Field(Null()), Field(UUID(42)), Field(String("Hello, World!"))}));
+    checkWriteBinarySize(Map({Tuple{Field(UInt64(42)), Field(String("str_42"))}, Tuple{Field(UInt64(43)), Field(String("str_43"))}}));
+    checkWriteBinarySize(Object({{String("key_1"), Field(UInt64(42))}, {String("key_2"), Field(UInt64(43))}}));
+    checkWriteBinarySize(DecimalField<Decimal32>(4242, 3));
+    checkWriteBinarySize(DecimalField<Decimal64>(4242, 3));
+    checkWriteBinarySize(DecimalField<Decimal128>(Int128(4242), 3));
+    checkWriteBinarySize(DecimalField<Decimal256>(Int256(4242), 3));
+    checkWriteBinarySize(AggregateFunctionStateData{.name="some_name", .data="some_data"});
+    checkWriteBinarySize(Array({
+        Tuple({Field(UInt64(42)), Map({Tuple{Field(UInt64(42)), Field(String("str_42"))}, Tuple{Field(UInt64(43)), Field(String("str_43"))}}), Field(UUID(42)), Field(String("Hello, World!"))}),
+        Tuple({Field(UInt64(43)), Map({Tuple{Field(UInt64(43)), Field(String("str_43"))}, Tuple{Field(UInt64(44)), Field(String("str_44"))}}), Field(UUID(43)), Field(String("Hello, World 2!"))})
+    }));
+}
