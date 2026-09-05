@@ -3673,6 +3673,57 @@ def test_set_binary_operators():
     )
 
     do_query_test(
+        "(sum by (shape, size) (last_over_time(foo[10])) unless sum by (shape, size) (last_over_time(bar[10])))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"shape": "square", "size": "s"}, "values": [[130, "40"]]}, {"metric": {"shape": "triangle", "size": "m"}, "values": [[110, "8"], [120, "80"]]}]}',
+        [
+            [
+                "[('shape','square'),('size','s')]",
+                "[('1970-01-01 00:02:10.000',40)]",
+            ],
+            [
+                "[('shape','triangle'),('size','m')]",
+                "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:00.000',80)]",
+            ],
+        ],
+    )
+
+    # Empty ignoring() keeps the same matching key for already grouped inputs.
+    do_query_test(
+        '(sum by (shape, size) (last_over_time(foo{shape="square"}[10])) unless ignoring() sum by (shape, size) (last_over_time(bar{shape="square"}[10])))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"shape": "square", "size": "s"}, "values": [[130, "40"]]}]}',
+        [
+            [
+                "[('shape','square'),('size','s')]",
+                "[('1970-01-01 00:02:10.000',40)]",
+            ],
+        ],
+    )
+
+    # The RHS still has matching VECTOR_GRID rows, but filtering removes every sample.
+    # The exact-group path must treat those rows as present and preserve the full LHS arrays.
+    do_query_test(
+        "(sum by (shape, size) (last_over_time(foo[10])) unless ((last_over_time(bar[10]) > 10000) + 0))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"shape": "circle", "size": "l"}, "values": [[110, "16"], [130, "16"], [150, "16"]]}, {"metric": {"shape": "square", "size": "s"}, "values": [[110, "4"], [130, "40"]]}, {"metric": {"shape": "triangle", "size": "m"}, "values": [[110, "8"], [120, "80"]]}]}',
+        [
+            [
+                "[('shape','circle'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',16),('1970-01-01 00:02:10.000',16),('1970-01-01 00:02:30.000',16)]",
+            ],
+            [
+                "[('shape','square'),('size','s')]",
+                "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:10.000',40)]",
+            ],
+            [
+                "[('shape','triangle'),('size','m')]",
+                "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:00.000',80)]",
+            ],
+        ],
+    )
+
+    do_query_test(
         "(last_over_time(foo[10]) or last_over_time(bar[10]))[50:10]",
         150,
         '{"resultType": "matrix", "result": [{"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "values": [[120, "16"]]}, {"metric": {"__name__": "bar", "shape": "rectangle", "size": "l"}, "values": [[110, "9"], [130, "90"]]}, {"metric": {"__name__": "bar", "shape": "square", "size": "s"}, "values": [[120, "40"], [140, "700"]]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "values": [[110, "8"], [150, "30"]]}, {"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[110, "16"], [130, "16"], [150, "16"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[110, "4"], [130, "40"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[110, "8"], [120, "80"]]}]}',
