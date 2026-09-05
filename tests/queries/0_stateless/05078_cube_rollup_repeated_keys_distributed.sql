@@ -8,6 +8,11 @@
 -- deduplicated keys, which is the bug this test's sibling covers.
 -- https://github.com/ClickHouse/ClickHouse/issues/117904
 
+-- `make_distributed_plan` refuses an aggregation carrying `max_rows_to_group_by`, and the CI users
+-- profile sets it (`tests/config/users.d/limits.yaml`), so pin it back to its default here rather
+-- than lose the coverage. Several tests in this directory pin it for their own reasons already.
+SET max_rows_to_group_by = 0;
+
 DROP TABLE IF EXISTS t_repeated_keys_distributed;
 
 CREATE TABLE t_repeated_keys_distributed (a UInt64) ENGINE = MergeTree ORDER BY a;
