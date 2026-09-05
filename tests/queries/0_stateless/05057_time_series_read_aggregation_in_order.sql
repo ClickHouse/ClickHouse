@@ -1,5 +1,5 @@
 -- Tags: no-fasttest
--- Tag no-fasttest: the TimeSeries table engine is experimental and disabled in the fast-test build.
+-- Tag no-fasttest: the TimeSeries table engine is in private preview and disabled in the fast-test build.
 
 SET enable_time_series_table = 1;
 SET session_timezone = 'UTC';
