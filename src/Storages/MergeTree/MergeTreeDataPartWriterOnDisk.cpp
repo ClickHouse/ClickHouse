@@ -17,6 +17,7 @@
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Columns/ColumnsView.h>
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/HashingWriteBuffer.h>
@@ -639,7 +640,7 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
             if (column.column->hasDynamicStructure())
                 mutable_column->takeExactDynamicStructureFrom(*column.column);
             if (column.column->hasStatistics())
-                mutable_column->takeOrCalculateStatisticsFrom({column.column});
+                mutable_column->takeOrCalculateStatisticsFrom(column.column);
             sample_column.column = std::move(mutable_column);
             block_sample.insert(std::move(sample_column));
         }
@@ -670,7 +671,7 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
             if (column.column->hasStatistics())
             {
                 auto mutable_column = IColumn::mutate(std::move(column.column));
-                mutable_column->takeOrCalculateStatisticsFrom({sample_column.column});
+                mutable_column->takeOrCalculateStatisticsFrom(sample_column.column);
                 column.column = std::move(mutable_column);
             }
         }

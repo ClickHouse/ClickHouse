@@ -5,6 +5,7 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnsView.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Port.h>
 
@@ -108,7 +109,8 @@ IMergingAlgorithm::Status ColumnGathererStream::merge()
         else if (result_column->hasStatistics())
         {
             auto col = IColumn::mutate(std::move(source_to_fully_copy->column));
-            col->takeOrCalculateStatisticsFrom({result_column->getPtr()});
+            ColumnPtr source_column = result_column->getPtr();
+            col->takeOrCalculateStatisticsFrom(source_column);
             res.addColumn(std::move(col));
         }
         else
@@ -166,7 +168,8 @@ IMergingAlgorithm::Status ColumnGathererStream::merge()
         else if (result_column->hasStatistics())
         {
             auto col = IColumn::mutate(std::move(source_to_fully_copy->column));
-            col->takeOrCalculateStatisticsFrom({result_column->getPtr()});
+            ColumnPtr source_column = result_column->getPtr();
+            col->takeOrCalculateStatisticsFrom(source_column);
             res.addColumn(std::move(col));
         }
         else

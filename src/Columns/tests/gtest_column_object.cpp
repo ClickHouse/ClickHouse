@@ -1,8 +1,13 @@
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
-#include <DataTypes/DataTypeFactory.h>
+#include <Columns/ColumnsView.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -594,11 +599,77 @@ TEST(ColumnObject, HashSharedDataNothingEntry)
     ASSERT_EQ(actual_hash, actual_again.get128());
 }
 
+TEST(ColumnObject, PrepareForSquashingNestedTypedAndMissingDynamicPaths)
+{
+    auto type = DataTypeFactory::instance().get(
+        "JSON(max_dynamic_types=10, max_dynamic_paths=10, "
+        "typed Tuple(Array(Nullable(String)), Map(String, UInt64), Variant(UInt64, String)))");
+
+    auto first_source = type->createColumn();
+    auto & first_object = assert_cast<ColumnObject &>(*first_source);
+    first_object.insert(
+        Object{
+            {"typed", Tuple{Array{Field("first"), Field(Null())}, Map{Tuple{Field("first-key"), Field(UInt64(1))}}, Field(UInt64(11))}},
+            {"a", Field(UInt64(101))}});
+
+    auto second_source = type->createColumn();
+    auto & second_object = assert_cast<ColumnObject &>(*second_source);
+    second_object.insert(
+        Object{
+            {"typed",
+             Tuple{
+                 Array{Field("second")},
+                 Map{Tuple{Field("second-key"), Field(UInt64(2))}, Tuple{Field("third-key"), Field(UInt64(3))}},
+                 Field("variant-string")}},
+            {"b", Field("dynamic-string")}});
+
+    VectorWithMemoryTracking<ColumnPtr> sources;
+    sources.emplace_back(std::move(first_source));
+    sources.emplace_back(std::move(second_source));
+
+    auto target = type->createColumn();
+    auto & target_object = assert_cast<ColumnObject &>(*target);
+    static constexpr size_t factor = 3;
+    target_object.prepareForSquashing(sources, factor);
+
+    const auto & typed_tuple = assert_cast<const ColumnTuple &>(*target_object.getTypedPaths().at("typed"));
+    const auto & typed_array = assert_cast<const ColumnArray &>(typed_tuple.getColumn(0));
+    const auto & typed_nullable = assert_cast<const ColumnNullable &>(typed_array.getData());
+    const auto & typed_string = assert_cast<const ColumnString &>(typed_nullable.getNestedColumn());
+    ASSERT_GE(typed_array.capacity(), sources.size() * factor);
+    ASSERT_GE(typed_nullable.capacity(), 3u * factor);
+    ASSERT_GE(typed_string.capacity(), 3u * factor);
+
+    const auto & typed_map = assert_cast<const ColumnMap &>(typed_tuple.getColumn(1));
+    const auto & map_elements = typed_map.getNestedData();
+    ASSERT_GE(typed_map.capacity(), sources.size() * factor);
+    ASSERT_GE(map_elements.getColumn(0).capacity(), 3u * factor);
+    ASSERT_GE(map_elements.getColumn(1).capacity(), 3u * factor);
+
+    const auto & typed_variant = assert_cast<const ColumnVariant &>(typed_tuple.getColumn(2));
+    ASSERT_GE(typed_variant.capacity(), sources.size() * factor);
+    ASSERT_GE(typed_variant.getVariantByGlobalDiscriminator(0).capacity(), factor);
+    ASSERT_GE(typed_variant.getVariantByGlobalDiscriminator(1).capacity(), factor);
+
+    ASSERT_TRUE(target_object.getDynamicPathsPtrs().contains("a"));
+    ASSERT_TRUE(target_object.getDynamicPathsPtrs().contains("b"));
+    ASSERT_GE(target_object.getDynamicPathsPtrs().at("a")->capacity(), sources.size() * factor);
+    ASSERT_GE(target_object.getDynamicPathsPtrs().at("b")->capacity(), sources.size() * factor);
+
+    for (size_t batch = 0; batch != factor; ++batch)
+        for (const auto & source : sources)
+            target_object.insertRangeFrom(*source, 0, source->size());
+
+    ASSERT_EQ(target_object.size(), sources.size() * factor);
+    for (size_t i = 0; i != target_object.size(); ++i)
+        ASSERT_EQ(target_object[i], (*sources[i % sources.size()])[0]);
+}
+
 TEST(ColumnObject, PrepareForSquashingScalesDynamicPathsByFactor)
 {
     /// `factor` declares how many source-sized batches will be appended, so it must reach the
-    /// dynamic paths' discriminators/offsets too, not only their variants. Regression:
-    /// reserve(total_size) instead of reserve(total_size * factor) left them sized for one batch.
+    /// dynamic paths' discriminators/offsets too, not only their variants. The reservation must
+    /// also include rows already present in a non-empty target.
     auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=10)");
 
     auto source = type->createColumn();
@@ -611,17 +682,29 @@ TEST(ColumnObject, PrepareForSquashingScalesDynamicPathsByFactor)
 
     auto target = type->createColumn();
     auto & target_object = assert_cast<ColumnObject &>(*target);
+    target_object.insert(Object{{"a", Field{UInt64(1'000)}}});
+    const Field initial_value = target_object[0];
 
     VectorWithMemoryTracking<ColumnPtr> sources;
     sources.push_back(std::move(source));
 
     static constexpr size_t factor = 8;
+    const size_t expected_reservation = (target_object.size() + sources.front()->size()) * factor;
     target_object.prepareForSquashing(sources, factor);
 
     /// Control, asserted first so it is reached even while the regression below still fails:
-    /// shared_data already scales by `factor`, and must keep doing so.
-    ASSERT_GE(target_object.getSharedDataPtr()->capacity(), 100u * factor);
+    /// shared_data already includes the non-empty target and scales by `factor`, and must keep doing so.
+    ASSERT_GE(target_object.getSharedDataPtr()->capacity(), expected_reservation);
 
     ASSERT_TRUE(target_object.getDynamicPathsPtrs().contains("a"));
-    ASSERT_GE(target_object.getDynamicPathsPtrs().at("a")->capacity(), 100u * factor);
+    ASSERT_GE(target_object.getDynamicPathsPtrs().at("a")->capacity(), expected_reservation);
+
+    ASSERT_EQ(sources.front()->size(), 100u);
+    for (size_t batch = 0; batch != factor; ++batch)
+        target_object.insertRangeFrom(*sources.front(), 0, sources.front()->size());
+
+    ASSERT_EQ(target_object.size(), 1u + 100u * factor);
+    ASSERT_EQ(target_object[0], initial_value);
+    for (size_t i = 1; i != target_object.size(); ++i)
+        ASSERT_EQ(target_object[i], (*sources.front())[(i - 1) % sources.front()->size()]);
 }
