@@ -291,7 +291,7 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         }
     }
 
-    context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
+    headers = context->getHTTPHeaderFilter().checkAndNormalizeHeaders(std::move(headers));
 
     auto shared_cache = S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(url.endpoint, url.bucket);
 

@@ -1111,6 +1111,18 @@ namespace
         Poco::Net::HTTPBasicCredentials credentials;
         const std::optional<FormatSettings> & format_settings;
     };
+
+/// A "Range" header must not reach the wire during schema inference: it would make inference read a
+/// partial-content response. Applied on the already-normalized names (case-insensitive), so a
+/// padded/mixed-case spelling that normalizes to "Range" is caught too. Only the fresh-request
+/// inference path uses this; the read/ATTACH paths keep their existing behaviour so that attaching
+/// a table stored with such a header does not start failing.
+void rejectRangeHeaders(const HTTPHeaderEntries & headers)
+{
+    for (const auto & entry : headers)
+        if (boost::to_lower_copy(entry.name) == "range")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range headers are not allowed");
+}
 }
 
 std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndFormatFromDataImpl(
@@ -1125,9 +1137,12 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     /// Enforce <http_forbid_headers> before any network access. This is the single funnel for
     /// schema inference (StorageURL ctor, StorageURLCluster, TableFunctionURL analysis), so the
     /// check here also covers the DESCRIBE / INSERT..SELECT / format-detection paths that never
-    /// reach the StorageURL ctor body. checkAndNormalizeHeaders mutates, so validate a copy.
-    HTTPHeaderEntries headers_to_check(headers);
-    context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_to_check);
+    /// reach the StorageURL ctor body. checkAndNormalizeHeaders returns the normalized headers, so
+    /// send that normalized copy — the normalized names are what reach the wire. Ban "Range" on the
+    /// normalized names (a padded spelling normalizes to "Range") so schema inference never reads a
+    /// partial-content response.
+    const auto headers_to_check = context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
+    rejectRangeHeaders(headers_to_check);
 
     Poco::Net::HTTPBasicCredentials credentials;
 
@@ -1137,7 +1152,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     else
         urls_to_check = {uri};
 
-    URLReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
+    URLReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers_to_check, format_settings, context);
     if (format)
         return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
     return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
@@ -1632,7 +1647,7 @@ StorageURL::StorageURL(
         distributed_processing_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
-    context_->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
+    headers = context_->getHTTPHeaderFilter().checkAndNormalizeHeaders(std::move(headers));
 }
 
 
