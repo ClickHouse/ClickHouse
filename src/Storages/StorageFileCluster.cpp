@@ -1,3 +1,6 @@
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessFlags.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -29,6 +32,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsString rename_files_after_processing;
 }
 
 StorageFileCluster::StorageFileCluster(
@@ -81,6 +85,26 @@ StorageFileCluster::StorageFileCluster(
     setInMemoryMetadata(storage_metadata);
 }
 
+namespace
+{
+
+/// The workers rename the files they read, so the user who asks for it must be allowed to write here,
+/// on the node it authenticated to: without a cluster secret a secondary query is authorized as the
+/// cluster's configured user, not as the user who issued this query.
+void checkWriteAccessIfFilesAreRenamed(const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::rename_files_after_processing].value.empty())
+        context->getAccess()->checkAccessWithFilter(
+            AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+}
+
+}
+
+void StorageFileCluster::updateBeforeRead(const ContextPtr & context)
+{
+    checkWriteAccessIfFilesAreRenamed(context);
+}
+
 void StorageFileCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const DB::ContextPtr & context)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
@@ -98,6 +122,10 @@ void StorageFileCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const Sto
 RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate, const ActionsDAG * /* filter */, const ContextPtr & context, ClusterPtr, StorageMetadataPtr metadata) const
 {
+    /// A distributed `INSERT ... SELECT` hands the workers their tasks from here without going
+    /// through `IStorageCluster::read`, so this is the one place every path shares.
+    checkWriteAccessIfFilesAreRenamed(context);
+
     auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context);
     auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
     {
