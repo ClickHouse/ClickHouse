@@ -1,6 +1,12 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <base/getFQDNOrHostName.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -87,23 +93,47 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(span.trace_id);
-    columns[i++]->insert(span.span_id);
-    columns[i++]->insert(span.parent_span_id);
-    columns[i++]->insert(span.operation_name);
-    columns[i++]->insert(span.kind);
-    columns[i++]->insert(span.start_time_us);
-    columns[i++]->insert(span.finish_time_us);
-    columns[i++]->insert(DateLUT::instance().toDayNum(span.finish_time_us / 1000000).toUnderType());
-    columns[i++]->insert(static_cast<Int8>(span.status_code));
-    columns[i++]->insert(span.status_message);
+    /// Write into the columns directly instead of boxing every value into a `Field`.
+    /// `IColumn::insert(Field)` on a `LowCardinality` column reaches `ColumnUnique::uniqueInsert`,
+    /// which allocates a throw-away `ColumnString` per value, and the `attribute` map additionally
+    /// materializes a `Map` of `Tuple`s of `Field`s - about seven allocations per attribute.
+    /// This is the dominant cost of a span log flush: in a Memory Sanitizer CI run, where the
+    /// stateless tests are executed with `opentelemetry_start_trace_probability = 0.1`, building
+    /// the block for a batch of 325865 spans took 99 s while the `INSERT` itself took 2.3 s. Once
+    /// a flush is slower than the rate at which spans are produced the queue keeps growing, and
+    /// `SYSTEM FLUSH LOGS opentelemetry_span_log` starts to exceed its 180 s timeout.
+    const auto & hostname = getFQDNOrHostName();
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(hostname.data(), hostname.size());
+    typeid_cast<ColumnUUID &>(*columns[i++]).getData().push_back(span.trace_id);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(span.span_id);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(span.parent_span_id);
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(span.operation_name.data(), span.operation_name.size());
+    typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(span.kind));
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(span.start_time_us);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(span.finish_time_us);
+    typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(
+        DateLUT::instance().toDayNum(span.finish_time_us / 1000000).toUnderType());
+    typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(span.status_code));
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(span.status_message.data(), span.status_message.size());
 
-    Map attributes_map;
-    attributes_map.reserve(span.attributes.size());
-    for (const auto & attribute : span.attributes)
-        attributes_map.push_back(Tuple{attribute.getKey(), attribute.getValue()});
-    columns[i++]->insert(std::move(attributes_map));
+    {
+        auto & column_map = typeid_cast<ColumnMap &>(*columns[i++]);
+        auto & offsets = column_map.getNestedColumn().getOffsets();
+        auto & tuple_column = column_map.getNestedData();
+        auto & key_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(0));
+        auto & value_column = typeid_cast<ColumnString &>(tuple_column.getColumn(1));
+
+        for (const auto & attribute : span.attributes)
+        {
+            const auto & key = attribute.getKey();
+            key_column.insertData(key.data(), key.size());
+
+            const auto value = attribute.getValue();
+            value_column.insertData(value.data(), value.size());
+        }
+
+        offsets.push_back(offsets.back() + span.attributes.size());
+    }
 }
 
 }
