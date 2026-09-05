@@ -23,10 +23,18 @@ SELECT '-- LIKE with two consecutive literal backslashes before a wildcard';
 SELECT groupArray(id) FROM tab WHERE msg LIKE '%ab\\\\\\\\%cd%';
 SELECT groupArray(id) FROM tab WHERE msg LIKE '%ab\\\\\\\\%cd%' SETTINGS use_skip_indexes = 0;
 
+SELECT extract(explain, 'Granules: [0-9]+/[0-9]+') AS explain FROM (
+    EXPLAIN indexes = 1 SELECT groupArray(id) FROM tab WHERE msg LIKE '%ab\\\\\\\\%cd%'
+) WHERE explain LIKE '%Granules: %/%';
+
 SELECT '-- the same pattern reached through a custom ESCAPE character';
 
 SELECT groupArray(id) FROM tab WHERE msg LIKE '%ab\\\\%cd%' ESCAPE '!';
 SELECT groupArray(id) FROM tab WHERE msg LIKE '%ab\\\\%cd%' ESCAPE '!' SETTINGS use_skip_indexes = 0;
+
+SELECT extract(explain, 'Granules: [0-9]+/[0-9]+') AS explain FROM (
+    EXPLAIN indexes = 1 SELECT groupArray(id) FROM tab WHERE msg LIKE '%ab\\\\%cd%' ESCAPE '!'
+) WHERE explain LIKE '%Granules: %/%';
 
 DROP TABLE tab;
 
@@ -46,5 +54,9 @@ SELECT '-- LIKE with two consecutive literal backslashes before a wildcard';
 
 SELECT groupArray(id) FROM tab WHERE msg LIKE '%ab\\\\\\\\%cd%';
 SELECT groupArray(id) FROM tab WHERE msg LIKE '%ab\\\\\\\\%cd%' SETTINGS use_skip_indexes = 0;
+
+SELECT extract(explain, 'Granules: [0-9]+/[0-9]+') AS explain FROM (
+    EXPLAIN indexes = 1 SELECT groupArray(id) FROM tab WHERE msg LIKE '%ab\\\\\\\\%cd%'
+) WHERE explain LIKE '%Granules: %/%';
 
 DROP TABLE tab;

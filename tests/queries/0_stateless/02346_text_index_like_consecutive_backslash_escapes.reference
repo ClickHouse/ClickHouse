@@ -2,10 +2,16 @@ text index with the ngrams tokenizer
 -- LIKE with two consecutive literal backslashes before a wildcard
 [1]
 [1]
+Granules: 3/3
+Granules: 1/3
 -- the same pattern reached through a custom ESCAPE character
 [1]
 [1]
+Granules: 3/3
+Granules: 1/3
 ngrambf_v1 index
 -- LIKE with two consecutive literal backslashes before a wildcard
 [1]
 [1]
+Granules: 3/3
+Granules: 1/3
