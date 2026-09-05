@@ -1596,7 +1596,8 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
         auto order_info = buildInputOrderFromUnorderedKeys(reading, fixed_columns, dag, keys);
 
         /// The order of BY columns does not matter for LIMIT BY
-        if (getCollationAwareSortPrefixInColumns(order_info.sort_description, keys).size() != keys.size())
+        if (getCollationAwareSortPrefixInColumns(order_info.sort_description, keys, *limit_by.getInputHeaders().front()).size()
+            != keys.size())
             return {};
 
         if (!canImproveOrderForDistinct(order_info, reading->getInputOrder()))
@@ -1616,7 +1617,8 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
         auto order_info = buildInputOrderFromUnorderedKeys(merge, fixed_columns, dag, keys);
 
         /// The order of BY columns does not matter for LIMIT BY
-        if (getCollationAwareSortPrefixInColumns(order_info.sort_description, keys).size() != keys.size())
+        if (getCollationAwareSortPrefixInColumns(order_info.sort_description, keys, *limit_by.getInputHeaders().front()).size()
+            != keys.size())
             return {};
 
         if (!canImproveOrderForDistinct(order_info, merge->getInputOrder()))
@@ -1865,7 +1867,8 @@ void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const Qu
 
     /// The sorted-stream transform needs every key in the sort prefix (and in that order); otherwise a
     /// key not covered by the prefix would be dropped from grouping.
-    auto sort_prefix = getCollationAwareSortPrefixInColumns(order_info.sort_description, limit_by->getColumns());
+    auto sort_prefix
+        = getCollationAwareSortPrefixInColumns(order_info.sort_description, limit_by->getColumns(), *limit_by->getInputHeaders().front());
     if (sort_prefix.size() != limit_by->getColumns().size())
         return;
 

@@ -91,7 +91,31 @@ SortDescription commonPrefix(const SortDescription & lhs, const SortDescription 
     return res;
 }
 
-SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns)
+namespace
+{
+
+/// Values that comparison declares equal while hash equality - the equality of `GROUP BY`, `DISTINCT`,
+/// `LIMIT BY` and `IN` - keeps apart: `-0.0` and `0.0`, and the `NaN` payloads. `Dynamic`, `Variant`
+/// and `Object` are only known at run time and may hold such a value.
+bool comparisonCanMergeDistinctValues(const IDataType & type)
+{
+    auto is_ambiguous = [](const IDataType & subtype)
+    {
+        WhichDataType which(subtype);
+        return which.isFloat() || which.isDynamic() || which.isVariant() || which.isObject();
+    };
+
+    if (is_ambiguous(type))
+        return true;
+
+    bool result = false;
+    type.forEachChild([&](const IDataType & child) { result = result || is_ambiguous(child); });
+    return result;
+}
+
+}
+
+SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns, const Block & header)
 {
     std::unordered_set<std::string_view> column_set(columns.begin(), columns.end());
 
@@ -104,6 +128,14 @@ SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & des
         /// A collated column is ordered by its collation key, not by value, so equal values are not
         /// adjacent; in-order grouping (DISTINCT / LIMIT BY) cannot rely on it. Stop the prefix here.
         if (sort_column_desc.collator)
+            break;
+
+        /// A group taken from the sort order is a range of rows that compare equal, and comparison
+        /// merges `-0.0` with `0.0`. The hash grouping the same steps use otherwise - and `GROUP BY` -
+        /// keeps them apart, so a float in the prefix would make the answer depend on which variant the
+        /// plan picks. The column keeps being grouped, just by hash.
+        const auto * column_in_header = header.findByName(sort_column_desc.column_name);
+        if (!column_in_header || !column_in_header->type || comparisonCanMergeDistinctValues(*column_in_header->type))
             break;
 
         prefix.emplace_back(sort_column_desc);
