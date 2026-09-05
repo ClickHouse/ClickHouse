@@ -9,8 +9,8 @@ SET enable_parallel_replicas = 1, max_parallel_replicas = 2, cluster_for_paralle
 
 -- A window function that does not reference the constant column projected by the inner subquery.
 -- Each query below must return the row count; a header that drops the unused constant makes the
--- replica's chunk mismatch the reader and aborts with "Invalid number of columns in chunk pushed
--- to OutputPort".
+-- replica's chunk mismatch the reader, which raises the LOGICAL_ERROR exception "Invalid number of
+-- columns in chunk pushed to OutputPort".
 SELECT DISTINCT count(*) OVER () FROM (SELECT 0 FROM t_window_const);
 SELECT DISTINCT count(*) OVER () FROM (SELECT 0 AS c, s FROM t_window_const);
 SELECT DISTINCT count(*) OVER (), 1 AS a, 'z' AS b FROM (SELECT 0, 5 FROM t_window_const);
@@ -32,7 +32,7 @@ SELECT DISTINCT count(*) OVER () FROM (SELECT 0 AS c, s FROM t_window_const UNIO
 
 -- A bare IN is genuinely non-constant, so it stays a plain column. Planned against a missing
 -- cluster, it must reach the cluster lookup and report CLUSTER_DOESNT_EXIST, which shows the header
--- was built rather than aborted.
+-- was built rather than failing earlier.
 SELECT DISTINCT count(*) OVER () FROM (SELECT s IN (SELECT toString(number) FROM numbers(1)) FROM t_window_const) SETTINGS cluster_for_parallel_replicas = 'not_exists'; -- { serverError CLUSTER_DOESNT_EXIST }
 SELECT DISTINCT count(*) OVER () FROM (SELECT s IN ('1', '2') FROM t_window_const) SETTINGS cluster_for_parallel_replicas = 'not_exists'; -- { serverError CLUSTER_DOESNT_EXIST }
 SELECT DISTINCT count(*) OVER () FROM (SELECT toUInt8(s IN ('1', '2')) + 0 FROM t_window_const) SETTINGS cluster_for_parallel_replicas = 'not_exists'; -- { serverError CLUSTER_DOESNT_EXIST }
