@@ -1,7 +1,10 @@
+import base64
+import gzip
 import sys
 import json
 import re
 import io
+import tarfile
 import zipfile
 from urllib.parse import urlparse
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -12,6 +15,17 @@ def make_zip_file(entries):
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
         for name, data in entries:
             archive.writestr(name, data)
+    return buffer.getvalue()
+
+
+def make_tar_file(entries, mode="w"):
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode=mode) as archive:
+        for name, data in entries:
+            encoded = data if isinstance(data, bytes) else data.encode("utf-8")
+            info = tarfile.TarInfo(name)
+            info.size = len(encoded)
+            archive.addfile(info, io.BytesIO(encoded))
     return buffer.getvalue()
 
 
@@ -58,6 +72,21 @@ DATA_PARTS = {
     "/data/apache_sort/subdir/part2.tsv": "11\n",
 }
 
+SIMPLE_ENTRIES = [
+    ("eod.csv", "1\n2\n"),
+    ("compressed.csv.gz", gzip.compress(b"4\n5\n")),
+    ("ignored.tsv", "100\n"),
+]
+SIMPLE_ARCHIVES = {
+    "/data/simple_archive.zip": make_zip_file(SIMPLE_ENTRIES),
+    "/data/simple_archive.tar": make_tar_file(SIMPLE_ENTRIES),
+    "/data/simple_archive.tar.gz": make_tar_file(SIMPLE_ENTRIES, "w:gz"),
+}
+SEVEN_ZIP_ARCHIVE = base64.b64decode(
+    "N3q8ryccAAR6+uLAhgAAAAAAAAAhAAAAAAAAALNtaxHgABsAGF0AGIsG6KncZB+qxtE07L6V51NQRUvIscAAAAAAgTMHrg/QD"
+    "rA8nz9HQQuzhjUvF/0mFycUGU6ZumpcFLtQ0sTFIPi7UL/aV1HJNT56yK3q4JtBV8pMBzjLgkmaOMy/z9sEjvZCcm7XHnG8B"
+    "k1QveQQyHhtaNJQfEr2+FEaIAAAABcGIAEJZgAHCwEAASMDAQEFXQAQAAAMgIYKAQLspfoAAA=="
+)
 SHARD_0_ARCHIVE = make_zip_file([("value.tsv", "101\n")])
 SHARD_1_ARCHIVE = make_zip_file([("value.tsv", "202\n"), ("padding.txt", "x" * 1024)])
 UNKNOWN_SIZE_ARCHIVE = make_zip_file([("value.tsv", "47\n")])
@@ -110,6 +139,11 @@ class RequestHandler(BaseHTTPRequestHandler):
         return f"<a href=\"{next_level}/\">{next_level}/</a>\n"
 
     def _archive_data_for_request(self, parsed_url):
+        if parsed_url.path in SIMPLE_ARCHIVES:
+            return SIMPLE_ARCHIVES[parsed_url.path]
+        if parsed_url.path == "/data/simple_archive.7z":
+            return SEVEN_ZIP_ARCHIVE
+
         if parsed_url.path != "/data/archive_identity/archive.zip":
             return None
 
@@ -130,6 +164,35 @@ class RequestHandler(BaseHTTPRequestHandler):
         if parsed_url.query == "shard=1":
             return b"202\n"
         return None
+
+    def _send_archive_data(self, archive_data):
+        range_header = self.headers.get("Range")
+        if range_header:
+            match = re.fullmatch(r"bytes=(\d+)-(\d*)", range_header)
+            if not match:
+                self.send_response(416)
+                self.end_headers()
+                return
+            start = int(match.group(1))
+            end = int(match.group(2)) if match.group(2) else len(archive_data) - 1
+            end = min(end, len(archive_data) - 1)
+            if start > end:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{len(archive_data)}")
+                self.end_headers()
+                return
+            response_data = archive_data[start : end + 1]
+            self.send_response(206)
+            self.send_header("Content-Range", f"bytes {start}-{end}/{len(archive_data)}")
+        else:
+            response_data = archive_data
+            self.send_response(200)
+
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(len(response_data)))
+        self.send_header("Accept-Ranges", "bytes")
+        self.end_headers()
+        self.wfile.write(response_data)
 
     def do_HEAD(self):
         if self._handle_control():
@@ -578,11 +641,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         archive_data = self._archive_data_for_request(parsed)
         if archive_data is not None:
-            self.send_response(200)
-            self.send_header("Content-Type", "application/zip")
-            self.send_header("Content-Length", str(len(archive_data)))
-            self.end_headers()
-            self.wfile.write(archive_data)
+            self._send_archive_data(archive_data)
             return
         if path == "/data/unknown_size_archive/archive.zip":
             self.send_response(200)

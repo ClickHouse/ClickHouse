@@ -632,6 +632,36 @@ def test_url_wildcard_failover_resets_credentials():
     assert result.strip() == "23"
 
 
+def test_url_archive_without_url_wildcards():
+    for archive_name in ("simple_archive.zip", "simple_archive.tar", "simple_archive.tar.gz"):
+        archive_url = f"http://resolver:8087/data/{archive_name} :: eod.csv"
+        assert node1.query(f"SELECT sum(c1) FROM url('{archive_url}')").strip() == "3"
+
+    archive_url = "http://resolver:8087/data/simple_archive.zip :: eod.csv"
+    assert node1.query(
+        "SELECT sum(value) FROM url("
+        "'http://resolver:8087/data/simple_archive.zip :: *.csv', "
+        "'CSV', 'value UInt64')"
+    ).strip() == "3"
+    assert node1.query(
+        "SELECT sum(id) FROM url("
+        "'http://resolver:8087/data/simple_archive.7z :: example*.csv', "
+        "'CSV', 'id UInt32, data String')"
+    ).strip() == "10"
+
+    table_name = "url_archive_empty_as"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+    try:
+        node1.query(
+            f"CREATE TABLE {table_name} ORDER BY () EMPTY AS "
+            f"SELECT * FROM url('{archive_url}')"
+        )
+        assert node1.query(f"SELECT count() FROM {table_name}").strip() == "0"
+        assert node1.query(f"DESCRIBE TABLE {table_name}") == TSV([["c1", "Nullable(Int64)"]])
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+
 def test_url_wildcard_archive_metadata_uses_shard_identity():
     result = node1.query(
         with_url_wildcard_setting(

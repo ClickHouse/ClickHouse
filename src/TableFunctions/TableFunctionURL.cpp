@@ -19,6 +19,7 @@
 #include <Storages/StorageURLCluster.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Storages/HivePartitioningUtils.h>
@@ -29,6 +30,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_archive_path_syntax;
     extern const SettingsBool allow_experimental_url_wildcard_from_index_pages;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
@@ -327,12 +329,17 @@ StoragePtr TableFunctionURL::getStorage(
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     const auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
 
-    /// Listable `*` / `**` path wildcards are expanded by listing HTTP index pages through
+    /// Listable `*` / `**` path wildcards and HTTP archives are read through
     /// `StorageObjectStorage` (the branch below). `StorageURLCluster` still uses
     /// `DisclosedGlobIterator` / `parseRemoteDescription` and cannot list index pages, so it must not
     /// take over such queries via the parallel-replicas path — that would silently fall back to the
     /// old literal/template expansion and read different (or no) files than the non-cluster path.
-    const bool use_web_wildcard = !is_insert_query && configuration.http_method.empty() && urlPathHasListableGlobs(source);
+    const auto [url, archive_pattern] = settings[Setting::allow_archive_path_syntax]
+        ? getURIAndArchivePattern(source)
+        : std::pair<String, std::optional<String>>{source, std::nullopt};
+    const bool use_web_wildcard = !is_insert_query && configuration.http_method.empty() && urlPathHasListableGlobs(url);
+    const bool use_web_object_storage = use_web_wildcard
+        || (!is_insert_query && configuration.http_method.empty() && archive_pattern.has_value());
 
     const bool can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
         && settings[Setting::parallel_replicas_for_cluster_engines]
@@ -340,7 +347,7 @@ StoragePtr TableFunctionURL::getStorage(
         && !context->isDistributed()
         && !is_secondary_query
         && !is_insert_query
-        && !use_web_wildcard;
+        && !use_web_object_storage;
 
     if (can_use_parallel_replicas)
     {
@@ -356,9 +363,10 @@ StoragePtr TableFunctionURL::getStorage(
             configuration);
     }
 
-    if (use_web_wildcard)
+    if (use_web_object_storage)
     {
-        checkExperimentalURLWildcardFromIndexPages(context);
+        if (use_web_wildcard)
+            checkExperimentalURLWildcardFromIndexPages(context);
         auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
 
         auto engine_args = makeWebObjectStorageEngineArgs(source, format_, structure, compression_method_, configuration.headers);
@@ -414,9 +422,15 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
         ColumnsDescription columns;
         String sample_path = filename;
 
-        if (configuration.http_method.empty() && urlPathHasListableGlobs(filename))
+        const auto [url, archive_pattern] = context->getSettingsRef()[Setting::allow_archive_path_syntax]
+            ? getURIAndArchivePattern(filename)
+            : std::pair<String, std::optional<String>>{filename, std::nullopt};
+        const bool use_web_wildcard = configuration.http_method.empty() && urlPathHasListableGlobs(url);
+
+        if (use_web_wildcard || (configuration.http_method.empty() && archive_pattern.has_value()))
         {
-            checkExperimentalURLWildcardFromIndexPages(context);
+            if (use_web_wildcard)
+                checkExperimentalURLWildcardFromIndexPages(context);
 
             auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
             auto engine_args = makeWebObjectStorageEngineArgs(filename, format, structure, compression_method, configuration.headers);
@@ -553,6 +567,21 @@ SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 ```
 
 Scheme dispatch is not yet wired through [`urlCluster`](/reference/functions/table-functions/urlCluster): a non-`http(s)` scheme passed to `urlCluster` is rejected with an error. Use the corresponding cluster function (`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …) for those backends instead.
+
+## Working with archives {#working-with-archives}
+
+Files in remote archives can be read by separating the archive URL and the path inside it with `::`. Globs are supported in both parts. The supported archive suffixes are aligned with the `file` and `s3` functions:
+
+- ZIP: `.zip`, `.zipx`
+- TAR: `.tar`, `.tar.gz`, `.tgz`, `.tar.zst`, `.tzst`, `.tar.xz`, `.tar.bz2`, `.tar.lzma`
+- 7Z: `.7z`
+
+```sql
+SELECT *
+FROM url('https://example.com/dataset.zip :: data/*.csv');
+```
+
+Archive access is read-only. The server must report the archive size so ClickHouse can issue range requests.
 
 ## Globs in URL {#globs-in-url}
 
