@@ -82,6 +82,11 @@ public:
         if (likely(std::abs(untracked_memory - state.contributed) < buffer_now))
             return true;
 
+        return publish(untracked_memory, state);
+    }
+
+    [[nodiscard]] ALWAYS_INLINE bool publish(Int64 untracked_memory, PerCPUMemoryThreadState & state)
+    {
         const int cpu = sched_getcpu();
         if (unlikely(static_cast<unsigned>(cpu) >= static_cast<unsigned>(cpu_count)))
             return false;
@@ -190,7 +195,8 @@ private:
 /// Process-wide instance used by CurrentMemoryTracker. Constructed before main(); allocations
 /// before its initialiser runs see cpu_count == 0, so sync() returns false without indexing the
 /// (empty) array — a normal per-thread flush.
-inline PerCPUMemory per_cpu_memory{PerCPUMemory::numberOfCPUs(), PerCPUMemory::DEFAULT_BUDGET, PerCPUMemory::DEFAULT_THREAD_BUFFER};
+/// Defined in `PerCPUMemory.cpp`: a definition here gives every shared object its own copy.
+extern PerCPUMemory per_cpu_memory;
 
 }
 
@@ -209,6 +215,7 @@ public:
     static constexpr Int64 UNLIMITED_BUDGET = std::numeric_limits<Int64>::max() / 2;
 
     [[nodiscard]] bool sync(Int64 /*untracked_memory*/, PerCPUMemoryThreadState &) { return true; }
+    [[nodiscard]] bool publish(Int64 /*untracked_memory*/, PerCPUMemoryThreadState &) { return true; }
     void release(PerCPUMemoryThreadState &) {}
     void rollback(PerCPUMemoryThreadState &, const PerCPUMemoryThreadState &) {}
     void setThreadBuffer(Int64 bytes) { buffer.store(bytes < 0 ? 0 : bytes, std::memory_order_relaxed); }
@@ -225,7 +232,8 @@ private:
     std::atomic<Int64> buffer{DEFAULT_THREAD_BUFFER};
 };
 
-inline PerCPUMemory per_cpu_memory;
+/// Defined in `PerCPUMemory.cpp`: a definition here gives every shared object its own copy.
+extern PerCPUMemory per_cpu_memory;
 
 }
 

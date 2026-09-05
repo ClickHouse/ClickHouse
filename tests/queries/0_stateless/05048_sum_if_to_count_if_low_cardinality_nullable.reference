@@ -1,0 +1,18 @@
+LowCardinality(Nullable(UInt8))
+-- LowCardinality(Nullable) condition: rewrite must not fire
+2
+10
+2
+10
+0
+-- Nullable condition: rewrite must not fire
+2
+2
+0
+-- Non-nullable condition: rewrite must still fire
+2
+1
+-- The un-negated direction agrees with `countIf` even for NULL conditions and must still be rewritten
+1
+1
+1

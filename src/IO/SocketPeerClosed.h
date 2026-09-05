@@ -52,7 +52,8 @@ SocketState getSocketState(const Poco::Net::StreamSocket & socket);
 
 #if USE_SSL
 /// TLS-aware core of the check, exposed for testing. The socket underlying `ssl` MUST be in
-/// non-blocking mode (the caller guarantees this) so that `SSL_peek` cannot block.
+/// non-blocking mode - don't-wait mode for a fiber socket - (the caller guarantees this) so that
+/// `SSL_peek` cannot block.
 SocketState getSSLSocketState(ssl_st * ssl);
 #endif
 

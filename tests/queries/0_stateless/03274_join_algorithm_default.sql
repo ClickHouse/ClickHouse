@@ -8,7 +8,7 @@ SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 
 -- Test that with default join_algorithm setting, we are doing a parallel hash join
 
-SELECT value == 'direct,parallel_hash,hash' FROM system.settings WHERE name = 'join_algorithm';
+SELECT value == 'direct,parallel_hash,hash,ie_join' FROM system.settings WHERE name = 'join_algorithm';
 
 EXPLAIN PIPELINE
 SELECT

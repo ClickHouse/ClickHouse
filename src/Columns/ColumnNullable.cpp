@@ -11,8 +11,10 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/Operators.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -246,15 +248,6 @@ void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in, const IColum
         getNestedColumn().deserializeAndInsertFromArena(in, settings);
     else
         getNestedColumn().insertDefault();
-}
-
-void ColumnNullable::skipSerializedInArena(ReadBuffer & in) const
-{
-    UInt8 val = 0;
-    readBinaryLittleEndian<UInt8>(val, in);
-
-    if (val == 0)
-        getNestedColumn().skipSerializedInArena(in);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -1065,6 +1058,16 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
+void ColumnNullable::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> *)
+{
+    getNestedColumn().fillFromRowRefsWithRowStore(removeNullable(type), source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores, &getNullMapData());
+}
+
+void ColumnNullable::fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> *)
+{
+    getNestedColumn().fillFromRowStorePtrs(removeNullable(type), row_store_ptrs, field_offset, field_size, begin, count, &getNullMapData());
+}
+
 /// A NULL row emits only the flag byte and never touches the nested column, so an
 /// unsupported nested type (e.g. LowCardinality, Array) would slip through silently.
 /// Probe row 0 once so every row rejects the same types a non-NULL row would, even
@@ -1204,6 +1207,14 @@ ColumnPtr removeNullableOrLowCardinalityNullable(const ColumnPtr & column)
     }
 
     return removeNullable(column);
+}
+
+bool ColumnNullable::hasOnlyTypeDefaults() const
+{
+    const auto & data = getNullMapData();
+    if (data.empty())
+        return true;
+    return memoryIsByte(data.data(), 0, data.size(), 1);
 }
 
 }

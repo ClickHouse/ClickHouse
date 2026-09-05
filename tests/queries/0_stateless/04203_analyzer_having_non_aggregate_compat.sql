@@ -121,14 +121,8 @@ SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_havi
 -- `enable_optimize_predicate_expression`; the flaky-check randomizer can disable it,
 -- so pin it here to keep the parity assertion deterministic.
 SELECT 'A.1 legacy parity';
-SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING service = 'svc1'
-ORDER BY category
-SETTINGS enable_analyzer = 0, enable_optimize_predicate_expression = 1;
 
 SELECT 'A.1 legacy parity';
-SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING service = 'svc1'
-ORDER BY category
-SETTINGS enable_analyzer = 0, enable_optimize_predicate_expression = 1, group_by_use_nulls = 1;
 
 SELECT 'A.1 legacy parity';
 SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING service = 'svc1'

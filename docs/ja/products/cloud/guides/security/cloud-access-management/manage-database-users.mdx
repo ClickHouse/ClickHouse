@@ -21,9 +21,13 @@ SQL コンソールのユーザーはセッションごとに作成され、自�
   ## SQL コンソールのユーザーとロール
 </div>
 
-基本的な SQL コンソールのロールは、Service Read Only および Service Admin の権限を持つユーザーに割り当てることができます。詳細については、[SQL Console ロール割り当ての管理](/ja/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)を参照してください。このガイドでは、SQL コンソールユーザー用のカスタムロールを作成する方法を説明します。
+基本的な SQL コンソールのロールは、Service Read Only および Service Admin の権限を持つユーザーに割り当てることができます。詳細については、[SQL Console ロール割り当ての管理](/ja/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)を参照してください。このガイドでは、SQL コンソールのユーザー用のカスタムロールを作成する方法を説明します。
 
-SQL コンソールユーザー用のカスタムロールを作成し、それに汎用ロールを付与するには、次のコマンドを実行します。メールアドレスは、コンソール上のユーザーのメールアドレスと一致している必要があります。
+<Tip>
+  コンソールからデータベースアクセスを管理するには、[Cloud 管理のデータベースロール](/ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (ベータ) の使用をお勧めします。`sql-console-role:<email>` ロールは、[JWT 認証](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) と互換性がありません。
+</Tip>
+
+SQL コンソールのユーザー用のカスタムロールを作成し、それに汎用ロールを付与するには、次のコマンドを実行します。メールアドレスは、コンソール上のユーザーのメールアドレスと一致している必要があります。
 
 <Steps>
   <Step title={<>`database_developer` を作成して権限を付与する</>} id="create-role-grant-permissions">
@@ -38,8 +42,8 @@ SQL コンソールユーザー用のカスタムロールを作成し、それ�
     ```
   </Step>
 
-  <Step title="SQL コンソールユーザー用ロールを作成する" id="create-sql-console-user-role">
-    SQL コンソールユーザー my.user@domain.com 用のロールを作成し、`database_developer` ロールを割り当てます。
+  <Step title="SQL コンソールのユーザー用ロールを作成する" id="create-sql-console-user-role">
+    SQL コンソールのユーザー my.user@domain.com 用のロールを作成し、`database_developer` ロールを割り当てます。
 
     ```sql
     CREATE ROLE OR REPLACE `sql-console-role:my.user@domain.com`;

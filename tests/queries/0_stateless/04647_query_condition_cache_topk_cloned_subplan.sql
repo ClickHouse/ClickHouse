@@ -1,8 +1,8 @@
--- Tags: long, no-parallel, no-parallel-replicas
+-- Tags: long, no-parallel
 -- Tag no-parallel: Messes with internal cache
 -- Tag long: needs ~1M rows for the QCC to populate.
 --
--- Companion of `04628_query_condition_cache_topk_default_off`, covering plans whose
+-- Companion of `04628_query_condition_cache_topk_gate_off`, covering plans whose
 -- `ReadFromMergeTree` step is *cloned* after the TopK marker was attached by `tryOptimizeTopK`.
 --
 -- `setTopKColumn` records the marker (`top_k_filter_info`) and, with
@@ -23,14 +23,13 @@
 
 SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
--- Pin the gate to its default value: this test covers the default-off contract.
+-- Turn the gate off: this test covers the contract of the query condition cache being
+-- switched off for TopK reads.
 SET use_query_condition_cache_for_top_k = 0;
 SET use_top_k_dynamic_filtering = 1;
 SET use_skip_indexes_for_top_k = 1;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET optimize_move_to_prewhere = 0;
-SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_local_plan = 1;
 SET max_threads = 1;
 SET allow_experimental_correlated_subqueries = 1;

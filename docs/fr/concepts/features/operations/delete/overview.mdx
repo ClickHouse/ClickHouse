@@ -2,18 +2,18 @@
 slug: /deletes/overview
 title: 'Aperçu de la suppression'
 description: 'Comment supprimer des données dans ClickHouse'
-keywords: ['delete', 'truncate', 'drop', 'lightweight delete']
+keywords: ['suppression', 'truncate', 'drop', 'suppression légère']
 doc_type: 'guide'
 ---
 
-Il existe plusieurs façons de supprimer des données dans ClickHouse, chacune avec ses avantages et ses caractéristiques en termes de performances. Vous devez choisir la méthode appropriée en fonction de votre modèle de données et du volume de données à supprimer.
+Il existe plusieurs façons de supprimer des données dans ClickHouse, chacune présentant ses propres avantages et performances. Choisissez la méthode appropriée en fonction de votre modèle de données et du volume de données à supprimer.
 
-| Méthode                                                                             | Syntaxe                      | Quand l&#39;utiliser                                                                                                                                                                                                                                 |
-| ----------------------------------------------------------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Suppression légère](/fr/concepts/features/operations/delete/lightweight-delete)       | `DELETE FROM [table]`        | À utiliser pour supprimer de petites quantités de données. Les lignes sont immédiatement exclues de toutes les requêtes SELECT suivantes, mais elles sont d&#39;abord uniquement marquées en interne comme supprimées, sans être retirées du disque. |
-| [Mutation de suppression](/fr/reference/statements/alter/delete)                       | `ALTER TABLE [table] DELETE` | À utiliser lorsque les données doivent être supprimées du disque immédiatement (par exemple pour des raisons de conformité). Cela affecte négativement les performances de SELECT.                                                                   |
-| [Tronquer une table](/fr/reference/statements/truncate)                                | `TRUNCATE TABLE [db.table]`  | Supprime efficacement toutes les données d&#39;une table.                                                                                                                                                                                            |
-| [Suppression d’une partition](/fr/reference/statements/alter/partition#drop-partitionpart) | `DROP PARTITION`             | Supprime efficacement toutes les données d&#39;une partition.                                                                                                                                                                                        |
+| Méthode                                                                             | Syntaxe                      | Quand l&#39;utiliser                                                                                                                                                                                                                              |
+| ----------------------------------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Suppression légère](/fr/concepts/features/operations/delete/lightweight-delete)       | `DELETE FROM [table]`        | À utiliser pour supprimer de petites quantités de données. Les lignes sont immédiatement exclues de toutes les requêtes SELECT ultérieures, mais ne sont d&#39;abord marquées comme supprimées qu&#39;en interne, sans être supprimées du disque. |
+| [Mutation de suppression](/fr/reference/statements/alter/delete)                       | `ALTER TABLE [table] DELETE` | À utiliser lorsque les données doivent être supprimées du disque immédiatement (par exemple, pour des raisons de conformité). Affecte négativement les performances de SELECT.                                                                    |
+| [Tronquer une table](/fr/reference/statements/truncate)                                | `TRUNCATE TABLE [db.table]`  | Supprime efficacement toutes les données d&#39;une table.                                                                                                                                                                                         |
+| [Supprimer une partition](/fr/reference/statements/alter/partition#drop-partitionpart) | `DROP PARTITION`             | Supprime efficacement toutes les données d&#39;une partition.                                                                                                                                                                                     |
 
 Voici un résumé des différentes façons de supprimer des données dans ClickHouse :
 
@@ -40,14 +40,14 @@ Pour en savoir plus sur les [suppressions légères](/fr/concepts/features/opera
   ## Mutations de suppression
 </div>
 
-Les mutations de suppression peuvent être déclenchées à l’aide de la commande `ALTER TABLE ... DELETE`, par exemple.
+Les mutations de suppression peuvent être exécutées à l’aide d’une commande `ALTER TABLE ... DELETE`, par exemple.
 
 ```sql
 -- delete all data from 2018 with a mutation. Not recommended.
 ALTER TABLE posts DELETE WHERE toYear(CreationDate) = 2018
 ```
 
-Ces opérations peuvent être exécutées soit de manière synchrone (par défaut si elles sont non répliquées), soit de manière asynchrone (selon le paramètre [mutations&#95;sync](/fr/reference/settings/session-settings#mutations_sync)). Elles sont extrêmement gourmandes en E/S, car elles réécrivent toutes les parts correspondant à l&#39;expression `WHERE`. Ce processus n&#39;a aucune atomicité : les parts sont remplacées par des parts mutées dès qu&#39;elles sont prêtes, et une requête `SELECT` qui commence à s&#39;exécuter pendant une mutation verra à la fois des données issues de parts déjà mutées et des données issues de parts qui ne l&#39;ont pas encore été. Les utilisateurs peuvent suivre l&#39;état d&#39;avancement via la table [system.mutations](/fr/reference/system-tables/mutations#monitoring-mutations). Ce sont des opérations gourmandes en E/S qui doivent être utilisées avec parcimonie, car elles peuvent affecter les performances des requêtes `SELECT` sur le cluster.
+Celles-ci peuvent être exécutées soit de manière synchrone (par défaut si elles ne sont pas répliquées), soit de manière asynchrone (selon le paramètre [mutations&#95;sync](/fr/reference/settings/session-settings/mutations#mutations_sync)). Ces opérations sont extrêmement gourmandes en E/S, car elles réécrivent toutes les parts correspondant à l’expression `WHERE`. Ce processus n’offre aucune atomicité : les parts sont remplacées par des parts mutées dès qu’elles sont prêtes, et une requête `SELECT` qui commence à s’exécuter pendant une mutation verra à la fois les données des parts déjà mutées et celles des parts qui ne le sont pas encore. Les utilisateurs peuvent suivre l’état d’avancement via la table [system.mutations](/fr/reference/system-tables/mutations#monitoring-mutations). Ces opérations sont très intensives en E/S et doivent être utilisées avec parcimonie, car elles peuvent affecter les performances des `SELECT` sur le cluster.
 
 Pour en savoir plus sur les [mutations de suppression](/fr/reference/statements/alter/delete).
 
@@ -55,28 +55,28 @@ Pour en savoir plus sur les [mutations de suppression](/fr/reference/statements/
   ## Tronquer une table
 </div>
 
-Si vous devez supprimer toutes les données d’une table, utilisez la commande `TRUNCATE TABLE` ci-dessous. Il s’agit d’une opération légère.
+Si toutes les données d&#39;une table doivent être supprimées, utilisez la commande `TRUNCATE TABLE` indiquée ci-dessous. Il s&#39;agit d&#39;une opération légère.
 
 ```sql
 TRUNCATE TABLE posts
 ```
 
-Pour en savoir plus sur [TRUNCATE TABLE](/fr/reference/statements/truncate).
+Pour en savoir plus, consultez [TRUNCATE TABLE](/fr/reference/statements/truncate).
 
 <div id="drop-partition">
-  ## Suppression d’une partition
+  ## Supprimer une partition
 </div>
 
-Si vous avez défini une clé de partitionnement personnalisée pour vos données, les partitions peuvent être supprimées efficacement. Évitez le partitionnement à forte cardinalité.
+Si vous avez défini une clé de partitionnement personnalisée pour vos données, il est possible de supprimer efficacement les partitions. Évitez le partitionnement à forte cardinalité.
 
 ```sql
 ALTER TABLE posts (DROP PARTITION '2008')
 ```
 
-En savoir plus sur [DROP PARTITION](/fr/reference/statements/alter/partition).
+Pour en savoir plus, consultez [DROP PARTITION](/fr/reference/statements/alter/partition).
 
 <div id="more-resources">
-  ## Autres ressources
+  ## Ressources complémentaires
 </div>
 
-* [Gestion des mises à jour et des suppressions dans ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
+* [Gérer les mises à jour et les suppressions dans ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

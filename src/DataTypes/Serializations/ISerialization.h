@@ -12,6 +12,7 @@
 #include <Formats/MarkInCompressedFile.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 
+#include <absl/functional/function_ref.h>
 #include <boost/noncopyable.hpp>
 #include <map>
 #include <unordered_map>
@@ -55,6 +56,14 @@ struct NameAndTypePair;
 
 struct MergeTreeSettings;
 
+/** Returns the separator byte that the HiveText output format uses at the given nesting level,
+  * following Apache Hive's LazySimpleSerDe separator list: index 0 is the fields delimiter,
+  * 1 the collection-items delimiter, 2 the map-keys delimiter, and deeper levels default to
+  * consecutive control characters (0x04, 0x05, ...). Throws if the nesting is too deep to be
+  * represented (Hive supports at most 8 separators).
+  */
+char getHiveTextDelimiter(const FormatSettings & settings, size_t nesting_level);
+
 /** Represents serialization of data type.
  *  Has methods to serialize/deserialize column in binary and several text formats.
  *  Every data type has default serialization, but can be serialized in different representations.
@@ -87,6 +96,12 @@ public:
 
     virtual KindStack getKindStack() const { return {Kind::DEFAULT}; }
     SerializationPtr getPtr() const { return shared_from_this(); }
+
+    /// Wrap the base (`type->createColumn()`) column into the column layout this serialization deserializes
+    /// into. Each layer composes on top of the nested one, so this reproduces the serialization's kind stack
+    /// (Sparse/Replicated/Detached) and any custom wrapping (e.g. a per-part value broadcast as a ColumnConst).
+    /// Default: identity.
+    virtual MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const { return column; }
 
     static KindStack getKindStack(const IColumn & column);
     static String kindStackToString(const KindStack & kind);
@@ -140,18 +155,6 @@ public:
         virtual ~DeserializeBinaryBulkState() = default;
 
         virtual std::shared_ptr<DeserializeBinaryBulkState> clone() const { return std::make_shared<DeserializeBinaryBulkState>(); }
-
-        /// Enumerates the columns owned by this state.
-        /// Used by ColumnsOwnershipValidator in debug and sanitizer builds.
-        virtual void forEachColumn(const std::function<void(const ColumnPtr &)> &) const {}
-
-        /// Enumerates the nested deserialize states held by this state. Composite serializations
-        /// (Variant, Dynamic, Tuple, Map, Object, Sparse, ...) keep the states of their nested
-        /// serializations as members, and such a nested state is not necessarily registered in any
-        /// SubstreamsDeserializeStatesCache (e.g. SerializationLowCardinality never registers its
-        /// state there), so the columns it owns are reachable only through this enumeration.
-        /// Used by ColumnsOwnershipValidator in debug and sanitizer builds.
-        virtual void forEachNestedState(const std::function<void(const std::shared_ptr<DeserializeBinaryBulkState> &)> &) const {}
     };
 
     using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
@@ -276,6 +279,7 @@ public:
 
             Bucket,
             MapBucketsInfo,
+            MapBucketIndexes,
 
             QuantizedCodes,
             ProductQuantizationCodebook,
@@ -324,10 +328,6 @@ public:
     struct ISubstreamsCacheElement
     {
         virtual ~ISubstreamsCacheElement() = default;
-
-        /// Enumerates the columns owned by this cache element.
-        /// Used by ColumnsOwnershipValidator in debug and sanitizer builds.
-        virtual void forEachColumn(const std::function<void(const ColumnPtr &)> &) const {}
     };
 
     using SubstreamsCache = std::unordered_map<String, std::unique_ptr<ISubstreamsCacheElement>>;
@@ -372,6 +372,13 @@ public:
         size_t map_buckets_min_avg_size = 0;
         /// Type of MergeTree data part we serialize/deserialize data from if any.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
+
+        /// Callback to check whether a specific substream exists in the current data part.
+        /// Used during enumeration to skip substreams that were introduced after the part
+        /// was written (e.g. MapBucketIndexes in old bucketed Map parts).
+        /// When not set, all substreams are enumerated unconditionally.
+        using CheckStreamExistsCallback = std::function<bool(const SubstreamPath &)>;
+        CheckStreamExistsCallback check_stream_exists_callback;
 
         /// Current level of array. Needed to differentiate stream names of nested array offsets.
         size_t array_level = 0;
@@ -511,15 +518,16 @@ public:
         /// Callback used to mark a specific stream as unneeded indicating that it won't be used anymore.
         std::function<void(const SubstreamPath &)> release_stream_callback;
 
+        /// Callback to check whether a specific substream exists in the current data part.
+        /// Used during deserialization to handle backward compatibility: old parts written
+        /// before a new substream was introduced will not have it, and the getter may throw
+        /// (e.g. in compact parts) if called for a non-existent substream.
+        using CheckStreamExistsCallback = std::function<bool(const SubstreamPath &)>;
+        CheckStreamExistsCallback check_stream_exists_callback;
+
         /// Type of MergeTree data part we deserialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
-
-        /// Usually substreams cache contains the whole column with rows from
-        /// multiple ranges. But sometimes we need to read a separate column
-        /// with rows only from current range. If this flag is true and
-        /// there is a column in cache, insert only rows from current range from it.
-        bool insert_only_rows_in_current_range_from_substreams_cache = false;
 
         /// If true, call release_stream on all streams used in the prefixes deserialization
         /// even for streams that will be used later for data deserialization.
@@ -566,10 +574,8 @@ public:
         SerializeBinaryBulkStatePtr & state) const;
 
     /// Read no more than limit values and append them into column.
-    /// If rows_offset is not 0, the deserialization process will skip the first rows_offset rows.
     virtual void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t rows_offset,
+        IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -578,11 +584,9 @@ public:
     /** Override these methods for data types that require just single stream (most of data types).
       */
     virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const;
-    /// If rows_offset is not 0, the deserialization process will skip the first rows_offset rows.
     virtual void deserializeBinaryBulk(
         IColumn & column,
         ReadBuffer & istr,
-        size_t rows_offset,
         size_t limit,
         double avg_value_size_hint) const;
 
@@ -633,6 +637,14 @@ public:
     virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
     virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
     virtual bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
+
+    /** Text serialization for the Hive text format. Used only for output.
+      * Without escaping or quoting. Complex types separate their elements by the Hive separator
+      * for the current nesting level (see getHiveTextDelimiter), threaded through
+      * settings.hive_text.nesting_level. The default implementation throws, so only the data
+      * types supported in Hive override it.
+      */
+    virtual void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
 
     /** Text serialization for displaying on a terminal or saving into a text file, and the like.
       * Without escaping or quoting.
@@ -712,6 +724,9 @@ public:
     /// Returns true if stream with specified path corresponds to dynamic subcolumn.
     static bool isDynamicSubcolumn(const SubstreamPath & path, size_t prefix_len);
 
+    /// Returns whether a substream should be prefetched.
+    static bool isPrefetchNeededForSubstream(const SubstreamPath & path, size_t prefix_len, bool prefetch_json_shared_data_substreams);
+
     static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
     static bool isMetadataStream(const SubstreamPath & path);
 
@@ -733,9 +748,10 @@ public:
 
     /// If we have data in substreams cache for substream path from settings insert it
     /// into resulting column and return true, otherwise do nothing and return false.
-    static bool insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column);
-    /// Perform insertion from column found in substreams cache.
-    static void insertDataFromCachedColumn(const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows, SubstreamsCache * cache, bool update_cache_after_insert = false);
+    static bool insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, IColumn & result_column);
+    /// Insert rows from the current deserialized range of cached_column into result_column.
+    /// Always copies data via insertRangeFrom — never shares column pointers.
+    static void insertDataFromCachedColumn(IColumn & result_column, const ColumnPtr & cached_column, size_t num_read_rows);
 
     /// Returns the total number of bytes allocated for this serialization object,
     /// including sizeof(*this) and any heap allocations (strings, vectors, etc.).
@@ -751,12 +767,17 @@ public:
     /// Throws LOGICAL_ERROR if the hash has not been set.
     UInt128 getHash() const;
 
+    /// Identity of a custom serialization (`IDataType::setCustomization`), which changes a column's
+    /// streams while being invisible to `IDataType::equals`. The class is enough while the serialization
+    /// follows from the type; override when it is configured elsewhere.
+    virtual String getCustomSerializationIdentity() const { return typeid(*this).name(); }
+
 protected:
     std::optional<UInt128> cached_hash;
 
     /// Look up the pool by hash; on cache miss call the creator to build
     /// the object.  The creator is invoked at most once and only on miss.
-    static SerializationPtr pooled(UInt128 hash, std::function<ISerialization *()> creator);
+    static SerializationPtr pooled(UInt128 hash, absl::FunctionRef<ISerialization *()> creator);
 
     void addSubstreamAndCallCallback(SubstreamPath & path, const StreamCallback & callback, Substream substream) const;
 
@@ -767,53 +788,6 @@ protected:
     static State * checkAndGetState(const StatePtr & state, const ISerialization * serialization);
 
     [[noreturn]] void throwUnexpectedDataAfterParsedValue(IColumn & column, ReadBuffer & istr, const FormatSettings &, const String & type_name) const;
-};
-
-/// Sanity checker for COW reference counting of columns on the deserialization read path.
-/// Only active in debug and sanitizer builds; in release builds all methods are no-ops.
-///
-/// It enumerates the column references that provably exist: references held by substreams cache
-/// elements and by deserialize states, and references from the result columns and their subcolumn
-/// trees. Each enumerated reference is a live `ColumnPtr`, so a column that was enumerated N times
-/// must have a reference count of at least N. A smaller reference count means that the reference
-/// counting was broken somewhere: some holder obtained the column without a counted reference.
-/// Such a column is freed while it is still in use, which later manifests as a use-after-free,
-/// a double-free or a segfault far away from the code that broke the counting
-/// (see https://github.com/ClickHouse/ClickHouse/issues/105626). This check turns those flaky
-/// crashes into a deterministic exception (`LOGICAL_ERROR` aborts in debug and sanitizer builds)
-/// at a point where the inconsistency is still observable.
-class ColumnsOwnershipValidator
-{
-public:
-    void add(const ISerialization::SubstreamsCache & cache);
-    /// Also accepts any map from a stream/column name to a deserialize state,
-    /// e.g. DeserializeBinaryBulkStateMap of IMergeTreeReader.
-    void add(const ISerialization::SubstreamsDeserializeStatesCache & states);
-    void add(const ISerialization::DeserializeBinaryBulkStatePtr & state);
-    void add(const ColumnPtr & column);
-
-    /// Checks all collected column holders against the result columns and their subcolumn trees.
-    void validate(const Columns & result_columns) const;
-
-private:
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    /// How many references to a column were enumerated, split by the kind of the holder
-    /// (the split makes the failure message actionable).
-    struct References
-    {
-        size_t from_substreams_cache = 0;
-        size_t from_deserialize_states = 0;
-        size_t direct = 0;
-
-        size_t total() const { return from_substreams_cache + from_deserialize_states + direct; }
-    };
-
-    void addColumnReference(const ColumnPtr & column, size_t References::* counter);
-
-    /// The same state can be reachable through several maps; the columns of each state must be counted only once.
-    std::unordered_set<const ISerialization::DeserializeBinaryBulkState *> seen_states;
-    std::unordered_map<const IColumn *, References> known_references;
-#endif
 };
 
 using SerializationPtr = std::shared_ptr<const ISerialization>;

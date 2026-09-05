@@ -1,0 +1,5 @@
+bucketed streams	1	1	3
+read after reattach	64	64
+values	{0:1}
+values	{1:2}
+basic table	8	8
