@@ -1030,8 +1030,8 @@ static std::exception_ptr tryEvaluateIndexExpression(const IndexDescription & in
         for (const auto & column : index.expression->getRequiredColumnsWithTypes())
             header.insert({column.type->createColumn(), column.type, column.name});
 
-        /// The call `ExpressionTransform` makes on this same DAG while merging, so an expression a merge
-        /// accepts cannot be rejected here.
+        /// The same dry run a merge performs: it rebuilds this expression's AST under the storage
+        /// context and hands the result to `ExpressionTransform::transformHeader`, which is this call.
         index.expression->getActionsDAG().updateHeader(header);
     }
     catch (...)

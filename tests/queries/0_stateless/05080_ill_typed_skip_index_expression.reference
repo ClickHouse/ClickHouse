@@ -11,5 +11,5 @@ C3 index over arithmetic
 2
 C4 index over a wrapped type
 2
-F an expression a merge would not dry-run either is left alone
+F an expression containing a function that opts out of constant folding is not probed
 1

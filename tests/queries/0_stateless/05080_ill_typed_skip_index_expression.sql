@@ -54,7 +54,7 @@ INSERT INTO t_wrapped VALUES (NULL, 2);
 OPTIMIZE TABLE t_wrapped FINAL;
 SELECT count() FROM t_wrapped;
 
-SELECT 'F an expression a merge would not dry-run either is left alone';
+SELECT 'F an expression containing a function that opts out of constant folding is not probed';
 CREATE TABLE t_unfoldable (c0 String, c1 Int8, INDEX i0 throwIf(c0 = c1, 'x') TYPE set(0)) ENGINE = MergeTree ORDER BY c1;
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 't_unfoldable';
 
