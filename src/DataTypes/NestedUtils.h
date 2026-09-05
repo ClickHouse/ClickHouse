@@ -116,19 +116,16 @@ namespace Nested
 }
 
 /// Use this class to extract element columns from columns of nested type in a block, e.g. named Tuple.
-/// It can extract a column from a multiple nested type column, e.g. named Tuple in named Tuple
-/// Keeps some intermediate data to avoid rebuild them multi-times.
+/// The requested name is cut at the first dot: the head names a block column and the tail is a
+/// subcolumn of its type, so the result is whatever `SELECT <head>.<tail>` yields for that column.
 class NestedColumnExtractHelper
 {
 public:
     explicit NestedColumnExtractHelper(const Block & block_, bool case_insentive_);
     std::optional<ColumnWithTypeAndName> extractColumn(const String & column_name);
 private:
-    std::optional<ColumnWithTypeAndName>
-    extractColumn(const String & original_column_name, const String & column_name_prefix, const String & column_name_suffix);
     const Block & block;
     bool case_insentive;
-    std::map<String, BlockPtr> nested_tables;
 };
 
 /// Returns type of scalars of Array of arbitrary dimensions and takes into account Tuples of Nested.

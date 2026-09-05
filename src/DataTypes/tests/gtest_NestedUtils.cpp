@@ -2,8 +2,15 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNested.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Columns/ColumnNullable.h>
+#include <Core/Block.h>
+#include <Core/Field.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/assert_cast.h>
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -44,6 +51,212 @@ GTEST_TEST(NestedUtils, collect)
     ASSERT_EQ(Nested::collect(source_columns).toString(), columns_with_nested.toString());
 }
 
+/// An EMPTY sample block (no rows, so no nulls) is what schema planning uses, e.g.
+/// `StorageHive::read`, so the type it yields must equal the one a null-carrying data block yields.
+/// The gtest has no global context, so `allow_nullable_tuple_in_extracted_subcolumns` reads as its
+/// default off: a TUPLE element stays plain, a deeper SCALAR leaf is `Nullable`.
+GTEST_TEST(NestedUtils, extractSubcolumnFromNullableTuplePreservesTypeOnEmptyBlock)
+{
+    DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
+    DataTypePtr string_type = std::make_shared<DataTypeString>();
+
+    /// Nullable(Tuple(a Tuple(x UInt32, y String), b String))
+    DataTypePtr inner_tuple = std::make_shared<DataTypeTuple>(
+        DataTypes{uint_type, string_type}, Strings{"x", "y"});
+    DataTypePtr outer_tuple = std::make_shared<DataTypeTuple>(
+        DataTypes{inner_tuple, string_type}, Strings{"a", "b"});
+    DataTypePtr nullable_tuple = std::make_shared<DataTypeNullable>(outer_tuple);
+
+    /// Empty block (0 rows): the schema-planning / sample-block case.
+    Block block;
+    block.insert({nullable_tuple->createColumn(), nullable_tuple, "t"});
+
+    NestedColumnExtractHelper extractor(block, /*case_insentive_=*/false);
+
+    /// Extracting the TUPLE element t.a stays plain Tuple(x UInt32, y String) with the setting off,
+    /// NOT nullable leaves.
+    auto col_a = extractor.extractColumn("t.a");
+    ASSERT_TRUE(col_a.has_value());
+    ASSERT_EQ(col_a->type->getName(), "Tuple(x UInt32, y String)");
+
+    /// Directly extracting the deeper SCALAR leaf t.a.x must be Nullable(UInt32), not UInt32.
+    auto col_ax = extractor.extractColumn("t.a.x");
+    ASSERT_TRUE(col_ax.has_value());
+    ASSERT_EQ(col_ax->type->getName(), "Nullable(UInt32)");
+
+    /// Sibling leaf t.a.y must be Nullable(String).
+    auto col_ay = extractor.extractColumn("t.a.y");
+    ASSERT_TRUE(col_ay.has_value());
+    ASSERT_EQ(col_ay->type->getName(), "Nullable(String)");
+
+    /// Top-level scalar leaf t.b must be Nullable(String).
+    auto col_b = extractor.extractColumn("t.b");
+    ASSERT_TRUE(col_b.has_value());
+    ASSERT_EQ(col_b->type->getName(), "Nullable(String)");
+}
+
+/// Extracting an element of a NULL-carrying parent must give the same column as extracting it from
+/// an empty one gives a type: a null map in the data cannot change the shape of the result.
+GTEST_TEST(NestedUtils, extractSubcolumnFromNullableTupleWithNullRowKeepsPlannedType)
+{
+    DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
+    DataTypePtr string_type = std::make_shared<DataTypeString>();
+
+    DataTypePtr inner_tuple = std::make_shared<DataTypeTuple>(
+        DataTypes{uint_type, string_type}, Strings{"x", "y"});
+    DataTypePtr outer_tuple = std::make_shared<DataTypeTuple>(
+        DataTypes{inner_tuple, string_type}, Strings{"a", "b"});
+    DataTypePtr nullable_tuple = std::make_shared<DataTypeNullable>(outer_tuple);
+
+    auto column = nullable_tuple->createColumn();
+    column->insert(Tuple{Tuple{UInt64(10), String("aa")}, String("B")});
+    column->insert(Tuple{Tuple{UInt64(99), String("zz")}, String("Z")});
+    assert_cast<ColumnNullable &>(*column).getNullMapData()[1] = 1;
+
+    Block block;
+    block.insert({std::move(column), nullable_tuple, "t"});
+
+    NestedColumnExtractHelper extractor(block, /*case_insentive_=*/false);
+
+    auto col_a = extractor.extractColumn("t.a");
+    ASSERT_TRUE(col_a.has_value());
+    ASSERT_EQ(col_a->type->getName(), "Tuple(x UInt32, y String)");
+    ASSERT_EQ(col_a->column->size(), 2u);
+    Field row0;
+    Field row1;
+    col_a->column->get(0, row0);
+    col_a->column->get(1, row1);
+    ASSERT_EQ(applyVisitor(FieldVisitorToString(), row0), "(10, 'aa')");
+    /// A `Tuple` cannot represent NULL itself, so the parent-NULL row keeps the payload the parent
+    /// holds under it. What that row contains is `NullableSubcolumnCreator`'s contract, identical to
+    /// the one a direct `SELECT t.a` gets, and not something this class decides.
+    ASSERT_EQ(applyVisitor(FieldVisitorToString(), row1), "(99, 'zz')");
+
+    /// The parent NULL reaches a scalar leaf as a real NULL.
+    auto col_ax = extractor.extractColumn("t.a.x");
+    ASSERT_TRUE(col_ax.has_value());
+    ASSERT_EQ(col_ax->type->getName(), "Nullable(UInt32)");
+    ASSERT_FALSE(col_ax->column->isNullAt(0));
+    ASSERT_TRUE(col_ax->column->isNullAt(1));
+}
+
+/// An element DECLARED `Nullable(Tuple(...))` is genuinely nullable, so its real NULL rows must
+/// survive extraction even with `allow_nullable_tuple_in_extracted_subcolumns` off (its default
+/// here), unlike a wrapping synthesized from an outer struct null map, which the setting governs.
+GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullable)
+{
+    DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
+
+    /// x Tuple(a Nullable(Tuple(b Nullable(UInt32))))
+    DataTypePtr b_type = std::make_shared<DataTypeNullable>(uint_type);
+    DataTypePtr inner_tuple = std::make_shared<DataTypeTuple>(DataTypes{b_type}, Strings{"b"});
+    DataTypePtr nullable_inner = std::make_shared<DataTypeNullable>(inner_tuple);
+    DataTypePtr outer_tuple = std::make_shared<DataTypeTuple>(DataTypes{nullable_inner}, Strings{"a"});
+
+    /// Three rows: (( (10) )), a NULL `a`, (( (30) )).
+    auto column = outer_tuple->createColumn();
+    column->insert(Tuple{Tuple{UInt64(10)}});
+    column->insert(Tuple{Null{}});
+    column->insert(Tuple{Tuple{UInt64(30)}});
+
+    Block block;
+    block.insert({std::move(column), outer_tuple, "x"});
+
+    NestedColumnExtractHelper extractor(block, /*case_insentive_=*/false);
+
+    auto col_a = extractor.extractColumn("x.a");
+    ASSERT_TRUE(col_a.has_value());
+    /// Genuinely nullable: stays Nullable regardless of the setting.
+    ASSERT_EQ(col_a->type->getName(), "Nullable(Tuple(b Nullable(UInt32)))");
+    ASSERT_EQ(col_a->column->size(), 3u);
+    ASSERT_FALSE(col_a->column->isNullAt(0));
+    /// The real NULL row must survive, not collapse to a default tuple.
+    ASSERT_TRUE(col_a->column->isNullAt(1));
+    ASSERT_FALSE(col_a->column->isNullAt(2));
+}
+
+/// Readers lowercase the requested name before it reaches the extractor, while subcolumn names are
+/// case-sensitive, so a mixed-case declared element (`A`) requested as `a` must still be found.
+GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullableCaseInsensitive)
+{
+    DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
+
+    /// x Tuple(A Nullable(Tuple(b Nullable(UInt32)))): note the mixed-case element name `A`.
+    DataTypePtr b_type = std::make_shared<DataTypeNullable>(uint_type);
+    DataTypePtr inner_tuple = std::make_shared<DataTypeTuple>(DataTypes{b_type}, Strings{"b"});
+    DataTypePtr nullable_inner = std::make_shared<DataTypeNullable>(inner_tuple);
+    DataTypePtr outer_tuple = std::make_shared<DataTypeTuple>(DataTypes{nullable_inner}, Strings{"A"});
+
+    auto column = outer_tuple->createColumn();
+    column->insert(Tuple{Tuple{UInt64(10)}});
+    column->insert(Tuple{Null{}});
+    column->insert(Tuple{Tuple{UInt64(30)}});
+
+    Block block;
+    block.insert({std::move(column), outer_tuple, "x"});
+
+    NestedColumnExtractHelper extractor(block, /*case_insentive_=*/true);
+
+    /// Requested lowercased, as the reader passes it.
+    auto col_a = extractor.extractColumn("x.a");
+    ASSERT_TRUE(col_a.has_value());
+    ASSERT_EQ(col_a->type->getName(), "Nullable(Tuple(b Nullable(UInt32)))");
+    ASSERT_EQ(col_a->column->size(), 3u);
+    ASSERT_FALSE(col_a->column->isNullAt(0));
+    ASSERT_TRUE(col_a->column->isNullAt(1));
+    ASSERT_FALSE(col_a->column->isNullAt(2));
+}
+
+/// Mirror of the previous test for the opposite spelling: `StorageHive::read` does NOT lowercase the
+/// request, so a non-lowercased suffix (`A`) reaches the resolver against a declared lowercase `a`.
+GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullableCaseInsensitiveRawSpelling)
+{
+    DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
+
+    /// x Tuple(a Nullable(Tuple(b Nullable(UInt32)))): declared element name is lowercase `a`.
+    DataTypePtr b_type = std::make_shared<DataTypeNullable>(uint_type);
+    DataTypePtr inner_tuple = std::make_shared<DataTypeTuple>(DataTypes{b_type}, Strings{"b"});
+    DataTypePtr nullable_inner = std::make_shared<DataTypeNullable>(inner_tuple);
+    DataTypePtr outer_tuple = std::make_shared<DataTypeTuple>(DataTypes{nullable_inner}, Strings{"a"});
+
+    auto column = outer_tuple->createColumn();
+    column->insert(Tuple{Tuple{UInt64(10)}});
+    column->insert(Tuple{Null{}});
+    column->insert(Tuple{Tuple{UInt64(30)}});
+
+    Block block;
+    block.insert({std::move(column), outer_tuple, "x"});
+
+    NestedColumnExtractHelper extractor(block, /*case_insentive_=*/true);
+
+    /// Requested with the original (non-lowercased) spelling, as StorageHive passes it.
+    auto col_a = extractor.extractColumn("x.A");
+    ASSERT_TRUE(col_a.has_value());
+    ASSERT_EQ(col_a->type->getName(), "Nullable(Tuple(b Nullable(UInt32)))");
+    ASSERT_EQ(col_a->column->size(), 3u);
+    ASSERT_FALSE(col_a->column->isNullAt(0));
+    ASSERT_TRUE(col_a->column->isNullAt(1));
+    ASSERT_FALSE(col_a->column->isNullAt(2));
+}
+
+/// An empty Nullable(Tuple()) has no elements, so extracting `t.x` must simply return no column
+/// rather than raising. Regression for the `Nullable(Tuple())` + missing-columns Arrow/ORC read
+/// reported on PR #109741.
+GTEST_TEST(NestedUtils, extractSubcolumnFromEmptyNullableTupleDoesNotThrow)
+{
+    DataTypePtr empty_tuple = std::make_shared<DataTypeTuple>(DataTypes{});
+    DataTypePtr nullable_empty_tuple = std::make_shared<DataTypeNullable>(empty_tuple);
+
+    Block block;
+    block.insert({nullable_empty_tuple->createColumn(), nullable_empty_tuple, "t"});
+
+    NestedColumnExtractHelper extractor(block, /*case_insentive_=*/false);
+
+    std::optional<ColumnWithTypeAndName> col_x;
+    ASSERT_NO_THROW(col_x = extractor.extractColumn("t.x"));
+    ASSERT_FALSE(col_x.has_value());
+}
+
 /// A subcolumn entry's type in storage is the type in metadata, while a plain entry carries the type
 /// its caller resolved -- for a MergeTree part being read, the part's own possibly older type. The
 /// group's element type must come from the plain entry in either order, or a type-directed
@@ -81,4 +294,92 @@ GTEST_TEST(NestedUtils, convertToSubcolumnsPrefersColumnOverSubcolumn)
             remapped_onto_nested = isNested(name_type.getTypeInStorage());
     }
     ASSERT_TRUE(remapped_onto_nested);
+}
+
+/// A `LowCardinality(T)` element cannot sit inside `Nullable`, so the parent struct null map has to
+/// go into its dictionary as `LowCardinality(Nullable(T))`.
+GTEST_TEST(NestedUtils, extractLowCardinalityLeafFromNullableTupleBecomesLowCardinalityNullable)
+{
+    DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
+    DataTypePtr lc_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+
+    /// Nullable(Tuple(lc LowCardinality(String), v UInt32))
+    DataTypePtr outer_tuple = std::make_shared<DataTypeTuple>(
+        DataTypes{lc_string, uint_type}, Strings{"lc", "v"});
+    DataTypePtr nullable_tuple = std::make_shared<DataTypeNullable>(outer_tuple);
+
+    /// Empty block (0 rows): the schema-planning / sample-block case must plan the same type as a
+    /// null-carrying block below.
+    Block empty_block;
+    empty_block.insert({nullable_tuple->createColumn(), nullable_tuple, "t"});
+    NestedColumnExtractHelper empty_extractor(empty_block, /*case_insentive_=*/false);
+
+    auto planned_lc = empty_extractor.extractColumn("t.lc");
+    ASSERT_TRUE(planned_lc.has_value());
+    ASSERT_EQ(planned_lc->type->getName(), "LowCardinality(Nullable(String))");
+
+    /// Data-carrying counterpart: row 1 has the parent struct NULL, and it carries a non-default
+    /// payload so a lost null map surfaces as 'zz' or '' rather than NULL.
+    auto column = nullable_tuple->createColumn();
+    column->insert(Tuple{"a", 1u});
+    column->insert(Tuple{"zz", 99u});
+    assert_cast<ColumnNullable &>(*column).getNullMapData()[1] = 1;
+    column->insert(Tuple{"c", 3u});
+
+    Block block;
+    block.insert({std::move(column), nullable_tuple, "t"});
+    NestedColumnExtractHelper extractor(block, /*case_insentive_=*/false);
+
+    auto col_lc = extractor.extractColumn("t.lc");
+    ASSERT_TRUE(col_lc.has_value());
+    ASSERT_EQ(col_lc->type->getName(), "LowCardinality(Nullable(String))");
+    ASSERT_EQ(col_lc->column->size(), 3u);
+    ASSERT_FALSE(col_lc->column->isNullAt(0));
+    ASSERT_TRUE(col_lc->column->isNullAt(1));
+    ASSERT_FALSE(col_lc->column->isNullAt(2));
+    ASSERT_EQ(std::string(col_lc->column->getDataAt(0)), "a");
+    ASSERT_EQ(std::string(col_lc->column->getDataAt(2)), "c");
+
+    /// The sibling scalar leaf keeps the plain Nullable promotion.
+    auto col_v = extractor.extractColumn("t.v");
+    ASSERT_TRUE(col_v.has_value());
+    ASSERT_EQ(col_v->type->getName(), "Nullable(UInt32)");
+    ASSERT_TRUE(col_v->column->isNullAt(1));
+}
+
+/// Element names only have to be unique case-sensitively, so under case-insensitive extraction one
+/// request matches both `A` and `a`. Declaration order decides, as it does for a block column.
+GTEST_TEST(NestedUtils, extractCaseCollidingElementPairsColumnWithItsOwnDeclaredType)
+{
+    DataTypePtr nullable_uint = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>());
+    DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
+
+    /// Tuple(A Nullable(Tuple(b Nullable(UInt32))), a Tuple(b UInt32)) -- `A` is genuinely nullable,
+    /// its lowercase sibling `a` is not.
+    DataTypePtr upper_inner = std::make_shared<DataTypeTuple>(DataTypes{nullable_uint}, Strings{"b"});
+    DataTypePtr upper_elem = std::make_shared<DataTypeNullable>(upper_inner);
+    DataTypePtr lower_elem = std::make_shared<DataTypeTuple>(DataTypes{uint_type}, Strings{"b"});
+    DataTypePtr outer_tuple = std::make_shared<DataTypeTuple>(
+        DataTypes{upper_elem, lower_elem}, Strings{"A", "a"});
+
+    auto column = outer_tuple->createColumn();
+    column->insert(Tuple{Tuple{10u}, Tuple{20u}});
+    column->insert(Tuple{Null{}, Tuple{21u}});
+    column->insert(Tuple{Tuple{30u}, Tuple{40u}});
+
+    Block block;
+    block.insert({std::move(column), outer_tuple, "x"});
+
+    /// The readers lowercase the requested spelling, so `x.a` is what arrives here.
+    NestedColumnExtractHelper extractor(block, /*case_insentive_=*/true);
+    auto col = extractor.extractColumn("x.a");
+    ASSERT_TRUE(col.has_value());
+
+    /// `A` wins the case-insensitive lookup, so the extracted type must be `A`'s nullable one and
+    /// its real NULL row must stay NULL, rather than `a`'s non-nullable one.
+    ASSERT_EQ(col->type->getName(), "Nullable(Tuple(b Nullable(UInt32)))");
+    ASSERT_EQ(col->column->size(), 3u);
+    ASSERT_FALSE(col->column->isNullAt(0));
+    ASSERT_TRUE(col->column->isNullAt(1));
+    ASSERT_FALSE(col->column->isNullAt(2));
 }

@@ -899,43 +899,9 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                 auto extractor_it = nested_extractors.find(search_nested);
                 if (extractor_it == nested_extractors.end())
                 {
-                    /// Collect the requested subcolumns into a single `Nested` type and reshape the decoded
-                    /// column to it, so `Nested::flatten` (used by the extractor) recognises and splits it
-                    /// — mirroring how the library reader reads the field with this type hint.
-                    NamesAndTypesList nested_columns;
-                    for (const auto & name_and_type : header.getNamesAndTypesList())
-                    {
-                        if (name_and_type.name.starts_with(nested_table_name + "."))
-                            nested_columns.push_back(name_and_type);
-                    }
-
                     auto & src = decoded[nested_it->second];
                     ColumnWithTypeAndName nested_column(src.column, src.type, nested_table_name);
 
-                    /// Arrow's default nullable schema yields `Array(Nullable(Tuple(...)))`. `Nested::flatten`
-                    /// cannot split a Nullable tuple, and casting it onto the non-nullable Nested tuple would
-                    /// fail on struct-level nulls. Unwrap the nullable tuple, propagating the struct null map
-                    /// down to each element (matching the library reader), so it becomes `Array(Tuple(...))`.
-                    if (const auto * arr_type = typeid_cast<const DataTypeArray *>(nested_column.type.get());
-                        arr_type && typeid_cast<const DataTypeTuple *>(removeNullable(arr_type->getNestedType()).get()))
-                    {
-                        const auto & arr_col = assert_cast<const ColumnArray &>(*nested_column.column);
-                        auto unwrapped = Nested::unwrapNullableTuple(
-                            {arr_col.getDataPtr(), arr_type->getNestedType(), nested_table_name});
-                        nested_column.column = ColumnArray::create(unwrapped.column, arr_col.getOffsetsPtr());
-                        nested_column.type = std::make_shared<DataTypeArray>(unwrapped.type);
-                    }
-
-                    const auto collected = Nested::collect(nested_columns);
-                    if (!collected.empty())
-                    {
-                        const DataTypePtr & nested_table_type = collected.front().type;
-                        if (case_insensitive)
-                            nested_column.type = alignStructFieldNamesCaseInsensitive(nested_column.type, nested_table_type);
-                        nested_column = realignStructFieldsToRequested(std::move(nested_column), nested_table_type);
-                        nested_column.column = castColumn(nested_column, nested_table_type);
-                        nested_column.type = nested_table_type;
-                    }
                     auto block = std::make_shared<Block>(Block({std::move(nested_column)}));
                     auto helper = std::make_shared<NestedColumnExtractHelper>(*block, case_insensitive);
                     extractor_it = nested_extractors.emplace(search_nested, std::make_pair(block, helper)).first;
