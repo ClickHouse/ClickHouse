@@ -47,6 +47,7 @@ TEST(ThreadFuzzer, mutex)
 #include <unistd.h>
 
 #include <base/errnoToString.h>
+#include <base/scope_guard.h>
 #include <Common/Exception.h>
 
 extern char ** environ;
@@ -227,6 +228,17 @@ TEST(ThreadFuzzerTimer, StopLeavesAForeignProfTimerAlone)
     const auto saved_disposition = std::signal(SIGPROF, SIG_IGN);
     ASSERT_NE(SIG_ERR, saved_disposition) << errnoToString();
 
+    /// Every exit path restores both, including the early return of a failed assertion below, so no
+    /// later test in this binary inherits the timer or the disposition.
+    const auto restore_timer_state = make_scope_guard([&]
+    {
+        struct itimerval disarm{};
+        const int disarm_rc = setitimer(ITIMER_PROF, &disarm, nullptr);
+        EXPECT_EQ(0, disarm_rc) << errnoToString();
+        const auto restored = std::signal(SIGPROF, saved_disposition);
+        EXPECT_NE(SIG_ERR, restored) << errnoToString();
+    });
+
     struct itimerval foreign{};
     foreign.it_interval.tv_sec = static_cast<time_t>(foreign_interval_us / 1000000);
     foreign.it_value.tv_sec = static_cast<time_t>(foreign_interval_us / 1000000);
@@ -235,12 +247,6 @@ TEST(ThreadFuzzerTimer, StopLeavesAForeignProfTimerAlone)
 
     DB::ThreadFuzzer::stop();
     const ProfTimer after_stop = profTimer();
-
-    /// Restored before the assertions, so a failure cannot leak the timer into later tests.
-    struct itimerval disarm{};
-    const int disarm_rc = setitimer(ITIMER_PROF, &disarm, nullptr);
-    EXPECT_EQ(0, disarm_rc) << errnoToString();
-    EXPECT_NE(SIG_ERR, std::signal(SIGPROF, saved_disposition)) << errnoToString();
 
     EXPECT_EQ(foreign_interval_us, after_stop.interval_us) << "stop() disarmed a timer it does not own";
 
