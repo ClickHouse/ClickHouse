@@ -56,26 +56,54 @@ def exec_root(cmd):
     return node.exec_in_container(["bash", "-c", cmd], privileged=True, user="root")
 
 
-def active_part_path(table):
-    path = node.query(
-        f"SELECT path FROM system.parts WHERE database = 'default' AND table = '{table}' AND active LIMIT 1"
-    ).strip()
+def active_part(table):
+    name, path = (
+        node.query(
+            f"SELECT name, path FROM system.parts WHERE database = 'default' AND table = '{table}' AND active LIMIT 1"
+        )
+        .strip()
+        .split("\t")
+    )
     assert path.startswith("/"), f"path is relative: {path}"
-    return path.rstrip("/")
+    return name, path.rstrip("/")
 
 
 def remove_all_marks_files(part_path):
-    # Remove every marks file in the part, so the marks of whichever column the case below reads
-    # or loads are gone. Returns the count so a layout change cannot leave the case asserting
-    # against an intact part.
+    # Remove every marks file in the part, so the marks of whichever column the case below reads or
+    # loads are gone. Returns their basenames: each case then asserts on the one its own code path
+    # is supposed to name, which is what pins the case to that path rather than to any failure.
     globs = " ".join(f"{part_path}/*.{ext}" for ext in MARKS_EXTENSIONS)
     removed = exec_root(
-        f'shopt -s nullglob; n=0; for f in {globs}; do rm -f "$f"; n=$((n + 1)); done; echo "$n"'
-    ).strip()
-    assert (
-        removed != "0"
-    ), f"no marks file in {part_path}: {exec_root(f'ls -1 {part_path}')}"
-    return int(removed)
+        f'shopt -s nullglob; for f in {globs}; do echo "${{f##*/}}"; rm -f "$f"; done'
+    ).split()
+    assert removed, f"no marks file in {part_path}: {exec_root(f'ls -1 {part_path}')}"
+    return removed
+
+
+def marks_file_of(removed, stream):
+    # The extension varies with the mark type, so pick the removed file by stream rather than
+    # hardcoding one: `<column>` for a wide part, `data` for a compact part's single marks file.
+    matches = [name for name in removed if name.startswith(f"{stream}.")]
+    assert len(matches) == 1, f"expected one {stream}.* marks file, got {removed}"
+    return matches[0]
+
+
+def assert_names_the_part_state(text, part_name, marks_file):
+    # The point of the diagnostic is the payload, so assert the payload and not just the exception
+    # name: the part, the specific missing marks file, its checksums status, and both listings.
+    # Generic phrases alone would still pass if any of these were dropped. The marks file is
+    # asserted with its `Marks file '...'` prefix because the name also appears in the checksums
+    # listing further down the same message, where it proves nothing about which file was missing.
+    #
+    # A message read back out of `system.text_log` arrives escaped, so undo the quote escaping to
+    # let one set of assertions serve both that and a client-side error string.
+    text = text.replace("\\'", "'")
+    assert f"Marks file '{marks_file}'" in text, text
+    assert f"in part '{part_name}'" in text, text
+    assert "The file is listed in the part's checksums" in text, text
+    assert "Part columns: [" in text, text
+    assert "Checksums files: [" in text, text
+    assert "Files on disk: [" in text, text
 
 
 def create_and_fill(table, settings):
@@ -94,18 +122,21 @@ def drop_table(table):
     )
 
 
-def assert_diagnostic_logged(table):
-    # `reason` is `broken-on-start` whether the load failed with the typed diagnostic or with the
-    # opaque `std::filesystem` error, so it cannot tell the two apart. The load path reports
-    # through the log rather than to a client, so this text_log assertion is what actually
-    # distinguishes them. The logger is `default.<table> (<uuid>)` under Atomic and
-    # `default.<table>` under Ordinary; the pattern matches both.
+def logged_diagnostic(table):
+    # `reason` in `system.detached_parts` is `broken-on-start` whether the load failed with the
+    # typed diagnostic or with the opaque `std::filesystem` error, so it cannot tell the two apart.
+    # A load path reports through the log rather than to a client, so the log is where the two are
+    # separable. The logger is `default.<table> (<uuid>)` under Atomic and `default.<table>` under
+    # Ordinary; the pattern matches both.
+    # The load failure is logged twice: once as the diagnostic itself and once wrapped in the
+    # broken-part report. Which one carries the full payload is an implementation detail, so join
+    # every matching row and assert against that.
     node.query("SYSTEM FLUSH LOGS text_log")
-    assert node.query(f"""SELECT count() > 0 FROM system.text_log
-                WHERE event_time > now() - INTERVAL 5 MINUTE
-                  AND logger_name LIKE '%default.{table}%'
-                  AND message LIKE '%does not exist on disk in part%'
-                  AND message LIKE '%listed in the part%checksums%'""") == "1\n"
+    return node.query(f"""SELECT arrayStringConcat(groupArray(message), ' | ')
+            FROM system.text_log
+            WHERE event_time > now() - INTERVAL 5 MINUTE
+              AND logger_name LIKE '%default.{table}%'
+              AND message LIKE '%does not exist on disk in part%'""")
 
 
 def test_query_read_path(started_cluster):
@@ -114,14 +145,14 @@ def test_query_read_path(started_cluster):
     table = "t_missing_marks"
     try:
         create_and_fill(table, WIDE_SETTINGS)
-        remove_all_marks_files(active_part_path(table))
+        part_name, part_path = active_part(table)
+        removed = remove_all_marks_files(part_path)
         node.query("SYSTEM DROP MARK CACHE")
 
-        # Column b's marks file is listed in the part's checksums, so the message says "listed".
+        # The query reads only b, so the loader is asked for b's marks.
         error = node.query_and_get_error(f"SELECT sum(b) FROM {table}")
         assert "NO_FILE_IN_DATA_PART" in error, error
-        assert "does not exist on disk in part" in error, error
-        assert "is listed in the part's checksums" in error, error
+        assert_names_the_part_state(error, part_name, marks_file_of(removed, "b"))
     finally:
         drop_table(table)
 
@@ -132,11 +163,11 @@ def test_wide_index_granularity_load_path(started_cluster):
     table = "t_missing_granularity_marks"
     try:
         create_and_fill(table, WIDE_SETTINGS)
-        part_path = active_part_path(table)
+        part_name, part_path = active_part(table)
 
         # Detaching unloads the part, so ATTACH below re-reads index granularity from disk.
         node.query(f"DETACH TABLE {table}")
-        remove_all_marks_files(part_path)
+        removed = remove_all_marks_files(part_path)
         node.query(f"ATTACH TABLE {table}", settings={"send_logs_level": "none"})
 
         assert (
@@ -145,7 +176,10 @@ def test_wide_index_granularity_load_path(started_cluster):
             )
             == "broken-on-start\n"
         )
-        assert_diagnostic_logged(table)
+        # a is the first column, so it is the one this path resolves its marks file from.
+        assert_names_the_part_state(
+            logged_diagnostic(table), part_name, marks_file_of(removed, "a")
+        )
     finally:
         drop_table(table)
 
@@ -163,10 +197,10 @@ def test_compact_index_granularity_load_path(started_cluster):
             )
             == "Compact\n"
         )
-        part_path = active_part_path(table)
+        part_name, part_path = active_part(table)
 
         node.query(f"DETACH TABLE {table}")
-        remove_all_marks_files(part_path)
+        removed = remove_all_marks_files(part_path)
         node.query(f"ATTACH TABLE {table}", settings={"send_logs_level": "none"})
 
         assert (
@@ -175,6 +209,10 @@ def test_compact_index_granularity_load_path(started_cluster):
             )
             == "broken-on-start\n"
         )
-        assert_diagnostic_logged(table)
+        # Asserting on the "data" marks file is what proves the compact path produced this
+        # diagnostic: the wide path would have named a per-column marks file instead.
+        assert_names_the_part_state(
+            logged_diagnostic(table), part_name, marks_file_of(removed, "data")
+        )
     finally:
         drop_table(table)
