@@ -38,6 +38,7 @@
 #include <base/types.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/HTTPConnectionPool.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/logger_useful.h>
@@ -530,6 +531,9 @@ A value of `0` means "never". The default value corresponds to 1 day.
     \
     \
     DECLARE(UInt64, max_remote_read_connections, 1000, R"(Maximum number of open remote read connections kept alive by `ReaderExecutor` for sequential read optimization. 0 disables connection reuse.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_memory_pressure_elevated_level_pct, DEFAULT_MEMORY_PRESSURE_ELEVATED_PCT, R"(Memory-pressure threshold, as a percent of a memory tracker's hard limit, at which the experimental `ReaderExecutor` enters the `Elevated` memory-pressure level and starts shrinking its read window. The thresholds are applied to three scopes independently - the server total (`max_server_memory_usage`), the user (`max_memory_usage_for_user`) and the query (`max_memory_usage`) - and a reader takes the highest of the three, so one query near its own limit shrinks its window even while the server is idle. A scope with no hard limit contributes nothing. Must be in `[1, 100]` and satisfy `elevated <= high <= critical`; an out-of-range or out-of-order triple is rejected at startup and on `SYSTEM RELOAD CONFIG`. Zero is rejected because an `elevated` of 0 would put every scope at `Elevated`, including one with no hard limit.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_memory_pressure_high_level_pct, DEFAULT_MEMORY_PRESSURE_HIGH_PCT, R"(Memory-pressure threshold at which the experimental `ReaderExecutor` enters the `High` memory-pressure level. See `reader_executor_memory_pressure_elevated_level_pct` for the scopes, range and ordering rules.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_memory_pressure_critical_level_pct, DEFAULT_MEMORY_PRESSURE_CRITICAL_PCT, R"(Memory-pressure threshold at which the experimental `ReaderExecutor` enters the `Critical` memory-pressure level, its most aggressive read-window reduction. See `reader_executor_memory_pressure_elevated_level_pct` for the scopes, range and ordering rules.)", EXPERIMENTAL) \
     DECLARE(UInt64, max_concurrent_queries, 0, R"(
 Limit on total number of concurrently executed queries. Note that limits on `INSERT` and `SELECT` queries, and on the maximum number of queries for users must also be considered.
 
@@ -3505,12 +3509,24 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 {
     using ChangeableWithoutRestart = ServerSettings::ChangeableWithoutRestart;
 
+    const MemoryPressureThresholds memory_pressure_thresholds = getMemoryPressureThresholds();
+
     ChangeableSettingsMap changeable_settings
         = {
             {"max_server_memory_usage", {std::to_string(total_memory_tracker.getHardLimit()), ChangeableWithoutRestart::Yes}},
             {"min_allocation_size_to_throw_on_memory_limit", {std::to_string(CurrentMemoryTracker::getMinAllocationSizeBytesToThrow()), ChangeableWithoutRestart::Yes}},
             {"max_per_cpu_untracked_memory", {std::to_string(per_cpu_memory.budgetCapacity()), ChangeableWithoutRestart::Yes}},
             {"per_cpu_untracked_memory_thread_buffer", {std::to_string(per_cpu_memory.threadBuffer()), ChangeableWithoutRestart::Yes}},
+
+            /// Report the live thresholds, not the values captured at startup. One snapshot for all
+            /// three rows: reading three times could straddle a reload and report thresholds that were
+            /// never published, such as an out-of-order one.
+            {"reader_executor_memory_pressure_elevated_level_pct",
+             {std::to_string(memory_pressure_thresholds.elevated_pct), ChangeableWithoutRestart::Yes}},
+            {"reader_executor_memory_pressure_high_level_pct",
+             {std::to_string(memory_pressure_thresholds.high_pct), ChangeableWithoutRestart::Yes}},
+            {"reader_executor_memory_pressure_critical_level_pct",
+             {std::to_string(memory_pressure_thresholds.critical_pct), ChangeableWithoutRestart::Yes}},
 
             /// Named collections metadata storage is initialized once, so use its effective startup type.
             {"named_collections_storage_type",

@@ -32,6 +32,7 @@
 #include <base/argsToConfig.h>
 #include <Common/PoolId.h>
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/MemoryWorker.h>
@@ -350,6 +351,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_read_connections;
+    extern const ServerSettingsUInt64 reader_executor_memory_pressure_elevated_level_pct;
+    extern const ServerSettingsUInt64 reader_executor_memory_pressure_high_level_pct;
+    extern const ServerSettingsUInt64 reader_executor_memory_pressure_critical_level_pct;
     extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_local_write_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_server_memory_usage;
@@ -2419,7 +2423,8 @@ try
             /// view, so CLI-injected and Poco-internal top-level keys do not need an allowlist.
             ServerSettings::checkUnknownSettings(*loaded_config, config_path, skip_check);
 
-            /// Fail closed on a legacy insert_deduplication_version arriving via a runtime reload.
+            /// Fail closed on a legacy insert_deduplication_version, or on a memory-pressure threshold
+            /// triple that is out of range or out of order, arriving via a runtime reload.
             /// Validate the incoming config BEFORE config().replace below: validating after would mutate
             /// the live config even for a rejected reload (ConfigReloader has no rollback hook), leaving
             /// system.server_settings reporting an unsupported value. Reject first, then replace.
@@ -2427,6 +2432,10 @@ try
                 ServerSettings incoming_server_settings;
                 incoming_server_settings.loadSettingsFromConfig(*loaded_config);
                 validate_insert_deduplication_version(incoming_server_settings);
+                validateMemoryPressureThresholds(
+                    incoming_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
+                    incoming_server_settings[ServerSetting::reader_executor_memory_pressure_high_level_pct],
+                    incoming_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
             }
 
             /// Fail closed on a Prometheus constant label that collides with a label an endpoint writes
@@ -2444,6 +2453,14 @@ try
 
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(config());
+
+            /// The check above sees the incoming file alone. A triple split across the file and the
+            /// command-line layer can have each source valid and the merge out of order, so check the
+            /// merged view too - here, before the first live setting below is touched.
+            validateMemoryPressureThresholds(
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_high_level_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
 
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
@@ -2718,6 +2735,14 @@ try
                 new_server_settings[ServerSetting::cpu_slot_preemption],
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
+
+            /// The thresholds were validated above, so a rejected reload never reaches here. Sets and stamps
+            /// the shared thresholds, so every monitor adopts them on its next sample,
+            /// bypassing the sticky cooldown.
+            setMemoryPressureThresholds(
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_high_level_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
 
             if (config().has("resources") || config().has("workload_classifiers"))
             {

@@ -1,12 +1,15 @@
 #include <IO/ReaderExecutor.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 
 namespace ProfileEvents
@@ -37,6 +40,25 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
+}
+
+namespace
+{
+
+/// A table of another extent does not compile, so a new level cannot leave a zero divisor behind.
+using PressureReduction = std::array<size_t, static_cast<size_t>(MemoryPressureLevel::Count)>;
+
+/// A window is what one `readNextWindow` serves; a block is the unit it is read and stored in - one
+/// `ChainedBuffers` node.
+constexpr auto WINDOW_REDUCTION = std::to_array<size_t>({1, 4, 16, 64});
+constexpr auto BLOCK_REDUCTION = std::to_array<size_t>({1, 2, 2, 8});
+
+size_t sizeAtPressure(MemoryPressureLevel pressure, size_t base, const PressureReduction & reduction)
+{
+    const size_t reduced = base / reduction[static_cast<size_t>(pressure)];
+    return std::min(std::max(reduced, MIN_READER_EXECUTOR_SIZE), base);
+}
+
 }
 
 /// Read `chunk` bytes into `dest` with no intermediate copy when the buffer honors an external
@@ -149,7 +171,8 @@ ReaderExecutor::~ReaderExecutor()
     /// the destructor.
     try
     {
-        dropLongConnection();
+        /// No window is in flight here, so sample the level for the drain buffer.
+        dropLongConnection(sampleWindowSizes());
     }
     catch (...)
     {
@@ -222,13 +245,15 @@ size_t ReaderExecutor::clampReach(size_t predicted_end, size_t phys_pos) const
     return end;
 }
 
-bool ReaderExecutor::shouldOpenLongConnection() const
+bool ReaderExecutor::shouldOpenLongConnection(size_t window_bytes) const
 {
     if (long_conn || !long_connection_limit)
         return false;
     /// Open a long connection when the predicted run end runs past this window (physical coords).
+    /// `window_bytes` is the pressure-adjusted window actually being served, so a shrunken window
+    /// admits the shorter runs that now outlive it instead of falling back to one-shot reads.
     const size_t phys = toPhysical(position);
-    return clampReach(fetch_tracker.predictedEnd(), phys) > phys + window_size;
+    return clampReach(fetch_tracker.predictedEnd(), phys) > phys + window_bytes;
 }
 
 bool ReaderExecutor::tryOpenLongConnection(const StoredObject & object, size_t object_offset)
@@ -279,7 +304,7 @@ size_t ReaderExecutor::readOneShot(const StoredObject & object, size_t object_of
     return readIntoBlock(*buffer, dst, want);
 }
 
-ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size_t object_offset, size_t want, size_t file_base)
+ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size_t object_offset, size_t want, size_t file_base, BlockAndWindowSizes sizes)
 {
     ChainedBuffers chain;
     size_t got_total = 0;
@@ -287,7 +312,7 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
     {
         while (got_total < limit)
         {
-            const size_t chunk = std::min(block_size, limit - got_total);
+            const size_t chunk = std::min(sizes.block_bytes, limit - got_total);
             auto block = std::make_shared<OwnedChainedBuffer>(chunk);
             const size_t n = read_chunk(block->data(), chunk);
             if (n > 0)
@@ -312,7 +337,7 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
         stats.add(Stats::LongConnectionHits);
         if (object_offset > long_conn->current_position)
         {
-            const size_t skipped = long_conn->skipForward(object_offset - long_conn->current_position, block_size);
+            const size_t skipped = long_conn->skipForward(object_offset - long_conn->current_position, sizes.block_bytes);
             stats.add(Stats::BytesFromSource, skipped);
             stats.add(Stats::LongConnectionBytes, skipped);
         }
@@ -325,8 +350,8 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
     else
     {
         if (long_conn)
-            dropLongConnection();
-        if (shouldOpenLongConnection() && tryOpenLongConnection(object, object_offset))
+            dropLongConnection(sizes);
+        if (shouldOpenLongConnection(sizes.window_bytes) && tryOpenLongConnection(object, object_offset))
         {
             fill(want, from_long_conn);
             if (long_conn && long_conn->atBound())
@@ -349,14 +374,14 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
     return chain;
 }
 
-ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want)
+ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want, BlockAndWindowSizes sizes)
 {
     ChainedBuffers chain;
     size_t file_pos = file_offset;
     for (const auto & object_range : offset_map.map(ByteRange{file_offset, want}))
     {
         ChainedBuffers piece = readObjectSlice(
-            object_range.object, object_range.object_offset, object_range.size, file_pos);
+            object_range.object, object_range.object_offset, object_range.size, file_pos, sizes);
         const size_t got = piece.range().size;
         chain.append(std::move(piece));
         file_pos += got;
@@ -367,7 +392,7 @@ ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want)
     return chain;
 }
 
-ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t max_serve)
+ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t max_serve, BlockAndWindowSizes sizes)
 {
     chassert(!cache_chain.empty());
     /// Resolve the whole window across tiers (front = fastest) and act on the run covering the head:
@@ -379,7 +404,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
     const size_t object_offset = start_piece.front().object_offset;
 
     /// Serve one block from `window_offset`, capped by the window and by what is available up to `end`.
-    auto serve_len = [&](size_t end) { return std::min({block_size, max_serve, end - window_offset}); };
+    auto serve_len = [&](size_t end) { return std::min({sizes.block_bytes, max_serve, end - window_offset}); };
 
     /// A miss to be populated carries its own open writer; any other miss is writer-less. `claim` is
     /// filled by the claim loop below (empty for a writer-less miss, or a tail another reader leads).
@@ -436,7 +461,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
         size_t miss_end = window_offset + max_serve;
         for (const auto & miss_tier : miss_tiers)
             miss_end = std::min(miss_end, miss_tier.range.end());
-        return readSource(window_offset, miss_end - window_offset);
+        return readSource(window_offset, miss_end - window_offset, sizes);
     }
 
     /// Fetch the writer ranges in one source read (across the objects they span) and populate each.
@@ -455,7 +480,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
     fetch_hi = std::min<size_t>(fetch_hi, offset_map.totalSize());
     fetch_hi = std::min(fetch_hi, next_resident);  /// do not re-read a block a slower tier already has
 
-    ChainedBuffers fetched = readSource(fetch_lo, fetch_hi - fetch_lo);
+    ChainedBuffers fetched = readSource(fetch_lo, fetch_hi - fetch_lo, sizes);
     const size_t fetched_end = fetched.empty() ? fetch_lo : fetched.range().end();
 
     for (auto & miss_tier : miss_tiers)
@@ -486,7 +511,15 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
     return fetched.slice(ByteRange{window_offset, serve_len(fetched_end)});
 }
 
-void ReaderExecutor::dropLongConnection()
+ReaderExecutor::BlockAndWindowSizes ReaderExecutor::sampleWindowSizes() const
+{
+    const MemoryPressureLevel pressure = CurrentThread::getMemoryPressureMonitor().currentLevel();
+    const size_t window = sizeAtPressure(pressure, window_size, WINDOW_REDUCTION);
+    const size_t block = std::min(sizeAtPressure(pressure, block_size, BLOCK_REDUCTION), window);
+    return {.window_bytes = window, .block_bytes = block};
+}
+
+void ReaderExecutor::dropLongConnection(BlockAndWindowSizes sizes)
 {
     if (!long_conn)
         return;
@@ -496,7 +529,7 @@ void ReaderExecutor::dropLongConnection()
     bool drain_failed = false;
     if (!long_conn->atBound())
     {
-        const auto drain = long_conn->drainTail(max_tail_for_drain, block_size, log);
+        const auto drain = long_conn->drainTail(max_tail_for_drain, sizes.block_bytes, log);
         if (drain.bytes)
         {
             stats.add(Stats::BytesFromSource, drain.bytes);
@@ -625,10 +658,13 @@ ChainedBuffers ReaderExecutor::readNextWindow()
 
     const size_t position_physical = toPhysical(position);
 
-    /// The most this window may serve: `window_size`, clamped to the file end (when the size is
-    /// known) and to the `read_until` bound. The cache path serves at most `block_size` of it; the
+    /// Sample the pressure level once per window; `Normal` keeps the base sizes.
+    const BlockAndWindowSizes sizes = sampleWindowSizes();
+
+    /// The most this window may serve: the pressure-adjusted window, clamped to the file end (when the
+    /// size is known) and to the `read_until` bound. The cache path serves at most one block of it; the
     /// no-cache path serves it whole.
-    size_t max_serve = window_size;
+    size_t max_serve = sizes.window_bytes;
     if (!offset_map.hasUnknownSize())
         max_serve = std::min(max_serve, offset_map.totalSize() - position_physical);
     chassert(!read_until || *read_until >= position);
@@ -641,8 +677,8 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     }
 
     ChainedBuffers chain = cache_chain.empty()
-        ? readSource(position_physical, max_serve)
-        : readThroughCaches(position_physical, max_serve);
+        ? readSource(position_physical, max_serve, sizes)
+        : readThroughCaches(position_physical, max_serve, sizes);
 
     const size_t got = chain.empty() ? 0 : chain.range().size;
     if (got == 0)

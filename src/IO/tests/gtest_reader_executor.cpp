@@ -10,6 +10,7 @@
 #include <cstring>
 
 #include <Common/CurrentThread.h>
+#include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
@@ -474,6 +475,87 @@ TEST_F(ReaderExecutorTest, WindowNeverExceedsBlockSize)
     EXPECT_EQ(windows, 10u);
 }
 
+TEST_F(ReaderExecutorTest, WindowShrinksUnderMemoryPressure)
+{
+    /// Under memory pressure the executor serves a smaller window, so its in-flight buffers hold
+    /// less. The no-cache path serves the whole (pressure-adjusted) window, so the first window's
+    /// size is exactly `sizeAtPressure(level, window_size, WINDOW_REDUCTION)`, capped by the file.
+    constexpr size_t base_window = 8 * 1024 * 1024;
+    StoredObjects objects{makeFile("a.bin", base_window)};
+
+    /// Drive the query's pressure level by loading its group memory tracker to a percent of a large
+    /// hard limit (kept large so the executor's own tracked reads stay well inside it). A fresh group
+    /// per call starts the cooldown clean, and snap-up is immediate, so the first window reflects the
+    /// level. Default thresholds are 75 / 90 / 95 percent.
+    auto firstWindow = [&](UInt64 pct) -> size_t
+    {
+        TestThreadGroup tg;
+        MemoryTracker & mt = tg.thread_group->memory_tracker;
+        constexpr Int64 limit = Int64(8) << 30;   /// 8 GiB
+        mt.setHardLimit(limit);
+        const Int64 amount = limit * static_cast<Int64>(pct) / 100;
+        mt.adjustWithUntrackedMemory(amount);
+
+        ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+            ReaderExecutor::Options{.window_size = base_window});
+        ChainedBuffers w = ex.readNextWindow();
+        const size_t got = w.atEnd() ? 0 : w.totalBytes();
+
+        mt.adjustWithUntrackedMemory(-amount);
+        return got;
+    };
+
+    EXPECT_EQ(firstWindow(50), base_window);        /// Normal: full window
+    EXPECT_EQ(firstWindow(80), base_window / 4);    /// Elevated: window / 4
+    EXPECT_EQ(firstWindow(92), base_window / 16);   /// High: window / 16
+    EXPECT_EQ(firstWindow(99), 128u * 1024);        /// Critical: window / 64, floored at 128 KiB
+}
+
+TEST_F(ReaderExecutorTest, BlockShrinksUnderMemoryPressure)
+{
+    /// The block shrinks too, not only the window: the source path chunks into nodes of the
+    /// pressure-adjusted block. Under Elevated the window is `window/4` but each node is `block/2`,
+    /// so the node size proves the block adapts independently of the window.
+    constexpr size_t base_window = 8 * 1024 * 1024;
+    constexpr size_t base_block = 1024 * 1024;
+    StoredObjects objects{makeFile("a.bin", base_window)};
+
+    /// Read one window and return {total bytes, largest node bytes}. See `WindowShrinksUnderMemoryPressure`
+    /// for how the pressure level is driven through the group memory tracker.
+    auto windowNodes = [&](UInt64 pct) -> std::pair<size_t, size_t>
+    {
+        TestThreadGroup tg;
+        MemoryTracker & mt = tg.thread_group->memory_tracker;
+        constexpr Int64 limit = Int64(8) << 30;
+        mt.setHardLimit(limit);
+        const Int64 amount = limit * static_cast<Int64>(pct) / 100;
+        mt.adjustWithUntrackedMemory(amount);
+
+        ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+            ReaderExecutor::Options{.window_size = base_window, .block_size = base_block});
+        ChainedBuffers w = ex.readNextWindow();
+        size_t total = 0;
+        size_t max_node = 0;
+        while (!w.atEnd())
+        {
+            auto span = w.peek();
+            max_node = std::max(max_node, span.size);
+            total += span.size;
+            w.advance(span.size);
+        }
+        mt.adjustWithUntrackedMemory(-amount);
+        return {total, max_node};
+    };
+
+    const auto [normal_total, normal_node] = windowNodes(50);   /// Normal
+    EXPECT_EQ(normal_total, base_window);
+    EXPECT_EQ(normal_node, base_block);          /// nodes of the full block
+
+    const auto [elevated_total, elevated_node] = windowNodes(80);   /// Elevated
+    EXPECT_EQ(elevated_total, base_window / 4);   /// window / 4
+    EXPECT_EQ(elevated_node, base_block / 2);     /// block / 2, smaller than the window
+}
+
 TEST_F(ReaderExecutorTest, SeekThenRead)
 {
     StoredObjects objects{makeFile("a.bin", 1024)};
@@ -879,6 +961,42 @@ TEST_F(ReaderExecutorTest, SequentialScanOpensAndReusesConnection)
     EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorLongConnectionHits), 1u);
     /// Forward-scan connections are read to their bound, so none are abandoned.
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorIncompleteConnections), 0u);
+}
+
+TEST_F(ReaderExecutorTest, LongConnectionAdmissionFollowsThePressureWindow)
+{
+    /// Admission is "the run outlives the current window", so it must weigh the run against the
+    /// pressure-adjusted window rather than the base one. The same scan is run twice over the same
+    /// file, and the only difference is the window the rule is measured against: at `Normal` the run
+    /// never outlives an 8 MiB window before the file ends, while at `Elevated` it outgrows a 2 MiB
+    /// window part way in. Measuring against the base window at `Elevated` gives one-shot reads
+    /// throughout, which is what this pins.
+    /// See `WindowShrinksUnderMemoryPressure` for how the pressure level is driven.
+    constexpr size_t base_window = 8 * 1024 * 1024;
+    constexpr size_t size = 12 * 1024 * 1024;
+    StoredObjects objects{makeFile("a.bin", size)};
+
+    auto connectionsOpened = [&](UInt64 pct) -> UInt64
+    {
+        TestThreadGroup tg;
+        MemoryTracker & mt = tg.thread_group->memory_tracker;
+        constexpr Int64 limit = Int64(8) << 30;   /// 8 GiB, far above anything the read tracks
+        mt.setHardLimit(limit);
+        const Int64 amount = limit * static_cast<Int64>(pct) / 100;
+        mt.adjustWithUntrackedMemory(amount);
+
+        ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+            .window_size = base_window, .min_bytes_for_seek = 2 * 1024 * 1024,
+            .max_tail_for_drain = 1024 * 1024,
+            .long_connection_limit = std::make_shared<LongConnectionLimit>(4)});
+        EXPECT_EQ(drain(ex).size(), size);
+
+        mt.adjustWithUntrackedMemory(-amount);
+        return tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened);
+    };
+
+    EXPECT_EQ(connectionsOpened(50), 0u);   /// Normal: no run outlives an 8 MiB window here
+    EXPECT_GE(connectionsOpened(80), 1u);   /// Elevated: the run outlives the 2 MiB window
 }
 
 TEST_F(ReaderExecutorTest, InBufferSeekIsServedWithoutRefetch)
