@@ -581,7 +581,7 @@ map.put("key3", new HashMap<String, Object>() {{
     put("key5", "value5");
 }});
 ```
-There is more convinient option to read JSON as String by passing server setting `jdbc_read_json_as_string=true` to connection properties.
+There is a more convenient option to read JSON as String by passing the server setting `output_format_binary_write_json_as_string=1` to connection properties.
 This makes driver return JSON values as String and can be used to parse using any JSON library.
 
 ```java
