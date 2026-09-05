@@ -1,0 +1,17 @@
+before
+1	one
+2	two-a
+2	two-b
+3	three
+after
+1	one
+3	three
+time travel
+1	one
+2	two-a
+2	two-b
+3	three
+delete summary
+DELETE	1	2	2	2
+empty manifest list
+0
