@@ -469,7 +469,7 @@ mortonDecode(range_mask, code)
     FunctionDocumentation::Arguments arguments = {
         {"tuple_size", "Integer value no more than 8.", {"UInt8/16/32/64"}},
         {"range_mask", "For the expanded mode, the mask for each argument. The mask is a tuple of unsigned integers. Each number in the mask configures the amount of range shrink.", {"Tuple(UInt8/16/32/64)"}},
-        {"code", "UInt64 code.", {"UInt64"}},
+        {"code", "Morton code to decode, as produced by `mortonEncode`. Only the low `N * intDiv(64, N)` bits form the input domain, where `N` is the resulting tuple size. Results for larger codes are unspecified and can differ between builds.", {"UInt64"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple of the specified size.", {"Tuple(UInt64)"}};
     FunctionDocumentation::Examples examples = {
