@@ -179,7 +179,8 @@ void MergeTreeDeduplicationLog::rotate()
     existing_logs.emplace(new_log_number, new_log_description);
 
     /// Nothing below can throw.
-    if (current_writer)
+    /// `finalize` throws a logical error on a canceled buffer, which has nothing left to flush.
+    if (current_writer && !current_writer->isCanceled())
     {
         try
         {
@@ -259,6 +260,16 @@ void MergeTreeDeduplicationLog::rotateAndDropIfNeededAfterWrite()
     }
 }
 
+void MergeTreeDeduplicationLog::prepareToWrite()
+{
+    /// A failed flush cancels the writer, and a canceled buffer rejects every later write, so a dead
+    /// writer must be replaced. `rotate` also works on a disk that cannot append.
+    if (!current_writer || current_writer->isCanceled() || current_writer->isFinalized())
+        rotate();
+
+    chassert(current_writer != nullptr);
+}
+
 std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::addPart(const std::vector<std::string> & block_ids, const MergeTreePartInfo & part_info)
 {
     std::lock_guard lock(state_mutex);
@@ -290,7 +301,7 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we add this part.");
     }
 
-    chassert(current_writer != nullptr);
+    prepareToWrite();
 
     for (const auto & block_id : block_ids)
     {
@@ -328,7 +339,7 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we drop this part.");
     }
 
-    chassert(current_writer != nullptr);
+    prepareToWrite();
 
     for (auto itr = deduplication_map.begin(); itr != deduplication_map.end(); /* no increment here, we erasing from map */)
     {
@@ -398,7 +409,9 @@ void MergeTreeDeduplicationLog::shutdown()
         /// any error, causing logical error (see ~MemoryBuffer()).
         try
         {
-            current_writer->finalize();
+            /// `finalize` throws a logical error on a canceled buffer, which has nothing left to flush.
+            if (!current_writer->isCanceled())
+                current_writer->finalize();
             current_writer.reset();
         }
         catch (...)

@@ -3,6 +3,8 @@
 #include <filesystem>
 
 #include <Disks/DiskLocal.h>
+#include <IO/SwapHelper.h>
+#include <IO/WriteBufferFromFileDecorator.h>
 #include <Storages/MergeTree/MergeTreeDeduplicationLog.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Common/Exception.h>
@@ -39,6 +41,68 @@ private:
     size_t calls = 0;
     const size_t fail_on_call;
 };
+
+/// A writer that fails a chosen flush the way a real I/O error does: `WriteBuffer::next` moves the
+/// cursor back, cancels the buffer and rethrows, so the buffer rejects every later write.
+class WriteBufferFailingOnNthFlush : public WriteBufferFromFileDecorator
+{
+public:
+    WriteBufferFailingOnNthFlush(std::unique_ptr<WriteBufferFromFileBase> impl_, size_t fail_on_flush_)
+        : WriteBufferFromFileDecorator(std::move(impl_)), fail_on_flush(fail_on_flush_)
+    {
+    }
+
+private:
+    void nextImpl() override
+    {
+        if (++flushes == fail_on_flush)
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while flushing {}", getFileName());
+
+        /// The body of `WriteBufferFromFileDecorator::nextImpl`, which is private.
+        SwapHelper swap(*this, *impl);
+        impl->next();
+    }
+
+    size_t flushes = 0;
+    const size_t fail_on_flush;
+};
+
+/// A local disk whose first writer fails a chosen flush. Later writers are healthy, so the log can recover.
+class DiskFailingOnNthFlush : public DiskLocal
+{
+public:
+    DiskFailingOnNthFlush(const String & path_, size_t fail_on_flush_)
+        : DiskLocal("faulty_flush", path_), fail_on_flush(fail_on_flush_)
+    {
+    }
+
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings) override
+    {
+        auto impl = DiskLocal::writeFile(path, buf_size, mode, settings);
+        if (std::exchange(inject, false))
+            return std::make_unique<WriteBufferFailingOnNthFlush>(std::move(impl), fail_on_flush);
+        return impl;
+    }
+
+private:
+    bool inject = true;
+    const size_t fail_on_flush;
+};
+
+/// The error code matters: a `LOGICAL_ERROR` would mean the defect fired instead of the injection.
+template <typename Operation>
+void expectInjectedFailure(Operation && operation)
+{
+    try
+    {
+        operation();
+        FAIL() << "the injected flush failure did not propagate";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::FAULT_INJECTED) << e.displayText();
+    }
+}
 
 }
 
@@ -87,6 +151,83 @@ TEST(MergeTreeDeduplicationLog, RotationFailureKeepsLogUsable)
         EXPECT_FALSE(log.addPart({"block4"}, part("all_7_7_0")).empty());
         EXPECT_FALSE(log.addPart({"block5"}, part("all_7_7_0")).empty());
         EXPECT_TRUE(log.addPart({"block3"}, part("all_7_7_0")).empty());
+    }
+
+    std::filesystem::remove_all(disk_path);
+}
+
+/// A failed flush cancels the writer of the deduplication log, and a canceled buffer rejects every later
+/// write. Before the fix, the next record hit the logical error "Cannot write to canceled buffer", which
+/// aborts the process in debug and sanitizer builds, and in a release build made every following insert
+/// into the table fail until the server was restarted.
+TEST(MergeTreeDeduplicationLog, FlushFailureKeepsLogUsable)
+{
+    const auto disk_path
+        = std::filesystem::temp_directory_path() / ("clickhouse_gtest_dedup_log_flush_" + std::to_string(getpid()));
+    std::filesystem::remove_all(disk_path);
+    std::filesystem::create_directories(disk_path);
+
+    /// `load` opens the first log, and that writer fails its second flush. `writeRecord` flushes once per
+    /// record and the records are far smaller than the buffer, so the second record is the one that fails.
+    auto disk = std::make_shared<DiskFailingOnNthFlush>(disk_path.string() + "/", 2);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_1_1_0")).empty());
+
+        /// The flush of the second record fails, which cancels the writer.
+        expectInjectedFailure([&] { log.addPart({"block2"}, part("all_2_2_0")); });
+
+        /// The log must still accept records, and must still deduplicate them.
+        EXPECT_TRUE(log.addPart({"block3"}, part("all_3_3_0")).empty());
+        EXPECT_FALSE(log.addPart({"block3"}, part("all_4_4_0")).empty());
+
+        /// The same for the other entry point that writes records.
+        EXPECT_NO_THROW(log.dropPart(part("all_1_1_0")));
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_5_5_0")).empty());
+    }
+
+    {
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        /// The record written after the recovery is on the disk.
+        EXPECT_FALSE(log.addPart({"block3"}, part("all_6_6_0")).empty());
+        /// The record whose flush failed is not, so a retry of that insert is not deduplicated away.
+        EXPECT_TRUE(log.addPart({"block2"}, part("all_6_6_0")).empty());
+    }
+
+    std::filesystem::remove_all(disk_path);
+}
+
+/// The failed flush can also be the last operation on the deduplication log before the table is dropped
+/// or the server stops, so no later record can replace the canceled writer. `finalize` rejects a canceled
+/// buffer as well, with the logical error "Cannot finalize buffer after cancellation."
+TEST(MergeTreeDeduplicationLog, CanceledWriterDoesNotBreakShutdown)
+{
+    const auto disk_path
+        = std::filesystem::temp_directory_path() / ("clickhouse_gtest_dedup_log_shutdown_" + std::to_string(getpid()));
+    std::filesystem::remove_all(disk_path);
+    std::filesystem::create_directories(disk_path);
+
+    auto disk = std::make_shared<DiskFailingOnNthFlush>(disk_path.string() + "/", 1);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+
+    {
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        expectInjectedFailure([&] {
+            log.addPart({"block1"}, MergeTreePartInfo::fromPartName("all_1_1_0", format_version));
+        });
+
+        EXPECT_NO_THROW(log.shutdown());
     }
 
     std::filesystem::remove_all(disk_path);

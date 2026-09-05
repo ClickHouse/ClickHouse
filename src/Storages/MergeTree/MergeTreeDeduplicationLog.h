@@ -204,6 +204,9 @@ private:
     /// The same after writing records, when a failure must not be reported as a failure of the operation
     void rotateAndDropIfNeededAfterWrite();
 
+    /// Make sure `current_writer` can accept records, replacing it if it cannot
+    void prepareToWrite();
+
     /// Load single log from disk. In case of corruption throws exceptions
     size_t loadSingleLog(const std::string & path);
 };
