@@ -10,8 +10,18 @@
 #include <Parsers/ASTCreateResourceQuery.h>
 #include <Parsers/ParserCreateWorkloadEntity.h>
 #include <Parsers/parseQuery.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Backups/BackupEntriesCollector.h>
+#include <Backups/BackupEntryFromMemory.h>
+#include <Backups/IBackup.h>
+#include <Backups/IBackupCoordination.h>
+#include <Backups/IRestoreCoordination.h>
+#include <Backups/RestorerFromBackup.h>
+#include <Common/escapeForFileName.h>
+
+#include <filesystem>
 
 #include <boost/container/flat_set.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -23,9 +33,12 @@
 namespace DB
 {
 
+namespace fs = std::filesystem;
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_RESTORE_TABLE;
     extern const int LOGICAL_ERROR;
 }
 
@@ -998,6 +1011,251 @@ std::vector<std::pair<String, ASTPtr>> WorkloadEntityStorageBase::parseEntitiesF
     }
 
     return result;
+}
+
+void WorkloadEntityStorageBase::backup(
+    BackupEntriesCollector & backup_entries_collector,
+    const String & data_path_in_backup,
+    WorkloadEntityType entity_type) const
+{
+    /// system.workloads and system.resources are backed up via two separate backup() calls on this shared storage.
+    /// Take a single consistent snapshot of all local entities for the whole backup operation (keyed by the backup
+    /// UUID) and serve both calls from it, so that a DDL committing between the two calls cannot split an
+    /// interdependent pair across the snapshot. Otherwise "CREATE RESOURCE r; CREATE WORKLOAD w SETTINGS ... FOR r"
+    /// committing between a resources snapshot and a workloads snapshot could put w.sql in the backup without r.sql,
+    /// producing a backup that fails to restore on the "FOR r" reference. For replicated storage the coordination
+    /// elects one host to write both entity types, so a per-host consistent snapshot is sufficient.
+    const UUID backup_id = backup_entries_collector.getBackupSettings().backup_uuid.value();
+
+    std::vector<std::pair<String, BackupEntryPtr>> backup_entries;
+    {
+        std::lock_guard lock{mutex};
+
+        /// Back up only entities defined via SQL and stored in this storage (`local_entities`).
+        /// Entities provided through the server configuration are kept in the next storage in the
+        /// chain (WorkloadEntityConfigStorage) and must NOT be backed up: the configuration is
+        /// assumed to be backed up and restored separately together with all its entities.
+        /// Re-creating a config entity from a backup would persist it as a SQL entity, which is not
+        /// equivalent. Note `getAllEntities()` returns the merged view (including config entities),
+        /// so it must not be used here.
+        auto [it, inserted] = entities_to_backup.try_emplace(backup_id);
+        if (inserted)
+        {
+            it->second = local_entities;
+            /// Drop the snapshot when the backup operation ends, whether it succeeds or fails. The cleanup runs
+            /// from the scope_guard's destructor, held alive by a post task, so it fires even if a later table's
+            /// backupData() throws before post tasks run (post tasks run only after all backupData() calls
+            /// succeed). Otherwise the snapshot would stay pinned on this shared storage, and a retry reusing the
+            /// same backup_uuid would serve this stale snapshot instead of the current local_entities.
+            auto cleanup = std::make_shared<scope_guard>([this, backup_id]
+            {
+                std::lock_guard cleanup_lock{mutex};
+                entities_to_backup.erase(backup_id);
+            });
+            backup_entries_collector.addPostTask([cleanup]{});
+        }
+
+        for (const auto & [entity_name, ast] : it->second)
+        {
+            if (getEntityType(ast) != entity_type)
+                continue;
+            backup_entries.emplace_back(
+                escapeForFileName(entity_name) + ".sql",
+                std::make_shared<BackupEntryFromMemory>(ast->formatWithSecretsOneLine()));
+        }
+    }
+
+    if (!isReplicated())
+    {
+        fs::path data_path_in_backup_fs{data_path_in_backup};
+        for (const auto & [file_name, entry] : backup_entries)
+            backup_entries_collector.addBackupEntry(data_path_in_backup_fs / file_name, entry);
+        return;
+    }
+
+    String replication_id = getReplicationID();
+    auto backup_coordination = backup_entries_collector.getBackupCoordination();
+    backup_coordination->addReplicatedWorkloadEntitiesDir(replication_id, entity_type, data_path_in_backup);
+
+    /// On the stage of running post tasks, all directories will already be added to the backup coordination object.
+    /// They will only be returned for one of the hosts below, for the rest an empty list.
+    /// See also BackupCoordinationReplicatedWorkloadEntities class.
+    backup_entries_collector.addPostTask(
+        [my_backup_entries = std::move(backup_entries),
+         my_replication_id = std::move(replication_id),
+         entity_type,
+         &backup_entries_collector,
+         backup_coordination]
+        {
+            auto dirs = backup_coordination->getReplicatedWorkloadEntitiesDirs(my_replication_id, entity_type);
+
+            for (const auto & dir : dirs)
+            {
+                fs::path dir_fs{dir};
+                for (const auto & [file_name, entry] : my_backup_entries)
+                    backup_entries_collector.addBackupEntry(dir_fs / file_name, entry);
+            }
+        });
+}
+
+void WorkloadEntityStorageBase::restore(
+    RestorerFromBackup & restorer,
+    const String & data_path_in_backup,
+    WorkloadEntityType entity_type)
+{
+    if (isReplicated()
+        && !restorer.getRestoreCoordination()->acquireReplicatedWorkloadEntities(getReplicationID()))
+        return; /// Other replica is already restoring the workload entities.
+
+    auto backup = restorer.getBackup();
+    fs::path data_path_in_backup_fs{data_path_in_backup};
+
+    Strings filenames = backup->listFiles(data_path_in_backup, /*recursive*/ false);
+    if (filenames.empty())
+        return; /// Nothing to restore.
+
+    for (const auto & filename : filenames)
+    {
+        if (!filename.ends_with(".sql"))
+            throw Exception(
+                ErrorCodes::CANNOT_RESTORE_TABLE,
+                "Cannot restore workload entities: File name {} doesn't have the extension .sql",
+                String{data_path_in_backup_fs / filename});
+    }
+
+    std::vector<std::pair<String, ASTPtr>> parsed_entities;
+    for (const auto & filename : filenames)
+    {
+        String filepath = data_path_in_backup_fs / filename;
+        auto in = backup->readFile(filepath);
+        String statement_def;
+        readStringUntilEOF(statement_def, *in);
+
+        for (auto & name_and_ast : parseEntitiesFromString(statement_def, log))
+        {
+            /// Reject a definition whose kind does not match the system table being restored. The two system
+            /// tables carry independent access checks (system.workloads requires CREATE_WORKLOAD, system.resources
+            /// requires CREATE_RESOURCE; see RestorerFromBackup::checkAccessForObjectsFoundInBackup), so accepting
+            /// a WORKLOAD from the resources directory (or vice versa) would bypass the access gate of the other
+            /// kind and violate the system-table backup contract.
+            if (getEntityType(name_and_ast.second) != entity_type)
+                throw Exception(
+                    ErrorCodes::CANNOT_RESTORE_TABLE,
+                    "Cannot restore workload entities: file {} defines an entity of a kind that does not match the "
+                    "system table being restored",
+                    String{data_path_in_backup_fs / filename});
+            parsed_entities.push_back(std::move(name_and_ast));
+        }
+    }
+
+    /// WORKLOADs and RESOURCEs are backed up (and restored) via two separate system tables (system.workloads and
+    /// system.resources), so their restore tasks are scheduled independently. We accumulate the parsed entities of
+    /// both types and create them all together, in an order that keeps every reference valid (resources first, then
+    /// workloads parent-first). Concurrent restores are allowed (backups.allow_concurrent_restores), so the
+    /// accumulator is keyed by the unique restore UUID instead of being kept as shared storage state; otherwise two
+    /// concurrent restores would mix their entities.
+    const auto & restore_settings = restorer.getRestoreSettings();
+    const UUID restore_id = restore_settings.restore_uuid.value();
+    /// WORKLOAD and RESOURCE entities share a single creation mode (create_workloads_and_resources): they are
+    /// intertwined and always restored together, so handling pre-existing entities differently per type makes no
+    /// sense. kCreateIfNotExists (default) skips existing entities, kCreate fails the RESTORE, kReplace overwrites.
+    const bool throw_if_exists = (restore_settings.create_workloads_and_resources == RestoreWorkloadsAndResourcesCreationMode::kCreate);
+    const bool replace_if_exists = (restore_settings.create_workloads_and_resources == RestoreWorkloadsAndResourcesCreationMode::kReplace);
+
+    {
+        std::lock_guard lock{mutex};
+        auto & accumulated = entities_to_restore[restore_id];
+        for (auto & [name, ast] : parsed_entities)
+            accumulated.emplace(name, ast);
+    }
+
+    /// Register the deferred restore task on every restore() call (i.e. once for each of the two system tables).
+    /// The task is idempotent: the first one to run swaps out and creates all entities accumulated for this restore
+    /// operation, and any later task finds the accumulator already drained and does nothing. Data restore tasks run
+    /// only after restore() has been called for both tables of the operation, so every referenced entity is present
+    /// by the time entities are created.
+    ///
+    /// The accumulator must not outlive the restore operation. A scope_guard held by the restore task drops it when
+    /// the operation ends, on success or failure, so a restore that aborts before the data restore tasks run (e.g.
+    /// another table throws) does not pin these ASTs on this shared storage; a retry reusing the same restore_uuid
+    /// then starts from an empty accumulator instead of mixing in the stale entities.
+    auto restore_context = restorer.getContext();
+    auto cleanup = std::make_shared<scope_guard>([this, restore_id]
+    {
+        std::lock_guard lock{mutex};
+        entities_to_restore.erase(restore_id);
+    });
+    restorer.addDataRestoreTask(
+        [this, restore_context, restore_id, throw_if_exists, replace_if_exists, cleanup]
+        { restoreEntitiesAccumulatedFromBackup(restore_context, restore_id, throw_if_exists, replace_if_exists); });
+}
+
+void WorkloadEntityStorageBase::restoreEntitiesAccumulatedFromBackup(
+    const ContextMutablePtr & context, const UUID & restore_id, bool throw_if_exists, bool replace_if_exists)
+{
+    std::unordered_map<String, ASTPtr> to_restore;
+    {
+        std::lock_guard lock{mutex};
+        if (auto it = entities_to_restore.find(restore_id); it != entities_to_restore.end())
+        {
+            to_restore.swap(it->second);
+            entities_to_restore.erase(it);
+        }
+    }
+
+    if (to_restore.empty())
+        return;
+
+    /// Every entity a restored workload references (its parent workload, and the RESOURCEs used in a
+    /// `SETTINGS ... FOR ...` clause) must exist once the restore completes: either it is part of this backup
+    /// or it is already present on the server. Otherwise creating the workload fails with an opaque
+    /// "references ... that doesn't exist" error. The usual cause is backing up / restoring only
+    /// `system.workloads` while a workload depends on a SQL-defined RESOURCE -- resources are not pulled into a
+    /// workloads-only backup, so the two system tables must be backed up and restored together. Fail early with
+    /// a clear, actionable message before creating anything.
+    ///
+    /// Only for non-replicated storage, where the in-memory maps are the authoritative single-node state. On
+    /// replicated (Keeper-backed) storage the local caches can lag Keeper until a watch fires, so this
+    /// pre-check could wrongly reject a dependency that is actually committed; there we leave `storeEntity` to
+    /// enforce references as before. Validating the replicated path against authoritative Keeper state is a
+    /// separate change.
+    if (!isReplicated())
+    {
+        std::lock_guard lock{mutex};
+        for (const auto & entry : to_restore)
+        {
+            forEachReference(entry.second, [&](const String & target, const String & source, ReferenceType type)
+            {
+                if (to_restore.contains(target) || entities.contains(target))
+                    return;
+                throw Exception(
+                    ErrorCodes::CANNOT_RESTORE_TABLE,
+                    "Cannot restore workload entities: workload '{}' references {} '{}' which is neither included "
+                    "in the backup nor present on the server. WORKLOADs and RESOURCEs must be backed up and "
+                    "restored together (include both TABLE system.workloads and TABLE system.resources in the "
+                    "same BACKUP/RESTORE command).",
+                    source,
+                    type == ReferenceType::ForResource ? "resource" : "parent workload",
+                    target);
+            });
+        }
+    }
+
+    /// orderEntities() returns resources first and then workloads in parent-first order, so that every reference
+    /// (workload parent, FOR resource) is already created by the time it is needed.
+    for (const auto & event : orderEntities(to_restore))
+    {
+        /// throw_if_exists / replace_if_exists come from the create_workloads_and_resources restore setting and are
+        /// applied uniformly to every workload and resource (see restore()).
+        storeEntity(
+            context,
+            event.type,
+            event.name,
+            event.entity,
+            throw_if_exists,
+            replace_if_exists,
+            context->getSettingsRef());
+    }
 }
 
 }

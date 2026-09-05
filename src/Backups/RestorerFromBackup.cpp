@@ -93,6 +93,18 @@ namespace
     {
         return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "functions");
     }
+
+    /// Whether a specified name corresponds to the system table backing WORKLOAD entities.
+    bool isSystemWorkloadsTableName(const QualifiedTableName & table_name)
+    {
+        return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "workloads");
+    }
+
+    /// Whether a specified name corresponds to the system table backing RESOURCE entities.
+    bool isSystemResourcesTableName(const QualifiedTableName & table_name)
+    {
+        return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "resources");
+    }
  }
 
 
@@ -331,6 +343,34 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     /// CREATE_FUNCTION privilege is required to restore the "system.functions" table.
                     if (table_info.has_data && restore_settings.shouldRestoreFunctions())
                         required_access.emplace_back(AccessType::CREATE_FUNCTION);
+                }
+                else if (isSystemWorkloadsTableName(table_name))
+                {
+                    /// CREATE_WORKLOAD privilege is required to restore WORKLOAD entities from the "system.workloads" table.
+                    /// (RESTORE creates them via storeEntity(), bypassing InterpreterCreateWorkloadQuery's own access check.)
+                    if (table_info.has_data && restore_settings.shouldRestoreTableData())
+                    {
+                        required_access.emplace_back(AccessType::CREATE_WORKLOAD);
+                        /// In 'replace' mode a restored entity can overwrite an existing one (storeEntity() with
+                        /// replace_if_exists), which is a DROP followed by a CREATE, so it also requires DROP_WORKLOAD
+                        /// -- mirroring the access required by CREATE OR REPLACE WORKLOAD.
+                        if (restore_settings.create_workloads_and_resources == RestoreWorkloadsAndResourcesCreationMode::kReplace)
+                            required_access.emplace_back(AccessType::DROP_WORKLOAD);
+                    }
+                }
+                else if (isSystemResourcesTableName(table_name))
+                {
+                    /// CREATE_RESOURCE privilege is required to restore RESOURCE entities from the "system.resources" table.
+                    /// (RESTORE creates them via storeEntity(), bypassing InterpreterCreateResourceQuery's own access check.)
+                    if (table_info.has_data && restore_settings.shouldRestoreTableData())
+                    {
+                        required_access.emplace_back(AccessType::CREATE_RESOURCE);
+                        /// In 'replace' mode a restored entity can overwrite an existing one (storeEntity() with
+                        /// replace_if_exists), which is a DROP followed by a CREATE, so it also requires DROP_RESOURCE
+                        /// -- mirroring the access required by CREATE OR REPLACE RESOURCE.
+                        if (restore_settings.create_workloads_and_resources == RestoreWorkloadsAndResourcesCreationMode::kReplace)
+                            required_access.emplace_back(AccessType::DROP_RESOURCE);
+                    }
                 }
                 /// Privileges required to restore ACL system tables are checked separately
                 /// (see access_restore_task->getRequiredAccess() below).
