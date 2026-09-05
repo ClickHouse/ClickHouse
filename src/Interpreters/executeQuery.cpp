@@ -51,6 +51,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/ParserSetQuery.h>
 #include <Parsers/queryNormalization.h>
 #include <Common/quoteString.h>
 #include <Parsers/toOneLineQuery.h>
@@ -310,6 +311,16 @@ static TSA_NO_THREAD_SAFETY_ANALYSIS void triggerSanitizerError()
     if (data[7] == 42)
         __builtin_trap();
 #endif
+}
+
+/// Whether the inline data of `insert` points into the transpiled query text owned by the context,
+/// i.e. the statement came from a foreign SQL dialect (see the `polyglot` branch below).
+static bool hasTranspiledInlineData(const ASTInsertQuery & insert, const ContextPtr & context)
+{
+    const String & transpiled = context->getTranspiledQuery();
+    if (transpiled.empty() || !insert.data)
+        return false;
+    return insert.data >= transpiled.data() && insert.data <= transpiled.data() + transpiled.size();
 }
 
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
@@ -2276,6 +2287,24 @@ static BlockIO executeQueryImpl(
     UInt64 normalized_query_hash = 0;
     size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
 
+    bool check_external_data_after_deferred_continue = false;
+    /// `istr` is moved into `ASTInsertQuery::tail` before this callback runs, so the buffer to
+    /// inspect is remembered separately. It stays alive as long as the query AST does.
+    ReadBuffer * external_data_buffer = nullptr;
+    auto check_external_data_after_deferred_continue_callback = [&]
+    {
+        if (!check_external_data_after_deferred_continue)
+            return;
+
+        check_external_data_after_deferred_continue = false;
+        if (!external_data_buffer->eof())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Processing an INSERT query in a foreign SQL dialect together with external data "
+                "(the HTTP request body) is not supported: the query is transpiled as a whole and "
+                "must carry all its data inline");
+    };
+
     /// Parse the query from string.
     try
     {
@@ -2320,18 +2349,47 @@ static BlockIO executeQueryImpl(
         }
         else if (settings[Setting::dialect] == Dialect::polyglot && !internal)
         {
-            /// Pass through to `ParserPolyglotQuery` which handles SET queries
-            /// internally (via the standard parser) even when the feature gate
-            /// is off.  This lets users recover from misconfigured profiles
-            /// (e.g. `SET dialect = 'clickhouse'`) without being locked out.
-            ParserPolyglotQuery parser(
-                max_query_size,
-                settings[Setting::max_parser_depth],
-                settings[Setting::max_parser_backtracks],
-                settings[Setting::polyglot_dialect],
-                end,
-                settings[Setting::allow_experimental_polyglot_dialect]);
-            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            /// A SET query is standard ClickHouse SQL and is parsed as-is, so that
+            /// `dialect`/`polyglot_dialect` can always be changed back (and before the
+            /// feature gate, to recover from a misconfigured profile). Everything else is
+            /// transpiled to ClickHouse SQL up front: the transpiled text is kept alive on
+            /// the query context, and inline INSERT data (`data`/`end`) points into that
+            /// live buffer and is processed by the normal path. `begin`/`end` (the original
+            /// query text) are deliberately left untouched, so that the logging/hashing
+            /// below still reflects what the user submitted, not the transpiled SQL.
+            ParserSetQuery set_parser;
+            const char * set_pos = begin;
+            String set_error;
+            out_ast = tryParseQuery(
+                set_parser, set_pos, end, set_error, false, "", false,
+                max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+
+            if (!out_ast)
+            {
+                if (!settings[Setting::allow_experimental_polyglot_dialect])
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Support for polyglot SQL transpiler is disabled (turn on setting 'allow_experimental_polyglot_dialect')");
+
+                const String source_dialect = settings[Setting::polyglot_dialect];
+                if (source_dialect.empty())
+                    throw Exception(
+                        ErrorCodes::SYNTAX_ERROR,
+                        "The `polyglot_dialect` setting must not be empty. "
+                        "Please specify the source SQL dialect (e.g. 'sqlite', 'mysql', 'postgresql').");
+
+                /// Keep the transpiled query alive for the whole query lifetime (see Context).
+                context->setTranspiledQuery(transpilePolyglotToClickHouse(
+                    std::string_view(begin, static_cast<size_t>(end - begin)), source_dialect, max_query_size));
+                const String & transpiled = context->getTranspiledQuery();
+                const char * transpiled_begin = transpiled.data();
+                const char * transpiled_end = transpiled.data() + transpiled.size();
+
+                ParserQuery parser(transpiled_end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+                out_ast = parseQuery(
+                    parser, transpiled_begin, transpiled_end, "", max_query_size,
+                    settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            }
         }
         else if (settings[Setting::dialect] == Dialect::clickhouse_json && !internal)
         {
@@ -2526,12 +2584,44 @@ static BlockIO executeQueryImpl(
 #endif
         }
 
+        /// A foreign-dialect INSERT carries all of its data inline: the transpiler rewrites the
+        /// whole statement at once, so the inline data belongs to the transpiled buffer and is
+        /// parsed with ClickHouse (not foreign) syntax. External data appended after the query —
+        /// the HTTP request body for `POST /?query=INSERT ... &dialect=polyglot` — never goes
+        /// through the transpiler and does not count towards `max_query_size`, so accepting it
+        /// would mix two different parsing rules in a single INSERT. Reject it instead of
+        /// silently reading it, mirroring the client-side rule for stdin and INFILE
+        /// (see `send_query_verbatim` in ClientBase). The check uses `getInsertAST` so that an
+        /// `EXPLAIN INSERT ... VALUES`, which carries its inline data in the nested `INSERT`, is
+        /// guarded as well.
+        const char * query_begin = begin;
         const char * query_end = end;
 
         if (out_ast)
         {
-            if (const auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
-                query_end = insert_query->data;
+            /// Cut the inline INSERT data out of the query text used for logging/processlist,
+            /// so that inserted row values are never written to `system.query_log` and friends.
+            /// `getInsertAST` also unwraps an `EXPLAIN INSERT ... VALUES`, which carries inline data
+            /// in its nested `INSERT` — the parsers locate the data boundary the same way.
+            if (const auto * insert_query = getInsertAST(out_ast); insert_query && insert_query->data)
+            {
+                if (hasTranspiledInlineData(*insert_query, context))
+                {
+                    /// Polyglot dialect: `[begin, end)` is the original foreign-dialect query, but
+                    /// the parsed AST (and thus `data`) points into the transpiled buffer owned by
+                    /// the context. The inline-data boundary cannot be mapped back onto the original
+                    /// text (transpilation rewrites the query), so log the transpiled header up to
+                    /// the data instead — it carries the INSERT target and column list but no row
+                    /// values, and reflects what was actually executed.
+                    query_begin = context->getTranspiledQuery().data();
+                    query_end = insert_query->data;
+                }
+                else if (context->getTranspiledQuery().empty())
+                {
+                    /// The usual case: `data` points into `[begin, end)` (the query buffer).
+                    query_end = insert_query->data;
+                }
+            }
         }
 
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
@@ -2547,12 +2637,12 @@ static BlockIO executeQueryImpl(
             if (visitor.getNumberOfReplacedParameters())
                 query = out_ast->formatWithSecretsOneLine();
             else
-                query.assign(begin, query_end);
+                query.assign(query_begin, query_end);
         }
         else
         {
             /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
-            query.assign(begin, query_end);
+            query.assign(query_begin, query_end);
         }
 
         /// Wipe any sensitive information (e.g. passwords) from the query.
@@ -2578,7 +2668,10 @@ static BlockIO executeQueryImpl(
     {
         /// Anyway log the query.
         if (query.empty())
-            query.assign(begin, std::min(static_cast<size_t>(end - begin), max_query_size));
+        {
+            const char * log_end = begin + std::min(static_cast<size_t>(end - begin), max_query_size);
+            query.assign(begin, log_end);
+        }
 
         query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length, true);
         logQuery(query_for_logging, context, internal, stage);
@@ -2765,6 +2858,32 @@ static BlockIO executeQueryImpl(
                 out_ast->format(buf, enforce_strict_identifier_format_settings);
             }
 
+            if (const auto * inline_data_insert = getInsertAST(out_ast); inline_data_insert && inline_data_insert->data
+                && !inline_data_insert->select && istr && hasTranspiledInlineData(*inline_data_insert, context))
+            {
+                /// The body cannot be inspected before the deferred HTTP 100 Continue response is sent
+                /// (that happens later, after the quota checks), so in that case rely on what the client
+                /// announced in the request headers instead of touching the buffer: reading it here would
+                /// wait for a body that the client only sends after receiving the 100 Continue response.
+                /// A chunked request has no header-level emptiness signal, so check it after the quota checks
+                /// send that response. A deferred `100 Continue` without a body (see
+                /// `03353_http_100_continue.sh`) is fine and keeps working. Without the deferral the buffer is
+                /// authoritative.
+                check_external_data_after_deferred_continue = http_continue_callback && flags.http_request_body_is_chunked;
+                external_data_buffer = istr.get();
+                const bool has_external_data = http_continue_callback
+                    ? flags.http_request_has_body
+                    : !istr->eof();
+                if (has_external_data)
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Processing an INSERT query in a foreign SQL dialect together with external data "
+                        "(the HTTP request body) is not supported: the query is transpiled as a whole and "
+                        "must carry all its data inline");
+            }
+
+            /// The external data is attached to a top-level INSERT only: that is the only form whose
+            /// data section is streamed from the request body (an explained INSERT is never executed).
             if (auto * insert_query = out_ast->as<ASTInsertQuery>())
                 insert_query->tail = std::move(istr);
 
@@ -2925,7 +3044,10 @@ static BlockIO executeQueryImpl(
 
             /// Invoke HTTP 100-Continue callback after async insert quota checks are completed
             if (http_continue_callback && !internal)
+            {
                 http_continue_callback();
+                check_external_data_after_deferred_continue_callback();
+            }
 
             auto result = queue->pushQueryWithInlinedData(out_ast, context);
 
@@ -2971,7 +3093,10 @@ static BlockIO executeQueryImpl(
         {
             /// Invoke HTTP 100-Continue callback if it was not invoked yet
             if (http_continue_callback && !internal)
+            {
                 http_continue_callback();
+                check_external_data_after_deferred_continue_callback();
+            }
         }
 
         QueryResultCachePtr query_result_cache = context->getQueryResultCache();
@@ -3111,7 +3236,10 @@ static BlockIO executeQueryImpl(
 
                 /// Invoke HTTP 100-Continue callback after quota checks are completed
                 if (http_continue_callback && !internal)
+                {
                     http_continue_callback();
+                    check_external_data_after_deferred_continue_callback();
+                }
 
                 if (interpreter)
                 {

@@ -1341,28 +1341,110 @@ void HTTPHandler::processQuery(
     QueryFlags query_flags;
     /// Streaming `INSERT` needs the parser to stop at the end of the URL-provided query so the
     /// request body stays intact for the input format. Only enable this when the URL query
-    /// alone already begins with an `INSERT` statement, otherwise we would break the legacy
-    /// behavior of splitting SQL text between the `query` parameter and the request body.
+    /// alone contains an `INSERT` statement at its top level, otherwise we would break the legacy
+    /// behavior of splitting SQL text between the `query` parameter and the request body. A CTE
+    /// before the `INSERT` is part of the same statement and has to use the streaming-safe path too.
     /// Leading whitespace and SQL comments are skipped so that forms like `/*trace*/ INSERT ...`
-    /// also take the streaming-safe parse path.
+    /// also take the streaming-safe parse path. The bareword `INSERT` alone is not enough: it is
+    /// also a legal identifier (a function or alias name), so an actual `INSERT INTO` at the start
+    /// of the statement is required - otherwise a query such as
+    /// `WITH cte AS (SELECT 1) SELECT 1 AS insert, 2 AS into` would stop concatenating the request
+    /// body to the URL query.
     auto url_query_starts_with_insert = [&query]()
     {
         Lexer lexer(query.data(), query.data() + query.size());
-        Token token = lexer.nextToken();
-        while (!token.isSignificant() && !token.isEnd() && !token.isError())
-            token = lexer.nextToken();
-        if (token.type != TokenType::BareWord)
-            return false;
-        static constexpr std::string_view kw = "INSERT";
-        if (static_cast<size_t>(token.end - token.begin) != kw.size())
-            return false;
-        for (size_t j = 0; j < kw.size(); ++j)
-            if (toUpperIfAlphaASCII(token.begin[j]) != kw[j])
+        const auto is_keyword = [](const Token & candidate, std::string_view keyword)
+        {
+            if (candidate.type != TokenType::BareWord || static_cast<size_t>(candidate.end - candidate.begin) != keyword.size())
                 return false;
-        return true;
+
+            for (size_t j = 0; j < keyword.size(); ++j)
+                if (toUpperIfAlphaASCII(candidate.begin[j]) != keyword[j])
+                    return false;
+
+            return true;
+        };
+
+        const auto next_significant_token = [&lexer]()
+        {
+            Token token = lexer.nextToken();
+            while (!token.isEnd() && !token.isError() && !token.isSignificant())
+                token = lexer.nextToken();
+            return token;
+        };
+
+        Token token = next_significant_token();
+
+        /// Skip a leading CTE list `WITH <item> (, <item>)*`, where an item is either
+        /// `<name> AS (<subquery>)` or `<expression> AS <name>`. Everything after the list is the
+        /// statement itself, and only its first tokens decide which parse path to take.
+        if (is_keyword(token, "WITH"))
+        {
+            while (true)
+            {
+                /// Find the `AS` separating the name of the CTE from its body. It is at the top
+                /// level of the list: an `AS` inside a subquery or a function call does not count.
+                size_t parentheses_depth = 0;
+                while (true)
+                {
+                    token = next_significant_token();
+                    if (token.isEnd() || token.isError())
+                        return false;
+                    if (parentheses_depth == 0 && is_keyword(token, "AS"))
+                        break;
+                    if (token.type == TokenType::OpeningRoundBracket)
+                        ++parentheses_depth;
+                    else if (token.type == TokenType::ClosingRoundBracket && parentheses_depth)
+                        --parentheses_depth;
+                }
+
+                /// Skip the body of the CTE: a parenthesized subquery, optionally prefixed with
+                /// `MATERIALIZED` (see `ParserWithElement`), or a single name.
+                token = next_significant_token();
+                if (token.isEnd() || token.isError())
+                    return false;
+                bool token_is_past_the_body = false;
+                if (is_keyword(token, "MATERIALIZED"))
+                {
+                    /// `MATERIALIZED` acts as the keyword only when a subquery follows; a bare
+                    /// `MATERIALIZED` is an ordinary alias name, and then the token just read is
+                    /// already the one after the body.
+                    token = next_significant_token();
+                    token_is_past_the_body = token.type != TokenType::OpeningRoundBracket;
+                }
+                if (!token_is_past_the_body)
+                {
+                    if (token.type == TokenType::OpeningRoundBracket)
+                    {
+                        for (size_t depth = 1; depth != 0;)
+                        {
+                            token = next_significant_token();
+                            if (token.isEnd() || token.isError())
+                                return false;
+                            if (token.type == TokenType::OpeningRoundBracket)
+                                ++depth;
+                            else if (token.type == TokenType::ClosingRoundBracket)
+                                --depth;
+                        }
+                    }
+
+                    token = next_significant_token();
+                }
+                if (token.type != TokenType::Comma)
+                    break;
+            }
+        }
+
+        return is_keyword(token, "INSERT") && is_keyword(next_significant_token(), "INTO");
     };
     query_flags.parse_query_from_initial_buffer
         = settings[Setting::input_format_max_block_wait_ms] != 0 && url_query_starts_with_insert();
+    /// Whether the client announced a request body with a non-zero Content-Length. A chunked body is recorded
+    /// separately: it can legally be empty, and its actual presence is determined after a deferred HTTP 100 Continue
+    /// response lets the client send the terminating chunk.
+    query_flags.http_request_has_body
+        = request.hasContentLength() && request.getContentLength() > 0;
+    query_flags.http_request_body_is_chunked = request.getChunkedTransferEncoding();
 
     executeQuery(
         std::move(in),

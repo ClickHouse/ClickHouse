@@ -100,6 +100,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <TableFunctions/ITableFunction.h>
 
+#include <array>
 #include <filesystem>
 #include <iostream>
 #include <limits>
@@ -665,8 +666,21 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         else if (dialect == Dialect::promql)
             parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
+        /// A foreign dialect (e.g. polyglot) is transpiled to ClickHouse SQL here, on the client, only
+        /// to parse it into an AST that drives client-side handling (statement classification, output
+        /// format, INSERT detection). This transpiled text is thrown away: the client sends the
+        /// *original* query verbatim and the server performs the authoritative transpilation whose
+        /// result is actually executed (so inline INSERT data lives in a server-owned buffer — see
+        /// executeQuery). Consequently the transpiler must also be available on the client (a client
+        /// built without USE_POLYGLOT throws SUPPORT_IS_DISABLED here), and the client and server
+        /// transpilers are assumed to agree — acceptable for an experimental dialect.
+        /// The classifier gets the real `max_query_size` rather than `max_length`: in multi-statement
+        /// mode `max_length` is 0 (a script may legitimately exceed the per-query limit), but the
+        /// polyglot parser consumes the whole remaining buffer as a single query and transpiles it,
+        /// so the per-query size guard must stay active in every mode to reject an oversized query
+        /// on the client, before the transpiler runs.
         else if (dialect == Dialect::polyglot)
-            parser = std::make_unique<ParserPolyglotQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
+            parser = std::make_unique<ParserPolyglotQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect], settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
         else
             parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
@@ -1572,10 +1586,21 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
     return !have_error;
 }
 
-void ClientBase::pinOutboundDialectForJSONDialect(const String & outbound_query)
+void ClientBase::pinOutboundDialect(const String & outbound_query, bool outbound_text_is_serialized_ast)
 {
     if (!current_query_parsed_as_json_dialect)
+    {
+        /// A foreign-dialect query is sent verbatim with its parse-time `dialect` pinned, so the server
+        /// reparses (for polyglot: transpiles) exactly the text the client classified — see
+        /// `processParsedSingleQuery`. When a client-side AST->SQL rewrite replaced that text, what is
+        /// being sent is the *already transpiled* AST serialized back to ClickHouse SQL, so the server
+        /// must parse it as SQL instead of running it through the transpiler a second time (e.g.
+        /// `clickhouse-client --dialect=polyglot --allow_merge_tree_settings --index_granularity=...`
+        /// rewrites a `CREATE TABLE`).
+        if (current_query_sent_verbatim && outbound_text_is_serialized_ast)
+            client_context->setSetting("dialect", String("clickhouse"));
         return;
+    }
 
     /// The client parsed this query as JSON (`clickhouse_json` dialect), but the server re-parses the
     /// outbound text using the session `dialect`. Determine the form of the text actually being sent:
@@ -1616,6 +1641,10 @@ std::optional<Settings> ClientBase::settingsWithoutCompatibilityDerived() const
 
 void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 {
+    /// Whether `query` below is no longer the text the client parsed, but that parse serialized back to
+    /// ClickHouse SQL. It decides how the server has to parse the outbound text (see `pinOutboundDialect`).
+    bool outbound_text_is_serialized_ast = false;
+
     /// Rewrite query only when we have query parameters.
     /// Note that if query is rewritten, comments in query are lost.
     /// But the user often wants to see comments in server logs, query log, processlist, etc.
@@ -1629,7 +1658,22 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
         /// Get new query after substitutions.
         if (visitor.getNumberOfReplacedParameters())
+        {
+            /// An INSERT in a foreign SQL dialect is sent to the server verbatim: its inline data exists
+            /// only in the original query text, and serializing the substituted AST back to SQL would
+            /// silently drop it (`ASTInsertQuery`'s formatter prints only the header, never the data).
+            /// Fail close instead of sending a payload-less INSERT. An INSERT without inline data
+            /// serializes losslessly (its data travels in data packets) and is not affected.
+            const auto * insert_ast = getInsertAST(parsed_query);
+            if (current_query_sent_verbatim && insert_ast && !insert_ast->select
+                && insert_ast->inline_data_owned_by_transpiled_query)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Substituting query parameters on the client (the server is too old to receive them) "
+                    "is not supported for an INSERT query in a foreign SQL dialect: the query is sent to "
+                    "the server verbatim and must carry all its data inline");
             query = parsed_query->formatWithSecretsOneLine();
+            outbound_text_is_serialized_ast = true;
+        }
         chassert(!query.empty());
     }
 
@@ -1646,6 +1690,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             }
 
             query = parsed_query->formatWithSecretsOneLine();
+            outbound_text_is_serialized_ast = true;
         }
     }
 
@@ -1752,11 +1797,11 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
     const auto & settings = client_context->getSettingsRef();
     const Int32 signals_before_stop = settings[Setting::partial_result_on_first_cancel] ? 2 : 1;
 
-    /// `query` may have been rewritten from JSON to SQL above; pin the transport dialect to match
-    /// before sending so the server parses it the same way the client did. Must run before
-    /// `settingsWithoutCompatibilityDerived` snapshots the settings, so the pinned `dialect` is
-    /// included in the settings sent to the server.
-    pinOutboundDialectForJSONDialect(query);
+    /// `query` may have been rewritten above (from JSON, or from a foreign dialect, to SQL); pin the
+    /// transport dialect to match before sending so the server parses it the same way the client did.
+    /// Must run before `settingsWithoutCompatibilityDerived` snapshots the settings, so the pinned
+    /// `dialect` is included in the settings sent to the server.
+    pinOutboundDialect(query, outbound_text_is_serialized_ast);
 
     const auto settings_without_compat = settingsWithoutCompatibilityDerived();
     const Settings * settings_to_send = settings_without_compat ? &*settings_without_compat : &settings;
@@ -2340,6 +2385,9 @@ bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
 
 void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
 {
+    /// See the same variable in `processOrdinaryQuery`.
+    bool outbound_text_is_serialized_ast = false;
+
     if (!query_parameters.empty()
         && connection->getServerRevision(connection_parameters.timeouts) < DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
     {
@@ -2349,7 +2397,10 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
 
         /// Get new query after substitutions.
         if (visitor.getNumberOfReplacedParameters())
+        {
             query = parsed_query->formatWithSecretsOneLine();
+            outbound_text_is_serialized_ast = true;
+        }
         chassert(!query.empty());
     }
 
@@ -2369,11 +2420,11 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     query_interrupt_handler.start();
     SCOPE_EXIT({ query_interrupt_handler.stop(); });
 
-    /// `query` may have been rewritten from JSON to SQL above; pin the transport dialect to match
-    /// before sending so the server parses it the same way the client did.
+    /// `query` may have been rewritten above (from JSON, or from a foreign dialect, to SQL); pin the
+    /// transport dialect to match before sending so the server parses it the same way the client did.
     /// Must run before `settingsWithoutCompatibilityDerived` snapshots the settings, so the pinned
     /// `dialect` is included in the settings sent to the server.
-    pinOutboundDialectForJSONDialect(query);
+    pinOutboundDialect(query, outbound_text_is_serialized_ast);
 
     const auto settings_without_compat = settingsWithoutCompatibilityDerived();
     const Settings * settings_to_send
@@ -2907,10 +2958,37 @@ void ClientBase::processParsedSingleQuery(
             client_context->setSettings(old_settings);
             connection->setFormatSettings(getFormatSettings(client_context));
         });
-        /// Capture whether this query was parsed via the `clickhouse_json` dialect *before* applying any
-        /// in-query `SET` (which may change `dialect`/`enable_json_ast_dialect`). The outbound
-        /// transport dialect is pinned to match the outbound text in `pinOutboundDialectForJSONDialect`.
-        current_query_parsed_as_json_dialect = client_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
+        /// Capture the parse-time dialect settings *before* applying any in-query `SET` or `SETTINGS`
+        /// clause (which may change `dialect`, `enable_json_ast_dialect` or the polyglot settings).
+        /// The AST was produced under these settings (see parseQuery), so the decision how to send the
+        /// very same text — and the settings that govern its server-side reparse — must be derived from
+        /// them, not from the settings the query itself installs for its own execution. The outbound
+        /// transport dialect for `clickhouse_json` is pinned in `pinOutboundDialect`; verbatim (foreign)
+        /// dialects are pinned below, after `applySettingsFromServerIfNeeded`.
+        const Dialect parse_dialect = client_context->getSettingsRef()[Setting::dialect];
+        const Field parse_dialect_value = client_context->getSettingsRef().get("dialect");
+        /// Every parse-time setting that governed the polyglot classifier's parse of this text — the
+        /// settings passed to `ParserPolyglotQuery` (see parseQuery) — and that the server consults
+        /// when it reparses the very same verbatim text (see `executeQuery`). All of them are pinned
+        /// below, not only the dialect: e.g. flipping `allow_settings_after_format_in_insert` from
+        /// inside the query would otherwise make the server read the `SETTINGS ...` clause of an
+        /// `INSERT ... VALUES SETTINGS ... (...)` as `Values` payload, diverging from the parse the
+        /// client already accepted.
+        static constexpr std::array polyglot_parse_setting_names{
+            "allow_experimental_polyglot_dialect",
+            "polyglot_dialect",
+            "allow_settings_after_format_in_insert",
+            "implicit_select",
+            "max_query_size",
+            "max_parser_depth",
+            "max_parser_backtracks"};
+        std::array<Field, polyglot_parse_setting_names.size()> parse_polyglot_values;
+        if (parse_dialect == Dialect::polyglot)
+        {
+            for (size_t i = 0; i < polyglot_parse_setting_names.size(); ++i)
+                parse_polyglot_values[i] = client_context->getSettingsRef().get(polyglot_parse_setting_names[i]);
+        }
+        current_query_parsed_as_json_dialect = parse_dialect == Dialect::clickhouse_json;
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
         connection->setFormatSettings(getFormatSettings(client_context));
 
@@ -2939,6 +3017,42 @@ void ClientBase::processParsedSingleQuery(
         const auto * insert = parsed_query->as<ASTInsertQuery>();
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
+
+        /// With a non-ClickHouse dialect (e.g. polyglot) the client already transpiled the query
+        /// locally to obtain this AST (see parseQuery), but that transpiled form — including any
+        /// inline INSERT data — differs from the text the client holds, so the client cannot split
+        /// the query from its data. Instead it sends the *original* query verbatim and lets the
+        /// server perform the authoritative transpilation and read the inline data itself (the
+        /// server keeps the transpiled query alive so the data pointers stay valid).
+        /// `clickhouse_json` is excluded: it is not a foreign SQL dialect but a different serialization
+        /// of a ClickHouse AST, the client deserializes it locally without rewriting any query text, and
+        /// its INSERT data is streamed by the client as usual (from stdin, INFILE or `input`).
+        /// The decision is made from the *parse-time* dialect: the AST in hand was produced by the
+        /// foreign-dialect classifier, so a query-local `SETTINGS dialect = ...` must not switch the
+        /// same query onto the native path (where e.g. `insert->data`, already cleared by the polyglot
+        /// parser, would be expected to carry the inline data).
+        const bool send_query_verbatim = parse_dialect != Dialect::clickhouse && parse_dialect != Dialect::clickhouse_json;
+        current_query_sent_verbatim = send_query_verbatim;
+
+        if (send_query_verbatim)
+        {
+            /// The original query text is sent verbatim, and the server reparses (for polyglot:
+            /// transpiles) it under the settings that accompany the query. Pin those settings to their
+            /// parse-time values so the query's own `SETTINGS` clause cannot change how the very same
+            /// text is interpreted on the server (e.g. `SELECT 1 SETTINGS
+            /// allow_experimental_polyglot_dialect = 0` in the polyglot dialect must not be accepted
+            /// locally and then rejected by the server before transpilation). Like the `clickhouse_json`
+            /// pinning above, this is transient: a `SET` still takes effect for subsequent queries (it
+            /// is applied to the server session and re-applied to the client context after this query
+            /// completes), and a `SETTINGS` clause is applied by the server itself when it executes the
+            /// transpiled query.
+            client_context->setSetting("dialect", parse_dialect_value);
+            if (parse_dialect == Dialect::polyglot)
+            {
+                for (size_t i = 0; i < polyglot_parse_setting_names.size(); ++i)
+                    client_context->setSetting(polyglot_parse_setting_names[i], parse_polyglot_values[i]);
+            }
+        }
 
         /// When the user explicitly requested inline insert data mode (via `--inline-insert-data` or
         /// `send_table_structure_on_insert_with_inline_data = 0`), it takes precedence over `async_insert`
@@ -2971,18 +3085,44 @@ void ClientBase::processParsedSingleQuery(
                     "Processing inline insert data with both inlined and external data (from stdin or infile) is not supported");
         }
 
+        /// With a non-ClickHouse dialect an INSERT that carries inline data is sent to the server
+        /// verbatim and the server reads that data from the transpiled query text; there is no slot left
+        /// for the client to forward external data. Reject it (stdin or INFILE) instead of silently
+        /// dropping it. Two shapes are not affected and keep streaming external data below, exactly as
+        /// their native counterparts do: `INSERT ... SELECT * FROM input(...)`, for which the server
+        /// requests the data explicitly, and an INSERT without any inline data (e.g. `INSERT INTO t
+        /// FORMAT TSV`, transpilable by the `clickhouse` source dialect) — the server-side transpilation
+        /// produces no inline data either, so the data still travels in the usual data packets. This
+        /// mirrors the server, which rejects external data only for a transpiled INSERT that does have
+        /// inline data (`hasTranspiledInlineData` in `executeQuery`).
+        if (send_query_verbatim && insert && !insert->select && insert->inline_data_owned_by_transpiled_query)
+        {
+            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
+
+            if (have_data_in_stdin || insert->infile)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Processing insert data from stdin or INFILE together with an INSERT query in a foreign SQL dialect "
+                    "is not supported: the query is sent to the server verbatim and must carry all its data inline");
+        }
+
         String query;
         /// An INSERT query may have the data that follows query text.
         /// Send part of the query without data, because data will be sent separately.
         /// But for asynchronous inserts or inline insert data mode we don't extract data,
         /// because it's needed to be done on server side.
-        if (insert && insert->data && !is_async_insert_with_inlined_data && !is_inline_insert_data && insert_query_without_data_length)
+        if (insert && insert->data && !is_async_insert_with_inlined_data && !is_inline_insert_data && !send_query_verbatim && insert_query_without_data_length)
             query = query_.substr(0, insert_query_without_data_length);
         else
             query = query_;
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function) && !is_inline_insert_data)
+        /// A verbatim (foreign dialect) query still takes this path when it uses `input`, and likewise when its
+        /// transpiled form carries no inline data at all: the whole query text is sent as is, and the server —
+        /// after transpiling it — asks for the external data exactly as it does for a native INSERT, so the
+        /// client streams stdin or INFILE as usual. Only an INSERT whose data lives inline in the transpiled
+        /// query has no room left for a data stream (it was rejected above if any was supplied).
+        if (insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function) && !is_inline_insert_data
+            && (!send_query_verbatim || input_function || !insert->inline_data_owned_by_transpiled_query))
         {
             /// The reader format for `input()` can come from the query `FORMAT` clause or from the
             /// `input_format` / `format` settings (mirrors `getSourceFromASTInsertQuery`); only reject
@@ -3228,16 +3368,10 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // - If the INSERT statement FORMAT is VALUES, we use the VALUES format parser to skip the inserted data until we reach the trailing single semicolon.
     // - Other formats (e.g. FORMAT CSV) are arbitrarily more complex and tricky to parse. For example, we may be unable to distinguish if the semicolon
     //   is part of the data or ends the statement. In this case, we simply assume that the end of the INSERT statement is determined by \n\n (two newlines).
-    auto * insert_ast = parsed_query->as<ASTInsertQuery>();
-    // We also consider the INSERT query in EXPLAIN queries (same as normal INSERT queries)
-    if (!insert_ast)
-    {
-        auto * explain_ast = parsed_query->as<ASTExplainQuery>();
-        if (explain_ast && explain_ast->getExplainedQuery())
-        {
-            insert_ast = explain_ast->getExplainedQuery()->as<ASTInsertQuery>();
-        }
-    }
+    // `getInsertAST` also considers the INSERT query in EXPLAIN queries (same as normal INSERT queries).
+    // It is the single place that unwraps inline-data carriers: the polyglot parser and the server-side
+    // logging and external-data checks in `executeQuery` use it too.
+    auto * insert_ast = getInsertAST(parsed_query);
     if (insert_ast && insert_ast->data)
     {
         if (insert_ast->format == "Values")
@@ -3476,7 +3610,11 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // Save query without trailing comment
                 auto query_to_execute = std::string_view(all_queries_text).substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
                 size_t insert_query_without_data_length = 0;
-                if (const auto * insert = parsed_query->as<ASTInsertQuery>())
+                /// `insert->data` is null for a foreign-dialect INSERT (the polyglot parser clears it,
+                /// because the query is sent verbatim and the server reads the data from its own
+                /// transpiled buffer). Guard the subtraction: `nullptr - query_to_execute.data()` is
+                /// undefined behavior, and the length is unused on the verbatim path anyway.
+                if (const auto * insert = parsed_query->as<ASTInsertQuery>(); insert && insert->data)
                     insert_query_without_data_length = insert->data - query_to_execute.data();
 
                 // Try to include the trailing comment with test hints. It is just

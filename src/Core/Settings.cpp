@@ -9012,6 +9012,8 @@ Enable PRQL - an alternative to SQL.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_polyglot_dialect, false, R"(
 Enable polyglot SQL transpiler - transpiles SQL from 30+ dialects (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB, etc.) into ClickHouse SQL.
+
+An `INSERT ... VALUES` query with inline data is transpiled as a whole, so the inline data counts towards `max_query_size` (unlike a native ClickHouse `INSERT`, whose inline data is streamed and is not bounded by `max_query_size`). Increase `max_query_size` to submit larger inline payloads in this dialect. Foreign-dialect `INSERT ... FORMAT` is not currently transpilable: the bundled dialects reject it, so only `INSERT ... VALUES` inline data is supported. For the same reason all of the data must be inline: external insert data appended to a foreign-dialect `INSERT` - piped stdin, `INFILE`, or a non-empty HTTP request body - is rejected with `NOT_IMPLEMENTED` rather than being read with different parsing rules than the transpiled part.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_json_ast_dialect, false, R"(
 Enable the `clickhouse_json` value of the `dialect` setting.

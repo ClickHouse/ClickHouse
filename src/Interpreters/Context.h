@@ -419,6 +419,14 @@ protected:
 
     String insert_format; /// Format, used in insert query.
 
+    /// When `dialect` is a foreign SQL dialect (e.g. polyglot), the query is transpiled to
+    /// ClickHouse SQL up front and the result is kept here for the lifetime of the query, so
+    /// that the AST's inline `INSERT ... VALUES`/`FORMAT` data pointers reference a live buffer.
+    /// Held by shared_ptr because `Context::createCopy` copies `ContextData`: child contexts
+    /// (async/distributed insert paths) must share the buffer, not clone a potentially large
+    /// inline `INSERT` payload.
+    std::shared_ptr<const String> transpiled_query;
+
     /// Filters supplied out-of-band by the HTTP interface (URL path filters, repeated `?filter=`
     /// parameters, unrecognized URL parameters as filters), already combined with `AND`. Kept
     /// separate from the `filter` setting so it composes with — rather than being overwritten by —
@@ -1242,6 +1250,16 @@ public:
 
     String getInsertFormat() const;
     void setInsertFormat(const String & name);
+
+    /// Store/read the ClickHouse SQL produced by transpiling a foreign-dialect query.
+    /// The buffer lives as long as the query context, so AST pointers into it (inline
+    /// INSERT data) stay valid throughout query execution.
+    void setTranspiledQuery(String query_) { transpiled_query = std::make_shared<const String>(std::move(query_)); }
+    const String & getTranspiledQuery() const
+    {
+        static const String empty;
+        return transpiled_query ? *transpiled_query : empty;
+    }
 
     const String & getHTTPCombinedFilter() const;
     void setHTTPCombinedFilter(const String & filter);

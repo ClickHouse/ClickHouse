@@ -227,7 +227,7 @@ std::string getUnmatchedParenthesesErrorMessage(
 }
 
 
-static ASTInsertQuery * getInsertAST(const ASTPtr & ast)
+ASTInsertQuery * getInsertAST(const ASTPtr & ast)
 {
     /// Either it is INSERT or EXPLAIN INSERT.
     if (auto * explain = ast->as<ASTExplainQuery>())
@@ -322,8 +322,13 @@ ASTPtr tryParseQuery(
       *
       * This shortcut is needed to avoid complex backtracking in case of obviously erroneous queries.
       */
+    /// A parser that consumes the input as foreign text (e.g. the polyglot dialect transpiler)
+    /// does not read it as ClickHouse SQL at all, so neither the shortcut below nor the
+    /// unmatched-parentheses check further down applies to the original buffer.
+    const bool foreign_text = parser.consumesForeignText();
+
     IParser::Pos lookahead(token_iterator);
-    if (!ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
+    if (!foreign_text && !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
     {
         while (lookahead->type != TokenType::Semicolon && lookahead->type != TokenType::EndOfStream)
         {
@@ -362,7 +367,7 @@ ASTPtr tryParseQuery(
 
     // More granular checks for queries other than INSERT w/inline data.
     /// Lexical error
-    if (last_token.isError())
+    if (!foreign_text && last_token.isError())
     {
         out_error_message = getLexicalErrorMessage(
             query_begin, current_statement_end(last_token.end), last_token, hilite, query_description);
@@ -370,7 +375,7 @@ ASTPtr tryParseQuery(
     }
 
     /// Unmatched parentheses
-    UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens));
+    UnmatchedParentheses unmatched_parens = foreign_text ? UnmatchedParentheses{} : checkUnmatchedParentheses(TokenIterator(tokens));
     if (!unmatched_parens.empty())
     {
         /// `checkUnmatchedParentheses` walks the entire remaining input, so it can

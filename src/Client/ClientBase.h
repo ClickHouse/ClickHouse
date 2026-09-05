@@ -157,12 +157,15 @@ protected:
     void processOrdinaryQuery(String query, ASTPtr parsed_query);
     void processInsertQuery(String query, ASTPtr parsed_query);
 
-    /// In `clickhouse_json` dialect the client parses JSON locally and then sends a query string that the
-    /// server re-parses using the session `dialect`. Pin the outbound `dialect` (and the experimental
-    /// gate) to match the form of `outbound_query` actually being sent — JSON body vs. SQL produced by a
-    /// client-side AST rewrite — so the server parses it the same way the client did. No-op outside
-    /// `clickhouse_json`. The change is temporary (the caller restores the saved settings after the query).
-    void pinOutboundDialectForJSONDialect(const String & outbound_query);
+    /// In the `clickhouse_json` dialect the client parses JSON locally, and in a foreign SQL dialect
+    /// (e.g. `polyglot`) it transpiles the query locally to classify it; both then send a query string
+    /// that the server re-parses using the session `dialect`. Pin the outbound `dialect` (and the
+    /// experimental gate) to match the form of `outbound_query` actually being sent — the text the client
+    /// parsed vs. ClickHouse SQL produced by a client-side AST rewrite, which the caller reports in
+    /// `outbound_text_is_serialized_ast` — so the server parses it the same way the client did. No-op for
+    /// the `clickhouse` dialect. The change is temporary (the caller restores the saved settings after the
+    /// query).
+    void pinOutboundDialect(const String & outbound_query, bool outbound_text_is_serialized_ast);
 
     /// Settings to transmit to the server: a copy of the client settings with `compatibility`-derived values
     /// reset, so the server re-derives them from `compatibility` itself and honors its own constraints (a profile
@@ -594,9 +597,15 @@ protected:
     bool allow_merge_tree_settings = false;
 
     /// True when the current query text was parsed via the `clickhouse_json` dialect JSON path. Captured
-    /// before any in-query `SET` is applied, so `pinOutboundDialectForJSONDialect` can keep the outbound
+    /// before any in-query `SET` is applied, so `pinOutboundDialect` can keep the outbound
     /// transport dialect consistent with the outbound text even if a JSON `SET dialect=...` changed it.
     bool current_query_parsed_as_json_dialect = false;
+
+    /// True when the current query text is sent to the server verbatim to be reparsed (for a foreign
+    /// dialect: transpiled) there — see `processParsedSingleQuery`. Captured together with the parse-time
+    /// dialect, so `pinOutboundDialect` can tell the server to parse plain SQL when a client-side AST
+    /// rewrite replaced that verbatim text with the serialized (already transpiled) AST.
+    bool current_query_sent_verbatim = false;
 
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_printed = false;

@@ -36,6 +36,13 @@ public:
     const char * data = nullptr;
     const char * end = nullptr;
 
+    /// Set when a transpiling parser (`ParserPolyglotQuery`) parsed this `INSERT` out of a transient
+    /// buffer holding the transpiled query and therefore had to clear `data`/`end`: the statement does
+    /// carry inline data, but only the server-side transpilation owns a live buffer for it. Whoever
+    /// decides whether external data can still be streamed alongside the query must consult this flag -
+    /// an `INSERT` that has no inline data at all keeps the ordinary streaming path.
+    bool inline_data_owned_by_transpiled_query = false;
+
     /// Data from buffer to insert after inlined one - may be nullptr.
     mutable ReadBufferPtr tail = nullptr;
 
