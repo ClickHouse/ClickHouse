@@ -1395,7 +1395,7 @@ Clears cache for schemas loaded from [`format_schema_path`](/reference/settings/
 
 Supported targets:
 - Protobuf: Removes imported Protobuf message definitions from memory.
-- Files: Deletes cached schema files stored locally in the [`format_schema_path`](/reference/settings/server-settings/settings/format#format_schema_path), generated when `format_schema_source` is set to `query`.
+- Files: Deletes cached schema files stored locally in the [`format_schema_path`](/reference/settings/server-settings/settings/format#format_schema_path), generated when `format_schema_source` is set to `query`. A file that a running query has published and not read back yet is kept, the number of kept files is reported in the server log, and a later drop removes it once no query is using it.
 Note: If no target is specified, both caches are cleared.
 
 ```sql

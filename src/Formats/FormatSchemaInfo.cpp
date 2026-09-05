@@ -42,6 +42,7 @@ namespace ErrorCodes
 
 namespace FailPoints
 {
+    extern const char format_schema_cache_pause_before_publish[];
     extern const char format_schema_cache_pause_before_read[];
 }
 
@@ -362,6 +363,9 @@ void FormatSchemaInfo::storeSchemaOnDisk(const fs::path & file_path, const Strin
         out.sync();
         out.close();
 
+        /// The temporary holds the whole schema here and is not reachable under the final name yet.
+        FailPointInjection::pauseFailPoint(FailPoints::format_schema_cache_pause_before_publish);
+
         if (fs::exists(file_path))
             DB::renameExchange(temp_path, file_path);
         else
@@ -413,7 +417,8 @@ void FormatSchemaInfo::processSchemaFile(
         schema_directory = format_schema_path;
     }
 
-    /// Only a cached schema lives in the directory that `removeCachedSchemaFiles` empties.
+    /// The pause is gated on a cached schema, the only kind that lives in the directory
+    /// `removeCachedSchemaFiles` empties.
     if (cache_file_in_use)
         FailPointInjection::pauseFailPoint(FailPoints::format_schema_cache_pause_before_read);
 }
