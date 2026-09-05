@@ -1214,8 +1214,8 @@ void MergeTreeData::checkProperties(
                     if (auto failure = tryEvaluateIndexExpression(index))
                     {
                         const IndexDescription * old_index = nullptr;
-                        /// The create path passes the same metadata object as both arguments, so an index found
-                        /// there is the one being declared and nothing can be inherited.
+                        /// The create path and the projection recursion pass the same metadata object as both
+                        /// arguments, so an index found there is the one being declared and nothing can be inherited.
                         if (&old_metadata != &new_metadata)
                             for (const auto & candidate : old_metadata.secondary_indices)
                                 if (candidate.name == index.name)

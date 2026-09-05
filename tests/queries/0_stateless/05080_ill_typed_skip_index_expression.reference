@@ -13,3 +13,5 @@ C4 index over a wrapped type
 2
 F an expression containing a function that opts out of constant folding is not probed
 1
+G LowCardinality alone is probed, a Nullable operand is not
+2

@@ -6,6 +6,9 @@ DROP TABLE IF EXISTS t_literal;
 DROP TABLE IF EXISTS t_arith;
 DROP TABLE IF EXISTS t_wrapped;
 DROP TABLE IF EXISTS t_unfoldable;
+DROP TABLE IF EXISTS t_lc;
+DROP TABLE IF EXISTS t_nullable;
+DROP TABLE IF EXISTS t_lc_nullable;
 
 SELECT 'A CREATE TABLE declaring an index expression that cannot be evaluated';
 CREATE TABLE t_create (c0 String, c1 Int8, INDEX i0 c0 = c1 TYPE set(0)) ENGINE = MergeTree ORDER BY c1; -- { serverError NO_COMMON_TYPE }
@@ -58,6 +61,14 @@ SELECT 'F an expression containing a function that opts out of constant folding 
 CREATE TABLE t_unfoldable (c0 String, c1 Int8, INDEX i0 throwIf(c0 = c1, 'x') TYPE set(0)) ENGINE = MergeTree ORDER BY c1;
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 't_unfoldable';
 
+SELECT 'G LowCardinality alone is probed, a Nullable operand is not';
+-- A `Nullable` operand takes `defaultImplementationForNulls`' zero-row early return, so the
+-- declaration is not type-checked and stays accepted; the failure still surfaces on `INSERT`.
+CREATE TABLE t_lc (c0 LowCardinality(String), c1 Int8, INDEX i0 c0 = c1 TYPE set(0)) ENGINE = MergeTree ORDER BY c1; -- { serverError NO_COMMON_TYPE }
+CREATE TABLE t_nullable (c0 Nullable(String), c1 Int8, INDEX i0 c0 = c1 TYPE set(0)) ENGINE = MergeTree ORDER BY c1;
+CREATE TABLE t_lc_nullable (c0 LowCardinality(Nullable(String)), c1 Int8, INDEX i0 c0 = c1 TYPE set(0)) ENGINE = MergeTree ORDER BY c1;
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name IN ('t_nullable', 't_lc_nullable');
+
 DROP TABLE t_alter;
 DROP TABLE t_modify;
 DROP TABLE t_plain;
@@ -65,3 +76,5 @@ DROP TABLE t_literal;
 DROP TABLE t_arith;
 DROP TABLE t_wrapped;
 DROP TABLE t_unfoldable;
+DROP TABLE t_nullable;
+DROP TABLE t_lc_nullable;
