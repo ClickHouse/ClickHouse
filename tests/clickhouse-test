@@ -1090,24 +1090,18 @@ LLDB_TIMEOUT = 30
 LLDB_SLOW_BUILD_TIMEOUT = 120
 
 LLDB_BACKTRACE_MARKER = "(lldb) thread backtrace all"
-LLDB_THREAD_HEADER_RE = re.compile(r"^[* ] *thread #\d+", re.M)
+LLDB_THREAD_HEADER_RE = re.compile(r"^[* ] *thread #(\d+)", re.M)
 
 
-def split_lldb_dump(dump: str) -> tuple[str, str]:
-    """Split an lldb --batch dump into the attach summary and the backtraces.
+def lldb_backtraces_only(dump: str) -> str:
+    """The part of an lldb --batch dump from the backtraces on.
 
     Attaching prints a stop summary before lldb echoes the first command: a
-    `thread #N` header and `frame #0` for every thread, plus a few lines of
-    disassembly wherever lldb has no source line for that frame. So the summary
-    enumerates every thread and the echo after it means the summary is
-    complete, while the backtraces that follow can be cut short by the lldb
-    timeout.
-
-    The summary is empty when the echo is absent, so an attach-only dump is
-    never taken for a thread census.
+    `thread #N` header and `frame #0` for each thread it reports, plus a few
+    lines of disassembly wherever lldb has no source line for that frame.
     """
-    summary, marker, rest = dump.partition(LLDB_BACKTRACE_MARKER)
-    return (summary, marker + rest) if marker else ("", dump)
+    _, marker, rest = dump.partition(LLDB_BACKTRACE_MARKER)
+    return marker + rest if marker else dump
 
 
 # collect server stacktraces using lldb (used uniformly on Linux and macOS)
@@ -1449,11 +1443,14 @@ def print_c_stacktraces(
             truncated = TRUNCATED_ON_TIMEOUT_MARKER in bt
             block = f"=== PID {pid} ({label}) ===\n{bt}"
             _append_stacktrace_log(C_STACKTRACES_LOG, block)
-            attach_summary, backtraces = split_lldb_dump(block)
+            backtraces = lldb_backtraces_only(block)
             print(trim_for_log(backtraces, 100))
+            # Distinct numbers over the whole dump: the two sections share one
+            # numbering, and either alone can be short (the summary skips threads
+            # with no stop reason, the timeout truncates the backtraces).
             threads = (
-                f" for {len(LLDB_THREAD_HEADER_RE.findall(attach_summary))} threads"
-                if attach_summary
+                f" for {len(set(LLDB_THREAD_HEADER_RE.findall(block)))} threads"
+                if LLDB_BACKTRACE_MARKER in block
                 else ""
             )
             print(
