@@ -10,6 +10,9 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Common/MultiVersion.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
+#if USE_AVRO
+#include <Databases/DataLake/DataLakeCatalogCache.h>
+#endif
 
 namespace DB
 {
@@ -85,6 +88,7 @@ public:
     void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const;
+    void clearCatalogCache() const;
 protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
@@ -115,6 +119,17 @@ private:
     /// Set when `catalog_impl` could not be built because its server-managed credentials are restricted on
     /// load; `getCatalog` then throws this so every query against the database reports a clear error.
     mutable String catalog_unavailable_reason TSA_GUARDED_BY(catalog_mutex);
+
+    /// Per-database storage cache to avoid repeated catalog resolution and storage construction.
+    /// Keyed by table and execution mode; values hold a StoragePtr and insertion time.
+    /// Bounded by catalog_cache_max_entries, TTL by
+    /// catalog_cache_staleness_ms. Uses CacheBase like IcebergMetadataFilesCache for
+    /// conciseness and metrics.
+#if USE_AVRO
+    mutable std::mutex catalog_cache_mutex;
+    mutable DataLake::DataLakeCatalogCachePtr catalog_cache TSA_GUARDED_BY(catalog_cache_mutex);
+    DataLake::DataLakeCatalogCachePtr getOrCreateCatalogCache(const DatabaseDataLakeSettings & settings) const;
+#endif
 
     void validateSettings();
 

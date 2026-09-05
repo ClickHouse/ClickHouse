@@ -30,6 +30,7 @@
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
+#include <Databases/DataLake/DatabaseDataLake.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -476,6 +477,19 @@ BlockIO InterpreterSystemQuery::execute()
 #if USE_AVRO
             getContext()->checkAccess(AccessType::SYSTEM_DROP_ICEBERG_METADATA_CACHE);
             system_context->clearIcebergMetadataFilesCache();
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
+#endif
+        case Type::CLEAR_DATALAKE_CATALOG_CACHE:
+#if USE_AVRO
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_DATALAKE_CATALOG_CACHE);
+            // Clear all per-database DataLake catalog caches by iterating databases
+            for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true}))
+            {
+                if (auto * datalake = dynamic_cast<DatabaseDataLake *>(db.second.get()))
+                    datalake->clearCatalogCache();
+            }
             break;
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
@@ -2794,6 +2808,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_ICEBERG_METADATA_CACHE);
+            break;
+        case Type::CLEAR_DATALAKE_CATALOG_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_DATALAKE_CATALOG_CACHE);
             break;
         case Type::CLEAR_PAIMON_METADATA_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_PAIMON_METADATA_CACHE);
