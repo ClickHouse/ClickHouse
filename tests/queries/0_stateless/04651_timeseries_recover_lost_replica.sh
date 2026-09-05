@@ -152,7 +152,7 @@ ${CLIENT} -q "CREATE TABLE ${DB}.ext_tags (
 ${CLIENT} -q "CREATE TABLE ${DB}.ext_metrics (metric_family_name String, type LowCardinality(String),
                                              unit LowCardinality(String), help String)
               ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family_name"
-${CLIENT} --allow_experimental_time_series_table=1 \
+${CLIENT} --enable_time_series_table=1 \
     -q "CREATE TABLE ${DB}.ts_ext ENGINE = TimeSeries
         DATA ${DB}.ext_data TAGS ${DB}.ext_tags METRICS ${DB}.ext_metrics"
 
@@ -170,7 +170,7 @@ count_inner_drop_rejections ts_ext
 # Part 2: a TimeSeries table with INNER target tables -- the shape that used to wedge recovery.
 # ---------------------------------------------------------------------------------------------
 
-${CLIENT} --allow_experimental_time_series_table=1 -q "CREATE TABLE ${DB}.ts ENGINE = TimeSeries"
+${CLIENT} --enable_time_series_table=1 -q "CREATE TABLE ${DB}.ts ENGINE = TimeSeries"
 
 # The outer TimeSeries table plus its 3 inner tables (data, tags, metrics).
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${DB}' AND (name = 'ts' OR name LIKE '.inner_id.%')"

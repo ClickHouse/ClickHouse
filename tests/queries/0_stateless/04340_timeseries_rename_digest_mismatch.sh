@@ -16,7 +16,7 @@ ${CLICKHOUSE_CLIENT} -q "
     ENGINE = Replicated('${ZK_PATH}', 's1', 'r1')
 "
 
-${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --allow_experimental_time_series_table=1 \
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --enable_time_series_table=1 \
     -q "CREATE TABLE ${DB}.ts ENGINE = TimeSeries"
 
 # Force the metadata digest assertion to always run (skip the 1/16 probability gate), so any
@@ -41,7 +41,7 @@ ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${DB}_renamed.ts2"
 # CREATE OR REPLACE creates a temporary table and renames it onto the target name; that internal
 # rename is the path the original report tripped over. With the target absent it must create the
 # table cleanly.
-${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --allow_experimental_time_series_table=1 \
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --enable_time_series_table=1 \
     -q "CREATE OR REPLACE TABLE ${DB}_renamed.cor ENGINE = TimeSeries"
 ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${DB}_renamed.cor"
 
@@ -63,7 +63,7 @@ ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${DB}_renamed SYNC" 2>/dev/null || true
 ORD="${CLICKHOUSE_DATABASE}_ord"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${ORD} SYNC"
 ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --allow_deprecated_database_ordinary=1 -q "CREATE DATABASE ${ORD} ENGINE = Ordinary"
-${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table=1 -q "CREATE TABLE ${ORD}.ts ENGINE = TimeSeries"
+${CLICKHOUSE_CLIENT} --enable_time_series_table=1 -q "CREATE TABLE ${ORD}.ts ENGINE = TimeSeries"
 # Occupy one of the destination inner-table names so the rename cannot complete.
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${ORD}.\`.inner.tags.ts2\` (x UInt8) ENGINE = MergeTree ORDER BY x"
 # The rename is rejected before any inner table is moved.
@@ -85,7 +85,7 @@ LZ2="${CLICKHOUSE_DATABASE}_lazy2"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${LZ} SYNC; DROP DATABASE IF EXISTS ${LZ2} SYNC"
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${LZ} ENGINE = Atomic SETTINGS lazy_load_tables = 1"
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${LZ2} ENGINE = Atomic"
-${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table=1 -q "CREATE TABLE ${LZ}.ts ENGINE = TimeSeries"
+${CLICKHOUSE_CLIENT} --enable_time_series_table=1 -q "CREATE TABLE ${LZ}.ts ENGINE = TimeSeries"
 # Reattach so the table is recreated as a lazy proxy.
 ${CLICKHOUSE_CLIENT} -q "DETACH DATABASE ${LZ}; ATTACH DATABASE ${LZ}"
 # The cross-database move is rejected before any inner table is moved.

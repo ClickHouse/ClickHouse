@@ -6,7 +6,7 @@ INSERT INTO ts_data SELECT ts::DateTime64 as timestamp, ts + 10000 as value FROM
 WITH [102, 104, 112, 113, 120] as timestamps
 INSERT INTO ts_data SELECT ts::DateTime64 as timestamp, ts + 10000 as value FROM (SELECT arrayJoin(timestamps) as ts);
 
-SET allow_experimental_ts_to_grid_aggregate_function = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 SELECT 'Original data (ts, val):';
 SELECT groupArraySorted(30)((toUnixTimestamp(timestamp), value)) FROM ts_data;

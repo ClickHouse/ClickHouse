@@ -1,4 +1,4 @@
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 -- All queries use a single-point grid at timestamp 100 with the staleness window (90, 100].
 

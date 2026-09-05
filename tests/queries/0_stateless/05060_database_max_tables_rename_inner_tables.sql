@@ -29,7 +29,7 @@ SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String
 
 -- A `TimeSeries` table has four inner tables by default - samples, recent samples, tags and
 -- metrics - so it needs five slots.
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier} ENGINE = Ordinary SETTINGS max_tables = 2;
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.ts ENGINE = TimeSeries;

@@ -8,7 +8,7 @@
 -- wrapped via `toDecimal128`, not `toDecimal64`, before conversion to
 -- `DateTime64`. Otherwise `prometheusQuery` throws `DECIMAL_OVERFLOW`.
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts_data;
 DROP TABLE IF EXISTS ts_tags;

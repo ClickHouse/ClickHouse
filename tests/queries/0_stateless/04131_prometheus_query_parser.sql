@@ -16,7 +16,7 @@
 -- which is the goal here; an evaluator regression on an empty selector would
 -- need a separate integration test.
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts;
 CREATE TABLE ts ENGINE = TimeSeries;

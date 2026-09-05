@@ -14,7 +14,7 @@ db="rdb_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --query "DROP DATABASE IF EXISTS ${db} SYNC"
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --query "CREATE DATABASE ${db} ENGINE = Replicated('/test/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/rdb', 's1', 'r1')"
 
-${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --allow_experimental_time_series_table 1 --query "CREATE TABLE ${db}.ts ENGINE = TimeSeries"
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --enable_time_series_table 1 --query "CREATE TABLE ${db}.ts ENGINE = TimeSeries"
 
 # Outer TimeSeries table + 4 inner tables (metrics, samples, tags, recentsamples).
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${db}'"

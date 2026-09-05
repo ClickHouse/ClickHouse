@@ -5,7 +5,7 @@ DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier} FORMAT Null;
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Replicated('/clickhouse/05060_time_series_truncate_in_replicated_database/{database}', 'shard1', 'replica1') FORMAT Null;
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 SET default_table_engine = 'ReplicatedMergeTree';
 
 CREATE TABLE ts ENGINE = TimeSeries FORMAT Null;

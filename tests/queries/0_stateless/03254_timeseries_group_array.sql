@@ -14,7 +14,7 @@ select [
 
 SELECT * FROM ts_raw_data;
 
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 SELECT 'groupArray: ', timeSeriesGroupArray(timestamp, value) FROM ts_raw_data;
 

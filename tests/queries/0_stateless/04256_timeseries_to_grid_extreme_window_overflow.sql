@@ -1,7 +1,7 @@
 -- Regression test for STID 4701-4d85 (and siblings STID 3738-56e0, STID 4287-5905): adversarial
 -- AST-fuzzer inputs with `window` near `INT64_MAX` triggered UBSan signed-integer overflow in the
 -- `timeSeries*ToGrid` aggregate functions.
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 -- Test cases 1 and 2 use `length` (the grid bucket count): the exact values are not the focus, only that
 -- the call returns without aborting under UBSan. Test case 3 asserts actual values, because that overflow

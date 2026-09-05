@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS ts_default;

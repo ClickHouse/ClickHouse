@@ -5,7 +5,7 @@
 -- Note: ATTACH TABLE with TimeSeries hangs in DatabaseReplicated mode
 -- because DDL goes through the replicated log requiring replica sync.
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts_attach_test;
 

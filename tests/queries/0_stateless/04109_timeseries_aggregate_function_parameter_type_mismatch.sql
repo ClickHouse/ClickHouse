@@ -6,7 +6,7 @@
 -- (e.g. quantile(0.5) vs quantile(toFloat32(0.5))).
 -- Users must spell parameters consistently on the CREATE TABLE and INSERT sides.
 
-SET allow_experimental_ts_to_grid_aggregate_function = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 DROP TABLE IF EXISTS ts_param_test;
 

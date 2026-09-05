@@ -9,7 +9,7 @@ CREATE TABLE ts_raw_data(timestamp DateTime, value Float64) ENGINE = MergeTree()
 INSERT INTO ts_raw_data VALUES
 (100, 1), (115, 3), (130, 6), (145, 10), (160, 2), (175, 5), (190, 9), (205, 1), (220, 4);
 
-SET allow_experimental_ts_to_grid_aggregate_function = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 WITH
     90::UInt32 AS start, 225::UInt32 AS end, 15 AS step, 60 AS window,

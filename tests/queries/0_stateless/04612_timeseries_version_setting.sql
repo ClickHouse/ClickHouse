@@ -5,7 +5,7 @@
 -- Coverage for the `version` setting of the TimeSeries table engine (see TimeSeriesVersion.h):
 -- it is pinned automatically at CREATE time, persists in the table metadata, and cannot be changed.
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts_version;
 DROP TABLE IF EXISTS ts_version_1;

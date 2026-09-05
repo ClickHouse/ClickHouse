@@ -11,7 +11,7 @@
 -- whole set. The `id IN <set>` condition always stays in the WHERE, so the returned rows never change.
 -- The range conditions contain the max-UUID literal, which is used below to detect the emission.
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS ts_clustered;

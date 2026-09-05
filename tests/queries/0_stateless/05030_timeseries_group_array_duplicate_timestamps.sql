@@ -1,4 +1,4 @@
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 SELECT 'The greatest value wins on duplicate timestamps:';
 

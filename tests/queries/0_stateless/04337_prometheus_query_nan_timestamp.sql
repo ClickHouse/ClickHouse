@@ -8,7 +8,7 @@
 -- overflow range check in getFromFloat (every comparison with NaN is false),
 -- so static_cast<Int64>(NaN) executed - undefined behaviour caught by UBSan.
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts_data;
 DROP TABLE IF EXISTS ts_tags;

@@ -6,7 +6,7 @@
 -- previous `Field`-based code had: a non-NULL `Nullable(String)` / `LowCardinality(String)` constant
 -- is accepted (the wrapper is unwrapped), while a NULL value is rejected with BAD_ARGUMENTS.
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts;
 CREATE TABLE ts ENGINE = TimeSeries;

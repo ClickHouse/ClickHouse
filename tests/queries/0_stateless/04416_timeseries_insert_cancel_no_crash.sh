@@ -10,7 +10,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} --query "
-    SET allow_experimental_time_series_table = 1;
+    SET enable_time_series_table = 1;
     CREATE TABLE ts_cancel ENGINE = TimeSeries;
 "
 

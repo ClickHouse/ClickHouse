@@ -6,7 +6,7 @@
 -- Tag no-shared-merge-tree: the inner engines come from `default_table_engine` at runtime,
 -- so `--replace-replicated-with-shared` cannot rewrite them, and they don't work on SMT disks.
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts_default_engine;
 

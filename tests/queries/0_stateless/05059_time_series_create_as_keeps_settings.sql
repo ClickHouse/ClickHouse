@@ -4,7 +4,7 @@
 -- of the other table's settings are still copied. A setting written as `name = DEFAULT` is a mention
 -- of that setting too, so the value of the other table is not copied for it.
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts_src;
 DROP TABLE IF EXISTS ts_copy;

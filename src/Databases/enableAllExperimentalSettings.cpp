@@ -60,7 +60,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_eval_table_function", 1);
     context->setSetting("allow_experimental_ytsaurus_table_engine", 1);
     context->setSetting("allow_experimental_ytsaurus_dictionary_source", 1);
-    context->setSetting("allow_experimental_time_series_aggregate_functions", 1);
+    context->setSetting("enable_time_series_aggregate_functions", 1);
     context->setSetting("allow_experimental_lightweight_update", 1);
     context->setSetting("allow_insert_into_iceberg", 1);
     context->setSetting("allow_experimental_iceberg_compaction", 1);

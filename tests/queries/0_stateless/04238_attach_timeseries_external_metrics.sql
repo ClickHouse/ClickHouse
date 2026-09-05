@@ -11,7 +11,7 @@
 -- Reproduces the ordering by detaching both tables and then re-attaching the
 -- `TimeSeries` table before its metrics target.
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 
 DROP TABLE IF EXISTS metrics_target_04238;
 DROP TABLE IF EXISTS ts_with_external_metrics_04238;

@@ -6,7 +6,7 @@
 -- (the `__name__` tag) and the tags with dedicated columns from the `tags_to_columns` setting.
 -- The default id generator calculates identifiers from the stored columns `metric_name` and `tags`.
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts;
 

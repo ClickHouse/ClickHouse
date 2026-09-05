@@ -17,8 +17,8 @@
 -- index computation, and throws `BAD_ARGUMENTS` when the resulting grid exceeds
 -- `MAX_BUCKET_COUNT` (16M buckets).
 
-SET allow_experimental_ts_to_grid_aggregate_function = 1;
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 DROP TABLE IF EXISTS ts_data_overflow_idx;
 CREATE TABLE ts_data_overflow_idx (timestamp DateTime64(0) NOT NULL, value Float64 NOT NULL)

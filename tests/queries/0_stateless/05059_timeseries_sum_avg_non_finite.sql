@@ -1,4 +1,4 @@
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 -- An infinite sample or an overflowing sum gives an infinite sum and average instead of the NaN a compensated sum
 -- would produce from `Inf - Inf`. Only `Inf + -Inf` and a NaN sample give NaN.

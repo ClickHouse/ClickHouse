@@ -12,7 +12,7 @@
 --   - extra outer metadata columns (`metric_name`, `tags`, ...) are accepted and normalized to the canonical
 --     schema, which is what lets a normalized table round-trip through DETACH/ATTACH (and replication/backup).
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts_reserved_id;
 DROP TABLE IF EXISTS ts_reserved_timestamp;

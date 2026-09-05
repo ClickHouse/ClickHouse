@@ -8858,14 +8858,14 @@ Enable experimental functions for natural language processing.
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
 Enable experimental hash functions
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_time_series_table, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine. Possible values:
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
 - 1 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is enabled.
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW, allow_experimental_time_series_table) \
     DECLARE(Bool, time_series_prefer_recent_samples_table, true, R"(
 Read from the recent samples table of a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table instead of the main samples table when the whole requested time range fits in the TTL window of the recent samples table (see the `recent_samples_ttl_seconds` setting of the TimeSeries table engine).
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     DECLARE(UInt64, unique_key_max_encoded_size, 256, R"(
 Maximum size (in bytes) of the order-preserving binary encoding of a single `UNIQUE KEY` row.
 )", EXPERIMENTAL) \
@@ -9199,22 +9199,22 @@ Use hash table size statistics collected from previous executions to size the JO
 Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.
 )", EXPERIMENTAL) \
     \
-    /** Experimental timeSeries* aggregate functions. */ \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(
-Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
-)", EXPERIMENTAL, allow_experimental_ts_to_grid_aggregate_function) \
+    /** timeSeries* aggregate functions (private preview). */ \
+    DECLARE_WITH_ALIAS(Bool, enable_time_series_aggregate_functions, false, R"(
+Enables the `timeSeries*` aggregate functions for Prometheus-like time series resampling, rate, and delta calculation.
+)", PRIVATE_PREVIEW, allow_experimental_time_series_aggregate_functions, allow_experimental_ts_to_grid_aggregate_function) \
     \
     DECLARE(String, promql_database, "", R"(
 Specifies the database name used by the 'promql' dialect. Empty string means the current database.
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     \
     DECLARE(String, promql_table, "", R"(
 Specifies the name of a TimeSeries table used by the 'promql' dialect.
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     \
     DECLARE_WITH_ALIAS(FloatAuto, promql_evaluation_time, Field("auto"), R"(
 Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
-)", EXPERIMENTAL, evaluation_time) \
+)", PRIVATE_PREVIEW, evaluation_time) \
     DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
 Allow to create tables with Paimon* table engines.
 )", EXPERIMENTAL) \

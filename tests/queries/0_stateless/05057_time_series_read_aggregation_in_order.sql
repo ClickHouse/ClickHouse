@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
--- Tag no-fasttest: the TimeSeries table engine is experimental and disabled in the fast-test build.
+-- Tag no-fasttest: the TimeSeries table engine is in private preview and disabled in the fast-test build.
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 SET session_timezone = 'UTC';
 -- The fix must make the samples read in-order on its own, without the caller enabling it, so pin
 -- the caller-visible setting off and keep plan optimizations on (defend against CI randomization).

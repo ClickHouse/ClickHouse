@@ -3,7 +3,7 @@
 -- check_referential_table_dependencies = 1 an external target table cannot be dropped
 -- while the TimeSeries table referencing it still exists.
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts;
 DROP TABLE IF EXISTS samples_table;

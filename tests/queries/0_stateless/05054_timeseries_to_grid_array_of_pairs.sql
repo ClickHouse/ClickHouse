@@ -8,7 +8,7 @@ CREATE TABLE ts_data(id UInt64, timestamps Array(DateTime), values Array(Float64
 
 INSERT INTO ts_data VALUES (1, [110, 120, 130, 140], [1, 1, 3, 4]), (2, [190, 200, 210, 220, 230], [5, 5, 8, 12, 13]), (3, [], []);
 
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 SELECT 'timeSeriesRateToGrid:';
 SELECT timeSeriesRateToGrid(90, 240, 15, 45)(timestamps, values) FROM ts_data;

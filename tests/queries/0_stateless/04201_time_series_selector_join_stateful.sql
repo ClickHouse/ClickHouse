@@ -6,7 +6,7 @@
 -- resulting in `BAD_ARGUMENTS` ("Unknown identifier"). Fixed by marking
 -- `timeSeriesIdToGroup` as stateful so the optimizer doesn't move it across pipeline barriers.
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS prometheus;

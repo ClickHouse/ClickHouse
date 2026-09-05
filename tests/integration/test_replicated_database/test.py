@@ -2063,7 +2063,7 @@ def test_timeseries(started_cluster):
         TAGS ENGINE = ReplicatedAggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
         METRICS ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family_name;
         """,
-        settings={"allow_experimental_time_series_table": 1}
+        settings={"enable_time_series_table": 1}
     )
 
     dummy_node.query(

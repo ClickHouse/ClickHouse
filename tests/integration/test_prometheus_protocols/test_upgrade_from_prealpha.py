@@ -16,7 +16,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/prometheus.xml", "configs/backups_disk.xml"],
-    user_configs=["configs/allow_experimental_time_series_table.xml"],
+    user_configs=["configs/enable_time_series_table.xml"],
     handle_prometheus_remote_write=(9093, "/write"),
     external_dirs=["/backups/"],
 )

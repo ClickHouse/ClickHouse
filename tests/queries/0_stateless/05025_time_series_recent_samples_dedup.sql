@@ -4,7 +4,7 @@
 
 -- The sink writes each samples block to both tables; identical content means a retried block deduplicates in both, so they cannot diverge.
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 SET session_timezone = 'UTC';
 
 -- The generated inner tables use replicated engines: the samples and recent samples tables need the block-hash

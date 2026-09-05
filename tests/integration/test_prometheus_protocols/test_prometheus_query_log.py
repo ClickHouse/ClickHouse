@@ -91,7 +91,7 @@ node = cluster.add_instance(
         "configs/prometheus.xml",
         "configs/config.d/query_log.xml",
     ],
-    user_configs=["configs/allow_experimental_time_series_table.xml"],
+    user_configs=["configs/enable_time_series_table.xml"],
     handle_prometheus_remote_write=(9093, "/write"),
 )
 

@@ -2,7 +2,7 @@
 -- two sorted runs. `arrayReduce` merges the states in array order, which fixes which state is merged into
 -- which - the two disjoint cases below differ only in that direction.
 
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 
 WITH
     (SELECT timeSeriesGroupArrayState(toDateTime64(number, 3, 'UTC'), number::Float64) FROM numbers(3)) AS earlier,

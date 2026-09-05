@@ -22,7 +22,7 @@ echo '--- every PromQL entry point rejects it ---'
 $CLICKHOUSE_CLIENT -q "SELECT * FROM prometheusQuery(ts_future_version, 'up', 1000)" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
 $CLICKHOUSE_CLIENT -q "SELECT * FROM prometheusQueryRange(ts_future_version, 'up', 1000, 2000, 60)" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
 $CLICKHOUSE_CLIENT -q "SELECT * FROM timeSeriesSelector(ts_future_version, 'up', 1000, 2000)" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
-$CLICKHOUSE_CLIENT --allow_experimental_time_series_table=1 --dialect=promql --promql_table=ts_future_version -q "up" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
+$CLICKHOUSE_CLIENT --enable_time_series_table=1 --dialect=promql --promql_table=ts_future_version -q "up" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
 
 echo '--- reads, writes, alters and maintenance are rejected too ---'
 $CLICKHOUSE_CLIENT -q "SELECT * FROM ts_future_version" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
