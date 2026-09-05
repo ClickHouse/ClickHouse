@@ -405,33 +405,6 @@ Available refresh settings:
 * `refresh_retry_initial_backoff_ms` - Delay before the first retry, if `refresh_retries` is not zero. Each subsequent retry doubles the delay, up to `refresh_retry_max_backoff_ms`. Default: 100 ms.
 * `refresh_retry_max_backoff_ms` - Limit on the exponential growth of delay between refresh attempts. Default: 60000 ms (1 minute).
 * `all_replicas` - In a [Replicated database](/reference/engines/database-engines/replicated) with `APPEND`, controls whether all replicas refresh independently or only one replica refreshes at each scheduled time. Cannot be changed after the view is created. Default: `false`.
-* `workload` - Workload used for the complete refresh: scheduler admission, internal refresh
-  operations, and the SELECT query. If a `QUERY` resource is configured and the workload resolves
-  to it, the refresh waits asynchronously for a query slot before execution, without occupying a
-  background schedule pool worker. It also controls CPU and I/O resource scheduling when those
-  resources are configured. A refresh-level workload overrides a workload specified in the SELECT
-  query. Without this refresh setting, a SELECT-level workload keeps its existing execution
-  behavior but does not enable admission before the refresh starts. Default: empty.
-
-For example, the following view runs refreshes in the `rmv` workload:
-
-```sql
-CREATE MATERIALIZED VIEW rmv
-REFRESH EVERY 1 MINUTE SETTINGS workload = 'rmv'
-TO target
-AS SELECT *
-FROM source;
-```
-
-The workload can be changed without modifying the SELECT query:
-
-```sql
-ALTER TABLE rmv
-MODIFY REFRESH EVERY 1 MINUTE SETTINGS workload = 'batch';
-```
-
-The new workload is used by subsequent refresh attempts. A refresh that is already running keeps
-the workload with which it started.
 
 ### Changing Refresh Parameters {#changing-refresh-parameters}
 

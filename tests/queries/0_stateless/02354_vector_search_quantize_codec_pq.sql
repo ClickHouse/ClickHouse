@@ -4,10 +4,10 @@
 -- The `product` (trained Product Quantization) method of the `Quantized(...)` column codec learns a per-part codebook with
 -- k-means and stores one m-byte code per vector, exposed as the readable subcolumn `<column>.quantized`, plus the
 -- per-part codebook as the subcolumn `<column>.product_quantization_codebook`. The full-precision data is stored verbatim, so reading the
--- vector itself (and the exact rescore) is unaffected. The codec is gated behind `allow_experimental_codecs`.
+-- vector itself (and the exact rescore) is unaffected. The codec is gated behind `enable_quantized_codec`.
 -- Syntax: `Quantized('product', dimensions, nbits, m)`.
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
 -- Lazy materialization (LazilyReadFromMergeTree) is an analyzer-only plan optimization, so the plan-shape assertion
 -- below needs the analyzer (the old-analyzer CI config does not produce the lazy read).

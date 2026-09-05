@@ -21,7 +21,7 @@ namespace zkutil
 namespace DB
 {
 
-class PipelineExecutor;
+class CompletedPipelineExecutor;
 class QueryStatus;
 
 class StorageMaterializedView;
@@ -43,6 +43,8 @@ enum class RefreshState
 class RefreshTask : public std::enable_shared_from_this<RefreshTask>
 {
 public:
+    ~RefreshTask();
+
     struct DependencyRefreshInfo
     {
         String database_and_table;
@@ -269,6 +271,8 @@ private:
         DependencyRefreshInfo notified_dependents;
     };
 
+    class AsyncQuerySlot;
+
     /// Information about the currently running refresh.
     struct ExecutionState
     {
@@ -277,7 +281,7 @@ private:
             None,
             /// doScheduling() decided to run a refresh, executeRefresh() didn't start yet.
             Requested,
-            /// Waiting for the workload resource scheduler to grant a query slot.
+            /// The scheduler has not resolved query-slot admission yet.
             WaitingForResource,
             /// executeRefresh() is in progress.
             Running,
@@ -292,7 +296,7 @@ private:
         /// this executor. Refresh task will then reconsider what to do, re-checking `stop_requested`,
         /// `out_of_schedule_refresh_requested`, etc.
         std::atomic_bool interrupt_execution {false};
-        PipelineExecutor * executor = nullptr;
+        CompletedPipelineExecutor * executor = nullptr;
         /// Process-list entry of the in-flight refresh query, so interruptExecution() can mark it
         /// killed. Set as soon as the query enters the process list, before it is interpreted.
         std::shared_ptr<QueryStatus> executing_query_status;
@@ -300,13 +304,9 @@ private:
         StopSource cancel_ddl_queries;
         Progress progress;
 
-        /// Workload admission is requested asynchronously before dispatching RefreshExec, so a
-        /// refresh waiting for a query slot does not occupy a BackgroundSchedulePool worker.
-        ContextMutablePtr refresh_context;
-        QuerySlotPtr query_slot;
+        /// Only the classifier and admission outcome survive the resource wait, not a query context.
+        std::unique_ptr<AsyncQuerySlot> query_slot;
         std::exception_ptr admission_exception;
-        String log_comment;
-        String workload;
 
         State state = State::None;
         /// Contains information about the completed refresh, and znode version number at the start
@@ -407,15 +407,8 @@ private:
 
     /// Perform an actual refresh: create new table, run INSERT SELECT, exchange tables, drop old table.
     /// Mutex must be unlocked.
-    std::optional<UUID> executeRefreshUnlocked(
-        int32_t root_znode_version,
-        std::vector<StorageID> deps,
-        ContextMutablePtr refresh_context,
-        QuerySlotPtr query_slot,
-        std::exception_ptr admission_exception,
-        const String & log_comment,
-        const String & workload,
-        String & out_error_message);
+    std::optional<UUID> executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message,
+        std::unique_ptr<AsyncQuerySlot> query_slot, std::exception_ptr admission_exception);
 
     DependencyRefreshInfo getInfoForDependentViewsLocked(const std::unique_lock<std::mutex> &) const;
 
@@ -485,4 +478,3 @@ struct OwnedRefreshTask
     explicit operator bool() const { return ptr != nullptr; }
 };
 }
-

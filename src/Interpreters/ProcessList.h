@@ -26,6 +26,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <map>
 #include <unordered_map>
 #include <vector>
 
@@ -400,6 +401,8 @@ public:
     using UserToQueries = std::unordered_map<String, ProcessListForUser>;
     /// query_id -> User
     using QueriesToUser = std::unordered_map<String, String>;
+    /// A PostgreSQL connection's `BackendKeyData` pair -> the query_id of its current statement
+    using PostgreSQLCancellationKeys = std::map<std::pair<Int32, UInt32>, String>;
 
     using QueryKindAmounts = std::unordered_map<IAST::QueryKind, QueryAmount>;
 
@@ -430,6 +433,12 @@ protected:
 
     /// Stores query IDs and associated users, used for query ID uniqueness check
     QueriesToUser queries_to_user;
+
+    /// A `CancelRequest` arrives on its own unauthenticated connection and carries only the pair from
+    /// `BackendKeyData`, so the secret is the credential. It is kept here rather than in the query ID
+    /// because `system.processes` and `system.query_log` expose query IDs verbatim. Keying on the whole
+    /// pair keeps a connection that reuses a connection ID from displacing a live one.
+    PostgreSQLCancellationKeys postgresql_cancellation_keys;
 
     /// Stores info about queries grouped by their priority
     QueryPriorities priorities;
@@ -469,21 +478,10 @@ public:
     /** Register running query. Returns refcounted object, that will remove element from list in destructor.
       * If too many running queries - wait for not more than specified (see settings) amount of time.
       * If timeout is passed - throw an exception.
-      * Don't count KILL QUERY queries or async insert flush queries.
-      * If force_query_slot is true, acquire a workload query slot even for an internal or
-      * otherwise unlimited query.
-      * A preacquired_query_slot allows a background query to wait asynchronously before entering
-      * ProcessList; ownership is transferred to the resulting QueryStatus.
+      * Don't count KILL QUERY queries or async insert flush queries
       */
-    EntryPtr insert(
-        const String & query_,
-        UInt64 normalized_query_hash,
-        const IAST * ast,
-        ContextMutablePtr query_context,
-        UInt64 watch_start_nanoseconds,
-        bool is_internal,
-        bool force_query_slot = false,
-        QuerySlotPtr preacquired_query_slot = {});
+    /// A supplied query slot must already be granted; its lifetime is transferred to QueryStatus.
+    EntryPtr insert(const String & query_, UInt64 normalized_query_hash, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds, bool is_internal, QuerySlotPtr query_slot = {});
 
     /// Number of currently executing queries.
     /// WARNING: includes internal queries (e.g. those executed by dictionaries, RMVs, async inserts).
@@ -566,8 +564,16 @@ public:
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);
     CancellationCode sendCancelToQuery(QueryStatusPtr elem);
 
+    /// Remember the `BackendKeyData` pair that authenticates `CancelRequest` for a PostgreSQL
+    /// connection, and the query ID of its current statement. Call again when that ID changes.
+    void registerPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key, const String & query_id);
+    void unregisterPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key);
+
+    /// Cancel an unauthenticated PostgreSQL request. Cancels only the query of the connection that
+    /// was given exactly this pair; queries from other interfaces never match.
+    CancellationCode sendCancelToPostgreSQLQuery(Int32 process_id, UInt32 secret_key);
+
     void killAllQueries();
 };
 
 }
-

@@ -16,6 +16,8 @@ doc_type: 'reference'
 Агрегатная функция, которая принимает данные временных рядов в виде пар временных меток и значений и вычисляет [дельта в стиле PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#delta) по этим данным на регулярной временной сетке, задаваемой начальной временной меткой, конечной временной меткой и шагом.
 Для каждой точки сетки образцы для вычисления `delta` берутся в пределах указанного временного окна.
 
+Если несколько образцов имеют одинаковую временную метку, используется только один из них: образец с наибольшим значением. Значение NaN уступает любому другому значению, поэтому значение NaN используется только в том случае, если все образцы с этой временной меткой имеют значение NaN.
+
 <Warning>
   Эта функция экспериментальная. Чтобы включить её, установите `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>
@@ -69,7 +71,7 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,3,4.5,3.75,NULL,NULL,3.75]                                                 │
+│ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                  │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -90,7 +92,7 @@ SELECT timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
 
 ```response title=Response
 ┌─timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,3,4.5,3.75,NULL,NULL,3.75]                                                   │
+│ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                    │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

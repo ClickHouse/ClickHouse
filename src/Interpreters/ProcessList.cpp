@@ -8,7 +8,7 @@
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
@@ -73,7 +73,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -118,8 +117,7 @@ ProcessList::EntryPtr ProcessList::insert(
     ContextMutablePtr query_context,
     UInt64 watch_start_nanoseconds,
     bool is_internal,
-    bool force_query_slot,
-    QuerySlotPtr preacquired_query_slot)
+    QuerySlotPtr query_slot)
 {
     EntryPtr res;
 
@@ -130,7 +128,6 @@ ProcessList::EntryPtr ProcessList::insert(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
 
     bool is_unlimited_query = isUnlimitedQuery(ast) || is_internal || client_info.is_from_introspection_port;
-    bool use_query_slot = !is_unlimited_query || force_query_slot;
     std::shared_ptr<QueryStatus> query;
 
     // Acquire a query slot and a memory reservation from the resource scheduler if necessary.
@@ -142,41 +139,28 @@ ProcessList::EntryPtr ProcessList::insert(
     // is already acquired at this point, and the upcoming multi-resource scheduler will admit query slots
     // and memory reservations together as a single allocation. Splitting their admission across the
     // `ProcessList` mutex would prevent that unification and is a worse design overall.
-    QuerySlotPtr query_slot = std::move(preacquired_query_slot);
-    if (query_slot)
-        query_slot->wait();
-
     MemoryReservationPtr memory_reservation;
-    if (use_query_slot || !is_unlimited_query)
+    if (!is_unlimited_query)
     {
         /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
         auto workload_entity_storage = query_context->getWorkloadEntityStoragePtr();
-
-        if (use_query_slot)
+        String query_resource_name = workload_entity_storage->getQueryResourceName();
+        if (!query_slot && !query_resource_name.empty())
         {
-            String query_resource_name = workload_entity_storage->getQueryResourceName();
-            if (!query_resource_name.empty() && !query_slot)
-            {
-                if (ResourceLink link = query_context->getWorkloadClassifier()->get(query_resource_name))
-                    query_slot = std::make_unique<QuerySlot>(link);
-            }
+            if (ResourceLink link = query_context->getWorkloadClassifier()->get(query_resource_name))
+                query_slot = std::make_unique<QuerySlot>(link);
         }
-
-        if (!is_unlimited_query)
+        String memory_reservation_resource_name = workload_entity_storage->getMemoryReservationResourceName();
+        if (!memory_reservation_resource_name.empty())
         {
-            String memory_reservation_resource_name = workload_entity_storage->getMemoryReservationResourceName();
-            if (!memory_reservation_resource_name.empty())
+            if (ResourceLink link = query_context->getWorkloadClassifier()->get(memory_reservation_resource_name))
             {
-                if (ResourceLink link = query_context->getWorkloadClassifier()->get(memory_reservation_resource_name))
-                {
-                    // The link must point to a space-shared resource; fail loudly instead of dereferencing null.
-                    if (!link.allocation_queue)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Resource '{}' configured for memory reservation is not a `MEMORY RESERVATION` resource",
-                            memory_reservation_resource_name);
-                    memory_reservation = std::make_unique<MemoryReservation>(
-                        link, client_info.current_query_id, settings[Setting::reserve_memory]);
-                }
+                // The link must point to a space-shared resource; fail loudly instead of dereferencing null.
+                if (!link.allocation_queue)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Resource '{}' configured for memory reservation is not a `MEMORY RESERVATION` resource",
+                        memory_reservation_resource_name);
+                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory]);
             }
         }
     }
@@ -328,9 +312,6 @@ ProcessList::EntryPtr ProcessList::insert(
                     .buffer_size = settings[Setting::temporary_files_buffer_size],
                     .metrics = {}, /// Metrics are set by child scopes
                 };
-
-                if (temporary_data_on_disk_settings.buffer_size > 1_GiB)
-                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large `temporary_files_buffer_size`, maximum 1 GiB");
 
                 if (user_process_list.user_temp_data_on_disk)
                     query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
@@ -818,6 +799,59 @@ CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem)
     /// The ProcessListEntry cannot be destroy if is_cancelling is true.
     {
         LockAndBlocker lock(mutex);
+        elem->is_cancelling = true;
+    }
+
+    SCOPE_EXIT({
+        DENY_ALLOCATIONS_IN_SCOPE;
+
+        Lock lock(mutex);
+        elem->is_cancelling = false;
+        cancelled_cv.notify_all();
+    });
+
+    return elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
+}
+
+
+void ProcessList::registerPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key, const String & query_id)
+{
+    LockAndBlocker lock(mutex);
+    postgresql_cancellation_keys[{connection_id, secret_key}] = query_id;
+}
+
+
+void ProcessList::unregisterPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key)
+{
+    LockAndBlocker lock(mutex);
+    postgresql_cancellation_keys.erase({connection_id, secret_key});
+}
+
+
+CancellationCode ProcessList::sendCancelToPostgreSQLQuery(Int32 process_id, UInt32 secret_key)
+{
+    QueryStatusPtr elem;
+
+    {
+        LockAndBlocker lock(mutex);
+
+        /// The request is unauthenticated, so a wrong secret must be indistinguishable from an
+        /// unknown connection.
+        auto cancellation_key = postgresql_cancellation_keys.find({process_id, secret_key});
+        if (cancellation_key == postgresql_cancellation_keys.end())
+            return CancellationCode::NotFound;
+
+        const String & current_query_id = cancellation_key->second;
+        auto query_user = queries_to_user.find(current_query_id);
+        if (query_user == queries_to_user.end())
+            return CancellationCode::NotFound;
+
+        /// Other interfaces can forge this query-id shape, so only cancel PostgreSQL queries.
+        elem = tryGetProcessListElement(current_query_id, query_user->second);
+        if (!elem || elem->getClientInfo().interface != ClientInfo::Interface::POSTGRESQL)
+            return CancellationCode::NotFound;
+
+        /// Keep the verified entry by pointer to prevent query-id reuse races.
         elem->is_cancelling = true;
     }
 

@@ -55,6 +55,13 @@ public:
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const override;
 
+    void deserializeBinaryBulkWithMultipleStreams(
+        IColumn & column,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const override;
+
 private:
     QuantizedCodecParams params;
     bool is_product_quantization;         /// trained Product Quantization (codebook + codes) vs data-independent codes

@@ -10,7 +10,6 @@ namespace DB
     DECLARE(UInt64, refresh_retry_initial_backoff_ms, 100, "Delay before the first retry if refresh query fails (if refresh_retries setting is not zero). Each subsequent retry doubles the delay, up to refresh_retry_max_backoff_ms.", 0) \
     DECLARE(UInt64, refresh_retry_max_backoff_ms, 60'000, "Limit on the exponential growth of delay between refresh attempts, if they keep failing and refresh_retries is positive.", 0) \
     DECLARE(Bool, all_replicas, /* do not change or existing tables will break */ false, "If the materialized view is in a Replicated database, and APPEND is enabled, this flag controls whether all replicas or one replica will refresh.", 0) \
-    DECLARE(String, workload, "", "Workload used for the complete refresh. It controls asynchronous QUERY admission and overrides a workload specified in the SELECT query.", 0) \
     DECLARE(Bool, prefer_dependency_replica, false, "Deprecated and ignored.", 0) \
     DECLARE(UInt64, prefer_dependency_replica_delay_ms, 2000, "Deprecated and ignored.", 0) \
 
@@ -44,4 +43,3 @@ void RefreshSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 }
-

@@ -12,8 +12,7 @@ class SettingsChanges;
 #define REFRESH_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, Int64) \
-    M(CLASS_NAME, UInt64) \
-    M(CLASS_NAME, String)
+    M(CLASS_NAME, UInt64)
 
 REFRESH_SETTINGS_SUPPORTED_TYPES(RefreshSettings, DECLARE_SETTING_TRAIT)
 
@@ -34,4 +33,3 @@ private:
     std::unique_ptr<RefreshSettingsImpl> impl;
 };
 }
-

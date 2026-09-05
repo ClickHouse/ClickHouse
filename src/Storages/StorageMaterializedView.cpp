@@ -334,7 +334,12 @@ StorageMaterializedView::StorageMaterializedView(
         manual_create_query->set(manual_create_query->columns_list, new_columns_list);
 
         if (to_table_engine)
+        {
             manual_create_query->set(manual_create_query->storage, to_table_engine);
+            /// We need to set this flag for consistency with the parser.
+            if (to_table_engine->engine && (to_table_engine->engine->name == "TimeSeries"))
+                manual_create_query->is_time_series_table = true;
+        }
 
         InterpreterCreateQuery create_interpreter(manual_create_query, create_context);
         create_interpreter.setInternal(true);
@@ -620,7 +625,7 @@ bool StorageMaterializedView::optimize(
     return storage_ptr->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
 }
 
-ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & log_comment) const
+ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & log_comment, ASTPtr & out_select_query) const
 {
     ContextPtr table_context = getContext();
     ClientInfo client_info = table_context->getClientInfo();
@@ -646,24 +651,17 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
     refresh_context->setCurrentQueryId("");
     /// Use the database where the materialized view is created to run the select query in the refresh task
     refresh_context->setCurrentDatabase(getStorageID().database_name);
+    /// Use the same metadata snapshot for SQL SECURITY and the SELECT settings/query.
+    out_select_query = view_metadata->getSelectQuery().select_query->clone();
+    InterpreterSetQuery::applySettingsFromQuery(out_select_query, refresh_context);
     return refresh_context;
 }
 
 std::tuple<boost::intrusive_ptr<ASTInsertQuery>, QueryScope>
-StorageMaterializedView::prepareRefresh(
-    bool append,
-    ContextMutablePtr refresh_context,
-    const String & workload,
-    std::optional<StorageID> & out_temp_table_id) const
+StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_context, ASTPtr select_query, std::optional<StorageID> & out_temp_table_id) const
 {
     auto inner_table_id = getTargetTableId();
     StorageID target_table = inner_table_id;
-
-    auto view_metadata = getInMemoryMetadataPtr(refresh_context, false);
-    auto select_query = view_metadata->getSelectQuery().select_query->clone();
-    InterpreterSetQuery::applySettingsFromQuery(select_query, refresh_context);
-    if (!workload.empty())
-        refresh_context->setSetting("workload", workload);
 
     if (!append)
     {
@@ -1161,4 +1159,3 @@ void registerStorageMaterializedView(StorageFactory & factory)
 }
 
 }
-

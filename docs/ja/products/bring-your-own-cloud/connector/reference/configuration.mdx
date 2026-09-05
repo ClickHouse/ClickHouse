@@ -1,0 +1,294 @@
+---
+title: '設定リファレンス'
+sidebarTitle: '設定リファレンス'
+description: 'すべての ClickHouse Connector 設定キー: VM の config.yaml と Helm チャートの値（デフォルト値を含む）'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'コネクタ', '設定', 'リファレンス']
+doc_type: 'reference'
+---
+
+このページでは、必要に応じて変更できるすべての設定キーについて、デフォルト値と意味を一覧で説明します。まず VM の設定ファイル、次に Helm チャートの値を説明します。タスク別の手順については、[設定ガイド](/ja/products/bring-your-own-cloud/connector/configuration)を参照してください。
+
+<div id="vm-configuration-file">
+  ## VM 設定ファイル
+</div>
+
+Linux VM では、コネクタは `clicklink clctl init` によって書き込まれた `/etc/clicklink/config.yaml` を読み取ります。`--force` を指定しない限り、このファイルは再実行後も保持されます。ファイルで省略されたオプションには、以下のコンパイル時のデフォルト値が適用されます。認証情報がこのファイルに保存されることはありません。
+
+<div id="vm-top-level">
+  ### トップレベルキー
+</div>
+
+| キー               | デフォルト        | 意味                                                                                    |
+| ---------------- | ------------ | ------------------------------------------------------------------------------------- |
+| `pcm_infra_uuid` | `init` により生成 | このコネクタのデプロイメントに固有の識別子です。すべてのアップストリームリクエストに付加されます。`--force` を含む再実行後も保持されます。編集しないでください。 |
+| `cloud`          | `init` により検出 | このホストのクラウドプロバイダーラベルです。必須です。空の場合、デーモンは起動しません。                                          |
+| `region`         | `init` により検出 | このホストのリージョンラベルです。必須です。空の場合、デーモンは起動しません。                                               |
+| `api`            |              | アップストリーム API 接続ブロック。[api](#vm-api) を参照してください。                                         |
+| `instances`      | `{}`         | 名前をキーとする ClickHouse インスタンスのマップ。[instances](#vm-instances) を参照してください。                  |
+| `scraper`        |              | scraperデーモンブロック。[scraper](#vm-scraper) を参照してください。                                      |
+| `troubleshooter` |              | トラブルシューターデーモンブロック。[troubleshooter](#vm-troubleshooter) を参照してください。                     |
+| `observability`  |              | 共有のロギングおよびポートブロック。[observability](#vm-observability) を参照してください。                       |
+
+<div id="vm-api">
+  ### api
+</div>
+
+| キー                        | デフォルト                                       | 意味                                                                 |
+| ------------------------- | ------------------------------------------- | ------------------------------------------------------------------ |
+| `api.endpoint`            | 登録バンドルから取得                                  | 組織のコネクタ API エンドポイント、`https://<subdomain>.<connector domain>`。      |
+| `api.access_key_file`     | `/etc/clicklink/access-key` (`init` が書き込み)  | HMAC アクセスキーを格納するファイル (モード 0600) 。                                  |
+| `api.secret_key_file`     | `/etc/clicklink/secret-key` (`init` が書き込み)  | HMAC シークレットキーを格納するファイル (モード 0600) 。                                |
+| `api.tls.enabled`         | `true`                                      | API 接続時に mTLS クライアント証明書を提示します。                                     |
+| `api.tls.cert_file`       | `/etc/clicklink/tls/client.crt`             | mTLS クライアントのリーフ証明書。更新時に自動的に書き換えられます。                               |
+| `api.tls.key_file`        | `/etc/clicklink/tls/client.key`             | mTLS クライアントの秘密鍵。                                                   |
+| `api.tls.ca_file`         | `/etc/clicklink/tls/ca.crt`                 | サーバー検証用にシステムルート証明書へ追加される CA チェーン。`init` は登録バンドルのチェーンをここにインストールします。 |
+| `api.retry.max_retries`   | `5`                                         | API リクエストごとの再試行回数。                                                 |
+| `api.retry.initial_delay` | `1s`                                        | 最初の再試行までのバックオフ遅延。                                                  |
+| `api.retry.max_delay`     | `30s`                                       | バックオフの上限。                                                          |
+| `api.retry.jitter_factor` | `0.25`                                      | バックオフ遅延に適用するランダムジッター。                                              |
+
+<div id="vm-instances">
+  ### instances
+</div>
+
+`instances.<name>` 配下の各エントリは、1 つの ClickHouse ネイティブプロトコルの接続先を指定します。
+
+| キー               | デフォルト     | 意味                                                                           |
+| ---------------- | --------- | ---------------------------------------------------------------------------- |
+| `host`           |           | ClickHouse ネイティブリスナーのホスト名または IP アドレス。                                        |
+| `port`           |           | ネイティブプロトコルのポート (通常、TLS 使用時は `9440`、平文使用時は `9000`) 。                          |
+| `database`       |           | コネクタのセッションでデフォルトとして使用するデータベース。                                               |
+| `secure`         | `false`   | ネイティブ接続で TLS を使用します。                                                         |
+| `max_open_conns` | 未設定       | このインスタンスへのオープン接続数の上限。                                                        |
+| `max_idle_conns` | 未設定       | このインスタンスへのアイドル状態のプールされた接続数の上限。                                               |
+| `namespace`      |           | インスタンスの Kubernetes ネームスペース。トラブルシューターによる Kubernetes リソースの読み取り範囲を限定するために使用します。 |
+| `cluster`        | `default` | 分散クエリに使用する ClickHouse クラスター名。                                                |
+
+<div id="vm-scraper">
+  ### scraper
+</div>
+
+| キー                                   | デフォルト                                 | 意味                                                                                                                                                                          |
+| ------------------------------------ | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scraper.enabled`                    | `false` (`init` により `true` が書き込まれます)  | scraper デーモンを実行します。                                                                                                                                                         |
+| `scraper.labels.platform`            |                                       | 出力されるすべてのメトリクスに付与されるラベル。scraper を有効にする場合は必須です。                                                                                                                              |
+| `scraper.labels.env`                 |                                       | 環境ラベル (例: `production`) 。必須です。                                                                                                                                              |
+| `scraper.labels.region`              |                                       | リージョンラベル。必須です。                                                                                                                                                              |
+| `scraper.scrape.interval`            | `2m`                                  | 各インスタンスをスクレイプする間隔。                                                                                                                                                          |
+| `scraper.scrape.timeout`             | `30s`                                 | スクレイプごとのクエリタイムアウト。                                                                                                                                                          |
+| `scraper.scrape.tables`              | 下記を参照                                 | インスタンスごとにスクレイプするシステムテーブル。デフォルトでは `metric_log`、`asynchronous_metric_log`、`tables`、`warnings`、`server_settings` を対象とします。生の SQL テキストがデフォルトで外部に出ないよう、`query_log` は意図的に除外されています。 |
+| `scraper.buffer.path`                | `/var/lib/clicklink/buffer`           | API エンドポイントに到達できない場合に、少なくとも 1 回の配信を保証するためのディスク上のスプール。                                                                                                                       |
+| `scraper.buffer.retention`           | `168h`                                | スプールされたデータの最大保持期間。                                                                                                                                                          |
+| `scraper.buffer.max_size_mb`         | `1024`                                | スプールサイズの上限 (MB) 。                                                                                                                                                           |
+| `scraper.sender.bandwidth_limit_mb`  | `1.0`                                 | アップロード速度の上限 (MB/s) 。                                                                                                                                                        |
+| `scraper.observability.health_port`  | `8082`                                | scraper のヘルスエンドポイントのポート。                                                                                                                                                    |
+| `scraper.observability.metrics_port` | `9092`                                | scraper のメトリクスポート。                                                                                                                                                          |
+| `scraper.access_directory`           | `/etc/clicklink/access/scraper`       | scraper のインスタンスごとのアクセスバンドルのルートディレクトリ。                                                                                                                                       |
+
+<div id="vm-troubleshooter">
+  ### troubleshooter
+</div>
+
+| キー                                                 | デフォルト                                                  | 意味                                                                              |
+| -------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| `troubleshooter.enabled`                           | `false` (`init` が `true` を書き込む)                        | troubleshooter デーモンを実行します。                                                      |
+| `troubleshooter.poll_interval`                     | `5s`                                                   | セッション状態のポーリング間隔。                                                                |
+| `troubleshooter.command_timeout`                   | `60s`                                                  | コマンドごとの実行タイムアウト。                                                                |
+| `troubleshooter.session_timeout`                   | `4h`                                                   | デフォルトのサポートセッション期間。                                                              |
+| `troubleshooter.session_file_path`                 | `/var/lib/clicklink/session.json`                      | `clicklink clctl troubleshoot session` コマンドと共有するセッション状態ファイル。                    |
+| `troubleshooter.access_directory`                  | `/etc/clicklink/access/troubleshooter`                 | troubleshooter のインスタンスごとのアクセスバンドルのルートディレクトリ。                                    |
+| `troubleshooter.allowed_tables`                    | [デフォルトのテーブル許可リスト](#default-table-allowlist)を参照         | troubleshooter が `SELECT` できるシステムテーブル。                                          |
+| `troubleshooter.max_open_conns`                    | `5`                                                    | 開いている ClickHouse 接続数の上限。                                                        |
+| `troubleshooter.max_idle_conns`                    | `5`                                                    | アイドル状態のプールされた接続数の上限。                                                            |
+| `troubleshooter.redaction.workers`                 | `4`                                                    | 並列マスキングワーカー数。                                                                   |
+| `troubleshooter.redaction.patterns_file`           | `/etc/clicklink/redaction-patterns.yaml`               | ユーザーが編集可能なマスキングパターン。このファイルが存在していて無効な場合、デーモンは起動しません。                             |
+| `troubleshooter.redaction.metrics_per_pattern`     | `false`                                                | パターンごとの一致数を示すカウンターメトリクスを出力します。                                                  |
+| `troubleshooter.redaction.metrics_per_pattern_cap` | `50`                                                   | パターンごとのメトリクスに含める一意のパターン名数の上限。                                                   |
+| `troubleshooter.audit_log.path`                    | `/var/log/clicklink/troubleshoot-audit.log`            | 受け入れまたはブロックされたすべてのコマンドを記録する追記専用の NDJSON 監査ログ。                                   |
+| `troubleshooter.audit_log.max_size_mb`             | `128`                                                  | このサイズを超えるとアクティブなログファイルをローテーションします。                                              |
+| `troubleshooter.audit_log.max_files`               | `5`                                                    | 保持するローテーション済みファイル数。                                                             |
+| `troubleshooter.audit_log.max_age`                 | `168h`                                                 | この期間より古いローテーション済みファイルは削除されます。                                                   |
+| `troubleshooter.gateway.enabled`                   | `false`                                                | セッションゲートウェイを提供します (OIDC 経由のサポートセッション) 。                                         |
+| `troubleshooter.gateway.listen_addr`               | `":8443"` (`init` が書き込む)                               | ゲートウェイのリッスンアドレス。                                                                |
+| `troubleshooter.gateway.audience`                  | `clicklink-clctl` (`init` が書き込む)                       | オペレータートークンに必須の audience クレーム。                                                   |
+| `troubleshooter.gateway.required_hosted_domain`    | `""`                                                   | 任意のホスト型ドメインクレームによる制限。ドメイン外のトークンは、許可リストの確認前に拒否されます。                              |
+| `troubleshooter.gateway.allowed_operators_file`    | `/etc/clicklink/allowed-operators.txt` (`init` が書き込む)  | 改行区切りのオペレーターのメールアドレス許可リスト。空の場合はすべて拒否されます。                                       |
+| `troubleshooter.gateway.rate_limit_per_minute`     | `0` (無効)                                               | オペレーターごとのリクエストレート制限。                                                            |
+| `troubleshooter.gateway.handler_timeout`           | 未設定                                                    | サーバー側のリクエストタイムアウト。                                                              |
+| `troubleshooter.gateway.jwks_uri`                  | `""`                                                   | Google 以外のアイデンティティプロバイダー用 JWKS エンドポイント。空の場合は Google のものを使用します。                  |
+| `troubleshooter.gateway.issuer`                    | `""`                                                   | `jwks_uri` が設定されている場合に固定する issuer クレーム。                                         |
+| `troubleshooter.gateway.tls.enabled`               | `false` (サポートセッションが有効な VM では `init` が `true` を書き込む)    | 証明書が存在しない場合にデーモンが生成する自己署名証明書を使用して、TLS 経由でゲートウェイを提供します。オペレーターはそのフィンガープリントを固定します。 |
+| `troubleshooter.gateway.tls.cert_file`             | `/var/lib/clicklink/gateway/tls/server.crt`            | ゲートウェイが使用する証明書。                                                                 |
+| `troubleshooter.gateway.tls.key_file`              | `/var/lib/clicklink/gateway/tls/server.key`            | ゲートウェイが使用する秘密鍵。                                                                 |
+| `troubleshooter.gateway.tls.self_signed_dns_names` | `[]` (`init` がホストを事前設定)                                | 証明書が存在しない場合にデーモン自身が生成する自己署名証明書の SAN。IP アドレスとして解析されるエントリは IP SAN になります。          |
+
+<div id="vm-observability">
+  ### オブザーバビリティ
+</div>
+
+| キー                           | デフォルト  | 意味                        |
+| ---------------------------- | ------ | ------------------------- |
+| `observability.enabled`      | `true` | ヘルスおよびメトリクスエンドポイントを提供します。 |
+| `observability.log_level`    | `info` | ログレベル。                    |
+| `observability.health_port`  | `8080` | 共有ヘルスポートのベースポート。          |
+| `observability.metrics_port` | `9090` | 共有メトリクスポートのベースポート。        |
+
+コンポーネントごとの `observability` ブロックは、このベース設定をオーバーライドします。scraper は `8082`/`9092`、troubleshooter は `8084`/`9094` を使用し、ゲートウェイは有効な場合に `8443` でリッスンします。
+
+<div id="default-table-allowlist">
+  ### デフォルトのテーブル許可リスト
+</div>
+
+troubleshooter のデフォルトの `allowed_tables` セットです。chart のデフォルト設定 `troubleshooter.allowedTables` と同じです。
+
+```text
+system.build_options    system.clusters       system.columns
+system.databases        system.tables         system.parts
+system.parts_columns    system.parts_summary  system.detached_parts
+system.processes        system.merges         system.mutations
+system.replicas         system.replication_queue
+system.metrics          system.events         system.asynchronous_metrics
+system.disks            system.storage_policies
+system.settings         system.settings_profiles
+system.settings_profile_elements
+system.functions        system.formats        system.table_engines
+system.users            system.roles          system.grants
+```
+
+<div id="helm-chart-values">
+  ## Helm チャートの値
+</div>
+
+Kubernetes では、コネクタは `clicklink-connector` チャートの値を使用して設定します。`clicklink clctl init` は、以下の項目がすべて設定された `clicklink-values.yaml` オーバーレイを用意し、`--force` を指定しない限り、再実行しても保持します。表にはチャートのデフォルト値を示します。標準的なワークロード設定 (`resources`、`nodeSelector`、`tolerations`、`affinity`、`serviceAccount.annotations`、`env`、`imagePullSecrets`) は各コンポーネントに空のデフォルト値で用意されているため、各表では繰り返し記載していません。
+
+<div id="helm-cluster">
+  ### クラスター
+</div>
+
+| キー                     | デフォルト                | 意味                                                        |
+| ---------------------- | -------------------- | --------------------------------------------------------- |
+| `cluster.pcmInfraUuid` | `""` (`init` により設定)  | このコネクタデプロイメントの一意の識別子。いずれかのコンポーネントが有効な場合は必須です。再実行後も保持されます。 |
+| `cluster.region`       | `""` (`init` により設定)  | Region ラベル。必須です。                                          |
+| `cluster.cloud`        | `""` (`init` により設定)  | クラウドプロバイダーのラベル。必須です。                                      |
+
+<div id="helm-image">
+  ### イメージ
+</div>
+
+| キー                 | デフォルト                                                | 意味                                                                                                                                     |
+| ------------------ | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `image.repository` | 公開チャートにあらかじめ設定済み                                     | コネクタのイメージリポジトリ。公開チャートはパブリックレジストリのイメージ (マルチアーキテクチャ、cosign署名済み) を参照します。境界内のミラーなどにオーバーライドする場合にのみ設定してください。公開値は `helm show values` で確認できます。 |
+| `image.tag`        | `""` (チャートの `appVersion` を追跡。`init` は CLI バージョンを固定)  | イメージタグ。                                                                                                                                |
+| `image.pullPolicy` | `IfNotPresent`                                       | Kubernetes のイメージプルポリシー。                                                                                                                |
+
+<div id="vm-api">
+  ### api
+</div>
+
+| キー                | デフォルト                 | 意味                                                                                                                                            |
+| ----------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api.endpoint`    | `""` (`init` によって設定)  | 両コンポーネントで共有される組織のコネクタ API エンドポイント。                                                                                                            |
+| `api.tls.enabled` | `true`                | API 接続時に mTLS クライアント証明書を提示します。                                                                                                                |
+| `api.tls.caFile`  | `""` (システムルート)        | サーバー検証用にシステムルートへ追加する CA。エンドポイントがプライベート CA 証明書を使用する場合は、`/etc/clicklink/secrets/mtls/ca.crt` に設定するか、`--api-private-ca` を指定して `init` を再実行してください。 |
+
+<div id="helm-secrets">
+  ### secrets
+</div>
+
+chart は、事前に作成された Secrets を使用します。`init` はインストール前にこれらを作成します。
+
+| キー                       | デフォルト            | 意味                                                                                                                                                                    |
+| ------------------------ | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `secrets.mtlsSecretName` | `clicklink-mtls` | mTLS クライアントの秘密鍵、証明書、CA チェーンを格納する `kubernetes.io/tls` Secret。                                                                                                          |
+| `secrets.hmacSecretName` | `clicklink-hmac` | リクエスト署名に使用する `access-key` と `secret-key` を格納する Opaque Secret。                                                                                                         |
+| `secrets.mtlsWriteback`  | `true`           | デーモンが自動更新された mTLS リーフ証明書を mTLS Secret に書き戻すことを許可します。コンポーネントの ServiceAccounts に、名前が完全に一致するこの 1 つの Secret に対する `update` 権限を付与します。これを有効にしない場合、更新された証明書を永続的に保存する場所がありません。 |
+
+<div id="vm-scraper">
+  ### scraper
+</div>
+
+| キー                                                                       | デフォルト                            | 意味                                                                                                                                                                                                         |
+| ------------------------------------------------------------------------ | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scraper.enabled`                                                        | `false` (`init` が `true` を書き込む)  | scraper をデプロイします。                                                                                                                                                                                          |
+| `scraper.replicaCount`                                                   | `1`                              | scraper のレプリカ数。                                                                                                                                                                                            |
+| `scraper.logLevel`                                                       | `info`                           | ログレベル。                                                                                                                                                                                                     |
+| `scraper.ports.health`                                                   | `8082`                           | ヘルスエンドポイントのポート。                                                                                                                                                                                            |
+| `scraper.ports.metrics`                                                  | `9092`                           | メトリクスポート。                                                                                                                                                                                                  |
+| `scraper.instances`                                                      | `{}`                             | ClickHouse インスタンスのマップ。VM の [instances](#vm-instances) フィールドと同じ構造です。                                                                                                                                       |
+| `scraper.labels.platform`, `scraper.labels.env`, `scraper.labels.region` | `""`                             | 出力されるすべてのメトリクスに付与するラベル。scraper を有効にする場合は 3 つすべてが必須です。指定しない場合、chart はレンダリング時にエラーになります。                                                                                                                      |
+| `scraper.config`                                                         | `{}`                             | 上記で定義されていない `scraper` 設定キーのパススルー (スクレイプ間隔、バッファ、sender など。VM の [scraper](#vm-scraper) ブロックと同じスキーマ) 。                                                                                                        |
+| `scraper.bufferSizeLimit`                                                | `2Gi`                            | scraper のスクラッチボリュームのサイズ上限。scraper には永続的なディスク上の状態はありません。                                                                                                                                                    |
+| `scraper.rbac.extraSecretNames`                                          | `[]`                             | scraper の ServiceAccount が `get` できる追加の Secret 名。完全一致する名前のみ指定できます。                                                                                                                                         |
+| `scraper.accessBundles`                                                  | `{}`                             | インスタンス名をキーとするインスタンスごとのアクセスバンドル。各バンドルには `secretName` と `serviceAccountName` が含まれます。`/etc/clicklink/access/scraper/<instance>/` にマウントされ、`clicklink clctl scraper access provision --target helm` によって作成されます。 |
+
+<div id="vm-troubleshooter">
+  ### troubleshooter
+</div>
+
+| キー                                              | デフォルト                                       | 意味                                                                                                                                                              |
+| ----------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `troubleshooter.enabled`                        | `false` (`init` が `true` を書き込みます)           | troubleshooter (単一レプリカの StatefulSet) をデプロイします。                                                                                                                  |
+| `troubleshooter.logLevel`                       | `info`                                      | ログレベル。                                                                                                                                                          |
+| `troubleshooter.ports.health`                   | `8084`                                      | ヘルスエンドポイントのポート。                                                                                                                                                 |
+| `troubleshooter.ports.metrics`                  | `9094`                                      | メトリクス用ポート。                                                                                                                                                      |
+| `troubleshooter.instances`                      | `{}`                                        | ClickHouse インスタンスのマップ。`scraper.instances` と同じ構造です。                                                                                                             |
+| `troubleshooter.sessionTimeout`                 | `4h`                                        | デフォルトのサポートセッション期間。                                                                                                                                              |
+| `troubleshooter.allowedTables`                  | [デフォルトのテーブル許可リスト](#default-table-allowlist) | troubleshooter の ClickHouse ユーザーが `SELECT` できるテーブル。このオーバーレイで編集するセキュリティレビューの対象です。ここに列挙されている内容にかかわらず、コマンドバリデーターではハードコードされた拒否リスト (`query_log`、`text_log`) が適用されます。 |
+| `troubleshooter.auditLog.path`                  | `/var/log/clicklink/troubleshoot-audit.log` | 監査ログの保存先。ポッドが再スケジュールされても記録が残るよう、state ボリューム上に保存されます。                                                                                                            |
+| `troubleshooter.auditLog.maxSizeMb`             | `128`                                       | このサイズを超えるとローテーションします。                                                                                                                                           |
+| `troubleshooter.auditLog.maxFiles`              | `5`                                         | 保持するローテーション済みファイル数。                                                                                                                                             |
+| `troubleshooter.auditLog.maxAge`                | `168h`                                      | これより古いローテーション済みファイルは削除されます。                                                                                                                                     |
+| `troubleshooter.redaction.workers`              | `4`                                         | 並列マスキングワーカー数。                                                                                                                                                   |
+| `troubleshooter.redaction.patternsConfigMap`    | `""`                                        | カスタムパターンを格納した `redaction-patterns.yaml` キーを持つ ConfigMap の名前。chart はこれを `/etc/clicklink/redaction-patterns.yaml` にマウントします。空の場合は、組み込みパターンのみが適用されます。               |
+| `troubleshooter.redaction.metricsPerPattern`    | `false`                                     | パターンごとの一致数を示すカウンターメトリクスを出力します。                                                                                                                                  |
+| `troubleshooter.redaction.metricsPerPatternCap` | `50`                                        | パターンごとのメトリクスに含める個別パターン名の上限。                                                                                                                                     |
+| `troubleshooter.config`                         | `{}`                                        | 上記で定義されていない任意の `troubleshooter` 設定キー (ポーリング間隔、コマンドタイムアウト、接続上限など) をそのまま渡します。                                                                                     |
+| `troubleshooter.rbac.extraSecretNames`          | `[]`                                        | troubleshooter の ServiceAccount が `get` できる追加の Secret 名。完全一致する名前のみ指定できます。                                                                                       |
+| `troubleshooter.accessBundles`                  | `{}`                                        | インスタンスごとのアクセスバンドル。`scraper.accessBundles` と同じ構造で、`/etc/clicklink/access/troubleshooter/<instance>/` にマウントされます。                                                  |
+
+<div id="helm-persistence">
+  ### 永続化
+</div>
+
+| キー                         | デフォルト               | 意味                                                                                       |
+| -------------------------- | ------------------- | ---------------------------------------------------------------------------------------- |
+| `persistence.enabled`      | `true`              | PersistentVolumeClaim を使用して troubleshooter の状態ディレクトリを永続化し、セッション状態と監査証跡が再起動後も保持されるようにします。 |
+| `persistence.storageClass` | `""` (クラスターのデフォルト)  | claim の StorageClass。`init` が `--storage-class` または検出されたデフォルトから設定します。                    |
+| `persistence.size`         | `5Gi`               | claim のサイズ。                                                                              |
+| `persistence.accessModes`  | `[ReadWriteOnce]`   | claim のアクセスモード。                                                                          |
+
+<div id="helm-clctl-gateway">
+  ### clctl.gateway
+</div>
+
+[サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)用のセッションゲートウェイ。
+
+| キー                                                               | デフォルト                  | 意味                                                                                                                             |
+| ---------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `clctl.gateway.enabled`                                          | `false`                | troubleshooter 内でセッションゲートウェイを提供します。                                                                                            |
+| `clctl.gateway.listenAddr`                                       | `":8443"`              | ポッドローカルのリッスンアドレス。                                                                                                              |
+| `clctl.gateway.port`                                             | `8443`                 | troubleshooter の Service および Ingress 経由で公開されるコンテナーポート。`listenAddr` のポートと一致します。                                                 |
+| `clctl.gateway.audience`                                         | `clicklink-clctl`      | operator トークンに必要な audience クレーム。セッションクライアントもデフォルトで同じ値を使用するため、変更する場合にのみ両者を合わせる必要があります。                                         |
+| `clctl.gateway.requiredHostedDomain`                             | `""`                   | ゲートウェイで必須とする任意のホステッドドメイン claim。許可リスト のルックアップ前に、ワークスペース外からのトークンを拒否します。                                                      |
+| `clctl.gateway.allowedOperators`                                 | `[]` (閉鎖)              | operator のメールアドレスの許可リスト。ConfigMap としてレンダリングされます。ローテーションには values の変更と `helm upgrade` が必要です。                               |
+| `clctl.gateway.jwksUri`                                          | `""`                   | Google 以外のアイデンティティプロバイダー 向け JWKS エンドポイントのオーバーライド。空の場合は Google のエンドポイントを使用します。                                              |
+| `clctl.gateway.issuer`                                           | `""`                   | 固定する issuer クレーム。`jwksUri` を設定する実運用のデプロイメントでは必須です。                                                                            |
+| `clctl.gateway.jwksEgressCIDRs`                                  | `[]`                   | デフォルト拒否の NetworkPolicy で、JWKS 検証のためにゲートウェイから到達可能にする必要がある CIDR。空の場合、すべてのトークンチェックがブロックされます。                                      |
+| `clctl.gateway.ingressFromSelector`                              | `{}`                   | ゲートウェイポートへの NetworkPolicy イングレス元。空の場合、chart のネームスペース内の任意のポッドを許可します。Ingress を使用する場合は、Ingress controller のネームスペースラベルを設定してください。   |
+| `clctl.gateway.rateLimit.requestsPerMinute`                      | `30`                   | operator ごとのリクエストレート制限。                                                                                                        |
+| `clctl.gateway.ingress.enabled`                                  | `false`                | ゲートウェイ用の Ingress をレンダリングします。無効の場合、operator は `kubectl port-forward` を使用してゲートウェイに接続します。ingress controller や cert-manager は不要です。 |
+| `clctl.gateway.ingress.className`, `hosts`, `tls`, `annotations` | `""`, `[]`, `[]`, `{}` | 標準の Ingress フィールド。`tls` は `kubernetes.io/tls` Secrets を参照します。                                                                  |
+
+<div id="helm-networkpolicy">
+  ### networkPolicy
+</div>
+
+| キー                                    | デフォルト   | 意味                                                                                                                                    |
+| ------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `networkPolicy.enabled`               | `true`  | egress 許可リストを含むデフォルト拒否の NetworkPolicy を生成します。適用には強制機能を備えた CNI が必要です。                                                                  |
+| `networkPolicy.allowEgressCIDRs`      | `[]`    | コネクタの API エンドポイントの背後にある CIDR です。強制機能を備えた CNI では、これを設定するまでコネクタからの egress は許可されません。                                                     |
+| `networkPolicy.allowEgressPorts`      | `[443]` | `allowEgressCIDRs` に対して開放するポートです。エンドポイントがデフォルト以外のポートで待ち受ける場合は上書きしてください。                                                               |
+| `networkPolicy.clickhouseNamespaces`  | `[]`    | `kubernetes.io/metadata.name` ラベルに一致する ClickHouse Services のネームスペースです。空の場合、クラスター内の ClickHouse へのアクセスは許可されません。                         |
+| `networkPolicy.metricsScrapeSelector` | `{}`    | ラベルで指定した特定の Prometheus ネームスペースからのメトリクススクレイプ ingress に制限します。空の場合、チャートのネームスペース内の任意のポッドからのスクレイプを許可します。                                   |
+| `networkPolicy.kubeletProbeCIDRs`     | `[]`    | キューブレットのヘルスプローブの送信元 CIDR (ノード IP) です。空の場合、ほとんどの CNI におけるキューブレットの例外処理と同様に、任意の送信元からのプローブ ingress を許可します。厳格なデフォルト拒否を使用する場合は明示的に設定してください。 |
+| `networkPolicy.apiserverCIDRs`        | `[]`    | Kubernetes API サーバーの CIDR です。空の場合、API サーバーへの egress ルールは生成されず、マネージド Kubernetes では設定するまでデーモンの最初のトークンリクエストが失敗します。                       |
