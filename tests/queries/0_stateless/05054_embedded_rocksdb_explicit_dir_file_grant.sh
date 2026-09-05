@@ -138,7 +138,10 @@ ${CLICKHOUSE_CLIENT} -q "GRANT READ ON FILE TO ${USER}"
 ${CLICKHOUSE_CLIENT} -q "GRANT READ ON DISK TO ${USER}"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${POC}.restore_src (k String, v String) ENGINE = EmbeddedRocksDB(0, '${RESTORE_DIR}') PRIMARY KEY k"
 ${CLICKHOUSE_CLIENT} -q "BACKUP TABLE ${POC}.restore_src TO ${BACKUP} FORMAT Null"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE ${POC}.restore_src SYNC"
+# A top-level `DROP TABLE` of a table that stores data on disk is ignored with the probability the
+# stress runner puts in `ignore_drop_queries_probability`, and still reports success. Pin it to 0
+# wherever this test relies on a drop having happened: the `RESTORE` below needs the name free.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${POC}.restore_src SYNC SETTINGS ignore_drop_queries_probability = 0"
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "RESTORE TABLE ${POC}.restore_src FROM ${BACKUP} FORMAT Null" 2>&1 \
     | denied_write && echo "restore-denied" || echo "NOT DENIED"
 created restore_src && echo "CREATED ANYWAY (unexpected)" || echo "not-created"
@@ -148,11 +151,15 @@ rc=$?
 if [ "$rc" -eq 0 ] && created restore_src; then echo "restore-allowed"; else echo "restore-FAILED (unexpected): rc=$rc $out"; fi
 
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${POC} SYNC"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${VICTIM} SYNC"
+poc_rc=$?
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${VICTIM} SYNC SETTINGS ignore_drop_queries_probability = 0"
+victim_rc=$?
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER}"
 
-# Dropping such a table closes its handle but leaves the directory, so remove the three this test made.
-if [ -n "${CLICKHOUSE_USER_FILES}" ]; then
+# Dropping such a table closes its handle but leaves the directory, so remove the three this test made,
+# once both drops above have reported success: a stored definition whose `rocksdb_dir` is gone cannot
+# be attached, and a table that fails to attach aborts metadata loading, so the server cannot start.
+if [ -n "${CLICKHOUSE_USER_FILES}" ] && [ "$poc_rc" -eq 0 ] && [ "$victim_rc" -eq 0 ]; then
     rm -rf "${CLICKHOUSE_USER_FILES:?}/${SECRET_DIR}" "${CLICKHOUSE_USER_FILES:?}/${RW_DIR}" \
         "${CLICKHOUSE_USER_FILES:?}/${RESTORE_DIR}" "${CLICKHOUSE_USER_FILES:?}/${MISSING_DIR}"
 fi
