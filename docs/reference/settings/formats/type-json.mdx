@@ -37,6 +37,17 @@ Possible values:
 + 0 — Disable (throw error on type mismatch).
 + 1 — Enable (skip field on type mismatch).
 
+## type_json_skip_null_typed_paths {#type_json_skip_null_typed_paths}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+When enabled, typed paths in JSON columns that have NULL values are treated as absent, matching the behavior of dynamic paths. This affects JSON serialization output, introspection functions like `JSONAllPaths`, `JSONHas`, `JSONExtractRaw`, `has`, and `empty`/`notEmpty` checks.
+
+Possible values:
+
++ 0 — Disable (typed paths are always present, even with NULL values).
++ 1 — Enable (NULL typed paths are treated as absent).
+
 ## type_json_use_partial_match_to_skip_paths_by_regexp {#type_json_use_partial_match_to_skip_paths_by_regexp}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

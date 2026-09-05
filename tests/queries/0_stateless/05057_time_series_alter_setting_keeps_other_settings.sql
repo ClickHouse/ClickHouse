@@ -1,5 +1,7 @@
--- Tags: no-replicated-database
+-- Tags: no-replicated-database, no-parallel-replicas
 -- Tag no-replicated-database: plain `DETACH TABLE` is not allowed there, only `DETACH TABLE PERMANENTLY`.
+-- Tag no-parallel-replicas: the initiator sends the argument of `timeSeriesTags` to the replicas unqualified,
+-- so they look the table up in the `default` database, see https://github.com/ClickHouse/ClickHouse/issues/118130.
 
 SET allow_experimental_time_series_table = 1;
 

@@ -32,6 +32,9 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Planner/PlannerExpressionAnalysis.h>
@@ -47,6 +50,7 @@ namespace Setting
 {
     extern const SettingsBool force_optimize_projection;
     extern const SettingsString preferred_optimize_projection_name;
+    extern const SettingsBool use_statistics_for_min_max_aggregation;
 }
 
 namespace FailPoints
@@ -564,6 +568,29 @@ struct MinMaxProjectionCandidate
     Block block;
 };
 
+/// A min(column) / max(column) / count() aggregate that can be computed from per-part column
+/// statistics (see StatisticsMinMax) for parts that have them materialized.
+struct StatisticsMinMaxAggregate
+{
+    enum class Kind : UInt8
+    {
+        Min,
+        Max,
+        Count,
+    };
+
+    Kind kind;
+
+    /// Physical column the aggregate is computed over (empty for count).
+    String column_name = {};
+
+    /// The Field type the statistics values must have to be exact. Legacy statistics stored
+    /// min/max as Float64 for any column type; such values are rejected as potentially lossy.
+    Field::Types::Which expected_field_type = Field::Types::Null;
+
+    const AggregateDescription * aggregate = nullptr;
+};
+
 struct AggregateProjectionCandidates
 {
     std::vector<AggregateProjectionCandidate> real;
@@ -574,7 +601,131 @@ struct AggregateProjectionCandidates
 
     /// If not empty, try to find exact ranges from parts to speed up trivial count queries.
     String only_count_column;
+
+    /// If not empty, try to answer the aggregation from per-part column statistics.
+    std::vector<StatisticsMinMaxAggregate> statistics_min_max_aggregates;
 };
+
+/// Check if the whole aggregation can be answered from per-part column statistics: there is no
+/// GROUP BY and no filter, and every aggregate is count() or min/max over a physical column
+/// that has statistics with min/max (StatisticsType::MinMax or StatisticsType::Basic) declared
+/// in the table metadata for a type whose min/max these statistics actually track
+/// (canStatisticsTrackMinMax).
+///
+/// Statistics describe the physical rows of a part as they were written, so anything that changes
+/// the visible rows or values at read time disables the optimization: lightweight deletes, pending
+/// ALTER MODIFY/RENAME/DROP COLUMN mutations, the delete bitmap of a unique-key table, and masking
+/// policies.
+/// (Pending data mutations and patch parts are already rejected by canUseProjectionForReadingStep,
+/// and FINAL together with SAMPLE are rejected there as well.)
+static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
+    const AggregatingStep & aggregating,
+    ReadFromMergeTree & reading,
+    const StorageMetadataPtr & metadata,
+    const DAGIndex & query_index,
+    const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::use_statistics_for_min_max_aggregation])
+        return {};
+
+    if (!aggregating.getParams().keys.empty())
+        return {};
+
+    const auto & aggregates = aggregating.getParams().aggregates;
+    if (aggregates.empty())
+        return {};
+
+    const auto & query_info = reading.getQueryInfo();
+    if (query_info.prewhere_info || query_info.row_level_filter || query_info.filter_actions_dag)
+        return {};
+
+    /// TODO(unique-key): the delete bitmap of a unique-key table is applied at read time,
+    /// statistics don't reflect it.
+    if (metadata->hasUniqueKey())
+        return {};
+
+    if (reading.getMergeTreeData().hasEnabledMaskingPolicies(context))
+        return {};
+
+    /// Pending metadata mutations (RENAME/DROP COLUMN) are applied at read time by AlterConversions,
+    /// so the column data (and statistics) physically stored in a part may not belong to the column
+    /// the query reads: `DROP COLUMN b, ADD COLUMN b` must read as the new default, and a name freed
+    /// by a drop can be taken over by a rename (see test 04872).
+    auto mutations_snapshot = reading.getMutationsSnapshot();
+    if (mutations_snapshot->hasLightweightDeletedMask() || mutations_snapshot->hasAlterMutations()
+        || mutations_snapshot->hasMetadataMutations())
+        return {};
+
+    const auto & columns = metadata->getColumns();
+
+    std::vector<StatisticsMinMaxAggregate> result;
+    result.reserve(aggregates.size());
+
+    for (const auto & aggregate : aggregates)
+    {
+        if (!aggregate.parameters.empty())
+            return {};
+
+        if (typeid_cast<const AggregateFunctionCount *>(aggregate.function.get()))
+        {
+            /// Only a bare `count()`: `count(expr)` must still evaluate the argument
+            /// (it can throw), even when the result would be the same row count.
+            if (!aggregate.argument_names.empty())
+                return {};
+
+            result.push_back({.kind = StatisticsMinMaxAggregate::Kind::Count, .aggregate = &aggregate});
+            continue;
+        }
+
+        const auto & function_name = aggregate.function->getName();
+        bool is_min = function_name == "min";
+        if (!is_min && function_name != "max")
+            return {};
+
+        if (aggregate.argument_names.size() != 1)
+            return {};
+
+        auto it = query_index.find(aggregate.argument_names.front());
+        if (it == query_index.end())
+            return {};
+
+        const auto * node = it->second;
+        while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+            node = node->children.front();
+
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            return {};
+
+        const auto * column = columns.tryGet(node->result_name);
+        if (!column || !column->type->equals(*node->result_type)
+            || !column->type->equals(*aggregate.function->getArgumentTypes().front()))
+            return {};
+
+        /// Statistics don't record whether a part contains NULL values, while min/max over
+        /// a Nullable column must skip them, so only plain columns are supported.
+        if (column->type->isNullable() || column->type->lowCardinality())
+            return {};
+
+        if (!column->statistics.types_to_desc.contains(StatisticsType::MinMax)
+            && !column->statistics.types_to_desc.contains(StatisticsType::Basic))
+            return {};
+
+        /// `basic` is declared for every column type, but it records min/max only for numeric-like
+        /// columns, so a `String` column with the default `auto_statistics_types` passes the check
+        /// above while no part will ever provide min/max. Decline here instead of loading the
+        /// estimates of every part before falling back to a normal read.
+        if (!canStatisticsTrackMinMax(column->type))
+            return {};
+
+        result.push_back({
+            .kind = is_min ? StatisticsMinMaxAggregate::Kind::Min : StatisticsMinMaxAggregate::Kind::Max,
+            .column_name = node->result_name,
+            .expected_field_type = column->type->getDefault().getType(),
+            .aggregate = &aggregate});
+    }
+
+    return result;
+}
 
 static AggregateProjectionCandidates getAggregateProjectionCandidates(
     QueryPlan::Node & node,
@@ -700,6 +851,15 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
         }
     }
 
+    /// When no projection can serve the aggregation, try to answer min/max/count directly
+    /// from per-part column statistics.
+    if (allow_implicit_projections && !candidates.minmax_projection && candidates.real.empty()
+        && candidates.only_count_column.empty() && !dag.filter_node)
+    {
+        candidates.statistics_min_max_aggregates
+            = getStatisticsMinMaxAggregates(aggregating, reading, metadata, query_index, context);
+    }
+
     return candidates;
 }
 
@@ -798,6 +958,166 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
 /// Pseudo projection name used to indicate exact count optimization
 static constexpr const char * EXACT_COUNT_PROJECTION_NAME = "_exact_count_projection";
 
+/// Pseudo projection name used to indicate min/max/count aggregation from column statistics
+static constexpr const char * STATISTICS_MIN_MAX_PROJECTION_NAME = "_statistics_min_max_projection";
+
+/// Compute the states of min/max/count aggregate functions over the parts whose column statistics
+/// can answer them exactly, and remove such parts from `remaining_select_result`. Returns a block
+/// with one row of aggregate function states, or an empty block if no part could be covered.
+static Block makeBlockWithMinMaxFromStatistics(
+    const std::vector<StatisticsMinMaxAggregate> & stats_aggregates,
+    ReadFromMergeTree::AnalysisResult & remaining_select_result,
+    const LoggerPtr & logger)
+{
+    std::vector<Field> folded_values(stats_aggregates.size());
+    size_t covered_parts = 0;
+    size_t covered_rows = 0;
+    size_t covered_marks = 0;
+    size_t covered_ranges = 0;
+
+    auto part_covered_by_statistics = [&](const RangesInDataPart & part_with_ranges)
+    {
+        const auto & part = part_with_ranges.data_part;
+
+        /// A lightweight delete mask hides rows that the statistics still account for.
+        if (part->hasLightweightDelete())
+            return false;
+
+        /// Part-level statistics can only answer a full-part read.
+        if (part->index_granularity->getRowsCountInRanges(part_with_ranges.ranges) != part->rows_count)
+            return false;
+
+        /// An empty part has no extremes, but `getExtremes` reports zeros for it. Read it instead;
+        /// it contributes nothing to the result anyway.
+        if (part->rows_count == 0)
+            return false;
+
+        Estimates estimates;
+        try
+        {
+            estimates = part->getEstimates();
+        }
+        catch (const Exception &)
+        {
+            tryLogCurrentException(logger, fmt::format(
+                "Failed to load statistics for part {}, reading it instead", part->name), LogsLevel::debug);
+            return false;
+        }
+
+        std::vector<const Field *> part_values(stats_aggregates.size(), nullptr);
+        for (size_t i = 0; i < stats_aggregates.size(); ++i)
+        {
+            const auto & stats_aggregate = stats_aggregates[i];
+            if (stats_aggregate.kind == StatisticsMinMaxAggregate::Kind::Count)
+                continue;
+
+            auto it = estimates.find(stats_aggregate.column_name);
+            if (it == estimates.end())
+                return false;
+
+            const auto & estimate = it->second;
+
+            /// Statistics that describe a different number of rows than the part cannot be trusted.
+            if (estimate.rows_count != part->rows_count)
+                return false;
+
+            const auto & value = stats_aggregate.kind == StatisticsMinMaxAggregate::Kind::Min
+                ? estimate.estimated_min
+                : estimate.estimated_max;
+
+            /// Reject legacy statistics whose min/max were stored lossy (as Float64 for any column type).
+            if (!value || value->getType() != stats_aggregate.expected_field_type)
+                return false;
+
+            part_values[i] = &*value;
+        }
+
+        for (size_t i = 0; i < stats_aggregates.size(); ++i)
+        {
+            if (!part_values[i])
+                continue;
+
+            auto & folded = folded_values[i];
+            bool is_min = stats_aggregates[i].kind == StatisticsMinMaxAggregate::Kind::Min;
+            const Field & value = *part_values[i];
+
+            /// `min`/`max` skip `NaN` and return it only when every value is `NaN`, and a part
+            /// whose values are all `NaN` reports `NaN` as both of its extremes, so fold the
+            /// per-part extrema with the same rule as `SingleValueDataFixed::setIfGreater`
+            /// and `SingleValueDataFixed::setIfSmaller` instead of the raw `Field` ordering.
+            if (folded.isNull() || isNaNField(folded))
+                folded = value;
+            else if (!isNaNField(value) && (is_min ? value < folded : folded < value))
+                folded = value;
+        }
+
+        ++covered_parts;
+        covered_rows += part->rows_count;
+        covered_marks += part_with_ranges.ranges.getNumberOfMarks();
+        covered_ranges += part_with_ranges.ranges.size();
+        return true;
+    };
+
+    auto & parts_with_ranges = remaining_select_result.parts_with_ranges;
+    std::erase_if(parts_with_ranges, part_covered_by_statistics);
+
+    if (covered_parts == 0)
+        return {};
+
+    remaining_select_result.selected_parts = parts_with_ranges.size();
+    remaining_select_result.selected_marks -= covered_marks;
+    remaining_select_result.selected_rows -= covered_rows;
+    remaining_select_result.selected_ranges -= covered_ranges;
+    /// The original result may have exceeded_row_limits set because the full table scan was over
+    /// the limit. The reduced result will be re-checked during execution.
+    remaining_select_result.exceeded_row_limits = false;
+
+    auto & stat = remaining_select_result.projection_stats.emplace_back();
+    stat.name = STATISTICS_MIN_MAX_PROJECTION_NAME;
+    stat.selected_parts = covered_parts;
+    stat.selected_marks = covered_marks;
+    stat.selected_ranges = covered_ranges;
+    stat.selected_rows = covered_rows;
+    stat.filtered_parts = covered_parts;
+    stat.description = fmt::format(
+        "Min/max aggregation from column statistics is applied: {} parts with {} rows are answered from statistics. Remaining parts to read: {}",
+        covered_parts, covered_rows, parts_with_ranges.size());
+    LOG_DEBUG(logger, "{}", stat.description);
+
+    Block block;
+    for (size_t i = 0; i < stats_aggregates.size(); ++i)
+    {
+        const auto & stats_aggregate = stats_aggregates[i];
+        const auto & function = stats_aggregate.aggregate->function;
+
+        auto column = ColumnAggregateFunction::create(function);
+        Arena & arena = column->createOrGetArena();
+        auto * place = arena.alignedAlloc(function->sizeOfData(), function->alignOfData());
+        function->create(place);
+
+        if (stats_aggregate.kind == StatisticsMinMaxAggregate::Kind::Count)
+        {
+            AggregateFunctionCount::set(place, covered_rows);
+        }
+        else
+        {
+            chassert(!folded_values[i].isNull());
+            auto value_column
+                = function->getArgumentTypes().front()->createColumnConst(1, folded_values[i])->convertToFullColumnIfConst();
+            const auto * value_column_ptr = value_column.get();
+            function->add(place, &value_column_ptr, 0, &arena);
+        }
+
+        column->insertFrom(place);
+        block.insert(ColumnWithTypeAndName(
+            std::move(column),
+            std::make_shared<DataTypeAggregateFunction>(function, function->getArgumentTypes(), stats_aggregate.aggregate->parameters),
+            stats_aggregate.aggregate->column_name));
+    }
+
+    return block;
+}
+
 std::optional<String> optimizeUseAggregateProjections(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
@@ -815,6 +1135,10 @@ std::optional<String> optimizeUseAggregateProjections(
         return {};
 
     if (aggregating && !aggregating->canUseProjection())
+        return {};
+
+    /// A merge-only step already consumes aggregate states; requesting projection merge mode for it again makes no sense.
+    if (aggregating && aggregating->getParams().only_merge)
         return {};
 
     QueryPlan::Node * reading_node = findReadingStep(*node.children.front());
@@ -860,11 +1184,31 @@ std::optional<String> optimizeUseAggregateProjections(
 
     /// Stores row count from exact ranges of parts.
     size_t exact_count = 0;
+    /// Stores one row of min/max/count aggregate function states computed from column statistics.
+    Block statistics_min_max_block;
     ReadFromMergeTree::AnalysisResultPtr parent_reading_select_result;
     ReadFromMergeTree::AnalysisResultPtr inexact_ranges_select_result;
     if (candidates.minmax_projection)
     {
         best_candidate = &candidates.minmax_projection->candidate;
+    }
+    else if (!candidates.statistics_min_max_aggregates.empty())
+    {
+        parent_reading_select_result = reading->getAnalyzedResult();
+        if (!parent_reading_select_result)
+            parent_reading_select_result = reading->selectRangesToRead(false);
+
+        if (parent_reading_select_result->parts_with_ranges.empty())
+            return {};
+
+        /// Copy parent analysis result to isolate modifications. This result will store the
+        /// remaining parts (without statistics), to be used for normal reading.
+        inexact_ranges_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>(*parent_reading_select_result);
+        statistics_min_max_block = makeBlockWithMinMaxFromStatistics(
+            candidates.statistics_min_max_aggregates, *inexact_ranges_select_result, logger);
+
+        if (statistics_min_max_block.empty())
+            return {};
     }
     else if (!candidates.real.empty() || !candidates.only_count_column.empty())
     {
@@ -1120,6 +1464,28 @@ std::optional<String> optimizeUseAggregateProjections(
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         has_parent_parts = false;
         short_circuited_with_prepared_source = true;
+    }
+    else if (!statistics_min_max_block.empty())
+    {
+        /// Min/max/count aggregation from column statistics: like the exact count optimization
+        /// below, the block with aggregate function states is a prepared source, and the parts
+        /// without statistics (if any) are read normally.
+        /// When parallel replicas is enabled, only the initiator should read the block to avoid data duplication.
+        chassert(inexact_ranges_select_result);
+
+        Pipe pipe;
+        if (!is_parallel_reading_on_remote_replicas)
+            pipe = Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(statistics_min_max_block))));
+        else
+            pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(statistics_min_max_block.cloneEmpty())));
+        projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+
+        selected_projection_name = STATISTICS_MIN_MAX_PROJECTION_NAME;
+        has_parent_parts = !inexact_ranges_select_result->parts_with_ranges.empty();
+        if (has_parent_parts)
+            reading->setAnalyzedResult(std::move(inexact_ranges_select_result));
+        else
+            short_circuited_with_prepared_source = true;
     }
     else if (best_candidate == nullptr)
     {

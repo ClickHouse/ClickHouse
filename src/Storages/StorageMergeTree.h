@@ -274,6 +274,17 @@ private:
     UInt64 getCurrentMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
     UInt64 getNextMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
+    /// A merge writes its result with the column names of the current metadata, so it materializes
+    /// every pending metadata mutation (`RENAME COLUMN`, `DROP COLUMN`) by itself. Returns the
+    /// mutation version the result part has to carry so that those mutations are not applied to it a
+    /// second time, or `nullopt` when the merge must not run at all. `partition_id` is the partition
+    /// of the result part: a pending command scoped to another partition is never applied to it and
+    /// so does not stand in the way. See #111001.
+    std::optional<Int64> getMutationVersionForMergedPart(
+        Int64 sources_data_version,
+        const String & partition_id,
+        std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
+
     /// Returns the maximum level and the maximum mutation version of the outdated parts in a range
     /// (left; right) whose creation was not rolled back, or zeros in case if empty range.
     /// Merges have to be aware of the outdated part's levels and mutation versions inside designated merge range.

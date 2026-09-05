@@ -53,6 +53,9 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageTimeSeries.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 
 #include <Interpreters/Context.h>
@@ -203,6 +206,37 @@ namespace fs = std::filesystem;
 
 namespace
 {
+
+/// How many tables a single `CREATE` adds to the database. Usually one, but the engines with
+/// hidden inner tables (`MaterializedView`, `TimeSeries`) issue nested internal `CREATE`s from
+/// their constructors, before the outer object itself is attached. The whole group must be
+/// accounted for in the `max_tables` check at once: otherwise the inner tables are created first
+/// and the outer attach is then rejected by the quota, leaving them behind.
+size_t getNumberOfTablesToCreate(const ASTCreateQuery & create, LoadingStrictnessLevel mode)
+{
+    /// On `ATTACH` the inner tables already exist and are attached by their own queries.
+    if (mode >= LoadingStrictnessLevel::ATTACH)
+        return 1;
+
+    size_t result = 1;
+
+    if (create.is_materialized_view_with_inner_table())
+        ++result;
+
+    if (create.is_time_series_table)
+    {
+        for (auto target_kind : StorageTimeSeries::getTargetKinds())
+        {
+            /// The recent samples target exists only if the create query has a `RECENT SAMPLES` clause.
+            if ((target_kind == ViewTarget::RecentSamples) && (!create.targets || !create.targets->tryGetTarget(target_kind)))
+                continue;
+            if (!create.hasTargetTableID(target_kind))
+                ++result;
+        }
+    }
+
+    return result;
+}
 
 /// Substitutes SQL UDFs the way `createTable` does, but never into an engine: an engine is an
 /// `ASTFunction` too, and a UDF may carry an engine's name, so substituting there would replace the
@@ -2467,6 +2501,12 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (!internal && is_initial_query && !is_predefined_database)
         throwIfTooManyEntities(create);
 
+    /// Check the per-database `max_tables` limit before constructing the storage: the storage
+    /// constructor can already create data on disk, as well as the hidden inner tables of a view,
+    /// and all of that would be left behind if the table were rejected later.
+    if (const auto * database_on_disk = dynamic_cast<const DatabaseOnDisk *>(database.get()))
+        database_on_disk->checkTablesLimit(getNumberOfTablesToCreate(create, mode));
+
     StoragePtr res;
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
@@ -3440,6 +3480,12 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
     /// For CREATE query generate UUID on initiator, so it will be the same on all hosts.
     /// It will be ignored if database does not support UUIDs.
     create.generateRandomUUIDs();
+
+    /// With an old DDL entry format the query is shipped un-normalized, so hosts running different releases
+    /// of ClickHouse would pin different latest versions. Pin the initiator's one here, like the UUIDs above.
+    /// A query with an AS clause is left alone: the hosts take the settings, including the version, from the other table.
+    if (create.is_time_series_table && create.as_table.empty() && !hasExplicitTimeSeriesSettingVersion(create))
+        setTimeSeriesSettingVersion(create, TimeSeriesVersion::LATEST);
 
     /// For cross-replication cluster we cannot use UUID in replica path.
     String cluster_name_expanded = local_context->getMacros()->expand(cluster_name);

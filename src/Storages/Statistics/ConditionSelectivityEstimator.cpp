@@ -269,6 +269,11 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     Field const_value;
     DataTypePtr const_type;
     String column_name;
+    /// Set when the right-hand side of IN / NOT IN is a prepared set whose ranges we can share.
+    /// The ranges themselves are pulled only at the point of use: the checks below can still reject
+    /// the atom (e.g. the left side is an expression rather than a column), and deriving them for an
+    /// atom we then discard is exactly the work this reuse is meant to avoid.
+    SetPtr set_for_ranges;
     DataTypePtr column_type;
 
     if (node.isFunction())
@@ -370,11 +375,10 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     return false;
                 }
 
-                Tuple tuple(columns[0]->size());
-                for (size_t i = 0; i < columns[0]->size(); ++i)
-                    tuple[i] = (*columns[0])[i];
-
-                const_value = std::move(tuple);
+                /// Take the set's shared range view instead of copying every element into a `Tuple`
+                /// only to turn it back into ranges below: for a large set that dominates planning,
+                /// and each consumer of the same set derives an identical result.
+                set_for_ranges = prepared_set;
                 column_name = func.getArgumentAt(0).getColumnName();
             }
             else if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
@@ -512,6 +516,22 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                         const_value = converted;
                     }
                 }
+            }
+
+            /// Every check that could reject this atom has passed, so the ranges will actually be used.
+            if (set_for_ranges)
+            {
+                auto set_ranges = set_for_ranges->getPlainRanges();
+                if (!set_ranges)
+                    return false;
+
+                chassert(is_in_operator);
+                out.function = RPNElement::FUNCTION_IN_RANGE;
+                if (func_name == "in")
+                    out.column_ranges.emplace(column_name, *set_ranges);
+                else
+                    out.column_not_ranges.emplace(column_name, *set_ranges);
+                return true;
             }
 
             /// The atom handlers for IN / NOT IN expect a Tuple but we may have parsed a single scalar in the case of IN (single_value).

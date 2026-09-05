@@ -82,6 +82,7 @@ namespace DatabaseMetadataDiskSetting
 {
 extern const DatabaseMetadataDiskSettingsBool lazy_load_tables;
 extern const DatabaseMetadataDiskSettingsString disk;
+extern const DatabaseMetadataDiskSettingsUInt64 max_tables;
 }
 
 
@@ -113,6 +114,8 @@ DatabaseOrdinary::DatabaseOrdinary(
         metadata_disk_ptr = getContext()->getDisk(database_metadata_disk_settings[DatabaseMetadataDiskSetting::disk].value);
     else
         metadata_disk_ptr = getContext()->getDatabaseDisk();
+
+    max_tables = database_metadata_disk_settings[DatabaseMetadataDiskSetting::max_tables].value;
 
     LOG_INFO(log, "Metadata disk {}, path {}", metadata_disk_ptr->getName(), metadata_disk_ptr->getPath());
 }
@@ -383,7 +386,7 @@ void DatabaseOrdinary::loadTableFromMetadata(
     chassert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
     const auto & query = ast->as<const ASTCreateQuery &>();
 
-    if (shouldLazyLoad(query, mode))
+    if (shouldLazyLoad(query, name, mode))
     {
         loadTableLazy(local_context, name, ast, mode);
         return;
@@ -434,7 +437,16 @@ void DatabaseOrdinary::loadTableFromMetadata(
     }
 }
 
-bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStrictnessLevel mode) const
+/// These engines run their ingestion in a background job that only `startup` starts.
+static bool isPushSourceEngine(const String & engine_name)
+{
+    static const std::unordered_set<std::string_view> push_source_engines
+        = {"Kafka", "RabbitMQ", "NATS", "FileLog", "S3Queue", "AzureQueue"};
+
+    return push_source_engines.contains(engine_name);
+}
+
+bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const
 {
     if (!database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
         return false;
@@ -450,6 +462,21 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStric
 
     /// Already handled by `StorageTableFunctionProxy`.
     if (query.as_table_function)
+        return false;
+
+    /// A push source starts the background job that feeds its materialized views in its own `startup`,
+    /// which the lazy stand-in never calls: nothing reads such a table directly, so the consumer would
+    /// never start and the ingestion would stall silently until the table is read by hand. Load it
+    /// eagerly, as views are - but only when it really has a materialized view to feed, so that an
+    /// unused source table still costs nothing to load.
+    ///
+    /// `TablesLoader` publishes the view dependencies of everything it is about to load into
+    /// `DatabaseCatalog` before it creates the loading jobs, so the graph is already complete here,
+    /// and it also holds the views of the databases that were loaded earlier. A view created later
+    /// resolves its source table, and that materializes and starts up the stand-in on the spot,
+    /// through `StorageProxy::getStorageSnapshot`.
+    if (query.storage && query.storage->engine && isPushSourceEngine(query.storage->engine->name)
+        && !DatabaseCatalog::instance().getDependentViews(StorageID{name}).empty())
         return false;
 
     if (mode == LoadingStrictnessLevel::FORCE_RESTORE)

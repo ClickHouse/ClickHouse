@@ -36,6 +36,10 @@ class _Environment(MetaClasses.Serializable):
     FORK_NAME: str
     COMMIT_MESSAGE: str = ""
     EVENT_ACTION: str = ""
+    # `created_at` of this workflow run, resolved once by the config job (see
+    # native_jobs._config_workflow) and inherited by every other job with this
+    # environment, so all of them agree on when the run started.
+    WORKFLOW_START_TIME: str = ""
     # merged PR for "push" or "merge_group" workflow
     LINKED_PR_NUMBER: int = 0
     LOCAL_RUN: bool = False

@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnConst.h>
@@ -3816,14 +3817,15 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
             if (!removes_filter)
             {
                 /// Preserve the original type if the column is needed in the result.
-                if (isFloat(removeLowCardinalityAndNullable(child->result_type)))
+                /// A cast alone is not enough: `and` implicitly converts its arguments to booleans,
+                /// while a cast maps values like 256 or 0.1 to 0, which is inconsistent with e.g. "1 and 256".
+                /// Only `Bool` is known to hold normalized values; a plain `UInt8` column can hold e.g. 2.
+                if (!isBool(removeLowCardinalityAndNullable(child->result_type)))
                 {
-                    /// For floating point types, it's not enough to cast to just UInt8.
-                    /// Because counstants like 0.1 will be casted to 0, which is inconsistent with e.g. "1 and 0.1"
-                    DataTypePtr cast_type = DataTypeFactory::instance().get("Bool");
-                    if (isNullableOrLowCardinalityNullable(child->result_type))
-                        cast_type = std::make_shared<DataTypeNullable>(std::move(cast_type));
-                    child = &addCast(*child, cast_type, {}, nullptr);
+                    auto uint8_type = std::make_shared<DataTypeUInt8>();
+                    const auto & true_node = addColumn(uint8_type->createColumnConst(0, 1), uint8_type, "true");
+                    FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+                    child = &addFunction(func_builder_and, {child, &true_node}, {});
                 }
 
                 if (!child->result_type->equals(*predicate->result_type))

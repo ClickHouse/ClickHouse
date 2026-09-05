@@ -15,20 +15,36 @@ set -euo pipefail
 #
 # PRs are processed in priority order within each round. First every PR carrying
 # the `blocker` label is processed; only once a full pass over them makes no
-# progress does the round move on to the PRs labeled `pr-critical-bugfix`, and
-# only once those likewise make no progress does it process the rest. As soon as
-# a priority makes progress the round stops there, and the next round starts over
+# progress does the round move on to the PRs labeled `pr-critical-bugfix`, then
+# to the PRs that have been approved by a reviewer at least once (any review in
+# the APPROVED state, even if it was later followed by more commits), and only
+# once those likewise make no progress does it process the rest. As soon as a
+# priority makes progress the round stops there, and the next round starts over
 # from the `blocker` PRs, so the highest-priority work is always revisited first.
 # "Progress" means a PR was pushed, merged or closed; a PR that only needs a
 # human decision (NEEDS-ATTENTION) or that failed / timed out does not count as
 # progress, so a stuck PR never starves the lower priorities.
+#
+# Before a priority tier is handed to the workers, every PR in it is inspected
+# through the GitHub GraphQL API: aggregate CI status, mergeability, the number
+# of unresolved review threads, whether a reviewer requested changes, the age
+# of the last commit, and comments from other people since that commit. A green
+# CI is therefore never a reason to leave a PR alone: a green PR that still has
+# conflicts, unresolved review threads, a stale branch or unanswered comments is
+# handed to a worker together with that list, so the worker addresses exactly
+# those items instead of declaring the PR done. Only a PR whose inspection finds
+# nothing pending at all is reported as GREEN and not dispatched; if the
+# inspection itself fails, the PR is dispatched as if nothing were known.
 #
 # Output is intentionally terse: one line when a PR is assigned to a worker, and
 # when it finishes a status line plus a one-to-two sentence summary of what was
 # done. The finish status is one of:
 #   PUSHED          - the worker pushed new commits (the PR head advanced)
 #   MERGED / CLOSED - the PR's state changed
-#   NO-CHANGE       - clean run, nothing pushed (e.g. already green / nothing to do)
+#   NO-CHANGE       - clean run, nothing pushed (the worker found nothing to do)
+#   GREEN           - not dispatched: the inspection found nothing pending (CI
+#                     green, mergeable, no unresolved threads, fresh, no new
+#                     comments from others)
 #   NEEDS-ATTENTION - clean run, nothing pushed, but still CONFLICTING: needs a
 #                     human decision (resolve a huge conflict, or close as obsolete)
 #   FAILED / TIMEOUT - the worker errored or hit the per-PR timeout
@@ -117,7 +133,13 @@ set -euo pipefail
 #   Set CONTINUE_ALL_PRS_PRS_FILE=<file> to read the PR list from a file instead
 #   of querying GitHub. Each line is "<number>\t<title>", optionally followed by
 #   a third tab-separated column of comma-separated labels
-#   ("<number>\t<title>\t<label>,<label>,...") used to assign the priority tier.
+#   ("<number>\t<title>\t<label>,<label>,...") used to assign the priority tier,
+#   and a fourth column of comma-separated inspection facts standing in for the
+#   GraphQL inspection: "approved", "ci=<SUCCESS|FAILURE|PENDING|...>",
+#   "mergeable=<MERGEABLE|CONFLICTING|UNKNOWN>", "unresolved=<N>",
+#   "review=<CHANGES_REQUESTED|APPROVED|...>", "age=<days since last commit>",
+#   "comments=<new comments from others since the last commit>". A PR without
+#   that column counts as not inspected: not approved, and always dispatched.
 #   Set CONTINUE_ALL_PRS_MIN_FREE_GB=<integer> to override the minimum free
 #   disk space maintained by worktree cleanup (default: 100).
 
@@ -142,6 +164,12 @@ WORKTREE_BASE=""
 TIMEOUT=7200
 MAX_CONTINUE=4
 RELATED_STALE_DAYS=7   # a "related" PR is processed only if nobody but me has acted within this many days
+STALE_BRANCH_DAYS=7    # a green PR whose last commit is older than this needs the base branch merged in
+INSPECT_TTL=600        # re-inspect a tier's PRs if the facts are older than this many seconds
+INSPECT_BATCH=20       # PRs per GraphQL inspection query
+MERGEABLE_RETRIES=3    # GitHub computes mergeability lazily; re-query UNKNOWN ones this many times
+declare -A PR_FACTS    # PR number -> comma-separated inspection facts (see inspect_prs)
+INSPECTED_AT=0         # epoch seconds of the last inspection pass
 ONCE=0
 SKIP_SUBMODULES=0
 COLOR_WHEN="auto"
@@ -990,6 +1018,7 @@ cleanup()
     status_stop   # reset the scroll region and kill the updater first
     [[ -n "${QUEUEFILE:-}" ]] && rm -f "$QUEUEFILE" "$QUEUEFILE.tmp" 2>/dev/null || true
     [[ -n "${LOCKFILE:-}" ]] && rm -f "$LOCKFILE" 2>/dev/null || true
+    [[ -n "${DISPATCHFILE:-}" ]] && rm -f "$DISPATCHFILE" 2>/dev/null || true
     rm -f "$STATSLOCK" "$STATSFILE.tmp" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -1014,7 +1043,7 @@ NUDGE_PROMPT="Continue where you left off and finish the task. Reminder: do not 
 # the exit code of the last turn (124 if the time budget was exhausted).
 run_continue_pr()
 {
-    local wt="$1" number="$2" log="$3"
+    local wt="$1" number="$2" log="$3" hint="${4:-}"
     local url="https://github.com/$REPO/pull/$number"
     local sid deadline iter ec now remaining build_steer prompt usage codex_home
     local -a codex_env
@@ -1031,6 +1060,8 @@ run_continue_pr()
     # Steer the worker to a persistent, ccache-backed build directory in this
     # worktree so rebuilds are incremental instead of cold each pass.
     build_steer="A persistent, ccache-backed build directory for this worktree is at ${wt}/build. Reuse it for any build - do not delete it; let ninja rebuild incrementally - and build only the affected targets. ccache is shared and warm across all workers (CCACHE_DIR=${CCACHE_DIR}), so a rebuild after merging master should be far faster than a cold build; never run a full from-scratch rebuild when an incremental one suffices."
+    # The orchestrator's pre-check (what is pending on this PR), if any.
+    [[ -n "$hint" ]] && build_steer="$build_steer $hint"
     deadline=$(( $(date +%s) + TIMEOUT ))
     iter=0
     ec=0
@@ -1184,7 +1215,7 @@ process_pr()
             --jq '.headRefOid' 2>/dev/null || echo "")
 
         if (( ec == 0 )); then
-            run_continue_pr "$wt" "$number" "$log" || ec=$?
+            run_continue_pr "$wt" "$number" "$log" "$(pr_hint "${PR_FACTS[$number]:-}")" || ec=$?
         fi
 
         # Detach HEAD so the PR branch isn't held by this worktree, letting a
@@ -1329,14 +1360,251 @@ load_excluded_authors()
 }
 
 # Map a PR's comma-separated label list to its priority tier: 0 for `blocker`,
-# 1 for `pr-critical-bugfix`, 2 for everything else (blocker wins if both apply).
+# 1 for `pr-critical-bugfix`, 3 for everything else (blocker wins if both apply).
+# Tier 2 (approved by a reviewer at least once) is not label-based; it is
+# assigned later by apply_approval_priority from the inspection facts.
 pr_priority()
 {
     case ",$1," in
         *,blocker,*)            printf '0' ;;
         *,pr-critical-bugfix,*) printf '1' ;;
-        *)                      printf '2' ;;
+        *)                      printf '3' ;;
     esac
+}
+
+# ----------------------------------------------------------------------------
+# PR inspection. One GraphQL query per INSPECT_BATCH PRs collects, for each PR,
+# the facts that decide its tier and whether it needs a worker at all:
+#   approved              a review in the APPROVED state exists (ever)
+#   ci=<state>            aggregate status of the head commit's checks
+#                         (SUCCESS, FAILURE, PENDING, ERROR, EXPECTED, NONE)
+#   mergeable=<state>     MERGEABLE, CONFLICTING or UNKNOWN
+#   unresolved=<N>        unresolved review threads ("?" if there are more
+#                         threads than one page and none of the first page is
+#                         unresolved, so the count is not known)
+#   review=<decision>     reviewDecision when the repository reports one
+#   age=<days>            days since the head commit was committed
+#   comments=<N>          comments by people other than the PR author, me and
+#                         bots since the head commit (the last 20 comments are
+#                         considered)
+# The facts are stored in PR_FACTS, comma-separated. A PR whose inspection
+# fails is left without facts and treated as not inspected: it is dispatched
+# unconditionally and its tier stays label-based.
+# ----------------------------------------------------------------------------
+
+# GitHub reports `mergeable=UNKNOWN` until a background job has computed it; the
+# query itself triggers that job, so the UNKNOWN ones are re-queried a few times.
+# inspect_prs <newline-separated PR numbers>
+inspect_prs()
+{
+    local numbers="$1" attempt pending number facts
+    INSPECTED_AT=$(date +%s)
+
+    if [[ -n "${CONTINUE_ALL_PRS_PRS_FILE:-}" ]]; then
+        inspect_prs_from_file "$numbers"
+        return 0
+    fi
+
+    pending="$numbers"
+    for (( attempt = 0; attempt <= MERGEABLE_RETRIES; attempt++ )); do
+        [[ -n "$pending" ]] || break
+        (( attempt > 0 )) && sleep 5
+        inspect_prs_graphql "$pending"
+        pending=""
+        while IFS= read -r number; do
+            [[ -n "$number" ]] || continue
+            facts="${PR_FACTS[$number]:-}"
+            if [[ ",$facts," == *,mergeable=UNKNOWN,* ]]; then
+                pending+="$number"$'\n'
+            fi
+        done <<< "$numbers"
+    done
+}
+
+# Fetch the facts of the given PRs in batches; leaves PR_FACTS untouched for a
+# PR whose query failed (and reports the failure).
+inspect_prs_graphql()
+{
+    local numbers="$1" batch="" count=0 number
+    while IFS= read -r number; do
+        [[ -n "$number" ]] || continue
+        batch+="$number"$'\n'
+        count=$(( count + 1 ))
+        if (( count == INSPECT_BATCH )); then
+            inspect_batch "$batch"
+            batch=""; count=0
+        fi
+    done <<< "$numbers"
+    [[ -n "$batch" ]] && inspect_batch "$batch"
+    return 0
+}
+
+inspect_batch()
+{
+    local batch="$1" number query result facts owner name
+    owner="${REPO%%/*}"; name="${REPO#*/}"
+
+    query="query {"
+    query+=" repository(owner: \"$owner\", name: \"$name\") {"
+    while IFS= read -r number; do
+        [[ "$number" =~ ^[0-9]+$ ]] || continue
+        query+=" p$number: pullRequest(number: $number) { ...F }"
+    done <<< "$batch"
+    query+=" } }"
+    query+=' fragment F on PullRequest {
+        number mergeable reviewDecision
+        author { login }
+        approvals: reviews(states: APPROVED, first: 1) { totalCount }
+        reviewThreads(first: 100) { pageInfo { hasNextPage } nodes { isResolved } }
+        commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }
+        comments(last: 20) { nodes { author { __typename login } createdAt } }
+    }'
+
+    if ! result=$(gh api graphql -f query="$query" 2>&1); then
+        banner "PR inspection failed for $(printf '%s\n' "$batch" | grep -c .) PR(s); dispatching them uninspected: ${result//$'\n'/ }"
+        return 0
+    fi
+
+    # One "<number>\t<facts>" line per PR that came back.
+    while IFS=$'\t' read -r number facts; do
+        [[ -n "$number" ]] || continue
+        PR_FACTS[$number]="$facts"
+    done < <(printf '%s' "$result" | jq -r --arg me "$GH_USER" '
+        (.data.repository // {}) | to_entries[] | .value | select(. != null)
+        | (.commits.nodes[0].commit // {}) as $head
+        | ($head.committedDate // "") as $committed
+        | (.author.login // "") as $author
+        | ([.reviewThreads.nodes[] | select(.isResolved | not)] | length) as $unresolved
+        | [ (if (.approvals.totalCount // 0) > 0 then "approved" else empty end),
+            "ci=\($head.statusCheckRollup.state // "NONE")",
+            "mergeable=\(.mergeable // "UNKNOWN")",
+            (if $unresolved == 0 and .reviewThreads.pageInfo.hasNextPage then "unresolved=?"
+             else "unresolved=\($unresolved)" end),
+            (if .reviewDecision != null then "review=\(.reviewDecision)" else empty end),
+            (if $committed == "" then "age=?"
+             else "age=\(((now - ($committed | fromdateiso8601)) / 86400) | floor)" end),
+            "comments=\([.comments.nodes[]
+                          | select(.author.__typename != "Bot"
+                                   and .author.login != $me
+                                   and .author.login != $author
+                                   and .createdAt > $committed)] | length)"
+          ] as $facts
+        | "\(.number)\t\($facts | join(","))"')
+}
+
+# File mode (CONTINUE_ALL_PRS_PRS_FILE): the facts are the optional fourth
+# tab-separated column of the PR's line.
+inspect_prs_from_file()
+{
+    local numbers="$1" n facts
+    while IFS=$'\t' read -r n facts; do
+        [[ -n "$n" && -n "$facts" ]] || continue
+        if grep -qx -- "$n" <<< "$numbers"; then
+            PR_FACTS[$n]="$facts"
+        fi
+    done < <(awk -F'\t' '$1 != "" && $4 != "" { print $1 "\t" $4 }' "$CONTINUE_ALL_PRS_PRS_FILE")
+}
+
+# Move the label-wise "other" PRs (tier 3) that a reviewer has approved at least
+# once into tier 2. Reads and prints "<number>\t<priority>\t<title>" lines.
+apply_approval_priority()
+{
+    local number priority title
+    while IFS=$'\t' read -r number priority title; do
+        [[ -n "$number" ]] || continue
+        if (( priority == 3 )) && [[ ",${PR_FACTS[$number]:-}," == *,approved,* ]]; then
+            priority=2
+        fi
+        printf '%s\t%s\t%s\n' "$number" "$priority" "$title"
+    done
+}
+
+# Print what the inspection found pending for a PR, "; "-separated, or nothing
+# when the PR is green and clean. A fact that is unknown counts as pending, so
+# an uninspected PR is always dispatched. pr_pending_items <facts>
+pr_pending_items()
+{
+    local facts="$1" tok ci="" mergeable="" unresolved="" review="" age="" comments=""
+    local -a toks=() items=()
+    if [[ -z "$facts" ]]; then
+        printf 'not inspected'
+        return 0
+    fi
+    IFS=, read -ra toks <<< "$facts"
+    for tok in "${toks[@]}"; do
+        case "$tok" in
+            ci=*)         ci="${tok#*=}" ;;
+            mergeable=*)  mergeable="${tok#*=}" ;;
+            unresolved=*) unresolved="${tok#*=}" ;;
+            review=*)     review="${tok#*=}" ;;
+            age=*)        age="${tok#*=}" ;;
+            comments=*)   comments="${tok#*=}" ;;
+        esac
+    done
+    case "$ci" in
+        SUCCESS) ;;
+        "")      items+=("CI status unknown") ;;
+        *)       items+=("CI is $ci") ;;
+    esac
+    case "$mergeable" in
+        MERGEABLE)   ;;
+        CONFLICTING) items+=("conflicts with the base branch") ;;
+        *)           items+=("mergeability unknown - check for conflicts") ;;
+    esac
+    case "$unresolved" in
+        0)  ;;
+        ""|"?") items+=("unresolved review threads could not be counted - check them") ;;
+        *)  items+=("$unresolved unresolved review thread(s)") ;;
+    esac
+    [[ "$review" == CHANGES_REQUESTED ]] && items+=("a reviewer requested changes")
+    if ! [[ "$age" =~ ^[0-9]+$ ]]; then
+        items+=("last commit date unknown - check whether the base branch must be merged")
+    elif (( age > STALE_BRANCH_DAYS )); then
+        items+=("last commit $age days ago - merge the base branch")
+    fi
+    if ! [[ "$comments" =~ ^[0-9]+$ ]]; then
+        items+=("recent comments unknown - check for unanswered ones")
+    elif (( comments > 0 )); then
+        items+=("$comments new comment(s) from others since the last commit")
+    fi
+    local out="" item
+    for item in "${items[@]}"; do
+        out+="${out:+; }$item"
+    done
+    printf '%s' "$out"
+}
+
+# The one-line pre-check summary handed to the worker; nothing for a PR that
+# was not inspected or has nothing pending. pr_hint <facts>
+pr_hint()
+{
+    local facts="$1" pending
+    [[ -n "$facts" ]] || return 0
+    pending=$(pr_pending_items "$facts")
+    [[ -n "$pending" ]] || return 0
+    printf 'Orchestrator pre-check of this PR from the GitHub API at the start of this pass (facts: %s). Pending: %s. A green CI does not make the PR done: work through every pending item - resolve conflicts and merge the base branch, address each unresolved review thread, reply to the new comments - and re-check the live PR state yourself, since these facts may have aged.' \
+        "$facts" "$pending"
+}
+
+# Write the "<number>\t<title>" lines of the PRs that need a worker to the file
+# given as the second argument; the PRs with nothing pending are reported as
+# GREEN (on stdout, like the worker status lines) and left out.
+# dispatchable_prs <lines> <output-file>
+dispatchable_prs()
+{
+    local lines="$1" out="$2" number title facts pending ts
+    : > "$out"
+    while IFS=$'\t' read -r number title; do
+        [[ -n "$number" ]] || continue
+        facts="${PR_FACTS[$number]:-}"
+        pending=$(pr_pending_items "$facts")
+        if [[ -z "$pending" ]]; then
+            ts=$(date +%H:%M:%S)
+            emit "$(pr_color_seq "$number")" "$ts  ..  GREEN     PR #$number  $title  --  nothing pending ($facts)"
+            continue
+        fi
+        printf '%s\t%s\n' "$number" "$title" >> "$out"
+    done <<< "$lines"
 }
 
 # Emit the PR list as "<number>\t<priority>\t<title>" lines, oldest first. The
@@ -1345,12 +1613,14 @@ fetch_prs()
 {
     if [[ -n "${CONTINUE_ALL_PRS_PRS_FILE:-}" ]]; then
         # File lines are "<number>\t<title>" with an optional third
-        # "<label>,<label>,..." column used only to assign the priority tier.
+        # "<label>,<label>,..." column used only to assign the priority tier
+        # (and a fourth facts column read by inspect_prs_from_file). awk splits
+        # the columns because `read` with a tab IFS collapses empty ones.
         local n t labels
-        while IFS=$'\t' read -r n t labels || [[ -n "$n" ]]; do
+        while IFS=$'\t' read -r n labels t; do
             [[ -n "$n" ]] || continue
             printf '%s\t%s\t%s\n' "$n" "$(pr_priority "$labels")" "$t"
-        done < "$CONTINUE_ALL_PRS_PRS_FILE"
+        done < <(awk -F'\t' '$1 != "" { print $1 "\t" ($3 == "" ? "-" : $3) "\t" $2 }' "$CONTINUE_ALL_PRS_PRS_FILE")
         return 0
     fi
 
@@ -1394,7 +1664,7 @@ fetch_prs()
                   always:    (any(.[]; .always)),
                   priority:  (if   ($names | index("blocker"))            then 0
                               elif ($names | index("pr-critical-bugfix")) then 1
-                              else 2 end) })
+                              else 3 end) })
         | sort_by(.updatedAt)
         | .[] | [ .number, (.always | tostring), .author, .updatedAt, (.priority | tostring), .title ] | @tsv' )
 
@@ -1430,8 +1700,10 @@ maybe_color_hint
 load_excluded_authors
 
 # Priority tiers processed highest-first each round (see the header comment).
-# Index i names priority i, as assigned by pr_priority / fetch_prs.
-PRIORITY_NAMES=("blocker" "pr-critical-bugfix" "other")
+# Index i names priority i, as assigned by pr_priority / fetch_prs and
+# apply_approval_priority.
+PRIORITY_NAMES=("blocker" "pr-critical-bugfix" "approved" "other")
+PRIORITY_ORDER="${PRIORITY_NAMES[0]} > ${PRIORITY_NAMES[1]} > ${PRIORITY_NAMES[2]} > ${PRIORITY_NAMES[3]}"
 
 modes=()
 (( MODE_MINE ))     && modes+=("mine")
@@ -1445,7 +1717,7 @@ banner "Workers:         $WORKERS"
 banner "Worktree base:   ${WORKTREE_BASE}-{0..$((WORKERS - 1))}"
 [[ -n "$GH_USER" ]] && banner "GitHub user:     $GH_USER"
 banner "Selecting:       $MODES_DESC"
-banner "Priority order:  ${PRIORITY_NAMES[0]} > ${PRIORITY_NAMES[1]} > ${PRIORITY_NAMES[2]}"
+banner "Priority order:  ${PRIORITY_ORDER}"
 (( MODE_RELATED )) && (( ${#EXCLUDED_AUTHOR[@]} )) && banner "Excluded (related): ${!EXCLUDED_AUTHOR[*]}"
 banner "Per-PR timeout:  ${TIMEOUT}s (shared across up to ${MAX_CONTINUE} turns)"
 banner "ccache:          ${CCACHE_DIR} (max ${CCACHE_MAXSIZE})"
@@ -1491,6 +1763,7 @@ fi
 
 QUEUEFILE="$(mktemp "$LOGDIR/queue.XXXXXX")"
 LOCKFILE="$(mktemp "$LOGDIR/lock.XXXXXX")"
+DISPATCHFILE="$(mktemp "$LOGDIR/dispatch.XXXXXX")"
 
 # Pin the status bar to the bottom of the terminal (TTY only).
 if (( SHOW_STATUS )) && [[ -t 1 ]]; then STATUS_ENABLED=1; fi
@@ -1515,13 +1788,17 @@ while true; do
     fi
 
     TOTAL=$(printf '%s\n' "$PRS_RAW" | grep -c . || true)
-    banner "Round ${ROUND}: ${TOTAL} PR(s) across ${WORKERS} worker(s), by priority: ${PRIORITY_NAMES[0]} > ${PRIORITY_NAMES[1]} > ${PRIORITY_NAMES[2]}"
+    banner "Round ${ROUND}: ${TOTAL} PR(s) across ${WORKERS} worker(s), by priority: ${PRIORITY_ORDER}"
     echo ""
+
+    # Inspect every PR once up front: the approval facts decide the tier split.
+    inspect_prs "$(printf '%s\n' "$PRS_RAW" | cut -f1)"
+    PRS_RAW="$(apply_approval_priority <<< "$PRS_RAW")"
 
     # Process the PRs in priority tiers. Only advance to a lower priority once a
     # full pass over the current one makes no progress; the moment a pass does
     # make progress, stop the round so the next one revisits the top priority.
-    for prio in 0 1 2; do
+    for prio in 0 1 2 3; do
         tier_prs=$(printf '%s\n' "$PRS_RAW" \
             | awk -F'\t' -v p="$prio" '$2 == p { t = $3; for (i = 4; i <= NF; ++i) t = t "\t" $i; print $1 "\t" t }')
         tier_count=$(printf '%s\n' "$tier_prs" | grep -c . || true)
@@ -1529,6 +1806,20 @@ while true; do
 
         banner "Priority ${prio} (${PRIORITY_NAMES[prio]}): ${tier_count} PR(s)"
         echo ""
+
+        # Refresh the inspection of this tier if the facts are older than
+        # INSPECT_TTL (the upfront pass may be hours old by the time a lower
+        # tier is reached), then leave out the PRs with nothing pending.
+        if (( $(date +%s) - INSPECTED_AT > INSPECT_TTL )); then
+            inspect_prs "$(printf '%s\n' "$tier_prs" | cut -f1)"
+        fi
+        dispatchable_prs "$tier_prs" "$DISPATCHFILE"
+        tier_prs=$(cat "$DISPATCHFILE")
+        tier_count=$(printf '%s\n' "$tier_prs" | grep -c . || true)
+        if (( tier_count == 0 )); then
+            banner "Priority ${prio} (${PRIORITY_NAMES[prio]}): nothing pending; advancing to the next priority"
+            continue
+        fi
         run_workers_on "$tier_prs"
 
         if [[ -s "$CLEANUP_FAILURE_FILE" ]]; then

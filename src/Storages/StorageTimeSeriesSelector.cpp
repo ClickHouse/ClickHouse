@@ -34,6 +34,7 @@
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
@@ -132,6 +133,7 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
+    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
     auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
         time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
@@ -816,6 +818,7 @@ void StorageTimeSeriesSelector::readImpl(
     size_t /* num_streams */)
 {
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
+    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_settings = time_series_storage->getStorageSettings();
 
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;

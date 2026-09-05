@@ -161,6 +161,10 @@ SET param__internal_join_table_stat_hints = '{
 }';
 -- The outer probe runs without Cascades (`viewExplain` reads are rejected, see case 7); the
 -- explained query enables it. Counts: replicated-subplan steps (must be 0), broadcasts (1).
+-- `cascades_aggregation_pushdown` is pinned off: it targets an unrelated gate (eager aggregation
+-- below a join) but is legal for this exact shape too (huge `f`, few distinct `k`), and its
+-- cheaper alternative collapses the whole plan to a single node - defeating this case's own
+-- probe of the ANY-join subplan broadcast gate.
 SELECT countIf(explain LIKE '%(Replicated %'), countIf(explain LIKE '%BroadcastExchange%')
 FROM (
     EXPLAIN
@@ -169,7 +173,8 @@ FROM (
     INNER JOIN (SELECT k, name FROM t_gating_dim1 ANY LEFT JOIN t_gating_dim2 USING (d)) AS dims ON f.k = dims.k
     GROUP BY dims.name
     SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
-        distributed_plan_execute_locally = 1, join_algorithm = 'hash', max_rows_to_group_by = 0
+        distributed_plan_execute_locally = 1, join_algorithm = 'hash', max_rows_to_group_by = 0,
+        cascades_aggregation_pushdown = 0
 )
 SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 -- The distributed join strategies shape and cost the plan for a hash join. When

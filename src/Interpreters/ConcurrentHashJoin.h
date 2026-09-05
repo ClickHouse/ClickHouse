@@ -72,6 +72,11 @@ public:
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
 
+    /// A single slot passes the left block through unscattered, and so does a shared two-level map.
+    /// With a single-level map (a key materializing to UInt8 or UInt16) the block is scattered
+    /// across the slots and emitted slot by slot, so equal left key values stop being contiguous.
+    bool preservesLeftBlockOrder() const override { return slots == 1 || hash_joins[0]->data->twoLevelMapIsUsed(); }
+
     /// Number of internal hash join slots.
     size_t getNumSlots() const { return slots; }
 
@@ -105,6 +110,18 @@ public:
     }
 
     void onBuildPhaseFinish() override;
+
+    /// See `HashJoin::keepRightBlocksForAnotherAlgorithm`.
+    void keepRightBlocksForAnotherAlgorithm()
+    {
+        std::ranges::for_each(hash_joins, [](auto & hash_join) { hash_join->data->keepRightBlocksForAnotherAlgorithm(); });
+    }
+
+    /// See `HashJoin::dropRightBlocksKeptForAnotherAlgorithm`.
+    void dropRightBlocksKeptForAnotherAlgorithm()
+    {
+        std::ranges::for_each(hash_joins, [](auto & hash_join) { hash_join->data->dropRightBlocksKeptForAnotherAlgorithm(); });
+    }
 
     void onProbePhaseFinish(size_t matched_right_rows) override
     {
