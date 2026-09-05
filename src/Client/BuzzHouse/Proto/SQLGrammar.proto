@@ -2391,11 +2391,11 @@ message UnlockSnapshot {
 }
 
 message SystemCommand {
+    reserved 4; // was: reload_models
     optional Cluster cluster = 1;
     oneof system_cmd_oneof {
         bool reload_embedded_dictionaries = 2;
         bool reload_dictionaries = 3;
-        bool reload_models = 4;
         bool reload_functions = 5;
         SQLIdentifier reload_function = 6;
         bool reload_asynchronous_metrics = 7;

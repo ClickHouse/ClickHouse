@@ -1490,6 +1490,8 @@ class JobConfigs:
                 "./ci/docker/fuzzer",
                 "./ci/jobs/ast_fuzzer_job.py",
                 "./ci/jobs/scripts/log_parser.py",
+                # `run-fuzzer.sh` runs `clickhouse_proc.py logs_export_*`
+                "./ci/jobs/scripts/clickhouse_proc.py",
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
@@ -1538,6 +1540,8 @@ class JobConfigs:
                 "./ci/jobs/scripts/find_symbols.py",
                 "./ci/jobs/scripts/find_tests.py",
                 "./ci/jobs/scripts/log_parser.py",
+                # `run-fuzzer.sh` runs `clickhouse_proc.py logs_export_*`
+                "./ci/jobs/scripts/clickhouse_proc.py",
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
@@ -1571,6 +1575,8 @@ class JobConfigs:
                 "./ci/jobs/buzzhouse_job.py",
                 "./ci/jobs/ast_fuzzer_job.py",
                 "./ci/jobs/scripts/log_parser.py",
+                # `run-fuzzer.sh` runs `clickhouse_proc.py logs_export_*`
+                "./ci/jobs/scripts/clickhouse_proc.py",
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
@@ -1885,6 +1891,23 @@ class JobConfigs:
         run_in_docker="clickhouse/stateless-test",
         timeout=3600,
     )
+    # The merge-queue copy of `docs_examples_job`, which reruns the examples
+    # against the merge group state. The examples are extracted from the
+    # server's own registrations and run against a live server, so a pull
+    # request and a `master` commit that are each green on their own can still
+    # break them together: the pull request documents a function whose behavior
+    # a `master` commit then changes, or `master` fixes an example the pull
+    # request has just listed in `known_failures.txt`.
+    #
+    # The merge queue builds only the plain `amd_binary` flavor, so this copy
+    # runs against that binary on an amd runner instead of the `arm_release`
+    # build the pull request and master workflows use - the examples exercise
+    # server behavior, which is the same either way. The run takes ~1.5 minutes
+    # and reuses the build the queue already produces, so it finishes well
+    # inside the runtime of the fast test it runs alongside.
+    docs_examples_mq_job = docs_examples_job.set_requires(
+        ArtifactNames.CH_AMD_BINARY, reset=True
+    ).set_runs_on(RunnerLabels.FUNC_TESTER_AMD)
     sqlstorm_test_job = Job.Config(
         name=JobNames.SQL_STORM_TEST,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,

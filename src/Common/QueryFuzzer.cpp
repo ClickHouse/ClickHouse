@@ -7836,8 +7836,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 {Type::LOAD_PRIMARY_KEY, Type::UNLOAD_PRIMARY_KEY},
                 /* These are too slow
                 {Type::RELOAD_FUNCTION, Type::RELOAD_FUNCTIONS},
-                {Type::RELOAD_DICTIONARY, Type::RELOAD_DICTIONARIES},
-                {Type::RELOAD_MODEL, Type::RELOAD_MODELS},*/
+                {Type::RELOAD_DICTIONARY, Type::RELOAD_DICTIONARIES},*/
                 {Type::JEMALLOC_ENABLE_PROFILE, Type::JEMALLOC_DISABLE_PROFILE},
                 {Type::JEMALLOC_PURGE, Type::JEMALLOC_FLUSH_PROFILE},
                 {Type::FLUSH_LOGS, Type::FLUSH_ASYNC_INSERT_QUEUE},

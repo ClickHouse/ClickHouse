@@ -1044,16 +1044,27 @@ def test_extended_query_ready_for_query_and_describe(started_cluster):
     sock.close()
 
 
-def test_bind_negative_count_recovers(started_cluster):
-    # Reject negative `Bind` counts without desynchronizing recovery.
+def test_malformed_extended_message_recovers(started_cluster):
+    # Reject malformed extended messages without desynchronizing recovery.
     node = started_cluster.instances["node"]
 
     def sync():
         return _fe("S", b"")
 
-    # `num_params = -1`.
+    # Put a complete-looking `Sync` frame after each invalid count, but include it in the
+    # malformed message's declared payload. Recovery must ignore it and wait for the real `Sync`.
+    def parse_neg_num_params():
+        b = b"\x00" + b"SELECT 1\x00" + struct.pack("!h", -1) + sync()
+        return _fe("P", b)
+
+    # Negative parameter-format-code count.
+    def bind_neg_param_formats():
+        b = b"\x00" + b"\x00" + struct.pack("!h", -1) + sync()
+        return _fe("B", b)
+
+    # Negative parameter count.
     def bind_neg_num_params():
-        b = b"\x00" + b"\x00" + struct.pack("!H", 0) + struct.pack("!h", -1)
+        b = b"\x00" + b"\x00" + struct.pack("!H", 0) + struct.pack("!h", -1) + sync()
         return _fe("B", b)
 
     # Negative result-format-code count.
@@ -1064,22 +1075,62 @@ def test_bind_negative_count_recovers(started_cluster):
             + struct.pack("!H", 0)
             + struct.pack("!H", 0)
             + struct.pack("!h", -1)
+            + sync()
         )
         return _fe("B", b)
 
-    for make_bind in (bind_neg_num_params, bind_neg_result_formats):
+    # `Describe` must not read the following `Sync` as its missing payload.
+    def describe_incomplete_payload():
+        return _fe("D", b"")
+
+    # A named portal is rejected after deserialization. The embedded `Sync` must
+    # remain in the `Execute` payload until recovery reaches the real `Sync`.
+    def execute_named_portal():
+        b = b"named\x00" + struct.pack("!I", 0) + sync()
+        return _fe("E", b)
+
+    # An invalid close target is rejected after deserialization for the same reason.
+    def close_invalid_target():
+        return _fe("C", b"X\x00" + sync())
+
+    for make_message in (
+        parse_neg_num_params,
+        bind_neg_param_formats,
+        bind_neg_num_params,
+        bind_neg_result_formats,
+        describe_incomplete_payload,
+        execute_named_portal,
+        close_invalid_target,
+    ):
         sock, read_until_ready = _pg_raw_extended_query_session(node)
-        sock.sendall(make_bind() + sync())
+        sock.sendall(make_message() + sync())
         types = read_until_ready()
-        assert "E" in types, f"malformed Bind must be rejected, got {types}"
+        assert "E" in types, f"malformed message must be rejected, got {types}"
         assert types.count("Z") == 1, (
-            f"malformed Bind must emit one ReadyForQuery per Sync, got {types}"
+            f"malformed message must emit one ReadyForQuery per real Sync, got {types}"
         )
         # The same connection must stay usable (stream stayed aligned).
         sock.sendall(_fe("Q", b"SELECT 7\x00"))
         types = read_until_ready()
-        assert "C" in types, f"connection must stay alive after malformed Bind, got {types}"
+        assert "C" in types, f"connection must stay alive after malformed message, got {types}"
         sock.close()
+
+
+def test_incomplete_simple_query_payload_recovers(started_cluster):
+    # A length-only `Query` must not wait for or consume the next frontend message.
+    node = started_cluster.instances["node"]
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.sendall(_fe("Q", b""))
+    types = read_until_ready()
+    assert "E" in types, f"incomplete Query must be rejected, got {types}"
+    assert types.count("Z") == 1, (
+        f"incomplete Query must emit one ReadyForQuery, got {types}"
+    )
+
+    sock.sendall(_fe("Q", b"SELECT 7\x00"))
+    types = read_until_ready()
+    assert "C" in types, f"connection must stay usable after incomplete Query, got {types}"
+    sock.close()
 
 
 def test_flush_error_discards_until_sync(started_cluster):

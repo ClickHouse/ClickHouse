@@ -183,6 +183,17 @@ A value of `0` means unlimited.
     DECLARE(UInt64, max_format_parsing_thread_pool_size, 100, R"(
 Maximum total number of threads to use for parsing input.
 )", 0) \
+    DECLARE(UInt64, max_iceberg_manifest_decode_thread_pool_size, 100, R"(
+Maximum total number of threads to use for decoding Iceberg data manifest files.
+
+The pool is separate from the IO pool on purpose: a decode task can block until the query consumes the entries it has produced, while the delete manifest decode waits for its tasks on the IO pool before any entry is consumed - sharing one pool could deadlock.
+)", 0) \
+    DECLARE(UInt64, max_iceberg_manifest_decode_thread_pool_free_size, 0, R"(
+Maximum number of idle standby threads to keep in the thread pool for decoding Iceberg data manifest files.
+)", 0) \
+    DECLARE(UInt64, iceberg_manifest_decode_thread_pool_queue_size, 10000, R"(
+The maximum number of jobs that can be scheduled on the thread pool for decoding Iceberg data manifest files.
+)", 0) \
     DECLARE(UInt64, max_format_parsing_thread_pool_free_size, 0, R"(
 Maximum number of idle standby threads to keep in the thread pool for parsing input.
 )", 0) \
@@ -2121,7 +2132,6 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "dictionary",
         "lemmatizers",
         "synonyms_extensions",
-        "catboost_lib_path",
         "path_to_regions_hierarchy_file",
         "path_to_regions_names_files",
 
@@ -2330,6 +2340,8 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// (e.g., cloud installations carrying historical settings). Kept here so
         /// that upgrading installations don't fail to start due to leftover keys.
         "format_alter_operations_with_parentheses",
+        /// The CatBoost integration is removed, but a leftover `catboost_lib_path` must not prevent the server from starting.
+        "catboost_lib_path",
 
         /// Background pool settings (legacy, moved to merge_tree section)
         "background_processing_pool_thread_sleep_seconds",
@@ -3650,6 +3662,12 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {getFormatParsingThreadPool().isInitialized() ? std::to_string(getFormatParsingThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"format_parsing_thread_pool_queue_size",
              {getFormatParsingThreadPool().isInitialized() ? std::to_string(getFormatParsingThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_iceberg_manifest_decode_thread_pool_size",
+             {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_iceberg_manifest_decode_thread_pool_free_size",
+             {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"iceberg_manifest_decode_thread_pool_queue_size",
+             {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
 
             {"abort_on_logical_error", {std::to_string(DB::abort_on_logical_error), ChangeableWithoutRestart::Yes}},
 
