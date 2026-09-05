@@ -544,12 +544,41 @@ try
 
         /// Prometheus (if defined and not setup yet with http_port)
         port_name = "prometheus.port";
-        createServer(
-            listen_host,
-            port_name,
-            listen_try,
-            [&, my_http_context = std::move(http_context)](UInt16 port) mutable
+        /// Handler configuration is parsed outside the callback: anything the callback throws is
+        /// reported as a listener bind failure, and only logged when `listen_try` is set. The port
+        /// check matches the early return in `createServer`.
+        if (config.has(port_name))
+        {
+            auto handler_factory = createKeeperPrometheusHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory");
+            createServer(
+                listen_host,
+                port_name,
+                listen_try,
+                [&, my_http_context = std::move(http_context)](UInt16 port) mutable
+                {
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(socket, listen_host, port);
+                    socket.setReceiveTimeout(my_http_context->getReceiveTimeout());
+                    socket.setSendTimeout(my_http_context->getSendTimeout());
+                    servers->emplace_back(
+                        listen_host,
+                        port_name,
+                        "Prometheus: http://" + address.toString(),
+                        std::make_unique<HTTPServer>(
+                            std::move(my_http_context), handler_factory, server_pool, socket, http_params));
+                });
+        }
+
+        /// HTTP control endpoints
+        port_name = "keeper_server.http_control.port";
+        if (config.has(port_name))
+        {
+            auto handler_factory = createKeeperHTTPHandlerFactory(
+                *this, config, global_context->getKeeperDispatcher(), "KeeperHTTPHandler-factory");
+            createServer(listen_host, port_name, listen_try, [&](UInt16 port) mutable
             {
+                auto my_http_context = httpContext();
+
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(socket, listen_host, port);
                 socket.setReceiveTimeout(my_http_context->getReceiveTimeout());
@@ -557,63 +586,49 @@ try
                 servers->emplace_back(
                     listen_host,
                     port_name,
-                    "Prometheus: http://" + address.toString(),
+                    "HTTP Control: http://" + address.toString(),
                     std::make_unique<HTTPServer>(
                         std::move(my_http_context),
-                        createKeeperPrometheusHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"),
+                        handler_factory,
                         server_pool,
                         socket,
                         http_params));
             });
-
-        /// HTTP control endpoints
-        port_name = "keeper_server.http_control.port";
-        createServer(listen_host, port_name, listen_try, [&](UInt16 port) mutable
-        {
-            auto my_http_context = httpContext();
-
-            Poco::Net::ServerSocket socket;
-            auto address = socketBindListen(socket, listen_host, port);
-            socket.setReceiveTimeout(my_http_context->getReceiveTimeout());
-            socket.setSendTimeout(my_http_context->getSendTimeout());
-            servers->emplace_back(
-                listen_host,
-                port_name,
-                "HTTP Control: http://" + address.toString(),
-                std::make_unique<HTTPServer>(
-                    std::move(my_http_context),
-                    createKeeperHTTPHandlerFactory(*this, config, global_context->getKeeperDispatcher(), "KeeperHTTPHandler-factory"),
-                    server_pool,
-                    socket,
-                    http_params));
-        });
+        }
 
         /// HTTPS control endpoints
         port_name = "keeper_server.http_control.secure_port";
-        createServer(listen_host, port_name, listen_try, [&](UInt16 port) mutable
+        if (config.has(port_name))
         {
 #if USE_SSL
-            auto my_http_context = httpContext();
-
-            Poco::Net::SecureServerSocket socket;
-            auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
-            socket.setReceiveTimeout(my_http_context->getReceiveTimeout());
-            socket.setSendTimeout(my_http_context->getSendTimeout());
-            servers->emplace_back(
-                listen_host,
-                port_name,
-                "HTTPS Control: https://" + address.toString(),
-                std::make_unique<HTTPServer>(
-                    std::move(my_http_context),
-                    createKeeperHTTPHandlerFactory(*this, config, global_context->getKeeperDispatcher(), "KeeperHTTPSHandler-factory"),
-                    server_pool,
-                    socket,
-                    http_params));
-#else
-            UNUSED(port);
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS control protocol is disabled because Poco library was built without NetSSL support.");
+            auto handler_factory = createKeeperHTTPHandlerFactory(
+                *this, config, global_context->getKeeperDispatcher(), "KeeperHTTPSHandler-factory");
 #endif
-        });
+            createServer(listen_host, port_name, listen_try, [&](UInt16 port) mutable
+            {
+#if USE_SSL
+                auto my_http_context = httpContext();
+
+                Poco::Net::SecureServerSocket socket;
+                auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
+                socket.setReceiveTimeout(my_http_context->getReceiveTimeout());
+                socket.setSendTimeout(my_http_context->getSendTimeout());
+                servers->emplace_back(
+                    listen_host,
+                    port_name,
+                    "HTTPS Control: https://" + address.toString(),
+                    std::make_unique<HTTPServer>(
+                        std::move(my_http_context),
+                        handler_factory,
+                        server_pool,
+                        socket,
+                        http_params));
+#else
+                UNUSED(port);
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS control protocol is disabled because Poco library was built without NetSSL support.");
+#endif
+            });
+        }
     }
 
     for (auto & server : *servers)
@@ -626,14 +641,14 @@ try
 
     Coordination::EventPtr unused_event = std::make_shared<Poco::Event>();
 
-    const std::string cert_path = config().getString("openSSL.server.certificateFile", "");
-    const std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
-
+    /// TLS certificates, keys and CA certificates are reloaded by CertificateReloader when these files change.
     std::vector<std::string> extra_paths = {include_from_path};
-    if (!cert_path.empty())
-        extra_paths.emplace_back(cert_path);
-    if (!key_path.empty())
-        extra_paths.emplace_back(key_path);
+    for (const auto * key : {"openSSL.server.certificateFile", "openSSL.server.privateKeyFile", "openSSL.server.caConfig",
+                             "openSSL.client.certificateFile", "openSSL.client.privateKeyFile", "openSSL.client.caConfig"})
+    {
+        if (auto file_path = config().getString(key, ""); !file_path.empty())
+            extra_paths.emplace_back(std::move(file_path));
+    }
 
     /// ConfigReloader have to strict parameters which are redundant in our case
     auto main_config_reloader = std::make_unique<ConfigReloader>(

@@ -1,5 +1,7 @@
 #include <Parsers/ParserPreparedStatement.h>
 
+#include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/IParserBase.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -11,6 +13,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 ASTPtr ASTPreparedStatement::clone() const
 {
@@ -81,26 +88,28 @@ bool ParserExecute::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     result->function_name = ast_ident->as<ASTIdentifier>()->full_name;
 
-    if (!open_bracket.ignore(pos, expected))
-        return false;
-
-    ASTPtr ast_args;
-    if (!exp_args.parse(pos, ast_args, expected))
-        return false;
-
-    for (size_t i = 0; i < ast_args->children.size(); ++i)
+    /// Accept both forms of a zero-parameter statement: `EXECUTE s` and `EXECUTE s()`.
+    if (open_bracket.ignore(pos, expected) && !close_bracket.ignore(pos, expected))
     {
-        /// The expression list parser accepts arbitrary expressions, but only literals are valid here.
-        const auto * literal = ast_args->children[i]->as<ASTLiteral>();
-        if (!literal)
-        {
-            expected.add(pos, "literal");
+        ASTPtr ast_args;
+        if (!exp_args.parse(pos, ast_args, expected))
             return false;
+
+        for (const auto & child : ast_args->children)
+        {
+            /// Expressions cannot be substituted as one parameter value without changing semantics.
+            const auto * literal = child->as<ASTLiteral>();
+            if (!literal)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "EXECUTE argument must be a literal value, not an expression: {}",
+                    child->formatWithSecretsOneLine());
+            /// `FieldVisitorToString` quotes and escapes string literals.
+            result->arguments.push_back(applyVisitor(FieldVisitorToString(), literal->value));
         }
-        result->arguments.push_back(fieldToString(literal->value));
+
+        if (!close_bracket.ignore(pos, expected))
+            return false;
     }
-    if (!close_bracket.ignore(pos, expected))
-        return false;
 
     return true;
 }

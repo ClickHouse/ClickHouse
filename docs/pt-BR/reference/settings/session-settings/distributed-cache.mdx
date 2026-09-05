@@ -38,6 +38,16 @@ Só tem efeito no ClickHouse Cloud. Uma configuração para fins de teste; não 
 
 Tem efeito apenas no ClickHouse Cloud. Permite ignorar o pool de conexões do distributed cache
 
+<div id="distributed_cache_client_id">
+  ## distributed_cache_client_id
+</div>
+
+<CloudOnlyBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Nova configuração (somente para testes de CI) para substituir o ID do cliente do distributed cache por consulta."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": ""},{"label": "Nova configuração (somente para testes de CI) para substituir o ID do cliente do distributed cache por consulta."}]}]} />
+
+Tem efeito apenas no ClickHouse Cloud. Configuração usada somente em testes de CI: quando não vazia, substitui o ID do cliente do distributed cache configurado no registro para as solicitações desta consulta. Permite que os testes distribuam os dados entre um conjunto limitado de IDs de cliente, mantendo os mesmos dados no mesmo ID de cliente. Exige que `ci_mode` esteja habilitado na configuração do cliente do distributed cache: caso contrário (o padrão, como em produção), uma consulta que encaminhe uma leitura ou gravação pelo distributed cache falhará com `SUPPORT_IS_DISABLED`, em vez de recorrer silenciosamente ao ID de cliente configurado. Consultas que nunca chegam ao distributed cache não são afetadas, portanto, o valor é ignorado nesses casos.
+
 <div id="distributed_cache_connect_backoff_max_ms">
   ## distributed_cache_connect_backoff_max_ms
 </div>
@@ -188,9 +198,9 @@ Só tem efeito no ClickHouse Cloud. Número mínimo de bytes para realizar seek 
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "4194304"},{"label": "Nova configuração para descartar e reabrir uma conexão de cache distribuído durante uma operação de seek quando muitos bytes em trânsito teriam de ser descartados. O padrão é 4 MiB; 0 restaura o comportamento anterior (sempre reutilizar a conexão por meio do ID do intervalo de leitura)."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "Nova configuração para descartar e reabrir uma conexão de distributed cache durante uma operação de seek quando muitos bytes em trânsito teriam de ser descartados. O padrão é 4 MiB; 0 restaura o comportamento anterior (sempre reutilizar a conexão por meio do ID do intervalo de leitura)."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "4194304"},{"label": "Nova configuração para descartar e reabrir uma conexão de distributed cache durante uma operação de seek quando muitos bytes em trânsito teriam de ser descartados. O padrão é 4 MiB; 0 restaura o comportamento anterior (sempre reutilizar a conexão por meio do ID do intervalo de leitura)."}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "4194304"},{"label": "Nova configuração para descartar e reabrir uma conexão de distributed cache durante uma operação de seek quando muitos bytes em trânsito teriam de ser descartados. O padrão é 4 MiB; 0 restaura o comportamento anterior (sempre reutilizar a conexão por meio do ID do intervalo de leitura)."}]}]} />
 
-Só tem efeito no ClickHouse Cloud. Ao realizar uma operação de seek a partir da posição atual de um stream de cache distribuído aberto, se a quantidade estimada de bytes em trânsito que teria de ser descartada para continuar reutilizando a conexão (por meio do mecanismo de ID do intervalo de leitura) exceder esse valor, descarte a conexão e abra uma nova. Isso evita drenar uma grande quantidade de dados não utilizados quando as operações de seek são frequentes. 0 desativa esse comportamento e sempre reutiliza a conexão.
+Só tem efeito no ClickHouse Cloud. Ao realizar uma operação de seek a partir da posição atual de um stream de distributed cache aberto, se a quantidade estimada de bytes em trânsito que teria de ser descartada para continuar reutilizando a conexão (por meio do mecanismo de ID do intervalo de leitura) exceder esse valor, descarte a conexão e abra uma nova. Isso evita drenar uma grande quantidade de dados não utilizados quando as operações de seek são frequentes. 0 desativa esse comportamento e sempre reutiliza a conexão.
 
 <div id="distributed_cache_pool_behaviour_on_limit">
   ## distributed_cache_pool_behaviour_on_limit

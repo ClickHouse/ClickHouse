@@ -18,7 +18,7 @@ workflow = Workflow.Config(
         Job.Config(
             name="Prepare changelog",
             command="python3 ./ci/jobs/changelog_nightly.py",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
             enable_gh_auth=True,
         ),
     ],
