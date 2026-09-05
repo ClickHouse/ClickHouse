@@ -4091,6 +4091,40 @@ def test_vanished_parts_retired_on_takeover(started_cluster):
             "The vanished-parts retirement never ran during the takeover scan"
         )
 
+        # Retiring a vanished part must also subtract its contribution from the table's size
+        # counters: `loadDataPart` adds it when it loads a part into the `Active` state, and
+        # `retirePartsVanishedFromStorage` forgets an `Active` part. A retirement that only
+        # flipped the state bit left `total_rows` / `total_bytes` (and with them everything
+        # built on `getTotalActiveSizeInBytes` — the `RESTORE` non-empty-table check, the
+        # drop-size check, the insert part-limit throttling) counting the dropped partition
+        # forever. The counters and the active parts are read in one query, and the mismatch
+        # they detect is permanent, so a bounded wait cannot hide it — it only tolerates the
+        # brief window in which a background cleanup retires a part between the two reads.
+        deadline = time.monotonic() + 30
+        counters = None
+        while time.monotonic() < deadline:
+            counters = follower.query(
+                f"""
+                SELECT
+                    (SELECT total_rows FROM system.tables
+                     WHERE database = currentDatabase() AND name = '{table}') AS counter_rows,
+                    (SELECT sum(rows) FROM system.parts
+                     WHERE database = currentDatabase() AND table = '{table}' AND active) AS active_rows,
+                    (SELECT total_bytes FROM system.tables
+                     WHERE database = currentDatabase() AND name = '{table}') AS counter_bytes,
+                    (SELECT sum(bytes_on_disk) FROM system.parts
+                     WHERE database = currentDatabase() AND table = '{table}' AND active) AS active_bytes
+                """
+            ).split()
+            if counters[0] == counters[1] and counters[2] == counters[3]:
+                break
+            time.sleep(1)
+        assert counters[0] == counters[1] and counters[2] == counters[3], (
+            "The size counters still include the retired parts "
+            f"(total_rows = {counters[0]} vs {counters[1]} rows in active parts, "
+            f"total_bytes = {counters[2]} vs {counters[3]} bytes in active parts)"
+        )
+
         # And the resurrection must not come back through a reload of the shared storage either.
         follower.query(f"DETACH TABLE {table}")
         follower.query(f"ATTACH TABLE {table}")

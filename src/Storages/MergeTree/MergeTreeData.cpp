@@ -3372,6 +3372,18 @@ size_t MergeTreeData::retirePartsVanishedFromStorage(
 
             LOG_INFO(log, "Retiring active part {}: it no longer exists on the shared storage", part->name);
 
+            /// The part is still `Active` here, so it counts towards the table's size counters and
+            /// the column and secondary index size caches (`loadDataPart` adds that contribution
+            /// when it loads a part into the `Active` state). Forgetting it without subtracting
+            /// the contribution would leave `totalRows` / `totalBytes` / `getActivePartsCount`
+            /// reporting a table that no longer has any active parts, and everything built on
+            /// `getTotalActiveSizeInBytes` — the `RESTORE` non-empty-table check, the drop-size
+            /// check, the insert part-limit throttling — acting on that stale value. This mirrors
+            /// the active branch of `removePartsFromWorkingSet` and inverts `restoreAndActivatePart`.
+            removePartContributionToColumnAndSecondaryIndexSizes(part);
+            removePartContributionToUncompressedBytesInPatches(part);
+            removePartContributionToDataVolume(part);
+
             /// Forget the part entirely instead of moving it to `Outdated`: there is nothing left
             /// to clean up on the storage, and a follower must not attempt such a cleanup anyway.
             modifyPartState(it, DataPartState::Temporary, parts_lock);
