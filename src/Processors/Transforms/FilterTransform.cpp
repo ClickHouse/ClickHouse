@@ -125,7 +125,8 @@ FilterTransform::FilterTransform(
     bool on_totals_,
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
     std::optional<std::pair<UInt64, String>> condition_,
-    bool update_row_numbers_info_)
+    bool update_row_numbers_info_,
+    String condition_time_zone_)
     : FilterTransform(
             header_,
             std::make_shared<const Block>(expression_ ? expression_->getActionsDAG().updateHeader(*header_) : *header_),
@@ -136,7 +137,8 @@ FilterTransform::FilterTransform(
             on_totals_,
             std::move(rows_filtered_),
             std::move(condition_),
-            update_row_numbers_info_)
+            update_row_numbers_info_,
+            std::move(condition_time_zone_))
 {
 }
 
@@ -149,7 +151,8 @@ FilterTransform::FilterTransform(
     bool on_totals_,
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
     std::optional<std::pair<UInt64, String>> condition_,
-    bool update_row_numbers_info_)
+    bool update_row_numbers_info_,
+    String condition_time_zone_)
     : ISimpleTransform(
             header_,
             std::make_shared<const Block>(checkAndRemoveFilterColumn(*transformed_header_, filter_column_name_, remove_filter_column_)),
@@ -161,6 +164,7 @@ FilterTransform::FilterTransform(
     , update_row_numbers_info(update_row_numbers_info_)
     , rows_filtered(rows_filtered_)
     , condition(condition_)
+    , condition_time_zone(std::move(condition_time_zone_))
     , transformed_header(*transformed_header_)
 {
     if (expression)
@@ -452,6 +456,7 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
             buffered_mark_ranges_info->table_uuid,
             buffered_mark_ranges_info->part_name,
             condition->first,
+            condition_time_zone,
             condition->second,
             buffered_mark_ranges_info->mark_ranges,
             buffered_mark_ranges_info->marks_count,
@@ -477,6 +482,7 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
                 buffered_mark_ranges_info->table_uuid,
                 buffered_mark_ranges_info->part_name,
                 condition->first,
+                condition_time_zone,
                 condition->second,
                 buffered_mark_ranges_info->mark_ranges,
                 buffered_mark_ranges_info->marks_count,

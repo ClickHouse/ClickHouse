@@ -110,6 +110,10 @@ struct FormatFilterInfo
     ColumnMapperPtr current_schema_column_mapper;
 
     std::optional<size_t> condition_hash;
+    /// The other half of the query condition cache key: the time zone the condition is evaluated in.
+    /// Set exactly when `condition_hash` is, and resolved in the constructor because `context` above
+    /// is a weak pointer.
+    String condition_time_zone;
 
     /// Lazy materialization: if set, read only the rows with these row numbers and skip everything
     /// else. Sorted, unique, absolute (pre-filtering) row indexes within the file. The format must

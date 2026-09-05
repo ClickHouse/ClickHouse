@@ -1961,7 +1961,8 @@ Chunk StorageFileSource::generate()
             {
                 const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
                 auto matching_marks = query_condition_cache->read(
-                    storage->getStorageID().uuid, cache_file_key, *format_filter_info->condition_hash);
+                    storage->getStorageID().uuid, cache_file_key, *format_filter_info->condition_hash,
+                    format_filter_info->condition_time_zone);
                 if (matching_marks.has_value())
                 {
                     const auto & marks = *matching_marks;
@@ -2217,6 +2218,7 @@ Chunk StorageFileSource::generate()
                                 storage->getStorageID().uuid,
                                 cache_file_key,
                                 *format_filter_info->condition_hash,
+                                format_filter_info->condition_time_zone,
                                 format_filter_info->filter_actions_dag->dumpNames(),
                                 unmatched_ranges,
                                 total_groups,

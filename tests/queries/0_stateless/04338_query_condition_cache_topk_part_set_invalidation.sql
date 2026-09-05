@@ -9,12 +9,12 @@
 -- Correctness regression for the Query Condition Cache (QCC) on the
 -- `ORDER BY <column> LIMIT n` (TopK) plan: a granule-skip decision recorded for
 -- one part depends on the TopK threshold, which is computed from rows of *all*
--- parts the query reads. The QCC key is `(table_uuid, part_name, condition_hash)`,
--- so when another part is dropped or mutated, the entry of an *unchanged* part
--- still matches the key while the decision it stores is stale. The TopK salt
--- therefore includes a hash of the whole part-set snapshot
--- (`ReadFromMergeTree::setTopKColumn`); this test checks that changing the part
--- set really invalidates the cached decisions.
+-- parts the query reads. The QCC key is
+-- `(table_uuid, part_name, condition_hash, time_zone)`, so when another part is
+-- dropped or mutated, the entry of an *unchanged* part still matches the key
+-- while the decision it stores is stale. The TopK salt therefore includes a hash
+-- of the whole part-set snapshot (`ReadFromMergeTree::setTopKColumn`); this test
+-- checks that changing the part set really invalidates the cached decisions.
 
 SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;

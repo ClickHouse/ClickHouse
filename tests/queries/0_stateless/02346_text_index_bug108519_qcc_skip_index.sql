@@ -148,9 +148,9 @@ DROP TABLE tab_alter;
 -- disjunction-enabled profile must NOT be consulted by a query that disabled the optimization, while
 -- a query with the same profile must still reuse it (so the combined-index exclusions are not
 -- re-evaluated). Assert that via the QueryConditionCacheHits/Misses profile events. The cache is keyed
--- by (table uuid, part, condition hash); tab_disj is freshly created, so its entries are unique to this
--- run and no instance-wide SYSTEM DROP QUERY CONDITION CACHE is needed (that would race sibling QCC
--- tests in the parallel pool).
+-- by (table uuid, part, condition hash, time zone); tab_disj is freshly created, so its entries are
+-- unique to this run and no instance-wide SYSTEM DROP QUERY CONDITION CACHE is needed (that would race
+-- sibling QCC tests in the parallel pool).
 DROP TABLE IF EXISTS tab_disj;
 CREATE TABLE tab_disj
 (
