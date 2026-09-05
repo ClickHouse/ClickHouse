@@ -17,7 +17,10 @@ public:
     size_t prev_unequal_column = 0;
 
 protected:
-    SortingQueue<SortCursor> queue;
+    /// The batch queue identifies how many consecutive rows can be taken from the front
+    /// cursor in one go (see `SortingQueueImpl::updateBatchSize`), so consuming rows one by
+    /// one with `next(1)` restructures the queue once per batch instead of once per row.
+    SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch> queue;
     SortDescription description;
 
     /// Previous row. May refer to last_chunk_sort_columns or row from source_chunks.

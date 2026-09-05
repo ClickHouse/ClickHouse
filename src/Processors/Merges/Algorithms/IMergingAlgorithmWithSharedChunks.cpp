@@ -41,7 +41,49 @@ void IMergingAlgorithmWithSharedChunks::initialize(Inputs inputs)
         sources_origin_merge_tree_part_level[source_num] = getPartLevelFromChunk(*source.chunk);
     }
 
-    queue = SortingQueue<SortCursor>(cursors);
+    /// A single-column key without a collation compares cheaply even through the generic
+    /// `SortCursor`, so it keeps the heap container (see `sortDescriptionCompareIsExpensive`),
+    /// and the batches are detected only when the algorithm can make use of them.
+    bool compare_is_expensive = sortDescriptionCompareIsExpensive(description);
+    bool detect_batches = compare_is_expensive || (uses_runs_of_equal_keys && anySourceHasRunsOfEqualKeys());
+    queue = SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch>(cursors, compare_is_expensive, detect_batches);
+}
+
+bool IMergingAlgorithmWithSharedChunks::anySourceHasRunsOfEqualKeys() const
+{
+    /// Checking the whole chunk would cost about as much as merging it, and the first rows are
+    /// representative enough: a part written by a single `INSERT` either has its duplicates spread
+    /// all over or none at all.
+    static constexpr size_t max_rows_to_check = 8192;
+
+    for (size_t source_num = 0; source_num < cursors.size(); ++source_num)
+    {
+        const auto & cursor = cursors[source_num];
+
+        /// Parts with a non-zero level are assumed to have no duplicates (see `rowsHaveDifferentSortColumns`),
+        /// and rows sorted through a permutation are not physically adjacent.
+        if (cursor.empty() || cursor.permutation || sources_origin_merge_tree_part_level[source_num] > 0)
+            continue;
+
+        size_t rows_to_check = std::min(cursor.getSize(), max_rows_to_check);
+        for (size_t row = 1; row < rows_to_check; ++row)
+        {
+            bool equal = true;
+            for (const auto * column : cursor.sort_columns)
+            {
+                if (column->compareAt(row, row - 1, *column, /* nan_direction_hint = */ 1) != 0)
+                {
+                    equal = false;
+                    break;
+                }
+            }
+
+            if (equal)
+                return true;
+        }
+    }
+
+    return false;
 }
 
 void IMergingAlgorithmWithSharedChunks::consume(Input & input, size_t source_num)

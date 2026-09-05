@@ -43,7 +43,22 @@ protected:
     Sources sources;
     std::vector<size_t> sources_origin_merge_tree_part_level;
 
-    SortingQueue<SortCursor> queue;
+    /// The batch queue identifies how many consecutive rows can be taken from the front
+    /// cursor in one go (see `SortingQueueImpl::updateBatchSize`), so consuming rows one by
+    /// one with `next(1)` restructures the queue once per batch instead of once per row.
+    SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch> queue;
+
+    /// Set by a derived algorithm before `initialize` when it can skip runs of equal keys within
+    /// a batch (see `ReplacingSortedAlgorithm`). The batch detection is then enabled if some
+    /// source actually starts with such runs; otherwise (and for algorithms that consume rows
+    /// one by one) it is enabled only for expensive comparators, where the batches save
+    /// comparisons. For cheap comparators on keys interleaved between the sources without
+    /// runs (e.g. parts that each hold every key once) the detection is pure overhead.
+    bool uses_runs_of_equal_keys = false;
+
+    /// Whether some source (with a zero part level, read without a permutation) has adjacent
+    /// rows with equal sort keys among its first rows.
+    bool anySourceHasRunsOfEqualKeys() const;
 
     /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
     /// If it is not nullptr then it should be populated during execution

@@ -67,6 +67,10 @@ private:
 
     bool enable_vertical_final = false; /// Either we use skipping final algorithm
     bool read_in_reverse = false; /// Inputs are read in the reverse order relative to the storage order
+
+    /// Processing a row has no effects besides replacing `selected_row`, so the merge can jump
+    /// over runs of equal keys within a batch straight to the last row of the run (see `merge`).
+    bool can_skip_to_run_end = false;
     std::queue<detail::SharedChunkPtr> to_be_emitted;   /// To save chunks when using skipping final
 
     using RowRef = detail::RowRefWithOwnedChunk;
