@@ -27,6 +27,21 @@ FROM
 );
 
 SELECT '';
+SELECT 'timeSeriesTagsToGroup FixedString tags_array:';
+
+SELECT timeSeriesGroupToTags(fixed_array_group),
+       timeSeriesGroupToTags(fixed_map_group),
+       timeSeriesGroupToTags(fixed_group),
+       fixed_array_group == fixed_group,
+       fixed_map_group == fixed_group
+FROM
+(
+    SELECT timeSeriesTagsToGroup([(toFixedString('__name__', 16), toFixedString('fixed_metric', 16))]) AS fixed_array_group,
+           timeSeriesTagsToGroup(map(toFixedString('__name__', 16), toFixedString('fixed_metric', 16))) AS fixed_map_group,
+           timeSeriesTagsToGroup([], toFixedString('__name__', 16), toFixedString('fixed_metric', 16)) AS fixed_group
+);
+
+SELECT '';
 SELECT 'timeSeriesStoreTags:';
 
 SELECT same_id1 == id1,

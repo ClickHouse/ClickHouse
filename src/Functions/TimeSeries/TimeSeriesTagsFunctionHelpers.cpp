@@ -79,6 +79,16 @@ namespace
             tags.reserve(tags.size() + num_tags);
     }
 
+    std::string_view extractStringViewAt(const IColumn & column, size_t row)
+    {
+        if (column.isNullAt(row))
+            return {};
+
+        auto value = std::string_view{column.getDataAt(row)};
+        trimRight(value, '\0'); /// Trim zero characters in case FixedString was used for this column.
+        return value;
+    }
+
     /// Extracts tags from a column of type Array(Tuple(String, String)) containing pairs (tag_name, tag_value).
     void extractTagsArrayFromColumn(
         std::string_view function_name,
@@ -107,8 +117,8 @@ namespace
                     res.reserve(res.size() + (end_offset - start_offset) + num_extra_tags);
                     for (size_t j = start_offset; j != end_offset; ++j)
                     {
-                        auto tag_name = std::string_view{tag_names.getDataAt(j)};
-                        auto tag_value = std::string_view{tag_values.getDataAt(j)};
+                        auto tag_name = extractStringViewAt(tag_names, j);
+                        auto tag_value = extractStringViewAt(tag_values, j);
                         res.emplace_back(tag_name, tag_value);
                     }
                 }
@@ -179,16 +189,6 @@ namespace
         const size_t num_rows = column_tag_name.size();
         chassert(column_tag_value.size() == num_rows);
         chassert(out_tags_vector.size() == num_rows);
-
-        const auto extractStringViewAt = [](const IColumn & column, size_t row) -> std::string_view
-        {
-            if (column.isNullAt(row))
-                return {};
-
-            auto value = std::string_view{column.getDataAt(row)};
-            trimRight(value, '\0'); /// Trim zero characters in case FixedString was used for this column.
-            return value;
-        };
 
         for (size_t i = 0; i != num_rows; ++i)
         {
