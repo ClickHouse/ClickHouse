@@ -436,13 +436,16 @@ void applyActionsToSortDescription(
         if (output == output_to_skip)
             continue;
 
+        /// An output that is not computed from a sort column (a constant, a function of several columns or of
+        /// a column the input is not sorted by) says nothing about the sort columns, so it is skipped. Stopping
+        /// here instead would keep the order only when the sort columns happen to lead the list of outputs.
         auto chain = buildPossiblyMonitinicChain(output);
         if (!chain.input_node)
-            break;
+            continue;
 
         auto it = input_to_sort_column.find(chain.input_node);
         if (it == input_to_sort_column.end())
-            break;
+            continue;
 
         SortColumn & sort_column = sort_columns[it->second];
 

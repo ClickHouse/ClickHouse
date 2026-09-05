@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -13,6 +14,8 @@
 #include <Processors/QueryPlan/SortingStep.h>
 
 #include <Functions/IFunction.h>
+#include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/TableJoin.h>
 
 
 namespace DB
@@ -38,6 +41,63 @@ struct SortingProperty
     SortDescription sort_description = {};
     SortScope sort_scope = SortScope::Stream;
 };
+
+/// A full sorting merge join emits its result in the order of one of its sorted inputs: `MergeJoinAlgorithm`
+/// walks both inputs with cursors that only move forward, so for an INNER or LEFT join the output rows follow
+/// the left input (an INNER join emits a subsequence of it, a LEFT join emits every left row, repeated for
+/// each match), and for a RIGHT join they follow the right input. A FULL join interleaves the non-matched rows
+/// of both sides, whose key columns of the other side are defaults, so neither side's keys stay sorted.
+///
+/// Only the leading run of join-key columns is advertised. Within one group of equal keys the rows of an ALL
+/// join are emitted as a cross product, which keeps the order of the keys but not of any other column.
+static SortingProperty applyOrderToJoin(const JoinStep & join_step, const SortingProperty * children_properties)
+{
+    const auto * merge_join = typeid_cast<const FullSortingMergeJoin *>(join_step.getJoin().get());
+    if (!merge_join)
+        return {};
+
+    /// `parallel_full_sorting_merge` is sharded by the hash of the join keys afterwards
+    /// (`optimizeParallelFullSortingMergeJoin`), and that pass only scatters a plain full sort. Advertising the
+    /// order would turn the merge-join sort above into `FinishSorting` and leave the next join in a chain
+    /// unsharded, trading its parallelism for a saved sort. Keep the parallel variant hash-sharded at every
+    /// level; its output is unordered by design.
+    if (merge_join->isParallel())
+        return {};
+
+    const auto & table_join = merge_join->getTableJoin();
+    const auto kind = table_join.kind();
+    if (!isInner(kind) && !isLeft(kind) && !isRight(kind))
+        return {};
+
+    /// With `swap_streams` the plan's right child feeds the algorithm's left input and vice versa.
+    const size_t algorithm_left_child = join_step.swap_streams ? 1 : 0;
+    const size_t ordered_child = isRight(kind) ? 1 - algorithm_left_child : algorithm_left_child;
+    const auto & clause = table_join.getOnlyClause();
+    const Names & key_names = isRight(kind) ? clause.key_names_right : clause.key_names_left;
+
+    auto sort_description = getCollationAwareSortPrefixInColumns(children_properties[ordered_child].sort_description, key_names);
+
+    /// Keep the key columns that reach the output under their own, unambiguous name. The legacy planner lets
+    /// both inputs carry a column of the same name and renames the right one on the way out, so a name found in
+    /// the other input may denote a different column in the output.
+    const auto & output_header = *join_step.getOutputHeader();
+    const auto & other_input_header = *join_step.getInputHeaders()[1 - ordered_child];
+    size_t num_columns_in_output = 0;
+    for (; num_columns_in_output < sort_description.size(); ++num_columns_in_output)
+    {
+        const auto & name = sort_description[num_columns_in_output].column_name;
+        if (!output_header.has(name) || other_input_header.has(name))
+            break;
+    }
+    sort_description.resize(num_columns_in_output);
+
+    if (sort_description.empty())
+        return {};
+
+    /// A single merge join is resized to `max_streams` outputs, and a sharded one has one output per shard,
+    /// so the order holds within every stream rather than globally.
+    return {std::move(sort_description), SortingProperty::SortScope::Stream};
+}
 
 static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
 {
@@ -146,6 +206,9 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
 
         return std::move(*properties);
     }
+
+    if (const auto * join_step = typeid_cast<const JoinStep *>(parent->step.get()); join_step && parent->children.size() == 2)
+        return applyOrderToJoin(*join_step, properties);
 
     if (auto * transforming = dynamic_cast<ITransformingStep *>(parent->step.get()))
     {
