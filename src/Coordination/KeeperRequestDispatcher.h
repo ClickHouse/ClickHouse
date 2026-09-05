@@ -4,6 +4,8 @@
 
 #if USE_NURAFT
 
+#include <limits>
+
 #include <Common/CacheLine.h>
 #include <Common/NonblockingBoundedQueue.h>
 #include <Coordination/KeeperServer.h>
@@ -136,13 +138,38 @@ private:
     public:
         /// Returns false if Status::Finished, i.e. the calling dispatchThread can go ahead and
         /// do the read right there.
-        bool add(KeeperRequestForSession & request_for_session)
+        /// `waits_for_write` says whether this batch holds a write of the read's own session; see
+        /// the comment at the call site.
+        bool add(KeeperRequestForSession & request_for_session, bool waits_for_write)
         {
             if (!lock())
                 return false;
+            /// The read is parked here until the batch commits; start measuring that wait. Done
+            /// under the lock because only the successful path parks the request, and because the
+            /// `writes_committed` check must see the state the batch is in at the moment of parking:
+            /// the lock is the only thing that orders this against `markWritesCommitted`.
+            if (waits_for_write && !writes_committed)
+                request_for_session.request->spans.maybeInitialize(
+                    KeeperSpan::ReadWaitForWrite, request_for_session.request->tracing_context.get());
             reads.push_back(std::move(request_for_session));
             unlock(Status::Available);
             return true;
+        }
+
+        /// Called by onCommit once every write of the batch has committed, before it starts draining
+        /// the parked reads. From this point on the container is only used to keep same-session reads
+        /// ordered behind the reads that are already executing, so a read parked here is not waiting
+        /// for an uncommitted write and must not be counted as one.
+        ///
+        /// Takes the lock, so that a read parked by dispatchThread after this returned is guaranteed
+        /// to see the new state. Finished means the batch is already done with its parked reads and
+        /// no more can be added, so there is nothing left to suppress.
+        void markWritesCommitted()
+        {
+            if (!lock())
+                return;
+            writes_committed = true;
+            unlock(Status::Available);
         }
 
         /// Moves reads out of the container.
@@ -176,6 +203,7 @@ private:
         {
             chassert(reads.empty());
             reads = std::move(initial_late_reads);
+            writes_committed = false;
             Status s = status.exchange(Status::Available);
             chassert(s == Status::Finished);
         }
@@ -193,6 +221,8 @@ private:
         };
 
         std::atomic<Status> status {Status::Finished};
+        /// See markWritesCommitted. Guarded by `status` used as a lock, like `reads`.
+        bool writes_committed = false;
         KeeperRequestsForSessions reads;
 
         bool lock()
@@ -274,6 +304,14 @@ private:
 
         /// Latest InFlightBatch that has read or write requests from this session.
         size_t last_batch_idx = 0;
+
+        /// Latest InFlightBatch that has *write* requests from this session, or `no_batch` if the
+        /// session hasn't written anything yet. `last_batch_idx` can't answer that: `quorum_reads`
+        /// advances it for reads too, and it starts out pointing at batch 0.
+        /// Only used to tell whether a parked read is waiting for a write of its own session, which
+        /// is what `keeper_read_wait_for_write_time_milliseconds` measures.
+        static constexpr size_t no_batch = std::numeric_limits<size_t>::max();
+        size_t last_write_batch_idx = no_batch;
 
         /// A flag used by request batching to detect dependencies between reads and writes.
         size_t reordering_version = 0;

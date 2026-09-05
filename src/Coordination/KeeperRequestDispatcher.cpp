@@ -90,6 +90,51 @@ static size_t getSubrequestCount(const Coordination::ZooKeeperRequest & request)
         return 1;
 }
 
+/// A read request that cannot be answered before the in-flight writes of its own session commit is
+/// parked (see `LateReads`); the span measures how long it waits there.
+static void startReadWaitForWriteSpan(const KeeperRequestForSession & read)
+{
+    read.request->spans.maybeInitialize(KeeperSpan::ReadWaitForWrite, read.request->tracing_context.get());
+}
+
+static std::vector<OpenTelemetry::SpanAttribute> readWaitForWriteSpanAttributes(const KeeperRequestForSession & read)
+{
+    return std::vector<OpenTelemetry::SpanAttribute>{
+        {"keeper.operation", Coordination::opNumToString(read.request->getOpNum())},
+        {"keeper.session_id", read.session_id},
+        {"keeper.xid", read.request->xid},
+    };
+}
+
+/// The wait ended because the write the read depends on committed, so it is a sample of what
+/// `keeper_read_wait_for_write_time_milliseconds` measures.
+static void finalizeReadWaitForWriteSpans(KeeperRequestsForSessions & reads)
+{
+    for (auto & read : reads)
+    {
+        /// Reads that were answered without waiting for a write never started the span.
+        if (!read.request->spans.isStarted(KeeperSpan::ReadWaitForWrite))
+            continue;
+
+        read.request->spans.maybeFinalize(
+            KeeperSpan::ReadWaitForWrite, [&] { return readWaitForWriteSpanAttributes(read); });
+    }
+}
+
+/// The wait was abandoned: the write the read depends on never committed. The trace span gets an
+/// error, but the duration is deliberately not observed - see `maybeAbandon`.
+static void abandonReadWaitForWriteSpans(KeeperRequestsForSessions & reads, const String & error_message)
+{
+    for (auto & read : reads)
+    {
+        if (!read.request->spans.isStarted(KeeperSpan::ReadWaitForWrite))
+            continue;
+
+        read.request->spans.maybeAbandon(
+            KeeperSpan::ReadWaitForWrite, [&] { return readWaitForWriteSpanAttributes(read); }, error_message);
+    }
+}
+
 /// Estimated memory used by a request/response struct, for queue size byte limits.
 static size_t getRequestBytesCost(const Coordination::ZooKeeperRequest & request)
 {
@@ -830,6 +875,9 @@ void KeeperRequestDispatcher::dispatchThread()
                     }
 
                     bool is_read = request.request->isReadRequest();
+                    /// Whether the request is a write as far as the session's dependencies are
+                    /// concerned, i.e. before the `quorum_reads` override below.
+                    const bool is_write_request = !is_read;
 
                     /// If read has to go through raft, put it in the batch as if it were a write.
                     /// It's sufficient to do this for the first request of a batch, the rest are ordered after it.
@@ -855,6 +903,17 @@ void KeeperRequestDispatcher::dispatchThread()
                             session->last_batch_idx = batch_idx;
 
                         size_t last_batch = session->last_batch_idx;
+
+                        /// `keeper_read_wait_for_write_time_milliseconds` measures how long a read
+                        /// waited for the write it depends on, so parking the read is only a sample
+                        /// of it if the batch it attaches to holds a write of this very session.
+                        /// Without `quorum_reads` that is implied by `last_batch_idx`, which only
+                        /// writes advance. With `quorum_reads` the read was force-attached to the
+                        /// batch it happened to land in just above, and what it ends up ordered
+                        /// behind can be another read pushed through raft, so the session's last
+                        /// *write* batch is what has to match.
+                        const bool waits_for_write = session->last_write_batch_idx == last_batch;
+
                         if (last_batch == batch_idx)
                         {
                             /// Case (1): read request should be attached to the current batch.
@@ -862,6 +921,8 @@ void KeeperRequestDispatcher::dispatchThread()
                             chassert(!requests.empty());
                             if (session)
                                 session->reordering_version = current_reordering_version;
+                            if (waits_for_write)
+                                startReadWaitForWriteSpan(request);
                             late_reads.push_back(std::move(request));
                         }
                         else
@@ -876,7 +937,8 @@ void KeeperRequestDispatcher::dispatchThread()
                                 /// If added == false, it means last_batch was committed and all its
                                 /// read requests were finished, which means we can execute this
                                 /// request right in dispatchThread.
-                                added = in_flight_batches[last_batch % in_flight_batches.size()].late_reads.add(request);
+                                added = in_flight_batches[last_batch % in_flight_batches.size()].late_reads.add(
+                                    request, waits_for_write);
                             }
                             if (!added)
                                 /// Case (3): do the read right in dispatchThread.
@@ -888,7 +950,13 @@ void KeeperRequestDispatcher::dispatchThread()
                         if ((session && session->reordering_version == current_reordering_version) || !optimize_read_order)
                             flush_to_intermediate_reads();
                         if (session)
+                        {
                             session->last_batch_idx = batch_idx;
+                            /// A read that `quorum_reads` pushed through raft is in the batch, but
+                            /// it is not a write, so reads ordered after it are not waiting for one.
+                            if (is_write_request)
+                                session->last_write_batch_idx = batch_idx;
+                        }
 
                         batch_subrequests += getSubrequestCount(*request.request);
                         batch_bytes += getRequestBytesCost(*request.request);
@@ -978,7 +1046,9 @@ void KeeperRequestDispatcher::dropInFlightRequests()
             if (batch.intermediate_reads_idx < batch.intermediate_reads.size() &&
                 batch.intermediate_reads[batch.intermediate_reads_idx].first == batch.committed_requests)
             {
-                for (const auto & read_request : batch.intermediate_reads[batch.intermediate_reads_idx].second)
+                auto & dropped_reads = batch.intermediate_reads[batch.intermediate_reads_idx].second;
+                abandonReadWaitForWriteSpans(dropped_reads, "Connection loss");
+                for (const auto & read_request : dropped_reads)
                 {
                     reads_dropped += 1;
                     addErrorResponse(read_request, Coordination::Error::ZCONNECTIONLOSS);
@@ -992,6 +1062,7 @@ void KeeperRequestDispatcher::dropInFlightRequests()
             auto reads = batch.late_reads.takeAndFinishIfEmpty();
             if (reads.empty())
                 break;
+            abandonReadWaitForWriteSpans(reads, "Connection loss");
             for (const auto & read_request : reads)
             {
                 reads_dropped += 1;
@@ -1070,6 +1141,7 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
     {
         auto reads = std::move(batch.intermediate_reads[batch.intermediate_reads_idx].second);
         batch.intermediate_reads_idx += 1;
+        finalizeReadWaitForWriteSpans(reads);
 
         /// (We could re-check whether the requests' sessions are still alive, but it doesn't seem
         ///  worth the map lookup cost. We already checked session liveness just before starting
@@ -1099,11 +1171,17 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
         /// dispatchThread that subsequent reads can be executed right there.
         /// (Alternatively, we could make dispatchThread block waiting for onCommit to finish reading,
         ///  but that's just worse.)
+        /// Reads parked from here on are only kept in order behind the reads we are about to
+        /// execute; they are not waiting for an uncommitted write, so they must not be recorded in
+        /// `keeper_read_wait_for_write_time_milliseconds`.
+        batch.late_reads.markWritesCommitted();
+
         while (true)
         {
             auto reads = batch.late_reads.takeAndFinishIfEmpty();
             if (reads.empty())
                 break;
+            finalizeReadWaitForWriteSpans(reads);
             executeReads(std::move(reads));
         }
 

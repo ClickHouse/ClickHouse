@@ -30,6 +30,8 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Common/HistogramMetrics.h>
+#include <Common/ZooKeeper/KeeperSpans.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -1442,6 +1444,29 @@ public:
     static size_t headIdx(const KeeperRequestDispatcher & dispatcher) { return dispatcher.head_idx.load(); }
 
     static void dropInFlightRequests(KeeperRequestDispatcher & dispatcher) { dispatcher.dropInFlightRequests(); }
+
+    /// Parks a read in the batch's late_reads, the way dispatchThread's case (2) does.
+    static bool addLateRead(
+        KeeperRequestDispatcher & dispatcher, size_t batch_idx, KeeperRequestForSession & request, bool waits_for_write)
+    {
+        return dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()].late_reads.add(
+            request, waits_for_write);
+    }
+
+    /// Puts the batch's late_reads back into the state a freshly started batch has, so that one
+    /// seeded batch can be reused for many rounds.
+    static void resetLateReads(KeeperRequestDispatcher & dispatcher, size_t batch_idx)
+    {
+        auto & late_reads = dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()].late_reads;
+        late_reads.deactivate();
+        late_reads.activate({});
+    }
+
+    /// What onCommit does once the whole batch has committed, before it drains the parked reads.
+    static void markWritesCommitted(KeeperRequestDispatcher & dispatcher, size_t batch_idx)
+    {
+        dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()].late_reads.markWritesCommitted();
+    }
 };
 
 class KeeperRequestDispatcherOldTestAccessor
@@ -1562,6 +1587,36 @@ struct DispatcherFixture
         dispatcher = std::make_unique<DB::KeeperRequestDispatcher>(server.get(), router());
     }
 };
+
+/// Total number of samples in a histogram metric, summed over its buckets (the counters are
+/// per-bucket, not cumulative), so a test can assert whether an observation happened at all.
+UInt64 histogramSampleCount(const String & name)
+{
+    UInt64 total = 0;
+    HistogramMetrics::Factory::instance().forEachFamily(
+        [&](const HistogramMetrics::MetricFamily & family)
+        {
+            if (family.getName() != name)
+                return;
+            family.forEachMetric(
+                [&](const HistogramMetrics::LabelValues &, const HistogramMetrics::Metric & metric)
+                {
+                    for (size_t i = 0; i <= family.getBuckets().size(); ++i)
+                        total += metric.getCounter(i);
+                });
+        });
+    return total;
+}
+
+DB::KeeperRequestForSession makeReadRequest(int64_t session_id, const std::string & path)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperGetRequest>();
+    request->path = path;
+    DB::KeeperRequestForSession request_for_session;
+    request_for_session.request = request;
+    request_for_session.session_id = session_id;
+    return request_for_session;
+}
 
 DB::KeeperRequestForSession makeSessionIDRequest(int32_t server_id, int64_t internal_id)
 {
@@ -1903,6 +1958,170 @@ TEST(KeeperDispatcher, InterruptibleSleepReturnsAtOnceForNonPositivePeriod)
         EXPECT_FALSE(signalled_when_the_wait_returned);
         EXPECT_LT(elapsed_ms, static_cast<UInt64>(notify_after_ms));
     }
+}
+
+
+/// The histogram means "time a read waited for the write it depends on". A read parked in
+/// `LateReads` while the batch still has uncommitted writes is such a wait; a read parked after the
+/// batch has fully committed is only being kept in order behind the reads that are already
+/// executing, so it must not become a sample.
+TEST(KeeperDispatcher, ReadWaitForWriteOnlyCountsWaitsForWrites)
+{
+    DispatcherFixture fixture;
+    auto & dispatcher = *fixture.dispatcher;
+
+    size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
+        dispatcher, makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 21));
+
+    /// Parked while the write is still in flight: this is a wait for a write.
+    /// (`add` moves the request out, so keep our own pointer to it.)
+    auto waiting_read = makeReadRequest(/*session_id=*/ 5, "/waiting");
+    auto waiting_request = waiting_read.request;
+    ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, waiting_read, /*waits_for_write=*/ true));
+    EXPECT_TRUE(waiting_request->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite));
+
+    /// Parked after the batch committed, in the window where onCommit re-opens the container between
+    /// `takeAndFinishIfEmpty` iterations.
+    RequestDispatcherAccessor::markWritesCommitted(dispatcher, batch_idx);
+    auto ordered_read = makeReadRequest(/*session_id=*/ 5, "/ordered");
+    auto ordered_request = ordered_read.request;
+    ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, ordered_read, /*waits_for_write=*/ true));
+    EXPECT_FALSE(ordered_request->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite))
+        << "a read parked after the batch committed was counted as waiting for a write";
+
+    /// A started span is the one that gets observed, which is what makes the distinction above matter.
+    UInt64 before = histogramSampleCount("keeper_read_wait_for_write_time_milliseconds");
+    waiting_request->spans.maybeFinalize(
+        DB::KeeperSpan::ReadWaitForWrite, [] { return std::vector<DB::OpenTelemetry::SpanAttribute>{}; });
+    EXPECT_EQ(histogramSampleCount("keeper_read_wait_for_write_time_milliseconds"), before + 1);
+
+    /// Leaves the batch in flight; drop it so the fixture tears down the way production does.
+    RequestDispatcherAccessor::dropInFlightRequests(dispatcher);
+}
+
+/// A read dropped because the append stream broke never saw its write commit, so its wait must not
+/// end up in the histogram - otherwise a broken stream reads as `wait_for_write` activity.
+TEST(KeeperDispatcher, ReadWaitForWriteNotObservedForDroppedReads)
+{
+    DispatcherFixture fixture;
+    auto & dispatcher = *fixture.dispatcher;
+
+    size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
+        dispatcher, makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 23));
+
+    auto read = makeReadRequest(/*session_id=*/ 7, "/dropped");
+    auto read_request = read.request;
+    ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, read, /*waits_for_write=*/ true));
+    ASSERT_TRUE(read_request->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite));
+
+    UInt64 before = histogramSampleCount("keeper_read_wait_for_write_time_milliseconds");
+    RequestDispatcherAccessor::dropInFlightRequests(dispatcher);
+
+    EXPECT_EQ(histogramSampleCount("keeper_read_wait_for_write_time_milliseconds"), before)
+        << "an abandoned wait was recorded in keeper_read_wait_for_write_time_milliseconds";
+    EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1) << "the dropped batch was not popped";
+}
+
+/// With `quorum_reads` the first read of a batch is pushed through raft and the reads behind it are
+/// parked, so what a parked read waits for can be another read rather than a write of its own
+/// session. dispatchThread works that out and passes it down; the parking path has to honour it, or
+/// the histogram quietly widens from "waited for a write" to "waited for whatever was in front".
+TEST(KeeperDispatcher, ReadWaitForWriteNotStartedForAReadThatFollowsAnotherRead)
+{
+    DispatcherFixture fixture;
+    auto & dispatcher = *fixture.dispatcher;
+
+    size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
+        dispatcher, makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 25));
+
+    auto read = makeReadRequest(/*session_id=*/ 11, "/behind-a-read");
+    auto read_request = read.request;
+    ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, read, /*waits_for_write=*/ false));
+
+    /// The finalizing side observes the histogram for exactly the spans that were started, so not
+    /// starting one is what keeps this read out of `keeper_read_wait_for_write_time_milliseconds`.
+    EXPECT_FALSE(read_request->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite))
+        << "a read that was not waiting for a write was counted as waiting for one";
+
+    RequestDispatcherAccessor::dropInFlightRequests(dispatcher);
+}
+
+/// onCommit marks the batch committed while dispatchThread keeps parking reads in the same
+/// container, so the suppression above is a cross-thread property: a read parked after
+/// `markWritesCommitted` returned must never be counted. That holds only because the flag is taken
+/// under the same lock as the parking itself - a flag beside the lock has no ordering against it and
+/// can still read as "not committed yet" on a weakly ordered machine.
+TEST(KeeperDispatcher, ReadWaitForWriteSuppressionIsVisibleToTheParkingThread)
+{
+    DispatcherFixture fixture;
+    auto & dispatcher = *fixture.dispatcher;
+
+    size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
+        dispatcher, makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 27));
+
+    constexpr size_t reads_per_round = 32;
+
+    /// One round per possible position of the commit within the sequence of parked reads, so the
+    /// interleaving is swept instead of being left to timing.
+    for (size_t mark_after = 0; mark_after <= reads_per_round; ++mark_after)
+    {
+        if (mark_after != 0)
+            RequestDispatcherAccessor::resetLateReads(dispatcher, batch_idx);
+
+        std::atomic<size_t> parked_count{0};
+        std::atomic<bool> parking_done{false};
+        std::atomic<bool> committed{false};
+
+        std::thread committer(
+            [&]
+            {
+                while (parked_count.load() < mark_after && !parking_done.load())
+                    std::this_thread::yield();
+                RequestDispatcherAccessor::markWritesCommitted(dispatcher, batch_idx);
+                committed.store(true);
+            });
+
+        /// (`add` moves the request out, so keep our own pointers to the ones we parked.)
+        std::vector<std::pair<Coordination::ZooKeeperRequestPtr, bool>> parked;
+        parked.reserve(reads_per_round);
+        for (size_t i = 0; i < reads_per_round; ++i)
+        {
+            auto read = makeReadRequest(/*session_id=*/ 13, "/parked");
+            auto read_request = read.request;
+            /// Read before parking: if this says the batch is already committed, then
+            /// `markWritesCommitted` returned before `add` was entered.
+            bool committed_before = committed.load();
+            if (!RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, read, /*waits_for_write=*/ true))
+                break;
+            parked.emplace_back(read_request, committed_before);
+            parked_count.store(i + 1);
+        }
+        parking_done.store(true);
+
+        committer.join();
+
+        for (const auto & [read_request, committed_before] : parked)
+        {
+            if (committed_before)
+                ASSERT_FALSE(read_request->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite))
+                    << "a read parked after markWritesCommitted returned was counted as waiting for a write";
+        }
+
+        /// The overlap above is a race, so it may not happen in a given round; these two do not
+        /// depend on timing and keep every round meaningful.
+        if (mark_after != 0)
+            EXPECT_TRUE(parked.front().first->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite))
+                << "the commit waits for this read to be parked, so it did wait for a write";
+
+        auto after_commit = makeReadRequest(/*session_id=*/ 13, "/after-commit");
+        auto after_commit_request = after_commit.request;
+        ASSERT_TRUE(
+            RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, after_commit, /*waits_for_write=*/ true));
+        EXPECT_FALSE(after_commit_request->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite))
+            << "a read parked once the committing thread was done was counted as waiting for a write";
+    }
+
+    RequestDispatcherAccessor::dropInFlightRequests(dispatcher);
 }
 
 #endif
