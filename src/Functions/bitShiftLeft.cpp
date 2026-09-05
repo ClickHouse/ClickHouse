@@ -153,17 +153,17 @@ struct BitShiftLeftImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    /// Compiled code cannot throw, so the count types for which `apply` raises - a big integer, and a
-    /// signed type, which may hold a negative value - are left uncompiled and raise there.
+    /// Compiled code cannot throw, and the decline is by type: a big-integer count has no
+    /// implementation at all, and a signed count is declined whole though only a negative one raises.
     static constexpr bool compilable = !is_big_int_v<B> && !is_signed_v<B>;
 
     static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
     {
         if (!left->getType()->isIntegerTy())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "BitShiftLeftImpl expected an integral type");
-        /// The shift is performed in the result type, which is at least as wide as `A`, while the value
-        /// shifted out is a value of `A`: a count reaching the width of `A` yields zero. The comparison
-        /// also keeps the count below the width of the result type, where the shift would be poison.
+        /// The shift runs in the result type, which is at least as wide as `A`, but the shifted value is
+        /// an `A`: a count reaching the width of `A` yields zero. The comparison also keeps the count
+        /// below the width of the result type, where the shift would be poison.
         auto * width_of_a = llvm::ConstantInt::get(left->getType(), 8 * sizeof(A));
         auto * zero = llvm::ConstantInt::get(left->getType(), 0);
         return b.CreateSelect(b.CreateICmpUGE(right, width_of_a), zero, b.CreateShl(left, right));
