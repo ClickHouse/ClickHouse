@@ -261,6 +261,7 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
     PlanOutline outline;
     outline.max_threads = max_threads;
     outline.concurrency_control = concurrency_control;
+    outline.include_step_descriptions = flags.with_step_descriptions;
     std::vector<String> payloads;
     UInt64 min_reader_plan_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
 
@@ -271,6 +272,8 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
     {
         Node * node = {};
         size_t next_child = 0;
+        /// Indices of this node's children in `outline.nodes`, filled as each child is emitted.
+        std::vector<UInt64> child_indices = {};
     };
 
     std::stack<Frame> stack;
@@ -293,12 +296,14 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
             continue;
         }
 
+        std::vector<UInt64> child_indices = std::move(frame.child_indices);
         stack.pop();
 
         PlanOutline::Node outline_node;
-        outline_node.child_count = node->children.size();
+        outline_node.children = std::move(child_indices);
         outline_node.step_name = node->step->getSerializationName();
-        outline_node.step_description = node->step->getStepDescription();
+        if (flags.with_step_descriptions)
+            outline_node.step_description = node->step->getStepDescription();
 
         const auto * info = step_registry.getStepSerializationInfo(outline_node.step_name);
         if (node->step->hasOutputHeader())
@@ -343,7 +348,10 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
         outline_node.min_reader_plan_version = node_min_reader;
         min_reader_plan_version = std::max(min_reader_plan_version, node_min_reader);
 
+        const UInt64 node_index = outline.nodes.size();
         outline.nodes.push_back(std::move(outline_node));
+        if (!stack.empty())
+            stack.top().child_indices.push_back(node_index);
         /// `payload` is finalized and goes out of scope here, so its bytes move rather than copy.
         payloads.push_back(std::move(payload.str()));
     }
@@ -398,17 +406,10 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
 
 /// Bounds the memory one plan can take before anything is buffered. A server setting, not a query
 /// one: a query setting arrives from the sender, who could then pick its own limit.
-static UInt64 readBodySize(ReadBuffer & in, const ContextPtr & context)
+static UInt64 readBodySize(ReadBuffer & in)
 {
-    const UInt64 max_envelope_bytes = context->getServerSettings()[ServerSetting::max_serialized_query_plan_size];
-
     UInt64 body_size = 0;
     readVarUInt(body_size, in);
-    if (body_size > max_envelope_bytes)
-        throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-            "Query plan body declares {} bytes which exceeds `max_serialized_query_plan_size` = {}",
-            body_size, max_envelope_bytes);
-
     return body_size;
 }
 
@@ -623,7 +624,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         UInt64 format_kind = 0;
         readVarUInt(format_kind, in);
 
-        const UInt64 body_size = readBodySize(in, context);
+        const UInt64 body_size = readBodySize(in);
 
         /// Acceptance is decided by the content's "needed to read" version, not by the writer's
         /// version: a newer writer's plan is readable as long as everything above this reader's
@@ -658,6 +659,18 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
             {
             }
         };
+
+        /// A body larger than the server accepts is refused, but only after the declared bytes are
+        /// drained: throwing here without draining would leave the body on the connection and parse the
+        /// next packet from the middle of it.
+        const UInt64 max_body_size = context->getServerSettings()[ServerSetting::max_serialized_query_plan_size];
+        if (body_size > max_body_size)
+        {
+            drain_body();
+            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+                "Query plan body declares {} bytes which exceeds `max_serialized_query_plan_size` = {}",
+                body_size, max_body_size);
+        }
 
         /// An unknown body layout is refused on the kind alone. Trusting `min_reader` here would put
         /// the whole grammar at the mercy of a future writer computing it correctly.

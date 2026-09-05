@@ -36,10 +36,15 @@ struct PlanOutline
     /// run with default limits after it is read back.
     UInt64 max_threads = 0;
     bool concurrency_control = false;
+    /// Step descriptions are debug text; they travel only when a writer asks for them, so a normal
+    /// plan does not pay for them. A reader learns from this whether each node carries one.
+    bool include_step_descriptions = false;
 
     struct Node
     {
-        UInt64 child_count = 0;
+        /// Indices of this node's input steps in `nodes`, left to right. Explicit edges rather than a
+        /// count leave room for a step shared by several parents (a DAG), not only a tree.
+        std::vector<UInt64> children;
         String step_name;                       /// QueryPlanStepRegistry key
         /// Every format appends fields to the one before, so a reader that knows fewer formats
         /// reads the front of the payload and the frame skips the rest.
@@ -56,8 +61,8 @@ struct PlanOutline
         String extension_bytes;                 /// empty today; a reader skips what it does not know
     };
 
-    /// Every child comes before its parent and the root is last, with siblings left to right.
-    /// `Delayed*` steps are skipped here, the same way the plan walk skips them.
+    /// Every child comes before its parent and the root is last. `Delayed*` steps are skipped here,
+    /// the same way the plan walk skips them.
     std::vector<Node> nodes;
 
     struct SetEntry
@@ -92,9 +97,9 @@ struct PlanOutlineShape
     bool ok() const { return issues.empty(); }
 };
 
-/// Rebuilds the tree from `child_count`. Nodes are in left-to-right post-order, so every child
-/// precedes its parent: each node takes the `child_count` most recent subtrees that nothing has
-/// claimed yet, and the single subtree left at the end is the root (the last node).
+/// Rebuilds the shape from each node's explicit child indices. A child index must point to an
+/// earlier node, so the graph is acyclic; the one node nothing points to is the root, and the writer
+/// emits it last.
 PlanOutlineShape reconstructOutlineShape(const PlanOutline & outline);
 
 struct QueryPlanOutlineValidationResult

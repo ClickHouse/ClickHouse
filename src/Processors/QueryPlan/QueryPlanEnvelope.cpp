@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 
+#include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -41,11 +42,14 @@ void writeOutlineBody(const PlanOutline & outline, WriteBuffer & out)
 {
     writeVarUInt(outline.max_threads, out);
     writeBinary(outline.concurrency_control, out);
+    writeBinary(outline.include_step_descriptions, out);
 
     writeVarUInt(outline.nodes.size(), out);
     for (const auto & node : outline.nodes)
     {
-        writeVarUInt(node.child_count, out);
+        writeVarUInt(node.children.size(), out);
+        for (UInt64 child : node.children)
+            writeVarUInt(child, out);
         writeStringBinary(node.step_name, out);
         writeVarUInt(node.step_format_version, out);
         writeVarUInt(node.min_reader_plan_version, out);
@@ -53,7 +57,8 @@ void writeOutlineBody(const PlanOutline & outline, WriteBuffer & out)
         UInt8 node_flags = node.header ? 1 : 0;
         writeIntBinary(node_flags, out);
 
-        writeStringBinary(node.step_description, out);
+        if (outline.include_step_descriptions)
+            writeStringBinary(node.step_description, out);
 
         if (node.header)
             serializeQueryPlanHeader(*node.header, out);
@@ -107,6 +112,7 @@ PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 
 
     readVarUInt(outline.max_threads, in);
     readBinary(outline.concurrency_control, in);
+    readBinary(outline.include_step_descriptions, in);
 
     /// Counts come from the peer: the vectors grow as elements are read, so a frame that ends
     /// early only pays for what it delivered.
@@ -116,7 +122,10 @@ PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 
     {
         PlanOutline::Node node;
 
-        node.child_count = readCappedVarUInt(in, MAX_OUTLINE_NODES, "node children");
+        /// A node cannot have more children than there are nodes, and each index is one of them.
+        UInt64 child_count = readCappedVarUInt(in, node_count, "node children");
+        for (UInt64 c = 0; c < child_count; ++c)
+            node.children.push_back(readCappedVarUInt(in, node_count, "child index"));
         readStringBinary(node.step_name, in, MAX_OUTLINE_FIELD_BYTES);
         readVarUInt(node.step_format_version, in);
         readVarUInt(node.min_reader_plan_version, in);
@@ -128,7 +137,8 @@ PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 
         if (node_flags & ~UInt8(1))
             throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
                 "Query plan node carries unknown flags {:#x}", UInt32(node_flags));
-        readStringBinary(node.step_description, in, MAX_OUTLINE_FIELD_BYTES);
+        if (outline.include_step_descriptions)
+            readStringBinary(node.step_description, in, MAX_OUTLINE_FIELD_BYTES);
 
         if (node_flags & 1)
             node.header = std::make_shared<const Block>(deserializeQueryPlanHeader(in, max_type_complexity));
@@ -188,20 +198,16 @@ PlanOutline readQueryPlanOutline(ReadBuffer & in, size_t max_type_complexity, UI
     /// to the protocol after it.
     UInt64 outline_size = readCappedVarUInt(in, std::min(MAX_OUTLINE_BYTES, max_frame_bytes), "outline bytes");
 
-    /// Copy the frame and parse from memory: parsing can then never read past the declared size,
-    /// and trailing bytes inside the frame are detectable.
-    String outline_bytes;
-    outline_bytes.resize(outline_size);
-    in.readStrict(outline_bytes.data(), outline_size);
-
-    ReadBufferFromMemory body(outline_bytes.data(), outline_bytes.size());
+    /// Read straight from the stream, bounded to the frame: parsing then never reads past the declared
+    /// size, and bytes left inside the frame are detectable, without copying the frame into memory first.
+    LimitReadBuffer body(in, {.read_no_more = outline_size});
     try
     {
         auto outline = readOutlineBody(body, max_type_complexity, max_frame_bytes);
 
-        if (!body.eof())
+        if (body.bytesUntilLimit() != 0)
             throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-                "Query plan outline has {} trailing bytes inside its frame", body.available());
+                "Query plan outline has {} trailing bytes inside its frame", body.bytesUntilLimit());
 
         return outline;
     }
@@ -227,36 +233,38 @@ PlanOutlineShape reconstructOutlineShape(const PlanOutline & outline)
     const size_t node_count = outline.nodes.size();
     shape.children.resize(node_count);
 
-    /// Subtrees that no parent has claimed yet, in the order they were completed.
-    std::vector<size_t> unclaimed;
-    unclaimed.reserve(node_count);
-
-    for (size_t i = 0; i < node_count; ++i)
+    if (node_count == 0)
     {
-        const UInt64 child_count = outline.nodes[i].child_count;
-        if (child_count > unclaimed.size())
-        {
-            shape.issues.push_back(fmt::format(
-                "node #{} ('{}') declares {} children but only {} subtrees precede it",
-                i, outline.nodes[i].step_name, child_count, unclaimed.size()));
-            return shape;
-        }
-
-        /// Popping walks the children right to left, so fill the list from the back.
-        auto & children = shape.children[i];
-        children.resize(child_count);
-        for (size_t position = child_count; position-- > 0;)
-        {
-            children[position] = unclaimed.back();
-            unclaimed.pop_back();
-        }
-
-        unclaimed.push_back(i);
+        shape.issues.push_back("plan has no nodes");
+        return shape;
     }
 
-    if (unclaimed.size() != 1)
-        shape.issues.push_back(fmt::format(
-            "plan tree does not have a single root: {} subtrees are unattached", unclaimed.size()));
+    std::vector<bool> referenced(node_count, false);
+    for (size_t i = 0; i < node_count; ++i)
+    {
+        for (UInt64 child : outline.nodes[i].children)
+        {
+            /// A child is written before its parent, so its index points back. This keeps the graph
+            /// acyclic and lets a reader build each node once its children exist.
+            if (child >= i)
+            {
+                shape.issues.push_back(fmt::format(
+                    "node #{} ('{}') has child index {} that does not precede it",
+                    i, outline.nodes[i].step_name, child));
+                return shape;
+            }
+            referenced[child] = true;
+        }
+        shape.children[i].assign(outline.nodes[i].children.begin(), outline.nodes[i].children.end());
+    }
+
+    /// The root is the one node nothing points to, and the writer emits it last.
+    for (size_t i = 0; i + 1 < node_count; ++i)
+        if (!referenced[i])
+            shape.issues.push_back(fmt::format(
+                "node #{} ('{}') is not an input of any step", i, outline.nodes[i].step_name));
+    if (referenced[node_count - 1])
+        shape.issues.push_back("the last plan node is an input of another step, so the plan has no single root");
 
     return shape;
 }
@@ -297,10 +305,10 @@ QueryPlanOutlineValidationResult validateQueryPlanOutline(
             /// A step is built from its children's headers, so a node whose child count does not
             /// match the input count the step reads would make the factory read a header that is
             /// not there. Caught here, before the step is built.
-            if (info->input_count != std::numeric_limits<size_t>::max() && node.child_count != info->input_count)
+            if (info->input_count != std::numeric_limits<size_t>::max() && node.children.size() != info->input_count)
                 result.issues.push_back(fmt::format(
                     "step '{}' (node #{}) has {} inputs but reads {}",
-                    node.step_name, i, node.child_count, info->input_count));
+                    node.step_name, i, node.children.size(), info->input_count));
 
             /// The version a node claims to need must cover the version that introduced the step's
             /// name. A writer that asked for too little would otherwise have old readers run the

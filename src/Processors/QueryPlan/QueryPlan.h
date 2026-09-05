@@ -244,6 +244,9 @@ public:
         /// See `serializeForDistributedTask`.
         bool sets_must_be_ready = false;
         SizeLimits sets_transfer_limits = {};
+        /// Put each step's debug description on the wire. Off by default: it is only useful for
+        /// rendering a plan whose steps a reader does not know, and costs bytes per node otherwise.
+        bool with_step_descriptions = false;
     };
 
 private:

@@ -522,7 +522,6 @@ PlanOutline makeTestOutline()
     PlanOutline outline;
 
     PlanOutline::Node leaf;
-    leaf.child_count = 0;
     leaf.step_name = "TestSource";
     leaf.step_format_version = 1;
     leaf.min_reader_plan_version = outline_version;
@@ -531,7 +530,7 @@ PlanOutline makeTestOutline()
     outline.nodes.push_back(std::move(leaf));
 
     PlanOutline::Node root;
-    root.child_count = 1;
+    root.children = {0};
     root.step_name = "Expression";
     root.step_format_version = 1;
     root.min_reader_plan_version = outline_version;
@@ -590,7 +589,6 @@ TEST(QueryPlanSerialization, PayloadTailIsSkippedForANewerStepFormat)
 
     PlanOutline outline;
     PlanOutline::Node node;
-    node.child_count = 0;
     node.step_name = "TestTailStep";
     node.step_format_version = 5;
     node.min_reader_plan_version = outline_version;
@@ -630,10 +628,10 @@ TEST(QueryPlanOutline, StepInputCountIsValidated)
 {
     registerStepsOnce();
 
-    auto make_node = [](const char * name, UInt64 child_count)
+    auto make_node = [](const char * name, std::vector<UInt64> children)
     {
         PlanOutline::Node outline_node;
-        outline_node.child_count = child_count;
+        outline_node.children = std::move(children);
         outline_node.step_name = name;
         outline_node.step_format_version = 1;
         outline_node.min_reader_plan_version = outline_version;
@@ -645,7 +643,7 @@ TEST(QueryPlanOutline, StepInputCountIsValidated)
     /// input, so building it would dereference a header that is not there.
     {
         PlanOutline outline;
-        outline.nodes.push_back(make_node("Expression", 0));
+        outline.nodes.push_back(make_node("Expression", {}));
         auto result = validateQueryPlanOutline(outline, outline_version);
         ASSERT_FALSE(result.ok());
         EXPECT_NE(result.describe().find("has 0 inputs but reads 1"), std::string::npos) << result.describe();
@@ -654,8 +652,8 @@ TEST(QueryPlanOutline, StepInputCountIsValidated)
     /// A source step given a child is rejected the same way.
     {
         PlanOutline outline;
-        outline.nodes.push_back(make_node("TestSource", 0));
-        outline.nodes.push_back(make_node("ReadNothing", 1));
+        outline.nodes.push_back(make_node("TestSource", {}));
+        outline.nodes.push_back(make_node("ReadNothing", {0}));
         auto result = validateQueryPlanOutline(outline, outline_version);
         ASSERT_FALSE(result.ok());
         EXPECT_NE(result.describe().find("has 1 inputs but reads 0"), std::string::npos) << result.describe();
@@ -664,8 +662,8 @@ TEST(QueryPlanOutline, StepInputCountIsValidated)
     /// The matching shape passes the arity check.
     {
         PlanOutline outline;
-        outline.nodes.push_back(make_node("TestSource", 0));
-        outline.nodes.push_back(make_node("Expression", 1));
+        outline.nodes.push_back(make_node("TestSource", {}));
+        outline.nodes.push_back(make_node("Expression", {0}));
         EXPECT_TRUE(validateQueryPlanOutline(outline, outline_version).ok());
     }
 }
@@ -674,6 +672,8 @@ TEST(QueryPlanOutline, WriteReadRoundTrip)
 {
     registerStepsOnce();
     auto outline = makeTestOutline();
+    /// Descriptions travel only when the writer opts in; this round trip checks that path.
+    outline.include_step_descriptions = true;
     outline.nodes[1].step_description = "test description";
     outline.nodes[0].settings.push_back({.name = "max_block_size", .flags = 0, .value = "\x01"});
     outline.nodes[0].payload_size = 42;
@@ -687,7 +687,7 @@ TEST(QueryPlanOutline, WriteReadRoundTrip)
     ASSERT_EQ(restored.nodes.size(), 2u);
     /// The root is the last node, its child the first.
     EXPECT_EQ(restored.nodes[1].step_name, "Expression");
-    EXPECT_EQ(restored.nodes[1].child_count, 1u);
+    EXPECT_EQ(restored.nodes[1].children.size(), 1u);
     EXPECT_EQ(restored.nodes[1].step_description, "test description");
     ASSERT_TRUE(restored.nodes[1].header);
     EXPECT_EQ(restored.nodes[1].header->columns(), 2u);
@@ -804,9 +804,9 @@ TEST(QueryPlanOutline, ValidationChecksTreeStructureAndSetOrder)
     registerStepsOnce();
     auto outline = makeTestOutline();
 
-    outline.nodes[1].child_count = 2;  /// Declares two children, only one subtree precedes it.
+    outline.nodes[1].children = {0, 1};  /// A child index that is the root itself, so it does not precede it.
     EXPECT_FALSE(validateQueryPlanOutline(outline, outline_version).ok());
-    outline.nodes[1].child_count = 1;
+    outline.nodes[1].children = {0};
 
     PlanOutline::SetEntry set1;
     set1.hash.low64 = 10;
@@ -970,15 +970,15 @@ TEST(QueryPlanOutline, ValidationRejectsMalformedChildCounts)
 
     /// The first node cannot have children: nothing precedes it.
     auto under_run = makeTestOutline();
-    under_run.nodes[0].child_count = 1;
+    under_run.nodes[0].children = {0};
     EXPECT_FALSE(validateQueryPlanOutline(under_run, outline_version).ok());
 
-    /// Two leaves leave two unattached subtrees, so there is no single root.
+    /// A leaf that no step takes as input leaves the plan without a single root.
     auto two_roots = makeTestOutline();
-    two_roots.nodes[1].child_count = 0;
+    two_roots.nodes[1].children = {};
     auto result = validateQueryPlanOutline(two_roots, outline_version);
     EXPECT_FALSE(result.ok());
-    EXPECT_NE(result.describe().find("single root"), std::string::npos) << result.describe();
+    EXPECT_NE(result.describe().find("not an input of any step"), std::string::npos) << result.describe();
 }
 
 TEST(QueryPlanOutline, ShapeRestoresChildrenLeftToRight)
@@ -990,7 +990,7 @@ TEST(QueryPlanOutline, ShapeRestoresChildrenLeftToRight)
     outline.nodes.push_back(makeTestOutline().nodes[0]);
     outline.nodes.push_back(makeTestOutline().nodes[0]);
     outline.nodes.push_back(makeTestOutline().nodes[1]);
-    outline.nodes[2].child_count = 2;
+    outline.nodes[2].children = {0, 1};
 
     auto shape = reconstructOutlineShape(outline);
     ASSERT_TRUE(shape.ok()) << (shape.issues.empty() ? String{} : shape.issues.front());
@@ -1011,10 +1011,10 @@ TEST(QueryPlanOutline, ReservedFlagBitsAreRejected)
         auto bytes = writeOutlineToString(makeTestOutline());
 
         /// Everything before the first node's flag byte is one byte except the step name: frame
-        /// size, the two plan-level limits, node count, child count, name length, name, format
-        /// version and reader version.
+        /// size, the two plan-level limits, the descriptions flag, node count, child count, name
+        /// length, name, format version and reader version.
         const std::string first_step_name = "TestSource";
-        const size_t flags_at = 7 + first_step_name.size() + 1;
+        const size_t flags_at = 8 + first_step_name.size() + 1;
         ASSERT_EQ(bytes[flags_at], char(1)) << "the node flag byte is not where this test expects it";
         bytes[flags_at] = char(1 | 2);
 
