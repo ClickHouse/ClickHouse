@@ -697,15 +697,17 @@ SELECT * from table WHERE str IN ('Hello', 'World');
 #### `LIKE` and `match` {#functions-example-like-match}
 
 <Note>
-These functions currently use the text index for filtering only if the index tokenizer is either `splitByNonAlpha`, `ngrams` or `sparseGrams`.
+These functions can use extracted tokens with `splitByNonAlpha`, `ngrams`, `sparseGrams`, or `asciiCJK`. The `jsonPathValues` tokenizer also supports them on direct `JSON` subcolumns; see [bounded path/value indexes](#json-indexes-jsonpathvalues).
 </Note>
 
 <Note>
 `NOT LIKE` (`notLike`) is not supported by the text index.
 </Note>
 
-In order to use `LIKE` ([like](/reference/functions/regular-functions/string-search-functions#like)) and the [match](/reference/functions/regular-functions/string-search-functions#match) function with text indexes, ClickHouse must be able to extract complete tokens from the search term.
+When using extracted tokens for `LIKE` ([like](/reference/functions/regular-functions/string-search-functions#like)) and the [match](/reference/functions/regular-functions/string-search-functions#match) function, ClickHouse must be able to extract complete tokens from the search term.
 For the index with `ngrams` tokenizer, this is the case if the length of the searched strings between wildcards is equal or longer than the ngram length.
+
+With `jsonPathValues`, these functions search indexed values instead of extracting complete tokens. Dictionary scans require `use_text_index_like_evaluation_by_dictionary_scan = 1`; prefix searches use ordered dictionary lookups. See [LIKE/ILIKE performance tuning](#like-ilike-queries-perf) for the pattern-length limits.
 
 Example for the text index with `splitByNonAlpha` tokenizer:
 
@@ -733,6 +735,8 @@ See the [LIKE/ILIKE performance tuning section](#like-ilike-queries-perf) for de
 [multiSearchAny](/reference/functions/regular-functions/string-search-functions#multiSearchAny) and its UTF-8 variant [multiSearchAnyUTF8](/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8) test whether any of several literal substrings occurs in the haystack, and [multiMatchAny](/reference/functions/regular-functions/string-search-functions#multiMatchAny) tests whether any of several regular expressions matches.
 These functions use the text index under the same conditions as `LIKE` and `match` (see above): ClickHouse must be able to extract complete tokens from each needle, and the list of needles must be constant.
 A granule is read if any needle may be present in it.
+
+With `jsonPathValues`, `multiSearchAny` and `multiSearchAnyUTF8` instead scan indexed values on direct `JSON` subcolumns when `use_text_index_like_evaluation_by_dictionary_scan = 1`. The needles must be constant and satisfy `text_index_like_min_pattern_length`; they do not need to contain complete tokens. `multiMatchAny` is not supported by `jsonPathValues`.
 
 For `multiMatchAny`, if a single pattern cannot be reduced to a token requirement (for example `.*`, which matches any document), the text index cannot be used and the query falls back to a full scan.
 
