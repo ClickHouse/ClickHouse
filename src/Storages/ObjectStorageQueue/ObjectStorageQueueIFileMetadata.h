@@ -34,6 +34,9 @@ public:
         /// Set how much time it took to list this object from s3.
         void setGetObjectTime(size_t elapsed_ms);
         void onProcessing();
+        /// Called when keeper says that the file is being processed by a processor
+        /// which does not share this file status, i.e. one of another server.
+        void onProcessingByAnotherProcessor();
         void onProcessed();
         void reset();
         void onFailed(const std::string & exception);
@@ -50,6 +53,9 @@ public:
         std::atomic<time_t> processing_end_time = 0;
         std::atomic<size_t> retries = 0;
         std::atomic<UInt64> get_object_time_ms = 0;
+        /// If the `Processing` state was not set by a processor of this table, but observed
+        /// in keeper, the moment of that observation. Zero if the state is owned locally.
+        std::atomic<time_t> foreign_processing_time = 0;
 
     private:
         mutable std::mutex last_exception_mutex;
@@ -103,6 +109,7 @@ public:
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
+        const std::atomic<size_t> & processing_state_cache_ttl_seconds_,
         LoggerPtr log_);
 
     virtual ~ObjectStorageQueueIFileMetadata();
@@ -223,6 +230,10 @@ protected:
     }
     void prepareFailedRequestsImpl(Coordination::Requests & requests, bool retriable);
 
+    /// Whether the cached file status alone already tells that the file
+    /// must not be processed, so keeper does not have to be asked at all.
+    bool hasNonProcessableState() const;
+
     const std::string path;
     const std::string zookeeper_name;
     const std::string node_name;
@@ -230,6 +241,7 @@ protected:
     const size_t max_loading_retries;
     const std::atomic<size_t> & metadata_ref_count;
     const bool use_persistent_processing_nodes;
+    const std::atomic<size_t> & processing_state_cache_ttl_seconds;
     const std::string processing_node_path;
     const std::string processed_node_path;
     const std::string failed_node_path;
