@@ -223,7 +223,9 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
         for (auto itr = existing_logs.begin(); itr != existing_logs.end();)
         {
             size_t number = itr->first;
-            disk->removeFile(itr->second.path);
+            /// A writer that was canceled instead of finalized never published its path on an
+            /// object-storage disk, so the log this entry names may not exist.
+            disk->removeFileIfExists(itr->second.path);
             itr = existing_logs.erase(itr);
             if (remove_from_value == number)
                 break;

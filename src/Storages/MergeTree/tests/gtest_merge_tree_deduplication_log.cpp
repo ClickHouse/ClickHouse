@@ -96,6 +96,54 @@ private:
     const size_t fail_write_file_on_call;
 };
 
+/// A writer that publishes nothing when it is canceled. On an object-storage disk the metadata of the
+/// path is created by the callback that `finalize` runs, and cancellation never runs it, so the path a
+/// canceled writer was opened for stays absent. Removing the local file it created is the stand-in.
+class WriteBufferUnpublishingOnCancel : public WriteBufferFailingOnNthFlush
+{
+public:
+    WriteBufferUnpublishingOnCancel(std::unique_ptr<WriteBufferFromFileBase> impl_, size_t fail_on_flush_, std::string file_name_)
+        : WriteBufferFailingOnNthFlush(std::move(impl_), fail_on_flush_), file_name(std::move(file_name_))
+    {
+    }
+
+private:
+    void cancelImpl() noexcept override
+    {
+        WriteBufferFromFileDecorator::cancelImpl();
+
+        std::error_code ignored;
+        std::filesystem::remove(file_name, ignored);
+    }
+
+    const std::string file_name;
+};
+
+/// A local disk whose first writer fails a chosen flush and publishes nothing when it is canceled.
+/// Later writers are healthy, so the log can recover.
+class DiskUnpublishingOnCancel : public DiskLocal
+{
+public:
+    DiskUnpublishingOnCancel(const String & path_, size_t fail_on_flush_)
+        : DiskLocal("unpublishing_on_cancel", path_), fail_on_flush(fail_on_flush_)
+    {
+    }
+
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings) override
+    {
+        auto impl = DiskLocal::writeFile(path, buf_size, mode, settings);
+        if (!std::exchange(inject, false))
+            return impl;
+
+        auto file_name = impl->getFileName();
+        return std::make_unique<WriteBufferUnpublishingOnCancel>(std::move(impl), fail_on_flush, std::move(file_name));
+    }
+
+private:
+    bool inject = true;
+    const size_t fail_on_flush;
+};
+
 /// The error code matters: a `LOGICAL_ERROR` would mean the defect fired instead of the injection.
 template <typename Operation>
 void expectInjectedFailure(Operation && operation)
@@ -291,6 +339,59 @@ TEST(MergeTreeDeduplicationLog, DropPartWithNothingToWriteDoesNotRecover)
         EXPECT_TRUE(log.addPart({"block3"}, part("all_3_3_0")).empty());
         /// The drop wrote nothing, so it left the deduplication state alone.
         EXPECT_FALSE(log.addPart({"block1"}, part("all_4_4_0")).empty());
+    }
+
+    std::filesystem::remove_all(disk_path);
+}
+
+/// Rotation records the path of the new log before anything is written to it, and a writer that is
+/// canceled instead of finalized publishes no path on an object-storage disk. Retention removes the logs
+/// it has recorded with the overload that throws on a missing path, and erases the entry only after the
+/// removal returns, so before the fix the first pass that reached such an entry threw before the erase and
+/// every later pass threw on the same entry, dropping no log again until the server was restarted.
+TEST(MergeTreeDeduplicationLog, CanceledWriterDoesNotWedgeRetention)
+{
+    const auto disk_path
+        = std::filesystem::temp_directory_path() / ("clickhouse_gtest_dedup_log_retention_" + std::to_string(getpid()));
+    std::filesystem::remove_all(disk_path);
+    std::filesystem::create_directories(disk_path);
+
+    /// `load` opens the first log, and that writer fails its second flush, which is the second record.
+    auto disk = std::make_shared<DiskUnpublishingOnCancel>(disk_path.string() + "/", 2);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    const auto second_log_path = disk_path / "dedup_logs" / "deduplication_log_2.txt";
+
+    {
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_1_1_0")).empty());
+
+        /// The flush of the second record fails, which cancels the writer of the first log and leaves that
+        /// log recorded under a path that holds nothing.
+        expectInjectedFailure([&] { log.addPart({"block2"}, part("all_2_2_0")); });
+
+        /// Three records through the recovered writer are more than the deduplication window, so the next
+        /// retention pass selects the first log for removal.
+        EXPECT_TRUE(log.addPart({"block3"}, part("all_3_3_0")).empty());
+        EXPECT_TRUE(log.addPart({"block4"}, part("all_4_4_0")).empty());
+        EXPECT_TRUE(log.addPart({"block5"}, part("all_5_5_0")).empty());
+
+        /// `ALTER ... MODIFY SETTING` reaches retention outside the `try` that a write goes through, so a
+        /// failure there is reported rather than logged and retried forever.
+        EXPECT_NO_THROW(log.setDeduplicationWindowSize(1));
+
+        /// The log still accepts records and still deduplicates them.
+        EXPECT_TRUE(log.addPart({"block6"}, part("all_6_6_0")).empty());
+        EXPECT_FALSE(log.addPart({"block6"}, part("all_7_7_0")).empty());
+
+        /// And retention keeps making progress: this record fills the current log, and the rotation it
+        /// triggers has to remove the log that has fallen out of the window by now.
+        EXPECT_TRUE(log.addPart({"block7"}, part("all_8_8_0")).empty());
+        EXPECT_FALSE(std::filesystem::exists(second_log_path));
     }
 
     std::filesystem::remove_all(disk_path);
