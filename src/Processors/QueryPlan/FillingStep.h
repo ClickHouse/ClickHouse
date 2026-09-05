@@ -25,6 +25,7 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     const SortDescription & getSortDescription() const override { return sort_description; }
+    const InterpolateDescriptionPtr & getInterpolateDescription() const { return interpolate_description; }
 
 private:
     void updateOutputHeader() override;

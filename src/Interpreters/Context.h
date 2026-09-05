@@ -1250,6 +1250,7 @@ public:
     void setMacros(std::unique_ptr<Macros> && macros);
 
     bool displaySecretsInShowAndSelect() const;
+    bool canDisplaySecretsInShowAndSelect() const;
     Settings getSettingsCopy() const;
     const Settings & getSettingsRef() const { return *settings; }
     void setSettings(const Settings & settings_);

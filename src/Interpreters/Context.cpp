@@ -318,6 +318,7 @@ namespace Setting
     extern const SettingsBool enable_filesystem_read_prefetches_log;
     extern const SettingsBool enable_blob_storage_log;
     extern const SettingsBool enable_blob_storage_log_for_read_operations;
+    extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsUInt64 filesystem_cache_max_download_size;
     extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_wait_for_concurrent_download_timeout_milliseconds;
@@ -3485,6 +3486,13 @@ StoragePtr Context::getViewSource() const
 bool Context::displaySecretsInShowAndSelect() const
 {
     return shared->server_settings[ServerSetting::display_secrets_in_show_and_select];
+}
+
+bool Context::canDisplaySecretsInShowAndSelect() const
+{
+    return getSettingsRef()[Setting::format_display_secrets_in_show_and_select]
+        && displaySecretsInShowAndSelect()
+        && getAccess()->isGranted(AccessType::displaySecretsInShowAndSelect);
 }
 
 Settings Context::getSettingsCopy() const
