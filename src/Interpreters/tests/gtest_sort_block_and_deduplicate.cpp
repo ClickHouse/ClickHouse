@@ -146,3 +146,12 @@ TEST(SortBlockAndDeduplicate, EmptyBlock)
     sortBlockAndDeduplicate(block, ascending({"k"}), IColumn::PermutationSortStability::Stable);
     EXPECT_EQ(block.rows(), 0u);
 }
+
+TEST(SortBlockAndDeduplicate, EqualValuesKeepTheFirstPayload)
+{
+    Block block{numbers("k", {7, 7, 7, 7}), arrivals(4)};
+    sortBlockAndDeduplicate(block, ascending({"k"}), IColumn::PermutationSortStability::Stable);
+
+    EXPECT_EQ(values(block, "k"), (std::vector<UInt64>{7}));
+    EXPECT_EQ(values(block, "arrival"), (std::vector<UInt64>{0}));
+}

@@ -435,21 +435,26 @@ void sortBlockAndDeduplicate(Block & block, const SortDescription & description,
         return;
     }
 
-    /// The first position of each equal range stays, the rest of the range is left out of the permutation.
-    IColumn::Permutation unique_rows;
-    unique_rows.reserve(permutation.size());
-    size_t next_pos = 0;
-    for (const auto & range : equal_ranges)
+    if (!equal_ranges.empty())
     {
-        unique_rows.insert(permutation.begin() + next_pos, permutation.begin() + range.from + 1);
-        next_pos = range.to;
+        /// Keep the first position of each equal range. The write position never passes the read
+        /// position, so retained entries can be compacted in the existing permutation.
+        size_t read_pos = 0;
+        size_t write_pos = 0;
+        for (const auto & range : equal_ranges)
+        {
+            while (read_pos <= range.from)
+                permutation[write_pos++] = permutation[read_pos++];
+            read_pos = range.to;
+        }
+        while (read_pos < permutation.size())
+            permutation[write_pos++] = permutation[read_pos++];
+        permutation.resize(write_pos);
     }
-    unique_rows.insert(permutation.begin() + next_pos, permutation.end());
-
-    if (unique_rows.size() == permutation.size() && isIdentityPermutation(permutation, /*limit=*/ 0))
+    else if (isIdentityPermutation(permutation, /*limit=*/ 0))
         return;
 
-    transformColumnsWithSharedIndex(columns, [&](const ColumnPtr & col) { return col->permute(unique_rows, unique_rows.size()); });
+    transformColumnsWithSharedIndex(columns, [&](const ColumnPtr & col) { return col->permute(permutation, permutation.size()); });
     block.setColumns(columns);
 }
 
