@@ -1,91 +1,89 @@
 <test>
     <settings>
-        <!-- Keep four 64-row filter blocks per input block and make the masks deterministic. -->
-        <max_block_size>256</max_block_size>
+        <!-- Use sizeable blocks so filtering dominates expression and block-management overhead. -->
+        <max_block_size>65536</max_block_size>
         <max_threads>1</max_threads>
         <max_insert_threads>1</max_insert_threads>
         <enable_optimize_predicate_expression>0</enable_optimize_predicate_expression>
+        <!-- Keep WHERE and explicit PREWHERE as separate out-of-place/in-place carriers. -->
+        <optimize_move_to_prewhere>0</optimize_move_to_prewhere>
     </settings>
-
-    <!-- UInt128 keeps these queries on the generic out-of-place ColumnVector filter path. -->
-    <query>
-        SELECT sum(value)
-        FROM
-        (
-            SELECT number, toUInt128(number) AS value
-            FROM numbers(10000000)
-        )
-        WHERE (number % 64 BETWEEN 4 AND 11)
-           OR (number % 64 BETWEEN 20 AND 35)
-           OR (number % 64 BETWEEN 48 AND 55)
-        FORMAT Null
-    </query>
-    <query>
-        SELECT sum(value)
-        FROM
-        (
-            SELECT number, toUInt128(number) AS value
-            FROM numbers(10000000)
-        )
-        WHERE cityHash64(number) % 2 = 0
-        FORMAT Null
-    </query>
-    <query>
-        SELECT sum(value)
-        FROM
-        (
-            SELECT number, toUInt128(number) AS value
-            FROM numbers(10000000)
-        )
-        WHERE number % 2 = 0
-        FORMAT Null
-    </query>
-    <query>
-        SELECT sum(value)
-        FROM
-        (
-            SELECT number, toUInt128(number) AS value
-            FROM numbers(10000000)
-        )
-        WHERE number % 64 != 32
-        FORMAT Null
-    </query>
 
     <create_query>DROP TABLE IF EXISTS t_column_vector_filter_runs</create_query>
     <create_query>
-        CREATE TABLE t_column_vector_filter_runs (k UInt64, payload UInt64)
-        ENGINE = MergeTree ORDER BY k
+        CREATE TABLE t_column_vector_filter_runs
+        (
+            value UInt128,
+            clustered_mask UInt8,
+            random_mask UInt8,
+            alternating_mask UInt8,
+            dense_mask UInt8
+        )
+        ENGINE = MergeTree ORDER BY tuple()
     </create_query>
     <fill_query>
         INSERT INTO t_column_vector_filter_runs
-        SELECT number, number FROM numbers(10000000)
+        SELECT
+            toUInt128(number),
+            toUInt8(
+                (number % 64 BETWEEN 4 AND 11)
+                OR (number % 64 BETWEEN 20 AND 35)
+                OR (number % 64 BETWEEN 48 AND 55)),
+            toUInt8(cityHash64(number) % 2 = 0),
+            toUInt8(number % 2 = 0),
+            toUInt8(number % 64 != 32)
+        FROM numbers(10000000)
     </fill_query>
 
-    <!-- PREWHERE applies the in-place ColumnVector filter while reading the table. -->
+    <!-- UInt128 keeps the timed WHERE queries on the generic out-of-place ColumnVector path. -->
     <query>
-        SELECT sum(payload)
+        SELECT sum(value)
         FROM t_column_vector_filter_runs
-        PREWHERE (k % 64 BETWEEN 4 AND 11)
-             OR (k % 64 BETWEEN 20 AND 35)
-             OR (k % 64 BETWEEN 48 AND 55)
+        WHERE clustered_mask = 1
         FORMAT Null
     </query>
     <query>
-        SELECT sum(payload)
+        SELECT sum(value)
         FROM t_column_vector_filter_runs
-        PREWHERE cityHash64(k) % 2 = 0
+        WHERE random_mask = 1
         FORMAT Null
     </query>
     <query>
-        SELECT sum(payload)
+        SELECT sum(value)
         FROM t_column_vector_filter_runs
-        PREWHERE k % 2 = 0
+        WHERE alternating_mask = 1
         FORMAT Null
     </query>
     <query>
-        SELECT sum(payload)
+        SELECT sum(value)
         FROM t_column_vector_filter_runs
-        PREWHERE k % 64 != 32
+        WHERE dense_mask = 1
+        FORMAT Null
+    </query>
+
+    <!-- PREWHERE applies the in-place ColumnVector filter to the generic UInt128 value column. -->
+    <query>
+        SELECT sum(value)
+        FROM t_column_vector_filter_runs
+        PREWHERE clustered_mask = 1
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(value)
+        FROM t_column_vector_filter_runs
+        PREWHERE random_mask = 1
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(value)
+        FROM t_column_vector_filter_runs
+        PREWHERE alternating_mask = 1
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(value)
+        FROM t_column_vector_filter_runs
+        PREWHERE dense_mask = 1
         FORMAT Null
     </query>
 
