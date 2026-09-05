@@ -492,6 +492,22 @@ void ColumnArray::doInsertManyFrom(const IColumn & src_, size_t position, size_t
 
     if (source_size == 0)
     {
+        /// A zero-length nested insert is not always a no-op. Columns with dynamic structure
+        /// can use it to combine the source and destination structures, as insertFrom does.
+        if (getData().hasDynamicStructure())
+        {
+            const auto data_checkpoint = getData().getCheckpoint();
+            try
+            {
+                getData().insertRangeFrom(src.getData(), src.offsetAt(position), 0);
+            }
+            catch (...)
+            {
+                getData().rollback(*data_checkpoint);
+                throw;
+            }
+        }
+
         offsets_data.resize_assume_reserved(old_rows + length);
         std::fill(offsets_data.begin() + old_rows, offsets_data.end(), old_offset);
         return;
