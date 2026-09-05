@@ -43,11 +43,12 @@ ClickHouse 提供四种组织级角色用于用户管理。只有 Admin 角色�
 </div>
 
 有关分配 SQL 控制台角色的说明，请参阅[管理 SQL 控制台角色分配](/zh/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)。
+要为单个 SQL 控制台用户自定义数据库权限，请参阅 [SQL 控制台用户和角色](/zh/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles)。
 
 | Role                  | Description                       |
 | --------------------- | --------------------------------- |
-| SQL console read only | 对服务内的数据库具有只读访问权限。                 |
-| SQL console admin     | 对服务内的数据库具有管理权限，相当于 Default 数据库角色。 |
+| SQL 控制台 read only | 对服务内的数据库具有只读访问权限。                 |
+| SQL 控制台 admin     | 对服务内的数据库具有管理权限，相当于 Default 数据库角色。 |
 
 <div id="console-permissions">
   ## 控制台权限
@@ -80,7 +81,7 @@ ClickHouse 提供四种组织级角色用于用户管理。只有 Admin 角色�
 | control-plane:service:manage-backups                                                                                               | 创建、管理和恢复服务备份。                                                                        |
 | **IP access list** ([更多信息](/zh/products/cloud/guides/security/connectivity/setting-ip-filters))                                       | 管理 IP 访问列表和网络过滤                                                                      |
 | control-plane:service:manage-ip-access-list                                                                                        | 管理服务的 IP 访问列表和网络过滤。                                                                  |
-| **Generative AI** ([更多信息](/zh/products/cloud/features/ai-ml/ask-ai))                                                                  | 配置生成式 AI 功能                                                                          |
+| **Generative AI** ([更多信息](/zh/products/cloud/features/ai-ml/aichat/using-ai-chat))                                                    | 配置生成式 AI 功能                                                                          |
 | control-plane:service:manage-generative-ai                                                                                         | 配置和管理服务的生成式 AI 功能及设置。                                                                |
 | **Query API endpoints** ([更多信息](/zh/products/cloud/guides/sql-console/query-endpoints))                                               | 查询 API 端点                                                                            |
 | control-plane:service:view-query-api-endpoints                                                                                     | 查看查询 API 端点及其配置。                                                                     |

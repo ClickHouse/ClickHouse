@@ -104,20 +104,20 @@ INSERT INTO my_table (metric_name, tags, time_series, metric_family, type, unit,
   ### 외부 컬럼 지정
 </div>
 
-외부 `time_series` 컬럼은 `CREATE TABLE` 문에서 명시적으로 나열해 기본 `Array(Tuple(DateTime64(3), Float64))` 타입을 재정의할 수 있습니다. ClickHouse는 튜플에서 타임스탬프와 스칼라 타입을 추출해 내부 samples table에 반영합니다:
+외부 `time_series` 컬럼은 `CREATE TABLE` 문에서 명시적으로 나열해 기본 `Array(Tuple(DateTime64(3), Float64))` 유형을 재정의할 수 있습니다. ClickHouse는 튜플에서 타임스탬프와 스칼라 유형을 추출해 내부 samples table에 반영합니다:
 
 ```sql
 CREATE TABLE my_table (time_series Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
 ```
 
-이는 samples `INNER COLUMNS` 절에서 timestamp 및 value 컬럼의 타입을 직접 선언하는 것과 동일합니다:
+이는 samples `INNER COLUMNS` 절에서 timestamp 및 value 컬럼의 유형을 직접 선언하는 것과 동일합니다:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
 ```
 
-두 형식을 모두 같은 `CREATE TABLE` 문에서 사용하는 경우, 선언된 타입이 일치해야 합니다.
+두 형식을 모두 같은 `CREATE TABLE` 문에서 사용하는 경우, 선언된 유형이 일치해야 합니다.
 
 <div id="target-tables">
   ## 대상 테이블
@@ -150,7 +150,7 @@ materialized view는 대상 테이블이 하나인 반면
 | `value`     | [x] | `Float64`             | `Float32` 또는 `Float64` | `timestamp`에 연결된 값   |
 
 엔진이 자체적으로 생성하는 컬럼에는 시계열 압축 코덱이 적용됩니다:
-`timestamp CODEC(DoubleDelta, ZSTD(1))` 및 `value CODEC(Gorilla, ZSTD(1))`입니다. 거의 단조로운 타임스탬프는 일반 코덱으로는 거의
+`timestamp CODEC(DoubleDelta, ZSTD(1))` 및 `value CODEC(ZSTD(3))`입니다. 거의 단조로운 타임스탬프는 일반 코덱으로는 거의
 압축되지 않으며, 그렇지 않으면 samples 테이블의 디스크상 크기에서 큰 비중을 차지할 수 있습니다.
 [컬럼 타입 조정](#adjusting-column-types)도 참조하십시오.
 
@@ -215,7 +215,7 @@ SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(Gorilla, ZSTD(1))
+    `value` Float64 CODEC(ZSTD(3))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 TAGS INNER COLUMNS
@@ -248,7 +248,7 @@ CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(Gorilla(8), ZSTD(1))
+    `value` Float64 CODEC(ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
@@ -297,14 +297,14 @@ SETTINGS index_granularity = 8192
 외부 컬럼 목록은 복사되지 않으며 다시 생성됩니다.
 
 <div id="adjusting-column-types">
-  ## 컬럼 타입 조정
+  ## 컬럼 유형 조정
 </div>
 
-`INNER COLUMNS` 절을 사용하면 내부 대상 테이블의 컬럼 타입을 조정할 수 있습니다. 예를 들어, 타임스탬프를 마이크로초 단위로 저장하고 값을 `Float32`로 저장하려면 다음을 사용합니다:
+`INNER COLUMNS` 절을 사용하면 내부 대상 테이블의 컬럼 유형을 조정할 수 있습니다. 예를 들어, 타임스탬프를 마이크로초 단위로 저장하고 값을 `Float32`로 저장하려면 다음을 사용합니다:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
 ```
 
 내부 컬럼을 코덱 없이 지정하면 기본 코덱이 사용됩니다:
@@ -440,16 +440,19 @@ ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
 
 다음은 `TimeSeries` 테이블을 정의할 때 지정할 수 있는 설정 목록입니다.
 
-| 이름                                   | 유형     | 기본값            | 설명                                                                                                                                                                             |
-| ------------------------------------ | ------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `id_generator`                       | 표현식    | `id` 유형에 따라 다름 | 태그로부터 시계열의 식별자(지문)를 계산하는 표현식입니다. 설정하지 않으면 `id` 컬럼의 기본 표현식이 사용됩니다. `id` 컬럼의 기본 표현식도 설정되지 않은 경우 표현식이 자동으로 선택됩니다                                                                  |
-| `tags_to_columns`                    | 맵      | {}             | [tags](#tags-table) 테이블에서 어떤 태그를 별도의 컬럼으로 저장할지 지정하는 맵입니다. 구문: `{'tag1': 'column1', 'tag2' : column2, ...}`                                                                     |
-| `use_all_tags_column_to_generate_id` | Bool   | false          | 더 이상 사용되지 않는 설정이며 아무 작업도 수행하지 않습니다                                                                                                                                             |
-| `store_min_time_and_max_time`        | Bool   | true           | true로 설정하면 테이블은 각 시계열에 대해 `min_time` 및 `max_time`을 저장합니다                                                                                                                       |
-| `aggregate_min_time_and_max_time`    | Bool   | true           | 내부 대상 `tags` 테이블을 생성할 때, 이 플래그를 사용하면 `min_time` 컬럼의 유형으로 단순한 `Nullable(DateTime64(3))` 대신 `SimpleAggregateFunction(min, Nullable(DateTime64(3)))`를 사용합니다. `max_time` 컬럼도 동일합니다 |
-| `filter_by_min_time_and_max_time`    | Bool   | true           | true로 설정하면 테이블은 시계열을 필터링할 때 `min_time` 및 `max_time` 컬럼을 사용합니다                                                                                                                  |
-| `samples_index_granularity`          | UInt64 | 32768          | 내부 [samples](#samples-table) 테이블의 `index_granularity`를 설정합니다. 명시적으로 설정하면 엔진 선언의 `index_granularity`를 재정의합니다. 외부 samples 테이블 및 MergeTree가 아닌 엔진에서는 무시됩니다                        |
-| `tags_index_granularity`             | UInt64 | 8192           | 내부 [tags](#tags-table) 테이블의 `index_granularity`를 설정합니다. 명시적으로 설정하면 엔진 선언의 `index_granularity`를 재정의합니다. 외부 tags 테이블 및 MergeTree가 아닌 엔진에서는 무시됩니다                                 |
+| 이름                                   | 유형     | 기본값                                                           | 설명                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------ | ------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id_generator`                       | 표현식    | `id` 유형에 따라 다름                                                | 태그로부터 시계열의 식별자(지문)를 계산하는 표현식입니다. 설정하지 않으면 `id` 컬럼의 기본 표현식이 사용됩니다. `id` 컬럼의 기본 표현식도 설정되지 않은 경우 표현식이 자동으로 선택됩니다                                                                                                                                                                                                                                                                                                                                                                   |
+| `tags_to_columns`                    | 맵      | {}                                                            | [tags](#tags-table) 테이블에서 어떤 태그를 별도의 컬럼으로 저장할지 지정하는 맵입니다. 구문: `{'tag1': 'column1', 'tag2' : column2, ...}`                                                                                                                                                                                                                                                                                                                                                                      |
+| `use_all_tags_column_to_generate_id` | Bool   | false                                                         | 더 이상 사용되지 않는 설정이며 아무 작업도 수행하지 않습니다                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `store_min_time_and_max_time`        | Bool   | true                                                          | true로 설정하면 테이블은 각 시계열에 대해 `min_time` 및 `max_time`을 저장합니다                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `aggregate_min_time_and_max_time`    | Bool   | true                                                          | 내부 대상 `tags` 테이블을 생성할 때, 이 플래그를 사용하면 `min_time` 컬럼의 유형으로 단순한 `Nullable(DateTime64(3))` 대신 `SimpleAggregateFunction(min, Nullable(DateTime64(3)))`를 사용합니다. `max_time` 컬럼도 동일합니다                                                                                                                                                                                                                                                                                                  |
+| `filter_by_min_time_and_max_time`    | Bool   | true                                                          | true로 설정하면 테이블은 시계열을 필터링할 때 `min_time` 및 `max_time` 컬럼을 사용합니다                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `samples_index_granularity`          | UInt64 | 32768                                                         | 내부 [samples](#samples-table) 테이블의 `index_granularity`를 설정합니다. 명시적으로 설정하면 엔진 선언의 `index_granularity`를 재정의합니다. 외부 samples 테이블 및 MergeTree가 아닌 엔진에서는 무시됩니다                                                                                                                                                                                                                                                                                                                         |
+| `tags_index_granularity`             | UInt64 | 8192                                                          | 내부 [tags](#tags-table) 테이블의 `index_granularity`를 설정합니다. 명시적으로 설정하면 엔진 선언의 `index_granularity`를 재정의합니다. 외부 tags 테이블 및 MergeTree가 아닌 엔진에서는 무시됩니다                                                                                                                                                                                                                                                                                                                                  |
+| `recent_samples_ttl_seconds`         | UInt64 | 345600                                                        | 추가 `recent samples` 대상 테이블의 보존 기간입니다. 삽입되는 모든 샘플은 이 테이블에도 기록됩니다. 내부 recent samples 테이블에는 항상 이 설정에서 파생된 `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)`이 적용됩니다(엔진 선언의 TTL을 재정의함). 외부 recent samples 테이블은 최소한 이 설정값만큼의 초 동안 데이터를 보존해야 합니다. 시간 범위가 TTL 윈도우에 포함되는 쿼리는 기본 samples 테이블보다 recent samples 테이블을 우선합니다(쿼리 수준 설정 `time_series_prefer_recent_samples_table` 참조). 기본값은 4일이며, 유효 값은 CREATE 시 테이블 정의에 고정됩니다. recent samples 테이블을 비활성화하려면 0으로 설정하십시오 |
+| `recent_samples_partition_by`        | 표현식    | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | 내부 `recent samples` 테이블의 파티션 키입니다. 예: `toStartOfHour(timestamp)`. `recent_samples_ttl_seconds`가 0이 아니어야 합니다                                                                                                                                                                                                                                                                                                                                                                     |
+| `recent_samples_index_granularity`   | UInt64 | 8192                                                          | 내부 `recent samples` 테이블의 `index_granularity`를 설정합니다. `recent_samples_ttl_seconds`가 0이 아니어야 합니다                                                                                                                                                                                                                                                                                                                                                                                  |
 
 <div id="functions">
   # 함수

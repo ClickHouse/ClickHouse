@@ -13,12 +13,38 @@ set -euo pipefail
 # worker becomes free first, so the work is distributed evenly regardless of how
 # long each PR takes.
 #
+# PRs are processed in priority order within each round. First every PR carrying
+# the `blocker` label is processed; only once a full pass over them makes no
+# progress does the round move on to the PRs labeled `pr-critical-bugfix`, then
+# to the PRs that have been approved by a reviewer at least once (any review in
+# the APPROVED state, even if it was later followed by more commits), and only
+# once those likewise make no progress does it process the rest. As soon as a
+# priority makes progress the round stops there, and the next round starts over
+# from the `blocker` PRs, so the highest-priority work is always revisited first.
+# "Progress" means a PR was pushed, merged or closed; a PR that only needs a
+# human decision (NEEDS-ATTENTION) or that failed / timed out does not count as
+# progress, so a stuck PR never starves the lower priorities.
+#
+# Before a priority tier is handed to the workers, every PR in it is inspected
+# through the GitHub GraphQL API: aggregate CI status, mergeability, the number
+# of unresolved review threads, whether a reviewer requested changes, the age
+# of the last commit, and comments from other people since that commit. A green
+# CI is therefore never a reason to leave a PR alone: a green PR that still has
+# conflicts, unresolved review threads, a stale branch or unanswered comments is
+# handed to a worker together with that list, so the worker addresses exactly
+# those items instead of declaring the PR done. Only a PR whose inspection finds
+# nothing pending at all is reported as GREEN and not dispatched; if the
+# inspection itself fails, the PR is dispatched as if nothing were known.
+#
 # Output is intentionally terse: one line when a PR is assigned to a worker, and
 # when it finishes a status line plus a one-to-two sentence summary of what was
 # done. The finish status is one of:
 #   PUSHED          - the worker pushed new commits (the PR head advanced)
 #   MERGED / CLOSED - the PR's state changed
-#   NO-CHANGE       - clean run, nothing pushed (e.g. already green / nothing to do)
+#   NO-CHANGE       - clean run, nothing pushed (the worker found nothing to do)
+#   GREEN           - not dispatched: the inspection found nothing pending (CI
+#                     green, mergeable, no unresolved threads, fresh, no new
+#                     comments from others)
 #   NEEDS-ATTENTION - clean run, nothing pushed, but still CONFLICTING: needs a
 #                     human decision (resolve a huge conflict, or close as obsolete)
 #   FAILED / TIMEOUT - the worker errored or hit the per-PR timeout
@@ -64,12 +90,12 @@ set -euo pipefail
 #   --effort LEVEL        Reasoning effort for each worker; default: medium.
 #                         Passed as `--effort` to `claude` and as the
 #                         `model_reasoning_effort` setting to `codex`.
-#   --api-key KEY         Use a custom API key for the workers. `claude` reads
-#                         `ANTHROPIC_API_KEY`; `codex` logs into a worker-local
-#                         `CODEX_HOME`. NOTE: visible in `ps`
+#   --api-key KEY         Use a custom credential for the workers. `claude`
+#                         reads it as `ANTHROPIC_API_KEY`; `codex` reads it as
+#                         `CODEX_ACCESS_TOKEN`. NOTE: visible in `ps`
 #                         while running; prefer --api-key-file.
-#   --api-key-file FILE   Read the custom API key from FILE (not shown
-#                         in `ps`). Default: whatever API key or login the
+#   --api-key-file FILE   Read the custom credential from FILE (not shown
+#                         in `ps`). Default: whatever credential or login the
 #                         selected agent already uses.
 #   --no-status           Disable the persistent bottom status bar (two lines:
 #                         elapsed, rounds, ok/fail counts, cost and token totals,
@@ -104,8 +130,18 @@ set -euo pipefail
 #   If colors look wrong, run with --color never.
 #
 # Advanced/testing:
-#   Set CONTINUE_ALL_PRS_PRS_FILE=<file> to read the PR list (lines of
-#   "<number>\t<title>") from a file instead of querying GitHub.
+#   Set CONTINUE_ALL_PRS_PRS_FILE=<file> to read the PR list from a file instead
+#   of querying GitHub. Each line is "<number>\t<title>", optionally followed by
+#   a third tab-separated column of comma-separated labels
+#   ("<number>\t<title>\t<label>,<label>,...") used to assign the priority tier,
+#   and a fourth column of comma-separated inspection facts standing in for the
+#   GraphQL inspection: "approved", "ci=<SUCCESS|FAILURE|PENDING|...>",
+#   "mergeable=<MERGEABLE|CONFLICTING|UNKNOWN>", "unresolved=<N>",
+#   "review=<CHANGES_REQUESTED|APPROVED|...>", "age=<days since last commit>",
+#   "comments=<new comments from others since the last commit>". A PR without
+#   that column counts as not inspected: not approved, and always dispatched.
+#   Set CONTINUE_ALL_PRS_MIN_FREE_GB=<integer> to override the minimum free
+#   disk space maintained by worktree cleanup (default: 100).
 
 REPO="ClickHouse/ClickHouse"
 
@@ -128,6 +164,12 @@ WORKTREE_BASE=""
 TIMEOUT=7200
 MAX_CONTINUE=4
 RELATED_STALE_DAYS=7   # a "related" PR is processed only if nobody but me has acted within this many days
+STALE_BRANCH_DAYS=7    # a green PR whose last commit is older than this needs the base branch merged in
+INSPECT_TTL=600        # re-inspect a tier's PRs if the facts are older than this many seconds
+INSPECT_BATCH=20       # PRs per GraphQL inspection query
+MERGEABLE_RETRIES=3    # GitHub computes mergeability lazily; re-query UNKNOWN ones this many times
+declare -A PR_FACTS    # PR number -> comma-separated inspection facts (see inspect_prs)
+INSPECTED_AT=0         # epoch seconds of the last inspection pass
 ONCE=0
 SKIP_SUBMODULES=0
 COLOR_WHEN="auto"
@@ -138,9 +180,10 @@ EFFORT="medium"        # reasoning effort passed to each worker
 AGENT="claude"         # agent CLI used by workers: claude or codex
 MODEL=""               # model passed to the selected agent (empty -> its configured default)
 SHOW_STATUS=1          # show the persistent bottom status bar (TTY only; --no-status disables)
-API_KEY=""             # custom provider API key for worker processes (--api-key)
+API_KEY=""             # custom provider credential for worker processes (--api-key)
 API_KEY_FILE=""        # ...or read it from this file (safer: not visible in `ps`)
 API_KEY_PROVIDED=0      # whether either custom-key option was supplied
+MIN_FREE_GB="${CONTINUE_ALL_PRS_MIN_FREE_GB:-100}"
 
 # PR selection modes (combinable). If none are given, all are enabled.
 MODE_MINE=0       # PRs I authored
@@ -186,6 +229,11 @@ if ! [[ "$WORKERS" =~ ^[0-9]+$ ]] || (( WORKERS < 1 )); then
     exit 1
 fi
 
+if ! [[ "$MIN_FREE_GB" =~ ^[0-9]+$ ]] || (( MIN_FREE_GB < 1 )); then
+    echo "${S}Error: CONTINUE_ALL_PRS_MIN_FREE_GB must be a positive integer${R}" >&2
+    exit 1
+fi
+
 case "$AGENT" in
     claude|codex) ;;
     *) echo "${S}Error: --agent must be claude or codex${R}" >&2; exit 1 ;;
@@ -193,15 +241,33 @@ esac
 
 MAIN_REPO="$(git rev-parse --show-toplevel)"
 [[ -n "$WORKTREE_BASE" ]] || WORKTREE_BASE="${MAIN_REPO}-prworker"
+WORKTREE_BASE="$(realpath -m "$WORKTREE_BASE")"
+
+# Install a defense-in-depth pre-push hook for ordinary worker pushes. The hook
+# is applied through command-scope environment configuration, so it also covers
+# branches checked out in linked worktrees without changing the user's repository
+# configuration. `git push --no-verify` bypasses hooks; the worker prompt's
+# explicit prohibition and safety gates remain the authoritative enforcement.
+PUSH_HOOKS_DIR="$(cd "$MAIN_REPO/utils/continue-all-prs-hooks" && pwd -P)"
+[[ -x "$PUSH_HOOKS_DIR/pre-push" ]] \
+    || { echo "${S}Error: missing executable pre-push hook: $PUSH_HOOKS_DIR/pre-push${R}" >&2; exit 1; }
+GIT_CONFIG_SLOT="${GIT_CONFIG_COUNT:-0}"
+[[ "$GIT_CONFIG_SLOT" =~ ^[0-9]+$ ]] \
+    || { echo "${S}Error: GIT_CONFIG_COUNT must be a non-negative integer${R}" >&2; exit 1; }
+printf -v "GIT_CONFIG_KEY_${GIT_CONFIG_SLOT}" '%s' core.hooksPath
+printf -v "GIT_CONFIG_VALUE_${GIT_CONFIG_SLOT}" '%s' "$PUSH_HOOKS_DIR"
+export "GIT_CONFIG_KEY_${GIT_CONFIG_SLOT}" "GIT_CONFIG_VALUE_${GIT_CONFIG_SLOT}"
+export GIT_CONFIG_COUNT=$((GIT_CONFIG_SLOT + 1))
 
 # No mode flag given -> select all categories (the default behavior).
 if (( ! MODE_ANY )); then
     MODE_MINE=1; MODE_ASSIGNED=1; MODE_RELATED=1
 fi
 
-# Custom API key for worker processes. `claude` reads its key from the environment.
-# `codex` is logged in with the key in a worker-local `CODEX_HOME` before it starts,
-# so it cannot inherit or overwrite an ambient Codex login.
+# Custom credential for worker processes. `claude` reads its API key from the
+# environment. `codex` receives its ChatGPT/Codex access token only in the worker
+# process and uses a worker-local `CODEX_HOME`, so it cannot fall back to or
+# overwrite an ambient Codex login.
 # Prefer --api-key-file: an inline --api-key is visible in `ps`.
 if [[ -n "$API_KEY_FILE" ]]; then
     [[ -r "$API_KEY_FILE" ]] || { echo "${S}Error: --api-key-file not readable: $API_KEY_FILE${R}" >&2; exit 1; }
@@ -393,6 +459,10 @@ na_add()
     } 7>>"$STATSLOCK"
 }
 
+# Record a PR that made real progress this priority pass. Reset by run_workers_on
+# before each pass; read afterwards to decide whether to advance priorities.
+action_add() { { flock 7; printf '%s\n' "$1" >> "$ACTION_FILE"; } 7>>"$STATSLOCK"; }
+
 # Pipe this script's stdout (banners + all worker lines) through the renderer,
 # which owns the real terminal. No-op if disabled or the renderer is missing.
 status_start()
@@ -553,27 +623,291 @@ setup_worktree_submodules()
 }
 
 # Create the worktree for a worker if it does not exist yet, otherwise reuse it.
+# Reusing an arbitrary pre-existing directory would make the worker cleanup
+# sequence operate on state which does not belong to this orchestrator.
 ensure_worktree()
 {
     local wt="$1"
+    local canonical_wt
 
-    if git -C "$MAIN_REPO" worktree list --porcelain | grep -qxF "worktree $wt"; then
-        banner "Reusing existing worktree: $wt"
+    # Do not use `grep -q` here: with a large worktree registry it closes the
+    # pipe after an early match, and `pipefail` turns Git's SIGPIPE into a false
+    # negative.
+    canonical_wt=$(realpath -m "$wt")
+
+    if git -C "$MAIN_REPO" worktree list --porcelain | grep -xF "worktree $canonical_wt" >/dev/null; then
+        banner "Reusing existing worktree: $canonical_wt"
         return 0
     fi
-    if [[ -e "$wt" ]]; then
-        banner "Path exists but is not a registered worktree, reusing as-is: $wt"
-        return 0
+    if [[ -e "$canonical_wt" ]]; then
+        echo "${S}ERROR: path exists but is not a registered worktree: $canonical_wt${R}" >&2
+        return 1
     fi
 
-    banner "Creating worktree: $wt"
-    git -C "$MAIN_REPO" worktree add --no-checkout --detach "$wt" HEAD
+    banner "Creating worktree: $canonical_wt"
+    git -C "$MAIN_REPO" worktree add --no-checkout --detach "$canonical_wt" HEAD
 
     if (( SKIP_SUBMODULES )); then
-        git -C "$wt" -c checkout.workers=0 -c core.fsync=none -c gc.auto=0 checkout -q -f HEAD -- .
+        git -C "$canonical_wt" -c checkout.workers=0 -c core.fsync=none -c gc.auto=0 checkout -q -f HEAD -- .
     else
-        setup_worktree_submodules "$wt"
+        setup_worktree_submodules "$canonical_wt"
     fi
+}
+
+# Return the available space, in KiB, on the filesystem containing the worker
+# pool. `df -P` keeps the available-space column stable across platforms.
+free_space_kib()
+{
+    df -Pk "$(dirname "$WORKTREE_BASE")" | awk 'NR == 2 { print $4 }'
+}
+
+is_registered_worktree()
+{
+    local candidate="$1"
+    git -C "$MAIN_REPO" worktree list --porcelain \
+        | grep -xF "worktree $candidate" >/dev/null
+}
+
+is_managed_worktree()
+{
+    local candidate="$1"
+    [[ "$candidate" != "$MAIN_REPO" && "$candidate" == "$WORKTREE_BASE-"* ]] \
+        && [[ "${candidate#"$WORKTREE_BASE"-}" =~ ^[0-9]+$ ]]
+}
+
+is_active_worker_worktree()
+{
+    local candidate="$1" i
+    for (( i = 0; i < WORKERS; ++i )); do
+        [[ "$candidate" == "${WORKTREE_BASE}-${i}" ]] && return 0
+    done
+    return 1
+}
+
+# List processes whose current directory is the worker or one of its
+# descendants. Agents can accidentally leave servers running after their turn;
+# those processes race with `git clean` by recreating files as it removes them.
+worktree_processes()
+{
+    local wt="$1" proc pid
+
+    while IFS= read -r proc; do
+        pid=${proc##*/}
+        [[ "$pid" != "$$" && "$pid" != "$BASHPID" ]] || continue
+        printf '%s\n' "$pid"
+    done < <(
+        find /proc -mindepth 2 -maxdepth 2 -type l -name cwd \
+            \( -lname "$wt" -o -lname "$wt (deleted)" -o -lname "$wt/*" \) \
+            -printf '%h\n' 2>/dev/null
+    )
+}
+
+stop_worktree_processes()
+{
+    local wt="$1" pid attempt
+    local -a pids=()
+
+    if ! is_active_worker_worktree "$wt" || ! is_registered_worktree "$wt"; then
+        echo "Refusing to stop processes in an unexpected worktree: $wt" >&2
+        return 1
+    fi
+
+    mapfile -t pids < <(worktree_processes "$wt")
+    (( ${#pids[@]} )) || return 0
+    echo "Stopping leftover processes in $wt: ${pids[*]}" >&2
+
+    for pid in "${pids[@]}"; do
+        kill -TERM "$pid" 2>/dev/null || sudo -n kill -TERM "$pid" 2>/dev/null || true
+    done
+
+    # A watchdog can replace a server while the first process snapshot is
+    # being terminated. Rescan before escalating so the replacement is also
+    # removed. `SIGKILL` is appropriate here: these are orphaned processes from
+    # a completed task, and cleanup cannot safely proceed while they are live.
+    for attempt in 1 2 3; do
+        mapfile -t pids < <(worktree_processes "$wt")
+        (( ${#pids[@]} )) || return 0
+        for pid in "${pids[@]}"; do
+            kill -KILL "$pid" 2>/dev/null || sudo -n kill -KILL "$pid" 2>/dev/null || true
+        done
+        sleep 0.1
+    done
+
+    mapfile -t pids < <(worktree_processes "$wt")
+    (( ! ${#pids[@]} )) || {
+        echo "Could not stop leftover processes in $wt: ${pids[*]}" >&2
+        return 1
+    }
+}
+
+# Remove registered worktrees nested below a directory before deleting that
+# directory. Git otherwise leaves their administrative entries behind and can
+# refuse to remove the parent. Deepest paths go first.
+remove_registered_descendants()
+{
+    local parent="$1" candidate
+    local -a descendants=()
+
+    mapfile -t descendants < <(
+        git -C "$MAIN_REPO" worktree list --porcelain \
+            | sed -n 's/^worktree //p' \
+            | awk -v prefix="$parent/" 'index($0, prefix) == 1 { print length($0) "\t" $0 }' \
+            | sort -rn \
+            | cut -f2-
+    )
+    for candidate in "${descendants[@]}"; do
+        is_managed_worktree "$candidate" || {
+            echo "Refusing to remove unmanaged nested worktree: $candidate" >&2
+            return 1
+        }
+        if ! git -C "$MAIN_REPO" worktree remove --force "$candidate"; then
+            echo "Retrying worktree removal with elevated permissions: $candidate" >&2
+            sudo -n git -c safe.directory="$MAIN_REPO" -C "$MAIN_REPO" worktree remove --force "$candidate"
+        fi
+    done
+}
+
+# Prepare a reusable worker for a new PR. Root-level build directories remain
+# available for reuse; all other tracked, untracked and ignored changes go.
+prepare_worktree_for_task()
+{
+    local wt="$1"
+
+    if ! is_active_worker_worktree "$wt" || ! is_registered_worktree "$wt"; then
+        echo "Refusing to clean an unexpected worktree: $wt" >&2
+        return 1
+    fi
+
+    stop_worktree_processes "$wt"
+    git -C "$wt" reset --hard -q HEAD
+    git -C "$wt" checkout --detach -q HEAD
+    remove_registered_descendants "$wt"
+    # `git submodule foreach` visits only initialized submodules. Always clean
+    # those existing worktrees: `--skip-submodules` avoids initialization, but
+    # must not let dirt from an earlier non-skipped run leak into the next PR.
+    # shellcheck disable=SC2016 # `$PWD` expands in each `git submodule foreach` shell.
+    git -C "$wt" submodule foreach --quiet --recursive \
+        'git reset --hard -q HEAD && { git clean -ffdx -e "/build*/" || { echo "Retrying cleanup with elevated permissions: $PWD" >&2; sudo -n git -c safe.directory="$PWD" -C "$PWD" clean -ffdx -e "/build*/"; }; }' >/dev/null
+    if (( SKIP_SUBMODULES )); then
+        # Restore initialized submodules to the superproject gitlinks without
+        # initializing absent ones. `submodule update` can nevertheless
+        # initialize submodules selected by `submodule.active`, so check out
+        # the recorded SHA directly in the submodules that `foreach` found.
+        git -C "$wt" submodule foreach --quiet --recursive \
+            'git checkout --detach -q "$sha1"'
+    else
+        git -C "$wt" submodule update --init --checkout --force --recursive --no-fetch
+    fi
+    # Integration tests can leave root-owned artifacts, and stale servers can
+    # briefly recreate files while cleanup is traversing a directory. Retry
+    # the identical, path-scoped cleanup after stopping any replacement
+    # processes. If elevation is unavailable, fail closed.
+    local attempt
+    for attempt in 1 2 3; do
+        git -C "$wt" clean -ffdx -e '/build*/' && return 0
+        stop_worktree_processes "$wt"
+        echo "Retrying cleanup with elevated permissions ($attempt/3): $wt" >&2
+        sudo -n git -c safe.directory="$wt" -C "$wt" clean -ffdx -e '/build*/' && return 0
+    done
+    echo "Worktree cleanup did not converge after 3 attempts: $wt" >&2
+    return 1
+}
+
+remove_managed_cache_dir()
+{
+    local wt="$1" candidate="$2" base
+    base="${candidate##*/}"
+
+    if ! is_registered_worktree "$wt" || ! is_managed_worktree "$wt" \
+        || [[ "$candidate" != "$wt/"* ]] \
+        || [[ "${candidate%/*}" != "$wt" ]] \
+        || { [[ "$base" != tmp ]] && [[ "$base" != build* ]]; }; then
+            echo "Refusing to remove unexpected cache directory: $candidate" >&2
+            return 1
+    fi
+
+    banner "Low disk space: removing $candidate"
+    remove_registered_descendants "$candidate"
+    if ! rm -rf -- "$candidate"; then
+        echo "Retrying cleanup with elevated permissions: $candidate" >&2
+        sudo -n rm -rf -- "$candidate"
+    fi
+}
+
+# Run only while the worker pool is idle. First discard old `tmp` and `build*`
+# directories, then stale managed worktrees, until the requested reserve is
+# restored. Active worker roots are never removed wholesale.
+cleanup_worktrees_if_disk_low()
+{
+    (( DRY_RUN )) && return 0
+
+    local minimum_kib=$(( MIN_FREE_GB * 1024 * 1024 )) available wt candidate mtime
+    local -a worktrees=() cache_candidates=() stale_worktrees=()
+    local -A worktree_mtime=()
+    available=$(free_space_kib)
+    [[ "$available" =~ ^[0-9]+$ ]] || {
+        echo "${S}Error: could not determine available disk space${R}" >&2
+        return 1
+    }
+    (( available < minimum_kib )) || return 0
+
+    banner "Low disk space: $(( available / 1024 / 1024 )) GiB free; cleaning managed worktrees to restore ${MIN_FREE_GB} GiB"
+    mapfile -t worktrees < <(git -C "$MAIN_REPO" worktree list --porcelain | sed -n 's/^worktree //p')
+
+    for wt in "${worktrees[@]}"; do
+        is_managed_worktree "$wt" || continue
+        [[ -d "$wt" ]] || continue
+        # Cache this before removing child directories, which changes the
+        # worktree root's mtime and would destroy the old-to-new ordering.
+        worktree_mtime["$wt"]=$(stat -c %Y "$wt")
+        while IFS= read -r -d '' candidate; do
+            mtime=$(stat -c %Y "$candidate")
+            cache_candidates+=("$mtime"$'\t'"$wt"$'\t'"$candidate")
+        done < <(find "$wt" -mindepth 1 -maxdepth 1 -type d \( -name tmp -o -name 'build*' \) -print0 2>/dev/null)
+    done
+
+    if (( ${#cache_candidates[@]} )); then
+        mapfile -t cache_candidates < <(printf '%s\n' "${cache_candidates[@]}" | sort -n)
+        for candidate in "${cache_candidates[@]}"; do
+            IFS=$'\t' read -r mtime wt candidate <<< "$candidate"
+            [[ -d "$candidate" ]] || continue
+            remove_managed_cache_dir "$wt" "$candidate"
+            available=$(free_space_kib)
+            (( available >= minimum_kib )) && return 0
+        done
+    fi
+
+    for wt in "${worktrees[@]}"; do
+        is_managed_worktree "$wt" || continue
+        is_active_worker_worktree "$wt" && continue
+        [[ -d "$wt" ]] || continue
+        mtime=${worktree_mtime["$wt"]:-$(stat -c %Y "$wt")}
+        stale_worktrees+=("$mtime"$'\t'"$wt")
+    done
+    if (( ${#stale_worktrees[@]} )); then
+        mapfile -t stale_worktrees < <(printf '%s\n' "${stale_worktrees[@]}" | sort -n)
+        for candidate in "${stale_worktrees[@]}"; do
+            wt=${candidate#*$'\t'}
+            # Removing a parent also unregisters its nested worktrees, which
+            # may still occur later in this snapshot.
+            is_registered_worktree "$wt" || continue
+            if ! is_managed_worktree "$wt" || is_active_worker_worktree "$wt"; then
+                echo "Refusing to remove unexpected worktree: $wt" >&2
+                return 1
+            fi
+            banner "Low disk space: removing stale worktree $wt"
+            remove_registered_descendants "$wt"
+            if ! git -C "$MAIN_REPO" worktree remove --force "$wt"; then
+                echo "Retrying worktree removal with elevated permissions: $wt" >&2
+                sudo -n git -c safe.directory="$MAIN_REPO" -C "$MAIN_REPO" worktree remove --force "$wt"
+            fi
+            available=$(free_space_kib)
+            (( available >= minimum_kib )) && return 0
+        done
+    fi
+
+    echo "${S}Error: only $(( available / 1024 / 1024 )) GiB free after cleaning managed worktrees; ${MIN_FREE_GB} GiB required${R}" >&2
+    return 1
 }
 
 # ----------------------------------------------------------------------------
@@ -587,17 +921,12 @@ LOGDIR="${MAIN_REPO}/tmp/continue-all-prs"
 STATSFILE="$LOGDIR/stats"
 STATSLOCK="$LOGDIR/stats.lock"
 NAFILE="$LOGDIR/needs-attention"
+CLEANUP_FAILURE_FILE="$LOGDIR/cleanup-failure"
+# PRs that made real progress (pushed / merged / closed) during the current
+# priority pass. A non-empty file after a pass means the round should stay on
+# this priority and not advance to a lower one.
+ACTION_FILE="$LOGDIR/action-taken"
 declare -a WORKER_PIDS=()
-
-cleanup_worker_codex_auth()
-{
-    [[ "$AGENT" == "codex" && "$CUSTOM_KEY" == 1 ]] || return 0
-
-    local wt
-    for wt in "${WT[@]-}"; do
-        rm -f "$wt/tmp/continue-all-prs/codex-home/auth.json" 2>/dev/null || true
-    done
-}
 
 stop_workers()
 {
@@ -616,7 +945,7 @@ stop_workers()
     for pid in "${live_jobs[@]}"; do
         [[ -n "${worker_pid_set[$pid]:-}" ]] && active_workers+=("$pid")
     done
-    (( ${#active_workers[@]} )) || { cleanup_worker_codex_auth; return 0; }
+    (( ${#active_workers[@]} )) || return 0
     roots="${active_workers[*]}"
     own_pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ' || true)
 
@@ -674,16 +1003,22 @@ stop_workers()
     if (( ${#active_workers[@]} )); then
         wait "${active_workers[@]}" 2>/dev/null || true
     fi
-    cleanup_worker_codex_auth
     WORKER_PIDS=()
 }
 
 cleanup()
 {
+    local wt
+
     stop_workers
+    for wt in "${WT[@]:-}"; do
+        [[ -n "$wt" && "$wt" == "$WORKTREE_BASE-"* ]] || continue
+        rm -rf -- "$wt/tmp/continue-all-prs/codex-home"
+    done
     status_stop   # reset the scroll region and kill the updater first
     [[ -n "${QUEUEFILE:-}" ]] && rm -f "$QUEUEFILE" "$QUEUEFILE.tmp" 2>/dev/null || true
     [[ -n "${LOCKFILE:-}" ]] && rm -f "$LOCKFILE" 2>/dev/null || true
+    [[ -n "${DISPATCHFILE:-}" ]] && rm -f "$DISPATCHFILE" 2>/dev/null || true
     rm -f "$STATSLOCK" "$STATSFILE.tmp" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -696,10 +1031,10 @@ DONE_MARKER='<<<CONTINUE-PR-DONE>>>'
 # root cause of merges that were prepared but never pushed: the worker started a
 # build in the background and ended its turn waiting for a notification that
 # never comes in single-shot `--print` mode).
-STEER_PROMPT="You are running in a non-interactive, single-shot batch session. Do NOT run any commands in the background and do NOT defer work expecting to be notified later - there is no later notification, and any background process is killed when your turn ends. Run builds, tests, and every long-running command synchronously in the foreground so they finish within your turn, and complete ALL work - including pushing your commits with 'git push' - before you end your turn. A passing (green) CI does NOT mean the PR is done: always fetch and address unresolved review comments and reviewer feedback - including automated or bot reviews such as clickhouse-gh[bot], and review threads that are merely COMMENTED rather than blocking - even when every check passes or the PR is already approved. Do not signal done while there are unaddressed review comments, unless addressing them genuinely requires a human decision. If the PR is CONFLICTING, resolve the conflicts (merge the base branch, resolve, and rework to build) and push whenever you have access; a contested/reserved/superseded note does not block mechanical conflict resolution. Determine pushability from repository and author ownership before maintainerCanModify: a same-repository PR and any PR authored by the authenticated gh user are pushable regardless of maintainerCanModify; that field only blocks pushing another author's cross-repository fork. If you cannot push (e.g. another author's fork with maintainer edits disabled), supersede it: open your own PR from the main repo (crediting the author; re-author the commits yourself if the author has not signed the CLA) and close theirs with a comment linking the new PR - unless the change is obsolete, already fixed, or already superseded, in which case say so specifically rather than a bare 'needs attention'. Every GitHub comment you post (PR comments, issue comments, and review-thread replies) MUST begin with the 🕵 symbol followed by a space, so automated comments are identifiable. When, and only when, the PR is fully handled (changes pushed, or you have determined that no change is needed or that it needs a human decision), end your final message with a line containing exactly: ${DONE_MARKER}"
+STEER_PROMPT="You are running in a non-interactive, single-shot batch session. Do NOT run any commands in the background and do NOT defer work expecting to be notified later - there is no later notification, and any background process is killed when your turn ends. Run builds, tests, and every long-running command synchronously in the foreground so they finish within your turn, and complete ALL work - including pushing your commits with 'git push' - before you end your turn. Preserve the existing remote PR history: only add commits, never rebase, reset onto another base, amend published commits, force-push, use a '+' refspec, bypass hooks with --no-verify, or delete the remote branch. Before committing, inspect the staged name-status and stat, stage only explicit intended paths, and reject unrelated files or mass changes. Before pushing, require the freshly fetched remote PR head to be an ancestor of local HEAD and inspect the complete diff against the base branch; a scope or lineage anomaly is a hard safety stop to report, never something to work around. A passing (green) CI does NOT mean the PR is done: always fetch and address unresolved review comments and reviewer feedback - including automated or bot reviews such as clickhouse-gh[bot], and review threads that are merely COMMENTED rather than blocking - even when every check passes or the PR is already approved. Do not signal done while there are unaddressed review comments, unless addressing them genuinely requires a human decision. If the PR is CONFLICTING, resolve the conflicts (merge the base branch, resolve, and rework to build) and push whenever you have access; a contested/reserved/superseded note does not block mechanical conflict resolution. Determine pushability from repository and author ownership before maintainerCanModify: a same-repository PR and any PR authored by the authenticated gh user are pushable regardless of maintainerCanModify; that field only blocks pushing another author's cross-repository fork. If you cannot push (e.g. another author's fork with maintainer edits disabled), supersede it: open your own PR from the main repo (crediting the author; re-author the commits yourself if the author has not signed the CLA) and close theirs with a comment linking the new PR - unless the change is obsolete, already fixed, or already superseded, in which case say so specifically rather than a bare 'needs attention'. Every GitHub comment you post (PR comments, issue comments, and review-thread replies) MUST begin with the 🕵 symbol followed by a space, so automated comments are identifiable. When, and only when, the PR is fully handled (changes pushed, or you have determined that no change is needed or that it needs a human decision), end your final message with a line containing exactly: ${DONE_MARKER}"
 
 # Sent on each resume to nudge the worker to finish.
-NUDGE_PROMPT="Continue where you left off and finish the task. Reminder: do not use background tasks - run everything synchronously and push your commits before finishing. A green CI does NOT mean you are done - also address unresolved review comments and reviewer feedback (including automated/bot reviews and COMMENTED, non-blocking threads). A same-repository PR or a PR authored by the authenticated gh user is pushable even when maintainerCanModify is false; only use that field for another author's cross-repository fork. Any build started in a previous turn was killed when that turn ended; re-run it in the foreground if you still need to verify. When the PR is fully handled, end your final message with a line containing exactly: ${DONE_MARKER}"
+NUDGE_PROMPT="Continue where you left off and finish the task. Reminder: do not use background tasks - run everything synchronously and push your commits before finishing. Preserve remote PR history and obey the staged-diff, full-PR-diff, and fast-forward-only safety gates; never force-push or bypass the pre-push hook. A green CI does NOT mean you are done - also address unresolved review comments and reviewer feedback (including automated/bot reviews and COMMENTED, non-blocking threads). A same-repository PR or a PR authored by the authenticated gh user is pushable even when maintainerCanModify is false; only use that field for another author's cross-repository fork. Any build started in a previous turn was killed when that turn ended; re-run it in the foreground if you still need to verify. When the PR is fully handled, end your final message with a line containing exactly: ${DONE_MARKER}"
 
 # Run /continue-pr-auto in a worktree, resuming the same session until the worker
 # signals completion (DONE_MARKER), the per-PR time budget (TIMEOUT, shared
@@ -708,7 +1043,7 @@ NUDGE_PROMPT="Continue where you left off and finish the task. Reminder: do not 
 # the exit code of the last turn (124 if the time budget was exhausted).
 run_continue_pr()
 {
-    local wt="$1" number="$2" log="$3"
+    local wt="$1" number="$2" log="$3" hint="${4:-}"
     local url="https://github.com/$REPO/pull/$number"
     local sid deadline iter ec now remaining build_steer prompt usage codex_home
     local -a codex_env
@@ -725,30 +1060,21 @@ run_continue_pr()
     # Steer the worker to a persistent, ccache-backed build directory in this
     # worktree so rebuilds are incremental instead of cold each pass.
     build_steer="A persistent, ccache-backed build directory for this worktree is at ${wt}/build. Reuse it for any build - do not delete it; let ninja rebuild incrementally - and build only the affected targets. ccache is shared and warm across all workers (CCACHE_DIR=${CCACHE_DIR}), so a rebuild after merging master should be far faster than a cold build; never run a full from-scratch rebuild when an incremental one suffices."
+    # The orchestrator's pre-check (what is pending on this PR), if any.
+    [[ -n "$hint" ]] && build_steer="$build_steer $hint"
     deadline=$(( $(date +%s) + TIMEOUT ))
-    : > "$log"
     iter=0
     ec=0
 
-    # Codex API-key authentication is configured state, not an environment
-    # variable consumed by `codex exec`. Keep that state private to this worker
-    # and remove it after the run, so a requested key cannot fall back to or
-    # modify the caller's ambient Codex login.
+    # Keep custom Codex access-token runs private to this worker, so a bad token
+    # cannot fall back to or modify the caller's ambient Codex login.
     codex_home=""
     codex_env=()
     if [[ "$AGENT" == "codex" && "$CUSTOM_KEY" == 1 ]]; then
         codex_home="$wt/tmp/continue-all-prs/codex-home"
         codex_env=("CODEX_HOME=$codex_home")
         mkdir -p "$codex_home"
-        rm -f "$codex_home/auth.json"
-        now=$(date +%s)
-        remaining=$(( deadline - now ))
-        (( remaining > 0 )) || return 124
-        printf '%s\n' "$API_KEY" | timeout "$remaining" env CODEX_HOME="$codex_home" codex login --with-api-key >> "$log" 2>&1 || {
-            ec=$?
-            rm -f "$codex_home/auth.json"
-            return "$ec"
-        }
+        export CODEX_ACCESS_TOKEN="$API_KEY"
     fi
 
     while :; do
@@ -788,7 +1114,8 @@ run_continue_pr()
                 prompt="/continue-pr-auto $url
 
 ${STEER_PROMPT} ${build_steer}"
-                ( cd "$wt" && timeout "$remaining" env "${codex_env[@]}" codex exec \
+                ( cd "$wt" || exit; \
+                    timeout "$remaining" env "${codex_env[@]}" codex exec \
                     --dangerously-bypass-approvals-and-sandbox --json \
                     --config "model_reasoning_effort=$EFFORT" "${model_args[@]}" \
                     --output-last-message "$log.last" - <<< "$prompt" \
@@ -799,7 +1126,8 @@ ${STEER_PROMPT} ${build_steer}"
                     ec=1
                 fi
             else
-                ( cd "$wt" && timeout "$remaining" env "${codex_env[@]}" codex exec resume \
+                ( cd "$wt" || exit; \
+                    timeout "$remaining" env "${codex_env[@]}" codex exec resume \
                     --dangerously-bypass-approvals-and-sandbox --json \
                     --config "model_reasoning_effort=$EFFORT" "${model_args[@]}" \
                     --output-last-message "$log.last" "$sid" - <<< "$NUDGE_PROMPT" \
@@ -842,14 +1170,18 @@ ${STEER_PROMPT} ${build_steer}"
         (( ec != 0 )) && break
     done
 
-    [[ -z "$codex_home" ]] || rm -f "$codex_home/auth.json"
+    if [[ -n "$codex_home" ]]; then
+        rm -rf -- "$codex_home"
+        unset CODEX_ACCESS_TOKEN
+    fi
+
     return "$ec"
 }
 
 process_pr()
 {
     local i="$1" wt="$2" number="$3" title="$4"
-    local color ts log ec outcome status mark summary
+    local color ts log ec outcome status mark summary cleanup_failed=0
     local before_sha after pr_state pr_mergeable pr_review after_sha pushed
 
     color=$(pr_color_seq "$number")
@@ -863,6 +1195,18 @@ process_pr()
         status="DRY-RUN (not processed)"
         summary="(dry run)"
     else
+        log="$LOGDIR/pr-$number.log"
+        : > "$log"
+        if ! prepare_worktree_for_task "$wt" >> "$log" 2>&1; then
+            printf 'Worktree cleanup failed before starting PR #%s.\n' "$number" > "$log.last"
+            cat "$log.last" >> "$log"
+            ec=1
+            cleanup_failed=1
+            printf '%s\t%s\n' "$i" "$wt" >> "$CLEANUP_FAILURE_FILE"
+        else
+            ec=0
+        fi
+
         # PR head before the work, so we can tell whether the worker actually
         # pushed anything (a clean agent exit does NOT imply progress: the
         # /continue-pr-auto skill exits 0 when it finds nothing to do, or when it
@@ -870,9 +1214,9 @@ process_pr()
         before_sha=$(gh pr view "$number" --repo "$REPO" --json headRefOid \
             --jq '.headRefOid' 2>/dev/null || echo "")
 
-        log="$LOGDIR/pr-$number.log"
-        ec=0
-        run_continue_pr "$wt" "$number" "$log" || ec=$?
+        if (( ec == 0 )); then
+            run_continue_pr "$wt" "$number" "$log" "$(pr_hint "${PR_FACTS[$number]:-}")" || ec=$?
+        fi
 
         # Detach HEAD so the PR branch isn't held by this worktree, letting a
         # different worker check it out in a later round.
@@ -912,10 +1256,15 @@ process_pr()
         *)               stats_add 0 1 0 0 0 0 0 0 ;;
     esac
     [[ "$outcome" == NEEDS-ATTENTION ]] && na_add "$number"
+    # Real progress (pushed / merged / closed) keeps the current priority tier
+    # active, so the round does not advance to a lower priority yet. NO-CHANGE,
+    # NEEDS-ATTENTION, FAILED and TIMEOUT are not progress and let it advance.
+    [[ "$mark" == "OK " ]] && action_add "$number"
 
     ts=$(date +%H:%M:%S)
     emit "$color" "$ts  $mark  worker $i  FINISHED  PR #$number  $title  --  $status"
     emit "$color" "            ^- $summary"
+    (( cleanup_failed == 0 ))
 }
 
 worker()
@@ -945,10 +1294,38 @@ worker()
         [[ -z "$line" ]] && break
 
         IFS=$'\t' read -r number title <<< "$line"
-        process_pr "$i" "$wt" "$number" "$title" || true
+        # A cleanup failure makes this worktree unsafe for another assignment
+        # in the same round. Leave the remaining queue to healthy workers
+        # instead of reporting the same failure for every subsequent PR.
+        process_pr "$i" "$wt" "$number" "$title" || break
     done
 
     exec 9>&-
+}
+
+# Run the worker pool over the given newline-separated "<number>\t<title>" list,
+# blocking until every worker drains the queue. Resets the progress marker first;
+# a worker records a PR in $ACTION_FILE whenever it makes real progress (pushed /
+# merged / closed), so afterwards a non-empty $ACTION_FILE means the pass
+# advanced at least one PR.
+run_workers_on()
+{
+    local prs="$1" i
+    : > "$ACTION_FILE"
+    printf '%s\n' "$prs" > "$QUEUEFILE"
+
+    # Job control gives every asynchronous worker its own process group. This
+    # lets the interrupt trap terminate the worker and all of its descendants
+    # immediately instead of waiting for a running agent command to return.
+    set -m
+    WORKER_PIDS=()
+    for (( i = 0; i < WORKERS; i++ )); do
+        worker "$i" "${WT[i]}" &
+        WORKER_PIDS+=($!)
+    done
+    set +m
+    wait "${WORKER_PIDS[@]}" || true
+    WORKER_PIDS=()
 }
 
 # Return 0 (true) if a "related" PR looks abandoned: nobody other than me has
@@ -982,10 +1359,268 @@ load_excluded_authors()
     done < "$EXCLUDE_AUTHORS_FILE"
 }
 
+# Map a PR's comma-separated label list to its priority tier: 0 for `blocker`,
+# 1 for `pr-critical-bugfix`, 3 for everything else (blocker wins if both apply).
+# Tier 2 (approved by a reviewer at least once) is not label-based; it is
+# assigned later by apply_approval_priority from the inspection facts.
+pr_priority()
+{
+    case ",$1," in
+        *,blocker,*)            printf '0' ;;
+        *,pr-critical-bugfix,*) printf '1' ;;
+        *)                      printf '3' ;;
+    esac
+}
+
+# ----------------------------------------------------------------------------
+# PR inspection. One GraphQL query per INSPECT_BATCH PRs collects, for each PR,
+# the facts that decide its tier and whether it needs a worker at all:
+#   approved              a review in the APPROVED state exists (ever)
+#   ci=<state>            aggregate status of the head commit's checks
+#                         (SUCCESS, FAILURE, PENDING, ERROR, EXPECTED, NONE)
+#   mergeable=<state>     MERGEABLE, CONFLICTING or UNKNOWN
+#   unresolved=<N>        unresolved review threads ("?" if there are more
+#                         threads than one page and none of the first page is
+#                         unresolved, so the count is not known)
+#   review=<decision>     reviewDecision when the repository reports one
+#   age=<days>            days since the head commit was committed
+#   comments=<N>          comments by people other than the PR author, me and
+#                         bots since the head commit (the last 20 comments are
+#                         considered)
+# The facts are stored in PR_FACTS, comma-separated. A PR whose inspection
+# fails is left without facts and treated as not inspected: it is dispatched
+# unconditionally and its tier stays label-based.
+# ----------------------------------------------------------------------------
+
+# GitHub reports `mergeable=UNKNOWN` until a background job has computed it; the
+# query itself triggers that job, so the UNKNOWN ones are re-queried a few times.
+# inspect_prs <newline-separated PR numbers>
+inspect_prs()
+{
+    local numbers="$1" attempt pending number facts
+    INSPECTED_AT=$(date +%s)
+
+    if [[ -n "${CONTINUE_ALL_PRS_PRS_FILE:-}" ]]; then
+        inspect_prs_from_file "$numbers"
+        return 0
+    fi
+
+    pending="$numbers"
+    for (( attempt = 0; attempt <= MERGEABLE_RETRIES; attempt++ )); do
+        [[ -n "$pending" ]] || break
+        (( attempt > 0 )) && sleep 5
+        inspect_prs_graphql "$pending"
+        pending=""
+        while IFS= read -r number; do
+            [[ -n "$number" ]] || continue
+            facts="${PR_FACTS[$number]:-}"
+            if [[ ",$facts," == *,mergeable=UNKNOWN,* ]]; then
+                pending+="$number"$'\n'
+            fi
+        done <<< "$numbers"
+    done
+}
+
+# Fetch the facts of the given PRs in batches; leaves PR_FACTS untouched for a
+# PR whose query failed (and reports the failure).
+inspect_prs_graphql()
+{
+    local numbers="$1" batch="" count=0 number
+    while IFS= read -r number; do
+        [[ -n "$number" ]] || continue
+        batch+="$number"$'\n'
+        count=$(( count + 1 ))
+        if (( count == INSPECT_BATCH )); then
+            inspect_batch "$batch"
+            batch=""; count=0
+        fi
+    done <<< "$numbers"
+    [[ -n "$batch" ]] && inspect_batch "$batch"
+    return 0
+}
+
+inspect_batch()
+{
+    local batch="$1" number query result facts owner name
+    owner="${REPO%%/*}"; name="${REPO#*/}"
+
+    query="query {"
+    query+=" repository(owner: \"$owner\", name: \"$name\") {"
+    while IFS= read -r number; do
+        [[ "$number" =~ ^[0-9]+$ ]] || continue
+        query+=" p$number: pullRequest(number: $number) { ...F }"
+    done <<< "$batch"
+    query+=" } }"
+    query+=' fragment F on PullRequest {
+        number mergeable reviewDecision
+        author { login }
+        approvals: reviews(states: APPROVED, first: 1) { totalCount }
+        reviewThreads(first: 100) { pageInfo { hasNextPage } nodes { isResolved } }
+        commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }
+        comments(last: 20) { nodes { author { __typename login } createdAt } }
+    }'
+
+    if ! result=$(gh api graphql -f query="$query" 2>&1); then
+        banner "PR inspection failed for $(printf '%s\n' "$batch" | grep -c .) PR(s); dispatching them uninspected: ${result//$'\n'/ }"
+        return 0
+    fi
+
+    # One "<number>\t<facts>" line per PR that came back.
+    while IFS=$'\t' read -r number facts; do
+        [[ -n "$number" ]] || continue
+        PR_FACTS[$number]="$facts"
+    done < <(printf '%s' "$result" | jq -r --arg me "$GH_USER" '
+        (.data.repository // {}) | to_entries[] | .value | select(. != null)
+        | (.commits.nodes[0].commit // {}) as $head
+        | ($head.committedDate // "") as $committed
+        | (.author.login // "") as $author
+        | ([.reviewThreads.nodes[] | select(.isResolved | not)] | length) as $unresolved
+        | [ (if (.approvals.totalCount // 0) > 0 then "approved" else empty end),
+            "ci=\($head.statusCheckRollup.state // "NONE")",
+            "mergeable=\(.mergeable // "UNKNOWN")",
+            (if $unresolved == 0 and .reviewThreads.pageInfo.hasNextPage then "unresolved=?"
+             else "unresolved=\($unresolved)" end),
+            (if .reviewDecision != null then "review=\(.reviewDecision)" else empty end),
+            (if $committed == "" then "age=?"
+             else "age=\(((now - ($committed | fromdateiso8601)) / 86400) | floor)" end),
+            "comments=\([.comments.nodes[]
+                          | select(.author.__typename != "Bot"
+                                   and .author.login != $me
+                                   and .author.login != $author
+                                   and .createdAt > $committed)] | length)"
+          ] as $facts
+        | "\(.number)\t\($facts | join(","))"')
+}
+
+# File mode (CONTINUE_ALL_PRS_PRS_FILE): the facts are the optional fourth
+# tab-separated column of the PR's line.
+inspect_prs_from_file()
+{
+    local numbers="$1" n facts
+    while IFS=$'\t' read -r n facts; do
+        [[ -n "$n" && -n "$facts" ]] || continue
+        if grep -qx -- "$n" <<< "$numbers"; then
+            PR_FACTS[$n]="$facts"
+        fi
+    done < <(awk -F'\t' '$1 != "" && $4 != "" { print $1 "\t" $4 }' "$CONTINUE_ALL_PRS_PRS_FILE")
+}
+
+# Move the label-wise "other" PRs (tier 3) that a reviewer has approved at least
+# once into tier 2. Reads and prints "<number>\t<priority>\t<title>" lines.
+apply_approval_priority()
+{
+    local number priority title
+    while IFS=$'\t' read -r number priority title; do
+        [[ -n "$number" ]] || continue
+        if (( priority == 3 )) && [[ ",${PR_FACTS[$number]:-}," == *,approved,* ]]; then
+            priority=2
+        fi
+        printf '%s\t%s\t%s\n' "$number" "$priority" "$title"
+    done
+}
+
+# Print what the inspection found pending for a PR, "; "-separated, or nothing
+# when the PR is green and clean. A fact that is unknown counts as pending, so
+# an uninspected PR is always dispatched. pr_pending_items <facts>
+pr_pending_items()
+{
+    local facts="$1" tok ci="" mergeable="" unresolved="" review="" age="" comments=""
+    local -a toks=() items=()
+    if [[ -z "$facts" ]]; then
+        printf 'not inspected'
+        return 0
+    fi
+    IFS=, read -ra toks <<< "$facts"
+    for tok in "${toks[@]}"; do
+        case "$tok" in
+            ci=*)         ci="${tok#*=}" ;;
+            mergeable=*)  mergeable="${tok#*=}" ;;
+            unresolved=*) unresolved="${tok#*=}" ;;
+            review=*)     review="${tok#*=}" ;;
+            age=*)        age="${tok#*=}" ;;
+            comments=*)   comments="${tok#*=}" ;;
+        esac
+    done
+    case "$ci" in
+        SUCCESS) ;;
+        "")      items+=("CI status unknown") ;;
+        *)       items+=("CI is $ci") ;;
+    esac
+    case "$mergeable" in
+        MERGEABLE)   ;;
+        CONFLICTING) items+=("conflicts with the base branch") ;;
+        *)           items+=("mergeability unknown - check for conflicts") ;;
+    esac
+    case "$unresolved" in
+        0)  ;;
+        ""|"?") items+=("unresolved review threads could not be counted - check them") ;;
+        *)  items+=("$unresolved unresolved review thread(s)") ;;
+    esac
+    [[ "$review" == CHANGES_REQUESTED ]] && items+=("a reviewer requested changes")
+    if ! [[ "$age" =~ ^[0-9]+$ ]]; then
+        items+=("last commit date unknown - check whether the base branch must be merged")
+    elif (( age > STALE_BRANCH_DAYS )); then
+        items+=("last commit $age days ago - merge the base branch")
+    fi
+    if ! [[ "$comments" =~ ^[0-9]+$ ]]; then
+        items+=("recent comments unknown - check for unanswered ones")
+    elif (( comments > 0 )); then
+        items+=("$comments new comment(s) from others since the last commit")
+    fi
+    local out="" item
+    for item in "${items[@]}"; do
+        out+="${out:+; }$item"
+    done
+    printf '%s' "$out"
+}
+
+# The one-line pre-check summary handed to the worker; nothing for a PR that
+# was not inspected or has nothing pending. pr_hint <facts>
+pr_hint()
+{
+    local facts="$1" pending
+    [[ -n "$facts" ]] || return 0
+    pending=$(pr_pending_items "$facts")
+    [[ -n "$pending" ]] || return 0
+    printf 'Orchestrator pre-check of this PR from the GitHub API at the start of this pass (facts: %s). Pending: %s. A green CI does not make the PR done: work through every pending item - resolve conflicts and merge the base branch, address each unresolved review thread, reply to the new comments - and re-check the live PR state yourself, since these facts may have aged.' \
+        "$facts" "$pending"
+}
+
+# Write the "<number>\t<title>" lines of the PRs that need a worker to the file
+# given as the second argument; the PRs with nothing pending are reported as
+# GREEN (on stdout, like the worker status lines) and left out.
+# dispatchable_prs <lines> <output-file>
+dispatchable_prs()
+{
+    local lines="$1" out="$2" number title facts pending ts
+    : > "$out"
+    while IFS=$'\t' read -r number title; do
+        [[ -n "$number" ]] || continue
+        facts="${PR_FACTS[$number]:-}"
+        pending=$(pr_pending_items "$facts")
+        if [[ -z "$pending" ]]; then
+            ts=$(date +%H:%M:%S)
+            emit "$(pr_color_seq "$number")" "$ts  ..  GREEN     PR #$number  $title  --  nothing pending ($facts)"
+            continue
+        fi
+        printf '%s\t%s\n' "$number" "$title" >> "$out"
+    done <<< "$lines"
+}
+
+# Emit the PR list as "<number>\t<priority>\t<title>" lines, oldest first. The
+# caller buckets them into priority tiers.
 fetch_prs()
 {
     if [[ -n "${CONTINUE_ALL_PRS_PRS_FILE:-}" ]]; then
-        cat "$CONTINUE_ALL_PRS_PRS_FILE"
+        # File lines are "<number>\t<title>" with an optional third
+        # "<label>,<label>,..." column used only to assign the priority tier
+        # (and a fourth facts column read by inspect_prs_from_file). awk splits
+        # the columns because `read` with a tab IFS collapses empty ones.
+        local n t labels
+        while IFS=$'\t' read -r n labels t; do
+            [[ -n "$n" ]] || continue
+            printf '%s\t%s\t%s\n' "$n" "$(pr_priority "$labels")" "$t"
+        done < <(awk -F'\t' '$1 != "" { print $1 "\t" ($3 == "" ? "-" : $3) "\t" $2 }' "$CONTINUE_ALL_PRS_PRS_FILE")
         return 0
     fi
 
@@ -1021,29 +1656,33 @@ fetch_prs()
         add
         | map(select((.labels // []) | map(.name) | index("hold") | not))
         | group_by(.number)
-        | map({ number:    .[0].number,
-                title:     .[0].title,
-                author:    (.[0].author.login // ""),
-                updatedAt: (map(.updatedAt) | max),
-                always:    (any(.[]; .always)) })
+        | map(([.[].labels[]?.name] | unique) as $names
+              | { number:    .[0].number,
+                  title:     .[0].title,
+                  author:    (.[0].author.login // ""),
+                  updatedAt: (map(.updatedAt) | max),
+                  always:    (any(.[]; .always)),
+                  priority:  (if   ($names | index("blocker"))            then 0
+                              elif ($names | index("pr-critical-bugfix")) then 1
+                              else 3 end) })
         | sort_by(.updatedAt)
-        | .[] | [ .number, (.always | tostring), .author, .updatedAt, .title ] | @tsv' )
+        | .[] | [ .number, (.always | tostring), .author, .updatedAt, (.priority | tostring), .title ] | @tsv' )
 
-    local number always author updatedAt title
-    while IFS=$'\t' read -r number always author updatedAt title; do
+    local number always author updatedAt priority title
+    while IFS=$'\t' read -r number always author updatedAt priority title; do
         [[ -n "$number" ]] || continue
         if [[ "$always" == "true" ]]; then
             # mine / assigned to me -> always processed, regardless of author.
-            printf '%s\t%s\n' "$number" "$title"
+            printf '%s\t%s\t%s\n' "$number" "$priority" "$title"
             continue
         fi
         # related-only: skip if the author is excluded from --related updates.
         [[ -n "${EXCLUDED_AUTHOR[${author,,}]:-}" ]] && continue
         if [[ "$updatedAt" < "$cutoff" ]]; then
             # No activity by anyone (including me) in the window -> abandoned.
-            printf '%s\t%s\n' "$number" "$title"
+            printf '%s\t%s\t%s\n' "$number" "$priority" "$title"
         elif related_is_abandoned "$number" "$cutoff"; then
-            printf '%s\t%s\n' "$number" "$title"
+            printf '%s\t%s\t%s\n' "$number" "$priority" "$title"
         fi
     done <<< "$candidates"
 }
@@ -1060,6 +1699,12 @@ fi
 maybe_color_hint
 load_excluded_authors
 
+# Priority tiers processed highest-first each round (see the header comment).
+# Index i names priority i, as assigned by pr_priority / fetch_prs and
+# apply_approval_priority.
+PRIORITY_NAMES=("blocker" "pr-critical-bugfix" "approved" "other")
+PRIORITY_ORDER="${PRIORITY_NAMES[0]} > ${PRIORITY_NAMES[1]} > ${PRIORITY_NAMES[2]} > ${PRIORITY_NAMES[3]}"
+
 modes=()
 (( MODE_MINE ))     && modes+=("mine")
 (( MODE_ASSIGNED )) && modes+=("assigned")
@@ -1072,6 +1717,7 @@ banner "Workers:         $WORKERS"
 banner "Worktree base:   ${WORKTREE_BASE}-{0..$((WORKERS - 1))}"
 [[ -n "$GH_USER" ]] && banner "GitHub user:     $GH_USER"
 banner "Selecting:       $MODES_DESC"
+banner "Priority order:  ${PRIORITY_ORDER}"
 (( MODE_RELATED )) && (( ${#EXCLUDED_AUTHOR[@]} )) && banner "Excluded (related): ${!EXCLUDED_AUTHOR[*]}"
 banner "Per-PR timeout:  ${TIMEOUT}s (shared across up to ${MAX_CONTINUE} turns)"
 banner "ccache:          ${CCACHE_DIR} (max ${CCACHE_MAXSIZE})"
@@ -1085,7 +1731,14 @@ if [[ "$AGENT" == "codex" ]]; then
     fi
 fi
 banner "Effort:          ${EFFORT}"
-(( CUSTOM_KEY )) && banner "API key:         custom (…${API_KEY: -4})"
+banner "Disk reserve:    ${MIN_FREE_GB} GiB (managed worktrees are cleaned below this)"
+if (( CUSTOM_KEY )); then
+    if [[ "$AGENT" == "codex" ]]; then
+        banner "Access token:    custom (…${API_KEY: -4})"
+    else
+        banner "API key:         custom (…${API_KEY: -4})"
+    fi
+fi
 (( DRY_RUN )) && banner "DRY RUN: not creating worktrees or running /continue-pr-auto"
 echo ""
 
@@ -1101,6 +1754,7 @@ done
 
 # Create worktrees up front (unless dry-running).
 if (( ! DRY_RUN )); then
+    cleanup_worktrees_if_disk_low
     for (( i = 0; i < WORKERS; i++ )); do
         ensure_worktree "${WT[i]}"
     done
@@ -1109,6 +1763,7 @@ fi
 
 QUEUEFILE="$(mktemp "$LOGDIR/queue.XXXXXX")"
 LOCKFILE="$(mktemp "$LOGDIR/lock.XXXXXX")"
+DISPATCHFILE="$(mktemp "$LOGDIR/dispatch.XXXXXX")"
 
 # Pin the status bar to the bottom of the terminal (TTY only).
 if (( SHOW_STATUS )) && [[ -t 1 ]]; then STATUS_ENABLED=1; fi
@@ -1116,38 +1771,68 @@ status_start
 
 ROUND=0
 while true; do
+    cleanup_worktrees_if_disk_low
+    rm -f "$CLEANUP_FAILURE_FILE"
     ROUND=$((ROUND + 1))
     stats_add 1 0 0 0 0 0 0 0
     na_reset
     banner "===== Round ${ROUND}: fetching open PRs ====="
 
-    PRS="$(fetch_prs || true)"
+    PRS_RAW="$(fetch_prs || true)"
 
-    if [[ -z "$PRS" ]]; then
+    if [[ -z "$PRS_RAW" ]]; then
         banner "No open PRs found. Sleeping 60s before retrying..."
         (( ONCE )) && break
         sleep 60
         continue
     fi
 
-    COUNT=$(printf '%s\n' "$PRS" | grep -c . || true)
-    banner "Round ${ROUND}: ${COUNT} PR(s) to process across ${WORKERS} worker(s)"
+    TOTAL=$(printf '%s\n' "$PRS_RAW" | grep -c . || true)
+    banner "Round ${ROUND}: ${TOTAL} PR(s) across ${WORKERS} worker(s), by priority: ${PRIORITY_ORDER}"
     echo ""
 
-    printf '%s\n' "$PRS" > "$QUEUEFILE"
+    # Inspect every PR once up front: the approval facts decide the tier split.
+    inspect_prs "$(printf '%s\n' "$PRS_RAW" | cut -f1)"
+    PRS_RAW="$(apply_approval_priority <<< "$PRS_RAW")"
 
-    # Job control gives every asynchronous worker its own process group. This
-    # lets the interrupt trap terminate the worker and all of its descendants
-    # immediately instead of waiting for a running agent command to return.
-    set -m
-    WORKER_PIDS=()
-    for (( i = 0; i < WORKERS; i++ )); do
-        worker "$i" "${WT[i]}" &
-        WORKER_PIDS+=($!)
+    # Process the PRs in priority tiers. Only advance to a lower priority once a
+    # full pass over the current one makes no progress; the moment a pass does
+    # make progress, stop the round so the next one revisits the top priority.
+    for prio in 0 1 2 3; do
+        tier_prs=$(printf '%s\n' "$PRS_RAW" \
+            | awk -F'\t' -v p="$prio" '$2 == p { t = $3; for (i = 4; i <= NF; ++i) t = t "\t" $i; print $1 "\t" t }')
+        tier_count=$(printf '%s\n' "$tier_prs" | grep -c . || true)
+        (( tier_count == 0 )) && continue
+
+        banner "Priority ${prio} (${PRIORITY_NAMES[prio]}): ${tier_count} PR(s)"
+        echo ""
+
+        # Refresh the inspection of this tier if the facts are older than
+        # INSPECT_TTL (the upfront pass may be hours old by the time a lower
+        # tier is reached), then leave out the PRs with nothing pending.
+        if (( $(date +%s) - INSPECTED_AT > INSPECT_TTL )); then
+            inspect_prs "$(printf '%s\n' "$tier_prs" | cut -f1)"
+        fi
+        dispatchable_prs "$tier_prs" "$DISPATCHFILE"
+        tier_prs=$(cat "$DISPATCHFILE")
+        tier_count=$(printf '%s\n' "$tier_prs" | grep -c . || true)
+        if (( tier_count == 0 )); then
+            banner "Priority ${prio} (${PRIORITY_NAMES[prio]}): nothing pending; advancing to the next priority"
+            continue
+        fi
+        run_workers_on "$tier_prs"
+
+        if [[ -s "$CLEANUP_FAILURE_FILE" ]]; then
+            banner "Worktree cleanup failed; stopping instead of retrying in another round"
+            exit 1
+        fi
+
+        if [[ -s "$ACTION_FILE" ]]; then
+            banner "Priority ${prio} (${PRIORITY_NAMES[prio]}) made progress; skipping lower priorities this round"
+            break
+        fi
+        banner "Priority ${prio} (${PRIORITY_NAMES[prio]}) needs no action; advancing to the next priority"
     done
-    set +m
-    wait "${WORKER_PIDS[@]}" || true
-    WORKER_PIDS=()
 
     echo ""
     banner "===== Round ${ROUND} complete ====="

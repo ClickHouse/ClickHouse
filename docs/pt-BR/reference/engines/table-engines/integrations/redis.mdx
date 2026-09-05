@@ -37,6 +37,7 @@ PRIMARY KEY(primary_key_name);
 
   `PRIMARY KEY` suporta apenas uma coluna. A chave primária será serializada em formato binário como uma chave do Redis.
   As colunas diferentes da chave primária serão serializadas em formato binário como valores do Redis, na ordem correspondente.
+  Varreduras completas com `SELECT * FROM redis_table` podem falhar com erros de desserialização binária se o banco de dados Redis selecionado contiver chaves ou valores que não foram gravados pelo ClickHouse.
 </Info>
 
 Os argumentos também podem ser passados usando [coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections). Nesse caso, `host` e `port` devem ser especificados separadamente. Essa abordagem é recomendada para ambientes de produção. No momento, todos os parâmetros passados ao Redis usando coleções nomeadas são obrigatórios.

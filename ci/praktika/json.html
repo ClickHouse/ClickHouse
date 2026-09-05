@@ -141,6 +141,14 @@
             text-decoration: none;
         }
 
+        /* File size shown next to a file link - same font size, but muted */
+        .file-size {
+            color: var(--text-color);
+            font-weight: normal;
+            opacity: 0.7;
+            white-space: nowrap;
+        }
+
         .external-link {
             color: var(--file-link-color);
             font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -753,6 +761,49 @@
         return `${formattedSeconds}.${formattedMilliseconds}`;
     }
 
+    // e.g. 1288490189 -> "1.2 GiB"; empty string for an unknown size.
+    function formatFileSize(sizeInBytes) {
+        if (sizeInBytes === null || sizeInBytes === undefined) {
+            return '';
+        }
+        const size = parseFloat(sizeInBytes);
+        if (isNaN(size) || size < 0) {
+            return '';
+        }
+        const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
+        let unitIdx = 0;
+        let value = size;
+        while (value >= 1024 && unitIdx < units.length - 1) {
+            value /= 1024;
+            unitIdx++;
+        }
+        return `${unitIdx === 0 ? Math.round(value) : value.toFixed(1)} ${units[unitIdx]}`;
+    }
+
+    // Size of the linked file, reused from StorageUsage (uploaded_details is
+    // keyed by basename, which is the link's last path component). undefined if
+    // unknown, e.g. a link to another report.
+    function sizeForLink(link, storage_usage) {
+        const details = storage_usage && storage_usage.uploaded_details;
+        if (!details) return undefined;
+        let name = link.split('/').pop().split('?')[0];
+        try {
+            name = decodeURIComponent(name);
+        } catch (e) {
+        }
+        return details[name];
+    }
+
+    // Appends " (1.2 GiB)" to a file link element, if the size is known.
+    function appendFileSize(linkElement, sizeInBytes) {
+        const text = formatFileSize(sizeInBytes);
+        if (!text) return;
+        const sizeElement = document.createElement('span');
+        sizeElement.className = 'file-size';
+        sizeElement.textContent = ` (${text})`;
+        linkElement.appendChild(sizeElement);
+    }
+
     // Function to determine status class based on value
     function getStatusClass(status) {
         const lowerStatus = status.toLowerCase();
@@ -867,7 +918,7 @@
         statusContainer.appendChild(widget);
     }
 
-    function addFileLinksWidget(links) {
+    function addFileLinksWidget(links, storage_usage = null) {
         if (!Array.isArray(links) || links.length === 0) return;
 
         const statusContainer = document.getElementById('status-container');
@@ -883,6 +934,7 @@
             fileLink.target = '_blank';
             fileLink.className = 'file-link';
             fileLink.textContent = link.includes(base_url) ? "Report" : link.split('/').pop();
+            appendFileSize(fileLink, sizeForLink(link, storage_usage));
 
             // Wrap each link in its own line for spacing
             const line = document.createElement('div');
@@ -1981,7 +2033,7 @@
                         statusEl.href = '#';
                         statusEl.addEventListener('click', (e) => {
                             e.preventDefault();
-                            toggleInfoRow(row, result.info, result.results, result.links);
+                            toggleInfoRow(row, result.info, result.results, result.links, result.ext?.storage_usage);
                         });
                     }
                     td.appendChild(statusEl);
@@ -2053,7 +2105,7 @@
 
             // unfold all for preview mode (nest_level = 0 in this case)
             if (nest_level === 0 && result.results.length > 0) {
-                toggleInfoRow(row, result.info, result.results, result.links);
+                toggleInfoRow(row, result.info, result.results, result.links, result.ext?.storage_usage);
             }
 
         });
@@ -2062,7 +2114,7 @@
     /**
      * Toggles an additional row below the clicked row to display the "info" text.
      */
-    function toggleInfoRow(row, infoText, sub_results = [], links = []) {
+    function toggleInfoRow(row, infoText, sub_results = [], links = [], storage_usage = null) {
         let nextRow = row.nextElementSibling;
 
         // Check if the next row is already an "info" row
@@ -2107,7 +2159,6 @@
                     let linkElement = document.createElement('a');
                     linkElement.href = link;
                     linkElement.target = "_blank"; // Open in a new tab
-                    linkElement.style.display = "block"; // Each link on a new line
 
                     if (!link.includes(base_url)) {
                         // External link: Show file name
@@ -2115,7 +2166,12 @@
                     } else {
                         linkElement.textContent = "Report";
                     }
-                    linksContainer.appendChild(linkElement);
+                    appendFileSize(linkElement, sizeForLink(link, storage_usage));
+
+                    // Each link, with its size, on a new line
+                    const line = document.createElement('div');
+                    line.appendChild(linkElement);
+                    linksContainer.appendChild(line);
                 });
 
                 infoCell.appendChild(linksContainer);
@@ -2432,7 +2488,7 @@
         let statusWidget = addStatusWidget(result.name, result.status, result.start_time, result.duration);
         addLabelsWidget(result.ext);
         if (nameParams.length > 1) {
-            addFileLinksWidget(result.links);
+            addFileLinksWidget(result.links, result.ext?.storage_usage);
             if (nameParams.length === 2) {
                 addStatisticsWidget(nameParams[1], result.duration * 1000)
             }
@@ -2531,15 +2587,19 @@
 
         const shaToLoad = (sha === 'latest') ? runtimeCache.commits[runtimeCache.commits.length - 1]?.sha : sha;
 
+        const task0 = normalizeTaskName(nameParams[0]);
+        // S3 layout includes the normalized workflow name:
+        // <suffix>/<sha>/<normalized_workflow>/result_<job>.json
+        const workflowSegment = encodeURIComponent(task0);
+
         const fetchTasks = [];
         if (nameParams.length > 1) {
             const task1 = normalizeTaskName(nameParams[1]);
-            const path1 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task1}.json`;
+            const path1 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/${workflowSegment}/result_${task1}.json`;
             fetchTasks.push(fetchJson(path1));
         }
 
-        const task0 = normalizeTaskName(nameParams[0]);
-        const path0 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task0}.json`;
+        const path0 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/${workflowSegment}/result_${task0}.json`;
         fetchTasks.push(fetchJson(path0));
 
         // Run fetchJson calls in parallel
@@ -2596,7 +2656,7 @@
         let resultResult;
         try {
             resultResult = await fetchJson(
-                `${privateBaseUrl}/PRs/${encodeURIComponent(private_pr_number)}/${encodeURIComponent(private_sha)}/result_pr.json`
+                `${privateBaseUrl}/PRs/${encodeURIComponent(private_pr_number)}/${encodeURIComponent(private_sha)}/pr/result_pr.json`
             );
         } catch (e) {
             return { data: null, error: 'Downstream: proxy unreachable' };
@@ -2839,6 +2899,21 @@
     });
 
     function createFavicon() {
+        let link = document.querySelector("link[rel='icon']");
+        if (!link) {
+            link = document.createElement("link");
+            link.rel = "icon";
+            document.head.appendChild(link);
+        }
+        // Prefer a project-provided favicon deployed next to this page in the
+        // report bucket; fall back to a generated one if it's absent.
+        const img = new Image();
+        img.onload = () => { link.href = "favicon.png"; };
+        img.onerror = () => { link.href = generateFaviconDataURL(); };
+        img.src = "favicon.png";
+    }
+
+    function generateFaviconDataURL() {
         const width = 32;
         const height = 32;
         const lineColor = "rgb(0, 0, 0)";
@@ -2870,16 +2945,7 @@
         }
 
         // Convert canvas to Data URL (PNG format)
-        const faviconURL = canvas.toDataURL("image/png");
-
-        // Set the favicon dynamically
-        let link = document.querySelector("link[rel='icon']");
-        if (!link) {
-            link = document.createElement("link");
-            link.rel = "icon";
-            document.head.appendChild(link);
-        }
-        link.href = faviconURL;
+        return canvas.toDataURL("image/png");
     }
     createFavicon();
     </script>

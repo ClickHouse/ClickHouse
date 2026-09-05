@@ -35,6 +35,10 @@ struct ChunkSelectFinalAllRows : public ChunkInfoCloneable<ChunkSelectFinalAllRo
 /** Merges several sorted inputs into one.
   * For each group of consecutive identical values of the primary key (the columns by which the data is sorted),
   *  keeps row with max `version` value.
+  *
+  * When `read_in_reverse` is set, the inputs are physically read backwards (each input is sorted in the direction
+  * opposite to the storage order), so among rows with equal versions the first row encountered from a source wins
+  * instead of the last one. This keeps the result identical to a merge in the direct order.
   */
 class ReplacingSortedAlgorithm final : public IMergingAlgorithmWithSharedChunks
 {
@@ -50,7 +54,8 @@ public:
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false,
         bool cleanup = false,
-        bool enable_vertical_final_ = false);
+        bool enable_vertical_final_ = false,
+        bool read_in_reverse_ = false);
 
     const char * getName() const override { return "ReplacingSortedAlgorithm"; }
     Status merge() override;
@@ -61,6 +66,7 @@ private:
     bool cleanup = false;
 
     bool enable_vertical_final = false; /// Either we use skipping final algorithm
+    bool read_in_reverse = false; /// Inputs are read in the reverse order relative to the storage order
     std::queue<detail::SharedChunkPtr> to_be_emitted;   /// To save chunks when using skipping final
 
     using RowRef = detail::RowRefWithOwnedChunk;

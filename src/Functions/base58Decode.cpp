@@ -35,9 +35,9 @@ the function throws an exception (or returns an empty string for `tryBase58Decod
         "Usage example",
         "SELECT base58Decode('JxF12TrwUP45BMd');",
         R"(
-┌─base58Decode⋯rwUP45BMd')─┐
-│ Hello World              │
-└──────────────────────────┘
+┌─base58Decode('JxF12TrwUP45BMd')─┐
+│ Hello World                     │
+└─────────────────────────────────┘
         )"
     }
     };

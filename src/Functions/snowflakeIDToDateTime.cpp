@@ -222,9 +222,9 @@ Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wik
 SELECT snowflakeIDToDateTime64(7204436857747984384) AS res
         )",
         R"(
-┌─────────────────res─┐
-│ 2024-06-06 10:59:58 │
-└─────────────────────┘
+┌─────────────────────res─┐
+│ 2024-06-06 10:59:58.851 │
+└─────────────────────────┘
         )"
     }
     };

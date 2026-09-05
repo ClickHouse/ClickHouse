@@ -1,5 +1,5 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/Formats/LazyOutputFormat.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Sources/NullSource.h>

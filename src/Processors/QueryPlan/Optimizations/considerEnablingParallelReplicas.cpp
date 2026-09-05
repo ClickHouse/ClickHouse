@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -35,6 +36,15 @@ extern const int LOGICAL_ERROR;
 namespace
 {
 
+/// Is this the branch of the plan that reads from the other replicas? Both implementations of parallel
+/// replicas are recognized: the query-based one (`ReadFromParallelRemoteReplicasStep`) and the plan-based
+/// one (`ReadFromParallelReplicasStep`, enabled by `parallel_replicas_plan_based`).
+bool isReadFromOtherReplicas(const IQueryPlanStep & step)
+{
+    return typeid_cast<const ReadFromParallelRemoteReplicasStep *>(&step)
+        || typeid_cast<const ReadFromParallelReplicasStep *>(&step);
+}
+
 /// Find the top node of the parallel replicas plan. E.g.:
 ///
 /// Expression ((Project names + Projection))
@@ -45,6 +55,10 @@ namespace
 ///          Expression ((WHERE + Change column names to column identifiers))
 ///            ReadFromMergeTree (default.hits)
 ///      ReadFromRemoteParallelReplicas (Query: ... Replicas: ...)
+///
+/// The plan-based implementation of parallel replicas (`parallel_replicas_plan_based`) builds the very
+/// same shape, the only difference being that the branch reading from the other replicas is a
+/// `ReadFromParallelReplicas` step, which ships a serialized plan fragment instead of a query.
 ///
 QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel_replicas_root)
 {
@@ -58,7 +72,7 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
         auto & frame = stack.back();
 
         /// Currently the approach is very simple: we look for Union step in the plan tree,
-        /// and consider its children. The first child that is not ReadFromParallelRemoteReplicas
+        /// and consider its children. The first child that is not a read from the other replicas
         /// is considered the top node of replicas plan.
         if (typeid_cast<UnionStep *>(frame.node->step.get()))
         {
@@ -79,7 +93,7 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
                     chassert(!node->children.empty());
                     node = node->children.front();
                 }
-                if (!typeid_cast<const ReadFromParallelRemoteReplicasStep *>(node->step.get()))
+                if (!isReadFromOtherReplicas(*node->step))
                 {
                     if (replicas_plan_top_node)
                     {
@@ -215,52 +229,42 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replic
     return nullptr;
 }
 
-/// Transplant the sets from the single-replica plan to the parallel-replicas plan once we decided to enable parallel replicas
+/// Transplant the sets from the single-replica plan to the parallel-replicas plan once we decided to enable parallel replicas.
+///
+/// Both walks use `forEachSubquerySet` rather than a plain `traverseQueryPlan`, which follows only
+/// `node->children`. A delayed set can also sit inside a set's own source plan (a nested `IN`) or -
+/// on the parallel-replicas side - inside the local branch under `ReadFromLocalParallelReplicaStep`,
+/// which is not a child node. A set missed here is not adopted from the single-replica plan and its
+/// subquery runs a second time at execution, which is exactly what this transplant exists to avoid.
 void moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, const QueryPlan & parallel_replicas_plan)
 {
-    Stack stack;
     std::map<FutureSet::Hash, SetAndKeyPtr> sets_map;
 
     // Create a map: set_key -> set
-    stack.clear();
-    traverseQueryPlan(
-        stack,
-        *single_replica_plan.getRootNode(),
-        [&](auto & frame_node)
+    forEachSubquerySet(
+        &single_replica_plan,
+        [&](FutureSetFromSubquery & future_set)
         {
-            if (auto * creating_sets_step = typeid_cast<DelayedCreatingSetsStep *>(frame_node.step.get()))
-            {
-                const auto sets = creating_sets_step->detachSets();
-                for (const auto & future_set : sets)
-                {
-                    if (auto set = future_set->detachSetAndKey())
-                        sets_map[future_set->getHash()] = std::move(set);
-                }
-            }
+            if (auto set = future_set.detachSetAndKey())
+                sets_map[future_set.getHash()] = std::move(set);
+            return true;
         });
 
     // Now transplant the sets
-    stack.clear();
-    traverseQueryPlan(
-        stack,
-        *parallel_replicas_plan.getRootNode(),
-        [&](auto & frame_node)
+    forEachSubquerySet(
+        &parallel_replicas_plan,
+        [&](FutureSetFromSubquery & future_set)
         {
-            if (const auto * creating_sets_step = typeid_cast<DelayedCreatingSetsStep *>(frame_node.step.get()))
-            {
-                for (const auto & future_set : creating_sets_step->getSets())
-                {
-                    if (auto it = sets_map.find(future_set->getHash()); it != sets_map.end())
-                    {
-                        future_set->replaceSetAndKey(it->second);
-                    }
-                    else
-                    {
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR, "Cannot find a matching set in the map of sets from single-replica plan");
-                    }
-                }
-            }
+            auto it = sets_map.find(future_set.getHash());
+            if (it == sets_map.end())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Cannot find a matching set in the map of sets from single-replica plan");
+
+            future_set.replaceSetAndKey(it->second);
+            /// The set is built now, so this plan will not run and the sets nested in it will never be
+            /// created. The single-replica plan has no counterparts for them either - its own nested
+            /// sources are long gone by this point - so descending would only fail the lookup above.
+            return false;
         });
 }
 }
@@ -309,7 +313,9 @@ void considerEnablingParallelReplicas(
         return;
     }
 
-    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder();
+    /// Hand the probe plan the sets this plan has already filled. It is built and optimized purely to
+    /// decide whether replicas pay off, and optimizing it would otherwise re-run every `IN` subquery.
+    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
     if (!plan_with_parallel_replicas)
         return;
 

@@ -34,12 +34,15 @@ public:
         IColumn::Offsets offsets_,
         IColumn::Filter filter_,
         IColumn::Offsets && matched_rows_,
+        size_t matched_right_rows_,
         ScatteredBlock && block_,
         Properties properties_);
 
     JoinResultBlock next() override;
 
     void setNextBlock(ScatteredBlock && block);
+
+    size_t getMatchedRightRows() const override { return matched_right_rows; }
 
     ~HashJoinResult() override;
 private:
@@ -59,6 +62,7 @@ private:
     size_t next_matched_rows_it = 0;
     size_t next_row_ref = 0;
     size_t num_joined_rows = 0;
+    size_t matched_right_rows = 0;
 
     struct GenerateCurrentRowState
     {

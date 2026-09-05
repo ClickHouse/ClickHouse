@@ -1128,6 +1128,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                                 break;
                             }
 
+                            /// A tuple already in the index is a no-op to visit, so its children may still be unnamed.
+                            visit(child, data);
+
                             auto name_and_type = getNameAndTypeFromAST(child, data);
                             if (name_and_type && isTupleType(name_and_type->type))
                             {
@@ -1312,10 +1315,20 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 /// We are in the part of the tree that we are not going to compute. You just need to define types.
                 /// Do not evaluate subquery and create sets. We replace "in*" function to "in*IgnoreSet".
 
+                /// Pass the left operand alone: the `IgnoreSet` variants never read the set, and the
+                /// real `in` always gets its set as a constant column, so a constant is what the
+                /// `LowCardinality` bookkeeping in `IFunctionOverloadResolver::getReturnType` expects
+                /// to see there. Passing the left operand twice instead would count two full
+                /// `LowCardinality` columns and type the expression as plain `UInt8` while execution
+                /// yields `LowCardinality(UInt8)`, so a query reading such a column across a subquery
+                /// boundary would fail the type check in `ActionsDAG::updateHeader`. A stand-in
+                /// constant column is not an option either: it would become part of the captured
+                /// arguments of an enclosing lambda and be looked up in later analysis passes that
+                /// never created it.
                 auto argument_name = node.arguments->children.at(0)->getColumnName();
                 data.addFunction(
                     FunctionFactory::instance().get(node.name + "IgnoreSet", data.getContext()),
-                    {argument_name, argument_name},
+                    {argument_name},
                     column_name);
             }
             return;
@@ -1454,6 +1467,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(node.name);
         if (user_defined_function && user_defined_function->as<ASTCreateWasmFunctionQuery>())
         {
+            UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(current_context);
             function_builder = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(node.name, current_context);
             is_user_defined_wasm_function = function_builder != nullptr;
         }

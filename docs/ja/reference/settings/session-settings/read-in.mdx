@@ -35,11 +35,11 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
   ## read_in_order_use_virtual_row
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "0"},{"label": "主キーまたはその単調関数の順に読み取る際に仮想行を使用します。複数のパーツを検索する場合、関連するパーツにのみアクセスするため有用です。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "仮想行の最適化をデフォルトで有効にします。多数のパーツにまたがって主キー順に読み取る際、スパースインデックスの主キー値を使用して `MergingSortedTransform` がソースの優先順位を付け直します。これにより、クエリに関係のないパーツの読み取りを回避するとともに、読み取りの並列性を維持するために最大 `max_threads` 個のパーツに制限された先読みウィンドウを使用します。これによりピークメモリ使用量が大幅に削減されます（https:\/\/github.com\/ClickHouse\/ClickHouse\/issues\/52624 を参照）。"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "0"},{"label": "主キーまたはその単調関数の順に読み取る際に仮想行を使用します。複数のパーツを検索する場合、関連するパーツにのみアクセスするため有用です。"}]}]} />
 
-主キーまたはその単調関数の順に読み取る際に仮想行を使用します。複数のパーツを検索する場合、関連するパーツにのみアクセスするため有用です。
+主キーまたはその単調関数の順に読み取る際に仮想行を使用します。複数のパーツを検索する場合、実際に結果に寄与できるパーツのみが読み取られ、読み取りの並列性を維持するために最大 `max_threads` 個のパーツに制限された先読みウィンドウも使用されます。
 
 <div id="read_in_order_use_virtual_row_per_block">
   ## read_in_order_use_virtual_row_per_block

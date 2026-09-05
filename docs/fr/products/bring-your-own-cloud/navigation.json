@@ -40,6 +40,26 @@
       ]
     },
     {
+      "group": "Connector",
+      "pages": [
+        "fr/products/bring-your-own-cloud/connector/overview",
+        "fr/products/bring-your-own-cloud/connector/onboarding",
+        "fr/products/bring-your-own-cloud/connector/architecture",
+        "fr/products/bring-your-own-cloud/connector/support-sessions",
+        "fr/products/bring-your-own-cloud/connector/configuration",
+        "fr/products/bring-your-own-cloud/connector/operations",
+        {
+          "group": "Reference",
+          "pages": [
+            "fr/products/bring-your-own-cloud/connector/reference/cli",
+            "fr/products/bring-your-own-cloud/connector/reference/configuration",
+            "fr/products/bring-your-own-cloud/connector/reference/faq",
+            "fr/products/bring-your-own-cloud/connector/reference/privilege-model"
+          ]
+        }
+      ]
+    },
+    {
       "group": "Reference",
       "pages": [
         "fr/products/bring-your-own-cloud/reference/network-security",
