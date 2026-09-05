@@ -8464,6 +8464,23 @@ If a vector search query has a WHERE clause, this setting determines if it is ev
     DECLARE_WITH_ALIAS(Float, vector_search_index_fetch_multiplier, 1.0, R"(
 Multiply the number of fetched nearest neighbors from the vector similarity index by this number. Only applied for post-filtering with other predicates or if setting 'vector_search_with_rescoring = 1'. Valid range: [1.0, 1000.0]. Values outside this range are rejected.
 )", 0, vector_search_postfilter_multiplier) \
+    DECLARE(Bool, allow_experimental_scann_index, false, R"(
+Allow creating `vector_similarity('scann', ...)` indexes. The ScaNN backend is experimental; set this to 1 to opt in.
+)", 0) \
+    DECLARE(UInt64, scann_num_leaves_to_search, 0, R"(
+The number of IVF partitions to search at query time when using a `vector_similarity('scann', ...)` index.
+Value 0 means automatic. ClickHouse uses a balanced recall/latency default:
+`0.75 * floor(1 + num_leaves * exp(2.0 * 0.8) * 0.015)`, where `num_leaves`
+is either specified in the index definition or selected automatically as `sqrt(num_vectors)`.
+Higher values increase recall at the cost of query latency.
+)", 0) \
+    DECLARE(UInt64, scann_candidate_pool_size, 0, R"(
+The size of the approximate-hashing candidate pool fed into ScaNN's exact reranker when querying a `vector_similarity('scann', ...)` index.
+This is the number of vectors that are scored by the fast asymmetric hashing stage before the slower exact distance reranking.
+Value 0 means automatic. ClickHouse uses a balanced recall/latency default based on
+`20 * floor(LIMIT^0.65 * sqrt(2.0)) * 2.5`, adjusted for very large or high-dimensional granules.
+Higher values increase recall at the cost of query latency.
+)", 0) \
     DECLARE(Bool, vector_search_use_quantized_codes, false, R"(
 Enables a two-stage approximate vector search without index (brute force scan) over a `Quantized`-compressed column. When enabled, `ORDER BY L2Distance|cosineDistance(vec, reference) LIMIT k` against a column encoded with a `Quantized(...)` codec will
 1. scan and filter the quantized vectors (this step produces `k * vector_search_index_fetch_multiplier` results), and

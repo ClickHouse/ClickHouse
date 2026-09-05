@@ -1,7 +1,15 @@
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 
-#if USE_USEARCH
+#if USE_USEARCH || USE_SCANN
 
+#if USE_SCANN
+#    include <Storages/MergeTree/MergeTreeIndexVectorSimilarityScann.h>
+#endif
+
+#include <ranges>
+#include <fmt/ranges.h>
+
+#if USE_USEARCH
 #include <usearch/index_plugins.hpp>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
@@ -23,13 +31,12 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/castColumn.h>
+#endif // USE_USEARCH
 
 #include <cmath>
-#include <ranges>
 #include <string_view>
 
-#include <fmt/ranges.h>
-
+#if USE_USEARCH
 namespace ProfileEvents
 {
     extern const Event USearchAddCount;
@@ -39,22 +46,27 @@ namespace ProfileEvents
     extern const Event USearchSearchVisitedMembers;
     extern const Event USearchSearchComputedDistances;
 }
+#endif
 
 namespace DB
 {
 
 namespace Setting
 {
-    extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
     extern const SettingsFloat vector_search_index_fetch_multiplier;
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
     extern const SettingsBool vector_search_with_rescoring;
 }
-
+#if USE_USEARCH
+namespace Setting
+{
+    extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
+}
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
 }
+#endif
 
 namespace ErrorCodes
 {
@@ -71,9 +83,16 @@ namespace ErrorCodes
 namespace
 {
 
-/// The only indexing method currently supported by USearch
-const std::set<String> methods = {"hnsw"};
+const std::set<String> methods = {
+#if USE_USEARCH
+    "hnsw",
+#endif
+#if USE_SCANN
+    "scann",
+#endif
+};
 
+#if USE_USEARCH
 /// Maps from user-facing name to internal name
 const std::unordered_map<String, unum::usearch::metric_kind_t> distanceFunctionToMetricKind = {
     {"L2Distance", unum::usearch::metric_kind_t::l2sq_k},
@@ -89,6 +108,7 @@ const std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToSca
     {"i8", unum::usearch::scalar_kind_t::i8_k},
     {"b1", unum::usearch::scalar_kind_t::b1x8_k}};
 /// Usearch provides more quantizations but ^^ above ones seem the only ones comprehensively supported across all distance functions.
+#endif // USE_USEARCH
 
 template<typename T>
 concept is_set = std::same_as<T, std::set<typename T::key_type, typename T::key_compare, typename T::allocator_type>>;
@@ -112,6 +132,8 @@ String joinByComma(const T & t)
 }
 
 }
+
+#if USE_USEARCH
 
 USearchIndexWithSerialization::USearchIndexWithSerialization(
     size_t dimensions,
@@ -626,9 +648,29 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionVectorSimilarity>(parameters, index_column, metric_kind, context);
 }
 
+#endif // USE_USEARCH
+
 MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
+
+#if USE_SCANN
+    const String & method = args[0].safeGet<String>();
+    if (method == "scann")
+    {
+        ScannIndexParams p;
+        p.distance_name = args[1].safeGet<String>();
+        p.dimensions    = args[2].safeGet<UInt64>();
+        if (args.size() == 5)
+        {
+            p.precision = args[3].safeGet<String>();
+            p.num_leaves = args[4].safeGet<UInt64>();
+        }
+        return std::make_shared<MergeTreeIndexVectorSimilarityScann>(std::move(metadata_snapshot), index, p);
+    }
+#endif
+
+#if USE_USEARCH
     UInt64 dimensions = args[2].safeGet<UInt64>();
 
     /// Default parameters:
@@ -650,23 +692,98 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snaps
     }
 
     return std::make_shared<MergeTreeIndexVectorSimilarity>(std::move(metadata_snapshot), index, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
+#else
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "vector_similarity index with method '{}' requires USearch to be enabled at build time",
+        args[0].safeGet<String>());
+#endif
 }
 
-void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */, const MergeTreeSettings & /*settings*/)
+void vectorSimilarityIndexValidator(const IndexDescription & index, [[maybe_unused]] bool attach, const MergeTreeSettings & /*settings*/)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
-    const bool has_three_args = (args.size() == 3);
-    const bool has_six_args = (args.size() == 6);
 
-    /// Check number and type of arguments
-    if (!has_three_args && !has_six_args)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector similarity index must have three or six arguments");
+    /// All backends require at least 3 arguments: (method, metric, dimensions)
+    if (args.size() < 3)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector similarity index must have at least three arguments");
     if (args[0].getType() != Field::Types::String)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "First argument of vector similarity index (method) must be of type String");
     if (args[1].getType() != Field::Types::String)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of vector similarity index (metric) must be of type String");
     if (args[2].getType() != Field::Types::UInt64)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Third argument of vector similarity index (dimensions) must be of type UInt64");
+
+    const String & method = args[0].safeGet<String>();
+
+    if (!methods.contains(method))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "First argument (method) of vector similarity index is not supported. Supported methods are: {}", joinByComma(methods));
+
+#if USE_SCANN
+    if (method == "scann")
+    {
+        static const std::unordered_set<String> scann_distances = {"L2Distance", "cosineDistance", "dotProduct"};
+        static const std::unordered_set<String> scann_precisions = {"f32", "bf16", "i8"};
+
+        if (args.size() != 3 && args.size() != 5)
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "vector_similarity index with method 'scann' requires three or five arguments: "
+                "method, distance_function, dimensions[, precision, num_leaves]");
+
+        const String & dist = args[1].safeGet<String>();
+        if (!scann_distances.contains(dist))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Second argument (distance function) of vector_similarity index with method 'scann' is not supported. "
+                "Supported distance functions are: L2Distance, cosineDistance, dotProduct");
+
+        if (args[2].safeGet<UInt64>() == 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Third argument (dimensions) of vector_similarity index must be > 0");
+
+        if (args.size() == 5)
+        {
+            if (args[3].getType() != Field::Types::String)
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "Fourth argument (precision) of vector_similarity index with method 'scann' must be of type String");
+            if (!scann_precisions.contains(args[3].safeGet<String>()))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Fourth argument (precision) of vector_similarity index with method 'scann' is not supported. "
+                    "Supported precisions are: f32, bf16, i8");
+            if (args[4].getType() != Field::Types::UInt64)
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "Fifth argument (num_leaves) of vector_similarity index with method 'scann' must be of type UInt64");
+            if (args[4].safeGet<UInt64>() == 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Fifth argument (num_leaves) of vector_similarity index with method 'scann' must be > 0");
+        }
+
+        if (index.column_names.size() != 1 || index.data_types.size() != 1)
+            throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS,
+                "Vector similarity index must be created on a single column");
+
+        DataTypePtr data_type = index.sample_block.getDataTypes()[0];
+        const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get());
+        if (!data_type_array)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Vector similarity index with method 'scann' can only be created on columns of type Array(Float32) or Array(Float64)");
+        TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
+        WhichDataType which(nested_type_index);
+        if (!which.isFloat32() && !which.isFloat64())
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Vector similarity index with method 'scann' can only be created on columns of type Array(Float32) or Array(Float64)");
+
+        if (!attach)
+            MergeTreeIndexVectorSimilarityScann::checkCPUSupport();
+        return;
+    }
+#endif
+
+#if USE_USEARCH
+    /// HNSW-specific validation
+    const bool has_three_args = (args.size() == 3);
+    const bool has_six_args = (args.size() == 6);
+
+    if (!has_three_args && !has_six_args)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector similarity index with method 'hnsw' must have three or six arguments");
     if (has_six_args)
     {
         if (args[3].getType() != Field::Types::String)
@@ -677,9 +794,6 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Sixth argument of vector similarity index (hnsw_candidate_list_size_for_construction) must be of type UInt64");
     }
 
-    /// Check that passed arguments are supported
-    if (!methods.contains(args[0].safeGet<String>()))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "First argument (method) of vector similarity index is not supported. Supported methods are: {}", joinByComma(methods));
     if (!distanceFunctionToMetricKind.contains(args[1].safeGet<String>()))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Second argument (distance function) of vector similarity index is not supported. Supported distance function are: {}", joinByComma(distanceFunctionToMetricKind));
     if (args[2].safeGet<UInt64>() == 0)
@@ -707,11 +821,9 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parameters passed to vector similarity index. Error: {}", error.release());
     }
 
-    /// Check that the index is created on a single column
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Vector similarity index must be created on a single column");
 
-    /// Check that the data type is Array(Float32|Float64|BFloat16)
     DataTypePtr data_type = index.sample_block.getDataTypes()[0];
     const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get());
     if (!data_type_array)
@@ -720,8 +832,13 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
     WhichDataType which(nested_type_index);
     if (!which.isNativeFloat() && !which.isBFloat16())
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity index can only be created on columns of type Array(Float32|Float64|BFloat16)");
-}
-
-}
-
+#else
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "vector_similarity index with method '{}' requires USearch to be enabled at build time",
+        method);
 #endif
+}
+
+}
+
+#endif /// USE_USEARCH || USE_SCANN

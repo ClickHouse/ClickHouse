@@ -604,10 +604,19 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
         .related = {"set", "tokenbf_v1"}});
     registerValidator("bloom_filter", bloomFilterIndexValidator);
 
-#if USE_USEARCH
+#if USE_USEARCH || USE_SCANN
     registerCreator("vector_similarity", vectorSimilarityIndexCreator, Documentation{
+#if USE_USEARCH && USE_SCANN
+        .description = "An approximate nearest-neighbour index over a vector column (built using HNSW or ScaNN), for speeding up `ORDER BY <distance_function>(vector, reference) LIMIT n` queries.",
+        .syntax = "INDEX name vector TYPE vector_similarity('hnsw', 'distance_function', dimensions[, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction]) GRANULARITY g\n"
+                  "INDEX name vector TYPE vector_similarity('scann', 'distance_function', dimensions[, precision, num_leaves]) GRANULARITY g",
+#elif USE_USEARCH
         .description = "An approximate nearest-neighbour index over a vector column (built using HNSW), for speeding up `ORDER BY <distance_function>(vector, reference) LIMIT n` queries.",
         .syntax = "INDEX name vector TYPE vector_similarity('hnsw', 'distance_function', dimensions[, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction]) GRANULARITY g",
+#elif USE_SCANN
+        .description = "An approximate nearest-neighbour index over a vector column (built using ScaNN), for speeding up `ORDER BY <distance_function>(vector, reference) LIMIT n` queries.",
+        .syntax = "INDEX name vector TYPE vector_similarity('scann', 'distance_function', dimensions[, precision, num_leaves]) GRANULARITY g",
+#endif
         .related = {}});
     registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif

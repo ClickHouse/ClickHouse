@@ -146,6 +146,9 @@ struct IMergeTreeIndexAggregator
     virtual bool empty() const = 0;
     virtual MergeTreeIndexGranulePtr getGranuleAndReset() = 0;
 
+    /// Optionally reserve storage for the expected number of rows in the next index granule being initialized.
+    virtual void reserve(size_t /*rows*/) {}
+
     /// Updates the stored info using rows of the specified block.
     /// Reads no more than `limit` rows.
     /// After finishing updating `pos` will store the position of the first row which was not read.
@@ -423,7 +426,7 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach, 
 MergeTreeIndexPtr bloomFilterIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
-#if USE_USEARCH
+#if USE_USEARCH || USE_SCANN
 MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 #endif
