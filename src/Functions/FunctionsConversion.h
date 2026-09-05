@@ -4353,6 +4353,56 @@ struct ToNumberMonotonicity
     }
 };
 
+/** `toUnixTimestamp` rides on `ToNumberMonotonicity` for most of its arguments, but its `Date` and `Date32`
+  * arms are not a cast of the day number: they multiply the day number by the number of seconds in a day and
+  * wrap the product around the result type (see `convertToUnixTimestampFromDate`). The conversion is therefore
+  * monotonic only over the days whose product fits, and a range reaching beyond them is reordered.
+  */
+template <typename T>
+struct ToUnixTimestampMonotonicity
+{
+    static bool has() { return true; }
+
+    static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
+    {
+        const IDataType * inner_type = &type;
+        if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(inner_type))
+            inner_type = low_cardinality->getDictionaryType().get();
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(inner_type))
+            inner_type = nullable->getNestedType().get();
+
+        if (!WhichDataType(*inner_type).isDateOrDate32())
+            return ToNumberMonotonicity<T>::get(type, left, right);
+
+        /// An unbounded side of the range reaches the days where the product wraps around.
+        if (left.isNull() || right.isNull())
+            return {};
+
+        auto day_number_of = [](const Field & field) -> std::optional<Int64>
+        {
+            if (field.getType() == Field::Types::UInt64)
+                return static_cast<Int64>(field.safeGet<UInt64>());
+            if (field.getType() == Field::Types::Int64)
+                return field.safeGet<Int64>();
+            return {};
+        };
+
+        const auto left_day = day_number_of(left);
+        const auto right_day = day_number_of(right);
+        if (!left_day || !right_day)
+            return {};
+
+        /// A negative day number wraps to the top of the result type, and so does a day whose product
+        /// exceeds it. In between the multiplication is an order-preserving bijection.
+        static constexpr Int64 max_day_number = static_cast<Int64>(std::numeric_limits<T>::max()) / DATE_SECONDS_PER_DAY;
+
+        if (*left_day < 0 || *right_day > max_day_number)
+            return {};
+
+        return { .is_monotonic = true, .is_strict = true };
+    }
+};
+
 template <typename T>
 struct ToDateMonotonicity
 {
@@ -4561,7 +4611,7 @@ extern template class FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotoni
 extern template class FunctionConvert<DataTypeIPv4, NameToIPv4, ToNumberMonotonicity<UInt32>>;
 extern template class FunctionConvert<DataTypeIPv6, NameToIPv6, ToNumberMonotonicity<UInt128>>;
 extern template class FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
-extern template class FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToNumberMonotonicity<UInt32>>;
+extern template class FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToUnixTimestampMonotonicity<UInt32>>;
 extern template class FunctionConvert<DataTypeDecimal<Decimal32>, NameToDecimal32, UnknownMonotonicity>;
 extern template class FunctionConvert<DataTypeDecimal<Decimal64>, NameToDecimal64, UnknownMonotonicity>;
 extern template class FunctionConvert<DataTypeDecimal<Decimal128>, NameToDecimal128, UnknownMonotonicity>;
@@ -4602,7 +4652,7 @@ using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonoton
 using FunctionToIPv4 = FunctionConvert<DataTypeIPv4, NameToIPv4, ToNumberMonotonicity<UInt32>>;
 using FunctionToIPv6 = FunctionConvert<DataTypeIPv6, NameToIPv6, ToNumberMonotonicity<UInt128>>;
 using FunctionToString = FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
-using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToNumberMonotonicity<UInt32>>;
+using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToUnixTimestampMonotonicity<UInt32>>;
 using FunctionToDecimal32 = FunctionConvert<DataTypeDecimal<Decimal32>, NameToDecimal32, UnknownMonotonicity>;
 using FunctionToDecimal64 = FunctionConvert<DataTypeDecimal<Decimal64>, NameToDecimal64, UnknownMonotonicity>;
 using FunctionToDecimal128 = FunctionConvert<DataTypeDecimal<Decimal128>, NameToDecimal128, UnknownMonotonicity>;
