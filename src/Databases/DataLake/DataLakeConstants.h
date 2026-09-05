@@ -43,5 +43,7 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
     /// DLF credentials
     {"dlf_access_key_id", DEFAULT_MASKING_RULE},
     {"dlf_access_key_secret", DEFAULT_MASKING_RULE},
+    /// JDBC catalog credentials
+    {"jdbc_password", DEFAULT_MASKING_RULE},
 };
 }

@@ -1,0 +1,4 @@
+--- CREATE DATABASE accepts the jdbc settings ---
+catalog_type = 'jdbc', warehouse = 'jdbc', jdbc_host = 'postgres', jdbc_port = 5432, jdbc_database = 'catalog', jdbc_schema = 'public', jdbc_user = 'reader'
+--- jdbc_password is hidden when formatted ---
+jdbc_password = '[HIDDEN]'
