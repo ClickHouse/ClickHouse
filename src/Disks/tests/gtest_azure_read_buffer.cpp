@@ -11,6 +11,7 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
+#include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
 #include <IO/ReadHelpers.h>
 
 #include <azure/core/http/raw_response.hpp>
@@ -129,7 +130,7 @@ public:
     {
     }
 
-    std::unique_ptr<Azure::Core::Http::RawResponse> Send(Azure::Core::Http::Request & request, const Azure::Core::Context &) override
+    std::unique_ptr<Azure::Core::Http::RawResponse> Send(Azure::Core::Http::Request & request, const Azure::Core::Context & context) override
     {
         const bool first_response = responses_sent == 0;
         const std::string & current_etag = (first_response || etags.etag_after_first.empty())
@@ -137,6 +138,33 @@ public:
             : etags.etag_after_first;
         const size_t current_blob_size = first_response ? blob_size : blob_size_after_first.value_or(blob_size);
         ++responses_sent;
+
+        /// The endpoint also accepts uploads (`Put Blob`, `Put Block` and `Put Block List`), so a
+        /// read-and-write copy can be driven end to end through it. The bytes of every uploaded
+        /// blob or block are appended to `uploaded` in the order they arrive; the block list itself
+        /// is XML and is not part of the data.
+        if (request.GetMethod() == Azure::Core::Http::HttpMethod::Put)
+        {
+            const auto & query = request.GetUrl().GetQueryParameters();
+            const auto comp = query.find("comp");
+            if (comp == query.end() || comp->second != "blocklist")
+            {
+                if (auto * body = request.GetBodyStream())
+                {
+                    auto bytes = body->ReadToEnd(context);
+                    uploaded.append(reinterpret_cast<const char *>(bytes.data()), bytes.size());
+                }
+            }
+
+            auto created = std::make_unique<Azure::Core::Http::RawResponse>(1, 1, Azure::Core::Http::HttpStatusCode::Created, "Created");
+            created->SetHeader("Content-Length", "0");
+            created->SetHeader("ETag", current_etag);
+            created->SetHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT");
+            /// The SDK reads this header unconditionally from every upload response.
+            created->SetHeader("x-ms-request-server-encrypted", "false");
+            created->SetBodyStream(std::make_unique<LyingBodyStream>(std::vector<uint8_t>{}, 0));
+            return created;
+        }
 
         if (etags.honour_if_match)
         {
@@ -186,6 +214,9 @@ public:
         return response;
     }
 
+    /// Everything the endpoint has been asked to store, in upload order.
+    const std::string & uploadedData() const { return uploaded; }
+
 private:
     size_t max_response_size;
     size_t served_size;
@@ -196,6 +227,7 @@ private:
     ETagBehaviour etags;
     std::optional<size_t> blob_size_after_first;
     size_t responses_sent = 0;
+    std::string uploaded;
 };
 
 /// Reads a blob from an endpoint that answers every ranged request with at most
@@ -376,6 +408,59 @@ std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeFreshBuffer(
         /* blob_storage_log */ DB::BlobStorageLogWriterPtr{},
         /* container_for_logging */ std::string{},
         known_object_size);
+}
+
+/// Copies a blob of `blob_size` bytes through `copyAzureBlobStorageFile` with the native copy
+/// disabled, so that the copy goes through the read-and-write fallback, in parts of `part_size`
+/// bytes (a single part when `part_size` is at least `blob_size`), from an endpoint that answers
+/// every ranged request with at most `max_response_size` bytes and whose object generation behaves
+/// as `etags` says. The read is pinned to `expected_etag`. Returns the bytes the endpoint was asked
+/// to store as the destination.
+std::string copyThroughReadAndWrite(
+    size_t blob_size,
+    size_t part_size,
+    size_t max_response_size,
+    const std::string & expected_etag,
+    const ETagBehaviour & etags,
+    size_t max_read_retries = 4)
+{
+    Azure::Storage::Blobs::BlobClientOptions client_options;
+    client_options.Retry.MaxRetries = 0;
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        max_response_size, blob_size, blob_size, /* send_etag */ true, /* reported_length */ std::nullopt,
+        /* ignore_range */ false, etags);
+    client_options.Transport.Transport = transport;
+
+    auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
+        Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", client_options), /* blob_prefix */ "");
+
+    auto settings = std::make_shared<DB::AzureBlobStorage::RequestSettings>();
+    settings->use_native_copy = false;
+    settings->max_single_read_retries = max_read_retries;
+    settings->max_single_download_retries = 1;
+    /// A blob of at least `max_single_part_upload_size` bytes is copied in parts of `part_size`.
+    settings->max_single_part_upload_size = part_size >= blob_size ? blob_size + 1 : 1;
+    settings->min_upload_part_size = part_size;
+    settings->max_upload_part_size = part_size;
+
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = 64;
+
+    DB::copyAzureBlobStorageFile(
+        container_client,
+        container_client,
+        /* src_container_for_logging */ "container",
+        /* src_blob */ "blob",
+        /* src_offset */ 0,
+        /* src_size */ blob_size,
+        expected_etag,
+        /* dest_container_for_logging */ "container",
+        /* dest_blob */ "copy",
+        settings,
+        read_settings,
+        /* object_to_attributes */ std::nullopt);
+
+    return transport->uploadedData();
 }
 
 }
@@ -897,6 +982,90 @@ TEST(AzureReadBigAt, BareExpectedETag)
 
     ASSERT_EQ(bytes_read, destination.size());
     assertCountsUpFromZero(destination);
+}
+
+/// The read-and-write fallback of a blob-to-blob copy, in several parts, against an endpoint that
+/// answers every request with fewer bytes than the part asks for: every part must be reassembled
+/// from several responses, and the destination must be the whole source, byte for byte.
+TEST(AzureCopyThroughReadAndWrite, MultipartUnchangedObject)
+{
+    std::string copied;
+    ASSERT_NO_THROW(copied = copyThroughReadAndWrite(
+        /* blob_size */ 100, /* part_size */ 40, /* max_response_size */ 30,
+        ETagBehaviour::first_generation, ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true}));
+
+    ASSERT_EQ(copied.size(), static_cast<size_t>(100));
+    assertCountsUpFromZero(copied);
+}
+
+/// The same copy in a single part.
+TEST(AzureCopyThroughReadAndWrite, SinglepartUnchangedObject)
+{
+    std::string copied;
+    ASSERT_NO_THROW(copied = copyThroughReadAndWrite(
+        /* blob_size */ 100, /* part_size */ 100, /* max_response_size */ 30,
+        ETagBehaviour::first_generation, ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true}));
+
+    ASSERT_EQ(copied.size(), static_cast<size_t>(100));
+    assertCountsUpFromZero(copied);
+}
+
+/// The source blob is overwritten in place after the first part has been read. Every part opens
+/// its own download of the source, so without pinning the destination would be assembled from two
+/// generations of the source. The endpoint evaluates `If-Match`, so the second part's download is
+/// rejected with `412 Precondition Failed`, which must surface as the object having changed.
+TEST(AzureCopyThroughReadAndWrite, PreconditionFailedBetweenParts)
+{
+    try
+    {
+        copyThroughReadAndWrite(
+            /* blob_size */ 100, /* part_size */ 40, /* max_response_size */ 40,
+            ETagBehaviour::first_generation,
+            ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = ETagBehaviour::second_generation, .honour_if_match = true});
+        FAIL() << "Expected an exception on a source blob overwritten between two parts of one copy";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::FILE_CHANGED_DURING_READ);
+    }
+}
+
+/// The same overwrite between parts, against an endpoint that ignores `If-Match` and serves the
+/// new generation anyway: the `ETag` of the response must still be compared with the one the copy
+/// is pinned to.
+TEST(AzureCopyThroughReadAndWrite, ETagChangedBetweenParts)
+{
+    try
+    {
+        copyThroughReadAndWrite(
+            /* blob_size */ 100, /* part_size */ 40, /* max_response_size */ 40,
+            ETagBehaviour::first_generation,
+            ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = ETagBehaviour::second_generation, .honour_if_match = false});
+        FAIL() << "Expected an exception on a part served from a different generation of the source than the copy is pinned to";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::FILE_CHANGED_DURING_READ);
+    }
+}
+
+/// The overwrite happens within a single part: the endpoint answers with fewer bytes than the part
+/// asks for, so the read is reopened at the current offset, and the reopened download hits the
+/// new generation of the source.
+TEST(AzureCopyThroughReadAndWrite, ETagChangedOnReopenWithinPart)
+{
+    try
+    {
+        copyThroughReadAndWrite(
+            /* blob_size */ 100, /* part_size */ 100, /* max_response_size */ 30,
+            ETagBehaviour::first_generation,
+            ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = ETagBehaviour::second_generation, .honour_if_match = true});
+        FAIL() << "Expected an exception on a source blob overwritten between two requests of one part";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::FILE_CHANGED_DURING_READ);
+    }
 }
 
 #endif

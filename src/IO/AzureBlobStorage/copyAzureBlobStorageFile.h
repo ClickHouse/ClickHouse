@@ -20,6 +20,12 @@ using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 
 /// Copies a file from AzureBlobStorage to AzureBlobStorage.
 /// The parameters `src_offset` and `src_size` specify a part in the source to copy.
+/// `src_etag` is the `ETag` of the generation of the source blob that the caller has decided to
+/// copy (from the listing or the `HEAD` that produced `src_size`), or empty when it is not known.
+/// When the copy falls back to reading and writing, every read of the source is pinned to that
+/// generation and bounded by `src_offset + src_size`, so that a source blob overwritten during the
+/// copy cannot end up as a destination stitched together from two generations, and an endpoint
+/// that answers with more or fewer bytes than requested cannot corrupt the destination.
 void copyAzureBlobStorageFile(
     std::shared_ptr<const AzureBlobStorage::ContainerClient> src_client,
     std::shared_ptr<const AzureBlobStorage::ContainerClient> dest_client,
@@ -27,6 +33,7 @@ void copyAzureBlobStorageFile(
     const String & src_blob,
     size_t src_offset,
     size_t src_size,
+    const String & src_etag,
     const String & dest_container_for_logging,
     const String & dest_blob,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings,

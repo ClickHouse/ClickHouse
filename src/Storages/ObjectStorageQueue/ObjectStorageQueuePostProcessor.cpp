@@ -468,6 +468,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                             /* src_blob */ object_from.remote_path,
                             /* src_offset */ 0,
                             blob_size,
+                            /* src_etag */ AzureBlobStorage::getETagOrEmpty(properties.ETag),
                             move_container,
                             /* dest_blob */ object_to.remote_path,
                             request_settings,

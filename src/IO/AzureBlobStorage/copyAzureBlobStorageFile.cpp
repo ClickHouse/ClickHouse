@@ -381,6 +381,7 @@ void copyAzureBlobStorageFile(
     const String & src_blob,
     size_t offset,
     size_t size,
+    const String & src_etag,
     const String & dest_container_for_logging,
     const String & dest_blob,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings,
@@ -478,10 +479,26 @@ void copyAzureBlobStorageFile(
     {
         /// Copy through read and write
         LOG_TRACE(log, "Reading and writing Blob: {} from Container: {}", src_blob, src_container_for_logging);
+        /// The same invariants as for a read of a stored object: the read is bounded by what the
+        /// caller asked to copy (the endpoint's idea of the length of the source is not trusted in
+        /// either direction), and it is pinned to the generation of the source blob the caller
+        /// selected, so that a source overwritten between two parts (or two requests of one part)
+        /// raises `FILE_CHANGED_DURING_READ` instead of silently mixing generations in the destination.
         auto create_read_buffer = [&]
         {
             return std::make_unique<ReadBufferFromAzureBlobStorage>(
-                src_client, src_blob, read_settings, settings->max_single_read_retries, settings->max_single_download_retries);
+                src_client,
+                src_blob,
+                read_settings,
+                settings->max_single_read_retries,
+                settings->max_single_download_retries,
+                /* use_external_buffer */ false,
+                /* restricted_seek */ false,
+                /* read_until_position */ offset + size,
+                /* blob_storage_log */ nullptr,
+                src_container_for_logging,
+                /* known_object_size */ std::nullopt,
+                src_etag);
         };
 
         UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, blob_storage_log, log};
