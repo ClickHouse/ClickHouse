@@ -1,6 +1,7 @@
-"""A manifest that declares a lower bound above the upper bound must not prune the data file it
-describes, so a filtered read still returns every matching row. The fallback is per column: a
-well-formed column in the same manifest entry must keep pruning."""
+"""A manifest whose bounds cannot be trusted must not prune the data file they describe, so a
+filtered read still returns every matching row: a lower bound above the upper bound, and a bound
+declared in fewer bytes than its column. The fallback is per column: a well-formed column in the
+same manifest entry must keep pruning."""
 
 import decimal
 import os
@@ -196,6 +197,26 @@ def _set_bounds_in_manifests(manifests, field_id, lower_raw, upper_raw):
     )
 
 
+def _resize_bounds_in_manifests(manifests, field_id, width):
+    """Re-declare one column's bounds with `width` bytes, keeping the little-endian value the writer
+    stored: high-order bytes are dropped when narrowing and zero filled when widening."""
+
+    def resize(data_file):
+        lower = next(
+            (entry for entry in data_file["lower_bounds"] if entry["key"] == field_id), None
+        )
+        upper = next(
+            (entry for entry in data_file["upper_bounds"] if entry["key"] == field_id), None
+        )
+        if lower is None or upper is None:
+            return False
+        for entry in (lower, upper):
+            entry["value"] = entry["value"][:width].ljust(width, b"\x00")
+        return True
+
+    return _patch_manifests(manifests, resize)
+
+
 def test_iceberg_inverted_manifest_bounds(started_cluster_iceberg_no_spark):
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     table_name = "test_iceberg_inverted_manifest_bounds_" + get_uuid_str()
@@ -251,6 +272,71 @@ def test_iceberg_inverted_manifest_bounds(started_cluster_iceberg_no_spark):
     assert _swap_bounds_in_manifests(manifests, only_field_id=2) > 0
     assert pruned_files(s_expr) == 0
     assert pruned_files(id_expr) == 0
+
+
+def test_iceberg_narrow_manifest_bounds(started_cluster_iceberg_no_spark):
+    """A bound narrower than its column is completed from bytes outside the payload, so the range it
+    describes is not the one the writer stored. A bound wider than its column is not: every released
+    ClickHouse wrote eight bytes for a four-byte column, and those tables must keep pruning."""
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    table_name = "test_iceberg_narrow_manifest_bounds_" + get_uuid_str()
+    table_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}"
+
+    instance.query(
+        f"CREATE TABLE {table_name} (n Int32, s String) "
+        f"ENGINE = IcebergLocal('{table_path}/', 'Parquet')",
+        settings=NOCACHE,
+    )
+    # One data file per INSERT, with disjoint ranges in both columns. Every value needs more than two
+    # bytes, so narrowing a bound to two loses part of the value rather than a run of leading zeros,
+    # and stays non-negative, which is what widening back with zeros reproduces.
+    for k in range(4):
+        instance.query(
+            f"INSERT INTO {table_name} SELECT toInt32(number), toString(number) "
+            f"FROM numbers({100000 + k * 100000}, 100)",
+            settings=NOCACHE,
+        )
+    assert instance.query(f"SELECT count() FROM {table_name}", settings=NOCACHE).strip() == "400"
+    instance.query(f"DROP TABLE {table_name}")
+
+    def select(where):
+        return (
+            f"SELECT n, s FROM icebergLocal(local, path = '{table_path}/') "
+            f"WHERE {where} ORDER BY ALL"
+        )
+
+    def pruned_files(where):
+        return _pruned_files(instance, table_name, select(where))
+
+    manifests = ContainerManifests(instance, table_path)
+
+    # Control: with the bounds the writer declared, a filter matching only the first data file prunes
+    # the other three. Without it, a fix that stopped pruning altogether would satisfy the assertions
+    # below. Only the first file holds values below 100010, and only its strings sort below "100010".
+    assert pruned_files("n < 100010") == 3
+    assert pruned_files("s < '100010'") == 3
+
+    # Widen `n` to eight bytes, which is what every released ClickHouse wrote for this column type.
+    # `ColumnVector::insertData` reads the four bytes the column holds and ignores the rest, so the
+    # bound still decodes and those tables must keep pruning.
+    assert _resize_bounds_in_manifests(manifests, 1, 8) > 0
+    assert pruned_files("n < 100010") == 3
+
+    # Narrow `n` to two bytes. The decode reads four either way, so the two the manifest no longer
+    # declares come from outside the payload and complete a value nothing stored: every file here
+    # holds values above 50000, yet a bound keeping only the low half of each orders below it, which
+    # would prune every file the filter needs. `s` is still well formed in the same manifest entry
+    # and must keep pruning, so the fallback is per column.
+    assert _resize_bounds_in_manifests(manifests, 1, 2) > 0
+    assert pruned_files("s < '100010'") == 3
+
+    # A count cannot tell a bound that was dropped from one that decoded to an inverted pair, which
+    # the sibling guard above drops for the same count. This names the column whose bound was
+    # dropped, and the read above has already parsed every bound in the manifest entry.
+    assert instance.grep_in_log(
+        f"usable range border for column id 1 of data file '.*{table_name}"
+    )
+    assert pruned_files("n > 50000") == 0
 
 
 def test_iceberg_inverted_decimal_manifest_bounds(started_cluster_iceberg_no_spark):
