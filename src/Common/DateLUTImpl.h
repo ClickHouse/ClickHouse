@@ -2030,7 +2030,8 @@ public:
     requires std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>
     NO_SANITIZE_UNDEFINED Time addDays(DateTime t, Int64 delta) const
     {
-        /// DateTime (UInt32) cannot represent values outside of the lookup table, so only DateTime64 takes the escape path.
+        /// A `DateTime` (`UInt32`) cannot denote a value outside the lookup table, so only the wide
+        /// timestamp types take the escape path.
         if constexpr (!std::is_same_v<DateTime, UInt32>)
             if (unlikely(isOutOfLUTRange(static_cast<Time>(t))))
                 return addDaysOutOfRange(t, delta);

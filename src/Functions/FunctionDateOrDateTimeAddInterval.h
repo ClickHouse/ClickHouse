@@ -708,8 +708,8 @@ struct SubtractIntervalImpl : public Transform
         return Transform::execute(t, negated, time_zone, utc_time_zone, scale);
     }
 
-    /// Reached only for delta == INT64_MIN, where the negation wraps. Kept out of line: in a
-    /// fixed-offset time zone every other row takes the arithmetic shortcut.
+    /// Reached only for `delta == INT64_MIN`, where the negation wraps. Kept out of line: the table
+    /// walk must not be inlined into a fixed-offset loop whose other rows take the shortcut.
     template <typename T>
     static NO_INLINE auto executeNegationOverflow(
         T t, Int64 negated, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
