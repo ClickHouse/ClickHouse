@@ -68,6 +68,14 @@ public:
     /// and SQL-defined handlers own their matched path and must execute their stored query unchanged.
     virtual bool parsesHTTPPath() const { return false; }
 
+    /// Idempotent HTTP methods are read-only by default. A handler may opt into mutating behavior for
+    /// a narrowly defined request shape, such as a PUT upload whose target table comes from the URL path.
+    virtual bool allowMutatingIdempotentMethods(
+        const HTTPServerRequest & /* request */, const HTMLForm & /* params */) const
+    {
+        return false;
+    }
+
     /// `body` is the request body wrapped in the transport decompression chain - the same object the query
     /// itself would read. Handlers must read the body only through it, never through `request.getStream()`
     /// directly: the wrapper snapshots the inner buffer state on construction, so bytes taken from the inner
@@ -82,8 +90,9 @@ protected:
     void setIntrospectionHandlerName(const String & name_) { introspection_handler_name = name_; }
 
     /// Set by SQL-defined handlers, whose query is fully known in advance, so it is known whether it can consume
-    /// the request body at all (see `SQLDefinedHandler`). The other handlers do not know it: for them the body may
-    /// be the rest of the query text or the data of an `INSERT`, so they have to assume that it is consumed.
+    /// the request body at all (see `SQLDefinedHandler`). The built-in path-table upload route has its own
+    /// body-consuming PUT shape. The other handlers do not know it: for POST and PUT the body may be the rest of the
+    /// query text or the data of an `INSERT`, so they have to assume that it is consumed.
     void setConsumesRequestBody(bool value)
     {
         body_contract_known = true;
@@ -95,12 +104,14 @@ private:
     String introspection_handler_name;
 
     /// Whether `consumes_request_body` carries a definitive answer. Only SQL-defined handlers set it: for them a
-    /// `POST` request needs `Content-Length` up front only when the body is actually consumed. For the other
-    /// handlers `POST` requires the length unconditionally, as it did before SQL-defined handlers existed.
+    /// `POST`, `PUT`, or `DELETE` request needs `Content-Length` up front only when the body is actually consumed. For
+    /// the other handlers' POST and PUT requests require the length unconditionally, as they may consume the body as
+    /// query text or insert data. The path-table upload route additionally requires it for its PUT shape.
     bool body_contract_known = false;
 
     /// Whether a body-carrying method must come with a length up front. Defaults to `false`: for the handlers that
-    /// do not set it, only `POST` requires the length, as it did before SQL-defined handlers existed.
+    /// do not set it, POST and PUT require the length. The path-table upload route additionally requires it for its
+    /// PUT shape.
     bool consumes_request_body = false;
 
     /// Whether the request body is appended to the query text. Defaults to `true` - the historical behavior, where
@@ -236,6 +247,8 @@ class DynamicQueryHandler : public HTTPHandler
 {
 private:
     std::string param_name;
+    /// Only the built-in catch-all handler enables the path-table upload mutation exception.
+    bool allow_path_table_uploads = false;
 
 public:
     explicit DynamicQueryHandler(
@@ -244,13 +257,16 @@ public:
         const std::string & param_name_ = "query",
         const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt,
         const std::string & url_prefix_ = "",
-        HTTPPathHintsPtr path_hints_ = nullptr);
+        HTTPPathHintsPtr path_hints_ = nullptr,
+        bool allow_path_table_uploads_ = false);
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
     bool customizeQueryParam(NameToNameMap & query_parameters, const std::string &key, const std::string &value) override;
 
     bool parsesHTTPPath() const override { return true; }
+
+    bool allowMutatingIdempotentMethods(const HTTPServerRequest & request, const HTMLForm & params) const override;
 };
 
 class PredefinedQueryHandler : public HTTPHandler

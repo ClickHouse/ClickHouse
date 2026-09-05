@@ -2,9 +2,9 @@
 
 #include <IO/PeekableReadBuffer.h>
 #include <IO/ReadHelpers.h>
+#include <Server/HTTP/HTTPRequest.h>
 
 #include <boost/noncopyable.hpp>
-#include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/NameValueCollection.h>
 #include <Poco/Net/PartSource.h>
 #include <Poco/URI.h>

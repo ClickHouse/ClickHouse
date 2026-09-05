@@ -6,5 +6,7 @@
 hello
 === a lengthless urlencoded POST to a non-body-consuming handler still requires the length ===
 1
+=== media type matching is case-insensitive for the same framing check ===
+1
 === the built-in dynamic handler keeps the unconditional POST contract ===
 1
