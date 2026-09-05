@@ -49,7 +49,7 @@ The main ClickHouse Keeper configuration tag is `<keeper_server>` and has the fo
 | `digest_enabled`                     | Enable real-time data consistency check                                                                                                                                                                                                             | `True`                                                                                                       |
 | `create_snapshot_on_exit`            | Create a snapshot during shutdown                                                                                                                                                                                                                   | -                                                                                                            |
 | `hostname_checks_enabled`            | Enable sanity hostname checks for cluster configuration (e.g. if localhost is used with remote endpoints)                                                                                                                                           | `True`                                                                                                       |
-| `four_letter_word_white_list`        | White list of 4lw commands.                                                                                                                                                                                                                         | `conf, cons, crst, envi, ruok, srst, srvr, stat, wchs, dirs, mntr, isro, rcvr, apiv, csnp, lgif, rqld, ydld` |
+| `four_letter_word_white_list`        | White list of 4lw commands.                                                                                                                                                                                                                         | `conf, cons, crst, envi, ruok, srst, srvr, stat, wchs, dirs, mntr, isro, rcvr, apiv, csnp, lgif, rqld, rclc, clrs, ftfl, ydld, bpon, bpof, pfev, lgrq`, plus `jmst, jmfp, jmep, jmdp` in builds with jemalloc |
 |`enable_ipv6`| Enable IPv6 | `True`|
 
 Other common parameters are inherited from the ClickHouse server config (`listen_host`, `logger`, and so on).
@@ -99,6 +99,8 @@ Internal coordination settings are located in the `<keeper_server>.<coordination
 | `disk_move_retries_wait_ms`        | How long to wait between retries after a failure which happened while a file was being moved between disks                                                                                                               | `1000`                                                                                                       |
 | `disk_move_retries_during_init`    | The amount of retries after a failure which happened while a file was being moved between disks during initialization                                                                                                    | `100`                                                                                                        |
 | `experimental_use_rocksdb`         | Use rocksdb as backend storage                                                                                                    | `0`                                                                                                        |
+| `slow_member_backpressure_no_progress_timeout_ms` | How long the leader keeps waiting for a replica that makes no progress at all, while the backpressure is on with [`bpon`](#four-letter-word-commands), before leaving it behind. Progress means an accepted response - log entries taken, or a snapshot object saved - so a replica that is merely slow keeps resetting this and only one that is stuck stops being waited for. The default is five minutes, and it is meant to be that large: a replica applying a large snapshot can be quiet for minutes and is exactly the one worth waiting for. A replica the leader cannot reach at all is dropped straight away, without waiting for this. `0` means the leader never stops waiting for a replica it can reach. | `300000` |
+| `slow_member_backpressure_max_uncommitted_log_entries` | The value `nuraft_max_uncommitted_log_entries` takes while the slow member backpressure is switched on with [`bpon`](#four-letter-word-commands). Holding the commit index back does not stop the leader appending, so without a tighter limit the log runs further ahead and the replica falls further behind instead of catching up. Tightening it makes the leader refuse new requests with a retriable error until the replica closes the gap. `0` leaves the limit unchanged. | `0` |
 
 Quorum configuration is located in the `<keeper_server>.<raft_configuration>` section and contain servers description.
 
@@ -174,7 +176,7 @@ clickhouse keeper --config /etc/your_path_to_config/config.xml
 
 ClickHouse Keeper also provides 4lw commands which are almost the same with Zookeeper. Each command is composed of four letters such as `mntr`, `stat` etc. There are some more interesting commands: `stat` gives general information about the server and connected clients, `srvr` gives extended details on the server, and `cons` gives extended details on connections.
 
-The 4lw commands have a white list configuration `four_letter_word_white_list` which has default value `conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,ydld`.
+The 4lw commands have a white list configuration `four_letter_word_white_list` which has default value `conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,rclc,clrs,ftfl,ydld,bpon,bpof,pfev,lgrq`, with `jmst,jmfp,jmep,jmdp` added in builds with jemalloc. The list is read once at startup, so changing it needs a restart.
 
 You can issue the commands to ClickHouse Keeper via telnet or nc, at the client port.
 
@@ -202,6 +204,7 @@ zk_packets_sent 68
 zk_num_alive_connections        1
 zk_outstanding_requests 0
 zk_server_state leader
+zk_slow_member_backpressure      0
 zk_znode_count  4
 zk_watch_count  1
 zk_ephemerals_count     0
@@ -399,6 +402,31 @@ Sent leadership request to leader.
 filtered_list   1
 multi_read  1
 check_not_exists    0
+```
+
+- `bpon`: Ask the leader to wait for replicas that cannot keep up. While it is on, the leader does not advance the commit index past any replica it can reach, so a replica that has fallen behind can close the gap instead of drifting until it needs a snapshot. Writes then commit at the speed of the slowest reachable replica, so switch it on deliberately, watch the replicas catch up, and switch it off again with `bpof`.
+
+  There is no lag threshold: every replica the leader can reach is waited for, however far behind it is, including one that is receiving a snapshot. A replica is left out only when waiting cannot get it anywhere - its last request failed, it made no progress within `slow_member_backpressure_no_progress_timeout_ms`, it has not answered at all yet on a new connection and no snapshot is on its way to it either, which leaves the leader with no idea where it stands, or it is out of the leader's log range, so that neither the log nor a snapshot can recover it - because waiting for such a replica would freeze the commit index for nothing.
+
+  Set `slow_member_backpressure_max_uncommitted_log_entries` as well. Holding the commit index back does not stop the leader appending, so without it the log keeps growing while the replica is being waited for.
+
+  The command can be sent to any node: a follower forwards it to the current leader and does not switch anything locally, so only the leader ever holds the setting. Check it with `zk_slow_member_backpressure` in `mntr` on the leader, which `zk_server_state` identifies. The setting lasts for one leadership - it is switched off both when a node becomes the leader and when it stops being one - and is not persisted, so a restarted node starts with it off.
+
+  Only the leader can answer for the setting, so only the leader's reply confirms it. A follower reports that it sent the request on, and nothing more: the leader refuses one that arrives after it has stopped leading.
+
+```bash
+$ echo bpon | nc localhost 9181   # sent to the leader
+Slow member backpressure is ON. Writes now commit at the speed of the slowest reachable replica. A new leader switches it off, so send this again after a leader change.
+
+$ echo bpon | nc localhost 9181   # sent to a follower
+Sent slow member backpressure ON request to leader. Check `zk_slow_member_backpressure` in `mntr` on the leader, which `zk_server_state` identifies, to see whether it took effect.
+```
+
+- `bpof`: Ask the leader to stop waiting for replicas that cannot keep up. It can be sent to any node and reaches the leader the same way as `bpon`.
+
+```bash
+$ echo bpof | nc localhost 9181
+Sent slow member backpressure OFF request to leader.
 ```
 
 - `ydld`: Request to yield leadership and become follower. If the server receiving the request is leader, it will pause write operations first, wait until the successor (current leader can never be successor) finishes the catch-up of the latest log, and then resign. The successor will be chosen automatically. Return `Sent yield leadership request to leader.` if request sent or `Failed to send yield leadership request to leader.` if request not sent. If the node is already a follower the outcome is the same as when the request is sent.

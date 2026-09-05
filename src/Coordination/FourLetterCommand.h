@@ -424,6 +424,35 @@ struct FeatureFlagsCommand : public IFourLetterCommand
     ~FeatureFlagsCommand() override = default;
 };
 
+/// Ask the leader to wait for replicas that cannot keep up: while on, it does
+/// not advance the commit index past any replica it can reach, so a replica
+/// that fell behind can close the gap instead of drifting until it needs a
+/// snapshot. Writes then go at the speed of the slowest replica.
+struct SlowMemberBackpressureOnCommand : public IFourLetterCommand
+{
+    explicit SlowMemberBackpressureOnCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "bpon"; }
+    String run() override;
+    ~SlowMemberBackpressureOnCommand() override = default;
+};
+
+/// Ask the leader to stop waiting for replicas that cannot keep up.
+struct SlowMemberBackpressureOffCommand : public IFourLetterCommand
+{
+    explicit SlowMemberBackpressureOffCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "bpof"; }
+    String run() override;
+    ~SlowMemberBackpressureOffCommand() override = default;
+};
+
 /// Yield leadership and become follower.
 struct YieldLeadershipCommand : public IFourLetterCommand
 {

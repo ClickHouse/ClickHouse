@@ -197,6 +197,12 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr feature_flags_command = std::make_shared<FeatureFlagsCommand>(keeper_dispatcher);
         factory.registerCommand(feature_flags_command);
 
+        FourLetterCommandPtr backpressure_on_command = std::make_shared<SlowMemberBackpressureOnCommand>(keeper_dispatcher);
+        factory.registerCommand(backpressure_on_command);
+
+        FourLetterCommandPtr backpressure_off_command = std::make_shared<SlowMemberBackpressureOffCommand>(keeper_dispatcher);
+        factory.registerCommand(backpressure_off_command);
+
         FourLetterCommandPtr yield_leadership_command = std::make_shared<YieldLeadershipCommand>(keeper_dispatcher);
         factory.registerCommand(yield_leadership_command);
 
@@ -322,6 +328,7 @@ String MonitorCommand::run()
     print(ret, "outstanding_requests", keeper_info.outstanding_requests_count);
 
     print(ret, "server_state", keeper_info.getRole());
+    print(ret, "slow_member_backpressure", keeper_info.is_slow_member_backpressure ? 1 : 0);
 
     const auto storage_stats = state_machine.getStorageStats();
 
@@ -657,6 +664,36 @@ String FeatureFlagsCommand::run()
     }
 
     return ret.str();
+}
+
+String SlowMemberBackpressureOnCommand::run()
+{
+    if (!keeper_dispatcher.requestSlowMemberBackpressure(true))
+        return "Failed to send slow member backpressure ON request to leader.";
+
+    /// Only the leader holds the setting, so reading it back says which of the
+    /// two things just happened: this node applied it itself, or it sent the
+    /// request on to the node it believes leads. A sent request is not a
+    /// switched setting - the leader refuses one that arrives after it has
+    /// stopped leading - so there is nothing to promise about writes yet.
+    if (!keeper_dispatcher.isSlowMemberBackpressure())
+        return "Sent slow member backpressure ON request to leader. Check "
+               "`zk_slow_member_backpressure` in `mntr` on the leader, which "
+               "`zk_server_state` identifies, to see whether it took effect.";
+
+    /// Both caveats matter to whoever just typed this and neither is visible
+    /// from `mntr`: writes now go at the speed of the slowest replica, and the
+    /// setting does not survive a leader change.
+    return "Slow member backpressure is ON. Writes now commit at the speed of "
+           "the slowest reachable replica. A new leader switches it off, so "
+           "send this again after a leader change.";
+}
+
+String SlowMemberBackpressureOffCommand::run()
+{
+    return keeper_dispatcher.requestSlowMemberBackpressure(false)
+        ? "Sent slow member backpressure OFF request to leader."
+        : "Failed to send slow member backpressure OFF request to leader.";
 }
 
 String YieldLeadershipCommand::run()
