@@ -2094,9 +2094,6 @@ class JobConfigs:
     ] + stateless_tests_selected_pr_jobs
     stateless_tests_targeted_matrix, stateless_targeted_exemptions = targeted_matrix(
         functional_tests_pr_jobs
-        + functional_tests_jobs_azure
-        + functional_test_llvm_coverage_jobs
-        + functional_test_excluded_from_llvm_job
     )
     # Preserve the original ARM ASan configuration as an additional environment.
     stateless_tests_targeted_matrix += stateless_tests_targeted_pr_jobs

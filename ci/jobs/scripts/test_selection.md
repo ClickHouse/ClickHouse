@@ -73,10 +73,11 @@ and do not establish coverage recall. A review-ready dataset needs at least 60
 days, actual failures, later flaky fixes, linked regressions, and controls.
 
 `expanded_targeted_matrix` remains disabled pending that replay and shadow review.
-The generated matrix contains the concrete PR configurations plus the original
-ARM ASan job. LLVM coverage and Azure modes have explicit exemptions because
-those runners disable randomized settings. The selected sanitizer configurations
-are derived from the full-suite definitions. Targeted repetitions preserve each
+The generated matrix uses the regular PR functional configurations plus the
+original ARM ASan job. Dedicated Azure, LLVM coverage, and excluded-from-LLVM job
+groups are outside this matrix. LLVM coverage modes in the regular configurations remain
+exempt because those runners disable randomized settings. The selected sanitizer
+configurations are derived from the full-suite definitions. Targeted repetitions preserve each
 configuration's runner, build, environment, timeout, and flavor.
 
 `selection-execution.json` accounts for every base-selected test, including flavor
