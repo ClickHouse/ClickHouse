@@ -161,9 +161,19 @@ void BuildRuntimeFilterStep::serializeSettings(QueryPlanSerializationSettings & 
 
 void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
 {
-    writeStringBinary(filter_column_name, ctx.out);
+    ctx.writeColumnName(filter_column_name);
     encodeDataType(filter_column_type, ctx.out);
-    writeStringBinary(filter_name, ctx.out);
+    /// `filter_name` is `_runtime_filter_<fingerprint>` and `calculateJoinFingerprint` folds the join
+    /// keys' composed names, so the id reads differently in the two plan builds exactly when the keys do
+    /// (`__table1.k` here, `__table2.k` there). It is a per-build rendezvous id between the build and the
+    /// probe side, not something comparable across builds, and the join it belongs to is already
+    /// identified by the subtree around this step. The runtime-filter id carrier inside the probe's
+    /// `ActionsDAG` is dropped for the same reason, see `ActionsDAG::Node::updateHash`.
+    ///
+    /// Today this cannot drift, because the step preserves both the rows and the header and so
+    /// contributes nothing to a cache key at all (`calculateHashFromStep` returns 0 before reaching this
+    /// serializer). The guard is here for the day that stops being true.
+    writeStringBinary(ctx.for_cache_key ? String{} : filter_name, ctx.out);
     writeBinary(allow_to_use_not_exact_filter, ctx.out);
 }
 

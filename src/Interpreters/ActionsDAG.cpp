@@ -1,5 +1,7 @@
 #include <Interpreters/ActionsDAG.h>
 
+#include <Analyzer/TableQualifiers.h>
+
 #include <Analyzer/FunctionNode.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -266,12 +268,41 @@ UInt64 ActionsDAG::Node::getHash() const
     return hash_state.get64();
 }
 
-void ActionsDAG::Node::updateHash(SipHash & hash_state) const
+void ActionsDAG::Node::updateHash(SipHash & hash_state, bool build_independent, const Block * input_header) const
 {
     hash_state.update(type);
 
-    if (!result_name.empty())
-        hash_state.update(result_name);
+    /// A derived node's name is a label this build chose, not part of what the node computes - the type,
+    /// the function and the children already say that - and it is branch-local: a query tree numbers its
+    /// tables independently, so a composed name reads `in(__table1.x, ...)` in a shipped fragment and
+    /// `in(__table2.x, ...)` in the plan enclosing it, which makes two identical reads hash differently
+    /// and costs Auto-PR the query. A caller asking for a build-independent key gets those names dropped.
+    ///
+    /// An INPUT keeps its name, because the name is the only thing telling two same-typed inputs apart:
+    /// drop it and `HAVING sum(a) > 5` and `HAVING sum(b) > 5` share a key, which then serves one
+    /// predicate's row estimate to an unrelated one. The branch-local part of that name is exactly the
+    /// index of the analyzer-generated table qualifier (`__table1.x` here, `__table2.x` there), so it is
+    /// normalized away rather than dropped - see `normalizeGeneratedTableQualifiers`. There is no query
+    /// tree at hand to tell a genuine qualifier from user text that looks like one, and none is needed:
+    /// the type and (for a constant) the value are hashed too, so two nodes whose names normalize
+    /// together stay apart on everything else.
+    /// An INPUT's name is normalized only when the header it reads from is known - which is exactly when
+    /// the name can be a planner-composed one. Two inputs whose names then normalize together
+    /// (`__table1.id` and `__table2.id`, one column from each side of a join) are told apart by where
+    /// each sits in that header.
+    ///
+    /// With no header the DAG sits at a read, where an INPUT is a physical column and its name is
+    /// already the same in every build. Normalizing there would be all cost and no benefit: a column
+    /// genuinely named `__table1.id` would be merged with one named `__table2.id`, and two different
+    /// PREWHERE predicates would share a statistics entry.
+    if (!result_name.empty() && (!build_independent || type == ActionType::INPUT))
+    {
+        const bool normalize = build_independent && !(type == ActionType::INPUT && !input_header);
+        hash_state.update(normalize ? normalizeGeneratedTableQualifiers(result_name) : result_name);
+    }
+
+    if (build_independent && type == ActionType::INPUT && input_header)
+        hash_state.update(input_header->has(result_name) ? input_header->getPositionByName(result_name) : input_header->columns());
 
     if (result_type)
         hash_state.update(result_type->getName());
@@ -281,6 +312,48 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
 
     if (function)
         hash_state.update(function->getName());
+
+    /// A lambda's body is not in this node: `function_base->getName()` is only `FunctionCapture`, and the
+    /// composed `result_name` that does carry it - `arrayExists(lambda(tuple(v), greater(v, 5)), a)` -
+    /// is dropped in build-independent mode. Without this, `v -> v > 5` and `v -> v < 5` hash alike and
+    /// one predicate's statistics are served to the other. So hash the capture and the body, mirroring
+    /// what `serialize` writes. Only in build-independent mode: an exact hash still has the name, and
+    /// `optimizeJoin` reads exact hashes back for its own statistics.
+    if (build_independent)
+    {
+        const auto hash_capture = [&](const LambdaCapture & capture, const ActionsDAG & lambda_dag)
+        {
+            hash_state.update(normalizeGeneratedTableQualifiers(capture.return_name));
+            hash_state.update(capture.return_type->getName());
+            for (const auto & captured_name : capture.captured_names)
+                hash_state.update(normalizeGeneratedTableQualifiers(captured_name));
+            for (const auto & captured_type : capture.captured_types)
+                hash_state.update(captured_type->getName());
+            /// The lambda's own argument names are written by the user, so they are the same in every build.
+            for (const auto & argument : capture.lambda_arguments)
+            {
+                hash_state.update(argument.name);
+                hash_state.update(argument.type->getName());
+            }
+            lambda_dag.updateHash(hash_state, build_independent, input_header);
+        };
+
+        if (const auto * function_capture = typeid_cast<const FunctionCapture *>(function_base.get()))
+            hash_capture(function_capture->getCapture(), function_capture->getAcionsDAG());
+
+        /// The same lambda can arrive as the value of a constant column instead of as the node's function.
+        if (column && result_type && WhichDataType(result_type).isFunction())
+        {
+            const IColumn * inner = column.get();
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(inner))
+                inner = &column_const->getDataColumn();
+            if (const auto * column_function = typeid_cast<const ColumnFunction *>(inner))
+            {
+                if (const auto * function_expression = typeid_cast<const FunctionExpression *>(column_function->getFunction().get()))
+                    hash_capture(function_expression->getCapture(), function_expression->getAcionsDAG());
+            }
+        }
+    }
 
     hash_state.update(is_function_compiled);
     hash_state.update(is_deterministic_constant);
@@ -296,16 +369,64 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
         /// statistics reuse.
         ///
         /// The one exception is the join runtime-filter id carrier: its value is a per-plan-build
-        /// rendezvous key (never a stable hash component), while its identity is its `result_name`,
-        /// hashed above. Skipping only its value keeps the single-replica and parallel-replicas plan
-        /// builds matching without dropping any other constant's value (it still serializes normally
-        /// for distributed propagation).
+        /// rendezvous key (never a stable hash component), while its identity is the structural
+        /// `_runtime_filter_<hash>` in `result_name` - hashed above in an exact hash, and dropped with
+        /// every other derived name in a build-independent one, which leaves two carriers told apart by
+        /// the DAG around them. Skipping only its value keeps the single-replica and parallel-replicas
+        /// plan builds matching without dropping any other constant's value (it still serializes
+        /// normally for distributed propagation).
         if (!is_runtime_filter_id)
             column->updateHashWithValue(0, hash_state);
+
+        /// A `Const(Set)` needs its identity added rather than its value skipped: `ColumnSet` is a dummy
+        /// column, so the call above hashes nothing for it, and in build-independent mode its
+        /// `__set_<hash>_<hash>` name is dropped along with every other derived name. Left at that, every
+        /// `IN` over the same type shares one key and `a IN (SELECT k FROM t1)` is served the row estimate
+        /// of `a IN (SELECT k FROM t2)`. `FutureSet::getHash` is the set's content-derived identity and is
+        /// equal across builds by construction (`FutureSetFromSubquery` is moved between plans keeping
+        /// it), so it discriminates two sets of the same type without depending on this build.
+        if (build_independent && result_type && WhichDataType(result_type).isSet())
+        {
+            const IColumn * inner = column.get();
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(inner))
+                inner = &column_const->getDataColumn();
+            if (const auto * column_set = typeid_cast<const ColumnSet *>(inner))
+            {
+                if (const auto & future_set = column_set->getData())
+                {
+                    const auto set_hash = future_set->getHash();
+                    hash_state.update(set_hash.low64);
+                    hash_state.update(set_hash.high64);
+                }
+            }
+        }
     }
 
     for (const auto & child : children)
-        child->updateHash(hash_state);
+        child->updateHash(hash_state, build_independent, input_header);
+}
+
+UInt64 ActionsDAG::getOutputIdentity(const std::string & name, const Block * input_header) const
+{
+    const auto * node = tryFindInOutputs(name);
+    /// Every caller names an output of its own DAG - a filter column, an array-joined column - so a
+    /// miss is a broken invariant, not a shape to support.
+    chassert(node, fmt::format("No output named {} in the DAG", name));
+
+    SipHash hash;
+    if (node)
+    {
+        node->updateHash(hash, /*build_independent=*/true, input_header);
+    }
+    else
+    {
+        /// Do not return the hash of an empty state: it is one value shared by every DAG that misses,
+        /// so unrelated plans would collapse onto a single cache key and be served each other's
+        /// statistics. Mixing in a marker and the (normalized) name keeps a miss distinguishable.
+        hash.update("<no such output>");
+        hash.update(normalizeGeneratedTableQualifiers(name));
+    }
+    return hash.get64();
 }
 
 UInt64 ActionsDAG::getHash() const
@@ -315,7 +436,7 @@ UInt64 ActionsDAG::getHash() const
     return hash.get64();
 }
 
-void ActionsDAG::updateHash(SipHash & hash_state) const
+void ActionsDAG::updateHash(SipHash & hash_state, bool build_independent, const Block * input_header) const
 {
     struct Frame
     {
@@ -332,7 +453,7 @@ void ActionsDAG::updateHash(SipHash & hash_state) const
         auto & frame = stack.top();
         if (frame.next_child == frame.node->children.size())
         {
-            frame.node->updateHash(hash_state);
+            frame.node->updateHash(hash_state, build_independent, input_header);
             stack.pop();
         }
         else
@@ -1940,13 +2061,19 @@ void ActionsDAG::appendInputsForUnusedColumns(const Block & sample_block)
         positions.pop_front();
     }
 
+    /// Append in `sample_block` order rather than in `names_map` traversal order. The latter depends on
+    /// the hash of the column names, so the same DAG built over `__table1.*` and over `__table2.*` can
+    /// order these inputs differently, and that order is observable: `serialize` writes node ids and the
+    /// input list, which feeds the plan cache key (see `Node::updateHash`).
+    std::vector<size_t> positions_to_append;
     for (const auto & [_, positions] : names_map)
+        positions_to_append.insert(positions_to_append.end(), positions.begin(), positions.end());
+    std::sort(positions_to_append.begin(), positions_to_append.end());
+
+    for (auto pos : positions_to_append)
     {
-        for (auto pos : positions)
-        {
-            const auto & col = sample_block.getByPosition(pos);
-            addInput(col.name, col.type);
-        }
+        const auto & col = sample_block.getByPosition(pos);
+        addInput(col.name, col.type);
     }
 }
 
@@ -4255,14 +4382,26 @@ const ActionsDAG::Node * FindOriginalNodeForOutputName::find(const String & outp
 }
 
 
-static void serializeCapture(const LambdaCapture & capture, WriteBuffer & out)
+static void serializeCapture(const LambdaCapture & capture, WriteBuffer & out, bool for_cache_key, const Block * input_header)
 {
-    writeStringBinary(capture.return_name, out);
+    /// `return_name` and the captured names are composed by `calculateActionNodeName`, so they carry the
+    /// analyzer's table qualifiers: a lambda capturing `__table1.a` in one plan build captures
+    /// `__table2.a` in the other. The lambda's own argument names below are written by the user and are
+    /// the same in every build, so they are left alone. See `writeCacheKeyColumnName`.
+    const auto write_name = [&](const String & name)
+    {
+        if (for_cache_key)
+            writeCacheKeyColumnName(name, input_header, out);
+        else
+            writeStringBinary(name, out);
+    };
+
+    write_name(capture.return_name);
     encodeDataType(capture.return_type, out);
 
     writeVarUInt(capture.captured_names.size(), out);
     for (const auto & name : capture.captured_names)
-        writeStringBinary(name, out);
+        write_name(name);
 
     writeVarUInt(capture.captured_types.size(), out);
     for (const auto & type : capture.captured_types)
@@ -4365,7 +4504,10 @@ static void serializeConstant(const IDataType & type, const IColumn & value, Wri
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected FunctionExpression for ColumnFunction. Got {}", function->getName());
 
-        serializeCapture(function_expression->getCapture(), out);
+        /// A captured lambda held in a constant column: its names are composed the same way, so they are
+        /// normalized too. There is no input header at hand here (this is reached from a constant's value,
+        /// not from a step's payload), so the names are discriminated by their normalized text alone.
+        serializeCapture(function_expression->getCapture(), out, registry.for_cache_key, /*input_header=*/nullptr);
         function_expression->getAcionsDAG().serialize(out, registry);
 
         const auto & captured_columns = column_function->getCapturedColumns();
@@ -4486,7 +4628,8 @@ static void addChildrenBeforeNode(std::vector<const ActionsDAG::Node *> & reorde
     already_added_nodes.insert(node);
 };
 
-void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const
+
+void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry, const Block * input_header) const
 {
     size_t nodes_size = nodes.size();
     writeVarUInt(nodes_size, out);
@@ -4510,7 +4653,17 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
     {
         const auto & node = *reordered_nodes[node_id];
         writeIntBinary(static_cast<UInt8>(node.type), out);
-        writeStringBinary(node.result_name, out);
+        /// A cache key must not depend on branch-local column names, and must still tell two same-typed
+        /// inputs apart - see `Node::updateHash`, which this mirrors.
+        if (registry.for_cache_key)
+        {
+            if (node.type == ActionType::INPUT)
+                writeCacheKeyColumnName(node.result_name, input_header, out);
+            else
+                writeStringBinary(String{}, out);
+        }
+        else
+            writeStringBinary(node.result_name, out);
         encodeDataType(node.result_type, out);
 
         writeVarUInt(node.children.size(), out);
@@ -4569,8 +4722,8 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
             writeStringBinary(node.function_base->getName(), out);
             if (function_capture)
             {
-                serializeCapture(function_capture->getCapture(), out);
-                function_capture->getAcionsDAG().serialize(out, registry);
+                serializeCapture(function_capture->getCapture(), out, registry.for_cache_key, input_header);
+                function_capture->getAcionsDAG().serialize(out, registry, input_header);
             }
         }
         else if (node.type == ActionType::ARRAY_JOIN)

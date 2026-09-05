@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
+
 
 #include <Core/Field.h>
 #include <Common/IntervalKind.h>
@@ -177,7 +179,8 @@ JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description)
 class WriteBuffer;
 class ReadBuffer;
 
-void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out);
+void serializeSortDescription(
+    const SortDescription & sort_description, WriteBuffer & out, bool for_cache_key = false, const Block * input_header = nullptr);
 void deserializeSortDescription(SortDescription & sort_description, ReadBuffer & in);
 
 }

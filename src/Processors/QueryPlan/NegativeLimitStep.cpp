@@ -100,7 +100,7 @@ void NegativeLimitStep::serialize(Serialization & ctx) const
     writeVarUInt(offset, ctx.out);
 
     if (with_ties)
-        serializeSortDescription(description, ctx.out);
+        serializeSortDescription(description, ctx.out, ctx.for_cache_key, ctx.input_header);
 }
 
 QueryPlanStepPtr NegativeLimitStep::deserialize(Deserialization & ctx)

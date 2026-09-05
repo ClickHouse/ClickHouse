@@ -1,6 +1,7 @@
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
+#include <Analyzer/TableQualifiers.h>
 #include <IO/Operators.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
@@ -285,12 +286,17 @@ JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description)
     return json_array;
 }
 
-void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out)
+void serializeSortDescription(
+    const SortDescription & sort_description, WriteBuffer & out, bool for_cache_key, const Block * input_header)
 {
     writeVarUInt(sort_description.size(), out);
     for (const auto & desc : sort_description)
     {
-        writeStringBinary(desc.column_name, out);
+        /// A sort column is a plan-build-local name in a cache key; see `writeCacheKeyColumnName`.
+        if (for_cache_key)
+            writeCacheKeyColumnName(desc.column_name, input_header, out);
+        else
+            writeStringBinary(desc.column_name, out);
 
         UInt8 flags = 0;
         if (desc.direction > 0)

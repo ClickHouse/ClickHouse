@@ -420,9 +420,16 @@ void FilterStep::serialize(Serialization & ctx) const
         flags |= 1;
     writeIntBinary(flags, ctx.out);
 
-    writeStringBinary(filter_column_name, ctx.out);
+    /// A cache key must not depend on the name this plan build composed for the filter column
+    /// (`greater(__table1.x, 5_UInt8)` here, `greater(__table2.x, 5_UInt8)` in the plan enclosing a
+    /// shipped fragment). What the predicate computes says the same thing build-independently, and
+    /// unlike an output index it does not move when the two builds order their outputs differently.
+    if (ctx.for_cache_key)
+        writeIntBinary(actions_dag.getOutputIdentity(filter_column_name, ctx.input_header), ctx.out);
+    else
+        writeStringBinary(filter_column_name, ctx.out);
 
-    actions_dag.serialize(ctx.out, ctx.registry);
+    actions_dag.serialize(ctx.out, ctx.registry, ctx.input_header);
 }
 
 QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)

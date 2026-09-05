@@ -7,6 +7,10 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+
+#include <Analyzer/TableQualifiers.h>
+#include <Processors/QueryPlan/Serialization.h>
+#include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <fmt/format.h>
 #include <algorithm>
@@ -507,5 +511,13 @@ void IQueryPlanStep::serialize(Serialization & /*ctx*/) const
 }
 
 void IQueryPlanStep::updateOutputHeader() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
+
+void IQueryPlanStep::Serialization::writeColumnName(const String & name) const
+{
+    if (for_cache_key)
+        writeCacheKeyColumnName(name, input_header, out);
+    else
+        writeStringBinary(name, out);
+}
 
 }
