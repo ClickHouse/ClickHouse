@@ -4291,14 +4291,10 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(
     QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope, std::vector<bool> * projection_from_matcher,
     std::vector<bool> * projection_has_explicit_alias)
 {
-    /// When `projection_from_matcher` is requested, record for each output column whether it was
-    /// produced by a matcher expansion (`*`, `t.*`, `COLUMNS(...)`), and whether its projection entry
-    /// carried an explicit `AS name`. A matcher resolves into a ListNode that contributes several
-    /// columns; every other entry contributes exactly one. Both properties are read from the entry
-    /// before it is resolved: resolution rewrites the list in place, which erases the expansion
-    /// boundaries and can replace an aliased node (a constant-folded function) with an unaliased one.
-    /// Duplicate-name disambiguation uses them to leave `*`-expanded columns shadowed by a later
-    /// explicit alias untouched (#14739) while still fixing genuinely distinct same-named columns.
+    /// Both flags describe each entry BEFORE it is resolved, because resolution rewrites the list in
+    /// place: it erases matcher expansion boundaries and can replace an aliased node (a
+    /// constant-folded function) with an unaliased one. A matcher expands to several output columns,
+    /// every other entry to exactly one.
     if (projection_from_matcher)
         projection_from_matcher->clear();
     if (projection_has_explicit_alias)
