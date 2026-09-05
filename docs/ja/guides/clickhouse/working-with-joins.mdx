@@ -106,7 +106,7 @@ LIMIT 10;
 <Image img="/images/starter_guides/joins/outer_join.webp" alt="Outer Join" />
 
 <Note>
-  ClickHouse は、[設定](/ja/reference/settings/session-settings#join_use_nulls)により [デフォルト値](/ja/reference/statements/create/table#default_values) の代わりに [NULL](/ja/reference/syntax#null) を返すようにできます (ただし、[パフォーマンス上の理由](/ja/reference/data-types/nullable#storage-features)から、あまり推奨されません) 。
+  ClickHouse は、[設定](/ja/reference/settings/session-settings/join#join_use_nulls)により [デフォルト値](/ja/reference/statements/create/table#default_values) の代わりに [NULL](/ja/reference/syntax#null) を返すようにできます (ただし、[パフォーマンス上の理由](/ja/reference/data-types/nullable#storage-features)から、あまり推奨されません) 。
 </Note>
 
 このクエリは、`genres` テーブルに一致する行がない `movies` テーブルのすべての行を取得し、その結果 `movie_id` カラムに (クエリ実行時に) デフォルト値 0 が入るため、ジャンルを持たない映画をすべて見つけます。
@@ -231,7 +231,7 @@ LIMIT 10;
 └─────────────────────────────────────────────┘
 ```
 
-構文的に最適化された `CROSS JOIN` クエリ版の `INNER JOIN` 句には、`ALL` キーワードが含まれています。これは、`INNER JOIN` に書き換えられた場合でも `CROSS JOIN` のデカルト積のセマンティクスを維持できるよう、明示的に追加されたものです。`INNER JOIN` では、デカルト積を[無効化](/ja/reference/settings/session-settings#join_default_strictness)できるためです。
+構文的に最適化された `CROSS JOIN` クエリ版の `INNER JOIN` 句には、`ALL` キーワードが含まれています。これは、`INNER JOIN` に書き換えられた場合でも `CROSS JOIN` のデカルト積のセマンティクスを維持できるよう、明示的に追加されたものです。`INNER JOIN` では、デカルト積を[無効化](/ja/reference/settings/session-settings/join#join_default_strictness)できるためです。
 
 ```sql
 ALL

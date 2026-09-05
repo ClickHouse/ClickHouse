@@ -7,6 +7,9 @@
 SET query_plan_optimize_lazy_final = 1;        -- off by default; bug needs it on
 SET min_filtered_ratio_for_lazy_final = 0;     -- avoid fallback to regular FINAL
 SET query_plan_direct_read_from_text_index = 1; -- exercise the direct read (randomized in CI)
+SET use_skip_indexes_if_final = 1;             -- the direct read needs skip indexes under FINAL
+SET use_skip_indexes_if_final_exact_mode = 1;  -- must stay in sync with the setting above
+SET enable_analyzer = 1;                       -- lazy FINAL requires the analyzer
 
 DROP TABLE IF EXISTS tab;
 
@@ -53,5 +56,36 @@ SELECT count() FROM tab FINAL WHERE str = 'bbb_updated'; -- 1: updated value sur
 SELECT count() FROM tab FINAL WHERE str = 'bbb';         -- 0: replaced value is gone
 SELECT count() FROM tab FINAL WHERE str = 'zzz';         -- 1: from the non-intersecting part
 SELECT count() FROM tab FINAL PREWHERE str = 'zzz';      -- 1: same via PREWHERE
+
+DROP TABLE tab;
+
+SELECT 'Single non-intersecting part with is_deleted: the direct text-index read must still drop deleted rows';
+CREATE TABLE tab
+(
+    id UInt64,
+    version UInt64,
+    is_deleted UInt8,
+    str String,
+    INDEX idx(str) TYPE text(tokenizer = array)
+)
+ENGINE = ReplacingMergeTree(version, is_deleted) ORDER BY id
+SETTINGS min_bytes_for_wide_part = 10485760, index_granularity = 8192; -- defaults: all 3 rows in one granule
+
+INSERT INTO tab VALUES (1, 1, 0, 'foo'), (2, 1, 0, 'bar'), (3, 1, 0, 'baz');
+INSERT INTO tab VALUES (2, 2, 1, 'bar');
+OPTIMIZE TABLE tab FINAL;
+
+-- 1: the direct index read and the is_deleted filter are in the same plan
+SELECT countIf(explain ILIKE '%__text_index%') > 0 AND countIf(explain ILIKE '%is_deleted = 0%') > 0
+FROM (EXPLAIN actions = 1, pretty = 1 SELECT count() FROM tab FINAL WHERE str = 'bar');
+
+-- 1: same, via the separate PREWHERE rewrite path
+SELECT countIf(explain ILIKE '%__text_index%') > 0 AND countIf(explain ILIKE '%is_deleted = 0%') > 0
+FROM (EXPLAIN actions = 1, pretty = 1 SELECT count() FROM tab FINAL PREWHERE str = 'bar');
+
+SELECT count() FROM tab;                            -- 3: the tombstone is still on disk
+SELECT count() FROM tab FINAL WHERE str = 'bar';    -- 0: deleted row is dropped
+SELECT count() FROM tab FINAL WHERE str = 'baz';    -- 1: survivor
+SELECT count() FROM tab FINAL PREWHERE str = 'bar'; -- 0: same via PREWHERE
 
 DROP TABLE tab;

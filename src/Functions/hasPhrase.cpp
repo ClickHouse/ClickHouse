@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Functions/hasPhrase.h>
 
 #include <Columns/ColumnFixedString.h>
@@ -188,7 +190,11 @@ FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & argu
     static const UnorderedSetWithMemoryTracking<ITokenizer::Type> supported_types = {
         ITokenizer::Type::SplitByNonAlpha,
         ITokenizer::Type::SplitByString,
+        ITokenizer::Type::SplitByRegexp,
         ITokenizer::Type::AsciiCJK,
+#if USE_ICU
+        ITokenizer::Type::Icu,
+#endif
         ITokenizer::Type::Ngrams,
     };
     if (!supported_types.contains(tokenizer->getType()))
@@ -238,7 +244,8 @@ If no text index is defined, the function performs a brute-force column scan whi
 
 Prior to searching, the function tokenizes both the `input` and the `phrase` arguments using the tokenizer specified for the text index.
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead — unless a tokenizer is provided as the optional third argument.
-The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `ngrams`, or `asciiCJK`.
+The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, or `icu`.
+Note that `splitByRegexp` is not supported for `hasPhrase` when the text index also defines a postprocessor.
 
 :::note
 When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasPhrase` applies it to both `input` and `phrase` before tokenization.

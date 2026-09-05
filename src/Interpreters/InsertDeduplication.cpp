@@ -158,21 +158,16 @@ DeduplicationInfo::Ptr DeduplicationInfo::filterToPartition(const PaddedPODArray
         return cloneSelf();
 
     /// Attributing tokens to partitions walks each token's row range over the selector, which is
-    /// only possible while the offsets still describe the block that was split. Behind an `Alias`
-    /// hop over a row-count-changing view the deduplication info is re-anchored to the view-output
-    /// chunks and there is no mapping from the tokens' source rows to the selector anymore. Refuse
-    /// loudly instead of reading out of the selector's bounds (see filterImpl).
-    if (row_to_partition.size() != getRows())
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Cannot attribute {} deduplication tokens to the partitions of the insert: the deduplication info "
-            "describes {} rows, but the block was split into partitions over {} rows because a materialized view "
-            "with a row-count-changing inner query was processed before a table with the `Alias` engine. "
-            "Debug: {}",
-            getCount(),
-            getRows(),
-            row_to_partition.size(),
-            debug());
+    /// only valid at the direct insert destination, where the offsets still describe exactly the
+    /// block that was split. A materialized-view (or `Alias`-hop) target may have changed the row
+    /// count in its inner query, so there is no mapping from the tokens' source rows to the
+    /// view-output selector: keep every token in every partition instead. A repeated token may
+    /// still be deduplicated per partition through the cached data hashes.
+    if (level == Level::VIEW)
+        return cloneSelf();
+
+    /// At the direct destination the offsets describe the split block, so the walk is in bounds.
+    chassert(row_to_partition.size() == getRows());
 
     /// Keep only tokens that have at least one row in this partition.
     std::set<size_t> absent_offsets;
@@ -404,29 +399,56 @@ DeduplicationInfo::FilterResult DeduplicationInfo::filterImpl(const std::set<siz
 }
 
 
-UInt128 DeduplicationInfo::calculateDataHashColumnWise(size_t offset, const Block & block) const
+void DeduplicationInfo::calculateDataHashes() const
+{
+    std::vector<size_t> pending;
+    for (size_t offset = 0; offset < tokens.size(); ++offset)
+        if (tokens[offset].by_user.empty() && !tokens[offset].data_hash_batch.has_value())
+            pending.push_back(offset);
+
+    if (pending.empty())
+        return;
+
+    /// Counted per token, not per pass: pre-warming keeps this at O(tokens); the per-partition
+    /// cold-clone path drives it to O(partitions*tokens) for tokens that span several partitions.
+    ProfileEvents::increment(ProfileEvents::DuplicationDataHashComputations, pending.size());
+
+    chassert(original_block && original_block->rows() == getRows());
+
+    /// The hash must not depend on the column's representation, so strip every representation wrapper
+    /// (`ColumnConst`, `ColumnReplicated`, `ColumnSparse`) before hashing. A wrapper hashes through the
+    /// generic per-row loop, whose byte stream differs from the dense column's range overload for every
+    /// variable-size type - the same rows would then produce two different block hashes and a retried
+    /// insert would not deduplicate.
+    /// `convertToFullIfWrapped` strips the whole column tree rather than just the root, because a
+    /// composite column hashes by delegating to its children (`ColumnTuple::updateHashWithValueRange`
+    /// calls each element's), so a wrapper anywhere in the tree would reach the generic loop. Every
+    /// wrapper observed here so far sits at the root, and it costs nothing to be exhaustive: with no
+    /// wrapper anywhere the call returns the column itself.
+    /// `LowCardinality` is deliberately not removed: it is a semantic type rather than a representation,
+    /// so it cannot differ between two attempts at the same insert.
+    /// Column-major so only one column is materialized at a time, instead of a dense copy of the whole block.
+    std::vector<SipHash> hashes(pending.size());
+    for (const auto & col : original_block->getColumns())
+    {
+        auto dense = col->convertToFullIfWrapped();
+        for (size_t i = 0; i < pending.size(); ++i)
+            dense->updateHashWithValueRange(getTokenBegin(pending[i]), getTokenEnd(pending[i]), hashes[i]);
+    }
+
+    for (size_t i = 0; i < pending.size(); ++i)
+        tokens[pending[i]].data_hash_batch = hashes[i].get128();
+}
+
+
+UInt128 DeduplicationInfo::getDataHash(size_t offset) const
 {
     chassert(offset < offsets.size());
+    chassert(tokens[offset].by_user.empty());
 
-    if (tokens[offset].data_hash_batch.has_value())
-        return tokens[offset].data_hash_batch.value();
+    if (!tokens[offset].data_hash_batch.has_value())
+        calculateDataHashes();
 
-    /// Cache miss: an actual column-wise hash pass over the token's rows. Counting these makes the
-    /// prewarm optimization observable: pre-warming keeps this at O(tokens); the per-partition
-    /// cold-clone path drives it to O(partitions*tokens) for tokens that span several partitions.
-    ProfileEvents::increment(ProfileEvents::DuplicationDataHashComputations);
-
-    chassert(block.rows() == getRows());
-
-    auto cols = block.getColumns();
-
-    SipHash hash;
-    size_t begin = getTokenBegin(offset);
-    size_t end = getTokenEnd(offset);
-    for (const auto & col : cols)
-        col->updateHashWithValueRange(begin, end, hash);
-
-    tokens[offset].data_hash_batch = hash.get128();
     return tokens[offset].data_hash_batch.value();
 }
 
@@ -445,7 +467,7 @@ DeduplicationHash DeduplicationInfo::getBlockUnifiedHash(size_t offset, const st
     }
     else
     {
-        auto data_hash = calculateDataHashColumnWise(offset, *original_block);
+        auto data_hash = getDataHash(offset);
         extension = fmt::format("{}_{}", data_hash.items[0], data_hash.items[1]);
     }
 
@@ -531,14 +553,7 @@ void DeduplicationInfo::cacheDataHashes() const
     if (disabled)
         return;
 
-    for (size_t offset = 0; offset < offsets.size(); ++offset)
-    {
-        if (!tokens[offset].by_user.empty() || tokens[offset].data_hash_batch.has_value())
-            continue;
-
-        chassert(original_block);
-        calculateDataHashColumnWise(offset, *original_block);
-    }
+    calculateDataHashes();
 }
 
 
@@ -579,12 +594,7 @@ void DeduplicationInfo::prewarmDataHashes() const
     if (!original_block || !original_block->rows())
         return;
 
-    for (size_t i = 0; i < tokens.size(); ++i)
-    {
-        if (!tokens[i].by_user.empty())
-            continue;
-        calculateDataHashColumnWise(i, *original_block);
-    }
+    calculateDataHashes();
 }
 
 
@@ -875,7 +885,6 @@ void DeduplicationInfo::updateOriginalBlock(const Chunk & chunk, SharedHeader he
     /// is called (e.g. in the sink), avoiding redundant recomputation during squashing.
     /// The columns are COW-shared with the chunk, so this does not increase memory usage.
     original_block = std::make_shared<Block>(header->cloneWithColumns(chunk.getColumns()));
-
 }
 
 

@@ -148,7 +148,15 @@ AccessRightsElements InterpreterCreateRowPolicyQuery::getRequiredAccess() const
 {
     const auto & query = query_ptr->as<const ASTCreateRowPolicyQuery &>();
     AccessRightsElements res;
-    auto access_type = (query.alter ? AccessType::ALTER_ROW_POLICY : AccessType::CREATE_ROW_POLICY);
+
+    /// `CREATE ROW POLICY OR REPLACE` throws away an existing policy of the same name - including which
+    /// roles it applies to - so it is a drop followed by a create and requires the privileges of both.
+    /// `DROP ROW POLICY` is required whether or not the policy currently exists, mirroring `REPLACE
+    /// TABLE`, so that the check does not reveal which policies exist either.
+    AccessFlags access_type = query.alter ? AccessType::ALTER_ROW_POLICY : AccessType::CREATE_ROW_POLICY;
+    if (query.or_replace)
+        access_type |= AccessType::DROP_ROW_POLICY;
+
     for (const auto & row_policy_name : query.names->full_names)
         res.emplace_back(access_type, row_policy_name.database, row_policy_name.table_name);
     return res;

@@ -27,7 +27,7 @@ A configuração do &#39;clickhouse-server&#39; especifica o arquivo com a hiera
 Além desse arquivo, ele também procura arquivos próximos que tenham o símbolo `_` e qualquer sufixo anexado ao nome (antes da extensão do arquivo).
 Por exemplo, ele também encontrará o arquivo `/opt/geo/regions_hierarchy_ua.txt`, se estiver presente. Aqui, `ua` é chamado de chave do dicionário. Para um dicionário sem sufixo, a chave é uma string vazia.
 
-Todos os dicionários são recarregados em tempo de execução (uma vez a cada certo número de segundos, conforme definido no parâmetro de configuração [`builtin_dictionaries_reload_interval`](/pt-BR/reference/settings/server-settings/settings#builtin_dictionaries_reload_interval), ou uma vez por hora, por padrão). No entanto, a lista de dicionários disponíveis é definida apenas uma vez, quando o servidor é iniciado.
+Todos os dicionários são recarregados em tempo de execução (uma vez a cada certo número de segundos, conforme definido no parâmetro de configuração [`builtin_dictionaries_reload_interval`](/pt-BR/reference/settings/server-settings/settings/other#builtin_dictionaries_reload_interval), ou uma vez por hora, por padrão). No entanto, a lista de dicionários disponíveis é definida apenas uma vez, quando o servidor é iniciado.
 
 Todas as funções para trabalhar com regiões têm um argumento opcional no final — a chave do dicionário. Ela é chamada de geobase.
 

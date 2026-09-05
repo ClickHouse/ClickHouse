@@ -727,6 +727,11 @@ public:
         return !projection_aliases_to_override.empty();
     }
 
+    const Names & getProjectionAliasesToOverride() const
+    {
+        return projection_aliases_to_override;
+    }
+
     /// Record the original display names after duplicate projection column names were made
     /// internally unique (see `getProjectionColumnDisplayNames`). Must be parallel to
     /// `projection_columns`.

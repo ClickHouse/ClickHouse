@@ -10,6 +10,10 @@ class BackgroundSchedulePoolTaskInfo;
 
 using BackgroundSchedulePoolTaskInfoPtr = std::shared_ptr<BackgroundSchedulePoolTaskInfo>;
 
+class BackgroundSchedulePool;
+
+using BackgroundSchedulePoolPtr = std::shared_ptr<BackgroundSchedulePool>;
+
 class BackgroundSchedulePoolTaskHolder
 {
 public:

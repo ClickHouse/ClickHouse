@@ -1,0 +1,294 @@
+---
+title: 'Referencia de configuración'
+sidebarTitle: 'Referencia de configuración'
+description: 'Todas las claves de configuración de ClickHouse Connector: el archivo config.yaml de la VM y los valores del gráfico de Helm, con sus valores predeterminados'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'configuración', 'referencia']
+doc_type: 'reference'
+---
+
+Esta página enumera todas las claves de configuración que podría necesitar modificar, junto con su valor predeterminado y significado: primero, el archivo de configuración de la VM y, después, los valores del gráfico de Helm. Para obtener instrucciones orientadas a tareas, consulte la [guía de configuración](/es/products/bring-your-own-cloud/connector/configuration).
+
+<div id="vm-configuration-file">
+  ## Archivo de configuración de la VM
+</div>
+
+En una VM Linux, el conector lee `/etc/clicklink/config.yaml`, que escribe `clicklink clctl init` y se conserva entre ejecuciones posteriores, salvo que se use `--force`. Las claves que se omitan del archivo usarán los valores predeterminados compilados que se indican a continuación. Las credenciales nunca se almacenan en este archivo.
+
+<div id="vm-top-level">
+  ### Claves de nivel superior
+</div>
+
+| Clave            | Valor predeterminado | Significado                                                                                                                                                                     |
+| ---------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pcm_infra_uuid` | generado por `init`  | Identificador único de esta implementación del conector, incluido en cada solicitud al upstream. Se conserva entre ejecuciones posteriores, incluso con `--force`. No lo edite. |
+| `cloud`          | detectado por `init` | Etiqueta del proveedor de Cloud para este host. Obligatorio; los demonios no se inician si está vacío.                                                                          |
+| `region`         | detectada por `init` | Etiqueta de región para este host. Obligatorio; los demonios no se inician si está vacía.                                                                                       |
+| `api`            |                      | Bloque de conexión con la API upstream; consulte [api](#vm-api).                                                                                                                |
+| `instances`      | `{}`                 | Mapa de instancias de ClickHouse por nombre; consulte [instances](#vm-instances).                                                                                               |
+| `scraper`        |                      | Bloque del demonio scraper; consulte [scraper](#vm-scraper).                                                                                                                    |
+| `troubleshooter` |                      | Bloque del demonio troubleshooter; consulte [troubleshooter](#vm-troubleshooter).                                                                                               |
+| `observability`  |                      | Bloque compartido de logging y puertos; consulte [observability](#vm-observability).                                                                                            |
+
+<div id="vm-api">
+  ### api
+</div>
+
+| Clave                     | Valor predeterminado                             | Significado                                                                                                                                        |
+| ------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api.endpoint`            | del paquete de inscripción                       | Endpoint de la API del conector de su organización: `https://<subdomain>.<connector domain>`.                                                      |
+| `api.access_key_file`     | `/etc/clicklink/access-key` (escrito por `init`) | Archivo que contiene la clave de acceso HMAC (modo 0600).                                                                                          |
+| `api.secret_key_file`     | `/etc/clicklink/secret-key` (escrito por `init`) | Archivo que contiene la clave secreta HMAC (modo 0600).                                                                                            |
+| `api.tls.enabled`         | `true`                                           | Presenta el certificado de cliente mTLS en las conexiones de API.                                                                                  |
+| `api.tls.cert_file`       | `/etc/clicklink/tls/client.crt`                  | Certificado de cliente mTLS; se reescribe automáticamente durante la renovación.                                                                   |
+| `api.tls.key_file`        | `/etc/clicklink/tls/client.key`                  | Clave privada de cliente mTLS.                                                                                                                     |
+| `api.tls.ca_file`         | `/etc/clicklink/tls/ca.crt`                      | Cadena de CA adicional que se añade a las raíces del sistema para verificar el servidor; `init` instala aquí la cadena del paquete de inscripción. |
+| `api.retry.max_retries`   | `5`                                              | Intentos de reintento por solicitud de API.                                                                                                        |
+| `api.retry.initial_delay` | `1s`                                             | Retraso inicial de backoff para los reintentos.                                                                                                    |
+| `api.retry.max_delay`     | `30s`                                            | Límite máximo de backoff.                                                                                                                          |
+| `api.retry.jitter_factor` | `0.25`                                           | Variación aleatoria aplicada a los retrasos de backoff.                                                                                            |
+
+<div id="vm-instances">
+  ### instancias
+</div>
+
+Cada entrada de `instances.<name>` describe un destino del protocolo nativo de ClickHouse:
+
+| Clave            | Predeterminado | Significado                                                                                                                                       |
+| ---------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host`           |                | Nombre de host o dirección IP del listener nativo de ClickHouse.                                                                                  |
+| `port`           |                | Puerto del protocolo nativo (normalmente, `9440` con TLS y `9000` sin cifrado).                                                                   |
+| `database`       |                | Base de datos predeterminada para las sesiones del conector.                                                                                      |
+| `secure`         | `false`        | Usa TLS en la conexión nativa.                                                                                                                    |
+| `max_open_conns` | no establecido | Límite de conexiones abiertas a esta instancia.                                                                                                   |
+| `max_idle_conns` | no establecido | Límite de conexiones inactivas agrupadas en esta instancia.                                                                                       |
+| `namespace`      |                | Espacio de nombres de Kubernetes de la instancia, utilizado para delimitar las lecturas de Kubernetes de la herramienta de solución de problemas. |
+| `cluster`        | `default`      | Nombre del clúster de ClickHouse utilizado para consultas distribuidas.                                                                           |
+
+<div id="vm-scraper">
+  ### scraper
+</div>
+
+| Clave                                | Predeterminado                  | Significado                                                                                                                                                                                                                                                                               |
+| ------------------------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scraper.enabled`                    | `false` (`init` escribe `true`) | Ejecuta el daemon del scraper.                                                                                                                                                                                                                                                            |
+| `scraper.labels.platform`            |                                 | Etiqueta que se inyecta en cada métrica emitida. Obligatoria cuando el scraper está habilitado.                                                                                                                                                                                           |
+| `scraper.labels.env`                 |                                 | Etiqueta de entorno, por ejemplo, `production`. Obligatoria.                                                                                                                                                                                                                              |
+| `scraper.labels.region`              |                                 | Etiqueta de región. Obligatoria.                                                                                                                                                                                                                                                          |
+| `scraper.scrape.interval`            | `2m`                            | Frecuencia de recopilación de cada instancia.                                                                                                                                                                                                                                             |
+| `scraper.scrape.timeout`             | `30s`                           | Tiempo de espera de consulta por recopilación.                                                                                                                                                                                                                                            |
+| `scraper.scrape.tables`              | consulte más abajo              | Tablas del sistema recopiladas por instancia. El conjunto predeterminado es `metric_log`, `asynchronous_metric_log`, `tables`, `warnings`, `server_settings`; `query_log` se excluye deliberadamente para que el texto SQL sin procesar no salga de su perímetro de forma predeterminada. |
+| `scraper.buffer.path`                | `/var/lib/clicklink/buffer`     | Cola persistente en disco para entregas de al menos una vez mientras no se pueda acceder al endpoint de la API.                                                                                                                                                                           |
+| `scraper.buffer.retention`           | `168h`                          | Antigüedad máxima de los datos en cola.                                                                                                                                                                                                                                                   |
+| `scraper.buffer.max_size_mb`         | `1024`                          | Límite de tamaño de la cola en MB.                                                                                                                                                                                                                                                        |
+| `scraper.sender.bandwidth_limit_mb`  | `1.0`                           | Límite de velocidad de carga en MB/s.                                                                                                                                                                                                                                                     |
+| `scraper.observability.health_port`  | `8082`                          | Puerto del endpoint de estado del scraper.                                                                                                                                                                                                                                                |
+| `scraper.observability.metrics_port` | `9092`                          | Puerto de métricas del scraper.                                                                                                                                                                                                                                                           |
+| `scraper.access_directory`           | `/etc/clicklink/access/scraper` | Directorio raíz de los paquetes de acceso por instancia del scraper.                                                                                                                                                                                                                      |
+
+<div id="vm-troubleshooter">
+  ### solucionador de problemas
+</div>
+
+| Clave                                              | Predeterminado                                                                             | Significado                                                                                                                                                |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `troubleshooter.enabled`                           | `false` (`init` escribe `true`)                                                            | Ejecuta el daemon de solución de problemas.                                                                                                                |
+| `troubleshooter.poll_interval`                     | `5s`                                                                                       | Intervalo de sondeo del estado de la sesión.                                                                                                               |
+| `troubleshooter.command_timeout`                   | `60s`                                                                                      | Tiempo de espera de ejecución por comando.                                                                                                                 |
+| `troubleshooter.session_timeout`                   | `4h`                                                                                       | Duración predeterminada de la sesión de soporte.                                                                                                           |
+| `troubleshooter.session_file_path`                 | `/var/lib/clicklink/session.json`                                                          | Archivo de estado de la sesión, compartido con los comandos `clicklink clctl troubleshoot session`.                                                        |
+| `troubleshooter.access_directory`                  | `/etc/clicklink/access/troubleshooter`                                                     | Directorio raíz de los paquetes de acceso por instancia del solucionador de problemas.                                                                     |
+| `troubleshooter.allowed_tables`                    | consulte la [lista de tablas permitidas predeterminada](#default-table-allowlist)          | Tablas del sistema desde las que el solucionador de problemas puede ejecutar `SELECT`.                                                                     |
+| `troubleshooter.max_open_conns`                    | `5`                                                                                        | Límite de conexiones abiertas a ClickHouse.                                                                                                                |
+| `troubleshooter.max_idle_conns`                    | `5`                                                                                        | Límite de conexiones inactivas del pool.                                                                                                                   |
+| `troubleshooter.redaction.workers`                 | `4`                                                                                        | Workers de redacción en paralelo.                                                                                                                          |
+| `troubleshooter.redaction.patterns_file`           | `/etc/clicklink/redaction-patterns.yaml`                                                   | Patrones de redacción editables por el cliente; el daemon no se inicia si el archivo existe, pero no es válido.                                            |
+| `troubleshooter.redaction.metrics_per_pattern`     | `false`                                                                                    | Emite una métrica de contador de coincidencias por patrón.                                                                                                 |
+| `troubleshooter.redaction.metrics_per_pattern_cap` | `50`                                                                                       | Límite de nombres de patrón distintos en la métrica por patrón.                                                                                            |
+| `troubleshooter.audit_log.path`                    | `/var/log/clicklink/troubleshoot-audit.log`                                                | Registro de auditoría NDJSON de solo anexión para cada comando aceptado o bloqueado.                                                                       |
+| `troubleshooter.audit_log.max_size_mb`             | `128`                                                                                      | Rota el archivo de registro activo al superar este tamaño.                                                                                                 |
+| `troubleshooter.audit_log.max_files`               | `5`                                                                                        | Número de archivos rotados que se conservan.                                                                                                               |
+| `troubleshooter.audit_log.max_age`                 | `168h`                                                                                     | Se eliminan los archivos rotados que superen esta antigüedad.                                                                                              |
+| `troubleshooter.gateway.enabled`                   | `false`                                                                                    | Expone el gateway de sesiones (sesiones de soporte mediante OIDC).                                                                                         |
+| `troubleshooter.gateway.listen_addr`               | `":8443"` (escrito por `init`)                                                             | Dirección de escucha del gateway.                                                                                                                          |
+| `troubleshooter.gateway.audience`                  | `clicklink-clctl` (escrito por `init`)                                                     | Claim de audiencia obligatorio en los tokens de operador.                                                                                                  |
+| `troubleshooter.gateway.required_hosted_domain`    | `""`                                                                                       | Validación opcional del claim de dominio alojado; los tokens de fuera del dominio se rechazan antes de consultar la lista de permitidos.                   |
+| `troubleshooter.gateway.allowed_operators_file`    | `/etc/clicklink/allowed-operators.txt` (escrito por `init`)                                | Lista de correos electrónicos permitidos de operadores, delimitada por saltos de línea. Si está vacía, no se permite el acceso.                            |
+| `troubleshooter.gateway.rate_limit_per_minute`     | `0` (deshabilitado)                                                                        | Límite de tasa de solicitudes por operador.                                                                                                                |
+| `troubleshooter.gateway.handler_timeout`           | sin establecer                                                                             | Tiempo de espera de solicitudes del lado del servidor.                                                                                                     |
+| `troubleshooter.gateway.jwks_uri`                  | `""`                                                                                       | Endpoint JWKS para un proveedor de identidad distinto de Google; si está vacío, se usa el de Google.                                                       |
+| `troubleshooter.gateway.issuer`                    | `""`                                                                                       | Claim de emisor que se valida cuando se establece `jwks_uri`.                                                                                              |
+| `troubleshooter.gateway.tls.enabled`               | `false` (`init` escribe `true` en una VM cuando las sesiones de soporte están habilitadas) | Expone el gateway mediante TLS con el certificado autofirmado que el daemon genera si no existe ninguno; los operadores fijan su huella digital.           |
+| `troubleshooter.gateway.tls.cert_file`             | `/var/lib/clicklink/gateway/tls/server.crt`                                                | Certificado del gateway.                                                                                                                                   |
+| `troubleshooter.gateway.tls.key_file`              | `/var/lib/clicklink/gateway/tls/server.key`                                                | Clave del gateway.                                                                                                                                         |
+| `troubleshooter.gateway.tls.self_signed_dns_names` | `[]` (`init` rellena previamente el host)                                                  | SAN del certificado autofirmado que el daemon genera si no existe ninguno; las entradas que se interpretan como direcciones IP se convierten en SAN de IP. |
+
+<div id="vm-observability">
+  ### observabilidad
+</div>
+
+| Clave                        | Predeterminado | Significado                                               |
+| ---------------------------- | -------------- | --------------------------------------------------------- |
+| `observability.enabled`      | `true`         | Expone endpoints de estado y métricas.                    |
+| `observability.log_level`    | `info`         | Nivel de registro.                                        |
+| `observability.health_port`  | `8080`         | Puerto base compartido para las comprobaciones de estado. |
+| `observability.metrics_port` | `9090`         | Puerto base compartido para las métricas.                 |
+
+Los bloques `observability` específicos de cada componente se superponen a esta configuración base: el scraper usa `8082`/`9092`, el troubleshooter `8084`/`9094` y el gateway escucha en `8443` cuando está habilitado.
+
+<div id="default-table-allowlist">
+  ### Lista de tablas permitidas predeterminada
+</div>
+
+El conjunto predeterminado `allowed_tables` del solucionador de problemas, idéntico al valor predeterminado `troubleshooter.allowedTables` del gráfico:
+
+```text
+system.build_options    system.clusters       system.columns
+system.databases        system.tables         system.parts
+system.parts_columns    system.parts_summary  system.detached_parts
+system.processes        system.merges         system.mutations
+system.replicas         system.replication_queue
+system.metrics          system.events         system.asynchronous_metrics
+system.disks            system.storage_policies
+system.settings         system.settings_profiles
+system.settings_profile_elements
+system.functions        system.formats        system.table_engines
+system.users            system.roles          system.grants
+```
+
+<div id="helm-chart-values">
+  ## Valores del gráfico de Helm
+</div>
+
+En Kubernetes, el conector se configura mediante los valores del gráfico `clicklink-connector`. `clicklink clctl init` prepara una superposición de `clicklink-values.yaml` con todos los valores siguientes completados y la conserva en ejecuciones posteriores, salvo que se especifique `--force`. Las tablas muestran los valores predeterminados del gráfico; los parámetros estándar de carga de trabajo (`resources`, `nodeSelector`, `tolerations`, `affinity`, `serviceAccount.annotations`, `env`, `imagePullSecrets`) están disponibles en cada componente, tienen valores predeterminados vacíos y no se repiten en cada tabla.
+
+<div id="helm-cluster">
+  ### clúster
+</div>
+
+| Clave                  | Valor predeterminado      | Significado                                                                                                                                           |
+| ---------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster.pcmInfraUuid` | `""` (`init` lo completa) | Identificador único de esta implementación del conector. Obligatorio cuando algún componente está habilitado; se conserva en ejecuciones posteriores. |
+| `cluster.region`       | `""` (`init` lo completa) | Etiqueta de región. Obligatoria.                                                                                                                      |
+| `cluster.cloud`        | `""` (`init` lo completa) | Etiqueta del proveedor de Cloud. Obligatoria.                                                                                                         |
+
+<div id="helm-image">
+  ### image
+</div>
+
+| Clave              | Predeterminado                                                           | Significado                                                                                                                                                                                                                                                                                |
+| ------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `image.repository` | preconfigurado en el chart publicado                                     | Repositorio de imágenes del conector. El chart publicado apunta a la imagen del registro público (multiarquitectura, firmada con cosign); configúrelo únicamente para sobrescribirlo, por ejemplo, con un mirror dentro del perímetro. Consulte el valor publicado con `helm show values`. |
+| `image.tag`        | `""` (sigue el `appVersion` del chart; `init` fija la versión de la CLI) | Etiqueta de la imagen.                                                                                                                                                                                                                                                                     |
+| `image.pullPolicy` | `IfNotPresent`                                                           | Política de extracción de imágenes de Kubernetes.                                                                                                                                                                                                                                          |
+
+<div id="vm-api">
+  ### api
+</div>
+
+| Clave             | Predeterminado            | Significado                                                                                                                                                                                                                            |
+| ----------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api.endpoint`    | `""` (`init` lo completa) | El endpoint de la API del conector de su organización, compartido por ambos componentes.                                                                                                                                               |
+| `api.tls.enabled` | `true`                    | Presenta el certificado de cliente mTLS en las conexiones de API.                                                                                                                                                                      |
+| `api.tls.caFile`  | `""` (raíces del sistema) | CA añadida a las raíces del sistema para verificar el servidor. Establézcalo en `/etc/clicklink/secrets/mtls/ca.crt` (o vuelva a ejecutar `init` con `--api-private-ca`) cuando el endpoint presente un certificado de una CA privada. |
+
+<div id="helm-secrets">
+  ### secretos
+</div>
+
+El chart utiliza Secrets creados previamente; `init` los crea antes de la instalación.
+
+| Clave                    | Predeterminado   | Significado                                                                                                                                                                                                                                                                                                        |
+| ------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `secrets.mtlsSecretName` | `clicklink-mtls` | Secret `kubernetes.io/tls` que contiene la clave de cliente mTLS, el certificado y la cadena de CA.                                                                                                                                                                                                                |
+| `secrets.hmacSecretName` | `clicklink-hmac` | Secret opaco que contiene `access-key` y `secret-key` para firmar solicitudes.                                                                                                                                                                                                                                     |
+| `secrets.mtlsWriteback`  | `true`           | Permite que los demonios guarden en el Secret mTLS el certificado final mTLS renovado automáticamente. Concede a las ServiceAccounts del componente el permiso `update` sobre ese único Secret por su nombre exacto; sin esta opción, los certificados renovados no tienen dónde almacenarse de forma persistente. |
+
+<div id="vm-scraper">
+  ### scraper
+</div>
+
+| Clave                                                                    | Predeterminado                    | Significado                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------ | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scraper.enabled`                                                        | `false` (`init` establece `true`) | Despliega el scraper.                                                                                                                                                                                                                                         |
+| `scraper.replicaCount`                                                   | `1`                               | Réplicas del scraper.                                                                                                                                                                                                                                         |
+| `scraper.logLevel`                                                       | `info`                            | Nivel de log.                                                                                                                                                                                                                                                 |
+| `scraper.ports.health`                                                   | `8082`                            | Puerto del endpoint de estado.                                                                                                                                                                                                                                |
+| `scraper.ports.metrics`                                                  | `9092`                            | Puerto de métricas.                                                                                                                                                                                                                                           |
+| `scraper.instances`                                                      | `{}`                              | Mapa de instancias de ClickHouse, con la misma estructura que los campos de [instancias](#vm-instances) de VM.                                                                                                                                                |
+| `scraper.labels.platform`, `scraper.labels.env`, `scraper.labels.region` | `""`                              | Etiquetas inyectadas en cada métrica emitida. Las tres son obligatorias cuando el scraper está habilitado; de lo contrario, el chart genera un error durante el renderizado.                                                                                  |
+| `scraper.config`                                                         | `{}`                              | Paso directo para cualquier clave de configuración de `scraper` no incluida anteriormente (intervalo de scrape, búfer, sender, etc.; mismo esquema que el bloque [scraper](#vm-scraper) de VM).                                                               |
+| `scraper.bufferSizeLimit`                                                | `2Gi`                             | Límite de tamaño del volumen temporal del scraper; el scraper no tiene estado persistente en disco.                                                                                                                                                           |
+| `scraper.rbac.extraSecretNames`                                          | `[]`                              | Nombres adicionales de Secret a los que el ServiceAccount del scraper puede aplicar `get`; solo se admiten nombres exactos.                                                                                                                                   |
+| `scraper.accessBundles`                                                  | `{}`                              | Paquetes de acceso por instancia, identificados por el nombre de la instancia, cada uno con `secretName` y `serviceAccountName`. Se montan en `/etc/clicklink/access/scraper/<instance>/`; los crea `clicklink clctl scraper access provision --target helm`. |
+
+<div id="vm-troubleshooter">
+  ### solucionador de problemas
+</div>
+
+| Clave                                           | Valor predeterminado                                                     | Significado                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `troubleshooter.enabled`                        | `false` (`init` escribe `true`)                                          | Despliega el solucionador de problemas (un StatefulSet de una sola réplica).                                                                                                                                                                                                                                                              |
+| `troubleshooter.logLevel`                       | `info`                                                                   | Nivel de registro.                                                                                                                                                                                                                                                                                                                        |
+| `troubleshooter.ports.health`                   | `8084`                                                                   | Puerto del endpoint de comprobación de estado.                                                                                                                                                                                                                                                                                            |
+| `troubleshooter.ports.metrics`                  | `9094`                                                                   | Puerto de métricas.                                                                                                                                                                                                                                                                                                                       |
+| `troubleshooter.instances`                      | `{}`                                                                     | Mapa de instancias de ClickHouse, con la misma estructura que `scraper.instances`.                                                                                                                                                                                                                                                        |
+| `troubleshooter.sessionTimeout`                 | `4h`                                                                     | Duración predeterminada de la sesión de soporte.                                                                                                                                                                                                                                                                                          |
+| `troubleshooter.allowedTables`                  | la [lista predeterminada de tablas permitidas](#default-table-allowlist) | Tablas en las que el usuario de ClickHouse del solucionador de problemas puede ejecutar `SELECT`. Esta es la superficie de revisión de seguridad que debe editarse en la superposición; en el validador de comandos se aplica una lista de denegación codificada (`query_log`, `text_log`), independientemente de lo que se enumere aquí. |
+| `troubleshooter.auditLog.path`                  | `/var/log/clicklink/troubleshoot-audit.log`                              | Ubicación del registro de auditoría, en el volumen de estado para que el historial persista tras la reprogramación del pod de Kubernetes.                                                                                                                                                                                                 |
+| `troubleshooter.auditLog.maxSizeMb`             | `128`                                                                    | Rota al superar este tamaño.                                                                                                                                                                                                                                                                                                              |
+| `troubleshooter.auditLog.maxFiles`              | `5`                                                                      | Número de archivos rotados que se conservan.                                                                                                                                                                                                                                                                                              |
+| `troubleshooter.auditLog.maxAge`                | `168h`                                                                   | Se eliminan los archivos rotados más antiguos que este valor.                                                                                                                                                                                                                                                                             |
+| `troubleshooter.redaction.workers`              | `4`                                                                      | Workers de redacción en paralelo.                                                                                                                                                                                                                                                                                                         |
+| `troubleshooter.redaction.patternsConfigMap`    | `""`                                                                     | Nombre de un ConfigMap cuya clave `redaction-patterns.yaml` contiene patrones personalizados; el chart lo monta en `/etc/clicklink/redaction-patterns.yaml`. Si está vacío, solo se aplican los patrones integrados.                                                                                                                      |
+| `troubleshooter.redaction.metricsPerPattern`    | `false`                                                                  | Emite una métrica de contador de coincidencias por patrón.                                                                                                                                                                                                                                                                                |
+| `troubleshooter.redaction.metricsPerPatternCap` | `50`                                                                     | Límite de nombres de patrón distintos en la métrica por patrón.                                                                                                                                                                                                                                                                           |
+| `troubleshooter.config`                         | `{}`                                                                     | Paso directo para cualquier clave de configuración de `troubleshooter` no definida anteriormente (intervalo de sondeo, tiempo de espera de comandos, límites de conexiones, etc.).                                                                                                                                                        |
+| `troubleshooter.rbac.extraSecretNames`          | `[]`                                                                     | Nombres adicionales de Secret que el ServiceAccount del solucionador de problemas puede `get`; solo nombres exactos.                                                                                                                                                                                                                      |
+| `troubleshooter.accessBundles`                  | `{}`                                                                     | Paquetes de acceso por instancia, con la misma estructura que `scraper.accessBundles`, montados en `/etc/clicklink/access/troubleshooter/<instance>/`.                                                                                                                                                                                    |
+
+<div id="helm-persistence">
+  ### persistencia
+</div>
+
+| Clave                      | Predeterminado                    | Significado                                                                                                                                                                            |
+| -------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `persistence.enabled`      | `true`                            | Almacena el directorio de estado del solucionador de problemas en un PersistentVolumeClaim para que el estado de la sesión y el registro de auditoría se conserven tras los reinicios. |
+| `persistence.storageClass` | `""` (predeterminado del clúster) | Clase de almacenamiento para la reclamación; `init` la establece a partir de `--storage-class` o de la predeterminada detectada.                                                       |
+| `persistence.size`         | `5Gi`                             | Tamaño de la reclamación.                                                                                                                                                              |
+| `persistence.accessModes`  | `[ReadWriteOnce]`                 | Modos de acceso de la reclamación.                                                                                                                                                     |
+
+<div id="helm-clctl-gateway">
+  ### clctl.gateway
+</div>
+
+La puerta de enlace de sesiones para las [sesiones de soporte](/es/products/bring-your-own-cloud/connector/support-sessions).
+
+| Clave                                                            | Predeterminado         | Significado                                                                                                                                                                                                                                                         |
+| ---------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `clctl.gateway.enabled`                                          | `false`                | Sirve la puerta de enlace de sesiones dentro del solucionador de problemas.                                                                                                                                                                                         |
+| `clctl.gateway.listenAddr`                                       | `":8443"`              | Dirección de escucha local del pod de Kubernetes.                                                                                                                                                                                                                   |
+| `clctl.gateway.port`                                             | `8443`                 | Puerto del contenedor expuesto mediante el Service y el Ingreso del solucionador de problemas; coincide con el puerto de `listenAddr`.                                                                                                                              |
+| `clctl.gateway.audience`                                         | `clicklink-clctl`      | Claim de audiencia requerido en los tokens de operador. El cliente de sesiones usa de forma predeterminada el mismo valor, por lo que solo debe coordinarse si cambia este valor.                                                                                   |
+| `clctl.gateway.requiredHostedDomain`                             | `""`                   | Claim opcional de dominio alojado requerido por la puerta de enlace; rechaza los tokens ajenos a su espacio de trabajo antes de consultar la lista de permitidos.                                                                                                   |
+| `clctl.gateway.allowedOperators`                                 | `[]` (cerrado)         | Lista de permitidos de direcciones de correo electrónico de operadores, generada en un ConfigMap; la rotación requiere cambiar los values y ejecutar `helm upgrade`.                                                                                                |
+| `clctl.gateway.jwksUri`                                          | `""`                   | Sobrescritura del endpoint JWKS para proveedores de identidad distintos de Google; si está vacío, usa el de Google.                                                                                                                                                 |
+| `clctl.gateway.issuer`                                           | `""`                   | Claim de emisor que se debe fijar. Obligatorio para cualquier implementación real que configure `jwksUri`.                                                                                                                                                          |
+| `clctl.gateway.jwksEgressCIDRs`                                  | `[]`                   | CIDR a los que la puerta de enlace debe acceder para validar JWKS con la NetworkPolicy de denegación predeterminada; si está vacío, bloquea todas las comprobaciones de tokens.                                                                                     |
+| `clctl.gateway.ingressFromSelector`                              | `{}`                   | Origen de Ingreso de NetworkPolicy para el puerto de la puerta de enlace; si está vacío, permite cualquier pod de Kubernetes del espacio de nombres del chart. Al usar un Ingreso, establézcalo en la etiqueta del espacio de nombres de su controlador de Ingreso. |
+| `clctl.gateway.rateLimit.requestsPerMinute`                      | `30`                   | Límite de solicitudes por minuto y operador.                                                                                                                                                                                                                        |
+| `clctl.gateway.ingress.enabled`                                  | `false`                | Genera un Ingreso para la puerta de enlace. Cuando está deshabilitado, los operadores acceden a la puerta de enlace mediante `kubectl port-forward`; no se necesita ningún controlador de Ingreso ni cert-manager.                                                  |
+| `clctl.gateway.ingress.className`, `hosts`, `tls`, `annotations` | `""`, `[]`, `[]`, `{}` | Campos estándar de Ingreso; `tls` hace referencia a secretos `kubernetes.io/tls`.                                                                                                                                                                                   |
+
+<div id="helm-networkpolicy">
+  ### networkPolicy
+</div>
+
+| Clave                                 | Valor predeterminado | Significado                                                                                                                                                                                                                                                                                       |
+| ------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `networkPolicy.enabled`               | `true`               | Genera una NetworkPolicy con denegación predeterminada y una lista de permitidos para la salida. Su aplicación requiere un CNI que imponga las reglas.                                                                                                                                            |
+| `networkPolicy.allowEgressCIDRs`      | `[]`                 | CIDR detrás del endpoint de la API del conector. Con un CNI que imponga las reglas, el conector no tendrá salida hasta que se complete este valor.                                                                                                                                                |
+| `networkPolicy.allowEgressPorts`      | `[443]`              | Puertos abiertos hacia `allowEgressCIDRs`; sobrescriba este valor cuando el endpoint escuche en un puerto no predeterminado.                                                                                                                                                                      |
+| `networkPolicy.clickhouseNamespaces`  | `[]`                 | Espacios de nombres de los servicios de ClickHouse, identificados mediante la etiqueta `kubernetes.io/metadata.name`. Si está vacío, no se permite el acceso a ClickHouse dentro del clúster.                                                                                                     |
+| `networkPolicy.metricsScrapeSelector` | `{}`                 | Restringe el ingreso para la recopilación de métricas a un espacio de nombres específico de Prometheus mediante una etiqueta; si está vacío, permite la recopilación desde cualquier pod de Kubernetes en el espacio de nombres del chart.                                                        |
+| `networkPolicy.kubeletProbeCIDRs`     | `[]`                 | CIDR desde los que se originan las sondas de estado del agente kubelet (IP de nodo). Si está vacío, permite el ingreso de sondas desde cualquier origen, como ocurre con la exención de kubelet en la mayoría de los CNI; establézcalo explícitamente con una denegación predeterminada estricta. |
+| `networkPolicy.apiserverCIDRs`        | `[]`                 | CIDR del servidor de la API de Kubernetes. Si está vacío, no se genera ninguna regla de salida para el servidor de la API y los demonios fallarán en su primera solicitud de token en Kubernetes gestionado hasta que se configure.                                                               |

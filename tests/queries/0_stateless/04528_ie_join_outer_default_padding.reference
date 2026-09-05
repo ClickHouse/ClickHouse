@@ -1,0 +1,49 @@
+left
+1	10	l1	1	9	11	r1
+2	20	l2a	2	19	21	r2
+3	20	l2b	2	19	21	r2
+4	30	l3	3	29	31	r3a
+4	30	l3	4	29	31	r3b
+5	40	l4	0	\N	\N	
+6	\N	lnull	0	\N	\N	
+1
+right
+0	\N		5	49	51	r5
+0	\N		6	\N	\N	rnull
+1	10	l1	1	9	11	r1
+2	20	l2a	2	19	21	r2
+3	20	l2b	2	19	21	r2
+4	30	l3	3	29	31	r3a
+4	30	l3	4	29	31	r3b
+1
+full
+0	\N		5	49	51	r5
+0	\N		6	\N	\N	rnull
+1	10	l1	1	9	11	r1
+2	20	l2a	2	19	21	r2
+3	20	l2b	2	19	21	r2
+4	30	l3	3	29	31	r3a
+4	30	l3	4	29	31	r3b
+5	40	l4	0	\N	\N	
+6	\N	lnull	0	\N	\N	
+1
+semi
+1	10	l1	9	11
+2	20	l2a	19	21
+3	20	l2b	19	21
+4	30	l3	29	31
+1
+anti
+5	40	l4	0	\N	\N	
+6	\N	lnull	0	\N	\N	
+1
+right semi
+10	1	9	11	r1
+20	2	19	21	r2
+30	3	29	31	r3a
+30	4	29	31	r3b
+1
+right anti
+0	\N		5	49	51	r5
+0	\N		6	\N	\N	rnull
+1

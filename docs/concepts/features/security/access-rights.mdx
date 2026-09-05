@@ -108,6 +108,8 @@ Privileges can be granted to a role by the [GRANT](/reference/statements/grant) 
 
 Row policy is a filter that defines which of the rows are available to a user or a role. Row policy contains filters for one particular table, as well as a list of roles and/or users which should use this row policy.
 
+A row policy applies where the table data is read locally. For a [Distributed](/reference/engines/table-engines/special/distributed) table, or another table that delegates reading to remote servers, define the policy on the underlying tables on each server: a policy on the remote-backed table itself cannot be applied to the shipped query, and reads through it are rejected instead. Such a policy on an underlying table is not applied when the initiator ships an already-built read plan, so keep [`serialize_query_plan = 0`](/reference/settings/session-settings/serialize#serialize_query_plan) for users whose row policies must be enforced (see [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891)).
+
 <Note>
 Row policies makes sense only if you have readonly access. If you can modify table or copy partitions between tables, it defeats the restrictions of row policies.
 </Note>
