@@ -1,0 +1,5 @@
+SELECT t_matcher.COLUMNS(\'^b\')\nFROM t_matcher
+SELECT t_matcher.COLUMNS(b_x, b_y)\nFROM t_matcher
+SELECT t_matcher.COLUMNS(\'^b\') APPLY toString()\nFROM t_matcher
+SELECT t_matcher.COLUMNS(b_x, b_y) APPLY toString()\nFROM t_matcher
+SELECT * EXCEPT \'^b\'\nFROM t_matcher

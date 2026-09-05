@@ -1,0 +1,9 @@
+QUERY id: 0
+  PROJECTION COLUMNS
+    a UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: a, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.t_sample_off, final: 0, sample_size: 1 / 2, sample_offset: 1 / 4
+SELECT *\nFROM t_sample_off\nSAMPLE 1 / 2 OFFSET 1 / 4

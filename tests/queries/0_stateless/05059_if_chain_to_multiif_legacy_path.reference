@@ -1,0 +1,12 @@
+SELECT multiIf(equals(number, 1), \'one\', equals(number, 2), \'two\', \'other\')\nFROM numbers(4)\nORDER BY number ASC
+other
+one
+two
+other
+SELECT multiIf(equals(number, 1), \'one\', equals(number, 2), \'two\', equals(number, 3), \'three\', \'other\')\nFROM numbers(5)\nORDER BY number ASC
+other
+one
+two
+three
+other
+SELECT if(equals(number, 1), \'one\', \'other\')\nFROM numbers(3)\nORDER BY number ASC
