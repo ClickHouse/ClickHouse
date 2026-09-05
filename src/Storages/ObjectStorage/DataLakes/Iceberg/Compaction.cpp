@@ -354,7 +354,12 @@ static void writeDataFiles(
                 context);
 
         RelativePathWithMetadata relative_path(data_file->data_object_info->getPath());
-        auto read_buffer = createReadBuffer(relative_path, object_storage, context, getLogger("IcebergCompaction"));
+        /// A data file may be Parquet/ORC/Avro; only the random-access ones should skip the generic
+        /// from-start prefetch (they read the footer at the tail first).
+        auto read_settings = context->getReadSettings();
+        read_settings.remote_fs_settings.random_access = FormatFactory::instance().checkIfFormatIsRandomAccessInput(
+            data_file->data_object_info->getFileFormat().value_or(write_format));
+        auto read_buffer = createReadBuffer(relative_path, object_storage, context, getLogger("IcebergCompaction"), read_settings);
 
         const Settings & settings = context->getSettingsRef();
         auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(

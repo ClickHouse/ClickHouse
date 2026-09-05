@@ -208,6 +208,7 @@ namespace Setting
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool s3_validate_etag_on_read;
+    extern const SettingsBool input_format_allow_seeks;
 }
 
 static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
@@ -1290,8 +1291,19 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
+            ReadSettings read_settings = context_->getReadSettings();
+            /// A random-access format only reads at arbitrary offsets while it is allowed to seek.
+            /// With `input_format_allow_seeks = 0` it reads the object sequentially from the start
+            /// instead, so the from-start read-ahead is exactly what it consumes and must not be
+            /// gated off: the hint follows the setting, not just the format's capability.
+            const bool seekable_read = format_settings
+                ? format_settings->seekable_read
+                : context_->getSettingsRef()[Setting::input_format_allow_seeks];
+            read_settings.remote_fs_settings.random_access
+                = seekable_read && FormatFactory::instance().checkIfFormatIsRandomAccessInput(format_name);
             read_buf = createReadBuffer(
-                object_info->relative_path_with_metadata, object_storage, context_, log, std::nullopt, !headers_requested);
+                object_info->relative_path_with_metadata, object_storage, context_, log,
+                read_settings, !headers_requested);
         }
 
         Block initial_header = read_from_format_info.format_header;
@@ -1799,8 +1811,13 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
     // For bigger files, parallel reading is more useful.
-    const bool object_too_small = is_size_known
-        && object_size <= 2 * context_->getSettingsRef()[Setting::max_download_buffer_size];
+    // For formats with random access (Parquet), we need footer to understand what we should read.
+    // So, it disabled for random access formats, if prefetch doesn't reach footer. (file size > 1MB)
+
+    const size_t prefetch_size_limit = modified_read_settings.remote_fs_settings.random_access
+        ? modified_read_settings.remote_fs_settings.buffer_size
+        : 2 * context_->getSettingsRef()[Setting::max_download_buffer_size];
+    const bool object_too_small = is_size_known && object_size <= prefetch_size_limit;
     const bool use_prefetch = object_too_small
         && modified_read_settings.remote_fs_settings.method == RemoteFSReadMethod::threadpool
         && modified_read_settings.remote_fs_settings.prefetch;

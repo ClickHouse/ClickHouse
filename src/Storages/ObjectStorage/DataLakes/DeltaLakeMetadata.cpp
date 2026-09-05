@@ -529,8 +529,11 @@ struct DeltaLakeMetadataImpl
         LOG_TRACE(log, "Using checkpoint file: {}", checkpoint_path.string());
 
         auto read_settings = context->getReadSettings();
+        /// The checkpoint is a Parquet file (random access): skip the generic from-start prefetch,
+        /// the reader seeks to the footer at the tail first.
+        read_settings.remote_fs_settings.random_access = true;
         RelativePathWithMetadata object_info(checkpoint_path);
-        auto buf = createReadBuffer(object_info, object_storage, context, log);
+        auto buf = createReadBuffer(object_info, object_storage, context, log, read_settings);
         auto format_settings = getFormatSettings(context);
 
         /// Force nullable, because this parquet file for some reason does not have nullable
