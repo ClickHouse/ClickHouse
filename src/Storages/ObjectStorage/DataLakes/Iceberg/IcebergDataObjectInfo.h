@@ -22,6 +22,9 @@ struct IcebergObjectSerializableInfo
     String file_format;
     std::vector<Iceberg::PositionDeleteObject> position_deletes_objects;
     std::vector<Iceberg::EqualityDeleteObject> equality_deletes_objects;
+    std::optional<Int64> record_count;
+    std::optional<Int64> file_size_in_bytes;
+    std::vector<std::pair<String, Field>> identity_partition_columns;
 
     void serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const;
     void deserializeForClusterFunctionProtocol(ReadBuffer & in, size_t protocol_version);
@@ -47,7 +50,11 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
     /// Full path to the data object file
     /// It is used to filter position deletes objects by data file path.
     /// It is also used to create a filter for the data object in the position delete transform.
-    explicit IcebergDataObjectInfo(Iceberg::ProcessedManifestFileEntryPtr data_manifest_file_entry_, Int32 schema_id_relevant_to_iterator_);
+    explicit IcebergDataObjectInfo(
+        Iceberg::ProcessedManifestFileEntryPtr data_manifest_file_entry_,
+        const String & resolved_storage_path_,
+        Int32 schema_id_relevant_to_iterator_,
+        std::vector<std::pair<String, Field>> identity_partition_columns_);
 
     explicit IcebergDataObjectInfo(const RelativePathWithMetadata & path_);
 

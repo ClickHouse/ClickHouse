@@ -179,7 +179,18 @@ Plan getPlan(
                 if (plan.partitions.size() <= partition_index)
                     plan.partitions.push_back({});
 
-                IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(data_file, 0);
+                IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(
+                    data_file,
+                    persistent_table_components.path_resolver.resolve(data_file->parsed_entry->file_path_key),
+                    0,
+                    Iceberg::getIdentityPartitionColumnValues(*data_file, *persistent_table_components.schema_processor));
+                /// One DataFilePlan per source *data file*, keyed by the data file's own path.
+                /// Keying by the manifest path made every data file after the first in a
+                /// manifest reuse the first file's plan, so writeDataFiles rewrote only one
+                /// file per manifest and the rest of the manifest's data silently disappeared
+                /// from the compacted table. The map still deduplicates the same data file
+                /// referenced from multiple snapshots' manifest lists.
+                const auto & data_file_path = data_file->parsed_entry->file_path_key;
                 std::shared_ptr<DataFilePlan> data_file_ptr;
                 if (!plan.path_to_data_file.contains(manifest_file.manifest_file_path))
                 {
