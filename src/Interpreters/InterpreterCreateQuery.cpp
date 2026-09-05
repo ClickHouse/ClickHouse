@@ -846,11 +846,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);
 
-    /// A replayed or recovered definition also carries `attach`, which `getLoadingStrictnessLevel`
-    /// reports as ATTACH, so `mode` alone cannot tell it apart from user-supplied input.
+    /// A replayed or recovered definition can arrive as a plain CREATE, or carry `attach`, which
+    /// `getLoadingStrictnessLevel` reports as ATTACH, so `mode` alone cannot tell it apart from
+    /// user-supplied input: the query flags and the context carry the rest of the provenance.
     const bool is_secondary_query
         = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
-    const bool is_fresh_definition = !is_secondary_query && isFreshTableDefinition(mode, create.attach_short_syntax);
+    const bool is_fresh_definition = !is_secondary_query && !is_restore_from_backup
+        && !getContext()->isRecoveryFromStoredMetadata() && isFreshTableDefinition(mode, create.attach_short_syntax);
 
     /// We have to check access rights again (in case engine was changed).
     if (create.storage && create.storage->engine)
@@ -2026,7 +2028,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (create.columns_list)
             properties.constraints = getConstraintsDescription(
                 create.columns_list->constraints, properties.columns, getContext(),
-                !is_secondary_query && isFreshTableDefinition(mode, create.attach_short_syntax));
+                !is_secondary_query && !is_restore_from_backup
+                    && !getContext()->isRecoveryFromStoredMetadata()
+                    && isFreshTableDefinition(mode, create.attach_short_syntax));
     }
 
     DatabasePtr database;
