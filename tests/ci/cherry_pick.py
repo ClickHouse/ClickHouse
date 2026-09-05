@@ -341,7 +341,9 @@ close it.
         """
         # Pin the release used for both the resolved tree and its final parent.
         # A retry can refresh the remote ref while the local release stays stale.
-        release_head = git_runner(f"git rev-parse {base or f'{self.REMOTE}/{self.name}'}")
+        release_head = git_runner(
+            f"git rev-parse {base or f'{self.REMOTE}/{self.name}'}"
+        )
         git_runner(f"{GIT_PREFIX} checkout -f {release_head}")
         # Create or reset backport branch
         git_runner(f"{GIT_PREFIX} checkout -B {self.backport_branch}")
@@ -543,61 +545,35 @@ close it.
             )
             return False
 
-        # A merge conflict can only land in a file the PR itself touches, so if
-        # nothing arrived on the release branch in those paths since the last
-        # attempt, the merge cannot come out differently. Two tree diffs answer
-        # that in milliseconds, where the retry below costs ~20 s of working-tree
-        # churn per PR: with tens of conflicting cherry-picks open and a release
-        # branch that moves several times a day, this is what keeps the retry from
-        # running on every pass for every one of them.
-        #
-        # `--no-renames` on the release-side diff so a rename shows up as both the
-        # old and the new path, which can only make this less eager to skip. `-z`
-        # because plain `--name-only` does not quote spaces.
-        pr_paths = set(
-            git_runner(
-                "git diff --name-only -z --no-renames "
-                f"{self.pr.merge_commit_sha}^1 {self.pr.merge_commit_sha}"
-            ).split("\0")
+        # Rebuild the empty merge and resolve entirely in the object database.
+        # Literal path intersections miss renames between master and the release;
+        # `merge-tree` uses the real merge machinery without rewriting the checkout.
+        release_tree = git_runner(f"git rev-parse {release_head}^{{tree}}")
+        refreshed_base = git_runner(
+            f"{GIT_PREFIX} commit-tree {release_tree} "
+            f"-p {release_head} -p {first_parent} -F -",
+            input=f"Refresh cherry-pick base for #{self.pr.number} on {self.name}",
         )
-        release_paths = set(
-            git_runner(
-                f"git diff --name-only -z --no-renames {base_parents[0]} {release_head}"
-            ).split("\0")
-        )
-        overlap = {path for path in pr_paths & release_paths if path}
-        if pr_paths and not overlap:
+        try:
+            result = git_runner(
+                f"{GIT_PREFIX} -c merge.renameLimit=999999 merge-tree "
+                f"--write-tree --name-only -z --no-messages {head} {refreshed_base}"
+            )
+        except CalledProcessError as e:
+            # Exit status 1 means conflicts; other failures must abort the retry.
+            if e.returncode != 1:
+                raise
             logging.info(
-                "Retry of cherry-pick PR #%s skipped: %s moved to %s but touched "
-                "none of the %s path(s) of #%s",
+                "Cherry-pick PR #%s still conflicts against %s at %s on: %s",
                 self.cherrypick_pr.number,
                 self.name,
                 release_head,
-                len(pr_paths),
-                self.pr.number,
+                ", ".join(path for path in e.output.split("\0")[1:] if path),
             )
             return False
+        resolved_tree = result.split("\0", maxsplit=1)[0]
 
-        logging.info(
-            "%s moved from %s to %s since cherry-pick PR #%s was created and "
-            "touched %s of the original PR's paths, re-trying the merge",
-            self.name,
-            base_parents[0],
-            release_head,
-            self.cherrypick_pr.number,
-            len(overlap),
-        )
-        self._prepare_backport_branch(remote_release)
-        if not self._try_merge_backport_into_cherrypick():
-            logging.info(
-                "Cherry-pick PR #%s still conflicts against %s at %s",
-                self.cherrypick_pr.number,
-                self.name,
-                release_head,
-            )
-            return False
-
-        if self._cherrypick_is_empty():
+        if resolved_tree == release_tree:
             # The prerequisite that landed was the change itself, applied by
             # some other route. Same conclusion as in `create_cherrypick`, and
             # the PR has nothing left to do.
@@ -630,6 +606,11 @@ close it.
             )
             return False
 
+        resolved_head = git_runner(
+            f"{GIT_PREFIX} commit-tree {resolved_tree} "
+            f"-p {head} -p {refreshed_base} -F -",
+            input=f"Retry cherry-pick #{self.pr.number} against {self.name}",
+        )
         # Protect the exact refs inspected above, including against a human push
         # during the merge. Publish both refs together or leave both untouched.
         git_runner(
@@ -637,8 +618,8 @@ close it.
             f"--force-with-lease=refs/heads/{self.cherrypick_branch}:{head} "
             f"--force-with-lease=refs/heads/{self.backport_branch}:{base} "
             f"{self.REMOTE} "
-            f"{self.cherrypick_branch}:refs/heads/{self.cherrypick_branch} "
-            f"{self.backport_branch}:refs/heads/{self.backport_branch}"
+            f"{resolved_head}:refs/heads/{self.cherrypick_branch} "
+            f"{refreshed_base}:refs/heads/{self.backport_branch}"
         )
         self.cherrypick_pr.create_issue_comment(
             f"The `{self.name}` branch moved since this cherry-pick was created "
@@ -671,8 +652,18 @@ close it.
         # Checkout the backport branch from the remote and make all changes to
         # apply like they are only one cherry-pick commit on top of release
         logging.info("Creating backport for PR #%s", self.pr.number)
-        git_runner(f"{GIT_PREFIX} checkout -f {self.backport_branch}")
-        git_runner(f"{GIT_PREFIX} pull --ff-only {self.REMOTE} {self.backport_branch}")
+        git_runner(
+            f"{GIT_PREFIX} fetch {self.REMOTE} "
+            f"+refs/heads/{self.backport_branch}:"
+            f"refs/remotes/{self.REMOTE}/{self.backport_branch}"
+        )
+        backport_head = git_runner(
+            f"git rev-parse {self.REMOTE}/{self.backport_branch}"
+        )
+        # A retry may have replaced the remote base in this same iteration.
+        git_runner(
+            f"{GIT_PREFIX} checkout -f -B {self.backport_branch} {backport_head}"
+        )
         merge_base = git_runner(
             f"{GIT_PREFIX} merge-base "
             f"{self.REMOTE}/{self.name} {self.backport_branch}"
@@ -681,10 +672,11 @@ close it.
         title = f"Backport #{self.pr.number} to {self.name}: {self.pr.title}"
         git_runner(f"{GIT_PREFIX} commit --allow-empty -F -", input=title)
 
-        # Push with force, create the backport PR, label and assign it
+        # Do not overwrite a resolution pushed after the fetch above.
         git_runner(
-            f"{GIT_PREFIX} push -f {self.REMOTE} "
-            f"{self.backport_branch}:{self.backport_branch}"
+            f"{GIT_PREFIX} push "
+            f"--force-with-lease=refs/heads/{self.backport_branch}:{backport_head} "
+            f"{self.REMOTE} {self.backport_branch}:refs/heads/{self.backport_branch}"
         )
         self._finalize_backport_pr(title)
 
@@ -703,8 +695,7 @@ close it.
         resolved_tree = git_runner(f"git rev-parse {self.cherrypick_branch}^{{tree}}")
         title = f"Backport #{self.pr.number} to {self.name}: {self.pr.title}"
         commit = git_runner(
-            f"{GIT_PREFIX} commit-tree {resolved_tree} "
-            f"-p {release_head} -F -",
+            f"{GIT_PREFIX} commit-tree {resolved_tree} " f"-p {release_head} -F -",
             input=title,
         )
         git_runner(f"{GIT_PREFIX} branch -f {self.backport_branch} {commit}")
