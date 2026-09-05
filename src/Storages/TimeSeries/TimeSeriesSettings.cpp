@@ -7,6 +7,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 
 #include <unordered_set>
 
@@ -33,6 +34,7 @@ namespace ErrorCodes
     DECLARE(ASTFunction, recent_samples_partition_by, String{}, "Partition key of the inner 'recent samples' table, for example 'toStartOfHour(timestamp)'. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, 'toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))' is used. Ignored for an external recent samples table. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
     DECLARE(UInt64, recent_samples_index_granularity, 8192, "Sets 'index_granularity' of the inner 'recent samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
     DECLARE(UInt64, tags_index_granularity, 8192, "Sets 'index_granularity' of the inner 'tags' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external tags table and a non-MergeTree engine", 0) \
+    DECLARE(UInt64, version, TimeSeriesVersion::LATEST, "The version of the TimeSeries table: it determines the set of the target tables and their structure. The version is pinned automatically when a table is created and cannot be changed afterwards. Tables created before this setting was introduced are considered as version 0", 0) \
 
 DECLARE_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TIMESERIES_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TimeSeriesSettings, TimeSeriesSetting)
@@ -105,6 +107,14 @@ bool TimeSeriesSettings::hasBuiltin(std::string_view name)
 
 void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
 {
+    UInt64 version = settings[TimeSeriesSetting::version];
+
+    if (!isTimeSeriesVersionSupported(version))
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Invalid value {} of the `version` setting: this server supports TimeSeries versions from {} to {}. "
+            "A table definition with another version was written by a different version of ClickHouse",
+            version, TimeSeriesVersion::MIN_SUPPORTED, TimeSeriesVersion::LATEST);
+
     if (!settings[TimeSeriesSetting::recent_samples_ttl_seconds])
     {
         /// Settings of the recent samples table make no sense without the table itself.
@@ -192,6 +202,37 @@ UInt64 getTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query)
         }
     }
     return TimeSeriesSettings{}[TimeSeriesSetting::recent_samples_ttl_seconds];
+}
+
+UInt64 getTimeSeriesSettingVersion(const ASTCreateQuery & query)
+{
+    if (query.storage && query.storage->settings)
+    {
+        if (const auto * value = query.storage->settings->changes.tryGet("version"))
+            return SettingFieldUInt64{*value}.value;
+    }
+    return TimeSeriesVersion::LATEST;
+}
+
+bool hasExplicitTimeSeriesSettingVersion(const ASTCreateQuery & query)
+{
+    return query.storage && query.storage->settings
+        && query.storage->settings->changes.tryGet("version");
+}
+
+void setTimeSeriesSettingVersion(ASTCreateQuery & query, UInt64 version)
+{
+    if (!query.storage)
+        query.set(query.storage, make_intrusive<ASTStorage>());
+
+    if (!query.storage->settings)
+    {
+        auto settings_ast = make_intrusive<ASTSetQuery>();
+        settings_ast->is_standalone = false;
+        query.storage->set(query.storage->settings, settings_ast);
+    }
+
+    query.storage->settings->changes.setSetting("version", Field{version});
 }
 
 }
