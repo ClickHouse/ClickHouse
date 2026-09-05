@@ -23,6 +23,8 @@
 #include <Coordination/KeeperRequestDispatcherOld.h>
 #include <Coordination/KeeperRequestDispatcher.h>
 
+#include <future>
+
 namespace DB
 {
 
@@ -31,6 +33,8 @@ namespace DB
 class KeeperDispatcher
 {
 private:
+    friend class KeeperDispatcherTestAccessor;
+
     using ClusterUpdateQueue = ConcurrentBoundedQueue<ClusterUpdateAction>;
 
     SnapshotsQueue snapshots_queue{1};
@@ -113,6 +117,13 @@ private:
     void containerGarbageCollectorThread(size_t batch_size, UInt64 max_never_used_interval_ms);
 
     void onSessionIDResponse(const Coordination::ZooKeeperResponsePtr & response) noexcept;
+
+    /// The only place that knows which responses do not go to a per-session response callback.
+    bool tryRouteSpecialResponse(const KeeperResponseForSession & response) noexcept;
+
+    /// Completes every waiter that can no longer receive a response. Call once no dispatcher can
+    /// produce one.
+    void failPendingSessionIDRequests() noexcept;
 
 public:
     KeeperDispatcher();
@@ -244,9 +255,10 @@ public:
         keeper_stats.incrementPacketsReceived();
     }
 
-    void resetConnectionStats()
+    void resetServerStats()
     {
         keeper_stats.reset();
+        server->resetLeaderMetrics();
     }
 
     /// Create snapshot manually, return the last committed log index in the snapshot

@@ -20,6 +20,8 @@ doc_type: 'reference'
   若要返回仅包含数组类型默认值的一行，可以用 [emptyArrayToSingle](/zh/reference/functions/regular-functions/array-functions#emptyArrayToSingle) 对其进行包装，例如：`arrayJoin(emptyArrayToSingle(...))`。
 </Note>
 
+`unnest` (自 26.5 版本起) 是函数调用形式中 `arrayJoin` 的不区分大小写别名 (`SELECT unnest(arr)`) 。不支持 PostgreSQL 表源语法 (`FROM unnest(...)`、`CROSS JOIN UNNEST(...)` 和 `LATERAL`) 。对于此类查询，请使用 [`ARRAY JOIN`](/zh/reference/statements/select/array-join) 子句。
+
 例如：
 
 ```sql title="Query"
@@ -50,6 +52,8 @@ WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 │           2 │
 └─────────────┘
 ```
+
+有一个例外：`arrayJoin` (包括通过其 `unnest` 别名使用) 不能用于在联接期间求值的 `JOIN ON` 条件，因为此类条件必须保持行数不变，且会针对每个联接行批次分别求值。仅适用于一侧的条件，以及基于 `arrayJoin` 的等值键，会在联接前被提取出来，因此不受影响。不含析取条件的 `ALL INNER JOIN` 条件同样不受影响，因为该条件会在联接后应用。如果展开仅依赖于一侧，请在联接前将其移至子查询中的 `ARRAY JOIN`；如果条件中 `arrayJoin` 的参数引用了两侧的列，则必须重构该条件。
 
 一个查询中可以使用多个 `arrayJoin` 函数。在这种情况下，转换会执行多次，行会成倍增加。
 例如：

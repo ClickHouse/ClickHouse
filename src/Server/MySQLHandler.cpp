@@ -10,6 +10,7 @@
 #include <Core/MySQL/PacketsPreparedStatements.h>
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <IO/LimitReadBuffer.h>
@@ -39,6 +40,8 @@
 #include <Common/QueryScope.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/SettingSource.h>
+#include <Common/SettingsChanges.h>
 #include <Common/StringUtils.h>
 #include <Common/config_version.h>
 #include <Common/logger_useful.h>
@@ -62,6 +65,11 @@ namespace Setting
     extern const SettingsSeconds send_timeout;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_session_user;
+}
+
 using namespace MySQLProtocol;
 using namespace MySQLProtocol::Generic;
 using namespace MySQLProtocol::ProtocolText;
@@ -75,6 +83,7 @@ using Poco::Net::SSLManager;
 
 namespace ErrorCodes
 {
+    extern const int AUTHENTICATION_FAILED;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int NOT_IMPLEMENTED;
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
@@ -82,10 +91,20 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int OPENSSL_ERROR;
     extern const int SYNTAX_ERROR;
+    extern const int UNKNOWN_PACKET_FROM_CLIENT;
 }
 
 static const size_t PACKET_HEADER_SIZE = 4;
 static const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
+
+/** The handshake response is read before the client is authenticated, so its size has to be bounded.
+  * The fields it carries are a user name, a database name, an authentication plugin name and an
+  * authentication response, so this is generous: a real client sends a few hundred bytes.
+  * Without a bound, a peer can make the server grow memory while sending a response that never ends:
+  * `MySQLPacketPayloadReadBuffer` follows a chain of maximum-size (16 MiB) packets as one logical
+  * message, and the fields inside the response are read up to a terminator.
+  */
+static const size_t MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE = 64 * 1024;
 
 static bool checkShouldReplaceQuery(const String & query, const String & prefix)
 {
@@ -496,6 +515,7 @@ MySQLHandler::MySQLHandler(
     const Poco::Net::StreamSocket & socket_,
     bool ssl_enabled, bool secure_required_,
      uint32_t connection_id_,
+    std::optional<String> default_session_user_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
@@ -504,6 +524,7 @@ MySQLHandler::MySQLHandler(
     , log(getLogger("MySQLHandler"))
     , secure_required(secure_required_)
     , connection_id(connection_id_)
+    , default_session_user(std::move(default_session_user_))
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
     , read_event(read_event_)
     , write_event(write_event_)
@@ -568,8 +589,28 @@ void MySQLHandler::run()
         if (!(client_capabilities & CLIENT_PROTOCOL_41))
             throw Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES, "Required capability: CLIENT_PROTOCOL_41.");
 
-        if (secure_required && !(client_capabilities & CLIENT_SSL))
+        /// Check the actual state of the transport, not the capability bit advertised by the client:
+        /// a client can set `CLIENT_SSL` in a plaintext `HandshakeResponse` without ever sending an
+        /// `SSLRequest`, and then the connection stays unencrypted.
+        if (secure_required && !secure_connection)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "SSL connection required.");
+
+        /// An empty user name means the default session user: the `default_session_user`
+        /// server setting, possibly overridden for this listener in the `protocols` section.
+        /// If the resolved name is empty too (explicitly configured to prohibit connections
+        /// without a user name), authentication fails on the empty user name below.
+        if (handshake_response.username.empty())
+            handshake_response.username = default_session_user
+                ? *default_session_user
+                : String(server.context()->getServerSettings()[ServerSetting::default_session_user]);
+
+        if (handshake_response.username.empty())
+        {
+            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Got an empty user name from MySQL handshake");
+            session->onAuthenticationFailure(handshake_response.username, socket().peerAddress(), exception);
+            packet_endpoint->sendPacket(ERRPacket(exception.code(), mysql_error_code, exception.message()));
+            return;
+        }
 
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
 
@@ -578,7 +619,15 @@ void MySQLHandler::run()
             session->makeSessionContext();
             session->sessionContext()->setDefaultFormat("MySQLWire");
             if (!handshake_response.database.empty())
+            {
+                /// `database` is a real setting, so enforce its constraints on the handshake database
+                /// too, consistently with `USE`, `SET database = ...` and the HTTP `?database=...`
+                /// parameter.
+                SettingsChanges database_change;
+                database_change.setSetting("database", handshake_response.database);
+                session->sessionContext()->checkSettingsConstraints(database_change, SettingSource::QUERY);
                 session->sessionContext()->setCurrentDatabase(handshake_response.database);
+            }
         }
         catch (const Exception & exc)
         {
@@ -693,6 +742,11 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     }
     else
     {
+        if (payload_size > MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                "Handshake response declares a payload of {} bytes, while it must be at most {} bytes",
+                payload_size, MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE);
+
         /// Reading rest of HandshakeResponse.
         packet_size = PACKET_HEADER_SIZE + payload_size;
         WriteBufferFromOwnString buf_for_handshake_response;
@@ -740,6 +794,10 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
     LOG_DEBUG(log, "Setting current database to {}", database);
     /// Mirror the access check of the SQL `USE database` statement (InterpreterUseQuery).
     session->sessionContext()->checkAccess(AccessType::SHOW_DATABASES, database);
+    /// ... and its settings-constraint check on the `database` setting.
+    SettingsChanges database_change;
+    database_change.setSetting("database", database);
+    session->sessionContext()->checkSettingsConstraints(database_change, SettingSource::QUERY);
     session->sessionContext()->setCurrentDatabase(database);
     packet_endpoint->sendPacket(OKPacket(0, client_capabilities, 0, 0, 1));
 }
@@ -782,7 +840,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
     String query = String(payload.position(), payload.buffer().end());
 
     // This is a workaround in order to support adding ClickHouse to MySQL using federated server.
-    // As Clickhouse doesn't support these statements, we just send OK packet in response.
+    // As ClickHouse doesn't support these statements, we just send OK packet in response.
     if (isFederatedServerSetupSetCommand(query))
     {
         packet_endpoint->sendPacket(OKPacket(0x00, client_capabilities, 0, 0, 0));
@@ -982,10 +1040,11 @@ MySQLHandlerSSL::MySQLHandlerSSL(
     bool ssl_enabled,
     bool secure_required_,
     uint32_t connection_id_,
+    std::optional<String> default_session_user_,
     KeyPair & private_key_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
-    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, secure_required_, connection_id_, read_event_, write_event_)
+    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, secure_required_, connection_id_, std::move(default_session_user_), read_event_, write_event_)
     , private_key(private_key_)
 {}
 
@@ -1015,7 +1074,33 @@ void MySQLHandlerSSL::finishHandshakeSSL(
     out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(*ss);
     sequence_id = 2;
     packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
-    packet_endpoint->receivePacket(packet); /// Reading HandshakeResponse from secure socket.
+
+    /// Reading HandshakeResponse from the secure socket, bounded the same way as on the plaintext
+    /// path: read the packet header, reject an oversized declared payload before reading it, and
+    /// then read exactly as many bytes as it declares. The bound has to be applied to the logical
+    /// MySQL payload rather than to the underlying stream: `MySQLPacketPayloadReadBuffer` reports
+    /// end of file as soon as the stream under it ends, so a stream cut off at the limit would make
+    /// a truncated packet look like a complete one.
+    char header[PACKET_HEADER_SIZE];
+    in->readStrict(header, PACKET_HEADER_SIZE);
+
+    size_t payload_size = unalignedLoad<uint32_t>(header) & 0xFFFFFFu;
+    if (payload_size > MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE)
+        throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+            "Handshake response declares a payload of {} bytes, while it must be at most {} bytes",
+            payload_size, MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE);
+
+    size_t packet_sequence_id = static_cast<uint8_t>(header[3]);
+    if (packet_sequence_id != sequence_id)
+        throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+            "Received packet with wrong sequence-id: {}. Expected: {}.",
+            packet_sequence_id, static_cast<unsigned int>(sequence_id));
+
+    WriteBufferFromOwnString buf_for_handshake_response;
+    copyData(*in, buf_for_handshake_response, payload_size);
+    ReadBufferFromString handshake_response_payload(buf_for_handshake_response.str());
+    packet.readPayloadWithUnpacked(handshake_response_payload);
+    packet_endpoint->sequence_id++;
 }
 
 #endif

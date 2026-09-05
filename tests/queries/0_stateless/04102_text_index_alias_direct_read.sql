@@ -11,6 +11,7 @@
 -- exactly the `ALIAS concat(s, '=', t)` case.
 
 SET query_plan_direct_read_from_text_index = 1;
+SET query_plan_optimize_count_from_text_index = 0;
 
 DROP TABLE IF EXISTS tab;
 

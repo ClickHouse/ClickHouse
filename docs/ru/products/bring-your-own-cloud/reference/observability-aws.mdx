@@ -34,7 +34,7 @@ BYOC предлагает два основных способа сбора и �
 | **Лучше всего подходит для** | Комплексного мониторинга инфраструктуры и сервисов                                                  | Мониторинга конкретного сервиса и интеграции                                              |
 | **Как интегрировать**        | Настройте федерацию во внешнем Prometheus для приёма метрик кластера                                | Добавьте конечные точки метрик ClickHouse напрямую в конфигурацию Prometheus              |
 
-**Рекомендация**: Для большинства сценариев мы рекомендуем интеграцию со встроенным стеком Prometheus, так как он предоставляет исчерпывающий набор метрик от всех компонентов в вашем BYOC-развертывании (сервисы ClickHouse, кластер Kubernetes и вспомогательные сервисы), а не только метрики сервера ClickHouse. 
+**Рекомендация**: Для большинства сценариев мы рекомендуем интеграцию со встроенным стеком Prometheus, так как он предоставляет исчерпывающий набор метрик от всех компонентов в вашем BYOC-развертывании (сервисы ClickHouse, кластер Kubernetes и вспомогательные сервисы), а не только метрики сервера ClickHouse.
 
 <div id="builtin-prometheus-stack">
   ## Встроенный стек Prometheus для BYOC
@@ -52,19 +52,21 @@ ClickHouse BYOC разворачивает в вашем кластере Kubern
 
 Чтобы подключиться к встроенному стеку Prometheus:
 
-1. **Обратитесь в ClickHouse Support**, чтобы включить приватный балансировщик нагрузки для вашей среды BYOC.
-2. **Запросите URL конечной точки Prometheus** в ClickHouse Support.
-3. **Проверьте доступность конечной точки Prometheus по частной сети** — обычно через пиринг VPC или другую конфигурацию частной сети.
+1. **Включите приватный балансировщик нагрузки** для инфраструктуры BYOC в консоли ClickHouse Cloud (см. [Load Balancers](/ru/products/bring-your-own-cloud/configuration/configurations#load-balancers)).
+2. **Запросите URL конечной точки Prometheus** у службы поддержки ClickHouse.
+3. **Проверьте подключение по частной сети** к конечной точке Prometheus — как правило, через пиринг VPC/VNet или другой вариант настройки частной сети.
 
-Форматы конечных точек различаются в зависимости от типа подключения:
+Форматы конечных точек зависят от типа подключения:
 
-| Подключение      | Формат конечной точки                                                          |
-| ---------------- | ------------------------------------------------------------------------------ |
-| VPC / пиринг VPC | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
-| PrivateLink      | `https://prometheus.vpce.<subdomain>.<region>.<cloud>.clickhouse-byoc.com`     |
+| Подключение            | Формат конечной точки                                                          |
+| ---------------------- | ------------------------------------------------------------------------------ |
+| Пиринг VPC/VNet        | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
+| Частная конечная точка | `https://prometheus.<label>.<subdomain>.<region>.<cloud>.clickhouse-byoc.com`  |
+
+`<cloud>` — это `aws`, `gcp` или `azure`. Для частных конечных точек значение `<label>` зависит от облачного провайдера: `vpce` в AWS, `p` в GCP и `privatelink` в Azure.
 
 <Note>
-  URL стека Prometheus доступен только через частные сетевые подключения и не требует аутентификации. Доступ разрешён только из сетей, которые могут обращаться к вашей VPC BYOC через пиринг VPC или другие варианты частного подключения.
+  URL стека Prometheus доступен только через подключения по частной сети и не требует аутентификации. Доступ ограничен сетями, которые могут обращаться к вашей VPC/VNet BYOC через пиринг или другие варианты частного подключения.
 </Note>
 
 <div id="prometheus-stack-integration">
@@ -119,19 +121,19 @@ scrape_configs:
 Конечная точка метрик доступна по пути `/metrics_all` на конечной точке вашего сервиса ClickHouse:
 
 ```bash
-curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443/metrics_all
+curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443/metrics_all
 ```
 
 **Пример ответа:**
 
 ```bash
-# HELP ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes Объём данных в байтах, хранящихся на диске `s3disk` в системной базе данных
+# HELP ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes The amount of bytes stored on disk `s3disk` in system database
 # TYPE ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes gauge
 ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes{hostname="c-jet-ax-16-server-43d5baj-0"} 62660929
-# HELP ClickHouse_CustomMetric_NumberOfBrokenDetachedParts Количество повреждённых отсоединённых частей
+# HELP ClickHouse_CustomMetric_NumberOfBrokenDetachedParts The number of broken detached parts
 # TYPE ClickHouse_CustomMetric_NumberOfBrokenDetachedParts gauge
 ClickHouse_CustomMetric_NumberOfBrokenDetachedParts{hostname="c-jet-ax-16-server-43d5baj-0"} 0
-# HELP ClickHouse_CustomMetric_TotalNumberOfErrors Общее количество ошибок на сервере с момента последнего перезапуска
+# HELP ClickHouse_CustomMetric_TotalNumberOfErrors The total number of errors on server since the last restart
 # TYPE ClickHouse_CustomMetric_TotalNumberOfErrors gauge
 ClickHouse_CustomMetric_TotalNumberOfErrors{hostname="c-jet-ax-16-server-43d5baj-0"} 9
 ```
@@ -182,7 +184,7 @@ global:
 scrape_configs:
   - job_name: "clickhouse"
     static_configs:
-      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443"]
+      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443"]
     scheme: https
     metrics_path: "/metrics_all"
     basic_auth:
@@ -193,7 +195,7 @@ scrape_configs:
 
 Замените:
 
-* `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443` на фактическую конечную точку вашего сервиса
+* `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443` на фактическую конечную точку вашего сервиса
 * `<username>` и `<password>` на учетные данные пользователя, используемые для сбора метрик
 
 <div id="clickhouse-mixin">

@@ -1,12 +1,13 @@
 {
   "icon": "/images/icons/icon-concepts.svg",
-  "item": "개념",
+  "item": "Concepts",
   "pages": [
     "ko/concepts/index",
     {
       "expanded": true,
-      "group": "기본 사항",
+      "group": "Fundamentals",
       "pages": [
+        "ko/concepts/core-concepts/index",
         "ko/concepts/core-concepts/glossary",
         "ko/concepts/core-concepts/parts",
         "ko/concepts/core-concepts/partitions",
@@ -14,44 +15,45 @@
         "ko/concepts/core-concepts/primary-indexes",
         "ko/concepts/core-concepts/query-parallelism",
         "ko/concepts/core-concepts/academic-overview"
-      ],
-      "root": "ko/concepts/core-concepts/index"
+      ]
     },
     {
       "expanded": true,
-      "group": "ClickHouse 개념",
+      "group": "ClickHouse concepts",
       "pages": [
+        "ko/concepts/features/index",
         {
-          "group": "materialized views",
+          "group": "Materialized views",
           "pages": [
+            "ko/concepts/features/materialized-views/index",
             "ko/concepts/features/materialized-views/incremental-materialized-view",
             "ko/concepts/features/materialized-views/refreshable-materialized-view",
             "ko/concepts/features/materialized-views/cascading-materialized-views"
-          ],
-          "root": "ko/concepts/features/materialized-views/index"
+          ]
         },
         {
           "group": "Dictionaries",
           "pages": [
+            "ko/concepts/features/dictionaries/index",
             "ko/concepts/features/dictionaries/best-practices"
-          ],
-          "root": "ko/concepts/features/dictionaries/index"
+          ]
         },
         {
-          "group": "프로젝션",
+          "group": "Projections",
           "pages": [
             "ko/concepts/features/projections/projections",
             "ko/concepts/features/projections/materialized-views-versus-projections"
           ]
         },
         {
-          "group": "성능",
+          "group": "Performance",
           "pages": [
+            "ko/concepts/features/performance/index",
             "ko/concepts/features/performance/prewhere",
             "ko/concepts/features/performance/allocation-profiling",
             "ko/concepts/features/performance/allocation-profiling-old",
             {
-              "group": "캐시",
+              "group": "Caches",
               "pages": [
                 "ko/concepts/features/performance/caches/caches",
                 "ko/concepts/features/performance/caches/query-cache",
@@ -60,7 +62,7 @@
               ]
             },
             {
-              "group": "스키핑 인덱스",
+              "group": "Skipping-indexes",
               "pages": [
                 "ko/concepts/features/performance/skip-indexes/skipping-indexes",
                 "ko/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -76,14 +78,13 @@
                 "ko/concepts/features/performance/troubleshoot/sampling-query-profiler"
               ]
             }
-          ],
-          "root": "ko/concepts/features/performance/index"
+          ]
         },
         {
-          "group": "작업",
+          "group": "Operations",
           "pages": [
             {
-              "group": "삽입",
+              "group": "Insert",
               "pages": [
                 "ko/concepts/features/operations/insert/inserting-data",
                 "ko/concepts/features/operations/insert/asyncinserts",
@@ -94,39 +95,37 @@
               ]
             },
             {
-              "group": "조회",
+              "group": "Select",
               "pages": [
                 "ko/concepts/features/operations/select/joining-tables"
               ]
             },
             {
-              "group": "수정",
+              "group": "Update",
               "pages": [
+                "ko/concepts/features/operations/update/index",
                 "ko/concepts/features/operations/update/overview",
-                "ko/concepts/features/operations/update/on-fly-mutations",
                 "ko/concepts/features/operations/update/replacing-merge-tree"
-              ],
-              "root": "ko/concepts/features/operations/update/index"
+              ]
             },
             {
-              "group": "삭제",
+              "group": "Delete",
               "pages": [
+                "ko/concepts/features/operations/delete/index",
                 "ko/concepts/features/operations/delete/overview",
-                "ko/concepts/features/operations/delete/delete-mutations",
                 "ko/concepts/features/operations/delete/drop-partition",
                 "ko/concepts/features/operations/delete/lightweight-delete",
                 "ko/concepts/features/operations/delete/truncate",
                 "ko/concepts/features/operations/delete/ttl"
-              ],
-              "root": "ko/concepts/features/operations/delete/index"
+              ]
             }
           ]
         },
         {
-          "group": "구성",
+          "group": "Configuration",
           "pages": [
             {
-              "group": "설정",
+              "group": "Settings",
               "pages": [
                 "ko/concepts/features/configuration/settings/overview",
                 "ko/concepts/features/configuration/settings/settings-query-level",
@@ -142,7 +141,7 @@
               ]
             },
             {
-              "group": "서버 구성",
+              "group": "Server config",
               "pages": [
                 "ko/concepts/features/configuration/server-config/configuration-files",
                 "ko/concepts/features/configuration/server-config/storing-data",
@@ -150,27 +149,30 @@
                 "ko/concepts/features/configuration/server-config/workload-scheduling",
                 "ko/concepts/features/configuration/server-config/quotas",
                 "ko/concepts/features/configuration/server-config/composable-protocols",
-                "ko/concepts/features/configuration/server-config/startup-scripts"
+                "ko/concepts/features/configuration/server-config/startup-scripts",
+                "ko/concepts/features/configuration/server-config/introspection-port"
               ]
             }
           ]
         },
         {
-          "group": "보안 및 인증",
+          "group": "Security and auth",
           "pages": [
+            "ko/concepts/features/security/index",
             "ko/concepts/features/security/access-rights",
             "ko/concepts/features/security/network-ports",
             {
               "group": "TLS",
               "pages": [
+                "ko/concepts/features/security/tls/index",
                 "ko/concepts/features/security/tls/configuring-tls",
                 "ko/concepts/features/security/tls/configuring-tls-acme-client"
-              ],
-              "root": "ko/concepts/features/security/tls/index"
+              ]
             },
             {
-              "group": "외부 인증 수단",
+              "group": "External authenticators",
               "pages": [
+                "ko/concepts/features/security/external-authenticators/index",
                 {
                   "group": "SSL",
                   "pages": [
@@ -188,16 +190,15 @@
                 "ko/concepts/features/security/external-authenticators/http",
                 "ko/concepts/features/security/external-authenticators/kerberos",
                 "ko/concepts/features/security/external-authenticators/jwt"
-              ],
-              "root": "ko/concepts/features/security/external-authenticators/index"
+              ]
             }
-          ],
-          "root": "ko/concepts/features/security/index"
+          ]
         },
         {
-          "group": "백업 및 복원",
+          "group": "Backup and restore",
           "pages": [
             "ko/concepts/features/backup-restore/overview",
+            "ko/concepts/features/backup-restore/restore-settings",
             "ko/concepts/features/backup-restore/local-disk",
             "ko/concepts/features/backup-restore/s3-endpoint",
             "ko/concepts/features/backup-restore/azure-blob-storage",
@@ -206,25 +207,31 @@
           ]
         },
         {
-          "group": "인터페이스",
+          "group": "Interfaces",
           "pages": [
+            "ko/concepts/features/interfaces/native-clients-interfaces-index",
             "ko/concepts/features/interfaces/cli",
             "ko/concepts/features/interfaces/client",
+            "ko/concepts/features/interfaces/mcp",
             {
-              "group": "드라이버 및 인터페이스",
+              "group": "Drivers and interfaces",
               "pages": [
+                "ko/concepts/features/interfaces/overview",
                 "ko/concepts/features/interfaces/http",
+                "ko/concepts/features/interfaces/framing-formats",
                 "ko/concepts/features/interfaces/tcp",
+                "ko/concepts/features/interfaces/adbc",
                 "ko/concepts/features/interfaces/jdbc",
                 "ko/concepts/features/interfaces/mysql",
-                "ko/concepts/features/interfaces/odbc",
+                {
+                  "$ref": "features/interfaces/odbc/navigation.json"
+                },
                 "ko/concepts/features/interfaces/postgresql",
                 "ko/concepts/features/interfaces/prometheus",
                 "ko/concepts/features/interfaces/ssh",
                 "ko/concepts/features/interfaces/grpc",
                 "ko/concepts/features/interfaces/arrowflight"
-              ],
-              "root": "ko/concepts/features/interfaces/overview"
+              ]
             },
             "ko/concepts/features/interfaces/cpp",
             "ko/concepts/features/interfaces/schema-inference",
@@ -232,18 +239,20 @@
             "ko/concepts/features/interfaces/web-sql",
             "ko/concepts/features/interfaces/web-ui-color-coding",
             "ko/concepts/features/interfaces/web-ui-pinned-columns",
+            "ko/concepts/features/interfaces/web-ui-result-shaping",
             "ko/concepts/features/interfaces/web-terminal",
             {
-              "group": "타사 클라이언트",
-              "pages": [],
-              "root": "ko/concepts/features/interfaces/third-party/index"
+              "group": "Third-party clients",
+              "pages": [
+                "ko/concepts/features/interfaces/third-party/index"
+              ]
             }
-          ],
-          "root": "ko/concepts/features/interfaces/native-clients-interfaces-index"
+          ]
         },
         {
-          "group": "도구 및 유틸리티",
+          "group": "Tools and utilities",
           "pages": [
+            "ko/concepts/features/tools-and-utilities/index",
             "ko/concepts/features/tools-and-utilities/backupview",
             "ko/concepts/features/tools-and-utilities/clickhouse-benchmark",
             "ko/concepts/features/tools-and-utilities/clickhouse-compressor",
@@ -255,16 +264,15 @@
             "ko/concepts/features/tools-and-utilities/clickhouse-obfuscator",
             "ko/concepts/features/tools-and-utilities/odbc-bridge",
             "ko/concepts/features/tools-and-utilities/static-files-disk-uploader"
-          ],
-          "root": "ko/concepts/features/tools-and-utilities/index"
+          ]
         }
-      ],
-      "root": "ko/concepts/features/index"
+      ]
     },
     {
       "expanded": true,
-      "group": "모범 사례",
+      "group": "Best practices",
       "pages": [
+        "ko/concepts/best-practices/index",
         "ko/concepts/best-practices/choosing-a-primary-key",
         "ko/concepts/best-practices/select-data-type",
         "ko/concepts/best-practices/use-materialized-views",
@@ -276,9 +284,7 @@
         "ko/concepts/best-practices/avoid-optimize-final",
         "ko/concepts/best-practices/avoidnullablecolumns",
         "ko/concepts/best-practices/json-type"
-      ],
-      "root": "ko/concepts/best-practices/index"
+      ]
     }
-  ],
-  "root": "ko/concepts/index"
+  ]
 }

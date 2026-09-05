@@ -44,6 +44,15 @@ When disabled, these shape rules are not enforced: such geometries are read as-i
 
 The validation is structural only: it checks point counts and ring closure. It does not inspect the geometric correctness of a shape — ring orientation (the right-hand rule / winding order) is not enforced, and structurally valid but geometrically degenerate geometries are accepted, such as a zero-area polygon, a self-intersecting ring, or a polygon whose holes lie outside its outer ring. Non-finite coordinates (`NaN`, `Inf`) are always rejected regardless of this setting, because they cannot be represented as JSON numbers.
 
+## format_hive_text_rows_delimiter {#format_hive_text_rows_delimiter}
+
+<SettingsInfoBlock type="Char" default_value="
+" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "\n"},{"label": "New setting for the delimiter at the end of each row in the HiveText output format."}]}]}/>
+
+Delimiter at the end of each row in the Hive Text output format
+
 ## format_json_object_each_row_column_for_object_name {#format_json_object_each_row_column_for_object_name}
 
 The name of column that will be used for storing/writing object names in [JSONObjectEachRow](/reference/formats/JSON/JSONObjectEachRow) format.

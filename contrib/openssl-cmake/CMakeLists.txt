@@ -47,6 +47,11 @@ option(OPENSSL_NO_ASM "Build OpenSSL from the portable C sources instead of the 
 if(NOT (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_S390X OR ARCH_RISCV64 OR ARCH_LOONGARCH64))
     message(STATUS "OpenSSL: no assembly for ${CMAKE_SYSTEM_PROCESSOR}, building the portable C sources")
     set(OPENSSL_NO_ASM ON)
+elseif(SANITIZE STREQUAL "memory")
+    # MemorySanitizer cannot instrument assembly, so an asm cipher core leaves its output buffer
+    # poisoned. Upstream's `Configure` disables asm under MSan for this reason.
+    message(STATUS "OpenSSL: MSan build, building the portable C sources instead of the assembly")
+    set(OPENSSL_NO_ASM ON)
 endif()
 
 if(OPENSSL_NO_ASM)

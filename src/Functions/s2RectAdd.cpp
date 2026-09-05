@@ -150,7 +150,14 @@ Expands an S2 latitude-longitude rectangle to include the given S2 point. The re
         {"s2Point", "S2 cell identifier of the point to add.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple (s2RectLow, s2RectHigh) representing the expanded rectangle.", {"Tuple(UInt64, UInt64)"}};
-    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2RectAdd(5765131099823669248, 5765131099823669248, 5765131099956887552)", ""}};
+    FunctionDocumentation::Examples examples = {
+        {"Basic usage",
+         "SELECT s2RectAdd(5765131099823669248, 5765131099823669248, 5765131099956887552)",
+         R"(
+┌─s2RectAdd(5765131099823669248, 5765131099823669248, 5765131099956887552)─┐
+│ (5765131100074425153,5765131099940616725)                                │
+└──────────────────────────────────────────────────────────────────────────┘
+)"}};
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

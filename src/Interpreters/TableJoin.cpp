@@ -84,6 +84,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_before_external_join;
     extern const SettingsDouble max_bytes_ratio_before_external_join;
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
+    extern const SettingsBool enable_join_key_only_hash_tables;
     extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
 }
 
@@ -206,7 +207,8 @@ std::string TableJoin::formatClausesPretty(const TableJoin::Clauses & clauses, c
     return fmt::format("{}", fmt::join(res, " OR "));
 }
 
-TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
+TableJoin::TableJoin(
+    const Settings & settings, JoinAnalyzeMode analyze_mode_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
     : size_limits(SizeLimits{settings[Setting::max_rows_in_join], settings[Setting::max_bytes_in_join], settings[Setting::join_overflow_mode]})
     , default_max_bytes(settings[Setting::default_max_bytes_in_join])
     , join_use_nulls(settings[Setting::join_use_nulls])
@@ -230,11 +232,13 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
           settings[Setting::max_bytes_before_external_join],
           settings[Setting::max_bytes_ratio_before_external_join]))
     , enable_join_fixed_hash_table_conversion(settings[Setting::enable_join_fixed_hash_table_conversion])
+    , enable_join_key_only_hash_tables(settings[Setting::enable_join_key_only_hash_tables])
     , join_runtime_filter_from_fixed_hash_table(settings[Setting::join_runtime_filter_from_fixed_hash_table])
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
     , enable_analyzer(settings[Setting::allow_experimental_analyzer])
+    , analyze_mode(analyze_mode_)
 {
 }
 
@@ -263,11 +267,13 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , enable_software_prefetch_in_join(settings.enable_software_prefetch_in_join)
     , max_bytes_before_external_join(settings.getEffectiveMaxBytesBeforeExternalJoin())
     , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
+    , enable_join_key_only_hash_tables(settings.enable_join_key_only_hash_tables)
     , join_runtime_filter_from_fixed_hash_table(settings.join_runtime_filter_from_fixed_hash_table)
     , max_memory_usage(settings.max_bytes_in_join)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
     , enable_analyzer(true)
+    , analyze_mode(settings.join_analyze_mode)
 {
 }
 
@@ -517,7 +523,24 @@ Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vecto
     {
         if (required_keys.contains(right_key_name) && !required_right_keys.has(right_key_name))
         {
-            const auto & right_key = right_table_keys.getByName(right_key_name);
+            auto right_key = right_table_keys.getByName(right_key_name);
+
+            /// A promoted key must be Nullable so an unmatched-left row fills NULL rather than the
+            /// storage default, which `firstNonDefault` would then prefer over the left NULL.
+            /// A matched row cannot have a NULL left key here, so matched values are unchanged.
+            if ((using_promoted_right_keys.contains(right_key_name)
+                 || using_promoted_right_keys.contains(renamedRightColumnName(right_key_name)))
+                && isLeftOrFull(kind())
+                && !isNullableOrLowCardinalityNullable(right_key.type) && JoinCommon::canBecomeNullable(right_key.type))
+            {
+                auto left_key = columns_from_left_table.tryGetByName(left_key_name);
+                if (left_key && isNullableOrLowCardinalityNullable(left_key->type))
+                {
+                    right_key.type = JoinCommon::convertTypeToNullable(right_key.type);
+                    right_key.column = nullptr;
+                }
+            }
+
             required_right_keys.insert(right_key);
             keys_sources.push_back(left_key_name);
         }

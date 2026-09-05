@@ -1,9 +1,9 @@
 ---
 slug: /cloud/managed-postgres/terraform
 sidebarTitle: 'Terraform'
-title: 'Managed Postgres Terraform 参考文档'
+title: 'ClickHouse Managed Postgres Terraform 参考文档'
 description: '使用 ClickHouse Terraform 提供商 管理 ClickHouse Managed Postgres 服务的参考文档。'
-keywords: ['managed postgres', 'terraform', '基础设施即代码', 'iac', 'provider', '程序化']
+keywords: ['managed postgres', 'terraform', '基础设施即代码', 'iac', '提供商', '程序化']
 doc_type: 'guide'
 ---
 
@@ -14,16 +14,8 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 可通过 [ClickHouse Terraform 提供商](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_service) 中的 `clickhouse_postgres_service` 资源创建和管理 ClickHouse Managed Postgres 服务。本文介绍该资源及其配套数据源的 提供商 设置与配置示例。
 
 <Note>
-  此资源目前处于 alpha 阶段，其行为可能会在未来的 提供商 版本中发生变化。它随常规 提供商 build 一同发布。本文档记录的是 提供商 版本 **v3.21.0** 及更高版本，这些版本更改了凭据的管理方式；更早版本的行为有所不同，并且截至 2026 年 7 月 31 日已无法再正常工作。详情请参阅 [提供商 发行版](https://github.com/ClickHouse/terraform-provider-clickhouse/releases)。
+  此资源目前处于 alpha 阶段，其行为可能会在未来的 提供商 版本中发生变化。它随常规 提供商 build 一同发布。本文档记录的是 提供商 版本 **v3.21.0** 及更高版本。详情请参阅 [提供商 发行版](https://github.com/ClickHouse/terraform-provider-clickhouse/releases)。
 </Note>
-
-<Warning>
-  **请在 2026 年 7 月 31 日之前升级到 提供商 v3.21.0**
-
-  自 **2026 年 7 月 31 日** 起，Managed Postgres API 不再在响应中返回 超级用户 密码和 connection string；只有在创建 service 或重置其密码时才会返回凭据。提供商版本 **v3.21.0 及更高版本** 在此变更前后的行为完全一致。较旧的 提供商 版本依赖 API 回显凭据：截至 2026 年 7 月 31 日，这些版本将不再填充 `connection_string`，而且在未声明 `password` 的情况下创建的 service 虽然会成功，但系统生成的密码不会被记录到任何地方。
-
-  请在 2026 年 7 月 31 日之前完成升级。使用 v3.21.0 首次执行 plan 或 apply 时，您的 Terraform 状态 会自动迁移。如果您的任何 services 依赖 server 生成的密码 (即配置中没有 `password`) ，请先使用 `terraform state pull` 将其取回并显式声明，因为 v3.21.0 要求标准 service 必须提供 `password` 或 `password_wo`。
-</Warning>
 
 <div id="provider-setup">
   ## 提供商设置
@@ -73,7 +65,7 @@ provider "clickhouse" {
 | `read_replica_of`          | 否                           | 要复制的主服务 ID。请参见[只读副本](#read-replicas)。与 `restore_to_point_in_time` 互斥。                             |
 | `restore_to_point_in_time` | 否                           | 通过将另一个服务恢复到某个时间点来创建该服务。请参见[时间点恢复](#point-in-time-restore)。与 `read_replica_of` 互斥。                 |
 
-以下属性为只读，并由 ClickHouse Cloud 在创建后填充：`id`、`state`、`created_at`、`is_primary`、`hostname`、`port` 和 `username`。不存在 `connection_string` 属性 (已在 v3.21.0 中移除) ：请使用 `hostname`、`port`、`username` 以及你声明的密码来构建连接 URI，例如 `postgres://${username}:${password}@${hostname}:${port}/postgres?sslmode=require`。
+以下属性为只读，并由 ClickHouse Cloud 在创建后填充：`id`、`state`、`created_at`、`is_primary`、`hostname`、`port` 和 `username`。不存在 `connection_string` 属性：请使用 `hostname`、`port`、`username` 以及你声明的密码来构建连接 URI，例如 `postgres://${username}:${password}@${hostname}:${port}/postgres?sslmode=require`。
 
 <Warning>
   The `password` 会以明文形式存储在你的 Terraform 状态中。请相应保护好 状态 文件，例如使用启用静态加密的远程后端，或者使用 `password_wo` 以使密码完全不进入状态。
@@ -167,7 +159,7 @@ data "clickhouse_postgres_service" "example" {
   id = clickhouse_postgres_service.example.id
 }
 
-# All Managed Postgres services in the organization.
+# All ClickHouse Managed Postgres services in the organization.
 data "clickhouse_postgres_services" "all" {}
 
 # The CA certificates for a service, for TLS connections.
@@ -180,7 +172,7 @@ data "clickhouse_postgres_service_ca_certificates" "certs" {
   ## 导入现有服务
 </div>
 
-现有的 Managed Postgres 服务可以通过服务 ID 导入到 Terraform 状态中：
+现有的 ClickHouse Managed Postgres 服务可以通过服务 ID 导入到 Terraform 状态中：
 
 ```bash
 terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx

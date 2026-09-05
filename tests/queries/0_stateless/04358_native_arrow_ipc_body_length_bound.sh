@@ -66,6 +66,6 @@ data[file_pos:file_pos + 8] = huge.to_bytes(8, 'little', signed=True)
 open(path, 'wb').write(bytes(data))
 EOF
 
-$CLICKHOUSE_LOCAL --input_format_arrow_use_native_reader=1 \
+$CLICKHOUSE_LOCAL \
     --query "SELECT * FROM file('${DATA_FILE}', 'ArrowStream')" 2>&1 \
     | grep -oF 'CANNOT_READ_ALL_DATA' | head -1 || echo 'FAIL: expected CANNOT_READ_ALL_DATA'

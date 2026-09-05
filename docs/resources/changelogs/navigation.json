@@ -23,6 +23,7 @@
             {
               "group": "2026",
               "pages": [
+                "resources/changelogs/cloud/release-notes/26_6",
                 "resources/changelogs/cloud/release-notes/26_4",
                 "resources/changelogs/cloud/release-notes/26_02"
               ]

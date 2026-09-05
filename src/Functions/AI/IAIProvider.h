@@ -7,6 +7,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <memory>
+#include <string_view>
 
 namespace DB
 {
@@ -66,6 +67,17 @@ struct AIRequest
     String function_name;
 };
 
+/// Canonical, provider-independent reason the model stopped generating. Each provider maps its
+/// native vocabulary onto these values.
+enum class FinishReason : UInt8
+{
+    Complete, /// Full answer produced: natural end, a stop sequence, or Anthropic structured-output `tool_use`.
+    Truncated, /// Output was cut off by a token limit (`max_tokens` / `length` / context window exceeded).
+    ContentFilter, /// The provider withheld or filtered the content.
+    RequiresAction, /// Model stopped expecting the caller to act (run a tool / resume the turn), not a final answer
+    Unknown, /// Unrecognized finish reason, potentially new reason introduced in API update.
+};
+
 /// Response from a single AI chat completion request. Returned by IAIProvider::call after parsing the provider's HTTP response.
 struct AIResponse
 {
@@ -78,9 +90,11 @@ struct AIResponse
     /// Number of tokens in the generated output, as reported by the provider. Used for quota tracking.
     UInt64 output_tokens = 0;
 
-    /// Why the model stopped generating. Common values: "stop" (natural end),
-    /// "length" (hit max_tokens limit), "end_turn" (Anthropic equivalent of stop).
-    String finish_reason;
+    /// Canonical reason the model stopped generating, normalized from the provider's native value.
+    FinishReason finish_reason = FinishReason::Complete;
+
+    /// The provider's raw native reason string, kept verbatim for diagnostics in error messages.
+    String raw_finish_reason;
 };
 
 /** Parameters for a single AI embedding request.
@@ -126,18 +140,28 @@ class IAIProvider
 public:
     virtual ~IAIProvider() = default;
 
-    /// Send a chat completion request and return the parsed response.
-    virtual AIResponse call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts) = 0;
+    /// Send a chat completion request. Replaces the contents of `response`, filling the token counts
+    /// before the payload is validated: so a failed request can still update token counts.
+    virtual void call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response) = 0;
 
     /// Whether this provider exposes an embeddings endpoint.
     virtual bool supportsEmbeddings() const { return false; }
 
-    /// Send an embedding request. Only valid when `supportsEmbeddings()` is true.
-    virtual AIEmbeddingResponse embed(const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts);
+    /// Send an embedding request. Only valid when `supportsEmbeddings()` is true. Replaces the contents of
+    /// `response`, filling `input_tokens` before the payload is validated: so a failed request can still update token counts
+    virtual void embed(
+        const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts, AIEmbeddingResponse & response);
 };
 
 using AIProviderPtr = std::unique_ptr<IAIProvider>;
 
 AIProviderPtr createAIProvider(const String & provider_name, const String & endpoint, const String & api_key, const String & api_version);
+
+/// Build an error message from a provider's non-200 HTTP response, for use in an exception that is logged.
+String formatProviderError(int status_code, const String & response_body);
+
+/// Replace control characters (including `\t \n \r`) with spaces so provider-controlled text cannot
+/// forge log lines or corrupt a terminal when embedded in a logged exception.
+String sanitizeForLog(std::string_view input);
 
 }

@@ -11,12 +11,12 @@ import { CloudNotSupportedBadge } from "/snippets/es/components/CloudNotSupporte
 <CloudNotSupportedBadge />
 
 <Tip>
-  Consulte nuestro servicio [Managed Postgres](/es/products/managed-postgres/overview). Con almacenamiento NVMe ubicado físicamente junto a los recursos de cómputo, ofrece un rendimiento hasta 10 veces superior para cargas de trabajo limitadas por disco en comparación con alternativas que usan almacenamiento conectado por red, como EBS, y le permite replicar sus datos de Postgres en ClickHouse mediante el conector Postgres CDC de ClickPipes.
+  Consulte nuestro servicio [ClickHouse Managed Postgres](/es/products/managed-postgres/overview). Con almacenamiento NVMe ubicado físicamente junto a los recursos de cómputo, ofrece un rendimiento hasta 10 veces superior para cargas de trabajo limitadas por disco en comparación con alternativas que usan almacenamiento conectado por red, como EBS, y le permite replicar sus datos de Postgres en ClickHouse mediante el conector Postgres CDC de ClickPipes.
 </Tip>
 
 ClickHouse admite el protocolo wire de PostgreSQL, lo que le permite usar clientes de Postgres para conectarse a ClickHouse. En cierto sentido, ClickHouse puede hacerse pasar por una instancia de PostgreSQL, lo que le permite conectar a ClickHouse una aplicación cliente de PostgreSQL que ClickHouse todavía no admite directamente (por ejemplo, Amazon Redshift).
 
-Para habilitar el protocolo wire de PostgreSQL, agregue la configuración [postgresql&#95;port](/es/reference/settings/server-settings/settings#postgresql_port) al archivo de configuración de su servidor. Por ejemplo, podría definir el puerto en un nuevo archivo XML dentro de la carpeta `config.d`:
+Para habilitar el protocolo wire de PostgreSQL, agregue la configuración [postgresql&#95;port](/es/reference/settings/server-settings/settings/postgresql#postgresql_port) al archivo de configuración de su servidor. Por ejemplo, podría definir el puerto en un nuevo archivo XML dentro de la carpeta `config.d`:
 
 ```xml
 <clickhouse>
