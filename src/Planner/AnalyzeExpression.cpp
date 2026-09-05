@@ -171,6 +171,15 @@ static CoreAnalysisResult buildExpressionCoreDAG(
 
     auto query_node = std::make_shared<QueryNode>(execution_context);
 
+    /// Analyzer error messages end with `In scope {}`, formatting the scope node - which here is the
+    /// synthetic `SELECT ... FROM _analyze_expression_db._analyze_expression_table` wrapper built
+    /// above. Reporting it would expose an internal name in a user-facing DDL error such as
+    /// `ALTER TABLE t ADD INDEX i ix TYPE minmax GRANULARITY 1`. The scope of a standalone
+    /// expression is the expression itself, so make `formatASTForErrorMessage` print that instead
+    /// (it prefers the original AST when one is set). Use the AST as the user wrote it, before UDF
+    /// inlining and scalar subquery substitution above rewrote a private copy of it.
+    query_node->setOriginalAST(expr_list_ast);
+
     auto expression_list = buildQueryTree(expression_ast_for_analysis, execution_context);
 
     query_node->getProjectionNode() = expression_list;
