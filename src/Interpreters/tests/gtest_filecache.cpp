@@ -24,6 +24,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/FileCache/FileCacheSettings.h>
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
@@ -33,7 +34,6 @@
 #include <Interpreters/FileCache/OvercommitFileCachePriority.h>
 #endif
 
-#include <Common/DimensionalMetrics.h>
 #include <Common/HistogramMetrics.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -63,6 +63,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/DimensionalMetrics.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -122,6 +123,7 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics;
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_user;
     extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
+    extern const FileCacheSettingsBool expose_prometheus_cache_usage_metrics_per_user;
     extern const FileCacheSettingsUInt64 bypass_cache_threshold;
 }
 
@@ -1984,6 +1986,7 @@ try
         settings2[FileCacheSetting::slru_size_ratio] = 0.5;
         settings2[FileCacheSetting::load_metadata_asynchronously] = false;
         settings2[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+        settings2[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user] = true;
 
         auto cache = std::make_shared<DB::FileCache>("slru_2", settings2);
         cache->initialize();
@@ -2040,7 +2043,11 @@ try
         assertProbationary(cache->dumpQueue(), { Range(0, 4), Range(5, 9) });
         assertProtected(cache->dumpQueue(), { Range(0, 4), Range(5, 9), Range(10, 14) });
 
+        const auto usage_before = cache->getUsageStatPerClient().at(user.user_id);
         read_and_check(file2, key2, data2);
+        const auto usage_after = cache->getUsageStatPerClient().at(user.user_id);
+        ASSERT_EQ(usage_after.size, usage_before.size);
+        ASSERT_EQ(usage_after.elements, usage_before.elements);
 
         dump = cache->dumpQueue();
         assertEqual(dump, { Range(0, 4), Range(5, 9), Range(10, 14), Range(0, 4), Range(5, 9)  });
@@ -3282,21 +3289,117 @@ TEST_F(FileCacheTest, EvictionMetricsRuntimeToggle)
     EXPECT_EQ(sum_dim("filesystem_cache_evictions_total"), before_redisabled);
 }
 
+TEST_F(FileCacheTest, UsageMetricsSettingIsStartupOnly)
+{
+    /// Counterpart of `EvictionMetricsRuntimeToggle` for the usage gauges:
+    /// `expose_prometheus_cache_usage_metrics_per_user` is deliberately *not* reloadable,
+    /// because usage is accounted per cache entry from the moment the entry is created,
+    /// so a cache populated while the setting was off cannot be accounted retroactively.
+    /// `applySettingsIfPossible` must therefore refuse the change (without throwing) and
+    /// leave both the behaviour and the reported (actual) value at the startup value.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    auto make_settings = [&](const std::string & path, bool expose)
+    {
+        DB::FileCacheSettings settings;
+        settings[FileCacheSetting::path] = path;
+        settings[FileCacheSetting::max_size] = 100;
+        settings[FileCacheSetting::max_elements] = 10;
+        settings[FileCacheSetting::max_file_segment_size] = 10;
+        settings[FileCacheSetting::boundary_alignment] = 1;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
+        settings[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user] = expose;
+        return settings;
+    };
+
+    /// Populate a cache so that there is something to account for.
+    auto populate = [&](DB::FileCache & cache, const std::string & key_name)
+    {
+        auto key = FileCacheKey::fromPath(key_name);
+        auto holder = cache.getOrSet(key, 0, 10, static_cast<size_t>(-1), {}, 0, FileCache::getCommonOrigin());
+        ASSERT_EQ(holder->size(), 1u);
+        download(*holder->begin());
+    };
+
+    /// 1) Started with the feature ON: a runtime disable must not drain the accounting.
+    {
+        auto settings = make_settings((caches_dir / "usage_metrics_startup_only_on").string(), true);
+        DB::FileCache cache("usage_metrics_startup_only_on", settings);
+        cache.initialize();
+        ASSERT_TRUE(cache.exposesUsageMetricsPerUser());
+
+        populate(cache, "usage_metrics_startup_only_on_key");
+        ASSERT_FALSE(cache.getUsageStatPerClient().empty());
+
+        DB::FileCacheSettings current = settings;
+        DB::FileCacheSettings new_settings = current;
+        new_settings[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user] = false;
+        ASSERT_NO_THROW(cache.applySettingsIfPossible(new_settings, current));
+
+        /// The reported value stays at what the cache really does, and usage is still accounted.
+        EXPECT_TRUE(current[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user]);
+        EXPECT_TRUE(cache.exposesUsageMetricsPerUser());
+        EXPECT_FALSE(cache.getUsageStatPerClient().empty());
+    }
+
+    /// 2) Started with the feature OFF: a runtime enable must not silently pretend to work.
+    {
+        auto settings = make_settings((caches_dir / "usage_metrics_startup_only_off").string(), false);
+        DB::FileCache cache("usage_metrics_startup_only_off", settings);
+        cache.initialize();
+        ASSERT_FALSE(cache.exposesUsageMetricsPerUser());
+
+        populate(cache, "usage_metrics_startup_only_off_key");
+        ASSERT_TRUE(cache.getUsageStatPerClient().empty());
+
+        DB::FileCacheSettings current = settings;
+        DB::FileCacheSettings new_settings = current;
+        new_settings[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user] = true;
+        ASSERT_NO_THROW(cache.applySettingsIfPossible(new_settings, current));
+
+        EXPECT_FALSE(current[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user]);
+        EXPECT_FALSE(cache.exposesUsageMetricsPerUser());
+        /// No half-enabled state: entries cached before the reload are not accounted,
+        /// and no new tracker was installed behind them.
+        EXPECT_TRUE(cache.getUsageStatPerClient().empty());
+        populate(cache, "usage_metrics_startup_only_off_key_2");
+        EXPECT_TRUE(cache.getUsageStatPerClient().empty());
+    }
+}
+
 namespace
 {
     /// Creators for SplitFileCachePriority inner queues used by the split-cache tests below.
     std::unique_ptr<IFileCachePriority> makeLRUInner(
-        IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements,
-        double /* size_ratio */, size_t /* overcommit_step */, String desc)
+        IFileCachePriority::QueueType queue_type,
+        size_t max_size,
+        size_t max_elements,
+        double /* size_ratio */,
+        size_t /* overcommit_step */,
+        String desc)
     {
-        return std::make_unique<LRUFileCachePriority>(queue_type, max_size, max_elements, desc);
+        return std::make_unique<LRUFileCachePriority>(
+            queue_type,
+            max_size,
+            max_elements,
+            desc);
     }
 
     std::unique_ptr<IFileCachePriority> makeSLRUInner(
-        IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements,
-        double size_ratio, size_t /* overcommit_step */, String desc)
+        IFileCachePriority::QueueType queue_type,
+        size_t max_size,
+        size_t max_elements,
+        double size_ratio,
+        size_t /* overcommit_step */,
+        String desc)
     {
-        return std::make_unique<SLRUFileCachePriority>(queue_type, max_size, max_elements, size_ratio, desc);
+        return std::make_unique<SLRUFileCachePriority>(
+            queue_type,
+            max_size,
+            max_elements,
+            size_ratio,
+            desc);
     }
 }
 
@@ -3384,6 +3487,7 @@ TEST_F(FileCacheTest, LRUDecrementSizeToZeroDropsElement)
         it = priority.add(key_metadata, /* offset */0, /* size */5, &state_lock);
     }
 
+    ASSERT_FALSE(it->getEntry()->tracksUsage());
     ASSERT_EQ(priority.getSize(state_guard.lock()), 5);
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 1);
 
@@ -3413,6 +3517,7 @@ TEST_F(FileCacheTest, SplitTotalSpaceCleanupReclaimsSystemQueue)
         IFileCachePriority::QueueType::Main, makeLRUInner, max_size, max_elements,
         /* slru_size_ratio */ 0.5, /* split_cache_ratio */ 0.5,
         "test_split_total_cleanup");
+    priority.setUsageTracker(std::make_shared<FileCacheUsageTracker>());
 
     const std::string cache_path = caches_dir / "test_split_total_cleanup";
     fs::create_directories(cache_path);
@@ -3431,6 +3536,9 @@ TEST_F(FileCacheTest, SplitTotalSpaceCleanupReclaimsSystemQueue)
         priority.add(key_metadata, 10, 10, &state_lock);
     }
     ASSERT_EQ(priority.getSize(state_guard.lock()), 20);
+    const auto usage = priority.getUsageStatPerClient(state_guard.lock()).at(system_origin.user_id);
+    ASSERT_EQ(usage.size, 20);
+    ASSERT_EQ(usage.elements, 2);
 
     /// Total-space cleanup wants to evict everything. The background thread invokes this
     /// with `getInternalOrigin()` (segment type `General`).
@@ -3690,6 +3798,7 @@ TEST_F(FileCacheTest, PriorityQueueElementsMetrics)
     {
         const int delta = queue_type == IFileCachePriority::QueueType::Main ? 1 : 0;
         LRUFileCachePriority priority(queue_type, 100, 10);
+        priority.setUsageTracker(std::make_shared<FileCacheUsageTracker>());
 
         IFileCachePriority::IteratorPtr it;
         {
@@ -3697,6 +3806,14 @@ TEST_F(FileCacheTest, PriorityQueueElementsMetrics)
             it = priority.add(key_metadata, 0, 10, &state_lock);
         }
         ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCachePriorityQueueElements), elements_before + delta);
+        const auto usage = priority.getUsageStatPerClient(state_guard.lock());
+        if (queue_type == IFileCachePriority::QueueType::Main)
+        {
+            ASSERT_EQ(usage.at(origin.user_id).size, 10);
+            ASSERT_EQ(usage.at(origin.user_id).elements, 1);
+        }
+        else
+            ASSERT_TRUE(usage.empty());
 
         it->invalidate();
         ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCacheInvalidatedElements), invalidated_before + delta);
@@ -3716,6 +3833,7 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
 
     /// protected = 10 bytes / 1 element, probationary = 20 bytes / 2 elements.
     SLRUFileCachePriority priority(IFileCachePriority::QueueType::Main, 30, 3, 1.0 / 3, "test_downgrade");
+    priority.setUsageTracker(std::make_shared<FileCacheUsageTracker>());
 
     const auto cache_path = caches_dir / "test_slru_downgrade";
     fs::create_directories(cache_path);
@@ -3750,8 +3868,13 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
         return it;
     };
 
-    add_segment(0, 10, IFileCachePriority::QueueEntryType::SLRU_Protected);   /// fills protected
+    add_segment(0, 10, IFileCachePriority::QueueEntryType::SLRU_Protected);
     auto prob_it = add_segment(10, 10, IFileCachePriority::QueueEntryType::SLRU_Probationary);
+
+    const auto & user_id = origin.user_id;
+    auto usage = priority.getUsageStatPerClient(state_guard.lock());
+    ASSERT_EQ(usage.at(user_id).size, 20);
+    ASSERT_EQ(usage.at(user_id).elements, 2);
 
     auto & events = CurrentThread::getProfileEvents();
     const auto downgraded_before = events[ProfileEvents::FilesystemCacheDowngradedFileSegments];
@@ -3762,6 +3885,244 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
 
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments], downgraded_before + 1);
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments], evicted_before);
+    usage = priority.getUsageStatPerClient(state_guard.lock());
+    ASSERT_EQ(usage.at(user_id).size, 20);
+    ASSERT_EQ(usage.at(user_id).elements, 2);
+}
+
+TEST_F(FileCacheTest, UsageSnapshotConsistentDuringSLRUMove)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    /// An SLRU queue move charges the segment's usage counters for the new queue entry
+    /// before discharging the old one. Both steps happen under the state lock, and
+    /// `getUsageStatPerClient` takes the same lock, so a concurrent sampler must never
+    /// observe the intermediate state where the moved segment is counted twice.
+
+    /// protected = 10 bytes / 1 element, probationary = 20 bytes / 2 elements.
+    SLRUFileCachePriority priority(IFileCachePriority::QueueType::Main, 30, 3, 1.0 / 3, "test_move_snapshot");
+    priority.setUsageTracker(std::make_shared<FileCacheUsageTracker>());
+
+    const auto cache_path = caches_dir / "test_slru_move_snapshot";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    const auto key = DB::FileCacheKey::fromPath("move_snapshot_key");
+    const auto & origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
+
+    CacheStateGuard state_guard;
+
+    auto add_segment = [&](size_t offset, size_t size, IFileCachePriority::QueueEntryType qtype)
+    {
+        IFileCachePriority::IteratorPtr it;
+        {
+            auto state_lock = state_guard.lock();
+            auto write_lock = priority.getPriorityGuardForTests().writeLock();
+            it = priority.addForRestore(key_metadata, offset, size, qtype, write_lock, &state_lock);
+        }
+        const auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, origin);
+        if (fs::exists(path))
+            fs::remove(path);
+        fs::create_directories(fs::path(path).parent_path());
+        WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        DB::writeString(std::string(size, '0'), wb);
+        wb.finalize();
+        auto file_segment = std::make_shared<FileSegment>(
+            key, offset, size, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings{}, false, nullptr, key_metadata, it);
+        LockedKey(key_metadata).emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment)));
+        return it;
+    };
+
+    auto it_a = add_segment(0, 10, IFileCachePriority::QueueEntryType::SLRU_Protected);
+    auto it_b = add_segment(10, 10, IFileCachePriority::QueueEntryType::SLRU_Probationary);
+
+    const auto & user_id = origin.user_id;
+
+    std::atomic<bool> done = false;
+    std::atomic<size_t> violations = 0;
+    std::thread sampler([&]
+    {
+        while (!done.load(std::memory_order_relaxed))
+        {
+            const auto usage = priority.getUsageStatPerClient(state_guard.lock());
+            const auto it = usage.find(user_id);
+            if (it == usage.end() || it->second.size != 20 || it->second.elements != 2)
+                violations.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+
+    /// Each iteration promotes the probationary segment into the full protected queue,
+    /// which downgrades the other segment, so the two segments keep swapping queues.
+    for (size_t i = 0; i < 500; ++i)
+    {
+        auto & it = (i % 2 == 0) ? it_b : it_a;
+        ASSERT_TRUE(priority.tryIncreasePriority(*it, true, state_guard));
+    }
+
+    done = true;
+    sampler.join();
+
+    ASSERT_EQ(violations.load(), 0);
+    const auto usage = priority.getUsageStatPerClient(state_guard.lock());
+    ASSERT_EQ(usage.at(user_id).size, 20);
+    ASSERT_EQ(usage.at(user_id).elements, 2);
+}
+
+TEST_F(FileCacheTest, UsageSnapshotNeverExceedsCacheSize)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    /// Cache decrements are lock-free by design (see the lock order in `Guards.h`: `getSize(Lock)`
+    /// is exact only with respect to concurrent growth), so a sampler holding the state lock
+    /// cannot be excluded from a removal in flight. Every removal site therefore discharges the
+    /// per-client counters *before* the queue state, which makes a concurrent sample lag behind
+    /// the cache instead of over-reporting it. Pin that direction: a snapshot taken while entries
+    /// are being shrunk and removed must never claim more usage than the cache actually holds.
+
+    LRUFileCachePriority priority(
+        IFileCachePriority::QueueType::Main, /* max_size */10000, /* max_elements */100, "usage_snapshot_bound_test");
+    priority.setUsageTracker(std::make_shared<FileCacheUsageTracker>());
+
+    const std::string cache_path = caches_dir / "test_usage_snapshot_bound";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+
+    const auto key = DB::FileCacheKey::fromPath("usage_snapshot_bound_key");
+    const auto & origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    std::atomic<bool> done = false;
+    std::atomic<size_t> violations = 0;
+    std::atomic<size_t> samples = 0;
+    std::thread sampler([&]
+    {
+        while (!done.load(std::memory_order_relaxed))
+        {
+            auto lock = state_guard.lock();
+            const auto usage = priority.getUsageStatPerClient(lock);
+
+            size_t usage_size = 0;
+            size_t usage_elements = 0;
+            for (const auto & [ignored_user_id, stat] : usage)
+            {
+                usage_size += stat.size;
+                usage_elements += stat.elements;
+            }
+
+            if (usage_size > priority.getSize(lock) || usage_elements > priority.getElementsCount(lock))
+                violations.fetch_add(1, std::memory_order_relaxed);
+            samples.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+
+    for (size_t i = 0; i < 500; ++i)
+    {
+        IFileCachePriority::IteratorPtr it;
+        {
+            auto state_lock = state_guard.lock();
+            it = priority.add(key_metadata, /* offset */i * 10, /* size */10, &state_lock);
+        }
+
+        ASSERT_TRUE(it->getEntry()->tracksUsage());
+
+        /// A lock-free shrink, then a lock-free removal.
+        it->decrementSize(4);
+        {
+            auto write_lock = cache_guard.writeLock();
+            it->remove(write_lock);
+        }
+    }
+
+    done = true;
+    sampler.join();
+
+    ASSERT_GT(samples.load(), 0u);
+    ASSERT_EQ(violations.load(), 0u);
+
+    const auto usage = priority.getUsageStatPerClient(state_guard.lock());
+    const auto it = usage.find(origin.user_id);
+    ASSERT_TRUE(it == usage.end() || (it->second.size == 0 && it->second.elements == 0));
+    ASSERT_EQ(priority.getSize(state_guard.lock()), 0u);
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 0u);
+}
+
+TEST_F(FileCacheTest, UsageAccounting)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    const auto cache_path = caches_dir / "test_usage_metrics";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+
+    const FileCacheOriginInfo user_a("usage_metrics_user_a", 1);
+    const FileCacheOriginInfo user_b("usage_metrics_user_b", 1);
+    auto key_metadata_a = std::make_shared<KeyMetadata>(
+        FileCacheKey::fromPath("usage_metrics_key_a"), std::make_shared<const FileCacheOriginInfo>(user_a), &cache_metadata);
+    auto key_metadata_b = std::make_shared<KeyMetadata>(
+        FileCacheKey::fromPath("usage_metrics_key_b"), std::make_shared<const FileCacheOriginInfo>(user_b), &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    LRUFileCachePriority priority(IFileCachePriority::QueueType::Main, 100, 10);
+    priority.setUsageTracker(std::make_shared<FileCacheUsageTracker>());
+    IFileCachePriority::IteratorPtr it_a;
+    IFileCachePriority::IteratorPtr it_b;
+    {
+        auto state_lock = state_guard.lock();
+        it_a = priority.add(key_metadata_a, 0, 10, &state_lock);
+        it_b = priority.add(key_metadata_b, 0, 7, &state_lock);
+    }
+
+    ASSERT_TRUE(it_a->getEntry()->tracksUsage());
+    ASSERT_TRUE(it_b->getEntry()->tracksUsage());
+    auto usage = priority.getUsageStatPerClient(state_guard.lock());
+    ASSERT_EQ(usage.at(user_a.user_id).size, 10);
+    ASSERT_EQ(usage.at(user_a.user_id).elements, 1);
+    ASSERT_EQ(usage.at(user_b.user_id).size, 7);
+    ASSERT_EQ(usage.at(user_b.user_id).elements, 1);
+
+    {
+        auto state_lock = state_guard.lock();
+        it_a->incrementSize(5, state_lock);
+    }
+    it_a->decrementSize(3);
+    ASSERT_EQ(priority.getUsageStatPerClient(state_guard.lock()).at(user_a.user_id).size, 12);
+
+    it_a->invalidate();
+    ASSERT_FALSE(priority.getUsageStatPerClient(state_guard.lock()).contains(user_a.user_id));
+    it_a->remove(cache_guard.writeLock());
+
+    it_b->remove(cache_guard.writeLock());
+    ASSERT_TRUE(priority.getUsageStatPerClient(state_guard.lock()).empty());
+}
+
+TEST_F(FileCacheTest, SharedCacheAliasesHaveOneInstance)
+{
+    auto & factory = FileCacheFactory::instance();
+    factory.clear();
+    SCOPE_EXIT(factory.clear());
+
+    FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 10;
+    settings[FileCacheSetting::max_file_segment_size] = 10;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user] = true;
+
+    auto first = factory.getOrCreate("usage_metrics_alias_a", settings, "");
+    auto second = factory.getOrCreate("usage_metrics_alias_b", settings, "");
+
+    EXPECT_EQ(first, second);
+    EXPECT_EQ(factory.getAll().size(), 2);
+    EXPECT_EQ(factory.getUniqueInstances().size(), 1);
+    EXPECT_EQ(first->getName(), "usage_metrics_alias_a");
+    EXPECT_TRUE(first->exposesUsageMetricsPerUser());
 }
 
 TEST_F(FileCacheTest, RenameToIncludeSizeInNameFailureKeepsSegmentConsistent)

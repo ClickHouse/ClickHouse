@@ -121,6 +121,8 @@ public:
 
     FileCachePriorityPtr copy() const;
 
+    void setUsageTracker(FileCacheUsageTrackerPtr tracker) override;
+
     /// For tests which put entries into a chosen sub-queue with `addForRestore`.
     CachePriorityGuard & getPriorityGuardForTests() { return getPriorityGuard(); }
 

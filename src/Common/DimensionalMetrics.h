@@ -58,6 +58,7 @@ namespace DimensionalMetrics
             std::vector<LabelValues> initial_label_values = {},
             MetricType type_ = MetricType::Gauge);
         Metric & withLabels(LabelValues label_values);
+        bool removeLabels(const LabelValues & label_values);
 
         template <typename Func>
         void forEachMetric(Func && func) const

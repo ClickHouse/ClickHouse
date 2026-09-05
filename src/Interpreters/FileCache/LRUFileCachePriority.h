@@ -131,7 +131,18 @@ public:
         const OriginInfo & origin_info,
         const CacheStateGuard::Lock & lock) override;
 
-    FileCachePriorityPtr copy() const { return std::make_unique<LRUFileCachePriority>(getQueueType(), max_size, max_elements, description, state); }
+    FileCachePriorityPtr copy() const
+    {
+        auto result = std::make_unique<LRUFileCachePriority>(
+            getQueueType(),
+            max_size,
+            max_elements,
+            description,
+            state);
+        if (getUsageTracker())
+            result->setUsageTracker(getUsageTracker());
+        return result;
+    }
 
     /// See a comment near eviction_pos.
     void resetEvictionPos(EvictionCursor cursor) override

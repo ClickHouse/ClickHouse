@@ -67,6 +67,13 @@ SplitFileCachePriority::SplitFileCachePriority(
         description_ + "_" + getKeyTypePrefix(SegmentType::System));
 }
 
+void SplitFileCachePriority::setUsageTracker(FileCacheUsageTrackerPtr tracker)
+{
+    IFileCachePriority::setUsageTracker(std::move(tracker));
+    getPriority(SegmentType::Data).setUsageTracker(getUsageTracker());
+    getPriority(SegmentType::System).setUsageTracker(getUsageTracker());
+}
+
 SplitFileCachePriority::SegmentType
 SplitFileCachePriority::getPriorityType(const SegmentType & segment_type) const
 {
