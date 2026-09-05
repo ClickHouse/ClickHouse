@@ -106,7 +106,7 @@ ColumnPtr FunctionArrayReverse::executeImpl(const ColumnsWithTypeAndName & argum
 bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data)
 {
     size_t size = src_array_offsets.size();
-    res_data.reserve(size);
+    res_data.reserve(src_data.size());
 
     ColumnArray::Offset src_prev_offset = 0;
     for (size_t i = 0; i < size; ++i)
