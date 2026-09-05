@@ -71,7 +71,7 @@ StorageSystemProjectionParts::StorageSystemProjectionParts(const StorageID & tab
         {"move_ttl_info.min",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "Array of date and time values. Each element describes the minimum key value for a TTL MOVE rule."},
         {"move_ttl_info.max",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "Array of date and time values. Each element describes the maximum key value for a TTL MOVE rule."},
 
-        {"default_compression_codec",                   std::make_shared<DataTypeString>(), "The name of the codec used to compress this data part (in case when there is no explicit codec for columns)."},
+        {"default_compression_codec",                   std::make_shared<DataTypeString>(), "The name of the codec used to compress this data part (in case when there is no explicit codec for columns). `UNKNOWN` means this codec could not be recovered exactly from the part metadata."},
 
         {"recompression_ttl_info.expression",           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),   "The TTL expression."},
         {"recompression_ttl_info.min",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression within this part. Used to understand whether we have at least one row with expired TTL."},
@@ -262,7 +262,9 @@ void StorageSystemProjectionParts::processNextStorage(
 
         if (columns_mask[src_index++])
         {
-            if (part->default_codec)
+            if (part->default_codec_is_approximate)
+                columns[res_index++]->insert("UNKNOWN");
+            else if (part->default_codec)
                 columns[res_index++]->insert(part->default_codec->getCodecDesc()->formatForLogging());
             else
                 columns[res_index++]->insertDefault();

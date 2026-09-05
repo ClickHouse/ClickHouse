@@ -276,7 +276,6 @@ const std::unordered_set<int> late_typecheck_errors = {
 const std::unordered_set<std::string_view> excluded_functions = {
     /// Avoid depending on environment (e.g. current query, configuration, settings).
     "synonyms",
-    "catboostEvaluate",
     "aiGenerate",
     "aiClassify",
     "aiFilter",

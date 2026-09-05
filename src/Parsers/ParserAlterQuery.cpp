@@ -1367,7 +1367,7 @@ For other `ALTER` queries which only modify the metadata, you can use the [alter
 You can specify how long (in seconds) to wait for inactive replicas to execute all `ALTER` queries with the [replication_wait_for_inactive_replica_timeout](/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) setting.
 
 <Note>
-For all `ALTER` queries, if `alter_sync = 2` and some replicas are not active for more than the time, specified in the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
+For all `ALTER` queries, if `alter_sync = 2`, or `alter_sync = 3` on `ReplicatedMergeTree`, and some replicas are not active for more than the time, specified in the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
 </Note>
 
 ### Concurrent `ALTER` assignment on one table {#concurrent-alter-assignment-on-one-table}
