@@ -254,6 +254,9 @@ bool IDataType::hasDynamicSubcolumns() const
 
 DataTypePtr IDataType::tryGetSubcolumnType(std::string_view subcolumn_name) const
 {
+    if (auto result = tryGetSubcolumnTypeWithoutSerialization(subcolumn_name))
+        return *result;
+
     auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
     auto subcolumn_data = getSubcolumnData(subcolumn_name, data, {}, false);
     return subcolumn_data ? subcolumn_data->type : nullptr;
@@ -261,6 +264,13 @@ DataTypePtr IDataType::tryGetSubcolumnType(std::string_view subcolumn_name) cons
 
 DataTypePtr IDataType::getSubcolumnType(std::string_view subcolumn_name) const
 {
+    if (auto result = tryGetSubcolumnTypeWithoutSerialization(subcolumn_name))
+    {
+        if (*result)
+            return *result;
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
+    }
+
     auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
     return getSubcolumnData(subcolumn_name, data, {}, true)->type;
 }

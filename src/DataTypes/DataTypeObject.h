@@ -94,6 +94,9 @@ public:
     /// Shared data has type Array(Tuple(String, String)).
     static const DataTypePtr & getTypeOfSharedData();
 
+protected:
+    std::optional<DataTypePtr> tryGetSubcolumnTypeWithoutSerialization(std::string_view subcolumn_name) const override;
+
 private:
     /// Don't change these constants, it can break backward compatibility.
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR = 4;

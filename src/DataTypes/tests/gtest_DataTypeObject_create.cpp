@@ -1,4 +1,7 @@
+#include <Common/assert_cast.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -9,6 +12,29 @@
 #include <gtest/gtest.h>
 
 using namespace DB;
+
+namespace
+{
+
+void expectSubcolumnType(const IDataType & type, std::string_view subcolumn, std::string_view expected_name)
+{
+    SCOPED_TRACE(String(subcolumn));
+    auto result = type.tryGetSubcolumnType(subcolumn);
+    EXPECT_EQ(type.hasSubcolumn(subcolumn), !expected_name.empty());
+
+    if (expected_name.empty())
+    {
+        EXPECT_EQ(result, nullptr);
+        EXPECT_THROW(type.getSubcolumnType(subcolumn), Exception);
+        return;
+    }
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->getName(), expected_name);
+    EXPECT_TRUE(result->equals(*type.getSubcolumnType(subcolumn)));
+}
+
+}
 
 /// Regression tests for STID 1477-2777 (BuzzHouse serverfuzz, amd_msan, 2026-04-25):
 /// `DataTypeObject::createObject` accessed `object_type_argument->parameter`,
@@ -194,4 +220,96 @@ TEST(DataTypeObject, CreateJSONWithValidAST)
 
     auto type_default = factory.get("JSON");
     ASSERT_NE(type_default, nullptr);
+}
+
+TEST(DataTypeObject, TypeOnlySubcolumnLookup)
+{
+    auto type = DataTypeFactory::instance().get(
+        "JSON("
+        "max_dynamic_types=5, max_dynamic_paths=3, "
+        "typed_string String, typed_array Array(UInt64), "
+        "nested Array(JSON(inner UInt32)), nullable Nullable(String), "
+        "a Array(JSON), a.b Int64, `escaped.dot` UInt8, `spaced path` UInt8, obj.x UInt16)");
+    const auto & object = assert_cast<const DataTypeObject &>(*type);
+
+    const std::vector<std::pair<String, String>> subcolumns = {
+        {"typed_string", "String"},
+        {"typed_array", "Array(UInt64)"},
+        {"typed_array.size0", "UInt64"},
+        {"arbitrary", "Dynamic(max_types=5)"},
+        {"arbitrary.:`Int64`", "Nullable(Int64)"},
+        {"arbitrary.:`Array(String)`.size0", "UInt64"},
+        {"nested.inner", "Array(UInt32)"},
+        {"nested.inner.:`UInt32`", "Array(UInt32)"},
+        {"a.x", "Array(Dynamic)"},
+        {"a.b", "Int64"},
+        {"a.b.c", "Array(Dynamic)"},
+        {"a.:`Array(JSON)`.x", "Array(Dynamic)"},
+        {"a.:`String`", "Array(Dynamic)"},
+        {"nullable", "Nullable(String)"},
+        {"escaped.dot", "UInt8"},
+        {"spaced path", "UInt8"},
+        {"^`obj`", "JSON(max_dynamic_types=5, max_dynamic_paths=3, x UInt16)"},
+        {"@`obj`.x", "UInt16"},
+        {"@`missing`", "Dynamic(max_types=5)"},
+        {DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION, "Array(String)"},
+        {":`Int64`", ""},
+    };
+
+    for (const auto & [subcolumn, expected_name] : subcolumns)
+        expectSubcolumnType(object, subcolumn, expected_name);
+}
+
+TEST(DataTypeObject, TypeOnlySubcolumnLookupPreservesSerializationPrecedence)
+{
+    auto & factory = DataTypeFactory::instance();
+
+    auto array_collision = factory.get("JSON(a Array(UInt64), a.size0 String)");
+    expectSubcolumnType(*array_collision, "a.size0", "UInt64");
+
+    auto tuple_collision = factory.get("JSON(a Tuple(size0 String), a.size0 UInt64)");
+    expectSubcolumnType(*tuple_collision, "a.size0", "String");
+
+    auto multiple_prefixes = factory.get("JSON(a Array(JSON), a.b Int64)");
+    expectSubcolumnType(*multiple_prefixes, "a.b", "Int64");
+    expectSubcolumnType(*multiple_prefixes, "a.b.c", "Array(Dynamic)");
+
+    auto special_name_collision = factory.get(fmt::format(
+        "JSON({} UInt8)", DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION));
+    expectSubcolumnType(
+        *special_name_collision, DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION, "UInt8");
+
+    auto prefixed_name_collision = std::make_shared<DataTypeObject>(
+        DataTypeObject::SchemaFormat::JSON,
+        std::unordered_map<String, DataTypePtr>{{"^`obj`", factory.get("JSON(x UInt8)")}});
+    expectSubcolumnType(*prefixed_name_collision, "^`obj`.x", "UInt8");
+}
+
+TEST(DataTypeObject, TypeOnlySubcolumnLookupUsesCanonicalPathNames)
+{
+    auto nested_type = DataTypeFactory::instance().get("JSON(x UInt8)");
+    auto object = std::make_shared<DataTypeObject>(
+        DataTypeObject::SchemaFormat::JSON,
+        std::unordered_map<String, DataTypePtr>{
+            {"escaped.dot", nested_type},
+            {R"(back\slash)", nested_type},
+            {"back`tick", nested_type},
+            {"spaced path", nested_type},
+        });
+
+    expectSubcolumnType(*object, "escaped.dot.x", "UInt8");
+    expectSubcolumnType(*object, R"(back\slash.x)", "UInt8");
+    expectSubcolumnType(*object, "back`tick.x", "UInt8");
+    expectSubcolumnType(*object, "spaced path.x", "UInt8");
+}
+
+TEST(DataTypeObject, TypeOnlySubcolumnLookupDefersToCustomSerialization)
+{
+    auto object = std::make_shared<DataTypeObject>(
+        DataTypeObject::SchemaFormat::JSON,
+        std::unordered_map<String, DataTypePtr>{{"a", DataTypeFactory::instance().get("UInt8")}});
+    auto serialization = object->getDefaultSerialization();
+    object->setCustomization(std::make_unique<DataTypeCustomDesc>(DataTypeCustomNamePtr{}, std::move(serialization)));
+
+    expectSubcolumnType(*object, "a", "UInt8");
 }

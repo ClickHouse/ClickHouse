@@ -7,6 +7,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 
 #include <memory>
+#include <optional>
 
 #include <boost/noncopyable.hpp>
 #include <fmt/format.h>
@@ -361,6 +362,10 @@ public:
     const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }
 
 protected:
+    /// Returns nullopt if this type doesn't provide a serialization-free lookup.
+    /// An engaged optional with a null pointer means that the subcolumn doesn't exist.
+    virtual std::optional<DataTypePtr> tryGetSubcolumnTypeWithoutSerialization(std::string_view) const { return std::nullopt; }
+
     static std::unique_ptr<SubstreamData> getSubcolumnData(
         std::string_view subcolumn_name,
         const SubstreamData & data,
