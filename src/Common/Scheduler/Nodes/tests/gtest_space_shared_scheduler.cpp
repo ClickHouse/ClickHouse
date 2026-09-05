@@ -3313,3 +3313,183 @@ TEST(SchedulerSpaceShared, ForcedSpillIncludesProcessorRegisteredDuringEpoch)
         MemorySpillScheduler::ForcedSpillOutcome::Progress);
 }
 
+
+/// With the default policy, the largest requester remains eligible at its original position.
+TEST(SchedulerSpaceShared, DefaultEvictionKeepsLargestRequesterFirst)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation requester(queue, "requester", 8000);
+    ManualAllocation peer(queue, "peer", 2000);
+    requester.increaseAsync(1000);
+
+    EXPECT_TRUE(requester.waitKillsFor(1, std::chrono::seconds(5)));
+    EXPECT_EQ(peer.killCount(), 0u);
+    EXPECT_EQ(requester.pressureCount(), 0u);
+}
+
+
+/// Following a child's suction owner must not cause an unconstrained parent to evict another query.
+TEST(SchedulerSpaceShared, AttachedParentWithCapacityWaitsForChildVictim)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation requester(queue, "requester", 6000, true, protectedFromEvictionPolicy());
+    auto victim = std::make_unique<ManualAllocation>(queue, "victim", 4000);
+    requester.increaseAsync(2000);
+    ASSERT_TRUE(victim->waitKillsFor(1, std::chrono::seconds(5)));
+
+    std::promise<void> attached;
+    t.scheduler.event_queue.enqueue([&]
+    {
+        auto subtree = r.root_node;
+        EXPECT_EQ(static_cast<ISpaceSharedNode *>(subtree.get())->increase, nullptr);
+        t.scheduler.removeChild(subtree.get());
+        subtree->basename = "inner";
+
+        auto outer = std::make_shared<AllocationLimit>(t.scheduler.event_queue, SchedulerNodeInfo{}, 20000);
+        r.root_node = outer;
+        outer->attachChild(subtree);
+        t.scheduler.attachChild(outer);
+
+        EXPECT_EQ(outer->getLocalSuctionAllocation(), &requester);
+        EXPECT_EQ(requester.killCount(), 0u);
+        EXPECT_EQ(victim->killCount(), 1u);
+        attached.set_value();
+    });
+    attached.get_future().get();
+
+    victim.reset();
+    ASSERT_TRUE(requester.waitSyncedFor(std::chrono::seconds(5)));
+    EXPECT_EQ(requester.size(), 8000);
+    EXPECT_EQ(requester.killCount(), 0u);
+}
+
+
+/// Reserved capacity changes the workload fit check, but cannot bypass the query's suction cap.
+TEST(SchedulerSpaceShared, SuctionCapAppliesWhenReservedCapacityMakesGrowthFit)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ResourceAllocation::MemoryPressurePolicy policy;
+    policy.protect_from_eviction = true;
+    policy.suction_reserved_bytes = 3000;
+    policy.suction_max_allocation_bytes = 5000;
+    ManualAllocation requester(queue, "requester", 3000, true, policy);
+    ManualAllocation peer(queue, "peer", 4000, true, policy);
+    requester.increaseAsync(3000);
+
+    EXPECT_TRUE(requester.waitKillsFor(1, std::chrono::seconds(5)));
+    EXPECT_EQ(requester.size(), 3000);
+    EXPECT_EQ(peer.killCount(), 0u);
+}
+
+
+/// The common policy owns one suction slot even when it has no allocation limit of its own.
+/// Run in a subprocess because admitting two owners used to trigger a scheduler-thread assertion.
+TEST(SchedulerSpaceShared, SiblingLimitsSharePolicySuctionSlot)
+{
+    for (const String & policy_kind : {String("fair"), String("precedence")})
+    {
+        SCOPED_TRACE(policy_kind);
+        ASSERT_EXIT(
+            {
+                SpaceSharedTest t;
+                SpaceSharedResourceHolder r(t);
+                SpaceSharedNodePtr policy;
+                if (policy_kind == "fair")
+                    policy = std::make_shared<FairAllocation>(t.scheduler.event_queue, SchedulerNodeInfo{});
+                else
+                    policy = std::make_shared<PrecedenceAllocation>(t.scheduler.event_queue, SchedulerNodeInfo{});
+                ISpaceSharedNode * policy_ptr = policy.get();
+
+                auto first_limit = std::make_shared<AllocationLimit>(t.scheduler.event_queue, SchedulerNodeInfo{}, 10000);
+                first_limit->basename = "first";
+                auto first_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, SchedulerNodeInfo{});
+                first_queue->basename = "queue";
+                AllocationQueue * first_queue_ptr = first_queue.get();
+                first_limit->attachChild(first_queue);
+                policy->attachChild(first_limit);
+
+                auto second_limit = std::make_shared<AllocationLimit>(t.scheduler.event_queue, SchedulerNodeInfo{}, 10000);
+                second_limit->basename = "second";
+                auto second_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, SchedulerNodeInfo{});
+                second_queue->basename = "queue";
+                AllocationQueue * second_queue_ptr = second_queue.get();
+                second_limit->attachChild(second_queue);
+                policy->attachChild(second_limit);
+
+                r.root_node = policy;
+                first_queue.reset();
+                second_queue.reset();
+                first_limit.reset();
+                second_limit.reset();
+                policy.reset();
+                r.registerResource();
+
+                ManualAllocation first(first_queue_ptr, "first", 6000, true, protectedFromEvictionPolicy());
+                auto first_victim = std::make_unique<ManualAllocation>(first_queue_ptr, "first_victim", 4000);
+
+                auto waiting_policy = protectedFromEvictionPolicy();
+                waiting_policy.max_allocation_before_suction_bytes = 1;
+                ManualAllocation second(second_queue_ptr, "second", 6000, true, waiting_policy);
+                auto second_victim = std::make_unique<ManualAllocation>(second_queue_ptr, "second_victim", 4000);
+                second.protectAfterPressureRounds(1);
+
+                first.increaseAsync(2000);
+                if (!first_victim->waitKillsFor(1, std::chrono::seconds(5)))
+                    std::_Exit(2);
+
+                second.increaseAsync(2000);
+                if (!second.waitPressureCountFor(1, std::chrono::seconds(5)))
+                    std::_Exit(3);
+                second.recoveryCheckpoint();
+
+                std::promise<void> inspected;
+                auto inspected_future = inspected.get_future();
+                t.scheduler.event_queue.enqueue([&]
+                {
+                    EXPECT_FALSE(second_queue_ptr->retrySuction(second));
+                    EXPECT_EQ(second_victim->killCount(), 0u);
+                    EXPECT_EQ(second.killCount(), 0u);
+                    if (::testing::Test::HasFailure())
+                        std::_Exit(4);
+                    EXPECT_EQ(policy_ptr->getSuctionAllocation(), &first);
+                    inspected.set_value();
+                });
+                if (inspected_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready)
+                    std::_Exit(5);
+
+                /// Completing the first request must wake the sibling waiting for the common slot.
+                first_victim.reset();
+                if (!first.waitSyncedFor(std::chrono::seconds(5)))
+                    std::_Exit(6);
+                if (!second_victim->waitKillsFor(1, std::chrono::seconds(5)))
+                    std::_Exit(7);
+                second_victim.reset();
+                if (!second.waitSyncedFor(std::chrono::seconds(5)))
+                    std::_Exit(8);
+                EXPECT_EQ(first.size(), 8000);
+                EXPECT_EQ(second.size(), 8000);
+                EXPECT_EQ(first.killCount(), 0u);
+                EXPECT_EQ(second.killCount(), 0u);
+
+                /// Exit without teardown so a failing ownership path cannot hang the test runner.
+                std::_Exit(::testing::Test::HasFailure() ? 1 : 0);
+            },
+            ::testing::ExitedWithCode(0),
+            "");
+    }
+}
