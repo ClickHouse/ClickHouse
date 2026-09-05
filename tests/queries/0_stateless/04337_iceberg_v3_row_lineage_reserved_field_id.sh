@@ -49,9 +49,9 @@ PY
 # A spec-compliant reader ignores the reserved field id and returns the projected column.
 ${CLICKHOUSE_CLIENT} --query "SELECT x FROM icebergLocal('${ICEBERG_TABLE_PATH}') ORDER BY x;"
 
-# Conversely, 2147483447 (Integer.MAX_VALUE - 200) is the highest field id a table may use, i.e.
-# NOT reserved. An unmapped column with that id is a genuine schema mismatch and must still be
-# rejected, so the reserved-range check must be strictly greater-than.
+# A column with a field id outside of the table schema is skipped the same way, no matter whether
+# the id is in the reserved range: it may also be a column that was dropped from the table, because
+# `DROP COLUMN` is a metadata-only operation that leaves existing data files untouched.
 ICEBERG_TABLE_PATH_UNMAPPED="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_v3_unmapped"
 rm -rf "${ICEBERG_TABLE_PATH_UNMAPPED}"
 
@@ -69,17 +69,19 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 path = sys.argv[1]
-x = pa.field("x", pa.int32(), nullable=False, metadata={b"PARQUET:field_id": b"1"})
 # 2147483447 = Integer.MAX_VALUE - 200: the highest id a table may use, so NOT reserved.
-extra = pa.field("extra", pa.int64(), nullable=True, metadata={b"PARQUET:field_id": b"2147483447"})
-table = pa.table(
-    {"x": pa.array([1], pa.int32()), "extra": pa.array([0], pa.int64())},
-    schema=pa.schema([x, extra]),
+# The unmapped column is named `x` too, as a column that was dropped and then re-added under the
+# same name would be: matching by field id must win, so the query must return 1 and not 777.
+extra = pa.field("x", pa.int64(), nullable=True, metadata={b"PARQUET:field_id": b"2147483447"})
+x = pa.field("x", pa.int32(), nullable=False, metadata={b"PARQUET:field_id": b"1"})
+table = pa.Table.from_arrays(
+    [pa.array([777], pa.int64()), pa.array([1], pa.int32())],
+    schema=pa.schema([extra, x]),
 )
 pq.write_table(table, path)
 PY
 
-${CLICKHOUSE_CLIENT} --query "SELECT x FROM icebergLocal('${ICEBERG_TABLE_PATH_UNMAPPED}') ORDER BY x;" 2>&1 | grep -oF "ICEBERG_SPECIFICATION_VIOLATION" | head -1
+${CLICKHOUSE_CLIENT} --query "SELECT x FROM icebergLocal('${ICEBERG_TABLE_PATH_UNMAPPED}') ORDER BY x;"
 
 # Cleanup
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_v3_row_lineage;"
