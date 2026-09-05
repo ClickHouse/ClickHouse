@@ -215,12 +215,19 @@ def phase_instances(phase_clusters, phase=None):
 def _wait_serving_requests(cluster, node, timeout):
     import helpers.keeper_utils as keeper_utils
     # A server started a moment ago has not necessarily bound its Keeper port yet, and
-    # wait_until_connected lets the refused connect propagate. Complete readiness is not
+    # wait_until_connected lets the refused connect propagate. A server whose cluster has no
+    # leader yet answers "not serving requests" instead of refusing, so that wait gets the
+    # remaining budget too and both paths end at one deadline. Complete readiness is not
     # probed because that probe is a client read, which a pinned old image can drop.
     deadline = time.time() + timeout
     while True:
         try:
-            keeper_utils.wait_until_connected(cluster, node, wait_complete_readiness=False)
+            keeper_utils.wait_until_connected(
+                cluster,
+                node,
+                timeout=max(deadline - time.time(), 0.0),
+                wait_complete_readiness=False,
+            )
             return
         except OSError:
             if time.time() >= deadline:
