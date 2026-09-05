@@ -305,7 +305,9 @@ def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
     )
 
 
-def _filter_unaffected_jobs(jobs, workflow_config, changed_files, affected_dockers=()):
+def _filter_unaffected_jobs(
+    jobs, workflow_config, changed_files, affected_dockers=(), forced_jobs=()
+):
     """
     Update workflow_config.filtered_jobs for jobs unaffected by changed_files.
 
@@ -317,6 +319,11 @@ def _filter_unaffected_jobs(jobs, workflow_config, changed_files, affected_docke
     Fix 2 (Bug 3) — all_required_artifacts is propagated to a fixed point after
     the initial sweep.  When an unaffected job is rescued because an affected job
     requires it, that rescued job's own dependencies are also rescued.
+
+    Jobs in forced_jobs (force-included by a workflow filter hook returning
+    Workflow.FILTER_HOOK_FORCE_JOB) are treated as affected, so they run even
+    when no changed file matches their digest_config, and their dependencies
+    are kept alive through the usual rescue propagation.
     """
     affected_artifacts = []
     unaffected_jobs = {}  # name → job
@@ -330,7 +337,10 @@ def _filter_unaffected_jobs(jobs, workflow_config, changed_files, affected_docke
 
         is_affected = False
 
-        if any(dep in affected_artifacts for dep in job.requires):
+        if job.name in forced_jobs:
+            print(f"Job [{job.name}] is force-included by a workflow filter hook")
+            is_affected = True
+        elif any(dep in affected_artifacts for dep in job.requires):
             print(f"Job [{job.name}] requires affected artifacts")
             is_affected = True
         elif job.get_docker_image_name() in affected_dockers:
@@ -486,6 +496,14 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             info=message,
         )
 
+    if env.RUN_ID:
+        # Resolved here, in the first job of the run, so that every job
+        # inherits one value with this environment. A rerun runs this job
+        # again and reads back the same `created_at`.
+        env.WORKFLOW_START_TIME = GH.get_workflow_run_created_at()
+        print(f"NOTE: Workflow run started at [{env.WORKFLOW_START_TIME}]")
+        env.dump()
+
     # refresh PR data
     if env.PR_NUMBER > 0:
         title, body, labels = GH.get_pr_title_body_labels()
@@ -619,6 +637,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             )
         )
 
+    force_jobs = set()
     if results[-1].is_ok() and workflow.workflow_filter_hooks:
         sw_ = Utils.Stopwatch()
         try:
@@ -639,6 +658,11 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                             )
                             workflow_config.set_job_as_filtered(job.name, reason)
                             continue
+                        if reason == Workflow.FILTER_HOOK_FORCE_JOB:
+                            print(
+                                f"Job [{job.name}] set to forced by custom hook [{hook.__name__}] - exempt from filtering by changed files"
+                            )
+                            force_jobs.add(job.name)
             status = Result.Status.OK
             workflow_config.dump()
             info = ""
@@ -680,7 +704,11 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 print(f"Affected docker images [{all_affected_dockers}]")
 
             _filter_unaffected_jobs(
-                workflow.jobs, workflow_config, changed_files, all_affected_dockers
+                workflow.jobs,
+                workflow_config,
+                changed_files,
+                all_affected_dockers,
+                force_jobs,
             )
 
             workflow_config.dump()
