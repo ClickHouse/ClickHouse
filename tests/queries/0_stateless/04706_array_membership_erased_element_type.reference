@@ -149,6 +149,10 @@ no conversion	0
 -- constant array, varying needle: the rows are paired against the array in batches, so the answer must not depend on where a batch ends
 0	0	0	75
 150	150	0
+1	1	2	1
+-- notHas resolves has through the same factory, so the two stay negations of one another
+0	1
+1	0
 -- arrayExists rewritten into has: the rewrite builds its own resolver, which must reach the same path
 1
 1

@@ -659,6 +659,28 @@ FROM (
     FROM t_const_batched
 );
 
+-- A constant array holding two alternatives cannot be compared as a whole batch, and its fallback
+-- keeps comparing the constant, so a UInt8 needle still reaches a UInt64 element. 251 elements fit
+-- 100 rows in one batch but not 300, so the two row counts must answer alike.
+WITH arrayConcat(arrayMap(x -> x::UInt64::Dynamic, range(0, 1000, 4)), ['s'::Dynamic]) AS a
+SELECT
+    (SELECT DISTINCT has(a, materialize(4::UInt8)) FROM numbers(100)) AS has_one_batch,
+    (SELECT DISTINCT has(a, materialize(4::UInt8)) FROM numbers(300)) AS has_several_batches,
+    (SELECT DISTINCT indexOf(a, materialize(4::UInt8)) FROM numbers(300)) AS index_of_several_batches,
+    (SELECT DISTINCT countEqual(a, materialize(4::UInt8)) FROM numbers(300)) AS count_equal_several_batches;
+
+SELECT '-- notHas resolves has through the same factory, so the two stay negations of one another';
+
+-- The JSON arm needs the setting: without it the typed path counts as present and both answers are
+-- the same whichever resolver notHas holds.
+SELECT has(json, 'a') AS json_has, notHas(json, 'a') AS json_not_has
+FROM (SELECT CAST('{"b": 2}', 'JSON(a Nullable(Int64))') AS json)
+SETTINGS type_json_skip_null_typed_paths = 1;
+
+WITH arrayConcat(arrayMap(x -> x::UInt64::Dynamic, range(0, 1000, 4)), ['s'::Dynamic]) AS a
+SELECT DISTINCT has(a, materialize(4::UInt8)) AS array_has, notHas(a, materialize(4::UInt8)) AS array_not_has
+FROM numbers(300);
+
 SELECT '-- arrayExists rewritten into has: the rewrite builds its own resolver, which must reach the same path';
 
 DROP TABLE IF EXISTS t_rewritten;

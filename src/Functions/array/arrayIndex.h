@@ -1375,7 +1375,14 @@ private:
                     batch_arguments, result_type, *batch_array, batch_needle, element_type, needle_type);
 
                 if (!batch_result)
-                    batch_result = executeArrayAfterErasedEquality(batch_arguments, result_type);
+                {
+                    /// The fallback compares a constant array's elements as Fields and a materialized
+                    /// one's as columns, and for erased elements the two do not agree, so a batch has
+                    /// to hand it the constant.
+                    ColumnsWithTypeAndName const_arguments = batch_arguments;
+                    const_arguments[0].column = arguments[0].column->cloneResized(batch_rows);
+                    batch_result = executeArrayAfterErasedEquality(const_arguments, result_type);
+                }
 
                 batch_result = batch_result->convertToFullColumnIfConst();
             }
