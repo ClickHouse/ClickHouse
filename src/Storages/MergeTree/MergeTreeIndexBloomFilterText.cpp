@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 
 #include <Columns/ColumnArray.h>
+#include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
@@ -624,6 +625,13 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     if (const auto is_case_insensitive_scenario = is_has_token_case_insensitive && lowercase_key_index;
         function_name.starts_with("hasToken") && ((!is_has_token_case_insensitive && key_index) || is_case_insensitive_scenario))
     {
+        /// A needle holding a token separator is invalid for the throwing `hasToken` variants, and the
+        /// brute-force scan reports that. Tokenizing it here would instead prune the granule that owes
+        /// the exception, turning it into an empty result, so leave those needles to the scan. The
+        /// `OrNull` variants yield NULL rather than an error and are unaffected.
+        if (!function_name.ends_with("OrNull") && std::ranges::any_of(const_value.safeGet<String>(), isTokenSeparator))
+            return false;
+
         out.key_column = is_case_insensitive_scenario ? *lowercase_key_index : *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);

@@ -46,3 +46,8 @@ mapkey tokenbf absent-key empty LC(FixedString), subcolumn
 1024
 mapkey tokenbf absent-key empty LC(FixedString)
 1024
+tokenbf hasToken LowCardinality(Nullable)
+1
+ngrambf hasToken LowCardinality(Nullable)
+1
+tokenbf hasToken separator needle raises

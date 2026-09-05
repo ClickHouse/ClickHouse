@@ -137,6 +137,19 @@ SET optimize_functions_to_subcolumns = 0;
 SELECT 'mapkey tokenbf absent-key empty LC(FixedString)';
 SELECT count() FROM t_map_tokenbf WHERE attrs['missing'] = CAST('', 'LowCardinality(FixedString(3))');
 
+-- Bloom-filter value gate with a non-null LowCardinality(Nullable(String)) needle. The map sections
+-- above put the wrapper on the KEY, which a different gate decides, so assert pruning here too.
+SELECT 'tokenbf hasToken LowCardinality(Nullable)';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_tokenbf WHERE hasToken(s, CAST('rare', 'LowCardinality(Nullable(String))'))) WHERE explain ILIKE '%Granules: 1/128%';
+SELECT 'ngrambf hasToken LowCardinality(Nullable)';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngrambf WHERE hasToken(s, CAST('rareword', 'LowCardinality(Nullable(String))'))) WHERE explain ILIKE '%Granules: 1/128%';
+
+-- `hasToken` rejects a needle holding a token separator. The index must leave such a predicate to
+-- the scan: pruning the granule that owes the exception would turn the error into an empty result.
+SELECT 'tokenbf hasToken separator needle raises';
+SELECT count() FROM t_tokenbf WHERE hasToken(s, 'bad needle'); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM t_tokenbf WHERE hasToken(s, toLowCardinality('bad needle')); -- { serverError BAD_ARGUMENTS }
+
 DROP TABLE t_fixed_ngrambf;
 DROP TABLE t_fixed_text;
 DROP TABLE t_text;
