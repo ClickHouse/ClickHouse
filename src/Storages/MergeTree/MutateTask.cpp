@@ -2990,6 +2990,16 @@ private:
             {
                 /// pass
             }
+            else if (ctx->files_to_skip.contains(rename_to))
+            {
+                /// The mutation pipeline rewrites this stream (`collectFilesToSkip` lists the
+                /// streams of the mutated columns), so the writer produces the file under this
+                /// name - the same way the unchanged-files loop below skips such streams.
+                /// Creating the hardlink would make the writer open a file hardlinked to the
+                /// source part and fail (the source part's files are read-only).
+                /// This happens when a rename targets a mutated column's stream, e.g. a rename
+                /// applied to the part together with an UPDATE of the renamed column.
+            }
             else
             {
                 ctx->new_data_part->getDataPartStorage().createHardLinkFrom(
@@ -3307,25 +3317,42 @@ private:
             ctx->out.reset();
         }
 
+        /// Apply the renames to the inherited checksums in two phases, reading every moved entry
+        /// from the source part's checksums - the physical rename above is a hardlink of
+        /// `rename_from` from the source part, so that is the checksum of the file the new part
+        /// actually has under `rename_to`.
+        ///
+        /// The rename map can contain a cycle: a chain of RENAME COLUMN mutations applied to the
+        /// part in one go can compose into a swap (`a` -> `b`, `b` -> `a`), e.g. when a part that
+        /// still has the pre-chain names receives the whole chain through alter conversions.
+        /// Applying such a map one entry at a time in place would first overwrite `b`'s entry
+        /// (still needed as the source of the second rename) with `a`'s and then move that same
+        /// entry back, committing a part whose `columns.txt` lists a column with no streams in
+        /// `checksums.txt` - reading it then fails with "Stream ... is not found" and the part is
+        /// detached as broken on the next server start.
+        ///
+        /// A stream the mutation pipeline rewrote takes precedence over a rename that targets the
+        /// same name: the hardlink loop skips such renames (`files_to_skip`), so the file under
+        /// that name is the writer's and so must be its checksum.
+        std::vector<std::pair<String, MergeTreeDataPartChecksums::Checksum>> moved_checksums;
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
+            if (!rename_to.empty() && !ctx->files_to_skip.contains(rename_to))
+            {
+                auto it = ctx->source_part->checksums.files.find(rename_from);
+                if (it != ctx->source_part->checksums.files.end())
+                    moved_checksums.emplace_back(rename_to, it->second);
+            }
+
             /// A stream the writer rewrote for the new column type must survive: stale-file
             /// accounting (`collectFilesForRenames`) can flag it for removal because its state-less
             /// stream enumeration does not see data-dependent substreams (e.g. `variant_discr` of a
             /// column that became Dynamic/JSON in this mutation).
-            if (written_files.contains(rename_from))
-                continue;
-
-            if (rename_to.empty() && ctx->new_data_part->checksums.files.contains(rename_from))
-            {
+            if (!written_files.contains(rename_from))
                 ctx->new_data_part->checksums.files.erase(rename_from);
-            }
-            else if (ctx->new_data_part->checksums.files.contains(rename_from))
-            {
-                ctx->new_data_part->checksums.files[rename_to] = ctx->new_data_part->checksums.files[rename_from];
-                ctx->new_data_part->checksums.files.erase(rename_from);
-            }
         }
+        for (auto & [moved_to, checksum] : moved_checksums)
+            ctx->new_data_part->checksums.files[moved_to] = std::move(checksum);
 
         MutationHelpers::finalizeMutatedPart(
             ctx->source_part,
