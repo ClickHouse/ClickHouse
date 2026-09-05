@@ -1239,7 +1239,14 @@ final step uses hashing or sorted-prefix deduplication, and can increase work in
 such as sorting. The sorted-prefix optimization itself does not spill and may retain a large range
 of rows sharing the same prefix in memory.
 
-When the threshold is exceeded, the distinct rows collected so far are sorted and written into a temporary file, and the rest of the data is processed the same way. After all data is read, the sorted files are merged and the remaining distinct rows are output. Rows stop streaming to the client as soon as the first spill happens: the remaining distinct rows are returned only after the merge. If a `LIMIT` is reached before the memory threshold, no spilling happens and the query still finishes early.
+When the threshold is exceeded, the keys retained by the hash set are extracted in batches and
+written into sorted temporary runs. The set stays allocated until its last keys have been extracted.
+Subsequent input is sorted into further runs, some of which may remain in memory. After all input has
+been read, the runs are merged to remove duplicates and keys already emitted before spilling.
+
+Rows found before spilling can be returned as they are processed. Once spilling starts, producing
+the remaining distinct rows requires reading the rest of the input. If a `LIMIT` is reached before
+the memory threshold, no spilling happens and the query still finishes early.
 
 When the query also has an `ORDER BY` at the same level, the `DISTINCT` runs after the sort and has to return the rows in the sorted order: after the merge, the spilled rows are additionally sorted back into their original order (this sort can also use the disk).
 

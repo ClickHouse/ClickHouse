@@ -1,14 +1,12 @@
 <test>
-    <!-- Key shapes that the DISTINCT hash set cannot store as plain fixed or string keys (several
-         variable-width columns, `LowCardinality`): with the spilling armed (the default), the spilling
-         transform keeps them as serialized keys so that it can rebuild the first spilled run from the
-         set; with the spilling disabled, the in-memory transform keeps only a hash per key. Nothing
-         spills here, so the two variants measure the cost of having the spilling armed. -->
+    <!-- These key shapes use serialized storage in `ExternalDistinctTransform` and hash-only storage
+         when spilling is disabled. A high absolute threshold with the ratio disabled selects the
+         external transform without spilling on these inputs, measuring the cost of extractable keys. -->
     <substitutions>
         <substitution>
             <name>external</name>
             <values>
-                <value>max_bytes_ratio_before_external_distinct = 0.5</value>
+                <value>max_bytes_ratio_before_external_distinct = 0, max_bytes_before_external_distinct = '1T'</value>
                 <value>max_bytes_ratio_before_external_distinct = 0, max_bytes_before_external_distinct = 0</value>
             </values>
         </substitution>

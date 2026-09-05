@@ -14,4 +14,19 @@
 1
 100
 1000	7000
-1
+array	1	1
+constant_limit	0	0
+constant_payload	1	1
+constants	0	0
+fixed_string	1	1
+float_classes	1	1
+int128	1	1
+low_cardinality	1	1
+multiple_keys	1	1
+non_comparable	1	1
+non_comparable_plan	0	0
+nullable_number	1	1
+nullable_string	1	1
+service_name	1	1
+string	1	1
+tuple	1	1
