@@ -44,6 +44,10 @@ set -euo pipefail
 # Usage:
 #   utils/continue-all-prs.sh [--workers N] [options]
 #
+# Two-model example:
+#   utils/continue-all-prs.sh --agent codex \
+#       --triage-model gpt-5.6-luna --model gpt-5.6-sol
+#
 # Options:
 #   --workers N           Number of parallel workers / worktrees (default: 1).
 #   --mine                Select PRs you authored.
@@ -71,26 +75,31 @@ set -euo pipefail
 #                         general-purpose GPT models. For recognized GPT models,
 #                         API cost is estimated from input, cached-input and
 #                         output token usage using the model's published rates.
+#   --triage-model MODEL  Enable two-model mode. MODEL performs the initial PR
+#                         check and can perform a clean base-branch merge. If a
+#                         conflict or code change is needed, it hands
+#                         a task description to the coding model selected by
+#                         --model. Requires --model and `bwrap`.
 #   --effort LEVEL        Reasoning effort for each worker; default: medium.
 #                         Passed as `--effort` to `claude` and as the
 #                         `model_reasoning_effort` setting to `codex`.
-#   --api-key KEY         Use a custom credential for the workers. `claude`
-#                         reads it as `ANTHROPIC_API_KEY`; `codex` reads it as
-#                         `CODEX_ACCESS_TOKEN`. NOTE: visible in `ps`
+#   --api-key KEY         Use a custom API key for the workers. `claude` reads
+#                         `ANTHROPIC_API_KEY`; `codex` logs into a worker-local
+#                         `CODEX_HOME`. NOTE: visible in `ps`
 #                         while running; prefer --api-key-file.
-#   --api-key-file FILE   Read the custom credential from FILE (not shown
-#                         in `ps`). Default: whatever credential or login the
+#   --api-key-file FILE   Read the custom API key from FILE (not shown
+#                         in `ps`). Default: whatever API key or login the
 #                         selected agent already uses.
 #   --no-status           Disable the persistent bottom status bar (two lines:
 #                         elapsed, rounds, ok/fail counts, cost and token totals,
 #                         plus the list of PR numbers needing attention). The bar
 #                         is shown by default on a TTY.
-#   --max-continue N      Max agent turns per PR. The worker runs once and is
-#                         then resumed (same session) until it signals it is done
-#                         or this cap is hit (default: 4). The worker is told not
-#                         to run anything in the background and to push before
-#                         ending each turn, so prepared changes don't get stranded
-#                         unpushed.
+#   --max-continue N      Max agent turns per PR (per model in two-model mode).
+#                         The worker runs once and is then resumed (same session)
+#                         until it signals it is done or this cap is hit
+#                         (default: 4). The worker is told not to run anything in
+#                         the background and to push before ending each turn, so
+#                         prepared changes don't get stranded unpushed.
 #   --once                Process every open PR once and exit, instead of
 #                         looping forever in rounds.
 #   --skip-submodules     Create worker worktrees without hardlinking submodules
@@ -151,8 +160,9 @@ CCACHE_SIZE="200G"     # ccache max size, applied via CCACHE_MAXSIZE env (not pe
 EFFORT="medium"        # reasoning effort passed to each worker
 AGENT="claude"         # agent CLI used by workers: claude or codex
 MODEL=""               # model passed to the selected agent (empty -> its configured default)
+TRIAGE_MODEL=""        # optional first-pass model; MODEL becomes the coding model
 SHOW_STATUS=1          # show the persistent bottom status bar (TTY only; --no-status disables)
-API_KEY=""             # custom provider credential for worker processes (--api-key)
+API_KEY=""             # custom provider API key for worker processes (--api-key)
 API_KEY_FILE=""        # ...or read it from this file (safer: not visible in `ps`)
 API_KEY_PROVIDED=0      # whether either custom-key option was supplied
 MIN_FREE_GB="${CONTINUE_ALL_PRS_MIN_FREE_GB:-100}"
@@ -180,6 +190,7 @@ while [[ $# -gt 0 ]]; do
         --ccache-size)    CCACHE_SIZE="$2"; shift 2 ;;
         --agent)          AGENT="$2"; shift 2 ;;
         --model)          MODEL="$2"; shift 2 ;;
+        --triage-model)   TRIAGE_MODEL="$2"; shift 2 ;;
         --effort)         EFFORT="$2"; shift 2 ;;
         --no-status)      SHOW_STATUS=0; shift ;;
         --api-key)        API_KEY="$2"; API_KEY_PROVIDED=1; shift 2 ;;
@@ -211,8 +222,24 @@ case "$AGENT" in
     *) echo "${S}Error: --agent must be claude or codex${R}" >&2; exit 1 ;;
 esac
 
+if [[ -n "$TRIAGE_MODEL" && -z "$MODEL" ]]; then
+    echo "${S}Error: --triage-model requires --model for the coding handoff${R}" >&2
+    exit 1
+fi
+
+if [[ -n "$TRIAGE_MODEL" ]] && ! command -v bwrap >/dev/null 2>&1; then
+    echo "${S}Error: --triage-model requires bwrap (Bubblewrap) to isolate Git credentials${R}" >&2
+    exit 1
+fi
+
 MAIN_REPO="$(git rev-parse --show-toplevel)"
 [[ -n "$WORKTREE_BASE" ]] || WORKTREE_BASE="${MAIN_REPO}-prworker"
+# `git worktree list` only reports absolute paths, so every guard comparing a
+# worker path against that list (`is_registered_worktree`, and through it
+# `prepare_worktree_for_task` and the cleanup helpers) requires an absolute
+# base. A relative `--worktree-base` would otherwise pass `ensure_worktree`,
+# which canonicalizes on its own, and then fail the first per-PR round with
+# `Refusing to clean an unexpected worktree`.
 WORKTREE_BASE="$(realpath -m "$WORKTREE_BASE")"
 
 # Install a defense-in-depth pre-push hook for ordinary worker pushes. The hook
@@ -236,10 +263,9 @@ if (( ! MODE_ANY )); then
     MODE_MINE=1; MODE_ASSIGNED=1; MODE_RELATED=1
 fi
 
-# Custom credential for worker processes. `claude` reads its API key from the
-# environment. `codex` receives its ChatGPT/Codex access token only in the worker
-# process and uses a worker-local `CODEX_HOME`, so it cannot fall back to or
-# overwrite an ambient Codex login.
+# Custom API key for worker processes. `claude` reads its key from the environment.
+# `codex` is logged in with the key in a worker-local `CODEX_HOME` before it starts,
+# so it cannot inherit or overwrite an ambient Codex login.
 # Prefer --api-key-file: an inline --api-key is visible in `ps`.
 if [[ -n "$API_KEY_FILE" ]]; then
     [[ -r "$API_KEY_FILE" ]] || { echo "${S}Error: --api-key-file not readable: $API_KEY_FILE${R}" >&2; exit 1; }
@@ -267,7 +293,12 @@ CODEX_LONG_CONTEXT_PRICING=0
 
 configure_codex_pricing()
 {
-    case "$MODEL" in
+    CODEX_INPUT_PRICE=""
+    CODEX_CACHED_INPUT_PRICE=""
+    CODEX_CACHE_WRITE_INPUT_PRICE=""
+    CODEX_OUTPUT_PRICE=""
+    CODEX_LONG_CONTEXT_PRICING=0
+    case "$1" in
         gpt-5.6|gpt-5.6-sol|gpt-5.6-sol-*)
             CODEX_INPUT_PRICE=5; CODEX_CACHED_INPUT_PRICE=0.5; CODEX_CACHE_WRITE_INPUT_PRICE=6.25; CODEX_OUTPUT_PRICE=30; CODEX_LONG_CONTEXT_PRICING=1 ;;
         gpt-5.6-terra|gpt-5.6-terra-*)
@@ -312,7 +343,7 @@ estimate_codex_cost()
 }
 
 if [[ "$AGENT" == "codex" ]]; then
-    configure_codex_pricing
+    configure_codex_pricing "$MODEL"
 fi
 
 # ----------------------------------------------------------------------------
@@ -405,18 +436,18 @@ STATUS_ENABLED=0
 START=0
 ORIG_OUT=""
 
-stats_init() { printf '0 0 0 0 0 0 0 0\n' > "$STATSFILE"; : > "$NAFILE"; }
+stats_init() { printf '0 0 0 0 0 0 0 0 0\n' > "$STATSFILE"; : > "$NAFILE"; }
 
-# stats_add <d_rounds> <d_ok> <d_fail> <d_in> <d_out> <d_cachein> <d_cacheout> <d_cost>
+# stats_add <d_rounds> <d_ok> <d_fail> <d_in> <d_out> <d_cachein> <d_cacheout> <d_triage_cost> <d_coding_cost>
 # Writes atomically (tmp + mv) so the renderer never reads a torn/empty file.
 stats_add()
 {
     { flock 7
-      local cur; cur=$(cat "$STATSFILE" 2>/dev/null || echo '0 0 0 0 0 0 0 0')
-      awk -v cur="$cur" -v r="$1" -v s="$2" -v f="$3" -v i="$4" -v o="$5" -v ci="$6" -v co="$7" -v c="$8" \
+      local cur; cur=$(cat "$STATSFILE" 2>/dev/null || echo '0 0 0 0 0 0 0 0 0')
+      awk -v cur="$cur" -v r="$1" -v s="$2" -v f="$3" -v i="$4" -v o="$5" -v ci="$6" -v co="$7" -v tc="$8" -v cc="$9" \
         'BEGIN { split(cur, x, " ");
-                 printf "%d %d %d %d %d %d %d %.6f\n",
-                        x[1]+r, x[2]+s, x[3]+f, x[4]+i, x[5]+o, x[6]+ci, x[7]+co, x[8]+c }' \
+                 printf "%d %d %d %d %d %d %d %.6f %.6f\n",
+                        x[1]+r, x[2]+s, x[3]+f, x[4]+i, x[5]+o, x[6]+ci, x[7]+co, x[8]+tc, x[9]+cc }' \
         > "$STATSFILE.tmp" && mv -f "$STATSFILE.tmp" "$STATSFILE"
     } 7>>"$STATSLOCK"
 }
@@ -602,9 +633,6 @@ ensure_worktree()
     local wt="$1"
     local canonical_wt
 
-    # Do not use `grep -q` here: with a large worktree registry it closes the
-    # pipe after an early match, and `pipefail` turns Git's SIGPIPE into a false
-    # negative.
     canonical_wt=$(realpath -m "$wt")
 
     if git -C "$MAIN_REPO" worktree list --porcelain | grep -xF "worktree $canonical_wt" >/dev/null; then
@@ -739,6 +767,27 @@ remove_registered_descendants()
     done
 }
 
+# Align the worker's submodule checkouts with the gitlinks recorded in the
+# superproject HEAD, honoring `--skip-submodules`. `--no-fetch` is load-bearing
+# for isolation: `.gitmodules` is pull-request content, so a submodule whose
+# objects are absent locally must fail here instead of fetching an
+# author-chosen URL with the operator's credentials.
+align_worker_submodules()
+{
+    local wt="$1"
+
+    if (( SKIP_SUBMODULES )); then
+        # Restore initialized submodules to the superproject gitlinks without
+        # initializing absent ones. `submodule update` can nevertheless
+        # initialize submodules selected by `submodule.active`, so check out
+        # the recorded SHA directly in the submodules that `foreach` found.
+        git -C "$wt" submodule foreach --quiet --recursive \
+            'git checkout --detach -q "$sha1"'
+    else
+        git -C "$wt" submodule update --init --checkout --force --recursive --no-fetch
+    fi
+}
+
 # Prepare a reusable worker for a new PR. Root-level build directories remain
 # available for reuse; all other tracked, untracked and ignored changes go.
 prepare_worktree_for_task()
@@ -760,16 +809,7 @@ prepare_worktree_for_task()
     # shellcheck disable=SC2016 # `$PWD` expands in each `git submodule foreach` shell.
     git -C "$wt" submodule foreach --quiet --recursive \
         'git reset --hard -q HEAD && { git clean -ffdx -e "/build*/" || { echo "Retrying cleanup with elevated permissions: $PWD" >&2; sudo -n git -c safe.directory="$PWD" -C "$PWD" clean -ffdx -e "/build*/"; }; }' >/dev/null
-    if (( SKIP_SUBMODULES )); then
-        # Restore initialized submodules to the superproject gitlinks without
-        # initializing absent ones. `submodule update` can nevertheless
-        # initialize submodules selected by `submodule.active`, so check out
-        # the recorded SHA directly in the submodules that `foreach` found.
-        git -C "$wt" submodule foreach --quiet --recursive \
-            'git checkout --detach -q "$sha1"'
-    else
-        git -C "$wt" submodule update --init --checkout --force --recursive --no-fetch
-    fi
+    align_worker_submodules "$wt"
     # Integration tests can leave root-owned artifacts, and stale servers can
     # briefly recreate files while cleanup is traversing a directory. Retry
     # the identical, path-scoped cleanup after stopping any replacement
@@ -900,6 +940,24 @@ CLEANUP_FAILURE_FILE="$LOGDIR/cleanup-failure"
 ACTION_FILE="$LOGDIR/action-taken"
 declare -a WORKER_PIDS=()
 
+cleanup_worker_codex_auth()
+{
+    [[ "$AGENT" == "codex" ]] || return 0
+
+    local wt
+    for wt in "${WT[@]-}"; do
+        # Triage receives a disposable `CODEX_HOME` inside its private clone.
+        # Remove it here too: `stop_workers` can run before `run_continue_pr`
+        # reaches its normal cleanup path.
+        rm -rf "$wt/tmp/continue-all-prs/triage-repository/.triage-codex-home" 2>/dev/null || true
+        # The worker-local `CODEX_HOME` is per-run state, not just credentials.
+        # `continue-pr-auto` keeps `tmp/continue-all-prs/` between pull requests,
+        # so leaving `config.toml`, plugin, or MCP state written by one run would
+        # silently become the starting state of the next, unrelated one.
+        [[ "$CUSTOM_KEY" != 1 ]] || rm -rf "$wt/tmp/continue-all-prs/codex-home" 2>/dev/null || true
+    done
+}
+
 stop_workers()
 {
     local roots own_pgid entry pid pgid
@@ -917,7 +975,7 @@ stop_workers()
     for pid in "${live_jobs[@]}"; do
         [[ -n "${worker_pid_set[$pid]:-}" ]] && active_workers+=("$pid")
     done
-    (( ${#active_workers[@]} )) || return 0
+    (( ${#active_workers[@]} )) || { cleanup_worker_codex_auth; return 0; }
     roots="${active_workers[*]}"
     own_pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ' || true)
 
@@ -975,18 +1033,13 @@ stop_workers()
     if (( ${#active_workers[@]} )); then
         wait "${active_workers[@]}" 2>/dev/null || true
     fi
+    cleanup_worker_codex_auth
     WORKER_PIDS=()
 }
 
 cleanup()
 {
-    local wt
-
     stop_workers
-    for wt in "${WT[@]:-}"; do
-        [[ -n "$wt" && "$wt" == "$WORKTREE_BASE-"* ]] || continue
-        rm -rf -- "$wt/tmp/continue-all-prs/codex-home"
-    done
     status_stop   # reset the scroll region and kill the updater first
     [[ -n "${QUEUEFILE:-}" ]] && rm -f "$QUEUEFILE" "$QUEUEFILE.tmp" 2>/dev/null || true
     [[ -n "${LOCKFILE:-}" ]] && rm -f "$LOCKFILE" 2>/dev/null || true
@@ -995,8 +1048,9 @@ cleanup()
 trap cleanup EXIT
 trap 'trap - INT TERM; echo; banner "Interrupted, stopping..."; stop_workers; exit 130' INT TERM
 
-# Marker the worker prints (on its own line) when it considers the PR finished.
+# Markers the worker prints on their own lines when it finishes or hands off.
 DONE_MARKER='<<<CONTINUE-PR-DONE>>>'
+HANDOFF_MARKER='<<<CONTINUE-PR-HANDOFF>>>'
 
 # Added to every worker session. Forbids backgrounding work (the
 # root cause of merges that were prepared but never pushed: the worker started a
@@ -1007,65 +1061,509 @@ STEER_PROMPT="You are running in a non-interactive, single-shot batch session. D
 # Sent on each resume to nudge the worker to finish.
 NUDGE_PROMPT="Continue where you left off and finish the task. Reminder: do not use background tasks - run everything synchronously and push your commits before finishing. Preserve remote PR history and obey the staged-diff, full-PR-diff, and fast-forward-only safety gates; never force-push or bypass the pre-push hook. A green CI does NOT mean you are done - also address unresolved review comments and reviewer feedback (including automated/bot reviews and COMMENTED, non-blocking threads). A same-repository PR or a PR authored by the authenticated gh user is pushable even when maintainerCanModify is false; only use that field for another author's cross-repository fork. Any build started in a previous turn was killed when that turn ended; re-run it in the foreground if you still need to verify. When the PR is fully handled, end your final message with a line containing exactly: ${DONE_MARKER}"
 
+TRIAGE_STEER_PROMPT="You are the triage model in a two-model workflow. Inspect the PR, its merge status, CI failures, and unresolved review feedback, then decide whether completing it requires writing code. You may finish and push the work yourself only when no source, test, or documentation changes are needed beyond a clean merge of the latest base branch. If any other code change, including a merge conflict, is needed, do not implement it. End with a handoff block containing a line exactly equal to ${HANDOFF_MARKER}, followed by a concise but sufficiently detailed task description for the coding model: include the diagnosis, relevant files or failures, reviewer requirements, work already performed, and the verification still needed. If you fully handle the PR yourself, use ${DONE_MARKER} as usual and do not emit ${HANDOFF_MARKER}."
+
+TRIAGE_NUDGE_PROMPT="Continue the initial triage. Only complete a clean base-branch merge yourself. If any other source, test, or documentation change is needed, stop and hand it to the coding model by emitting ${HANDOFF_MARKER} on its own line followed by a detailed task description. Emit ${DONE_MARKER} only if the PR is fully handled."
+
+# The prompt is not a security boundary: a triage model can still edit the
+# worktree. It may leave no changes, or exactly the conflict-free merge that
+# this function prepared for it. Anything else must be discarded before the
+# coding model receives the worktree.
+triage_state_is_safe()
+{
+    local wt="$1" start_head="$2" base_head="$3"
+    local head first_parent second_parent extra_parent merge_base expected_tree actual_tree index
+
+    [[ -z "$(git -C "$wt" status --porcelain)" ]] || return 1
+    head=$(git -C "$wt" rev-parse HEAD) || return 1
+    [[ "$head" == "$start_head" ]] && return 0
+
+    read -r first_parent second_parent extra_parent < <(git -C "$wt" show -s --format='%P' HEAD)
+    [[ "$first_parent" == "$start_head" && "$second_parent" == "$base_head" && -z "$extra_parent" ]] || return 1
+    # Git 2.34 lacks the two-argument `merge-tree` form with `--write-tree`.
+    # Build the three-tree merge in a private index instead. `write-tree`
+    # rejects unmerged entries, so this only yields a tree for a clean merge.
+    merge_base=$(git -C "$wt" merge-base "$start_head" "$base_head") || return 1
+    mkdir -p "$wt/tmp/continue-all-prs" || return 1
+    index=$(cd "$wt" && mktemp "$PWD/tmp/continue-all-prs/triage-merge-index.XXXXXX") || return 1
+    rm -f "$index"
+    if ! GIT_INDEX_FILE="$index" git -C "$wt" read-tree -m "$merge_base" "$start_head" "$base_head" \
+        || ! expected_tree=$(GIT_INDEX_FILE="$index" git -C "$wt" write-tree); then
+        rm -f "$index"
+        return 1
+    fi
+    rm -f "$index"
+    actual_tree=$(git -C "$wt" rev-parse "$head^{tree}") || return 1
+    [[ "$actual_tree" == "$expected_tree" ]]
+}
+
+# Canonical clone URL of the repository the pull requests belong to. Triage
+# must never take the base branch from an inherited `origin`, which can point
+# at a fork of the operator's checkout.
+repo_clone_url()
+{
+    printf 'https://github.com/%s.git\n' "$REPO"
+}
+
+# Check out the actual PR head before triage begins, and return the data needed
+# to validate and push a mechanical base merge.  A detached checkout avoids
+# reserving one shared local branch when multiple workers process the same PR.
+prepare_triage_worktree()
+{
+    local wt="$1" number="$2" deadline="$3"
+    local meta base_ref head_ref head_repo_url head_owner author cross_repo maintainer_can_modify
+    local fetch_url push_url base_repo_url pushable=0
+
+    meta=$(run_with_deadline "$deadline" gh pr view "$number" --repo "$REPO" \
+        --json baseRefName,headRefName,headRepository,headRepositoryOwner,author,isCrossRepository,maintainerCanModify \
+        --jq '[.baseRefName, .headRefName, (.headRepository.url // ""), (.headRepositoryOwner.login // ""), (.author.login // ""), (.isCrossRepository | tostring), (.maintainerCanModify | tostring)] | @tsv') || return $?
+    IFS=$'\t' read -r base_ref head_ref head_repo_url head_owner author cross_repo maintainer_can_modify <<< "$meta"
+    [[ -n "$base_ref" && -n "$head_ref" && -n "$head_repo_url" ]] || return 1
+
+    fetch_url="$head_repo_url"
+    if [[ "$cross_repo" == "true" ]]; then
+        if [[ "$head_owner" == "$GH_USER" || "$author" == "$GH_USER" || "$maintainer_can_modify" == "true" ]]; then
+            pushable=1
+        fi
+    else
+        pushable=1
+    fi
+
+    # Fetching by URL avoids adding a per-fork remote to the shared Git config.
+    # Use full `refs/heads/` refspecs: a short name is ambiguous, and a fork
+    # that carries both a branch and a tag called `$head_ref` would make
+    # `FETCH_HEAD` resolve to the tag, so triage would inspect a tree that is
+    # not the PR head.  `headRefName` is controlled by the fork, so this is
+    # reachable from outside.
+    run_with_deadline "$deadline" git -C "$wt" fetch -q "$fetch_url" "refs/heads/$head_ref" || return $?
+    git -C "$wt" checkout --detach -q FETCH_HEAD || return 1
+    # Resolve the base branch from the pull request's own repository, by
+    # explicit URL. The triage clone inherits `origin` from the operator's
+    # checkout, which may be a fork: fetching `origin/$base_ref` from it would
+    # validate a merge of the fork's base branch instead of the real one.
+    base_repo_url=$(repo_clone_url)
+    run_with_deadline "$deadline" git -C "$wt" fetch -q "$base_repo_url" \
+        "+refs/heads/$base_ref:refs/remotes/origin/$base_ref" || return $?
+    push_url="$head_repo_url"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$(git -C "$wt" rev-parse HEAD)" "$(git -C "$wt" rev-parse "origin/$base_ref")" "$head_ref" "$push_url" "$pushable"
+}
+
+# Triage is untrusted: give it a private clone rather than the worker's
+# worktree and common Git directory. Its only permitted result is a validated
+# merge commit, transferred by the orchestrator after it leaves the sandbox.
+create_triage_clone()
+{
+    local wt="$1" triage_wt="$2" deadline="$3"
+
+    rm -rf "$triage_wt"
+    run_with_deadline "$deadline" git clone -q --shared --no-checkout "$wt" "$triage_wt" || return $?
+    # Cloning a local path points `origin` at the worker's directory. Use the
+    # canonical repository instead of whatever `origin` the operator's checkout
+    # carries, so that everything triage resolves through `origin` - the base
+    # branch above all - comes from the pull request's own repository.
+    git -C "$triage_wt" remote set-url origin "$(repo_clone_url)"
+}
+
+# The private triage clone starts without a checkout. Materialize its
+# submodules only after `prepare_triage_worktree` has checked out the actual
+# PR head, so builds and source inspection see the same revision as triage.
+#
+# `.gitmodules` is pull-request content, and this runs in the orchestrator,
+# before the Bubblewrap namespace and the scrubbed Git environment exist: a
+# plain `git submodule update --init` would resolve author-chosen URLs with the
+# operator's SSH agent, credential helpers, and tokens still available, so a
+# `.gitmodules` pointing at `ssh://git@attacker.example/...` would make the
+# worker authenticate to that endpoint. Take every submodule URL from the
+# trusted worker's checkout instead, keyed by submodule path, and leave
+# submodules the worker does not know - the only thing a `.gitmodules` change
+# can introduce - unmaterialized.
+setup_triage_submodules()
+{
+    local triage_wt="$1" wt="$2" deadline="$3"
+
+    (( SKIP_SUBMODULES )) && return 0
+    materialize_trusted_submodules "$triage_wt" "$wt" "$deadline"
+}
+
+# One level of submodules, then the same rule for their own submodules: a
+# nested `.gitmodules` is pull-request content as well, so its URLs are no more
+# trustworthy than the top-level ones.
+materialize_trusted_submodules()
+{
+    local repo="$1" trusted="$2" deadline="$3"
+    local record key value name path
+    local -A trusted_path=() trusted_url=() url_of_path=()
+    local -a paths=()
+
+    [[ -e "$repo/.gitmodules" && -e "$trusted/.gitmodules" ]] || return 0
+
+    while IFS= read -r -d '' record; do
+        key=${record%%$'\n'*}
+        [[ "$key" != "$record" ]] && value=${record#*$'\n'} || value=""
+        case "$key" in
+            submodule.*.path) name=${key#submodule.}; trusted_path[${name%.path}]="$value" ;;
+            submodule.*.url) name=${key#submodule.}; trusted_url[${name%.url}]="$value" ;;
+        esac
+    done < <(git config -f "$trusted/.gitmodules" --list -z)
+    for name in "${!trusted_path[@]}"; do
+        [[ -n "${trusted_url[$name]:-}" ]] || continue
+        url_of_path[${trusted_path[$name]}]="${trusted_url[$name]}"
+    done
+
+    while IFS= read -r -d '' record; do
+        key=${record%%$'\n'*}
+        [[ "$key" != "$record" ]] && value=${record#*$'\n'} || value=""
+        [[ "$key" == submodule.*.path ]] || continue
+        name=${key#submodule.}
+        name=${name%.path}
+        path="$value"
+        [[ -n "${url_of_path[$path]:-}" ]] || continue
+        git -C "$repo" config "submodule.$name.url" "${url_of_path[$path]}" || return 1
+        paths+=("$path")
+    done < <(git config -f "$repo/.gitmodules" --list -z)
+
+    (( ${#paths[@]} )) || return 0
+    # Allow only the transports the trusted URLs actually use, so a redirect or
+    # an unexpected URL form cannot reach an arbitrary remote helper either.
+    run_with_deadline "$deadline" git -C "$repo" \
+        -c protocol.allow=never -c protocol.https.allow=always -c protocol.file.allow=always \
+        submodule update --checkout -- "${paths[@]}" || return $?
+
+    for path in "${paths[@]}"; do
+        materialize_trusted_submodules "$repo/$path" "$trusted/$path" "$deadline" || return $?
+    done
+}
+
+# Use the remaining per-PR budget for setup operations as well as agent turns.
+# `timeout` returns 124 when the budget expires, which `run_continue_pr`
+# reports as the ordinary per-PR timeout outcome.
+run_with_deadline()
+{
+    local deadline="$1" remaining
+    shift
+
+    remaining=$(( deadline - $(date +%s) ))
+    (( remaining > 0 )) || return 124
+    timeout "$remaining" "$@"
+}
+
+# `git clone --shared` lets the triage clone read the worker's objects, not the
+# other way round: the pull-request head and the base branch that triage
+# fetched live only in the clone's own object store. Import them into the
+# trusted worker, or the checkout below fails with `reference is not a tree`.
+import_triage_objects()
+{
+    local wt="$1" triage_wt="$2" oid
+    local -a missing=()
+
+    for oid in "${@:3}"; do
+        git -C "$wt" cat-file -e "$oid^{commit}" 2>/dev/null || missing+=("$oid")
+    done
+    (( ${#missing[@]} )) || return 0
+    git -C "$wt" fetch -q --no-tags "$triage_wt" "${missing[@]}"
+}
+
+recreate_validated_triage_merge()
+{
+    local wt="$1" start_head="$2" base_head="$3" triage_wt="$4"
+
+    import_triage_objects "$wt" "$triage_wt" "$start_head" "$base_head" || return 1
+
+    # Do not transfer the triage commit object. Even with the expected parents
+    # and tree, its author, committer, and message are untrusted. Recreate the
+    # clean merge in the trusted worker instead.
+    git -C "$wt" checkout --detach -q "$start_head" || return 1
+    if ! git -C "$wt" merge --no-ff --no-commit "$base_head"; then
+        git -C "$wt" merge --abort || true
+        return 1
+    fi
+    # This synthetic merge is a mechanical handoff step, not a commit the
+    # operator authors: never make it depend on the local signing setup. With
+    # `commit.gpgSign=true` configured, an otherwise clean validated merge
+    # would fail here on any machine where signing needs interaction.
+    git -C "$wt" -c commit.gpgSign=false commit -m "Merge base branch into pull request head" || return 1
+    # The recreated merge can advance submodule gitlinks (a base-branch
+    # submodule bump merges cleanly). Without realignment the worker's
+    # submodule worktrees stay on the old revisions and the coding model
+    # starts from a dirty tree, building against stale submodule sources.
+    align_worker_submodules "$wt"
+}
+
+discard_untrusted_triage_changes()
+{
+    local wt="$1" start_head="$2" log="$3"
+
+    echo "Discarding non-mechanical changes made by the triage model before coding handoff." >> "$log"
+    git -C "$wt" reset --hard "$start_head" >> "$log"
+    git -C "$wt" clean -fd >> "$log"
+}
+
+prepare_triage_sandbox_config()
+{
+    local wt="$1" config source_config key
+
+    config="${2:-$wt/tmp/continue-all-prs/triage-git-config}"
+
+    # Worktrees share the main repository's config. Never mutate it for
+    # triage: use a private copy mounted over the common config only in the
+    # Bubblewrap namespace. Besides credential helpers, remove all HTTPS
+    # extra headers, SSH command overrides, and include files, which can carry
+    # authentication tokens.
+    mkdir -p "${config%/*}" || return 1
+    source_config=$(git -C "$wt" rev-parse --path-format=absolute --git-path config) || return 1
+    cp "$source_config" "$config" || return 1
+    while IFS= read -r key; do
+        git config --file "$config" --unset-all "$key" || return 1
+    done < <(git config --file "$config" --name-only --get-regexp '^credential(\..*)?\.helper$' || true)
+    while IFS= read -r key; do
+        git config --file "$config" --unset-all "$key" || return 1
+    done < <(git config --file "$config" --name-only --get-regexp '^http\..*\.extraheader$' || true)
+    git config --file "$config" --unset-all core.sshCommand 2>/dev/null || true
+    while IFS= read -r key; do
+        git config --file "$config" --unset-all "$key" || return 1
+    done < <(git config --file "$config" --name-only --get-regexp '^(include|includeif\..*)\.path$' || true)
+    # Remote URLs and URL rewrites can embed credentials too. Triage fetches
+    # pull-request heads by explicit public URL, and only needs `origin` for
+    # the public base repository, so discard every inherited remote endpoint
+    # and URL rewrite before restoring that one auth-free fetch URL.
+    while IFS= read -r key; do
+        git config --file "$config" --unset-all "$key" || return 1
+    done < <(git config --file "$config" --name-only --get-regexp '^remote\..*\.(url|pushurl)$' || true)
+    while IFS= read -r key; do
+        git config --file "$config" --unset-all "$key" || return 1
+    done < <(git config --file "$config" --name-only --get-regexp '^url\..*\.(insteadof|pushinsteadof)$' || true)
+    git config --file "$config" remote.origin.url "https://github.com/${REPO}.git" || return 1
+    printf '%s\n' "$config"
+}
+
 # Run /continue-pr-auto in a worktree, resuming the same session until the worker
 # signals completion (DONE_MARKER), the per-PR time budget (TIMEOUT, shared
-# across all turns) is exhausted, or the continuation cap (MAX_CONTINUE) is hit.
+# across all turns and models) is exhausted, or the continuation cap
+# (MAX_CONTINUE per model) is hit. In two-model mode, the triage model can emit
+# HANDOFF_MARKER to start a fresh coding-model session in the same worktree.
 # Writes the full transcript to $log and the final turn to $log.last. Returns
 # the exit code of the last turn (124 if the time budget was exhausted).
 run_continue_pr()
 {
     local wt="$1" number="$2" log="$3"
     local url="https://github.com/$REPO/pull/$number"
-    local sid deadline iter ec now remaining build_steer prompt usage codex_home
-    local -a codex_env
-    local u_i u_o u_ci u_co u_cost
-    local -a model_args
+    local sid deadline iter phase_iter ec now remaining build_steer prompt usage codex_home last_message
+    local phase active_model active_wt system_prompt turn_prompt handoff triage_start_head triage_base_head triage_head_ref triage_push_url triage_pushable triage_wt triage_sandbox_config triage_agent_home triage_codex_home triage_home triage_current_head
+    local -a codex_env active_codex_env
+    local u_i u_o u_ci u_co u_cost triage_cost coding_cost
+    local -a model_args triage_git_args triage_sandbox_args
     sid=""
-    if [[ "$AGENT" == "claude" ]]; then
-        sid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null \
-            || uuidgen 2>/dev/null \
-            || python3 -c 'import uuid; print(uuid.uuid4())')
-    fi
-    model_args=()
-    [[ -n "$MODEL" ]] && model_args=(--model "$MODEL")
-    # Steer the worker to a persistent, ccache-backed build directory in this
-    # worktree so rebuilds are incremental instead of cold each pass.
-    build_steer="A persistent, ccache-backed build directory for this worktree is at ${wt}/build. Reuse it for any build - do not delete it; let ninja rebuild incrementally - and build only the affected targets. ccache is shared and warm across all workers (CCACHE_DIR=${CCACHE_DIR}), so a rebuild after merging master should be far faster than a cold build; never run a full from-scratch rebuild when an incremental one suffices."
+    phase="coding"
+    [[ -n "$TRIAGE_MODEL" ]] && phase="triage"
+    handoff=""
+    triage_start_head=""
+    triage_base_head=""
+    triage_head_ref=""
+    triage_push_url=""
+    triage_pushable=0
+    # The documented budget covers every triage operation, including clone,
+    # metadata retrieval, and fetches before the first agent turn.
     deadline=$(( $(date +%s) + TIMEOUT ))
+    if [[ "$phase" == "triage" ]]; then
+        triage_wt="$wt/tmp/continue-all-prs/triage-repository"
+        create_triage_clone "$wt" "$triage_wt" "$deadline" || return $?
+        local triage_metadata
+        triage_metadata=$(prepare_triage_worktree "$triage_wt" "$number" "$deadline") || return $?
+        setup_triage_submodules "$triage_wt" "$wt" "$deadline" || return $?
+        IFS=$'\t' read -r triage_start_head triage_base_head triage_head_ref triage_push_url triage_pushable <<< "$triage_metadata"
+    fi
+    : > "$log"
     iter=0
+    phase_iter=0
     ec=0
 
-    # Keep custom Codex access-token runs private to this worker, so a bad token
-    # cannot fall back to or modify the caller's ambient Codex login.
+    # Codex API-key authentication is configured state, not an environment
+    # variable consumed by `codex exec`. Keep that state private to this worker
+    # and remove it after the run, so a requested key cannot fall back to or
+    # modify the caller's ambient Codex login.
     codex_home=""
     codex_env=()
     if [[ "$AGENT" == "codex" && "$CUSTOM_KEY" == 1 ]]; then
         codex_home="$wt/tmp/continue-all-prs/codex-home"
         codex_env=("CODEX_HOME=$codex_home")
+        rm -rf "$codex_home"
         mkdir -p "$codex_home"
-        export CODEX_ACCESS_TOKEN="$API_KEY"
+        now=$(date +%s)
+        remaining=$(( deadline - now ))
+        (( remaining > 0 )) || return 124
+        printf '%s\n' "$API_KEY" | timeout "$remaining" env CODEX_HOME="$codex_home" codex login --with-api-key >> "$log" 2>&1 || {
+            ec=$?
+            rm -rf "$codex_home"
+            return "$ec"
+        }
+    fi
+
+    if [[ "$phase" == "triage" ]]; then
+        triage_sandbox_config=$(prepare_triage_sandbox_config "$triage_wt" "$wt/tmp/continue-all-prs/triage-git-config") || return 1
+        triage_home="$triage_wt/.triage-home"
+        mkdir -p "$triage_home" || return 1
+        # The private clone prevents shared Git metadata from persisting. Use
+        # an empty home and a sanitized, read-only clone config so the triage
+        # model cannot discover host credentials or authenticate a push.
+        # A private PID namespace with its own procfs is part of that boundary:
+        # without it the host `/proc` stays visible and the triage model can
+        # read `/proc/<pid>/environ` of the orchestrator or of any other
+        # same-UID process and recover the credentials scrubbed from its own
+        # environment.
+        triage_sandbox_args=(
+            bwrap
+            --ro-bind / /
+            --unshare-pid
+            --proc /proc
+            --die-with-parent
+            --dev /dev
+            # `--ro-bind / /` also makes the host `/tmp` read-only, while the
+            # mounts below only re-open the clone and the private home for
+            # writing. Anything that falls back to the default temporary
+            # directory (`mktemp`, compiler and linker helpers, Python
+            # tooling, some Git plumbing) would then fail with `EROFS` and
+            # turn a routine inspection step into a triage failure instead of
+            # a handoff to the coding model. Give the namespace its own
+            # writable, private temporary directory. It is mounted before the
+            # clone and home binds, so those still win when the worktree base
+            # itself lives under `/tmp`.
+            --tmpfs /tmp
+            --setenv TMPDIR /tmp
+            --bind "$triage_wt" "$triage_wt"
+            --ro-bind "$triage_sandbox_config" "$triage_wt/.git/config"
+            --tmpfs "$triage_home"
+            --setenv HOME "$triage_home"
+            # `gh` resolves its configuration directory as `GH_CONFIG_DIR`,
+            # then `$XDG_CONFIG_HOME/gh`, and only then `$HOME/.config/gh`.
+            # Redirecting `XDG_CONFIG_HOME` into the private home closes that
+            # middle path: without it a triage turn can still run
+            # `gh auth token` on a host that uses an XDG configuration layout.
+            --setenv XDG_CONFIG_HOME "$triage_home/.config"
+            --setenv GIT_CONFIG_GLOBAL /dev/null
+            --setenv GIT_CONFIG_SYSTEM /dev/null
+            --setenv GIT_CONFIG_NOSYSTEM 1
+            --setenv GIT_TERMINAL_PROMPT 0
+            --setenv GIT_ASKPASS /bin/false
+        )
+        # `HOME` above gives Git an empty configuration chain. Hide the host
+        # credential locations too, so an agent cannot read a token directly
+        # and embed it in a push URL.
+        [[ ! -d "$HOME/.config/gh" ]] || triage_sandbox_args+=(--tmpfs "$HOME/.config/gh")
+        [[ ! -d "$HOME/.config/git" ]] || triage_sandbox_args+=(--tmpfs "$HOME/.config/git")
+        [[ ! -d "$HOME/.ssh" ]] || triage_sandbox_args+=(--tmpfs "$HOME/.ssh")
+        [[ ! -e "$HOME/.gitconfig" ]] || triage_sandbox_args+=(--ro-bind /dev/null "$HOME/.gitconfig")
+        [[ ! -e "$HOME/.git-credentials" ]] || triage_sandbox_args+=(--ro-bind /dev/null "$HOME/.git-credentials")
+        [[ ! -e "$HOME/.netrc" ]] || triage_sandbox_args+=(--ro-bind /dev/null "$HOME/.netrc")
+        [[ "${GH_CONFIG_DIR:-}" != /* || ! -d "$GH_CONFIG_DIR" ]] || triage_sandbox_args+=(--tmpfs "$GH_CONFIG_DIR")
+        # The redirected `XDG_CONFIG_HOME` above hides these from `gh` and Git,
+        # but mask the host directories as well so their absolute paths stay
+        # unreadable even when the agent opens them directly.
+        if [[ "${XDG_CONFIG_HOME:-}" == /* ]]; then
+            [[ ! -d "$XDG_CONFIG_HOME/gh" ]] || triage_sandbox_args+=(--tmpfs "$XDG_CONFIG_HOME/gh")
+            [[ ! -d "$XDG_CONFIG_HOME/git" ]] || triage_sandbox_args+=(--tmpfs "$XDG_CONFIG_HOME/git")
+        fi
+        # `--ro-bind / /` keeps the outer checkout readable by absolute path,
+        # and its real Git configuration can carry authentication (a standard
+        # `actions/checkout` run stores an `http.*.extraheader` token there).
+        # Only the triage clone's own config is replaced with the sanitized
+        # copy above, so mask the worker's common and per-worktree config
+        # files too; the main repository shares the same common config.
+        local host_git_config host_worktree_config
+        host_git_config=$(git -C "$wt" rev-parse --path-format=absolute --git-path config) || return 1
+        host_worktree_config=$(git -C "$wt" rev-parse --path-format=absolute --git-path config.worktree) || return 1
+        [[ ! -e "$host_git_config" ]] || triage_sandbox_args+=(--ro-bind /dev/null "$host_git_config")
+        [[ ! -e "$host_worktree_config" ]] || triage_sandbox_args+=(--ro-bind /dev/null "$host_worktree_config")
+        if [[ "$AGENT" == "codex" ]]; then
+            if [[ "$CUSTOM_KEY" == 1 ]]; then
+                triage_agent_home="$codex_home"
+            else
+                triage_agent_home="${CODEX_HOME:-$HOME/.codex}"
+            fi
+            # Give triage a disposable copy of Codex state. The sandbox may
+            # write auth, plugin, and MCP state, but none of it can reach the
+            # worker's real `CODEX_HOME` or survive the triage phase.
+            triage_codex_home="$triage_wt/.triage-codex-home"
+            rm -rf "$triage_codex_home"
+            mkdir -p "$triage_codex_home" || return 1
+            [[ ! -d "$triage_agent_home" ]] || cp -a "$triage_agent_home/." "$triage_codex_home" || return 1
+            triage_sandbox_args+=(--bind "$triage_codex_home" "$triage_home/.codex")
+            triage_sandbox_args+=(--setenv CODEX_HOME "$triage_home/.codex")
+        fi
+    else
+        triage_sandbox_args=()
     fi
 
     while :; do
         iter=$(( iter + 1 ))
+        phase_iter=$(( phase_iter + 1 ))
         now=$(date +%s)
         remaining=$(( deadline - now ))
         (( remaining > 0 )) || { ec=124; break; }
-        (( iter > MAX_CONTINUE )) && break
+        (( phase_iter > MAX_CONTINUE )) && break
 
-        echo "===== turn $iter (session ${sid:-pending}, ${remaining}s budget left) =====" >> "$log"
+        if [[ "$phase" == "triage" ]]; then
+            active_model="$TRIAGE_MODEL"
+            active_wt="$triage_wt"
+            # The outer worktree is read-only in the Bubblewrap namespace and
+            # does not contain the merge being validated. Keep triage builds
+            # in its writable private clone instead.
+            mkdir -p "$active_wt/build" || return 1
+            build_steer="A persistent, ccache-backed build directory for this worktree is at ${active_wt}/build. Reuse it for any build - do not delete it; let ninja rebuild incrementally - and build only the affected targets. ccache is shared and warm across all workers (CCACHE_DIR=${CCACHE_DIR}), so a rebuild after merging master should be far faster than a cold build; never run a full from-scratch rebuild when an incremental one suffices."
+            system_prompt="$STEER_PROMPT $build_steer $TRIAGE_STEER_PROMPT"
+            turn_prompt="$TRIAGE_NUDGE_PROMPT"
+        else
+            active_model="$MODEL"
+            active_wt="$wt"
+            build_steer="A persistent, ccache-backed build directory for this worktree is at ${active_wt}/build. Reuse it for any build - do not delete it; let ninja rebuild incrementally - and build only the affected targets. ccache is shared and warm across all workers (CCACHE_DIR=${CCACHE_DIR}), so a rebuild after merging master should be far faster than a cold build; never run a full from-scratch rebuild when an incremental one suffices."
+            system_prompt="$STEER_PROMPT $build_steer"
+            turn_prompt="$NUDGE_PROMPT"
+        fi
+        model_args=()
+        [[ -n "$active_model" ]] && model_args=(--model "$active_model")
+        active_codex_env=("${codex_env[@]}")
+        triage_git_args=()
+        if [[ "$phase" == "triage" ]]; then
+            triage_git_args=(
+                env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_PAT -u GH_CONFIG_DIR
+                -u SSH_AUTH_SOCK -u GIT_SSH_COMMAND -u GIT_SSH -u GIT_CONFIG -u GIT_CONFIG_PARAMETERS -u GIT_CONFIG_COUNT
+            )
+            # Command-scope Git configuration is injected through numbered
+            # `GIT_CONFIG_KEY_*` / `GIT_CONFIG_VALUE_*` variables. It takes
+            # precedence over the sanitized clone config, so do not inherit
+            # any of it into the triage sandbox.
+            local git_config_var
+            for git_config_var in "${!GIT_CONFIG_KEY_@}" "${!GIT_CONFIG_VALUE_@}"; do
+                triage_git_args+=(-u "$git_config_var")
+            done
+            # Bubblewrap supplies the private `CODEX_HOME`; do not override it
+            # with the host-side custom-key directory after entering the sandbox.
+            active_codex_env=()
+            last_message="$active_wt/.continue-pr-last-message"
+        else
+            last_message="$log.last"
+        fi
+
+        echo "===== turn $iter ($phase model ${active_model:-default}, session ${sid:-pending}, ${remaining}s budget left) =====" >> "$log"
         ec=0
         if [[ "$AGENT" == "claude" ]]; then
-            if (( iter == 1 )); then
-                ( cd "$wt" && timeout "$remaining" claude --dangerously-skip-permissions --print \
+            if (( phase_iter == 1 )); then
+                sid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null \
+                    || uuidgen 2>/dev/null \
+                    || python3 -c 'import uuid; print(uuid.uuid4())')
+                prompt="/continue-pr-auto $url"
+                if [[ -n "$handoff" ]]; then
+                    prompt+=$'\n\nThe triage model handed off this task. Validate its diagnosis, then complete the work:\n'
+                    prompt+="$handoff"
+                fi
+                ( cd "$active_wt" && "${triage_sandbox_args[@]}" "${triage_git_args[@]}" timeout "$remaining" claude --dangerously-skip-permissions --print \
                     --output-format json --effort "$EFFORT" "${model_args[@]}" \
-                    --session-id "$sid" --append-system-prompt "$STEER_PROMPT $build_steer" \
-                    "/continue-pr-auto $url"</dev/null ) > "$log.json" 2>"$log.err" || ec=$?
+                    --session-id "$sid" --append-system-prompt "$system_prompt" \
+                    "$prompt"</dev/null ) > "$log.json" 2>"$log.err" || ec=$?
             else
-                ( cd "$wt" && timeout "$remaining" claude --dangerously-skip-permissions --print \
+                ( cd "$active_wt" && "${triage_sandbox_args[@]}" "${triage_git_args[@]}" timeout "$remaining" claude --dangerously-skip-permissions --print \
                     --output-format json --effort "$EFFORT" "${model_args[@]}" \
-                    --resume "$sid" --append-system-prompt "$STEER_PROMPT $build_steer" \
-                    "$NUDGE_PROMPT"</dev/null ) > "$log.json" 2>"$log.err" || ec=$?
+                    --resume "$sid" --append-system-prompt "$system_prompt" \
+                    "$turn_prompt"</dev/null ) > "$log.json" 2>"$log.err" || ec=$?
             fi
 
             # Extract the final message text and accumulate token/cost usage.
@@ -1073,21 +1571,27 @@ run_continue_pr()
                 jq -r '.result // ""' "$log.json" > "$log.last"
                 usage=$(jq -r '[(.usage.input_tokens//0),(.usage.output_tokens//0),(.usage.cache_creation_input_tokens//0),(.usage.cache_read_input_tokens//0),(.total_cost_usd//0)]|@tsv' "$log.json" 2>/dev/null)
                 IFS=$'\t' read -r u_i u_o u_ci u_co u_cost <<< "$usage"
-                stats_add 0 0 0 "${u_i:-0}" "${u_o:-0}" "${u_ci:-0}" "${u_co:-0}" "${u_cost:-0}"
+                triage_cost=0
+                coding_cost=0
+                if [[ "$phase" == "triage" ]]; then triage_cost="${u_cost:-0}"; else coding_cost="${u_cost:-0}"; fi
+                stats_add 0 0 0 "${u_i:-0}" "${u_o:-0}" "${u_ci:-0}" "${u_co:-0}" "$triage_cost" "$coding_cost"
             else
                 cat "$log.err" 2>/dev/null > "$log.last" || true
             fi
         else
-            rm -f "$log.last"
-            if (( iter == 1 )); then
+            rm -f "$last_message"
+            if (( phase_iter == 1 )); then
                 prompt="/continue-pr-auto $url
 
-${STEER_PROMPT} ${build_steer}"
-                ( cd "$wt" || exit; \
-                    timeout "$remaining" env "${codex_env[@]}" codex exec \
+${system_prompt}"
+                if [[ -n "$handoff" ]]; then
+                    prompt+=$'\n\nThe triage model handed off this task. Validate its diagnosis, then complete the work:\n'
+                    prompt+="$handoff"
+                fi
+                ( cd "$active_wt" && "${triage_sandbox_args[@]}" "${triage_git_args[@]}" env "${active_codex_env[@]}" timeout "$remaining" codex exec \
                     --dangerously-bypass-approvals-and-sandbox --json \
                     --config "model_reasoning_effort=$EFFORT" "${model_args[@]}" \
-                    --output-last-message "$log.last" - <<< "$prompt" \
+                    --output-last-message "$last_message" - <<< "$prompt" \
                 ) > "$log.json" 2>"$log.err" || ec=$?
                 sid=$(jq -Rrs '[splits("\n") | fromjson? | select(.type == "thread.started") | .thread_id][0] // empty' "$log.json" 2>/dev/null || true)
                 if [[ -z "$sid" ]] && (( ec == 0 )); then
@@ -1095,11 +1599,10 @@ ${STEER_PROMPT} ${build_steer}"
                     ec=1
                 fi
             else
-                ( cd "$wt" || exit; \
-                    timeout "$remaining" env "${codex_env[@]}" codex exec resume \
+                ( cd "$active_wt" && "${triage_sandbox_args[@]}" "${triage_git_args[@]}" env "${active_codex_env[@]}" timeout "$remaining" codex exec resume \
                     --dangerously-bypass-approvals-and-sandbox --json \
                     --config "model_reasoning_effort=$EFFORT" "${model_args[@]}" \
-                    --output-last-message "$log.last" "$sid" - <<< "$NUDGE_PROMPT" \
+                    --output-last-message "$last_message" "$sid" - <<< "$turn_prompt" \
                 ) > "$log.json" 2>"$log.err" || ec=$?
             fi
 
@@ -1114,8 +1617,15 @@ ${STEER_PROMPT} ${build_steer}"
                      ([$events[] | select(.type == "turn.completed") | (.usage.cached_input_tokens // 0)] | add // 0),
                      0] | @tsv' "$log.json" 2>/dev/null)
                 IFS=$'\t' read -r u_i u_o u_ci u_co u_cost <<< "$usage"
+                configure_codex_pricing "$active_model"
                 u_cost=$(estimate_codex_cost "${u_i:-0}" "${u_co:-0}" "${u_o:-0}" "${u_ci:-0}")
-                stats_add 0 0 0 "${u_i:-0}" "${u_o:-0}" "${u_ci:-0}" "${u_co:-0}" "${u_cost:-0}"
+                triage_cost=0
+                coding_cost=0
+                if [[ "$phase" == "triage" ]]; then triage_cost="${u_cost:-0}"; else coding_cost="${u_cost:-0}"; fi
+                stats_add 0 0 0 "${u_i:-0}" "${u_o:-0}" "${u_ci:-0}" "${u_co:-0}" "$triage_cost" "$coding_cost"
+            fi
+            if [[ "$phase" == "triage" && -f "$last_message" ]]; then
+                cp "$last_message" "$log.last" || return 1
             fi
             if [[ ! -s "$log.last" ]]; then
                 {
@@ -1126,12 +1636,101 @@ ${STEER_PROMPT} ${build_steer}"
         fi
         cat "$log.last" >> "$log"
 
-        # Done when the worker emits the marker on its own line; also stop on any
-        # hard failure or timeout of a turn. A `SIGKILL` can affect all concurrent
-        # Codex processes at once (for example, an external resource manager).
-        # Once Codex has reported a session ID, resume that session within the
-        # existing turn and time limits instead of discarding its completed work.
-        grep -qE "^${DONE_MARKER}[[:space:]]*$" "$log.last" && break
+        # A triage handoff starts a fresh session with the coding model but keeps
+        # the same worktree and deadline. Check it before DONE_MARKER so an
+        # accidental extra completion marker cannot suppress requested coding.
+        if [[ "$phase" == "triage" ]] && grep -qE "^${HANDOFF_MARKER}[[:space:]]*$" "$log.last"; then
+            handoff=$(cat "$log.last")
+            if triage_state_is_safe "$triage_wt" "$triage_start_head" "$triage_base_head"; then
+                triage_current_head=$(git -C "$triage_wt" rev-parse HEAD) || return 1
+                if [[ "$triage_current_head" != "$triage_start_head" ]]; then
+                    recreate_validated_triage_merge "$wt" "$triage_start_head" "$triage_base_head" "$triage_wt" || return 1
+                fi
+            else
+                discard_untrusted_triage_changes "$triage_wt" "$triage_start_head" "$log"
+            fi
+            echo "===== handoff from $TRIAGE_MODEL to $MODEL =====" >> "$log"
+            rm -rf "$triage_codex_home"
+            phase="coding"
+            triage_sandbox_args=()
+            phase_iter=0
+            sid=""
+            continue
+        fi
+
+        # Done when the worker emits the marker on its own line; also stop on a
+        # hard failure or timeout. A `SIGKILL` can affect all concurrent Codex
+        # processes at once (for example, an external resource manager). Once
+        # Codex reports a session ID, resume that session within the existing
+        # turn and time limits instead of discarding its completed work.
+        if grep -qE "^${DONE_MARKER}[[:space:]]*$" "$log.last"; then
+            if [[ "$phase" != "triage" ]] || triage_state_is_safe "$triage_wt" "$triage_start_head" "$triage_base_head"; then
+                if [[ "$phase" == "triage" ]]; then
+                    triage_current_head=$(git -C "$triage_wt" rev-parse HEAD) || return 1
+                    # An unchanged triage worktree did not perform the only
+                    # update triage is allowed to make. It is safe, but there
+                    # is nothing to recreate or push.
+                    [[ "$triage_current_head" != "$triage_start_head" ]] || break
+                    recreate_validated_triage_merge "$wt" "$triage_start_head" "$triage_base_head" "$triage_wt" || return 1
+                    if [[ "$triage_pushable" != "1" ]]; then
+                        handoff=$(cat "$log.last")
+                        echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL because the validated merge cannot be pushed =====" >> "$log"
+                        rm -rf "$triage_codex_home"
+                        phase="coding"
+                        triage_sandbox_args=()
+                        phase_iter=0
+                        sid=""
+                        continue
+                    fi
+                fi
+                if [[ "$phase" == "triage" ]] && ! git -C "$wt" push "$triage_push_url" "HEAD:refs/heads/$triage_head_ref" >> "$log" 2>&1; then
+                    handoff=$(cat "$log.last")
+                    echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL after the validated triage update could not be pushed =====" >> "$log"
+                    rm -rf "$triage_codex_home"
+                    phase="coding"
+                    triage_sandbox_args=()
+                    phase_iter=0
+                    sid=""
+                    continue
+                fi
+                break
+            fi
+            handoff=$(cat "$log.last")
+            discard_untrusted_triage_changes "$triage_wt" "$triage_start_head" "$log"
+            echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL after non-mechanical triage changes =====" >> "$log"
+            rm -rf "$triage_codex_home"
+            phase="coding"
+            triage_sandbox_args=()
+            phase_iter=0
+            sid=""
+            continue
+        fi
+        # If triage used its continuation allowance without an explicit marker,
+        # escalate to the coding model rather than misclassifying the PR as
+        # handled. A killed Codex session can also take this handoff path on
+        # its last permitted triage turn; otherwise the next iteration would
+        # reach the cap before resetting its nonzero exit code.
+        if [[ "$phase" == "triage" ]] && (( phase_iter == MAX_CONTINUE )); then
+            if (( ec == 0 )) || { [[ "$AGENT" == "codex" && -n "$sid" ]] && (( ec == 137 )); }; then
+                handoff=$(cat "$log.last")
+                if triage_state_is_safe "$triage_wt" "$triage_start_head" "$triage_base_head"; then
+                    triage_current_head=$(git -C "$triage_wt" rev-parse HEAD) || return 1
+                    if [[ "$triage_current_head" != "$triage_start_head" ]]; then
+                        recreate_validated_triage_merge "$wt" "$triage_start_head" "$triage_base_head" "$triage_wt" || return 1
+                    fi
+                else
+                    discard_untrusted_triage_changes "$triage_wt" "$triage_start_head" "$log"
+                fi
+                echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL after $MAX_CONTINUE turns =====" >> "$log"
+                rm -rf "$triage_codex_home"
+                phase="coding"
+                triage_sandbox_args=()
+                phase_iter=0
+                sid=""
+                continue
+            fi
+        fi
+
         if [[ "$AGENT" == "codex" && -n "$sid" ]] && (( ec == 137 )); then
             echo "Codex was killed; resuming session $sid on the next turn." >> "$log"
             continue
@@ -1139,11 +1738,8 @@ ${STEER_PROMPT} ${build_steer}"
         (( ec != 0 )) && break
     done
 
-    if [[ -n "$codex_home" ]]; then
-        rm -rf -- "$codex_home"
-        unset CODEX_ACCESS_TOKEN
-    fi
-
+    [[ -z "$codex_home" ]] || rm -rf "$codex_home"
+    [[ -z "${triage_codex_home:-}" ]] || rm -rf "$triage_codex_home"
     return "$ec"
 }
 
@@ -1164,6 +1760,10 @@ process_pr()
         status="DRY-RUN (not processed)"
         summary="(dry run)"
     else
+        # Clean the reused worker before any per-PR work. Besides isolating
+        # PRs from each other's leftovers, this keeps the worktree safe for
+        # direct writes such as `recreate_validated_triage_merge`, which must
+        # not inherit untracked files from a previous failed PR.
         log="$LOGDIR/pr-$number.log"
         : > "$log"
         if ! prepare_worktree_for_task "$wt" >> "$log" 2>&1; then
@@ -1221,8 +1821,8 @@ process_pr()
 
     # Count the PR as processed ok (clean run) or not (errored/timed out).
     case "$outcome" in
-        FAILED*|TIMEOUT) stats_add 0 0 1 0 0 0 0 0 ;;
-        *)               stats_add 0 1 0 0 0 0 0 0 ;;
+        FAILED*|TIMEOUT) stats_add 0 0 1 0 0 0 0 0 0 ;;
+        *)               stats_add 0 1 0 0 0 0 0 0 0 ;;
     esac
     [[ "$outcome" == NEEDS-ATTENTION ]] && na_add "$number"
     # Real progress (pushed / merged / closed) keeps the current priority tier
@@ -1447,12 +2047,34 @@ banner "Worktree base:   ${WORKTREE_BASE}-{0..$((WORKERS - 1))}"
 banner "Selecting:       $MODES_DESC"
 banner "Priority order:  ${PRIORITY_NAMES[0]} > ${PRIORITY_NAMES[1]} > ${PRIORITY_NAMES[2]}"
 (( MODE_RELATED )) && (( ${#EXCLUDED_AUTHOR[@]} )) && banner "Excluded (related): ${!EXCLUDED_AUTHOR[*]}"
-banner "Per-PR timeout:  ${TIMEOUT}s (shared across up to ${MAX_CONTINUE} turns)"
+if [[ -n "$TRIAGE_MODEL" ]]; then
+    banner "Per-PR timeout:  ${TIMEOUT}s (shared across up to ${MAX_CONTINUE} turns per model)"
+else
+    banner "Per-PR timeout:  ${TIMEOUT}s (shared across up to ${MAX_CONTINUE} turns)"
+fi
 banner "ccache:          ${CCACHE_DIR} (max ${CCACHE_MAXSIZE})"
 banner "Agent:           ${AGENT}"
-[[ -n "$MODEL" ]] && banner "Model:           ${MODEL}"
+if [[ -n "$TRIAGE_MODEL" ]]; then
+    banner "Triage model:    ${TRIAGE_MODEL}"
+    banner "Coding model:    ${MODEL}"
+elif [[ -n "$MODEL" ]]; then
+    banner "Model:           ${MODEL}"
+fi
 if [[ "$AGENT" == "codex" ]]; then
-    if [[ -n "$CODEX_INPUT_PRICE" ]]; then
+    if [[ -n "$TRIAGE_MODEL" ]]; then
+        configure_codex_pricing "$TRIAGE_MODEL"
+        if [[ -n "$CODEX_INPUT_PRICE" ]]; then
+            banner "Triage pricing:  input \$${CODEX_INPUT_PRICE}, cached \$${CODEX_CACHED_INPUT_PRICE}, output \$${CODEX_OUTPUT_PRICE} per MTok"
+        else
+            banner "Triage pricing:  unavailable for ${TRIAGE_MODEL}; cost will exclude its usage"
+        fi
+        configure_codex_pricing "$MODEL"
+        if [[ -n "$CODEX_INPUT_PRICE" ]]; then
+            banner "Coding pricing:  input \$${CODEX_INPUT_PRICE}, cached \$${CODEX_CACHED_INPUT_PRICE}, output \$${CODEX_OUTPUT_PRICE} per MTok"
+        else
+            banner "Coding pricing:  unavailable for ${MODEL}; cost will exclude its usage"
+        fi
+    elif [[ -n "$CODEX_INPUT_PRICE" ]]; then
         banner "Pricing:         input \$${CODEX_INPUT_PRICE}, cached \$${CODEX_CACHED_INPUT_PRICE}, output \$${CODEX_OUTPUT_PRICE} per MTok"
     else
         banner "Pricing:         unavailable for ${MODEL:-configured default}; cost will exclude Codex usage"
@@ -1460,13 +2082,7 @@ if [[ "$AGENT" == "codex" ]]; then
 fi
 banner "Effort:          ${EFFORT}"
 banner "Disk reserve:    ${MIN_FREE_GB} GiB (managed worktrees are cleaned below this)"
-if (( CUSTOM_KEY )); then
-    if [[ "$AGENT" == "codex" ]]; then
-        banner "Access token:    custom (…${API_KEY: -4})"
-    else
-        banner "API key:         custom (…${API_KEY: -4})"
-    fi
-fi
+(( CUSTOM_KEY )) && banner "API key:         custom (…${API_KEY: -4})"
 (( DRY_RUN )) && banner "DRY RUN: not creating worktrees or running /continue-pr-auto"
 echo ""
 
@@ -1501,7 +2117,7 @@ while true; do
     cleanup_worktrees_if_disk_low
     rm -f "$CLEANUP_FAILURE_FILE"
     ROUND=$((ROUND + 1))
-    stats_add 1 0 0 0 0 0 0 0
+    stats_add 1 0 0 0 0 0 0 0 0
     na_reset
     banner "===== Round ${ROUND}: fetching open PRs ====="
 
