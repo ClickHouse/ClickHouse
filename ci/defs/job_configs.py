@@ -1243,7 +1243,11 @@ class JobConfigs:
             requires=[ArtifactNames.DEB_AMD_RELEASE],
         ),
     )
-    # why it's master only?
+    # Despite the name, only release_branches.py uses these.
+    # Six batches, not four: the whole integration suite is about 110000 test-seconds, which
+    # four batches of three xdist workers cannot fit into the two-hour pytest session timeout
+    # however well they are balanced. At four batches this job timed out on roughly half of
+    # all release-branch runs.
     integration_test_asan_master_jobs = common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
@@ -1251,7 +1255,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
             )
-            for total_batches in (4,)
+            for total_batches in (6,)
             for batch in range(1, total_batches + 1)
         ]
     )
@@ -1870,7 +1874,10 @@ class JobConfigs:
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
+            include_paths=[
+                "./ci/jobs/libfuzzer_test_check.py",
+                "./tests/fuzz/runner.py",
+            ],
         ),
     )
     libfuzzer_corpus_minimization_job = Job.Config(
@@ -1882,7 +1889,10 @@ class JobConfigs:
         ),
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
+            include_paths=[
+                "./ci/jobs/libfuzzer_test_check.py",
+                "./tests/fuzz/runner.py",
+            ],
         ),
     )
     collect_clickhouse_profiles_jobs = Job.Config(
