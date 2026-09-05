@@ -14,7 +14,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TMP="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
-NAT="output_format_arrow_use_native_writer = 1"
 COMMON="output_format_arrow_fixed_string_as_fixed_byte_array = 0, output_format_arrow_string_as_string = 1, output_format_arrow_compression_method = 'none', engine_file_truncate_on_insert = 1"
 
 # All NULL, nested carries a distinctive marker; a sibling column has the same NULL structure but trivial nested.
@@ -25,17 +24,16 @@ for FMT in Arrow ArrowStream; do
     echo "=== ${FMT} ==="
 
     # The nested bytes of NULL rows must not reach the native output.
-    ${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('${TMP}.s.${FMT}', '${FMT}') ${FS_MARK} SETTINGS ${NAT}, ${COMMON}"
+    ${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('${TMP}.s.${FMT}', '${FMT}') ${FS_MARK} SETTINGS ${COMMON}"
     echo "fixedstring: leaked marker occurrences in native output: $(grep -c -a SECRETLEAK "${TMP}.s.${FMT}")"
 
     # The native output must not depend on what a NULL row carries in its nested column.
-    ${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('${TMP}.s2.${FMT}', '${FMT}') ${FS_PLAIN} SETTINGS ${NAT}, ${COMMON}"
+    ${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('${TMP}.s2.${FMT}', '${FMT}') ${FS_PLAIN} SETTINGS ${COMMON}"
     cmp -s "${TMP}.s.${FMT}" "${TMP}.s2.${FMT}" && echo "fixedstring: native output independent of NULL-row nested bytes: OK" || echo "fixedstring: native output independent of NULL-row nested bytes: MISMATCH"
 
-    # Round-trips to all NULL, and the native reader agrees with the library reader.
-    SN=$(${CLICKHOUSE_LOCAL} --query "SELECT count() = 64 AND countIf(s IS NULL) = 64 FROM file('${TMP}.s.${FMT}', '${FMT}') SETTINGS input_format_arrow_use_native_reader = 1")
-    SL=$(${CLICKHOUSE_LOCAL} --query "SELECT count() = 64 AND countIf(s IS NULL) = 64 FROM file('${TMP}.s.${FMT}', '${FMT}') SETTINGS input_format_arrow_use_native_reader = 0")
-    echo "fixedstring: round-trips to all NULL (native reader / library reader): ${SN} / ${SL}"
+    # Round-trips to all NULL.
+    SN=$(${CLICKHOUSE_LOCAL} --query "SELECT count() = 64 AND countIf(s IS NULL) = 64 FROM file('${TMP}.s.${FMT}', '${FMT}')")
+    echo "fixedstring: round-trips to all NULL: ${SN}"
 
     rm -f "${TMP}.s.${FMT}" "${TMP}.s2.${FMT}"
 done

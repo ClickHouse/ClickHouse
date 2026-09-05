@@ -241,7 +241,7 @@ SELECT toTypeName(json.a.b), toTypeName(json.a.g), toTypeName(json.c), toTypeNam
 └──────────────────────┴──────────────────────┴────────────────────┴────────────────────┘
 ```
 
-Как видно, для `a.b` используется тип `UInt32`, как и было указано в объявлении JSON type,
+Как видно, для `a.b` используется тип `UInt32`, как и было указано в объявлении типа JSON,
 а для всех остальных подстолбцов используется тип `Dynamic`.
 
 Подстолбцы типа `Dynamic` также можно читать, используя специальный синтаксис `json.some.path.:TypeName`:
@@ -293,7 +293,7 @@ while executing 'FUNCTION CAST(__table1.json.a.g :: 2, 'UUID'_String :: 1) -> CA
 ```
 
 <Note>
-  Чтобы эффективно читать подстолбцы из компактных частей MergeTree, убедитесь, что включена настройка MergeTree [write&#95;marks&#95;for&#95;substreams&#95;in&#95;compact&#95;parts](/ru/reference/settings/merge-tree-settings#write_marks_for_substreams_in_compact_parts).
+  Чтобы эффективно читать подстолбцы из компактных частей MergeTree, убедитесь, что включена настройка MergeTree [write&#95;marks&#95;for&#95;substreams&#95;in&#95;compact&#95;parts](/ru/reference/settings/merge-tree-settings/write#write_marks_for_substreams_in_compact_parts).
 </Note>
 
 <div id="reading-json-sub-objects-as-sub-columns">
@@ -396,16 +396,16 @@ FROM test;
 Это работает так же, как [автоматическое определение схемы](/ru/concepts/features/interfaces/schema-inference),
 и управляется теми же настройками:
 
-* [input&#95;format&#95;try&#95;infer&#95;dates](/ru/reference/settings/formats#input_format_try_infer_dates)
-* [input&#95;format&#95;try&#95;infer&#95;datetimes](/ru/reference/settings/formats#input_format_try_infer_datetimes)
-* [schema&#95;inference&#95;make&#95;columns&#95;nullable](/ru/reference/settings/formats#schema_inference_make_columns_nullable)
-* [input&#95;format&#95;json&#95;try&#95;infer&#95;numbers&#95;from&#95;strings](/ru/reference/settings/formats#input_format_json_try_infer_numbers_from_strings)
-* [input&#95;format&#95;json&#95;infer&#95;incomplete&#95;types&#95;as&#95;strings](/ru/reference/settings/formats#input_format_json_infer_incomplete_types_as_strings)
-* [input&#95;format&#95;json&#95;read&#95;numbers&#95;as&#95;strings](/ru/reference/settings/formats#input_format_json_read_numbers_as_strings)
-* [input&#95;format&#95;json&#95;read&#95;bools&#95;as&#95;strings](/ru/reference/settings/formats#input_format_json_read_bools_as_strings)
-* [input&#95;format&#95;json&#95;read&#95;bools&#95;as&#95;numbers](/ru/reference/settings/formats#input_format_json_read_bools_as_numbers)
-* [input&#95;format&#95;json&#95;read&#95;arrays&#95;as&#95;strings](/ru/reference/settings/formats#input_format_json_read_arrays_as_strings)
-* [input&#95;format&#95;json&#95;infer&#95;array&#95;of&#95;dynamic&#95;from&#95;array&#95;of&#95;different&#95;types](/ru/reference/settings/formats#input_format_json_infer_array_of_dynamic_from_array_of_different_types)
+* [input&#95;format&#95;try&#95;infer&#95;dates](/ru/reference/settings/formats/input-format#input_format_try_infer_dates)
+* [input&#95;format&#95;try&#95;infer&#95;datetimes](/ru/reference/settings/formats/input-format#input_format_try_infer_datetimes)
+* [schema&#95;inference&#95;make&#95;columns&#95;nullable](/ru/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable)
+* [input&#95;format&#95;json&#95;try&#95;infer&#95;numbers&#95;from&#95;strings](/ru/reference/settings/formats/input-format#input_format_json_try_infer_numbers_from_strings)
+* [input&#95;format&#95;json&#95;infer&#95;incomplete&#95;types&#95;as&#95;strings](/ru/reference/settings/formats/input-format#input_format_json_infer_incomplete_types_as_strings)
+* [input&#95;format&#95;json&#95;read&#95;numbers&#95;as&#95;strings](/ru/reference/settings/formats/input-format#input_format_json_read_numbers_as_strings)
+* [input&#95;format&#95;json&#95;read&#95;bools&#95;as&#95;strings](/ru/reference/settings/formats/input-format#input_format_json_read_bools_as_strings)
+* [input&#95;format&#95;json&#95;read&#95;bools&#95;as&#95;numbers](/ru/reference/settings/formats/input-format#input_format_json_read_bools_as_numbers)
+* [input&#95;format&#95;json&#95;read&#95;arrays&#95;as&#95;strings](/ru/reference/settings/formats/input-format#input_format_json_read_arrays_as_strings)
+* [input&#95;format&#95;json&#95;infer&#95;array&#95;of&#95;dynamic&#95;from&#95;array&#95;of&#95;different&#95;types](/ru/reference/settings/formats/input-format#input_format_json_infer_array_of_dynamic_from_array_of_different_types)
 
 Рассмотрим несколько примеров:
 
@@ -616,7 +616,7 @@ Code: 117. DB::Exception: Cannot insert data into JSON column: Duplicate path fo
 ```
 
 Если вы хотите сохранить ключи с точками и не представлять их как вложенные объекты, можно включить
-настройку [json&#95;type&#95;escape&#95;dots&#95;in&#95;keys](/ru/reference/settings/formats#json_type_escape_dots_in_keys) (доступна начиная с версии `25.8`). В этом случае при парсинге все точки в ключах JSON будут
+настройку [json&#95;type&#95;escape&#95;dots&#95;in&#95;keys](/ru/reference/settings/formats/other#json_type_escape_dots_in_keys) (доступна начиная с версии `25.8`). В этом случае при парсинге все точки в ключах JSON будут
 экранироваться как `%2E`, а при formatting преобразовываться обратно.
 
 ```sql title="Query"
@@ -881,12 +881,12 @@ ORDER BY _part ASC
 и `advanced`.
 
 Версия сериализации определяется
-настройками MergeTree [object&#95;shared&#95;data&#95;serialization&#95;version](/ru/reference/settings/merge-tree-settings#object_shared_data_serialization_version)
-и [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95;level&#95;parts](/ru/reference/settings/merge-tree-settings#object_shared_data_serialization_version_for_zero_level_parts)
+настройками MergeTree [object&#95;shared&#95;data&#95;serialization&#95;version](/ru/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
+и [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95;level&#95;parts](/ru/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_zero_level_parts)
 (часть нулевого уровня — это часть, создаваемая при вставке данных в таблицу; при слиянии части получают более высокий уровень).
 
 Примечание: изменение сериализации общей структуры данных поддерживается только
-для `v3` [object serialization version](/ru/reference/settings/merge-tree-settings#object_serialization_version)
+для `v3` [object serialization version](/ru/reference/settings/merge-tree-settings/other#object_serialization_version)
 
 <div id="shared-data-map">
   #### Map
@@ -903,14 +903,14 @@ ORDER BY _part ASC
 </div>
 
 В версии сериализации `map_with_buckets` общие данные сериализуются как `N` столбцов («бакетов») типа `Map(String, String)`.
-Каждый такой бакет содержит только подмножество путей. Чтобы прочитать подстолбец для пути из этого типа сериализации, ClickHouse
+Каждый такой бакет содержит только подмножество путей. Чтобы прочитать подстолбец по пути из этого типа сериализации, ClickHouse
 считывает весь столбец `Map` из одного бакета и уже в памяти извлекает запрошенный путь.
 
-Эта сериализация менее эффективна для записи данных и чтения всего `JSON`-столбца, но более эффективна для чтения подстолбцов путей,
+Эта сериализация менее эффективна для записи данных и чтения всего `JSON`-столбца, но более эффективна для чтения подстолбцов по путям,
 поскольку считывает данные только из нужных бакетов.
 
-Количество бакетов `N` задаётся настройками MergeTree [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/ru/reference/settings/merge-tree-settings#object_shared_data_buckets_for_compact_part) (по умолчанию 8)
-и [object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/ru/reference/settings/merge-tree-settings#object_shared_data_buckets_for_wide_part) (по умолчанию 32).
+Количество бакетов `N` задаётся настройками MergeTree [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/ru/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_compact_part) (по умолчанию 8)
+и [object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/ru/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part) (по умолчанию 32).
 Максимально допустимое значение для обеих настроек — 256.
 
 <div id="shared-data-advanced">
@@ -964,7 +964,7 @@ ORDER BY _part ASC
 
 ```sql title="Query"
 SELECT arrayJoin(distinctJSONPaths(json))
-FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject)
+FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', NOSIGN, JSONAsObject)
 ```
 
 ```text title="Response"
@@ -1024,7 +1024,7 @@ FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz
 
 ```sql title="Query"
 SELECT arrayJoin(distinctJSONPathsAndTypes(json))
-FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject)
+FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', NOSIGN, JSONAsObject)
 SETTINGS date_time_input_format = 'best_effort'
 ```
 
@@ -1170,6 +1170,8 @@ SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 
 При включенных ленивых подсказках типов этот запрос не возвращает ни одной строки, что подтверждает, что операция затронула только метаданные.
 
+Это относится к описанным выше изменениям подсказок типов; сведения о случаях, которые вместо этого отклоняются, см. в разделе [Ограничения](#lazy-type-hints-limitations).
+
 <div id="materializing-type-hints">
   ### Материализация подсказок типов
 </div>
@@ -1187,6 +1189,14 @@ SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 * Эта возможность экспериментальная и может измениться в будущих версиях
 * Преобразование типов при выполнении запроса может приводить к существенным накладным расходам по производительности по сравнению с заранее материализованными типами, особенно для крупных объектов JSON
 * Эта возможность работает только при изменении `typed_paths` (подсказок типов); другие параметры JSON, такие как `max_dynamic_paths`, `SKIP` или `SKIP REGEXP`, по-прежнему требуют мутаций
+
+- Изменение подсказки типа (или удаление типизированного пути) **не** является операцией только с метаданными и отклоняется, если затронутый подстолбец используется в структуре с позиционным хранением:
+
+  * в **первичном ключе/ключе сортировки** или **ключе партиционирования** — изменение запрещено, поскольку первичный индекс / значения партиции на диске нельзя перестроить с помощью `ALTER`, изменяющего только метаданные (как и для любого другого ключевого столбца);
+  * в явном **индексе пропуска данных** — сначала удалите индекс или отключите `allow_experimental_json_lazy_type_hints`, чтобы выполнить изменение как полную мутацию, перестраивающую индекс.
+  * в **проекции, ключ сортировки (`ORDER BY`) которой считывает подстолбец** — сначала удалите проекцию, поскольку `ALTER`, изменяющий только метаданные, не может перестроить первичный индекс проекции.
+
+  Добавление подсказок для путей, не используемых ни в одной такой структуре, или изменения, при которых тип используемых подстолбцов на диске остаётся неизменным (например, добавление несвязанного типизированного пути), по-прежнему являются операциями только с метаданными.
 
 <div id="comparison-between-values-of-the-json-type">
   ## Сравнение значений типа JSON

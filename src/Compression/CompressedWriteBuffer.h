@@ -44,6 +44,9 @@ public:
 
     void setCodec(CompressionCodecPtr codec_);
 
+    /// Returns the buffer that compressed data is written into.
+    WriteBuffer * getNestedBuffer() const { return &out; }
+
 private:
     void nextImpl() override;
     /// finalize call does not affect the out buffer.
@@ -55,12 +58,6 @@ private:
 
     WriteBuffer & out;
     CompressionCodecPtr codec;
-
-    /// If true, the size of internal buffer will be exponentially increased up to
-    /// adaptive_buffer_max_size after each nextImpl call. It can be used to avoid
-    /// large buffer allocation when actual size of written data is small.
-    bool use_adaptive_buffer_size;
-    size_t adaptive_buffer_max_size;
 
     PODArray<char> compressed_buffer;
 };

@@ -1,0 +1,5 @@
+-- a `= DEFAULT` construction setting in a VIEW definition is rejected too
+-- a `= DEFAULT` construction setting in a MATERIALIZED VIEW definition is rejected too
+-- a `= DEFAULT` construction setting via ALTER TABLE ... MODIFY QUERY is rejected too
+-- a plain view works; a `= DEFAULT` reset on the reading query is applied there (no limit, 10 rows)
+10

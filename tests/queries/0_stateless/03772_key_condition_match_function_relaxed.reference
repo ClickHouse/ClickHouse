@@ -31,18 +31,7 @@ FROM 03772_table_match
 WHERE NOT match(url, '^abcd');
 Expression ((Project names + Projection))
   Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.03772_table_match)
-        Indexes:
-          PrimaryKey
-            Keys:
-              url
-            Condition: not((url in [\'abcd\', \'abce\')))
-            Parts: 1/1
-            Granules: 1/1
-            Search Algorithm: generic exclusion search
-          Ranges: 1
+    ReadFromPreparedSource (_exact_count_projection)
 SELECT count(*)
 FROM 03772_table_match
 WHERE match(url, '^abcd');

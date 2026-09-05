@@ -1,0 +1,118 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-08-15
+title: 'ClickStack demo days - 2026-08-15'
+sidebarTitle: '2026-08-15'
+description: 'ClickStack demo days: 2026-08-15'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="dashboard-variables">
+  ## Variables del dashboard
+</div>
+
+*Demo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/gY2Kej-EYx4" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Las variables del dashboard son la principal novedad de esta semana. Se basan en el modelo de filtros que ya usan los dashboards: cualquier filtro existente o nuevo puede estar disponible como variable.
+
+De forma predeterminada, una variable usa el nombre para mostrar del filtro. Si ese nombre contiene caracteres especiales o dos filtros comparten el mismo nombre para mostrar, puede asignarle un nombre de variable personalizado. Este nombre se mantiene aunque el filtro se renombre posteriormente. La página de configuración muestra el nombre que debe usar como referencia y, una vez habilitada la variable, también aparece en la información sobre herramientas del filtro.
+
+Los gráficos con SQL sin procesar admiten varias formas de usar variables. `$__filter($var)` expande la selección actual de una variable. Es el equivalente para una sola variable de la macro `$__filters` existente, que expande todos los filtros.
+
+La incorporación más interesante es `$__conditionalAll(condition, $var)`. Su primer argumento es una condición y el segundo, una variable. Cuando la variable tiene una selección, la condición se incluye en la consulta. Si no hay selección, toda la expresión se convierte en `1 = 1` y no afecta al filtrado.
+
+Esto permite crear correspondencias entre fuentes. Un dashboard puede asignar códigos de estado de traces a `error` o `info`, lo que permite que un filtro de gravedad definido para una tabla de logs filtre una tabla de traces. Seleccione `error` en el dashboard y la consulta de traces filtrará por un estado de error.
+
+El autocompletado sugiere todas las variables disponibles y los formatos compatibles. A raíz de una sugerencia de Brandon, ahora muestra la expansión real en línea según la selección actual. Las sugerencias de macros también incluyen sus expansiones, y una nueva sección de documentación explica qué hace cada macro. La validación detecta referencias a variables inexistentes y macros invocadas con argumentos incorrectos.
+
+Los gráficos del constructor usan la misma sustitución de variables en la mayoría de los campos editables, tanto en entradas SQL como de Lucene. Las variables funcionan en `WHERE`, `GROUP BY`, `HAVING` y `ORDER BY`, con el mismo autocompletado y validación. Los campos de Lucene admiten variables, pero no macros. Los campos del constructor de SQL ofrecen las macros relacionadas con variables en lugar del conjunto completo disponible en SQL sin procesar.
+
+Las alertas tienen una regla estricta: todas las variables se evalúan con su valor vacío. Si una consulta de alerta hace referencia a variables, el editor le avisa antes de guardarla. La vista previa y el SQL generado muestran la expansión vacía, incluso en la página de detalles de la alerta, y la tarea de alerta aplica esos valores vacíos al ejecutarse.
+
+La configuración de variables sigue estando detrás de `NEXT_PUBLIC_ENABLE_DASHBOARD_VARIABLES`. Si no hay variables configuradas, el comportamiento del dashboard no cambia.
+
+**PR relacionados:** [#2836](https://github.com/hyperdxio/hyperdx/pull/2836) añade la configuración de variables de filtro, [#2873](https://github.com/hyperdxio/hyperdx/pull/2873) sustituye variables en gráficos con SQL sin procesar, [#2874](https://github.com/hyperdxio/hyperdx/pull/2874) añade autocompletado y validaciones para variables de dashboard en SQL, [#2901](https://github.com/hyperdxio/hyperdx/pull/2901) admite variables de dashboard en mosaicos del constructor de gráficos, [#2910](https://github.com/hyperdxio/hyperdx/pull/2910) expande variables como vacías en consultas de alerta, [#2923](https://github.com/hyperdxio/hyperdx/pull/2923) admite consultas de valores para variables dependientes, [#2937](https://github.com/hyperdxio/hyperdx/pull/2937) admite macros anidadas y referencias a variables en macros, [#2944](https://github.com/hyperdxio/hyperdx/pull/2944) añade variables de dashboard a la API externa
+
+<div id="alert-detail-page-with-evaluation-history">
+  ## Página de detalles de alertas con historial de evaluaciones
+</div>
+
+*Demo de [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Y0entaRF-R8" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Hasta ahora, una alerta solo mostraba una franja de historial y poco más. No había mucho que revisar si querías entender qué estaba haciendo realmente la alerta.
+
+La nueva página de detalles muestra cada evaluación. En las alertas agrupadas, indica qué grupo se activó y qué valor superó el umbral. Cada entrada también incluye la duración de la consulta de ClickHouse y la configuración de la alerta.
+
+La columna de buckets completados retroactivamente requiere cierta explicación. Cuando se omite una evaluación, la siguiente ejecución cubre el hueco procesando el bucket faltante. Por tanto, los buckets completados retroactivamente indican que la alerta se está ejecutando con retraso. Ahora, una consulta lenta de ClickHouse deja evidencia visible, en lugar de retrasar silenciosamente las evaluaciones posteriores.
+
+Los marcadores del gráfico se alinean con el inicio del bucket evaluado, lo que facilita ver cuándo se activó la alerta y cuándo volvió a OK.
+
+También puedes editar o eliminar una alerta directamente desde la página de detalles. No es necesario volver al modal de búsqueda guardada ni al editor de mosaicos del dashboard. Aún se está evaluando incluir más opciones de configuración de la alerta en esta página.
+
+La página sigue estando detrás de `NEXT_PUBLIC_ENABLE_ALERT_DETAILS`.
+
+**PR relacionados:** [#2833](https://github.com/hyperdxio/hyperdx/pull/2833) modelo de lectura de evaluaciones de alertas y `GET /alerts/:id/evaluations`, [#2834](https://github.com/hyperdxio/hyperdx/pull/2834) persistir errores de evaluación de alertas y analítica en AlertHistory, [#2835](https://github.com/hyperdxio/hyperdx/pull/2835) página de detalles de alertas con historial de evaluaciones, [#2928](https://github.com/hyperdxio/hyperdx/pull/2928) alinear los marcadores del gráfico de alertas con el inicio del bucket evaluado, [#2931](https://github.com/hyperdxio/hyperdx/pull/2931) permitir editar y eliminar alertas desde la página de detalles de alertas
+
+<div id="investigating-alerts-and-mcp-tool-annotations">
+  ## Investigación de alertas y anotaciones de herramientas MCP
+</div>
+
+*Demo de [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/942yeJitK4Q" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Las alertas que se activan ahora cuentan con un botón Investigar. Al hacer clic en él, se inicia una investigación en un notebook desde la página de alertas o la página de detalles de la alerta.
+
+El objetivo final es iniciar estas investigaciones automáticamente cuando se active una alerta. El botón es un paso intermedio útil, no la forma final prevista.
+
+Todas las herramientas del servidor MCP de ClickStack ahora también incluyen anotaciones indicativas. Anteriormente, el servidor no indicaba si una herramienta era de solo lectura o si otra modificaba o eliminaba datos.
+
+Añadir `readOnlyHint` y `destructiveHint` proporciona a los clientes información suficiente para tratar estas herramientas de forma diferente. Las operaciones de lectura pueden continuar sin interrupciones, mientras que las acciones destructivas pueden requerir una aprobación explícita. Eliminar una alerta es el ejemplo más evidente. Deberías recibir una solicitud de confirmación antes de que ocurra.
+
+El último cambio afecta a las herramientas que los agentes eligen en primer lugar. El uso de `clickstack_sql` había aumentado a medida que se ampliaba el conjunto de herramientas sin una política de selección clara. Los agentes recurrían a SQL sin procesar incluso cuando las herramientas constructoras eran más adecuadas.
+
+Esto importa más allá de la corrección de las consultas. El SQL sin procesar crea mosaicos de resultados estáticos. Las herramientas constructoras, `clickstack_table`, `clickstack_timeseries` y `clickstack_search`, generan mosaicos en los que puedes hacer clic y a partir de los cuales puedes pivotar.
+
+Ahora, MCP dirige primero a los agentes hacia esas herramientas constructoras y reserva el SQL sin procesar para las consultas que realmente no pueden expresar. Las puntuaciones de evaluación mejoraron notablemente tras el cambio.
+
+**PR relacionados:** [#2838](https://github.com/hyperdxio/hyperdx/pull/2838) añade anotaciones a todas las herramientas MCP (`readOnlyHint`, etc.); [#2840](https://github.com/hyperdxio/hyperdx/pull/2840) orienta a los agentes hacia herramientas constructoras de consultas en lugar de SQL sin procesar; [#2870](https://github.com/hyperdxio/hyperdx/pull/2870) orienta a los agentes de dashboards hacia filtros de mosaico por serie. El botón Investigar no tiene ningún PR público al que enlazar.
+
+<div id="multi-series-metric-charts-in-a-single-query">
+  ## Gráficos de métricas multiserie en una sola consulta
+</div>
+
+*Demo de [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/jJKgFrMfGjU" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Antes, incluir varias métricas en un gráfico implicaba ejecutar una consulta de ClickHouse por serie y, después, combinar los conjuntos de resultados en Node o en el navegador. Un gráfico con N series generaba N consultas.
+
+Ahora, los gráficos multiserie se compilan en una única consulta SQL. Cada serie se convierte en una CTE y ClickHouse las combina al final. Las proporciones siguen el mismo enfoque: ambas series se generan en una sola consulta y la proporción se calcula en la proyección final.
+
+La reducción del número de consultas es el beneficio inmediato. Esta misma estructura de consulta también sienta las bases para las fórmulas de métricas. Una fórmula necesita que todas las series estén disponibles como columnas en una misma relación para poder expresarse en el `SELECT` final. Eso es exactamente lo que ahora genera el compilador, y el trabajo en fórmulas ya avanza en paralelo.
+
+El cambio reveló una regresión. Los mosaicos multiserie no se renderizaban cuando combinaban agregaciones que producían valores de punto flotante y enteros. Bastaba con combinar un `quantile` de histograma, que devuelve `Float64`, con un `count` de histograma, que devuelve `Int64`, para desencadenarla.
+
+El `UNION ALL` y el pivote compuestos enviaban todas las series a través de la misma columna, lo que hacía que ClickHouse ampliara el tipo a `Variant(Float64, Int64)`. Este caso ya se ha corregido.
+
+**PR relacionados:** [#2858](https://github.com/hyperdxio/hyperdx/pull/2858) amplía la cobertura de pruebas de enteros para la combinación de métricas multiserie, [#2859](https://github.com/hyperdxio/hyperdx/pull/2859) traslada a ClickHouse el cálculo de combinación de métricas multiserie, [#2907](https://github.com/hyperdxio/hyperdx/pull/2907) cobertura de tareas de alertas para mosaicos de métricas multiserie, [#2916](https://github.com/hyperdxio/hyperdx/pull/2916) corrige gráficos de métricas multiserie que combinan agregaciones de punto flotante y enteros, [#2872](https://github.com/hyperdxio/hyperdx/pull/2872) modelo de expresiones de fórmulas, [#2908](https://github.com/hyperdxio/hyperdx/pull/2908) renderiza fórmulas en la consulta de métricas compuesta, [#2909](https://github.com/hyperdxio/hyperdx/pull/2909) interfaz de usuario del editor de gráficos para fórmulas de métricas
+
+<div id="lucene-autocomplete-and-password-requirement-fixes">
+  ## Correcciones del autocompletado de Lucene y de los requisitos de contraseña
+</div>
+
+*Demo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/8MODmM5RT6Q" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Las pruebas de las variables del dashboard revelaron otra regresión: el autocompletado de Lucene había dejado de funcionar sin previo aviso en casi todas partes. La página de Búsqueda era el único lugar donde seguía funcionando.
+
+El otro cambio se encuentra en la página Join Team, donde los usuarios invitados establecen su contraseña. La página no mostraba los requisitos de contraseña, aunque el backend los aplicaba. Al introducir una contraseña no válida, se mostraba un mensaje genérico de &quot;La contraseña no es válida&quot; y el usuario debía adivinar la política.
+
+Ahora estos requisitos son visibles. Al revisar el componente compartido que los muestra, también se detectaron dos discrepancias con el backend: qué caracteres especiales se consideran válidos y la longitud máxima de la contraseña. Ambas se han corregido.
+
+**PR relacionados:** [#2902](https://github.com/hyperdxio/hyperdx/pull/2902) restaura el autocompletado de Lucene, [#2904](https://github.com/hyperdxio/hyperdx/pull/2904) muestra los requisitos de contraseña en la página Join Team

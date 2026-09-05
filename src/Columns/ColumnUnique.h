@@ -94,7 +94,6 @@ public:
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
-    void skipSerializedInArena(ReadBuffer & in) const override;
     void updateHashWithValue(size_t n, SipHash & hash_func) const override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -166,18 +165,27 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getNumberOfDefaultRows' not implemented for ColumnUnique");
     }
 
+    bool hasOnlyTypeDefaults() const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'hasOnlyTypeDefaults' not implemented for ColumnUnique");
+    }
+
     void getIndicesOfNonDefaultRows(IColumn::Offsets &, size_t, size_t) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getIndicesOfNonDefaultRows' not implemented for ColumnUnique");
     }
 
-    const UInt64 * tryGetSavedHash() const override { return reverse_index.tryGetSavedHash(); }
+    std::span<const UInt64> tryGetSavedHash() const override { return reverse_index.tryGetSavedHash(); }
 
     UInt128 getHash() const override { return hash.getHash(*getRawColumnPtr()); }
 
     /// This is strange. Please remove this method as soon as possible.
     std::optional<UInt64> getOrFindValueIndex(std::string_view value) const override
     {
+        /// The reserved prefix slots are not in the reverse index, so match the default value here.
+        if (auto index = getNestedTypeDefaultValueIndex(); getRawColumnPtr()->getDataAt(index) == value)
+            return index;
+
         if (std::optional<UInt64> res = reverse_index.getIndex(value); res)
             return res;
 
@@ -595,12 +603,6 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertAggregationStateValue
     in.ignore(string_size_with_zero_byte);
 
     return ret;
-}
-
-template <typename ColumnType>
-void ColumnUnique<ColumnType>::skipSerializedInArena(ReadBuffer &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipSerializedInArena is not supported for {}", this->getName());
 }
 
 template <typename ColumnType>

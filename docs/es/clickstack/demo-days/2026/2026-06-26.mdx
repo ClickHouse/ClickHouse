@@ -1,0 +1,106 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-06-26
+title: 'Demo days - 2026-06-26'
+sidebarTitle: '2026-06-26'
+sidebar_label: '2026-06-26'
+sidebar_position: 626
+description: 'ClickStack demo days del 2026-06-26'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="anomaly-detection-for-alerting-continues-with-bar-charts">
+  ## La detección de anomalías para alertas continúa con gráficos de barras
+</div>
+
+*Demo de [@fleon](https://github.com/fleon)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/AeibhN5dGQY" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Sigue siendo, en gran medida, un experimento. Las bandas de distribución normal utilizadas para resaltar anomalías funcionan bien en gráficos de líneas, pero son mucho más difíciles de representar en gráficos de barras. Himanshu probó bandas de error e incluso gráficos de barras huecas para hacer las bandas más visibles, pero los resultados siguen pareciendo recargados. Superponer una banda como línea sobre una barra sólida presenta el mismo problema, ya que la barra domina la visualización y dificulta distinguir la banda.
+
+Por ahora, probablemente orientaremos a los usuarios hacia el gráfico de líneas cuando quieran examinar las bandas de anomalías y volveremos a revisar el diseño del gráfico de barras más adelante. Himanshu busca comentarios sobre el mejor enfoque antes de publicar esta funcionalidad.
+
+<div id="external-onclick-actions-for-tables">
+  ## Acciones externas al hacer clic en tablas
+</div>
+
+*Demo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/8CV7ZEbFqhk" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Drew presentó una incorporación pequeña pero útil a las tablas de los dashboards: la posibilidad de vincular filas directamente con herramientas externas.
+
+Las filas de las tablas ya permiten acceder en profundidad a Búsqueda u otro dashboard. Esto añade una tercera opción, &quot;External&quot;, que construye una URL con valores de la fila seleccionada antes de abrirla. En la demo, al hacer clic en una fila de un catálogo de productos, se insertaba el nombre del producto en una URL de búsqueda de Google para ilustrar el concepto, pero el mismo mecanismo funciona igual de bien para enlazar con Grafana, runbooks internos, sistemas de tickets o cualquier otra herramienta que acepte parámetros en una URL.
+
+Es una funcionalidad sencilla, pero importante. En lugar de tratar ClickStack como un destino, pasa a formar parte del flujo de trabajo más amplio de observabilidad, lo que facilita ir directamente desde un dashboard a las herramientas necesarias para continuar una investigación.
+
+**PR relacionados:** [#2523](https://github.com/hyperdxio/hyperdx/pull/2523) feat: compatibilidad con enlaces externos mediante el comportamiento al hacer clic en tablas de dashboards
+
+<div id="otel-profiling">
+  ## Perfilado de OTel
+</div>
+
+*Demo de [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/-yAP8lXA2D8" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+El perfilado está empezando a abrirse paso en ClickStack, aunque todavía está claramente en fase de desarrollo. Spencer mostró un prototipo inicial que ingesta muestras de perfilado de OpenTelemetry, los mismos datos que se utilizan para generar gráficos de llamas y que consumen herramientas como pprof. Mediante un dashboard de Grafana respaldado por ClickHouse, visualizó un pequeño programa que ordenaba datos repetidamente y examinó bloques individuales de la pila de llamadas a medida que llegaban nuevas muestras de perfilado.
+
+La implementación aún es bastante preliminar, y la consulta lo refleja. Cada fila combina elementos de logs y traces, y almacena arrays largos de nombres y direcciones de funciones que representan un span o una sección de un gráfico de llamas. Reconstruir el formato que espera Grafana requiere realizar joins y agregaciones entre esos arrays, mientras que el exporter debe descomponer los frames de perfilado sin procesar antes de escribirlos en ClickHouse. El schema aún se basa en filtros de Bloom, y ahora también se ha añadido la búsqueda de texto completo, lo que dio lugar a un debate sobre la compatibilidad. Dado que ClickHouse Cloud ya admite la búsqueda de texto completo, el equipo debatió durante cuánto tiempo más será necesario mantener la vía open source sin esta funcionalidad.
+
+El trabajo se encuentra actualmente en revisión en un PR abierto. El plan es incorporar primero la funcionalidad principal en open source antes de integrarla en ClickStack.
+
+<div id="autocomplete-for-otel-metric-sources">
+  ## Autocompletado para fuentes de métricas de OTel
+</div>
+
+*Demo a cargo de [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/lvcv7IV2Bs8" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Brandon presentó una pequeña mejora para facilitar la incorporación de métricas. Al crear una fuente de métricas de OpenTelemetry, los campos de la tabla de métricas ahora se completan automáticamente según los nombres de las tablas de la base de datos seleccionada, en lugar de tener que seleccionar cada uno manualmente. Esto también equipara las métricas con la experiencia de incorporación que ya ofrecen los logs y los traces.
+
+**PR relacionados:** [#2524](https://github.com/hyperdxio/hyperdx/pull/2524) feat(app): completar automáticamente los menús desplegables de tablas de métricas en el formulario Create Source
+
+<div id="eval-framework-for-dashboards">
+  ## Marco de evaluación para dashboards
+</div>
+
+*Demo de [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/cg2pYb5rsKU" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Los dashboards generados por IA están mejorando, pero evaluar el progreso a simple vista solo permite llegar hasta cierto punto. Brandon está creando un marco de evaluación para medir si la generación de dashboards realmente mejora y, lo que es igual de importante, en qué aspectos aún presenta deficiencias.
+
+La evaluación pide al modelo que genere un dashboard que pruebe deliberadamente el mayor número posible de funcionalidades, incluidas secciones plegables, pestañas, mapas de calor, gráficos circulares, SQL sin procesar junto con tiles basados en fuentes, filtros a nivel de servicio y enlaces de drill-down entre dashboards.
+
+A continuación, una fase de validación comprueba que todo se haya renderizado y se comporte según lo esperado. Durante el proceso, ya ha descubierto problemas reales, incluidos tiles de Markdown que se renderizan sistemáticamente demasiado cortos. También sigue los enlaces de drill-down habilitados por la nueva funcionalidad `onclick` de Drew para verificar que la navegación a un segundo dashboard generado por IA funcione correctamente. A medida que se añadan nuevas capacidades a los dashboards, se incorporarán a la evaluación para detectar regresiones automáticamente, en lugar de depender de pruebas manuales. Brandon espera abrir pronto una PR con el marco.
+
+**PR relacionadas:** [#2571](https://github.com/hyperdxio/hyperdx/pull/2571) feat(hdx-eval): añadir escenario de evaluación de creación de dashboards (en curso)
+
+<div id="connecting-to-prometheus">
+  ## Conexión a Prometheus
+</div>
+
+*Demo de [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/qvM8-6A4two" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Aaron presentó una integración inicial entre ClickStack y Prometheus. Una nueva opción «Compatible con Prometheus» en la configuración avanzada de una fuente indica a ClickStack que trate el host configurado como un endpoint de la API de Prometheus —Thanos en la demo—, en lugar de como una instancia de ClickHouse. Una vez habilitada, los tiles del dashboard pueden ejecutar PromQL directamente en ese endpoint. Aaron lo demostró con un gráfico que agrupaba el uso de CPU de los pods, enviando la consulta directamente a Prometheus en lugar de traducirla mediante ClickHouse. La demo en sí fue bastante breve, pero propició un debate más amplio sobre la experiencia de usuario.
+
+A largo plazo, el objetivo es ofrecer compatibilidad nativa con Prometheus en ClickStack. Esta funcionalidad pretende ser un primer paso práctico que permita a los equipos que ya dependen de Prometheus seguir utilizándolo mientras adoptan ClickStack, en lugar de obligarlos a canalizarlo todo a través de ClickHouse desde el primer día. En paralelo, seguimos trabajando para admitir PromQL de forma nativa en ClickHouse.
+
+**PR relacionados:** [#2518](https://github.com/hyperdxio/hyperdx/pull/2518) feat: añadir la capacidad de conectarse a un almacén de datos externo de Prometheus

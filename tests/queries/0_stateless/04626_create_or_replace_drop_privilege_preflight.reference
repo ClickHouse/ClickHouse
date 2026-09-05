@@ -1,0 +1,7 @@
+-- [scoped DROP DICTIONARY grant] replacing the dictionary with a view must succeed:
+42
+-- [no DROP DICTIONARY grant] the replace must be denied:
+ACCESS_DENIED
+-- [no DROP DICTIONARY grant] and the denied replace must leave the dictionary intact and no leftovers:
+1
+0

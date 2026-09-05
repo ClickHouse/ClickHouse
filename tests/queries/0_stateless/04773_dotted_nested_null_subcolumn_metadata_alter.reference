@@ -1,0 +1,18 @@
+wide, part state
+Wide
+Array(String)
+Array(Nullable(String))
+wide, dotted Nested member
+['a','b']	[0,0]
+[0,0]
+0
+compact, part state
+Compact
+Array(String)
+compact, dotted Nested member
+['a','b']	[0,0]
+[0,0]
+control, share_nested_offsets = 0
+['a','b']	[0,0]
+control, undotted column
+['a','b']	[0,0]

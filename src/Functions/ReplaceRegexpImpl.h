@@ -89,7 +89,7 @@ struct ReplaceRegexpImpl
     }
 
     /// The replacement string references must not contain non-existing capturing groups.
-    static void checkSubstitutions(std::string_view replacement, int num_captures, ReplaceCancellationBudget & budget)
+    static void checkSubstitutions(std::string_view replacement, int num_captures, CancellationBudget & budget)
     {
         for (size_t i = 0; i < replacement.size(); ++i)
         {
@@ -106,7 +106,7 @@ struct ReplaceRegexpImpl
         }
     }
 
-    static Instructions createInstructions(std::string_view replacement, int num_captures, ReplaceCancellationBudget & budget)
+    static Instructions createInstructions(std::string_view replacement, int num_captures, CancellationBudget & budget)
     {
         checkSubstitutions(replacement, num_captures, budget);
 
@@ -147,7 +147,7 @@ struct ReplaceRegexpImpl
     /// `budget` is mandatory: this helper scans the whole replacement, and `analyze` the whole needle.
     static bool canFallbackToStringReplacement(
         const String & needle, const String & replacement, const re2::RE2 & searcher, int num_captures,
-        ReplaceCancellationBudget & budget)
+        CancellationBudget & budget)
     {
         if (searcher.NumberOfCapturingGroups())
             return false;
@@ -167,7 +167,7 @@ struct ReplaceRegexpImpl
         const re2::RE2 & searcher,
         int num_captures,
         const Instructions & instructions,
-        ReplaceCancellationBudget & budget)
+        CancellationBudget & budget)
     {
         std::string_view haystack(haystack_data, haystack_length);
         std::string_view matches[max_captures];
@@ -201,14 +201,17 @@ struct ReplaceRegexpImpl
                 {
                     std::string_view replacement;
                     if (instr.substitution_num >= 0)
-                        replacement = {matches[instr.substitution_num].data(), matches[instr.substitution_num].size()};
+                        replacement = matches[instr.substitution_num];
                     else
                         replacement = instr.literal;
                     res_data.resize(res_data.size() + replacement.size());
-                    memcpy(&res_data[res_offset], replacement.data(), replacement.size());
+                    /// re2 reports a capturing group that did not participate in the match as a null
+                    /// string_view, and passing that to memcpy is undefined behavior even for a zero size.
+                    if (!replacement.empty())
+                        memcpy(&res_data[res_offset], replacement.data(), replacement.size());
                     res_offset += replacement.size();
-                    units_since_charge += 1 + replacement.size() / ReplaceCancellationBudget::bytes_per_unit;
-                    if (units_since_charge >= ReplaceCancellationBudget::units_per_instruction_charge)
+                    units_since_charge += 1 + replacement.size() / CancellationBudget::bytes_per_unit;
+                    if (units_since_charge >= CancellationBudget::units_per_instruction_charge)
                     {
                         budget.chargeUnits(units_since_charge);
                         units_since_charge = 0;
@@ -216,7 +219,7 @@ struct ReplaceRegexpImpl
                 }
 
                 /// This iteration, whatever the loop has not flushed, plus the prefix bytes copied.
-                budget.chargeUnits(1 + units_since_charge + bytes_to_copy / ReplaceCancellationBudget::bytes_per_unit);
+                budget.chargeUnits(1 + units_since_charge + bytes_to_copy / CancellationBudget::bytes_per_unit);
 
                 if constexpr (replace == ReplaceRegexpTraits::First)
                     can_finish_current_string = true;
@@ -268,7 +271,7 @@ struct ReplaceRegexpImpl
         const uint8_t ** capture_starts,
         const uint8_t ** capture_ends,
         const Instructions & instructions,
-        ReplaceCancellationBudget & budget)
+        CancellationBudget & budget)
     {
         const auto * begin = reinterpret_cast<const uint8_t *>(haystack_data);
         const auto * end = begin + haystack_length;
@@ -312,8 +315,8 @@ struct ReplaceRegexpImpl
                     if (!replacement.empty())
                         memcpy(&res_data[res_offset], replacement.data(), replacement.size());
                     res_offset += replacement.size();
-                    units_since_charge += 1 + replacement.size() / ReplaceCancellationBudget::bytes_per_unit;
-                    if (units_since_charge >= ReplaceCancellationBudget::units_per_instruction_charge)
+                    units_since_charge += 1 + replacement.size() / CancellationBudget::bytes_per_unit;
+                    if (units_since_charge >= CancellationBudget::units_per_instruction_charge)
                     {
                         budget.chargeUnits(units_since_charge);
                         units_since_charge = 0;
@@ -321,7 +324,7 @@ struct ReplaceRegexpImpl
                 }
 
                 /// See `processString`.
-                budget.chargeUnits(1 + units_since_charge + bytes_to_copy / ReplaceCancellationBudget::bytes_per_unit);
+                budget.chargeUnits(1 + units_since_charge + bytes_to_copy / CancellationBudget::bytes_per_unit);
 
                 if constexpr (replace == ReplaceRegexpTraits::First)
                     can_finish_current_string = true;
@@ -368,7 +371,7 @@ struct ReplaceRegexpImpl
         size_t regexp_jit_min_count = std::numeric_limits<size_t>::max(),
         const std::function<void()> & check_cancellation = {})
     {
-        ReplaceCancellationBudget budget(check_cancellation);
+        CancellationBudget budget(check_cancellation);
 
         if (needle.empty())
         {
@@ -452,7 +455,7 @@ struct ReplaceRegexpImpl
     {
         chassert(haystack_offsets.size() == needle_offsets.size());
 
-        ReplaceCancellationBudget budget(check_cancellation);
+        CancellationBudget budget(check_cancellation);
 
         ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());
@@ -511,7 +514,7 @@ struct ReplaceRegexpImpl
     {
         chassert(haystack_offsets.size() == replacement_offsets.size());
 
-        ReplaceCancellationBudget budget(check_cancellation);
+        CancellationBudget budget(check_cancellation);
 
         if (needle.empty())
         {
@@ -568,7 +571,7 @@ struct ReplaceRegexpImpl
         chassert(haystack_offsets.size() == needle_offsets.size());
         chassert(needle_offsets.size() == replacement_offsets.size());
 
-        ReplaceCancellationBudget budget(check_cancellation);
+        CancellationBudget budget(check_cancellation);
 
         ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());
@@ -629,7 +632,7 @@ struct ReplaceRegexpImpl
         size_t input_rows_count,
         const std::function<void()> & check_cancellation = {})
     {
-        ReplaceCancellationBudget budget(check_cancellation);
+        CancellationBudget budget(check_cancellation);
 
         if (needle.empty())
         {

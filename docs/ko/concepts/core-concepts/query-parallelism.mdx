@@ -35,7 +35,7 @@ ClickHouse는 ① 테이블의 프라이머리 키(primary key)에 대한 필터
 
 <br />
 
-`n`개의 병렬 처리 레인 수는 [`max_threads`](/ko/reference/settings/session-settings#max_threads) 설정으로 제어되며, 기본적으로 서버에서 ClickHouse가 사용할 수 있는 단일 CPU의 코어 수(스레드 수)와 일치합니다. 위 예시에서는 `4`개의 코어를 가정합니다.
+`n`개의 병렬 처리 레인 수는 [`max_threads`](/ko/reference/settings/session-settings/max-threads#max_threads) 설정으로 제어되며, 기본적으로 서버에서 ClickHouse가 사용할 수 있는 단일 CPU의 코어 수(스레드 수)와 일치합니다. 위 예시에서는 `4`개의 코어를 가정합니다.
 
 `8`개의 코어가 있는 머신에서는 더 많은 레인이 데이터를 병렬로 처리하므로 쿼리 처리량이 대략 2배로 증가합니다(메모리 사용량도 그에 따라 함께 증가합니다):
 
@@ -221,21 +221,21 @@ WHERE town = 'LONDON';
 
 설정된 `max_threads` 값과 관계없이, ClickHouse는 이를 뒷받침할 만큼 데이터가 충분할 때에만 추가 처리 레인을 할당합니다. `max_threads`의 &quot;max&quot;는 실제 사용되는 스레드 수를 보장한다는 뜻이 아니라 상한을 의미합니다.
 
-여기서 &quot;충분한 데이터&quot;는 주로 두 가지 설정으로 결정되며, 각 처리 레인이 처리해야 하는 최소 행 수(기본값 163,840)와 최소 바이트 수(기본값 2,097,152)를 정의합니다.
+여기서 &quot;충분한 데이터&quot;의 의미는 주로 두 가지 설정에 의해 결정되며, 각 처리 레인이 처리해야 하는 최소 행 수(기본값 163,840)와 최소 바이트 수(기본값 2,097,152)를 정의합니다:
 
 shared-nothing 클러스터의 경우:
 
-* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read](/ko/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read)
-* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read](/ko/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read)
+* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read](/ko/reference/settings/session-settings/merge-tree#merge_tree_min_rows_for_concurrent_read)
+* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read](/ko/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_for_concurrent_read)
 
 공유 스토리지를 사용하는 클러스터의 경우(예: ClickHouse Cloud):
 
-* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/ko/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem)
-* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/ko/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem)
+* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/ko/reference/settings/session-settings/merge-tree#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem)
+* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/ko/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem)
 
 또한 읽기 작업 크기에는 절대적인 하한이 있으며, 다음 설정으로 제어됩니다.
 
-* [Merge&#95;tree&#95;min&#95;read&#95;task&#95;size](/ko/reference/settings/session-settings#merge_tree_min_read_task_size) + [merge&#95;tree&#95;min&#95;bytes&#95;per&#95;task&#95;for&#95;remote&#95;reading](/ko/reference/settings/session-settings#merge_tree_min_bytes_per_task_for_remote_reading)
+* [merge&#95;tree&#95;min&#95;read&#95;task&#95;size](/ko/reference/settings/session-settings/merge-tree#merge_tree_min_read_task_size) + [merge&#95;tree&#95;min&#95;bytes&#95;per&#95;task&#95;for&#95;remote&#95;reading](/ko/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_per_task_for_remote_reading)
 
 <Warning>
   **이 설정은 수정하지 마십시오**

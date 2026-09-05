@@ -1,0 +1,17 @@
+-- query_plan_optimize_lazy_materialization_for_object_storage = 1
+-- filtering by a defaulted column that is not selected
+1000	val_0
+993	val_1
+986	val_2
+-- the lazy read step is still applied (only s is deferred)
+1
+-- the input of the filter-only default expression is not deferred
+Lazily read columns: s
+-- query_plan_optimize_lazy_materialization_for_object_storage = 0
+-- filtering by a defaulted column that is not selected
+1000	val_0
+993	val_1
+986	val_2
+-- the lazy read step is still applied (only s is deferred)
+0
+-- the input of the filter-only default expression is not deferred

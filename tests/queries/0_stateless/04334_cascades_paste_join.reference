@@ -1,0 +1,5 @@
+-- 1. PASTE JOIN is rejected under Cascades
+-- 2. Baseline without Cascades
+1000
+-- 3. PASTE JOIN nested under aggregation is also rejected
+-- 4. Rejected without Cascades too (legacy path gathers a distributed read below the join)
