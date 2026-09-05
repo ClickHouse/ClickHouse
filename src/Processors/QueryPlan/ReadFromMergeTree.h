@@ -81,6 +81,11 @@ struct TopKFilterInfo
     /// query condition cache key so that QCC entries written under a TopK plan are partitioned
     /// by the TopK parameters and don't bleed across plans with different LIMIT, sort key, etc.
     UInt64 condition_hash = 0;
+
+    /// Set while the dynamic `__topKFilter` prewhere condition is still to be installed. It belongs
+    /// here, not in `ReadFromMergeTree`, because a plan is cloned between the pass that sets it and
+    /// the pass that installs, and the copies rebuild this struct field by field.
+    bool dynamic_filter_pending = false;
 };
 
 struct LazyMaterializingRows;
@@ -477,6 +482,16 @@ public:
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
+
+    bool hasPendingTopKDynamicFilter() const
+    {
+        return top_k_filter_info.has_value() && top_k_filter_info->dynamic_filter_pending;
+    }
+    void clearPendingTopKDynamicFilter()
+    {
+        if (top_k_filter_info.has_value())
+            top_k_filter_info->dynamic_filter_pending = false;
+    }
 
     /// Carries the TopK stamp and the query condition cache gate over from a read step that this
     /// step replaces (e.g. the projection read built by `optimizeUseNormalProjections`; `clone` and
