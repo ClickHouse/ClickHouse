@@ -20,6 +20,35 @@ namespace ErrorCodes
 
 class IFunction;
 
+class QueryStatus;
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+
+/// The executing query, which need not be the one that built the function: an `IFunction` is retained in
+/// table metadata and re-executed later. Empty when the thread has no query context, or the query has no
+/// process-list entry, in which case the checks below are no-ops.
+QueryStatusPtr getQueryStatusOfExecutingQuery();
+
+/// Polls query cancellation from inside a per-row loop, which pipeline-level cancellation cannot reach.
+/// `QueryStatus::checkTimeLimit` throws for `KILL QUERY` and for the `throw` overflow mode and returns
+/// false for `break`; a scalar has no meaningful partial result, so `break` is a hard stop here as well.
+void checkQueryCancellation(const QueryStatusPtr & query_status, std::string_view function_name);
+
+/// Throttled form of the above, for loops whose per-row work can be small enough that an unconditional
+/// poll dominates it. Poll only on crossing a 64 KiB stride, so worst-case latency between polls is one
+/// stride's parsing. Each row counts as at least one byte, so a block of empty strings still polls.
+inline void checkQueryCancellationThrottled(
+    const QueryStatusPtr & query_status, std::string_view function_name, size_t bytes, size_t & bytes_since_check)
+{
+    static constexpr size_t bytes_between_cancellation_checks = 65536;
+
+    bytes_since_check += bytes ? bytes : 1;
+    if (bytes_since_check >= bytes_between_cancellation_checks)
+    {
+        bytes_since_check = 0;
+        checkQueryCancellation(query_status, function_name);
+    }
+}
+
 /// Methods, that helps dispatching over real column types.
 
 template <typename Type>
