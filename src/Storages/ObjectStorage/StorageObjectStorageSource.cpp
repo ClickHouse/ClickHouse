@@ -4,6 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
+#include <Common/FullyQualifiedObjectPath.h>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
@@ -360,9 +361,7 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
 {
-    std::string result = joinPathUnderPrefix(
-        include_connection_info ? configuration.getDataSourceDescription() : configuration.getNamespace(),
-        object_info.getPath());
+    std::string result = formatObjectPath(configuration, object_info.getPath(), include_connection_info);
 
     /// For web URL shards the same relative path can be produced by different expanded URL options
     /// (e.g. `http://{host1,host2}/data/**`). Including `read_source_index` keeps schema/count cache
@@ -447,6 +446,18 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     std::unique_ptr<IObjectIterator> iterator;
     const auto & reading_path = configuration->getPathForRead();
+    /// An archive exposes `_path` and `_file` values for its entries, while this iterator usually
+    /// sees only the outer archive object. A known, non-glob archive member is an exception: its
+    /// virtual path is known before opening the archive, so filter it before probing a missing outer
+    /// archive. This only works when the outer archive paths are materialized locally - explicit keys
+    /// or a single brace expansion - so that the member name can be appended to each concrete path.
+    /// The outer path must not contain a general glob: that form goes through `GlobIterator`, which
+    /// builds filter values from the listed outer archive objects, not from the entry virtual paths,
+    /// so pushing an entry-level predicate there would wrongly discard every archive. Such archive
+    /// forms still need the regular filter step after `ArchiveIterator` has created entry object infos.
+    const bool is_explicit_archive_member = is_archive && !configuration->isPathInArchiveWithGlobs()
+        && (!reading_path.hasGlobs() || (!match_web_paths_only && hasExactlyOneBracketsExpansion(reading_path.path)));
+    const auto * path_filter_predicate = is_archive && !is_explicit_archive_member ? nullptr : predicate;
     /// `KeysIterator` carries only path strings and drops `read_source_index`. For web URL shards the
     /// same relative path can come from different expanded URL options (e.g. `http://{h1,h2}/data/**`),
     /// so losing the source index would make `WebObjectStorage::readObject` treat all shards as failover
@@ -455,27 +466,105 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     if (!match_web_paths_only && reading_path.hasGlobs() && hasExactlyOneBracketsExpansion(reading_path.path))
     {
         auto paths = expandSelectionGlob(reading_path.path);
+        ExpressionActionsPtr deferred_filter_actions;
+        std::vector<String> archive_member_names;
+
+        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(path_filter_predicate, virtual_columns, local_context, hive_columns))
+        {
+            Strings filter_paths;
+            filter_paths.reserve(paths.size());
+            for (const auto & path : paths)
+                filter_paths.push_back(joinPathUnderPrefix(configuration->getNamespace(), path));
+
+            if (is_explicit_archive_member)
+            {
+                for (auto & path : filter_paths)
+                    path += fmt::format("::{}", configuration->getPathInArchive());
+                archive_member_names.assign(paths.size(), configuration->getPathInArchive());
+            }
+
+            if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
+            {
+                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                VirtualColumnUtils::filterByPathOrFile(
+                    paths, filter_paths, actions, virtual_columns, hive_columns, local_context,
+                    /*format_settings=*/std::nullopt,
+                    is_explicit_archive_member ? &archive_member_names : nullptr);
+            }
+            else
+            {
+                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            }
+        }
+
         iterator = std::make_unique<KeysIterator>(
             paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, skip_object_metadata, with_tags,
-            file_progress_callback);
+            file_progress_callback, deferred_filter_actions, hive_columns, configuration->getNamespace(), local_context,
+            is_explicit_archive_member ? configuration->getPathInArchive() : String{});
     }
     else if (reading_path.hasGlobs())
     {
-        // Try extract _path values from filter, which will allow to use KeysIterator instead of GlobIterator
+        // Try extract _path values from filter, which will allow to use KeysIterator instead of GlobIterator.
+        /// Not for archives: their `_path` values are entry virtual paths (`<archive>::<member>`), which
+        /// are not object keys - they can neither be validated against the outer glob nor listed by
+        /// `KeysIterator`, so the extraction would drop every archive (or probe a bogus key when the
+        /// outer glob happens to match the full entry string). Archives keep `GlobIterator`, and the
+        /// entry-level predicate is applied after `ArchiveIterator` has created entry object infos.
         std::optional<Strings> paths;
-        if (!match_web_paths_only && filter_actions_dag && local_context->getSettingsRef()[Setting::s3_path_filter_limit])
+        if (!match_web_paths_only && !is_archive && filter_actions_dag && local_context->getSettingsRef()[Setting::s3_path_filter_limit])
             paths = VirtualColumnUtils::extractPathValuesFromFilter(
                 filter_actions_dag, local_context, local_context->getSettingsRef()[Setting::s3_path_filter_limit]);
 
-        // If paths is nullopt, use the glob iterator to scan all matching files.
-        // If paths contains a value, validate the extracted paths and use the key-based iterator
-        // (even if the result is empty, indicating no scanning is required).
-        if (!paths)
+        /// Validate that extracted paths match the glob pattern to prevent scanning unallowed data.
+        /// The extracted values are `_path` column values, so they need that column's formatter
+        /// inverted rather than a plain relative(). That inverse is not unique: under a non-empty
+        /// namespace a key that keeps a leading separator renders exactly like the same key without
+        /// it. When the glob accepts both spellings of a value there is no way to tell which object
+        /// was meant, and guessing would read the wrong one, so the extraction is given up on and
+        /// the listing decides - `GlobIterator` matches the keys as they really are.
+        std::optional<Strings> validated_paths;
+        if (paths)
+        {
+            re2::RE2 matcher(makeRegexpPatternFromGlobs(reading_path.path));
+            if (!matcher.ok())
+                throw Exception(
+                    ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", reading_path.path, matcher.error());
+
+            validated_paths.emplace();
+            for (const auto & path : paths.value())
+            {
+                std::optional<String> matched_key;
+                for (auto & candidate : candidateKeysUnderPrefix(configuration->getNamespace(), path))
+                {
+                    const auto & path_for_matching = match_web_paths_only ? getPathComponentForGlobMatching(candidate) : candidate;
+                    if (!RE2::FullMatch(path_for_matching, matcher))
+                        continue;
+
+                    if (matched_key)
+                    {
+                        matched_key.reset();
+                        validated_paths.reset();
+                        break;
+                    }
+                    matched_key = std::move(candidate);
+                }
+
+                if (!validated_paths)
+                    break;
+                if (matched_key)
+                    validated_paths->push_back(std::move(*matched_key));
+            }
+        }
+
+        // If there are no validated paths, use the glob iterator to scan all matching files.
+        // Otherwise use the key-based iterator (even if the list is empty, indicating no scanning
+        // is required).
+        if (!validated_paths)
             iterator = std::make_unique<GlobIterator>(
                 object_storage,
                 configuration,
-                predicate,
+                path_filter_predicate,
                 virtual_columns,
                 hive_columns,
                 local_context,
@@ -486,32 +575,20 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 file_progress_callback);
         else
         {
-            // Validate that extracted paths match the glob pattern to prevent scanning unallowed data
-            Strings validated_paths;
-            re2::RE2 matcher(makeRegexpPatternFromGlobs(reading_path.path));
-            if (matcher.ok())
-            {
-                for (const auto & path : paths.value())
-                {
-                    /// `path` is a `_path` column value, so it needs that column's formatter
-                    /// inverted rather than a plain relative().
-                    const auto relative_path = relativizePathUnderPrefix(configuration->getNamespace(), path);
-                    const auto & path_for_matching = match_web_paths_only ? getPathComponentForGlobMatching(relative_path) : relative_path;
-                    if (RE2::FullMatch(path_for_matching, matcher))
-                        validated_paths.push_back(relative_path);
-                }
-            }
-            else
-                throw Exception(
-                    ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", reading_path.path, matcher.error());
-
+            /// The validated keys stand in for a listing: a listing never yields a key that does not exist,
+            /// so a candidate that names no object must be skipped, not probed with an exception. Otherwise
+            /// `WHERE _path = '<something that matches the glob but is not there>'` would throw where the
+            /// glob alone returns no rows, and a mixed `IN` would throw instead of returning the existing part.
+            /// The metadata is fetched here for the same reason even when the caller would defer it (cluster
+            /// mode): the probe is what tells a missing candidate apart, and a listing would have carried the
+            /// metadata anyway.
             iterator = std::make_unique<KeysIterator>(
-                validated_paths,
+                *validated_paths,
                 object_storage,
                 virtual_columns,
                 is_archive ? nullptr : read_keys,
-                query_settings.ignore_non_existent_file,
-                skip_object_metadata,
+                /*ignore_non_existent_files=*/true,
+                /*skip_object_metadata=*/false,
                 with_tags,
                 file_progress_callback);
         }
@@ -549,7 +626,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 *filter_actions_dag,
                 virtual_columns,
                 hive_columns,
-                configuration->getNamespace(),
+                configuration,
                 local_context,
                 file_progress_callback);
         }
@@ -557,14 +634,15 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     }
     else
     {
+        Strings keys;
         Strings paths;
+        ExpressionActionsPtr deferred_filter_actions;
 
-        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, local_context, hive_columns);
+        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(path_filter_predicate, virtual_columns, local_context, hive_columns);
         if (filter_dag)
         {
             const auto configuration_paths = configuration->getPaths();
 
-            std::vector<std::string> keys;
             keys.reserve(configuration_paths.size());
 
             for (const auto & path: configuration_paths)
@@ -574,27 +652,58 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
             paths.reserve(keys.size());
             for (const auto & key : keys)
-                paths.push_back(joinPathUnderPrefix(configuration->getNamespace(), key));
+                paths.push_back(formatObjectPath(*configuration, key, /*include_connection_info=*/false));
 
-            VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
-            auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-            VirtualColumnUtils::filterByPathOrFile(keys, paths, actions, virtual_columns, hive_columns, local_context);
-            paths = keys;
+            if (is_explicit_archive_member)
+            {
+                for (auto & path : paths)
+                    path += fmt::format("::{}", configuration->getPathInArchive());
+            }
+
+            std::vector<String> archive_member_names;
+            if (is_explicit_archive_member)
+                archive_member_names.assign(keys.size(), configuration->getPathInArchive());
+
+            /// Unlike `GlobIterator`, which applies its filter while listing objects (that is, when the
+            /// pipeline runs), the keys are pruned here, while the pipeline is being built. A set can
+            /// still be unbuilt at this point: `ReadFromObjectStorageStep::applyFilters` leaves the sets
+            /// of `globalIn` / `globalNotIn` alone so that `ReadFromRemote` can attach an external table
+            /// to them first, and plan optimization has since moved the subquery plan of such a set into
+            /// `CreatingSetsStep`, so `buildSetsForDAG` cannot build it here either - it only becomes
+            /// ready when the pipeline runs. Executing a not-ready set here throws "Not-ready Set is
+            /// passed as the second argument", so defer the filter to `KeysIterator::next` instead: it
+            /// runs when the pipeline runs, after `CreatingSetsStep` has built the set. The filter must
+            /// still be applied before the metadata probe in `next` (not merely left to the `Filter`
+            /// step above this source), because probing a filtered-out nonexistent key would throw
+            /// FILE_DOESNT_EXIST.
+            if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
+            {
+                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                VirtualColumnUtils::filterByPathOrFile(
+                    keys, paths, actions, virtual_columns, hive_columns, local_context,
+                    /*format_settings=*/std::nullopt,
+                    is_explicit_archive_member ? &archive_member_names : nullptr);
+            }
+            else
+            {
+                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            }
         }
         else
         {
             const auto configuration_paths = configuration->getPaths();
-            paths.reserve(configuration_paths.size());
+            keys.reserve(configuration_paths.size());
             for (const auto & path: configuration_paths)
             {
-                paths.emplace_back(path.path);
+                keys.emplace_back(path.path);
             }
         }
 
         iterator = std::make_unique<KeysIterator>(
-            paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
+            keys, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, /*skip_object_metadata=*/false, with_tags,
-            file_progress_callback);
+            file_progress_callback, deferred_filter_actions, hive_columns, configuration->getNamespace(), local_context,
+            is_explicit_archive_member ? configuration->getPathInArchive() : String{});
     }
 
     if (is_archive)
@@ -656,7 +765,7 @@ Chunk StorageObjectStorageSource::generate()
 
             const auto reading_path = configuration->getPathForRead().path;
 
-            if (!full_path.starts_with(reading_path))
+            if (!full_path.starts_with(reading_path) && !trySplitFullyQualifiedObjectPath(full_path))
                 full_path = fs::path(reading_path) / object_info->getPath();
 
             auto object_metadata = object_info->getObjectMetadata();
@@ -2042,7 +2151,12 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     bool ignore_non_existent_files_,
     bool skip_object_metadata_,
     bool with_tags_,
-    std::function<void(FileProgress)> file_progress_callback_)
+    std::function<void(FileProgress)> file_progress_callback_,
+    ExpressionActionsPtr deferred_filter_actions_,
+    NamesAndTypesList hive_columns_,
+    String object_namespace_,
+    ContextPtr context_,
+    String archive_member_path_)
     : object_storage(object_storage_)
     , virtual_columns(virtual_columns_)
     , file_progress_callback(file_progress_callback_)
@@ -2050,6 +2164,11 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     , ignore_non_existent_files(ignore_non_existent_files_)
     , skip_object_metadata(skip_object_metadata_)
     , with_tags(with_tags_)
+    , deferred_filter_actions(std::move(deferred_filter_actions_))
+    , hive_columns(std::move(hive_columns_))
+    , object_namespace(std::move(object_namespace_))
+    , context(std::move(context_))
+    , archive_member_path(std::move(archive_member_path_))
 {
     if (read_keys_)
     {
@@ -2071,6 +2190,30 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
             return nullptr;
 
         auto key = keys[current_index];
+
+        /// The filter could not be applied when the iterator was created, because a set in it was not
+        /// ready yet (see `createFileIterator`); it is ready now, when the pipeline runs. Filter before
+        /// fetching the metadata: probing a filtered-out nonexistent key would throw FILE_DOESNT_EXIST.
+        if (deferred_filter_actions)
+        {
+            std::vector<String> filtered_keys({key});
+            std::vector<String> filter_paths({joinPathUnderPrefix(object_namespace, key)});
+            if (!archive_member_path.empty())
+                filter_paths.front() += fmt::format("::{}", archive_member_path);
+            std::vector<String> archive_member_names;
+            if (!archive_member_path.empty())
+                archive_member_names.push_back(archive_member_path);
+            VirtualColumnUtils::filterByPathOrFile(
+                filtered_keys, filter_paths, deferred_filter_actions, virtual_columns, hive_columns, context,
+                /*format_settings=*/std::nullopt,
+                archive_member_path.empty() ? nullptr : &archive_member_names);
+            if (filtered_keys.empty())
+            {
+                if (emit_profile_events)
+                    ProfileEvents::increment(ProfileEvents::ObjectStoragePredicateFilteredObjects);
+                continue;
+            }
+        }
 
         ObjectMetadata object_metadata{};
         if (!skip_object_metadata)
