@@ -32,7 +32,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 * الوصول إلى ملفات سجل Redis
 
 <Steps>
-  <Step title="تحقّق من إعدادات تسجيل Redis" id="verify-redis">
+  <Step>
+    #### تحقّق من إعدادات تسجيل Redis
+
     أولاً، تحقّق من إعدادات تسجيل Redis لديك. اتصل بـ Redis وتحقّق من مسار ملف السجل:
 
     ```bash
@@ -66,7 +68,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="أنشئ تهيئة مخصصة لـ OTel collector" id="custom-otel">
+  <Step>
+    #### أنشئ تهيئة مخصصة لـ OTel collector
+
     يتيح لك ClickStack توسيع تهيئة OpenTelemetry Collector الأساسية عبر إرفاق ملف تهيئة مخصص وتعيين متغير بيئة. وتُدمَج هذه التهيئة المخصصة مع التهيئة الأساسية التي يديرها HyperDX عبر OpAMP.
 
     أنشئ ملفًا باسم `redis-monitoring.yaml` بالتكوين التالي:
@@ -122,7 +126,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="تهيئة ClickStack لتحميل إعدادات مخصّصة" id="load-custom">
+  <Step>
+    #### تهيئة ClickStack لتحميل إعدادات مخصّصة
+
     لتمكين إعدادات المجمِّع المخصّصة في عملية نشر ClickStack الحالية لديك، يجب عليك:
 
     1. تحميل ملف الإعدادات المخصّص إلى `/etc/otelcol-contrib/custom.config.yaml`
@@ -164,7 +170,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="التحقق من السجلات في HyperDX" id="verifying-logs">
+  <Step>
+    #### التحقق من السجلات في HyperDX
+
     بعد إكمال الإعداد، سجّل الدخول إلى HyperDX وتحقّق من أن السجلات تصل كما ينبغي:
 
     <Image img="/images/clickstack/redis/redis-log-view.webp" alt="عرض السجلات" />
@@ -180,7 +188,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 للمستخدمين الذين يريدون اختبار تكامل Redis قبل تهيئة أنظمة production الخاصة بهم، نوفر مجموعة بيانات تجريبية من سجلات Redis مُولَّدة مسبقًا بأنماط واقعية.
 
 <Steps>
-  <Step title="تنزيل مجموعة البيانات التجريبية" id="download-sample">
+  <Step>
+    #### تنزيل مجموعة البيانات التجريبية
+
     نزّل ملف السجل التجريبي:
 
     ```bash
@@ -188,8 +198,10 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="إنشاء تهيئة collector للاختبار" id="test-config">
-    أنشئ ملفًا باسم `redis-demo.yaml` بالتهيئة التالية:
+  <Step>
+    #### إنشاء إعداد أداة التجميع للاختبار
+
+    أنشئ ملفًا باسم `redis-demo.yaml` بالإعداد التالي:
 
     ```yaml
     cat > redis-demo.yaml << 'EOF'
@@ -230,8 +242,10 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="تشغيل ClickStack باستخدام التهيئة التجريبية" id="run-demo">
-    شغّل ClickStack باستخدام السجلات والتهيئة التجريبية:
+  <Step>
+    #### تشغيل ClickStack باستخدام الإعداد التجريبي
+
+    شغّل ClickStack باستخدام السجلات والإعداد التجريبي:
 
     ```bash
     docker run --name clickstack-demo \
@@ -244,6 +258,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 
     <Note>
       **يؤدي ذلك إلى ربط ملف السجل مباشرةً داخل الحاوية. ويُستخدم هذا لأغراض الاختبار مع بيانات تجريبية ثابتة.**
+
     </Note>
 
     ## التحقق من السجلات في HyperDX
@@ -257,7 +272,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Info>
       **عرض المنطقة الزمنية**
 
-      يعرض HyperDX الطوابع الزمنية بحسب المنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)**. يضمن النطاق الزمني الواسع ظهور السجلات التجريبية بغض النظر عن موقعك. وبعد ظهور السجلات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
+      يعرض HyperDX الطوابع الزمنية بحسب المنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)**. يضمن النطاق الزمني الواسع ظهور السجلات التجريبية بغض النظر عن موقعك. وبعد ظهور السجلات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على مرئيات أوضح.
     </Info>
 
     <Image img="/images/clickstack/redis/redis-log-view.webp" alt="عرض السجل" />
@@ -273,11 +288,13 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 لمساعدتك على بدء مراقبة Redis باستخدام ClickStack، نوفر التصورات الأساسية لسجلات Redis.
 
 <Steps>
-  <Step title="نزّل إعدادات لوحة المعلومات" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-logs-dashboard.json'} download="redis-logs-dashboard.json" eventName="docs.redis_logs_monitoring.dashboard_download">نزّل ملف إعدادات لوحة المعلومات</TrackedLink>.
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-logs-dashboard.json'} download="redis-logs-dashboard.json" eventName="docs.redis_logs_monitoring.dashboard_download">نزّل</TrackedLink> إعدادات لوحة المعلومات
   </Step>
 
-  <Step title="استيراد لوحة معلومات مُعدّة مسبقًا" id="import-dashboard">
+  <Step>
+    #### استيراد لوحة معلومات مُعدّة مسبقًا
+
     1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات.
     2. انقر على &quot;استيراد لوحة معلومات&quot; في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث.
 
@@ -288,7 +305,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/redis/redis-import-dashboard.webp" alt="إنهاء الاستيراد" />
   </Step>
 
-  <Step title="ستُنشأ لوحة المعلومات مع تهيئة جميع التصورات مسبقًا" id="created-dashboard">
+  <Step>
+    #### ستُنشأ لوحة المعلومات مع تهيئة جميع التصورات مسبقًا
+
     <Note>
       بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)** (عدّله وفقًا لمنطقتك الزمنية المحلية). لن تتضمن لوحة المعلومات المستوردة نطاقًا زمنيًا محددًا افتراضيًا.
     </Note>
@@ -402,4 +421,4 @@ tail -5 /var/log/redis/redis-server.log
   ## الانتقال إلى بيئة الإنتاج
 </div>
 
-يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. أما بالنسبة إلى عمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector خاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.
+يستفيد هذا الدليل من OpenTelemetry Collector المدمج في ClickStack لتوفير إعداد سريع. أما لعمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات الإنتاج.

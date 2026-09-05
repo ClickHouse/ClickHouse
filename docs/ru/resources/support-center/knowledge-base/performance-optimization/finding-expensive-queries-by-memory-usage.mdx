@@ -6,7 +6,7 @@ tags: ['Производительность и оптимизации']
 keywords: ['Ресурсоемкие запросы', 'Использование памяти']
 ---
 
-<div id="using-the-systemquery-log-table">
+<div id="using-the-systemquery_log-table">
   ## Использование таблицы `system.query_log`
 </div>
 
@@ -29,7 +29,6 @@ FROM
     clusterAllReplicas(default, system.query_log)
 WHERE
     (event_time >= (now() - toIntervalDay(1)))
-    AND is_initial_query = 1
     AND query_kind = 'Select'
     AND type = 'QueryFinish'
     and user != 'monitoring-internal'
@@ -51,16 +50,10 @@ ORDER BY
 ```
 
 <Note>
-  Если у вас нет таблицы `system.query_log`, скорее всего, у вас не включено логирование запросов. О том, как его включить, см. описание [настройки `query_log`](/ru/reference/settings/server-settings/settings/query#query_log).
+  Если у вас нет таблицы `system.query_log`, скорее всего, у вас не включено логирование запросов. О том, как его включить, см. описание [настройки `query_log`](/ru/reference/settings/server-settings/settings#server_configuration_parameters-query-log).
 </Note>
 
-<Note>
-  **`query_log` содержит не только отправленные вами запросы**
-
-  Один отправленный запрос может отображаться в виде нескольких строк: исходный запрос (`is_initial_query = 1`) и производные или внутренние шаги (`is_initial_query = 0`), например вторичные запросы для распределённого выполнения или внутренние запросы, используемые для вычисления представлений. У этих внутренних строк собственные значения `query_id` — их назначает ClickHouse, и иногда они содержат метку вроде `queryView...`, — поэтому не следует считать, что каждый `query_id` совпадает с тем, который сообщил ваш клиент. Чтобы отнести использование к запросу именно в том виде, в котором вы его выполнили, отфильтруйте по `is_initial_query = 1` или сопоставьте `query_id = initial_query_id`. Подробности см. в разделе [Как определить самые ресурсоёмкие запросы](/ru/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries#initial_query_id-vs-query_id) и в [справочнике `query_log`](/ru/reference/system-tables/query_log).
-</Note>
-
-Если у вас нет кластера, вы можете выполнять запросы напрямую к единственной таблице `system.query_log`:
+Если у вас нет кластера, вы можете просто выполнять запросы напрямую к единственной таблице `system.query_log`:
 
 ```sql
 SELECT
@@ -73,7 +66,6 @@ FROM
     system.query_log
 WHERE
     (event_time >= (now() - toIntervalDay(1)))
-    AND is_initial_query = 1
     AND query_kind = 'Select'
     AND type = 'QueryFinish'
     and user != 'monitoring-internal'

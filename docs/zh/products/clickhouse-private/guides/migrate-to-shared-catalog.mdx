@@ -1,0 +1,193 @@
+---
+noindex: true
+title: "迁移到 Shared Catalog"
+description: "Shared Catalog 是在 ClickHouse 私网实例中管理元数据的新方式。"
+---
+
+Shared Catalog 是在 ClickHouse 私网实例中管理元数据的新方式。与使用 [Replicated](https://clickhouse.com/docs/engines/database-engines/replicated) 引擎的数据库不同，后者依赖 ClickHouse Keeper 中的 DDL 队列来确保 DDL 语句应用到所有副本上，而 [Shared](https://clickhouse.com/docs/engines/database-engines/shared) 数据库引擎则将所有元数据直接存储在 Keeper 中，因此无需再在副本之间同步 DDL 语句。
+
+Shared Catalog 提供了以下优势：
+
+* 所有副本的状态保持一致
+* 计算节点无状态化 (可实现无状态 Server 节点) 
+* 原子性的 `CREATE TABLE ... AS SELECT`
+* 支持 `UNDROP`
+* 支持在数据库之间 `RENAME`/移动 `TABLE`
+* 快速且可靠的副本引导 (缩短唤醒、启动和预配时间) 
+
+不过，如果你的实例在首次部署时未配置 Shared Catalog，则需要进行迁移。我们建议你先在测试环境中验证迁移，再迁移生产实例。
+
+<div id="migration-requirements">
+  ## 迁移要求
+</div>
+
+在开始迁移之前，请先确认满足以下前置条件：
+
+<Steps>
+  <Step>
+    ### 1. 至少 2 个 server 副本
+
+    Operator 会通过滚动升级将数据库迁移到新的 Shared 数据库引擎。请将 `server.replicas` helm 值设置为 2 或更高。
+  </Step>
+
+  <Step>
+    ### 2. 所有数据库都使用 Replicated 引擎
+
+    除 `system` 外，所有数据库都必须使用 Replicated 数据库引擎。可通过以下方式验证：
+
+    ```sql
+    SELECT DISTINCT
+        name,
+        engine
+    FROM clusterAllReplicas('default', system.databases)
+    WHERE (name NOT IN ('INFORMATION_SCHEMA', 'system', 'information_schema'))
+      AND (engine != 'Replicated')
+    ```
+
+    该查询不应返回任何行。
+  </Step>
+
+  <Step>
+    ### 3. 所有表都使用非复制表引擎
+
+    除 `system` 中的表外，任何表都不应使用复制型或旧版表引擎。可通过以下方式验证：
+
+    ```sql
+    SELECT
+        name,
+        engine,
+        database
+    FROM system.tables
+    WHERE ((engine LIKE '%Replicated%') OR (engine IN ('Ordinary', 'Atomic')))
+      AND (database != 'system')
+    ```
+
+    该查询不应返回任何行。
+  </Step>
+
+  <Step>
+    ### 4. 不存在 detached 表
+
+    ```sql
+    SELECT * FROM system.detached_tables
+    ```
+
+    该查询不应返回任何行。
+
+    满足以上所有要求后，即可开始迁移。如果有任何要求未满足，请联系 ClickHouse 支持团队寻求帮助。
+  </Step>
+</Steps>
+
+<div id="performing-the-migration">
+  ## 执行迁移
+</div>
+
+<Warning>
+  对于 Hydra 实例，请先迁移父实例，再迁移所有子实例。父实例迁移完成后，再对每个子实例重复以下步骤。
+</Warning>
+
+<Steps>
+  <Step>
+    ### 1. 启用 Shared Catalog 配置
+
+    在 Helm 配置值中将 `featureFlags.enableSharedCatalog` 设为 `true`。这会启用该配置，但不会触发数据库迁移。如果在此标志设为 `true` 的情况下部署 ClickHouse Cluster，却不迁移现有的 Replicated 数据库，ClickHouse Cluster 将无法启动。
+  </Step>
+
+  <Step>
+    ### 2. 添加迁移标记
+
+    在 Helm 配置值中将 `featureFlags.migrateToSharedCatalog` 设为 `true`。这样会：
+
+    * 向 ClickHouse 添加 `shared_database_catalog.migration_from_database_replicated` 设置，告知其在 Shared Catalog 模式下运行时预期会存在现有的 `Replicated` 数据库
+    * 向 ClickHouseCluster Kubernetes 资源添加 `clickhouse.com/start-shared-catalog-migration: "true"` 注解，通知 Operator 迁移此集群
+
+    部署后，Operator 会触发 Server 节点的滚动升级。这也会将所有数据库的类型更改为 `Shared`。
+  </Step>
+
+  <Step>
+    ### 3. 等待状态变为 Ready
+
+    ```bash
+    kubectl get ClickHouseCluster <instance-name>
+    ```
+  </Step>
+
+  <Step>
+    ### 4. 移除迁移标记
+
+    当状态变为 Ready 后，在 Helm 配置值中将 `featureFlags.migrateToSharedCatalog` 设为 `false`。由于所有数据库都已从 `Replicated` 迁移为 `Shared` 类型，这些迁移设置已不再适用。
+  </Step>
+
+  <Step>
+    ### 5. 验证所有数据库都已迁移
+
+    确认所有非系统数据库都使用 Shared engine：
+
+    ```sql
+    SELECT DISTINCT
+        name,
+        engine
+    FROM clusterAllReplicas('default', system.databases)
+    WHERE (name NOT IN ('INFORMATION_SCHEMA', 'system', 'information_schema'))
+      AND (engine != 'Shared')
+    ```
+
+    该查询不应返回任何行。此时，你的实例已迁移到 Shared Catalog。
+  </Step>
+</Steps>
+
+<div id="rollback">
+  ## 回滚
+</div>
+
+如果 Shared Catalog 出现任何问题，您可以回滚到之前的状态：
+
+<Steps>
+  <Step>
+    ### 1. 移除迁移标记
+
+    在 Helm 配置值中将 `featureFlags.migrateToSharedCatalog` 设置为 `false`。
+  </Step>
+
+  <Step>
+    ### 2. 移除 Shared Catalog 设置
+
+    在 Helm 配置值中将 `featureFlags.enableSharedCatalog` 设置为 `false`。这将触发 Operator 恢复这些更改。
+  </Step>
+
+  <Step>
+    ### 3. 移除 Keeper 中的 Catalog
+
+    为 Keeper 建立端口转发连接，并启动一个 keeper-client 会话 (使用 `clickhouse keeper-client`) 。
+
+    会话启动后，执行以下命令：
+
+    ```text
+    ls '/clickhouse/catalog'
+    # 输出：migration_from_database_replicated_completed names references replicas uuids
+
+    rmr '/clickhouse/catalog'
+    # 即将递归删除路径 /clickhouse/catalog。是否继续？
+    # [y/n] y
+    ```
+
+    这将清理 Keeper 中所有 Shared Catalog 状态。
+  </Step>
+
+  <Step>
+    ### 4. 验证回滚
+
+    确认所有非 system database 都再次使用 Replicated 引擎：
+
+    ```sql
+    SELECT DISTINCT
+        name,
+        engine
+    FROM clusterAllReplicas('default', system.databases)
+    WHERE (name NOT IN ('INFORMATION_SCHEMA', 'system', 'information_schema'))
+      AND (engine != 'Replicated')
+    ```
+
+    查询结果不应返回任何行。
+  </Step>
+</Steps>

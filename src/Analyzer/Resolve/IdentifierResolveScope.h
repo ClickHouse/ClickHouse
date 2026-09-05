@@ -1,7 +1,6 @@
 #pragma once
 
 #include <optional>
-#include <unordered_set>
 
 #include <Interpreters/Context_fwd.h>
 #include <Analyzer/HashUtils.h>
@@ -150,18 +149,6 @@ struct IdentifierResolveScope
     /// Store current scope aliases defined in WITH clause if `enable_scopes_for_with_statement` setting is disabled.
     ScopeAliases global_with_aliases;
 
-    /// Alias names of this scope through which some identifier was actually resolved.
-    /// Multiple expressions with the same alias are an error only if the alias is actually used:
-    /// unused conflicting aliases are allowed, because aliases also give names to expressions
-    /// without being referenced, e.g. to tuple elements in SELECT tuple(1 AS x), tuple(2 AS x)
-    /// (see the setting enable_named_columns_in_function_tuple).
-    /// The names are recorded only when alias resolution wins, not on tentative probes that
-    /// fall back to another resolution path (e.g. SELECT tuple(a AS a) FROM t resolves a to
-    /// the source column). This state is deliberately per scope and not inside ScopeAliases:
-    /// the alias table is copied between scopes (see global_with_aliases), and a lookup in one
-    /// scope must not make an alias of another scope look referenced.
-    std::unordered_set<std::string> used_alias_names;
-
     /// Valid only during table ALIAS columns resolve.
     AnalysisTableExpressionData * table_expression_data_for_alias_resolution = nullptr;
 
@@ -180,7 +167,7 @@ struct IdentifierResolveScope
     std::unordered_set<const IQueryTreeNode *> table_expressions_in_resolve_process;
 
     /// Table expression node to data
-    std::unordered_map<TableExpressionNodePtr, AnalysisTableExpressionData> table_expression_node_to_data;
+    std::unordered_map<QueryTreeNodePtr, AnalysisTableExpressionData> table_expression_node_to_data;
 
     /// Table expression nodes that appear in the join tree of the corresponding query
     std::unordered_set<QueryTreeNodePtr> registered_table_expression_nodes;
@@ -211,21 +198,11 @@ struct IdentifierResolveScope
     bool join_use_nulls = false;
     bool allow_resolve_from_using = true;
 
-    /** True while the `PREWHERE` expression of this query is being resolved.
-      * `PREWHERE` is evaluated by the reading step and cannot contain a correlated subquery,
-      * so the `rewrite_in_to_join` rewrite of `x IN (subquery)` into `exists(...)` must not be
-      * applied there - the plain `IN` is kept instead.
-      */
-    bool in_prewhere = false;
-
     /// JOINs count
     size_t joins_count = 0;
 
     /// JOIN USING count (joins whose keys can retype a matched column)
     size_t using_joins_count = 0;
-
-    /// True while resolving a JOIN ON expression.
-    bool resolving_join_on_expression = false;
 
     /// Subquery depth
     size_t subquery_depth = 0;
@@ -233,7 +210,7 @@ struct IdentifierResolveScope
     /** Scope join tree node for expression.
       * Valid only during analysis construction for single expression.
       */
-    TableExpressionNodePtr expression_join_tree_node;
+    QueryTreeNodePtr expression_join_tree_node;
 
     /// Node hash to mask id map
     std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
@@ -242,9 +219,9 @@ struct IdentifierResolveScope
 
     IdentifierResolveScope * getNearestQueryScope();
 
-    AnalysisTableExpressionData & getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node);
+    AnalysisTableExpressionData & getTableExpressionDataOrThrow(const QueryTreeNodePtr & table_expression_node);
 
-    const AnalysisTableExpressionData & getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node) const;
+    const AnalysisTableExpressionData & getTableExpressionDataOrThrow(const QueryTreeNodePtr & table_expression_node) const;
 
     void pushExpressionNode(const QueryTreeNodePtr & node);
 

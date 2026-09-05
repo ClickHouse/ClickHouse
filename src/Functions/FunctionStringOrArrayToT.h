@@ -56,13 +56,6 @@ public:
         return false;
     }
 
-    bool isVolumeReducing() const override
-    {
-        if constexpr (requires { Impl::is_volume_reducing; })
-            return Impl::is_volume_reducing;
-        return false;
-    }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0])
@@ -115,10 +108,9 @@ public:
         {
             if (Impl::is_fixed_to_constant)
             {
-                /// Result is derived from N (a type property), not from data, so it is valid even for 0 rows.
-                /// Impls reaching this branch must not read data, hence no bounds risk on an empty buffer.
                 ResultType res = 0;
-                Impl::vectorFixedToConstant(col_fixed->getChars(), col_fixed->getN(), res, input_rows_count);
+                if (input_rows_count)
+                    Impl::vectorFixedToConstant(col_fixed->getChars(), col_fixed->getN(), res, input_rows_count);
 
                 return result_type->createColumnConst(col_fixed->size(), toField(res));
             }
@@ -135,9 +127,9 @@ public:
         {
             if (const ColumnQBit * col_qbit = checkAndGetColumn<ColumnQBit>(column.get()))
             {
-                /// Dimension is a type property, valid even for 0 rows (same reason as the FixedString branch).
                 ResultType res = 0;
-                Impl::qbitToConstant(col_qbit->getDimension(), res);
+                if (input_rows_count)
+                    Impl::qbitToConstant(col_qbit->getDimension(), res);
 
                 return result_type->createColumnConst(col_qbit->size(), toField(res));
             }

@@ -1,19 +1,14 @@
 #pragma once
 
 #include <Parsers/ASTSampleRatio.h>
-#include <Parsers/IAST.h>
 
-#include <Core/Streaming/CursorTree.h>
-#include <Core/Streaming/Settings.h>
+#include <Core/Streaming/CursorTree_fwd.h>
 
 namespace DB
 {
 
 class ReadBuffer;
 class WriteBuffer;
-
-struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /** Modifiers that can be used for table, table function and subquery in JOIN TREE.
   *
@@ -23,6 +18,12 @@ class TableExpressionModifiers
 {
 public:
     using Rational = ASTSampleRatio::Rational;
+
+    struct StreamSettings
+    {
+        /// Null means "no cursor" (read from the beginning of the table).
+        CursorTreeNodePtr cursor_tree;
+    };
 
     TableExpressionModifiers() = default;
     TableExpressionModifiers(bool has_final_,
@@ -102,8 +103,16 @@ private:
 void serializeRational(TableExpressionModifiers::Rational val, WriteBuffer & out);
 TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in);
 
-/// Returns metadata extended according to table expression modifiers.
-StorageMetadataPtr extendMetadataWithModifiers(const StorageMetadataPtr & metadata, const TableExpressionModifiers & modifiers);
+inline bool operator==(const TableExpressionModifiers::StreamSettings & lhs, const TableExpressionModifiers::StreamSettings & rhs)
+{
+    if ((lhs.cursor_tree == nullptr) != (rhs.cursor_tree == nullptr))
+        return false;
+
+    if (lhs.cursor_tree == nullptr)
+        return true;
+
+    return cursorTreeToMap(lhs.cursor_tree) == cursorTreeToMap(rhs.cursor_tree);
+}
 
 inline bool operator==(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)
 {

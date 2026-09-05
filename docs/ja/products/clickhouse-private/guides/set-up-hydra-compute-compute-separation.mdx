@@ -1,0 +1,124 @@
+---
+noindex: true
+title: "Hydra を設定する（コンピュート分離）"
+sidebarTitle: "Hydra を設定する（コンピュート分離）"
+description: "このガイドでは、既存の ClickHouse Private クラスター向けに Hydra 子インスタンスをプロビジョニングする手順を説明します。"
+---
+
+このガイドでは、既存の ClickHouse Private クラスター向けに Hydra 子インスタンスをプロビジョニングする手順を説明します。Hydra を使用すると、共有データセットに対して複数の独立したコンピュートグループを実行でき、それぞれに独自のサイジングとエンドポイントを設定できます。
+
+Hydra の動作の概念的な概要については、[Hydra Compute Separation](/ja/products/clickhouse-private/explanation/hydra-compute-separation) を参照してください。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* **親** として使用する、稼働中の ClickHouse Private クラスター (このガイドでは `default-xx-01` を使用)
+
+* Hydra のフィーチャーフラグを有効にしてインストールされた ClickHouse Operator:
+
+  ```text
+  --set operator.featureFlags.privateHydraEnabled="true"
+  ```
+
+  このフラグを指定せずに Operator をインストールした場合は、先にこのフラグを `true` に設定してアップグレードしてから進めてください。
+
+* Helm レジストリおよび `onprem-clickhouse-cluster` チャートへのアクセス
+
+<Steps>
+  <Step>
+    ## 1. 親クラスターを特定する
+
+    子を作成する前に、親クラスターの **名前** と **ネームスペース** を確認してください。親は稼働中の状態である必要があります。親が停止、終了、またはアイドル状態の場合、子はプロビジョニングできません。
+
+    `default-xx-01` という名前のクラスターでは、デフォルト値は次のとおりです。
+
+    | プロパティ   | 値                  |
+    | ------- | ------------------ |
+    | クラスター名  | `default-xx-01`    |
+    | ネームスペース | `ns-default-xx-01` |
+  </Step>
+
+  <Step>
+    ## 2. 子インスタンスを作成する
+
+    <Warning>
+      各 ClickHouseCluster インスタンスは、それぞれ専用のネームスペースに配置する必要があります。親と同じネームスペースに子インスタンスをデプロイしないでください。Operator は 1 ネームスペースにつき 1 つの ClickHouseCluster が存在することを前提としており、これに違反するとクラスターの健全性が損なわれます。
+    </Warning>
+
+    親で使用したものと同じ Helm チャートを使って新しい `ClickHouseCluster` をデプロイし、関連付けのために `parentCluster` の値を追加します。
+
+    ```bash
+    helm install default-xx-02 oci://$HELM_REGISTRY/helm/onprem-clickhouse-cluster \
+        --version=$CR_HELM_TAG \
+        --namespace ns-default-xx-02 \
+        --create-namespace \
+        --set-json='parentCluster.name="c-default-xx-01"' \
+        --set-json='parentCluster.namespace="ns-default-xx-01"' \
+        --set-json="server.replicas=$SERVER_REPLICAS" \
+        --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\""
+    ```
+
+    この子インスタンスは次のようになります。
+
+    * 親の ClickHouse Keeper アンサンブルを共有する (個別の Keeper デプロイは不要)
+    * 親の S3 データプレフィックスを共有する
+    * 独立したリソース割り当てで自身の ClickHouse Server ポッドを実行する
+    * 独自の Kubernetes Service エンドポイントを公開する
+  </Step>
+
+  <Step>
+    ## 3. 読み取り専用の子を作成する (任意)
+
+    データをクエリできても書き込めない子を作成するには、`isReadonly` フラグを追加します。
+
+    ```bash
+    helm install default-xx-03 oci://$HELM_REGISTRY/helm/onprem-clickhouse-cluster \
+        --version=$CR_HELM_TAG \
+        --namespace ns-default-xx-03 \
+        --create-namespace \
+        --set-json='parentCluster.name="c-default-xx-01"' \
+        --set-json='parentCluster.namespace="ns-default-xx-01"' \
+        --set-json='isReadonly=true' \
+        --set-json="server.replicas=$SERVER_REPLICAS" \
+        --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\""
+    ```
+
+    読み取り専用の子は、書き込みアクセスが不要なレポート、ダッシュボード、または分析ワークロードに適しています。
+  </Step>
+
+  <Step>
+    ## 4. 子インスタンスを確認する
+
+    子をデプロイしたら、稼働していることを確認します。
+
+    ```bash
+    kubectl get clickhousecluster -n ns-default-xx-02
+    ```
+
+    子自身のサービス エンドポイント経由で接続します。
+
+    ```bash
+    kubectl port-forward svc/c-default-xx-02-server-any 9000:9000 -n ns-default-xx-02
+    clickhouse client --host localhost --port 9000 --password $PASSWORD
+    ```
+
+    データにアクセスできることを確認するため、クエリを実行します。
+
+    ```sql
+    SELECT count() FROM system.tables;
+    ```
+  </Step>
+</Steps>
+
+<div id="limitations">
+  ## 制限事項
+</div>
+
+1. **親が稼働中である必要があります。** 親インスタンスが停止中、終了済み、またはアイドル状態の場合、子インスタンスをプロビジョニングすることはできません。子インスタンスは親の Keeper アンサンブルと共有データ構成に依存するため、親は稼働中の状態である必要があります。
+
+2. **親を削除する前に子を削除してください。** 親クラスターを削除する前に、すべての子インスタンスを削除する必要があります。有効な子インスタンスがある親を削除しようとすると失敗します。
+
+3. **パスワードのリセットは親に対して行われます。** Hydra 子インスタンスではパスワードをリセットできません。子インスタンスのパスワードをリセットするには、代わりに親インスタンスでリセットしてください。詳細は [how-to/reset-passwords.md](/ja/products/clickhouse-private/guides/reset-user-passwords) を参照してください。

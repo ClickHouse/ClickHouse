@@ -14,8 +14,6 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 
-#include <algorithm>
-#include <limits>
 #include <random>
 
 namespace DB
@@ -44,61 +42,6 @@ struct DistributionLimits
     UInt64 max_trials;
     Float64 max_parameter;
 };
-
-/// The distributions of the standard library are sampled with loops that cannot be interrupted. For
-/// extreme enough parameters those loops either never terminate or need a number of iterations
-/// proportional to the argument, so the query ignores `max_execution_time` and `KILL QUERY` and occupies
-/// a thread until the server is restarted. Constant folding executes the function during query analysis,
-/// so even a plain `SELECT randChiSquared(1.7976931348623157e308)` hangs before a pipeline exists. The
-/// `max_rand_distribution_parameter` and `max_rand_distribution_trials` settings only bound the
-/// computation time and may be switched off with 0, therefore the bounds below, which delimit the domain
-/// where the samplers are usable at all, apply unconditionally.
-
-/// `std::gamma_distribution`, which backs the chi-squared, Student's t and Fisher's F distributions,
-/// draws candidates as `sqrt((3 * shape - 0.75) / w) * (u - 0.5)` where `w = u * (1 - u)` never exceeds
-/// 1/4. Once `12 * shape` overflows to infinity, every candidate is infinite, both acceptance criteria
-/// evaluate to NaN, and the loop spins forever. All three functions use half of their argument as their
-/// shape parameter, so `6 * argument` has to stay finite; the bound keeps a factor of two of headroom
-/// for the rounding of the intermediate products, which by itself makes the exact quotient hang.
-constexpr Float64 max_degrees_of_freedom = std::numeric_limits<Float64>::max() / 12;
-
-/// `std::binomial_distribution` starts at the mode and walks outwards one value at a time, subtracting the
-/// probability of every visited value from a uniform draw, so a single sample costs O(t) in the worst case.
-/// It derives the probability of the mode from differences of `lgamma(t + 1)` evaluated in `double`, whose
-/// terms grow as `t * ln(t)`; cancelling them therefore loses a relative accuracy of about
-/// `t * ln(t) * epsilon`. Every probability the walk accumulates inherits that error, so with roughly that
-/// same probability their total stays below 1, the draw lands above the total, and the walk traverses all
-/// `t` values instead of the few around the mode it normally needs. Measured for `p = 0.999`, the total
-/// falls short of 1 by 3.5e-7 at 10^9 trials, by 1.9e-5 at 10^10, by 2.9e-4 at 10^11 and by 3.2e-3 at
-/// 10^12, while the runaway walk itself takes seconds at 10^9 trials and hours at 10^12. Nothing above the
-/// default of `max_rand_distribution_trials` is therefore safe, and that default is exactly what this
-/// bound keeps: the setting can still lower the limit for `randBinomial`, but no longer raise it.
-constexpr UInt64 max_number_of_trials = 1'000'000'000;
-
-/// The settings bound the computation time and are disabled by 0; the hard bounds above always hold.
-Float64 effectiveMaxDegreesOfFreedom(const DistributionLimits & limits)
-{
-    if (limits.max_parameter > 0)
-        return std::min(limits.max_parameter, max_degrees_of_freedom);
-    return max_degrees_of_freedom;
-}
-
-UInt64 effectiveMaxNumberOfTrials(const DistributionLimits & limits)
-{
-    if (limits.max_trials > 0)
-        return std::min(limits.max_trials, max_number_of_trials);
-    return max_number_of_trials;
-}
-
-/// `std::binomial_distribution` returns 0 for `p = 0` and `t` for `p = 1` without entering the walk, so
-/// these two degenerate cases are computed in constant time for any number of trials and only the tunable
-/// limit applies to them.
-UInt64 effectiveMaxNumberOfTrialsForProbability(const DistributionLimits & limits, Float64 p)
-{
-    if (p == 0.0 || p == 1.0)
-        return limits.max_trials > 0 ? limits.max_trials : std::numeric_limits<UInt64>::max();
-    return effectiveMaxNumberOfTrials(limits);
-}
 
 struct UniformDistribution
 {
@@ -178,7 +121,7 @@ struct ChiSquaredDistribution
     {
         if (degree_of_freedom <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} should be greater than zero", getName());
-        if (degree_of_freedom > effectiveMaxDegreesOfFreedom(limits))
+        if (limits.max_parameter > 0 && degree_of_freedom > limits.max_parameter)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} is too large: {}", getName(), degree_of_freedom);
 
         auto distribution = std::chi_squared_distribution<>(degree_of_freedom);
@@ -197,7 +140,7 @@ struct StudentTDistribution
     {
         if (degree_of_freedom <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} should be greater than zero", getName());
-        if (degree_of_freedom > effectiveMaxDegreesOfFreedom(limits))
+        if (limits.max_parameter > 0 && degree_of_freedom > limits.max_parameter)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} is too large: {}", getName(), degree_of_freedom);
 
         auto distribution = std::student_t_distribution<>(degree_of_freedom);
@@ -216,7 +159,7 @@ struct FisherFDistribution
     {
         if (d1 <= 0 || d2 <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} should be greater than zero", getName());
-        if (const Float64 max_parameter = effectiveMaxDegreesOfFreedom(limits); d1 > max_parameter || d2 > max_parameter)
+        if (limits.max_parameter > 0 && (d1 > limits.max_parameter || d2 > limits.max_parameter))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} is too large: d1={}, d2={}", getName(), d1, d2);
 
         auto distribution = std::fisher_f_distribution<>(d1, d2);
@@ -252,7 +195,7 @@ struct BinomialDistribution
     {
         if (p < 0.0 || p > 1.0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} should be inside [0, 1] because it is a probability", getName());
-        if (t > effectiveMaxNumberOfTrialsForProbability(limits, p))
+        if (limits.max_trials > 0 && t > limits.max_trials)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (number of experiments) of function {} is too large: {}", getName(), t);
 
         auto distribution = std::binomial_distribution<UInt64>(t, p);
@@ -430,7 +373,7 @@ Returns a random Float64 number drawn uniformly from the interval $[\min, \max]$
     FunctionDocumentation::Arguments arguments = {
         {"min", "Left boundary of the range (inclusive).", {"Float64"}},
         {"max", "Right boundary of the range (inclusive).", {"Float64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a random number drawn uniformly from the interval formed by `min` and `max`.", {"Float64"}};
     FunctionDocumentation::Examples examples = {
@@ -457,7 +400,7 @@ Returns a random Float64 number drawn from a [normal distribution](https://en.wi
     FunctionDocumentation::Arguments arguments_normal = {
         {"mean", "The mean value of distribution", {"Float64"}},
         {"stddev", "The standard deviation of the distribution", {"Float64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_normal = {"Returns a random Float64 number drawn from the specified normal distribution.", {"Float64"}};
     FunctionDocumentation::Examples examples_normal = {
@@ -485,7 +428,7 @@ Returns a random Float64 number drawn from a [log-normal distribution](https://e
     FunctionDocumentation::Arguments arguments_lognormal = {
         {"mean", "The mean value of distribution.", {"Float64"}},
         {"stddev", "The standard deviation of the distribution.", {"Float64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_lognormal = {"Returns a random Float64 number drawn from the specified log-normal distribution.", {"Float64"}};
     FunctionDocumentation::Examples examples_lognormal = {
@@ -512,7 +455,7 @@ Returns a random Float64 number drawn from an [exponential distribution](https:/
     FunctionDocumentation::Syntax syntax_exponential = "randExponential(lambda[, x])";
     FunctionDocumentation::Arguments arguments_exponential = {
         {"lambda", "Rate parameter or lambda value of the distribution", {"Float64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_exponential = {"Returns a random Float64 number drawn from the specified exponential distribution.", {"Float64"}};
     FunctionDocumentation::Examples examples_exponential = {
@@ -539,7 +482,7 @@ Returns a random Float64 number drawn from a [chi-square distribution](https://e
     FunctionDocumentation::Syntax syntax_chisquared = "randChiSquared(degree_of_freedom[, x])";
     FunctionDocumentation::Arguments arguments_chisquared = {
         {"degree_of_freedom", "Degrees of freedom.", {"Float64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_chisquared = {"Returns a random Float64 number drawn from the specified chi-square distribution.", {"Float64"}};
     FunctionDocumentation::Examples examples_chisquared = {
@@ -565,7 +508,7 @@ Returns a random Float64 number drawn from a [Student's t-distribution](https://
     FunctionDocumentation::Syntax syntax_studentt = "randStudentT(degree_of_freedom[, x])";
     FunctionDocumentation::Arguments arguments_studentt = {
         {"degree_of_freedom", "Degrees of freedom.", {"Float64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_studentt = {"Returns a random Float64 number drawn from the specified Student's t-distribution.", {"Float64"}};
     FunctionDocumentation::Examples examples_studentt = {
@@ -593,7 +536,7 @@ Returns a random Float64 number drawn from an [F-distribution](https://en.wikipe
     FunctionDocumentation::Arguments arguments_fisherf = {
         {"d1", "d1 degree of freedom in `X = (S1 / d1) / (S2 / d2)`.", {"Float64"}},
         {"d2", "d2 degree of freedom in `X = (S1 / d1) / (S2 / d2)`.", {"Float64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_fisherf = {"Returns a random Float64 number drawn from the specified F-distribution", {"Float64"}};
     FunctionDocumentation::Examples examples_fisherf = {
@@ -620,7 +563,7 @@ Returns a random Float64 number drawn from a [Bernoulli distribution](https://en
     FunctionDocumentation::Syntax syntax_bernoulli = "randBernoulli(probability[, x])";
     FunctionDocumentation::Arguments arguments_bernoulli = {
         {"probability", "The probability of success as a value between `0` and `1`.", {"Float64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_bernoulli = {"Returns a random Float64 number drawn from the specified Bernoulli distribution.", {"UInt64"}};
     FunctionDocumentation::Examples examples_bernoulli = {
@@ -648,7 +591,7 @@ Returns a random Float64 number drawn from a [binomial distribution](https://en.
     FunctionDocumentation::Arguments arguments_binomial = {
         {"experiments", "The number of experiments", {"UInt64"}},
         {"probability", "The probability of success in each experiment as a value between `0` and `1`", {"Float64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_binomial = {"Returns a random Float64 number drawn from the specified binomial distribution.", {"UInt64"}};
     FunctionDocumentation::Examples examples_binomial = {
@@ -676,7 +619,7 @@ Returns a random Float64 number drawn from a [negative binomial distribution](ht
     FunctionDocumentation::Arguments arguments_negativebinomial = {
         {"experiments", "The number of experiments.", {"UInt64"}},
         {"probability", "`The probability of failure in each experiment as a value between `0` and `1`.", {"Float64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_negativebinomial = {"Returns a random Float64 number drawn from the specified negative binomial distribution", {"UInt64"}};
     FunctionDocumentation::Examples examples_negativebinomial = {
@@ -703,7 +646,7 @@ Returns a random Float64 number drawn from a [Poisson distribution](https://en.w
     FunctionDocumentation::Syntax syntax_poisson = "randPoisson(n[, x])";
     FunctionDocumentation::Arguments arguments_poisson = {
         {"n", "The mean number of occurrences.", {"UInt64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_poisson = {"Returns a random Float64 number drawn from the specified Poisson distribution.", {"UInt64"}};
     FunctionDocumentation::Examples examples_poisson = {

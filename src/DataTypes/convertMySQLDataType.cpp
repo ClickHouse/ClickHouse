@@ -154,34 +154,22 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
     {
         res = DataTypeFactory::instance().get("MultiPolygon");
     }
-    else if (type_support.isSet(MySQLDataTypesSupport::GEOMETRY) && type_name == "multipoint")
-    {
-        res = DataTypeFactory::instance().get("MultiPoint");
-    }
     else if (type_support.isSet(MySQLDataTypesSupport::GEOMETRY) && type_name == "geometry")
     {
         /// The generic `GEOMETRY` column can hold a value of any subtype, so it is mapped to the
         /// umbrella `Geometry` type (a `Variant` over the concrete geometric types). Reading a value
-        /// whose subtype has no ClickHouse counterpart (`GEOMETRYCOLLECTION`) throws at
+        /// whose subtype has no ClickHouse counterpart (`MULTIPOINT`, `GEOMETRYCOLLECTION`) throws at
         /// read time; this incompatibility is accepted in exchange for a proper geometric type.
         res = DataTypeFactory::instance().get("Geometry");
     }
 
-    /// String is the fallback for all unknown types. In particular, the spatial type
-    /// `GEOMETRYCOLLECTION` has no ClickHouse counterpart and falls back to String.
+    /// String is the fallback for all unknown types. In particular, the spatial types `MULTIPOINT`
+    /// and `GEOMETRYCOLLECTION` have no ClickHouse counterpart and fall back to String.
     if (!res)
         res = std::make_shared<DataTypeString>();
 
     if (is_nullable)
-    {
-        /// A mapped type that cannot be inside `Nullable` (the `Array`/`Variant`-based geometric
-        /// types) falls back to `Nullable(String)` holding MySQL's own bytes (SRID prefix + WKB),
-        /// matching the result-set path.
-        if (res->canBeInsideNullable())
-            res = std::make_shared<DataTypeNullable>(res);
-        else
-            res = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
-    }
+        res = std::make_shared<DataTypeNullable>(res);
 
     return res;
 }

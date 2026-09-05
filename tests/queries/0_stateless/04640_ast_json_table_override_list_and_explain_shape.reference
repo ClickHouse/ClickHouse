@@ -1,2 +1,0 @@
-CREATE DATABASE db ENGINE = MaterializedMySQL(\'127.0.0.1:3306\', \'db\', \'user\', \'pw\') TABLE OVERRIDE t1 (PARTITION BY a), TABLE OVERRIDE t2 (COLUMNS (`b` Int32))
-EXPLAIN TABLE OVERRIDE mysql(\'127.0.0.1:3306\', \'db\', \'table\', \'user\', \'pw\') PARTITION BY toYYYYMM(created)

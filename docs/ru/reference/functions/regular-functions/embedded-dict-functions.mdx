@@ -27,16 +27,16 @@ ClickHouse поддерживает одновременную работу с �
 Помимо этого файла, также выполняется поиск расположенных рядом файлов, в имени которых есть символ `_` и любой суффикс, добавленный к имени (перед расширением файла).
 Например, если файл `/opt/geo/regions_hierarchy_ua.txt` существует, он тоже будет найден. Здесь `ua` называется ключом словаря. Для словаря без суффикса ключом является пустая строка.
 
-Все словари перезагружаются во время работы (через определённое число секунд, как задано параметром конфигурации [`builtin_dictionaries_reload_interval`](/ru/reference/settings/server-settings/settings/other#builtin_dictionaries_reload_interval), или раз в час по умолчанию). Однако список доступных словарей определяется только один раз — при запуске сервера.
+Все словари перезагружаются во время работы (через определённое число секунд, как задано параметром конфигурации [`builtin_dictionaries_reload_interval`](/ru/reference/settings/server-settings/settings#builtin_dictionaries_reload_interval), или раз в час по умолчанию). Однако список доступных словарей определяется только один раз — при запуске сервера.
 
 Все функции для работы с регионами имеют необязательный аргумент в конце — ключ словаря. Он называется геобазой.
 
 Пример:
 
 ```sql
-regionToCountry(RegionID) – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
-regionToCountry(RegionID, '') – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
-regionToCountry(RegionID, 'ua') – Uses the dictionary for the 'ua' key: /opt/geo/regions_hierarchy_ua.txt
+regionToCountry(RegionID) – Использует словарь по умолчанию: /opt/geo/regions_hierarchy.txt
+regionToCountry(RegionID, '') – Использует словарь по умолчанию: /opt/geo/regions_hierarchy.txt
+regionToCountry(RegionID, 'ua') – Использует словарь для ключа 'ua': /opt/geo/regions_hierarchy_ua.txt
 ```
 
 ### regionToName

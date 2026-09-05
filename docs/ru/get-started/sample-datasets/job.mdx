@@ -1,10 +1,10 @@
 ---
-title: "Join Order Benchmark (JOB)"
-description: "Набор данных и запросы Join Order Benchmark (JOB)."
-sidebarTitle: "JOB"
-slug: "/getting-started/example-datasets/job"
-doc_type: "guide"
-keywords: ["демонстрационный набор данных", "JOB", "join order benchmark", "бенчмарк", "тестирование производительности", "оптимизатор запросов", "порядок JOIN"]
+description: 'Набор данных и запросы Join Order Benchmark (JOB).'
+sidebarTitle: 'JOB'
+slug: /getting-started/example-datasets/job
+title: 'Join Order Benchmark (JOB)'
+doc_type: 'guide'
+keywords: ['демонстрационный набор данных', 'JOB', 'join order benchmark', 'бенчмарк', 'тестирование производительности', 'оптимизатор запросов', 'порядок JOIN']
 ---
 
 Join Order Benchmark (JOB) нагружает оптимизатор запросов 113 аналитическими запросами к реальному, сильно коррелированному набору данных (снимку IMDb). С момента своего появления бенчмарк JOB стал фактическим стандартом для оценки производительности оптимизаторов запросов реляционных баз данных, включая оценку мощности и оптимизацию порядка JOIN. В отличие от синтетических бенчмарков, предполагающих равномерные и независимые данные, JOB использует реальные данные с перекосами и корреляциями, что делает его сложным тестом для оптимизации порядка JOIN и оценки мощности.
@@ -24,7 +24,7 @@ Join Order Benchmark (JOB) нагружает оптимизатор запро�
 
 Набор данных JOB — это снимок IMDb, содержащий 21 таблицу. Определения таблиц доступны в [`init_cloud.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/init_cloud.sql) в репозитории ClickHouse.
 
-В каждой таблице используется движок [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree) с сортировкой по столбцу первичного ключа `id`, что соответствует исходной схеме PostgreSQL, где в каждой таблице объявлен `id integer NOT NULL PRIMARY KEY`. Столбцы PostgreSQL, допускающие NULL, сопоставляются с типами `Nullable(...)`.
+В каждой таблице используется движок [`MergeTree`](/ru/engines/table-engines/mergetree-family/mergetree) с сортировкой по столбцу первичного ключа `id`, что соответствует исходной схеме PostgreSQL, где в каждой таблице объявлен `id integer NOT NULL PRIMARY KEY`. Столбцы PostgreSQL, допускающие NULL, сопоставляются с типами `Nullable(...)`.
 
 Создайте таблицы:
 
@@ -38,9 +38,12 @@ clickhouse client --database job --queries-file init_cloud.sql
   ## Загрузка данных
 </div>
 
-Данные берутся из исходного снимка IMDb, используемого в JOB, и распространяются по одному CSV-файлу на таблицу (`aka_name.csv`, `title.csv`, ...). В этих CSV используется семантика PostgreSQL `COPY` с `ESCAPE '\'`: символ обратной косой черты экранирует кавычку только внутри поля в кавычках, а вне кавычек обратная косая черта считается обычным символом. ClickHouse ожидает CSV в формате RFC 4180 (удвоенные кавычки, без экранирования обратной косой чертой), поэтому файлы сначала нужно перекодировать.
+Данные берутся из исходного снимка IMDb, используемого в JOB, и распространяются по одному CSV-файлу на таблицу (`aka_name.csv`, `title.csv`, ...).
+В этих CSV используется семантика PostgreSQL `COPY` с `ESCAPE '\'`: символ обратной косой черты экранирует кавычку только внутри поля в кавычках, а вне кавычек обратная косая черта считается обычным символом.
+ClickHouse ожидает CSV в формате RFC 4180 (удвоенные кавычки, без экранирования обратной косой чертой), поэтому файлы сначала нужно перекодировать.
 
-[`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py) выполняет это преобразование. Он читает исходный CSV из stdin и записывает стандартный CSV в stdout, удваивая вложенные кавычки и сохраняя пустые поля без кавычек (которые ClickHouse сопоставляет с `NULL` для столбцов `Nullable`).
+[`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py) выполняет это преобразование.
+Он читает исходный CSV из stdin и записывает стандартный CSV в stdout, удваивая вложенные кавычки и сохраняя пустые поля без кавычек (которые ClickHouse сопоставляет с `NULL` для столбцов `Nullable`).
 
 Чтобы создать таблицы из исходных CSV:
 
@@ -97,7 +100,9 @@ done
   ## Запросы
 </div>
 
-113 JOB-запросов можно найти [здесь](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries) в репозитории ClickHouse. Настройки, используемые для их запуска, находятся в [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json). Сведения об известных проблемах и примечания к отдельным запросам см. в [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md).
+113 JOB-запросов можно найти [здесь](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries) в репозитории ClickHouse.
+Настройки, используемые для их запуска, находятся в [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json).
+Сведения об известных проблемах и примечания к отдельным запросам см. в [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md).
 
 В запросах таблицы указаны по именам, поэтому запускайте их в базе данных `job` (например, с помощью `clickhouse client --database job`).
 
@@ -123,9 +128,3 @@ WHERE ct.kind = 'production companies'
   AND mc.movie_id = mi_idx.movie_id
   AND it.id = mi_idx.info_type_id;
 ```
-
-<div id="performance-benchmark">
-  ## Бенчмарк производительности
-</div>
-
-ClickHouse отслеживает производительность запросов JOB во всех выпущенных версиях. На странице [бенчмарка версий ClickHouse](https://benchmark.clickhouse.com/versions/#version=+s\&dataset=+ob\&metric=hot\&queries=-) можно посмотреть время выполнения всех 113 запросов JOB и проследить, как менялась производительность с течением времени.

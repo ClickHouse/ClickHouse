@@ -1,0 +1,306 @@
+---
+title: 'DataStore の設定'
+sidebarTitle: '概要'
+slug: /chdb/configuration
+description: 'DataStore の実行エンジン、互換性モード、ログ、キャッシュ、プロファイリング、dtype 補正を設定します'
+keywords: ['chdb', 'datastore', 'configuration', 'config', 'settings']
+doc_type: 'reference'
+---
+
+DataStore では、実行エンジンの選択、互換性モード、ログ、キャッシュ、プロファイリング、dtype 補正について包括的に設定できます。
+
+<div id="quick-reference">
+  ## クイックリファレンス
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# クイックセットアッププリセット
+config.enable_debug()           # 詳細ログを有効化
+config.use_chdb()               # ClickHouse engineを強制使用
+config.use_pandas()             # pandas engineを強制使用
+config.use_auto()               # engineを自動選択（デフォルト）
+config.use_performance_mode()   # SQL優先、最大throughput
+config.use_pandas_compat()      # pandas完全互換（デフォルト）
+config.enable_profiling()       # パフォーマンスプロファイリングを有効化
+```
+
+<div id="all-options">
+  ## すべての設定オプション
+</div>
+
+| カテゴリ         | オプション                    | 値                                                      | デフォルト              | 説明                                  |
+| ------------ | ------------------------ | ------------------------------------------------------ | ------------------ | ----------------------------------- |
+| **ログ**     | `log_level`              | DEBUG/INFO/WARNING/ERROR                               | WARNING            | ログの詳細度                              |
+|              | `log_format`             | &quot;simple&quot;, &quot;verbose&quot;                | &quot;simple&quot; | ログメッセージのフォーマット                      |
+| **キャッシュ**    | `cache_enabled`          | True/False                                             | True               | 結果のキャッシュを有効化                        |
+|              | `cache_ttl`              | float (Seconds)                                        | 0.0                | cache の有効期限 (TTL)                   |
+| **エンジン**     | `execution_engine`       | &quot;auto&quot;, &quot;chdb&quot;, &quot;pandas&quot; | &quot;auto&quot;   | 実行エンジン                              |
+|              | `cross_datastore_engine` | &quot;auto&quot;, &quot;chdb&quot;, &quot;pandas&quot; | &quot;auto&quot;   | DataStore をまたぐ操作                    |
+| **互換性**      | `compat_mode`            | &quot;pandas&quot;, &quot;performance&quot;            | &quot;pandas&quot; | pandas 互換性と SQL 優先のスループットのどちらを重視するか |
+| **プロファイリング** | `profiling_enabled`      | True/False                                             | False              | プロファイリングを有効化                        |
+| **Dtype**    | `correction_level`       | NONE/CRITICAL/HIGH/MEDIUM/ALL                          | HIGH               | Dtype の補正レベル                        |
+
+***
+
+<div id="methods">
+  ## 設定方法
+</div>
+
+<div id="logging">
+  ### ログ設定
+</div>
+
+```python
+from chdb.datastore.config import config
+import logging
+
+# ログレベルを設定する
+config.set_log_level(logging.DEBUG)
+config.set_log_level(logging.INFO)
+config.set_log_level(logging.WARNING)  # デフォルト
+config.set_log_level(logging.ERROR)
+
+# ログフォーマットを設定する
+config.set_log_format("simple")   # デフォルト
+config.set_log_format("verbose")  # 詳細情報
+
+# デバッグモードを即座に有効にする
+config.enable_debug()  # DEBUGレベル + verboseフォーマットを設定する
+```
+
+詳細については、[ログ](/ja/products/chdb/debugging/logging)を参照してください。
+
+<div id="cache">
+  ### Cache の設定
+</div>
+
+```python
+# キャッシュの有効化/無効化
+config.set_cache_enabled(True)   # デフォルト
+config.set_cache_enabled(False)  # キャッシュを無効化
+
+# cache の有効期限 (TTL) を設定
+config.set_cache_ttl(60.0)  # 60秒後にcacheが期限切れになる
+config.set_cache_ttl(0.0)   # 期限切れなし（デフォルト）
+
+# 現在の設定を確認
+print(config.cache_enabled)
+print(config.cache_ttl)
+```
+
+<div id="engine">
+  ### エンジン設定
+</div>
+
+```python
+# 実行エンジンを設定する
+config.set_execution_engine('auto')    # 自動選択（デフォルト）
+config.set_execution_engine('chdb')    # ClickHouse を強制使用
+config.set_execution_engine('pandas')  # pandas を強制使用
+
+# クイックプリセット
+config.use_auto()     # 自動選択
+config.use_chdb()     # ClickHouse を強制使用
+config.use_pandas()   # pandas を強制使用
+
+# クロス DataStore エンジン（異なる DataStore 間の操作用）
+config.set_cross_datastore_engine('auto')
+config.set_cross_datastore_engine('chdb')
+config.set_cross_datastore_engine('pandas')
+
+# 現在のエンジンを確認する
+print(config.execution_engine)
+```
+
+詳細については、[実行エンジン](/ja/products/chdb/configuration/execution-engine)を参照してください。
+
+<div id="compat-mode">
+  ### 互換性モード
+</div>
+
+```python
+# パフォーマンスモード: SQL優先、pandasの互換性オーバーヘッドなし
+config.use_performance_mode()
+# または: config.set_compat_mode('performance')
+
+# Pandas互換性モード（デフォルト）
+config.use_pandas_compat()
+# または: config.set_compat_mode('pandas')
+
+# 現在のモードを確認
+print(config.compat_mode)  # 'pandas' または 'performance'
+```
+
+詳細は、[パフォーマンスモード](/ja/products/chdb/configuration/performance-mode)を参照してください。
+
+<div id="profiling">
+  ### プロファイリングの設定
+</div>
+
+```python
+# プロファイリングを有効にする
+config.enable_profiling()
+config.set_profiling_enabled(True)
+
+# プロファイリングを無効にする
+config.set_profiling_enabled(False)
+
+# プロファイリングが有効かどうかを確認する
+print(config.profiling_enabled)
+```
+
+詳細については、[プロファイリング](/ja/products/chdb/debugging/profiling)を参照してください。
+
+<div id="dtype">
+  ### dtype の修正
+</div>
+
+```python
+from chdb.datastore.dtype_correction.config import CorrectionLevel
+
+# 補正レベルを設定する
+config.set_correction_level(CorrectionLevel.NONE)      # 補正なし
+config.set_correction_level(CorrectionLevel.CRITICAL)  # クリティカルな型のみ
+config.set_correction_level(CorrectionLevel.HIGH)      # デフォルト
+config.set_correction_level(CorrectionLevel.MEDIUM)    # より多くの補正
+config.set_correction_level(CorrectionLevel.ALL)       # すべての補正
+```
+
+***
+
+<div id="config-object">
+  ## configオブジェクトの使用
+</div>
+
+`config` オブジェクトは、すべての設定を管理するシングルトンです。
+
+```python
+from chdb.datastore.config import config
+
+# 設定を読み取る
+print(config.log_level)
+print(config.execution_engine)
+print(config.cache_enabled)
+print(config.profiling_enabled)
+
+# 設定を変更する
+config.set_log_level(logging.DEBUG)
+config.set_execution_engine('chdb')
+config.set_cache_enabled(False)
+config.enable_profiling()
+```
+
+***
+
+<div id="in-code">
+  ## コード内での設定
+</div>
+
+<div id="per-script">
+  ### スクリプト単位の設定
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config
+
+# スクリプトの開始時に設定する
+config.enable_debug()
+config.use_chdb()
+config.enable_profiling()
+
+# DataStore のコード
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).groupby('city').agg({'salary': 'mean'})
+```
+
+<div id="context-manager">
+  ### コンテキストマネージャー (今後対応予定)
+</div>
+
+```python
+# 計画中の機能: 一時的な設定
+with config.override(execution_engine='pandas'):
+    result = ds.process()
+# 元の設定に復元
+```
+
+***
+
+<div id="scenarios">
+  ## よくある設定パターン
+</div>
+
+<div id="dev-config">
+  ### 開発/デバッグ
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.enable_debug()        # 詳細ログ
+config.enable_profiling()    # パフォーマンス計測
+config.set_cache_enabled(False)  # 最新の結果を得るためにキャッシュを無効化
+```
+
+<div id="prod-config">
+  ### 本番環境
+</div>
+
+```python
+from chdb.datastore.config import config
+import logging
+
+config.set_log_level(logging.WARNING)  # 最小限のログ
+config.set_execution_engine('auto')    # 最適なエンジン選択
+config.set_cache_enabled(True)         # キャッシュを有効化
+config.set_profiling_enabled(False)    # プロファイリングのオーバーヘッドを無効化
+```
+
+<div id="max-throughput-config">
+  ### 最大スループット
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_performance_mode()    # SQLファースト、pandasのオーバーヘッドなし
+config.set_cache_enabled(False)  # ストリーミング用にcacheを無効化
+```
+
+<div id="perf-config">
+  ### 性能テスト
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_chdb()            # ベンチマーク用にClickHouseを強制使用
+config.enable_profiling()    # パフォーマンスを計測
+config.set_cache_enabled(False)  # 正確な計測のためcacheを無効化
+```
+
+<div id="compat-config">
+  ### Pandas 互換性テスト
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_pandas()          # pandasエンジンを強制使用
+config.enable_debug()        # 使用される操作を確認
+```
+
+***
+
+<div id="related">
+  ## 関連ドキュメント
+</div>
+
+* [実行エンジン](/ja/products/chdb/configuration/execution-engine) - エンジン選択の詳細
+* [パフォーマンスモード](/ja/products/chdb/configuration/performance-mode) - 最大スループットを実現する SQL ファーストモード
+* [関数設定](/ja/products/chdb/configuration/function-config) - 関数ごとのエンジン設定
+* [ログ](/ja/products/chdb/debugging/logging) - ログ設定
+* [プロファイリング](/ja/products/chdb/debugging/profiling) - パフォーマンスプロファイリング

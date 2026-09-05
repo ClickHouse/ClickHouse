@@ -21,12 +21,12 @@ Você pode monitorar:
 * As métricas do servidor ClickHouse.
 
 <div id="built-in-advanced-observability-dashboard">
-  ## Dashboard avançado de observabilidade integrado
+  ## Painel avançado de observabilidade integrado
 </div>
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" alt="Dashboard avançado de observabilidade nativo" size="md" />
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" alt="Dashboard avançado nativo de observabilidade" size="md" />
 
-O ClickHouse inclui um dashboard avançado de observabilidade integrado, que pode ser acessado em `$HOST:$PORT/dashboard` (requer usuário e senha) e exibe as seguintes métricas:
+O ClickHouse inclui um painel avançado de observabilidade integrado, que pode ser acessado em `$HOST:$PORT/dashboard` (requer usuário e senha) e exibe as seguintes métricas:
 
 * Consultas por segundo
 * Uso de CPU (núcleos)
@@ -61,7 +61,7 @@ Esses dados são coletados na tabela `system.asynchronous_metric_log`.
 
 O servidor ClickHouse tem instrumentos integrados para monitorar o próprio estado.
 
-Para acompanhar eventos do servidor, use os logs do servidor. Consulte a seção [logger](/pt-BR/reference/settings/server-settings/settings/other#logger) do arquivo de configuração.
+Para acompanhar eventos do servidor, use os logs do servidor. Consulte a seção [logger](/pt-BR/reference/settings/server-settings/settings#logger) do arquivo de configuração.
 
 O ClickHouse coleta:
 
@@ -70,10 +70,10 @@ O ClickHouse coleta:
 
 Você pode encontrar as métricas nas tabelas [system.metrics](/pt-BR/reference/system-tables/metrics), [system.events](/pt-BR/reference/system-tables/events) e [system.asynchronous&#95;metrics](/pt-BR/reference/system-tables/asynchronous_metrics).
 
-Você pode configurar o ClickHouse para exportar métricas para o [Graphite](https://github.com/graphite-project). Consulte a [seção Graphite](/pt-BR/reference/settings/server-settings/settings/graphite#graphite) no arquivo de configuração do servidor ClickHouse. Antes de configurar a exportação de métricas, você deve configurar o Graphite seguindo o [guia](https://graphite.readthedocs.io/en/latest/install.html) oficial.
+Você pode configurar o ClickHouse para exportar métricas para o [Graphite](https://github.com/graphite-project). Consulte a [seção Graphite](/pt-BR/reference/settings/server-settings/settings#graphite) no arquivo de configuração do servidor ClickHouse. Antes de configurar a exportação de métricas, você deve configurar o Graphite seguindo o [guia](https://graphite.readthedocs.io/en/latest/install.html) oficial.
 
-Você pode configurar o ClickHouse para exportar métricas para o [Prometheus](https://prometheus.io). Consulte a [seção Prometheus](/pt-BR/reference/settings/server-settings/settings/other#prometheus) no arquivo de configuração do servidor ClickHouse. Antes de configurar a exportação de métricas, você deve configurar o Prometheus seguindo o [guia](https://prometheus.io/docs/prometheus/latest/installation/) oficial.
+Você pode configurar o ClickHouse para exportar métricas para o [Prometheus](https://prometheus.io). Consulte a [seção Prometheus](/pt-BR/reference/settings/server-settings/settings#prometheus) no arquivo de configuração do servidor ClickHouse. Antes de configurar a exportação de métricas, você deve configurar o Prometheus seguindo o [guia](https://prometheus.io/docs/prometheus/latest/installation/) oficial.
 
 Além disso, você pode monitorar a disponibilidade do servidor por meio da API HTTP. Envie uma solicitação `HTTP GET` para `/ping`. Se o servidor estiver disponível, ele responderá com `200 OK`.
 
-Para monitorar servidores em uma configuração de cluster, você deve definir o parâmetro [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/pt-BR/reference/settings/session-settings/max#max_replica_delay_for_distributed_queries) e usar o recurso HTTP `/replicas_status`. Uma solicitação para `/replicas_status` retorna `200 OK` se a réplica estiver disponível e não estiver atrasada em relação às outras réplicas. Se uma réplica estiver atrasada, ela retorna `503 HTTP_SERVICE_UNAVAILABLE` com informações sobre a diferença.
+Para monitorar servidores em uma configuração de cluster, você deve definir o parâmetro [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/pt-BR/reference/settings/session-settings#max_replica_delay_for_distributed_queries) e usar o recurso HTTP `/replicas_status`. Uma solicitação para `/replicas_status` retorna `200 OK` se a réplica estiver disponível e não estiver atrasada em relação às outras réplicas. Se uma réplica estiver atrasada, ela retorna `503 HTTP_SERVICE_UNAVAILABLE` com informações sobre a diferença.

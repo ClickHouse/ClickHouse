@@ -26,7 +26,7 @@ ASTPtr timeSeriesTimestampASTCast(ASTPtr && ast, const DataTypePtr & timestamp_d
 /// Makes an AST casting an expression representing a duration to the duration data type corresponding to a specified `timestamp_data_type`.
 ASTPtr timeSeriesDurationASTCast(ASTPtr && ast, const DataTypePtr & timestamp_data_type);
 
-/// Makes an AST casting an expression representing a scalar value to a specified `scalar_data_type`.
+/// Makes an AST casting an expression representing a timestamp to a specified `timestamp_data_type`.
 ASTPtr timeSeriesScalarASTCast(ASTPtr && ast, const DataTypePtr & scalar_data_type);
 
 }

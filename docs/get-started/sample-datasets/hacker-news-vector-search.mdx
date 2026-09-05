@@ -60,7 +60,7 @@ vector similarity search combined with post-filtering/pre-filtering as explained
 To load the dataset from the `Parquet` file, run the following SQL statement:
 
 ```sql
-INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet', NOSIGN);
+INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet');
 ```
 
 Inserting 28.74 million rows into the table will take a few minutes.

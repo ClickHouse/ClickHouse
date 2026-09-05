@@ -1,6 +1,7 @@
 #pragma once
 #include <Core/Types.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 

@@ -145,15 +145,8 @@ public:
 
     virtual bool isConnected() const = 0;
 
-    /// Check if connection is still active with ping request. The round trip also synchronizes the
-    /// client with the server: after it returns, everything the server has already sent (including
-    /// a close) has been observed. Use it to recover from a protocol desynchronization.
+    /// Check if connection is still active with ping request.
     virtual bool checkConnected(const ConnectionTimeouts & /*timeouts*/) = 0;
-
-    /// The same, but without a round trip. It only reports a failure that is already visible on the
-    /// socket, so it must not be used to recover from a desynchronization - only to skip a
-    /// connection that is known to be unusable before sending the next request.
-    virtual bool checkConnectedWithoutRoundTrip() = 0;
 
     /** Disconnect.
       * This may be used, if connection is left in unsynchronised state

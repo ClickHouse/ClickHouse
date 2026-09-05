@@ -920,13 +920,13 @@ h3ExactEdgeLengthM(index)
 **Пример**
 
 ```sql title="Query"
-SELECT round(h3ExactEdgeLengthM(1310277011704381439), 6) AS exactEdgeLengthM;
+SELECT h3ExactEdgeLengthM(1310277011704381439) AS exactEdgeLengthM;;
 ```
 
 ```text title="Response"
-┌─exactEdgeLengthM─┐
-│    195449.631634 │
-└──────────────────┘
+┌───exactEdgeLengthM─┐
+│ 195449.63163407316 │
+└────────────────────┘
 ```
 
 <div id="h3exactedgelengthkm">
@@ -952,13 +952,13 @@ h3ExactEdgeLengthKm(index)
 **Пример**
 
 ```sql title="Query"
-SELECT round(h3ExactEdgeLengthKm(1310277011704381439), 8) AS exactEdgeLengthKm;
+SELECT h3ExactEdgeLengthKm(1310277011704381439) AS exactEdgeLengthKm;;
 ```
 
 ```text title="Response"
-┌─exactEdgeLengthKm─┐
-│      195.44963163 │
-└───────────────────┘
+┌──exactEdgeLengthKm─┐
+│ 195.44963163407317 │
+└────────────────────┘
 ```
 
 <div id="h3exactedgelengthrads">
@@ -984,13 +984,13 @@ h3ExactEdgeLengthRads(index)
 **Пример**
 
 ```sql title="Query"
-SELECT round(h3ExactEdgeLengthRads(1310277011704381439), 12) AS exactEdgeLengthRads;
+SELECT h3ExactEdgeLengthRads(1310277011704381439) AS exactEdgeLengthRads;;
 ```
 
 ```text title="Response"
-┌─exactEdgeLengthRads─┐
-│      0.030677980119 │
-└─────────────────────┘
+┌──exactEdgeLengthRads─┐
+│ 0.030677980118976447 │
+└──────────────────────┘
 ```
 
 <div id="h3numhexagons">
@@ -1053,9 +1053,9 @@ SELECT h3PointDistM(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistM;
 ```
 
 ```text title="Response"
-┌───────h3PointDistM─┐
-│ 2223901.0395045886 │
-└────────────────────┘
+┌──────h3PointDistM─┐
+│ 2223901.039504589 │
+└───────────────────┘
 ```
 
 <div id="h3pointdistkm">
@@ -1086,9 +1086,9 @@ SELECT h3PointDistKm(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistKm;
 ```
 
 ```text title="Response"
-┌──────h3PointDistKm─┐
-│ 2223.9010395045884 │
-└────────────────────┘
+┌─────h3PointDistKm─┐
+│ 2223.901039504589 │
+└───────────────────┘
 ```
 
 <div id="h3pointdistrads">
@@ -1248,7 +1248,7 @@ h3Distance(start,end)
 
 ```text title="Response"
 ┌─distance─┐
-│        6 │
+│        7 │
 └──────────┘
 ```
 
@@ -1291,7 +1291,7 @@ h3HexRing(index, k)
   ## h3GetUnidirectionalEdge
 </div>
 
-Возвращает индекс H3 однонаправленного ребра для двух соседних индексов ячеек H3 (исходной и целевой). Генерирует исключение, если хотя бы один из входных индексов не является допустимой ячейкой H3 (это поведение регулируется настройкой `functions_h3_default_if_invalid`). Для допустимых ячеек H3, не являющихся соседними (в том числе при указании одной и той же ячейки дважды), возвращает `0`.
+Возвращает индекс H3 для однонаправленного ребра на основе указанных исходной ячейки и пункта назначения; в случае ошибки возвращает 0.
 
 **Синтаксис**
 
@@ -1329,7 +1329,7 @@ h3GetUnidirectionalEdge(originIndex, destinationIndex)
 **Синтаксис**
 
 ```sql
-h3UnidirectionalEdgeIsValid(index)
+h3UnidirectionalEdgeisValid(index)
 ```
 
 **Параметр**
@@ -1357,7 +1357,7 @@ h3UnidirectionalEdgeIsValid(index)
   ## h3GetOriginIndexFromUnidirectionalEdge
 </div>
 
-Возвращает индекс исходного шестиугольника по H3Index однонаправленного ребра. Генерирует исключение, если входное значение не является допустимым направленным ребром (управляется настройкой `functions_h3_default_if_invalid`); возвращает `0`, только если эта настройка включена.
+Возвращает индекс исходного шестиугольника по H3Index однонаправленного ребра.
 
 **Синтаксис**
 
@@ -1371,18 +1371,17 @@ h3GetOriginIndexFromUnidirectionalEdge(edge)
 
 **Возвращаемое значение**
 
-* Номер шестиугольного индекса исходной ячейки. [UInt64](/ru/reference/data-types/int-uint).
-* По умолчанию генерирует исключение `INCORRECT_DATA` для недопустимых направленных рёбер; возвращает `0`, если `functions_h3_default_if_invalid = 1`.
+* Номер исходного шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
 
 **Пример**
 
 ```sql title="Query"
- SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707199) AS origin;
+ SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707197) AS origin;
 ```
 
 ```text title="Response"
 ┌─────────────origin─┐
-│ 599686042433355775 │
+│ 599686042433355773 │
 └────────────────────┘
 ```
 
@@ -1390,7 +1389,7 @@ h3GetOriginIndexFromUnidirectionalEdge(edge)
   ## h3GetDestinationIndexFromUnidirectionalEdge
 </div>
 
-Возвращает индекс шестиугольника пункта назначения по однонаправленному ребру H3Index. Генерирует исключение, если входное значение не является допустимым ориентированным ребром (поведение определяется настройкой `functions_h3_default_if_invalid`); возвращает `0`, только если эта настройка включена.
+Возвращает индекс шестиугольника пункта назначения по однонаправленному ребру H3Index.
 
 **Синтаксис**
 
@@ -1404,18 +1403,17 @@ h3GetDestinationIndexFromUnidirectionalEdge(edge)
 
 **Возвращаемое значение**
 
-* Номер шестиугольного индекса целевой ячейки. [UInt64](/ru/reference/data-types/int-uint).
-* По умолчанию генерирует исключение `INCORRECT_DATA` для недопустимых направленных рёбер; возвращает `0`, если `functions_h3_default_if_invalid = 1`.
+* Номер шестиугольного индекса пункта назначения. [UInt64](/ru/reference/data-types/int-uint).
 
 **Пример**
 
 ```sql title="Query"
- SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707199) AS destination;
+ SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707197) AS destination;
 ```
 
 ```text title="Response"
 ┌────────destination─┐
-│ 599686043507097599 │
+│ 599686043507097597 │
 └────────────────────┘
 ```
 
@@ -1439,10 +1437,10 @@ h3GetIndexesFromUnidirectionalEdge(edge)
 
 Кортеж, состоящий из двух значений `tuple(origin,destination)`:
 
-* `origin` — номер шестиугольного индекса исходной ячейки. [UInt64](/ru/reference/data-types/int-uint).
-* `destination` — номер шестиугольного индекса целевой ячейки. [UInt64](/ru/reference/data-types/int-uint).
+* `origin` — исходный номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+* `destination` — номер шестиугольного индекса пункта назначения. [UInt64](/ru/reference/data-types/int-uint).
 
-Генерирует исключение, если переданное значение не является допустимым направленным ребром (это регулируется настройкой `functions_h3_default_if_invalid`); возвращает `(0,0)` только при включённой этой настройке.
+Возвращает `(0,0)`, если переданное значение недопустимо.
 
 **Пример**
 
@@ -1460,7 +1458,7 @@ h3GetIndexesFromUnidirectionalEdge(edge)
   ## h3GetUnidirectionalEdgesFromHexagon
 </div>
 
-Возвращает все однонаправленные рёбра для указанного H3Index. Генерирует исключение, если входное значение не является допустимой ячейкой H3 (это регулируется настройкой `functions_h3_default_if_invalid`); возвращает пустой массив только при включённой настройке.
+Возвращает все однонаправленные рёбра для указанного H3Index.
 
 **Синтаксис**
 
@@ -1470,17 +1468,16 @@ h3GetUnidirectionalEdgesFromHexagon(index)
 
 **Параметр**
 
-* `index` — номер шестиугольного индекса, соответствующий ячейке. [UInt64](/ru/reference/data-types/int-uint).
+* `index` — номер шестиугольного индекса, соответствующий однонаправленному ребру. [UInt64](/ru/reference/data-types/int-uint).
 
 **Возвращаемое значение**
 
-* Массив индексов H3, представляющих каждое однонаправленное ребро. [Array](/ru/reference/data-types/array)([UInt64](/ru/reference/data-types/int-uint)).
-* По умолчанию генерирует исключение `INCORRECT_DATA` для недопустимых ячеек; возвращает `[]`, когда `functions_h3_default_if_invalid = 1`.
+Массив индексов H3, представляющих каждое однонаправленное ребро. [Array](/ru/reference/data-types/array)([UInt64](/ru/reference/data-types/int-uint)).
 
 **Пример**
 
 ```sql title="Query"
- SELECT h3GetUnidirectionalEdgesFromHexagon(599686042433355775) AS edges;
+ SELECT h3GetUnidirectionalEdgesFromHexagon(1248204388774707199) AS edges;
 ```
 
 ```text title="Response"
@@ -1493,7 +1490,7 @@ h3GetUnidirectionalEdgesFromHexagon(index)
   ## h3GetUnidirectionalEdgeBoundary
 </div>
 
-Возвращает координаты, задающие однонаправленное ребро. Генерирует исключение, если входное значение не является допустимым направленным ребром (это регулируется настройкой `functions_h3_default_if_invalid`); возвращает пустой массив только при включённой настройке.
+Возвращает координаты, задающие однонаправленное ребро.
 
 **Синтаксис**
 
@@ -1507,8 +1504,7 @@ h3GetUnidirectionalEdgeBoundary(index)
 
 **Возвращаемое значение**
 
-* Массив пар &#39;(lat, lon)&#39;. [Array](/ru/reference/data-types/array)([Float64](/ru/reference/data-types/float), [Float64](/ru/reference/data-types/float)).
-* По умолчанию генерирует исключение `INCORRECT_DATA` для недопустимых направленных рёбер; возвращает `[]`, когда `functions_h3_default_if_invalid = 1`.
+* Массив пар &#39;(lon, lat)&#39;. [Array](/ru/reference/data-types/array)([Float64](/ru/reference/data-types/float), [Float64](/ru/reference/data-types/float)).
 
 **Пример**
 

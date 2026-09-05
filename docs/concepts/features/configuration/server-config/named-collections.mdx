@@ -6,13 +6,13 @@ title: 'Named collections'
 doc_type: 'reference'
 ---
 
+import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
 Named collections provide a way to store collections of key-value pairs to be
 used to configure integrations with external sources. You can use named collections with
 dictionaries, tables, table functions, and object storage.
-
-<Note>
-DDL-created named collections can be enabled on select ClickHouse Cloud services. Contact Support to confirm availability. Named collections defined in configuration files aren't available because users can't modify server configuration files in ClickHouse Cloud.
-</Note>
 
 Named collections can be configured with DDL or in configuration files and are applied
 when ClickHouse starts. They simplify the creation of objects and the hiding of credentials
@@ -94,16 +94,6 @@ To use ZooKeeper/Keeper we also need to set up a `path` (path in ZooKeeper/Keepe
 ```
 
 An optional configuration parameter `update_timeout_ms` by default is equal to `5000`.
-
-You can inspect the active storage type through `system.server_settings` and `getServerSetting`:
-
-```sql
-SELECT value, getServerSetting('named_collections_storage_type')
-FROM system.server_settings
-WHERE name = 'named_collections_storage.type';
-```
-
-Changing the storage type requires a server restart; `SYSTEM RELOAD CONFIG` does not change the active backend.
 
 ## Storing named collections in configuration files {#storing-named-collections-in-configuration-files}
 

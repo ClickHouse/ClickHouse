@@ -2,7 +2,7 @@
 slug: /integrations/integration-development/documenting-your-integration
 sidebarTitle: 'توثيق تكاملك'
 title: 'توثيق تكامل ClickHouse الخاص بك'
-description: 'كيفية المساهمة بصفحات التكامل في هذا المستودع، بما في ذلك الأقسام المطلوبة وقالب جاهز للنسخ واللصق.'
+description: 'كيفية المساهمة بصفحات التكامل في clickhouse-docs، بما في ذلك الأقسام المطلوبة وقالب جاهز للنسخ واللصق.'
 keywords: ['شريك', 'تكامل', 'توثيق', 'مساهمة', 'طلب سحب', 'توثيق التكامل']
 doc_type: 'guide'
 ---
@@ -15,10 +15,10 @@ doc_type: 'guide'
   ## مكان وجود الوثائق
 </div>
 
-* **المستودع:** [`ClickHouse/ClickHouse`](https://github.com/ClickHouse/ClickHouse) (`docs/` في هذه الشجرة)
-* **التنسيق:** MDX، ومبني باستخدام [Mintlify](https://www.mintlify.com/)
-* **الموقع:** `docs/integrations/<category>/<your-integration>/`، حيث يعكس `<category>` وظيفة منتجك (`data-visualization` و`data-ingestion` و`language-clients` وما إلى ذلك)
-* **العملية:** افتح طلب سحب على `master`. يراجع فريق التكاملات في ClickHouse الطلب. ويوقّع المساهمون لأول مرة على اتفاقية ترخيص المساهم عندما يطلب البوت ذلك في طلب السحب. راجع [دليل المساهمة في الوثائق](https://github.com/ClickHouse/ClickHouse/tree/master/docs#readme) للمعاينة المحلية (`mint dev` من `docs/`)
+* **المستودع:** [`ClickHouse/clickhouse-docs`](https://github.com/ClickHouse/clickhouse-docs)
+* **التنسيق:** Markdown، ومبني باستخدام Docusaurus
+* **الموقع:** `/docs/integrations/<category>/<your-integration>/`، حيث يعكس `<category>` وظيفة منتجك (`data-visualization` و`data-ingestion` و`language-clients` وما إلى ذلك)
+* **العملية:** افتح طلب سحب على `main`. يراجع فريق تكاملات ClickHouse الطلب. ويوقّع المساهمون لأول مرة على اتفاقية ترخيص المساهم عندما يطلب البوت ذلك في طلب السحب
 
 تُعد صفحات التكامل في هذا المستودع المرجع الرئيسي للمستخدمين النهائيين. ويمكنك إضافة رابط من صفحة التكامل الخاصة بك إلى وثائق تكميلية على موقعك للاطلاع على التفاصيل الخاصة بالمنتج.
 
@@ -49,7 +49,7 @@ doc_type: 'guide'
 </div>
 
 * **اعرض كلاً من Cloud وذاتي الاستضافة.** يستخدم Cloud عادةً HTTPS على المنفذ `8443` وnative TCP على `9440`. وتكون المنافذ الافتراضية في ذاتي الاستضافة هي `8123` و`9000`
-* **استخدم تنبيهات Mintlify** (`<Note>`, `<Warning>`, `<Tip>`) للملاحظات الجانبية بدلاً من الفقرات الغامقة
+* **استخدم تنبيهات Docusaurus** (`:::note`, `:::warning`, `:::tip`) للملاحظات الجانبية بدلاً من الفقرات الغامقة
 * **أضف روابط لمزيد من التفصيل.** اربط بالوثائق الحالية لأنواع البيانات والتنسيقات وJDBC وClickPipes والموضوعات المشابهة بدلاً من إعادة شرحها
 * **من دون تسويق.** صفحات التكامل هنا هي مرجع تقني. يجب أن يكون المحتوى الترويجي على موقعك؛ ويمكننا وضع رابط إليه من دليل الشركاء
 
@@ -57,17 +57,10 @@ doc_type: 'guide'
   ## قالب جاهز للنسخ واللصق
 </div>
 
-املأ الأقسام الموضوعة بين الأقواس، واحفظه بالاسم `docs/integrations/<category>/<your-integration>/index.mdx`، ثم افتح PR.
+املأ الأقسام الموضوعة بين الأقواس، واحفظه بالاسم `/docs/integrations/<category>/<your-integration>/index.md`، ثم افتح PR.
 
-```mdx
----
-title: '[Your product] and ClickHouse'
-sidebarTitle: '[Your product]'
-slug: /integrations/[your-product]
-description: '[One sentence: what the integration does.]'
-doc_type: 'guide'
-keywords: ['[your product]', 'integration']
----
+```markdown
+# [Your product] and ClickHouse
 
 [One to three sentences: what the integration does and why a
 ClickHouse user would want it.]

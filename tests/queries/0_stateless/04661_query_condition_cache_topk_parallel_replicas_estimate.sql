@@ -3,7 +3,7 @@
 -- Tag no-parallel-replicas: The test sets up parallel replicas explicitly
 -- Tag long: needs ~1M rows for the QCC to populate.
 --
--- Companion of `04628_query_condition_cache_topk_gate_off` and
+-- Companion of `04628_query_condition_cache_topk_default_off` and
 -- `04651_query_condition_cache_topk_parallel_replicas_local`, covering the pre-plan estimate that
 -- sizes automatic parallel replicas (`parallel_replicas_min_number_of_rows_per_replica > 0`).
 --
@@ -21,8 +21,7 @@
 
 SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
--- Turn the gate off: this test covers the contract of the query condition cache being
--- switched off for TopK reads.
+-- Pin the gate to its default value: this test covers the default-off contract.
 SET use_query_condition_cache_for_top_k = 0;
 SET use_top_k_dynamic_filtering = 0;
 SET use_skip_indexes_for_top_k = 1;
