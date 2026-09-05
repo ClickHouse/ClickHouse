@@ -27,6 +27,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -185,6 +186,7 @@ PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series
     , time_series_storage(storagePtrToTimeSeries(time_series_storage_))
     , log(getLogger("PrometheusHTTPProtocolAPI"))
 {
+    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
 }
 
 PrometheusHTTPProtocolAPI::~PrometheusHTTPProtocolAPI() = default;
@@ -240,16 +242,16 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     chassert(sql_query);
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
-    /// The generated SQL relies on `AS MATERIALIZED` to avoid evaluating subqueries referenced more than once
-    /// repeatedly (see SQLSubqueryType::MATERIALIZED_TABLE), and that mark has effect only with the setting
-    /// `enable_materialized_cte` enabled. Enable it unless the user set it explicitly.
+    /// Isolate the settings required by generated PromQL from the request context.
+    auto query_context = Context::createCopy(getContext());
     if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
-        getContext()->setSetting("enable_materialized_cte", true);
+        query_context->setSetting("enable_materialized_cte", true);
 
     /// `AS MATERIALIZED` is honored by the analyzer only, so the generated SQL always runs the analyzer.
-    getContext()->setSetting("allow_experimental_analyzer", true);
+    query_context->setSetting("allow_experimental_analyzer", true);
+    query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
-    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
 
     try
     {
@@ -409,10 +411,17 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseStringBlock(WriteBuffer & resp
 
 void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer & response, const Block & result_block, bool first)
 {
+    if (result_block.rows() == 0)
+        return;
+
     const auto & timestamp_column = result_block.getByName(TimeSeriesColumnNames::Timestamp).column;
     auto timestamp_data_type = result_block.getByName(TimeSeriesColumnNames::Timestamp).type;
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
     const auto & value_column = result_block.getByName(TimeSeriesColumnNames::Value).column;
+
+    WriteBufferFromOwnString timestamp_buffer;
+    writeTimestamp(timestamp_buffer, timestamp_column->getInt(0), timestamp_scale);
+    const std::string_view timestamp_text = timestamp_buffer.stringView();
 
     bool need_comma = !first;
 
@@ -433,8 +442,7 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer
         writeString("\"value\":[", response);
 
         // Write timestamp
-        DateTime64 timestamp = timestamp_column->getInt(i);
-        writeTimestamp(response, timestamp, timestamp_scale);
+        writeString(timestamp_text, response);
 
         writeString(",", response);
 

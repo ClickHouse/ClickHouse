@@ -1,0 +1,16 @@
+--- the version is pinned into a new table ---
+1	1
+--- the version survives DETACH/ATTACH ---
+1
+--- the version cannot be altered ---
+--- altering another setting does not drop the version or other settings from the metadata ---
+1	1	1	1
+--- an explicit version in CREATE: supported versions are allowed, unknown ones are rejected ---
+1
+0
+--- PromQL works on tables of every supported version ---
+0
+0
+--- CREATE AS copies the version ---
+ts_version_0_copy	0
+ts_version_1_copy	1
