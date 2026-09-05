@@ -349,6 +349,19 @@ def test_materialized_row_ids_are_not_pruned_away(
         == ""
     )
 
+    # The manifest does declare the materialized ids 0..3 for this file and vouches for them, so the
+    # filter above skips it rather than reading it and finding nothing. Declining to use a well
+    # formed declared pair would leave the fallback range 0..7 instead, which overlaps the filter and
+    # keeps the file, so this count is what pins the declared bounds as being used at all.
+    assert (
+        _pruned_files(
+            instance,
+            TABLE_NAME,
+            f"SELECT id FROM {table_expression} WHERE _row_id >= 4 ORDER BY ALL",
+        )
+        == 1
+    )
+
     # The same for the sequence number: the updated row carries a materialized value of its own.
     assert (
         instance.query(
