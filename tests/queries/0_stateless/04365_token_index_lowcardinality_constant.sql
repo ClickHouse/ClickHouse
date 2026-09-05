@@ -6,6 +6,9 @@
 -- the LowCardinality variant reads the SAME single granule as the plain-String variant.
 
 SET enable_analyzer = 1;
+-- A bare count() over a text-index predicate is answered from the posting lists
+-- (ReadFromTextIndexCount), leaving no ReadFromMergeTree node whose granule count to assert.
+SET query_plan_optimize_count_from_text_index = 0;
 
 DROP TABLE IF EXISTS t_text;
 DROP TABLE IF EXISTS t_tokenbf;
