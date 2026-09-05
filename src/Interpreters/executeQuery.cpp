@@ -54,7 +54,7 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
-#include <Parsers/ASTHypotheticalIndexQuery.h>
+#include <Parsers/ASTHypotheticalObjectQuery.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTUndropQuery.h>
@@ -1469,12 +1469,12 @@ bool mainTableTouchedIfExists(const IAST & ast, const ContextPtr & context)
         const auto * index_decl = create_index->index_decl ? create_index->index_decl->as<ASTIndexDeclaration>() : nullptr;
         return index_decl && index_decl->getType();
     }
-    /// `CREATE`/`DROP HYPOTHETICAL INDEX` never mutates the table it names:
-    /// `InterpreterHypotheticalIndexQuery` only reads the table's metadata and updates the session-local
-    /// `HypotheticalIndexStore`. Detaching and attaching the table would be a side effect on live table
-    /// state that the query never changes (and `DROP HYPOTHETICAL INDEX ... IF EXISTS` may be a pure
-    /// no-op), so these references are not eligible.
-    if (ast.as<ASTHypotheticalIndexQuery>())
+    /// `CREATE`/`DROP HYPOTHETICAL INDEX` and `CREATE`/`DROP HYPOTHETICAL PROJECTION` never mutate the
+    /// table they name: `InterpreterHypotheticalObjectQuery` only reads the table's metadata and updates
+    /// the session-local `HypotheticalObjectStore`. Detaching and attaching the table would be a side
+    /// effect on live table state that the query never changes (and `DROP HYPOTHETICAL INDEX ... IF EXISTS`
+    /// may be a pure no-op), so these references are not eligible.
+    if (ast.as<ASTHypotheticalObjectQuery>())
         return false;
     return true;
 }
@@ -2670,7 +2670,7 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
 
         /// Targets whose query never touches an existing table of that name (plain `CREATE`/`ATTACH`,
         /// `CREATE ... IF NOT EXISTS`, `UNDROP`, the failing/no-op shapes of `CREATE INDEX`, and the
-        /// session-local hypothetical-index statements — see `mainTableTouchedIfExists`) are skipped too:
+        /// session-local hypothetical-object statements — see `mainTableTouchedIfExists`) are skipped too:
         /// resolving them would detach a table the statement is about to fail on or no-op against.
         if (!query_with_output->isTemporary() && mainTableTouchedIfExists(*ast, data.context))
             data.addTableIfNotEmpty(query_with_output->getDatabase(), query_with_output->getTable(), active_ctes, mainTableResolveNamespace(*ast), requiredAccessForTableQuery(*ast), mainTableExistenceRequired(*ast), mainTableExpectedObjectKind(*ast));
