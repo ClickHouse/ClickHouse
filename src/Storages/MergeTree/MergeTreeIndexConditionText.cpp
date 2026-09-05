@@ -1675,8 +1675,21 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
         if (!future_set)
             return false;
 
-        auto prepared_set = future_set->buildOrderedSetInplace(getContext());
-        if (!prepared_set || !prepared_set->hasExplicitSetElements())
+        /// The decision below is made once, at analysis time. A set backed by an `ENGINE = Set` table
+        /// keeps changing while the query runs, so a concurrent `INSERT` of the default value would
+        /// make the predicate true for a missing key after the granules holding such rows were already
+        /// pruned, and the query would silently miss them. There is nothing to evaluate against but
+        /// that mutable set, so give up on the index.
+        if (future_set->canChangeDuringQuery())
+            return false;
+
+        /// Only the existence of the set matters here: `actions.execute` below evaluates the subDAG on a
+        /// default value and needs `FunctionIn` to find a ready set, but never reads its elements.
+        /// Requiring `hasExplicitSetElements` on top of that gives up on a set that exceeded
+        /// `use_index_for_in_with_subqueries_max_values`, dropping the index for exactly the large `IN`
+        /// sets it is most worth using on.
+        future_set->buildOrderedSetInplace(getContext());
+        if (!future_set->get())
             return false;
     }
 
@@ -1772,8 +1785,21 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
         if (!future_set)
             return false;
 
-        auto prepared_set = future_set->buildOrderedSetInplace(getContext());
-        if (!prepared_set || !prepared_set->hasExplicitSetElements())
+        /// The decision below is made once, at analysis time. A set backed by an `ENGINE = Set` table
+        /// keeps changing while the query runs, so a concurrent `INSERT` of the default value would
+        /// make the predicate true for a missing key after the granules holding such rows were already
+        /// pruned, and the query would silently miss them. There is nothing to evaluate against but
+        /// that mutable set, so give up on the index.
+        if (future_set->canChangeDuringQuery())
+            return false;
+
+        /// Only the existence of the set matters here: `actions.execute` below evaluates the subDAG on a
+        /// default value and needs `FunctionIn` to find a ready set, but never reads its elements.
+        /// Requiring `hasExplicitSetElements` on top of that gives up on a set that exceeded
+        /// `use_index_for_in_with_subqueries_max_values`, dropping the index for exactly the large `IN`
+        /// sets it is most worth using on.
+        future_set->buildOrderedSetInplace(getContext());
+        if (!future_set->get())
             return false;
     }
 

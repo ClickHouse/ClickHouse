@@ -74,6 +74,13 @@ public:
     /// result the plan may end up not needing at all, so any further consult-only caller belongs here.
     SetPtr getOrderedSetIfAlreadyBuilt(const ContextPtr & context);
 
+    /// Whether the contents of the set can still change after a caller has looked at them.
+    /// Only a set backed by a table can: `StorageSet::insertBlock` inserts into the very `Set` object
+    /// held here, so a query sees values inserted after it started. A set the query builds for itself
+    /// is frozen once built. A caller that derives a decision from the set at analysis time and never
+    /// revisits it - index analysis that prunes granules, say - must refuse a set that can change.
+    virtual bool canChangeDuringQuery() const { return false; }
+
     using Hash = CityHash_v1_0_2::uint128;
     virtual Hash getHash() const = 0;
 
@@ -94,6 +101,11 @@ public:
     SetPtr buildOrderedSetInplace(const ContextPtr &) override;
     Hash getHash() const override;
     ASTPtr getSourceAST() const override { return ast; }
+
+    /// No storage id means the set is not backed by a table at all: the query built it for itself and
+    /// wrapped it here to hand to `FunctionIn` (see `optimizeLazyFinal`). Such a set is filled once,
+    /// by the `CreatingSetStep` below it, and never mutated afterwards.
+    bool canChangeDuringQuery() const override { return storage_id.has_value(); }
 
     const std::optional<StorageID> & getStorageID() const { return storage_id; }
 private:
