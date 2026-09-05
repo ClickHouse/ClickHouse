@@ -15,7 +15,7 @@ namespace DB
 class MergeSorter
 {
 public:
-    MergeSorter(SharedHeader header, Chunks chunks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_);
+    MergeSorter(SharedHeader header, Chunks chunks_, const SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_);
 
     Chunk read();
 
@@ -45,7 +45,7 @@ private:
 class MergeSorterSource final : public ISource
 {
 public:
-    MergeSorterSource(SharedHeader header, Chunks chunks, SortDescription & description, size_t max_merged_block_size, UInt64 limit)
+    MergeSorterSource(SharedHeader header, Chunks chunks, const SortDescription & description, size_t max_merged_block_size, UInt64 limit)
         : ISource(header), merge_sorter(header, std::move(chunks), description, max_merged_block_size, limit)
     {
     }

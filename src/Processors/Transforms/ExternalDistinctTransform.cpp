@@ -1,15 +1,8 @@
 #include <Processors/Transforms/ExternalDistinctTransform.h>
 
 #include <algorithm>
-#include <functional>
-#include <numeric>
+#include <iterator>
 
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <Core/SortCursor.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <IO/ReadBufferFromString.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -17,11 +10,9 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/SortingTransform.h>
-#include <Common/Arena.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
-#include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
 
 namespace ProfileEvents
@@ -41,161 +32,13 @@ namespace ErrorCodes
 namespace
 {
 
-constexpr auto FLAG_COLUMN_NAME = "__distinct_already_emitted";
-constexpr auto ARRIVAL_NUMBER_COLUMN_NAME = "__distinct_arrival_number";
-
 /// A run is written only when at least this much data was accumulated (but never more than the spill
 /// threshold itself, so that tiny thresholds still spill deterministically). Without a floor, when it is
 /// some *other* operator that keeps the memory usage of the query above the threshold, every consumed
 /// chunk would be dumped as its own temporary file.
 constexpr size_t MIN_BYTES_IN_RUN = DEFAULT_BLOCK_SIZE * 256;
 
-SortDescription buildSortDescription(const Block & header, const ColumnNumbers & key_columns_pos)
-{
-    SortDescription description;
-    description.reserve(key_columns_pos.size());
-    for (const auto pos : key_columns_pos)
-        description.emplace_back(header.getByPosition(pos).name, 1, 1);
-    return description;
-}
-
-/// Positions of the columns that are written to the spilled runs: all the non-constant columns of the
-/// header, in the header order. The constant columns are not spilled - their values are known from the
-/// header, so they are re-attached to the merged stream instead (see restoreConstantColumns).
-ColumnNumbers calculateSpillColumnsPositions(const Block & header)
-{
-    ColumnNumbers positions;
-    positions.reserve(header.columns());
-    for (size_t pos = 0; pos < header.columns(); ++pos)
-    {
-        const auto & column = header.getByPosition(pos).column;
-        if (!column || !isColumnConst(*column))
-            positions.push_back(pos);
-    }
-    return positions;
-}
-
-/// Positions of the key columns within the spill layout. Every key column is spilled (the keys are
-/// non-constant by construction), so each key position is present among the spill positions.
-ColumnNumbers mapKeysToSpillPositions(const ColumnNumbers & key_columns_pos, const ColumnNumbers & spill_columns_pos)
-{
-    ColumnNumbers spill_positions;
-    spill_positions.reserve(key_columns_pos.size());
-    for (const auto key_pos : key_columns_pos)
-    {
-        const auto it = std::find(spill_columns_pos.begin(), spill_columns_pos.end(), key_pos);
-        chassert(it != spill_columns_pos.end());
-        spill_positions.push_back(it - spill_columns_pos.begin());
-    }
-    return spill_positions;
-}
-
-/// Positions within the spill layout of the key columns whose type is not comparable: they are spilled as
-/// their serialized values (see serializeValues) so that the sorting and the merge of the runs can compare
-/// them as bytes.
-ColumnNumbers calculateSerializedKeyColumnsPositions(
-    const Block & header, const ColumnNumbers & key_columns_pos, const ColumnNumbers & spill_key_columns_pos)
-{
-    ColumnNumbers positions;
-    for (size_t i = 0; i < key_columns_pos.size(); ++i)
-    {
-        if (!header.getByPosition(key_columns_pos[i]).type->isComparable())
-            positions.push_back(spill_key_columns_pos[i]);
-    }
-    return positions;
-}
-
-/// The serialization of every value of the column (IColumn::serializeValueIntoArena) as a String column.
-ColumnPtr serializeValues(const IColumn & column)
-{
-    const size_t num_rows = column.size();
-    auto serialized = ColumnString::create();
-    serialized->reserve(num_rows);
-
-    Arena arena;
-    for (size_t row = 0; row < num_rows; ++row)
-    {
-        const char * begin = nullptr;
-        const auto value = column.serializeValueIntoArena(row, arena, begin, /*settings=*/ nullptr);
-        serialized->insertData(value.data(), value.size());
-    }
-    return serialized;
-}
-
-/// The inverse of serializeValues: a column of the given type holding the deserialized values.
-ColumnPtr deserializeValues(const IColumn & serialized, const IDataType & type)
-{
-    const size_t num_rows = serialized.size();
-    auto column = type.createColumn();
-    column->reserve(num_rows);
-
-    for (size_t row = 0; row < num_rows; ++row)
-    {
-        ReadBufferFromString in(serialized.getDataAt(row));
-        column->deserializeAndInsertFromArena(in, /*settings=*/ nullptr);
-    }
-    return column;
-}
-
-/// A service column only needs a name that is unique within the spill header (everything addresses it
-/// by position); a user column may legitimately be named like it, so uniquify by prepending underscores
-/// instead of failing.
-String uniqueColumnName(const Block & header, String name)
-{
-    while (header.has(name))
-        name = "_" + name;
-    return name;
-}
-
-/// The spilled columns (the serialized key columns as String, under their own names), then the arrival
-/// number column (when the input order is preserved), then the flag column.
-SharedHeader buildSpillHeader(
-    const Block & header,
-    const ColumnNumbers & spill_columns_pos,
-    const ColumnNumbers & spill_serialized_key_columns_pos,
-    bool with_arrival_numbers)
-{
-    Block spill_header;
-    for (const auto pos : spill_columns_pos)
-        spill_header.insert(header.getByPosition(pos));
-
-    auto string_type = std::make_shared<DataTypeString>();
-    for (const auto pos : spill_serialized_key_columns_pos)
-    {
-        auto & column = spill_header.getByPosition(pos);
-        column.type = string_type;
-        column.column = string_type->createColumn();
-    }
-
-    if (with_arrival_numbers)
-    {
-        auto arrival_number_type = std::make_shared<DataTypeUInt64>();
-        spill_header.insert({arrival_number_type->createColumn(), arrival_number_type, uniqueColumnName(header, ARRIVAL_NUMBER_COLUMN_NAME)});
-    }
-
-    auto flag_type = std::make_shared<DataTypeUInt8>();
-    spill_header.insert({flag_type->createColumn(), flag_type, uniqueColumnName(header, FLAG_COLUMN_NAME)});
-    return std::make_shared<const Block>(std::move(spill_header));
-}
-
-/// The spill header without its last column (the flag): the header of the merged and deduplicated stream
-/// of the runs.
-SharedHeader buildMergedHeader(const Block & spill_header)
-{
-    Block merged_header = spill_header;
-    merged_header.erase(merged_header.columns() - 1);
-    return std::make_shared<const Block>(std::move(merged_header));
-}
-
-/// Ascending sort over the last column of the merged header, the arrival numbers.
-SortDescription buildArrivalNumberDescription(const Block & merged_header)
-{
-    SortDescription description;
-    description.emplace_back(merged_header.getByPosition(merged_header.columns() - 1).name, 1, 1);
-    return description;
-}
-
-/// Deduplicates the merged stream of the runs (see DistinctSortedFilter) and strips the flag column.
+/// Deduplicates merged runs with `DistinctSortedFilter` and removes the emitted flag column.
 class MergedRunsDistinctTransform final : public ISimpleTransform
 {
 public:
@@ -221,98 +64,6 @@ private:
 
 }
 
-DistinctSortedFilter::DistinctSortedFilter(ColumnNumbers key_columns_pos_, SortDescription description_, size_t flag_column_pos_)
-    : key_columns_pos(std::move(key_columns_pos_))
-    , description(std::move(description_))
-    , flag_column_pos(flag_column_pos_)
-{
-    chassert(key_columns_pos.size() == description.size());
-    chassert(!key_columns_pos.empty());
-}
-
-void DistinctSortedFilter::reset()
-{
-    prev_chunk_latest_key.clear();
-}
-
-void DistinctSortedFilter::saveLatestKey(const ColumnRawPtrs & key_columns, size_t row_pos)
-{
-    prev_chunk_latest_key.clear();
-    for (const auto * col : key_columns)
-    {
-        prev_chunk_latest_key.emplace_back(col->cloneEmpty());
-        prev_chunk_latest_key.back()->insertFrom(*col, row_pos);
-    }
-}
-
-bool DistinctSortedFilter::isLatestKeyFromPrevChunk(const ColumnRawPtrs & key_columns, size_t row_pos) const
-{
-    for (size_t i = 0, s = key_columns.size(); i < s; ++i)
-    {
-        const int res = prev_chunk_latest_key[i]->compareAt(0, row_pos, *key_columns[i], description[i].nulls_direction);
-        if (res != 0)
-            return false;
-    }
-    return true;
-}
-
-Chunk DistinctSortedFilter::filter(Chunk chunk, bool strip_flag)
-{
-    const size_t num_rows = chunk.getNumRows();
-    if (unlikely(num_rows == 0))
-        return chunk;
-
-    auto columns = chunk.detachColumns();
-    chassert(flag_column_pos == columns.size() - 1);
-
-    ColumnRawPtrs key_columns;
-    key_columns.reserve(key_columns_pos.size());
-    for (const auto pos : key_columns_pos)
-        key_columns.emplace_back(columns[pos].get());
-
-    const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[flag_column_pos]).getData();
-
-    IColumn::Filter filter_values(num_rows, 0);
-    size_t output_rows = 0;
-    size_t range_begin = 0;
-
-    /// If the first row has the same key as the last row of the previous chunk, the previous range
-    /// continues into this chunk: it was already decided at its first row, skip the continuation.
-    if (!prev_chunk_latest_key.empty() && isLatestKeyFromPrevChunk(key_columns, 0))
-        range_begin = getEqualRangeEndAssumeSorted(key_columns, description, 0, num_rows);
-
-    while (range_begin != num_rows)
-    {
-        const size_t range_end = getEqualRangeEndAssumeSorted(key_columns, description, range_begin, num_rows);
-
-        /// The merge of the runs must return the flagged rows before the equal unflagged ones (the
-        /// sorting queues break ties by the input index and the flagged run is the input 0).
-        chassert(std::is_sorted(flags.begin() + range_begin, flags.begin() + range_end, std::greater{}));
-
-        /// Keep the first row of the range unless this value was already emitted before the spill.
-        if (flags[range_begin] == 0)
-        {
-            filter_values[range_begin] = 1;
-            ++output_rows;
-        }
-
-        range_begin = range_end;
-    }
-
-    saveLatestKey(key_columns, num_rows - 1);
-
-    if (output_rows != num_rows)
-    {
-        for (auto & column : columns)
-            column = column->filter(filter_values, output_rows);
-    }
-
-    if (strip_flag)
-        columns.pop_back();
-
-    return Chunk(std::move(columns), output_rows);
-}
-
 ExternalDistinctTransform::ExternalDistinctTransform(
     SharedHeader header_,
     const SizeLimits & set_size_limits_,
@@ -331,19 +82,12 @@ ExternalDistinctTransform::ExternalDistinctTransform(
     , tmp_data(std::move(tmp_data_))
     , min_free_disk_space(min_free_disk_space_)
     , max_block_size_rows(max_block_size_rows_)
-    , preserve_input_order(preserve_input_order_)
-    , description(buildSortDescription(*header_, distinct_set.getKeyColumnsPositions()))
-    , spill_columns_pos(calculateSpillColumnsPositions(*header_))
-    , spill_key_columns_pos(mapKeysToSpillPositions(distinct_set.getKeyColumnsPositions(), spill_columns_pos))
-    , spill_serialized_key_columns_pos(
-          calculateSerializedKeyColumnsPositions(*header_, distinct_set.getKeyColumnsPositions(), spill_key_columns_pos))
-    , spill_header(buildSpillHeader(*header_, spill_columns_pos, spill_serialized_key_columns_pos, preserve_input_order))
-    , merged_header(buildMergedHeader(*spill_header))
-    , arrival_number_description(preserve_input_order ? buildArrivalNumberDescription(*merged_header) : SortDescription{})
-    , run_dedup(spill_key_columns_pos, description, spill_header->columns() - 1)
+    , spill_layout(header_, distinct_set.getKeyColumnsPositions(), preserve_input_order_)
+    , run_dedup(
+          spill_layout.getKeyColumnsPositions(), spill_layout.getKeySortDescription(), spill_layout.getFlagColumnPosition())
 {
     chassert(max_bytes_before_external_distinct > 0);
-    /// DistinctStep never uses this transform when all the distinct columns are constant.
+    /// `DistinctStep` selects this transform only when the distinct key has non-constant columns.
     chassert(distinct_set.hasKeyColumns());
 }
 
@@ -354,128 +98,15 @@ size_t ExternalDistinctTransform::minBytesInRun() const
     return std::min(max_bytes_before_external_distinct, MIN_BYTES_IN_RUN);
 }
 
-Chunk ExternalDistinctTransform::buildChunkFromKeys(MutableColumns && key_columns) const
+Chunk ExternalDistinctTransform::sortSpillChunk(Chunk chunk, bool already_emitted) const
 {
-    const auto & header = inputs.front().getHeader();
-    const size_t num_rows = key_columns[0]->size();
-
-    Columns columns(spill_columns_pos.size());
-    for (size_t i = 0; i < key_columns.size(); ++i)
-        columns[spill_key_columns_pos[i]] = std::move(key_columns[i]);
-
-    /// The rows of the first run only suppress the equal rows during the merge and are never emitted, so
-    /// the values of their non-key columns are never read: default values stand in for them.
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        if (!columns[i])
-            columns[i] = header.getByPosition(spill_columns_pos[i]).type->createColumn()->cloneResized(num_rows);
-    }
-
-    return Chunk(std::move(columns), num_rows);
-}
-
-Chunk ExternalDistinctTransform::restoreConstantColumns(Chunk chunk) const
-{
-    const auto & header = inputs.front().getHeader();
-    if (spill_columns_pos.size() == header.columns())
-        return chunk;
-
-    const size_t num_rows = chunk.getNumRows();
-    auto spilled_columns = chunk.detachColumns();
-
-    Columns columns(header.columns());
-    for (size_t i = 0; i < spill_columns_pos.size(); ++i)
-        columns[spill_columns_pos[i]] = std::move(spilled_columns[i]);
-
-    for (size_t pos = 0; pos < columns.size(); ++pos)
-    {
-        if (!columns[pos])
-            columns[pos] = header.getByPosition(pos).column->cloneResized(num_rows);
-    }
-
-    return Chunk(std::move(columns), num_rows);
-}
-
-Chunk ExternalDistinctTransform::dropArrivalNumbers(Chunk chunk) const
-{
-    if (!preserve_input_order)
-        return chunk;
-
-    const size_t num_rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-    columns.pop_back();
-    return Chunk(std::move(columns), num_rows);
-}
-
-Chunk ExternalDistinctTransform::deserializeKeyColumns(Chunk chunk) const
-{
-    if (spill_serialized_key_columns_pos.empty())
-        return chunk;
-
-    const auto & header = inputs.front().getHeader();
-    const size_t num_rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-    for (const auto pos : spill_serialized_key_columns_pos)
-        columns[pos] = deserializeValues(*columns[pos], *header.getByPosition(spill_columns_pos[pos]).type);
-
-    return Chunk(std::move(columns), num_rows);
-}
-
-Chunk ExternalDistinctTransform::stripConstantColumns(Chunk chunk) const
-{
-    const auto & header = inputs.front().getHeader();
-    if (spill_columns_pos.size() == header.columns())
-        return chunk;
-
-    const size_t num_rows = chunk.getNumRows();
-    auto input_columns = chunk.detachColumns();
-
-    /// The constant columns are not spilled: they are re-attached from the header after the merge of
-    /// the runs (see restoreConstantColumns).
-    Columns columns;
-    columns.reserve(spill_columns_pos.size());
-    for (const auto pos : spill_columns_pos)
-        columns.push_back(std::move(input_columns[pos]));
-
-    return Chunk(std::move(columns), num_rows);
-}
-
-Chunk ExternalDistinctTransform::prepareSpillChunk(Chunk chunk, bool already_emitted, UInt64 first_arrival_number) const
-{
-    chassert(chunk.getNumColumns() == spill_columns_pos.size());
-    const size_t num_rows = chunk.getNumRows();
-
-    /// Special column representations cannot be written to the temporary files in the Native format.
-    removeSpecialColumnRepresentations(chunk);
-    convertToFullIfConst(chunk);
-
-    auto columns = chunk.detachColumns();
-    for (const auto pos : spill_serialized_key_columns_pos)
-        columns[pos] = serializeValues(*columns[pos]);
-
-    if (preserve_input_order)
-    {
-        auto arrival_numbers = ColumnUInt64::create(num_rows);
-        std::iota(arrival_numbers->getData().begin(), arrival_numbers->getData().end(), first_arrival_number);
-        columns.emplace_back(std::move(arrival_numbers));
-    }
-    columns.emplace_back(ColumnUInt8::create(num_rows, static_cast<UInt8>(already_emitted)));
-
-    /// sortBlock needs a Block to resolve the sort description; the service columns (the arrival numbers,
-    /// the flag) just follow the permutation. The sort must be stable: every deduplication below keeps the
-    /// first row of each range of equal keys, and the first row must stay the first-received one - both for
-    /// the non-key columns of a row (when the DISTINCT key is a subset of the columns) and for the choice
-    /// among values that compare equal but differ in the binary representation (0. and -0., NaN payloads).
-    ///
-    /// The duplicates within a chunk are dropped right here, before the chunk is accumulated, merged and
-    /// written: with a skewed input most rows repeat within a chunk, and dropping them at once keeps the
-    /// post-spill work proportional to the distinct rows, as the hash set kept it before the spill. The
-    /// rows of the first run come from the set and have no duplicates.
-    Block block = spill_header->cloneWithColumns(columns);
+    /// Stable sorting retains the first-arriving payload and the first binary representation among
+    /// keys that compare equal. The service columns follow the same permutation as the input columns.
+    Block block = spill_layout.getSpillHeader()->cloneWithColumns(chunk.detachColumns());
     if (already_emitted)
-        sortBlock(block, description, /*limit=*/ 0, IColumn::PermutationSortStability::Stable);
+        sortBlock(block, spill_layout.getKeySortDescription(), /*limit=*/ 0, IColumn::PermutationSortStability::Stable);
     else
-        sortBlockAndDeduplicate(block, description, IColumn::PermutationSortStability::Stable);
+        sortBlockAndDeduplicate(block, spill_layout.getKeySortDescription(), IColumn::PermutationSortStability::Stable);
 
     return Chunk(block.getColumns(), block.rows());
 }
@@ -490,28 +121,28 @@ void ExternalDistinctTransform::startFirstSpill()
 
     Chunks run_chunks;
     size_t run_bytes = 0;
-    /// The rows of the first run are never emitted, so their arrival numbers do not matter.
-    auto add_run_chunk = [&](Chunk chunk)
-    {
-        auto prepared = prepareSpillChunk(std::move(chunk), /*already_emitted=*/ true, /*first_arrival_number=*/ 0);
-        run_bytes += prepared.allocatedBytes();
-        run_chunks.push_back(std::move(prepared));
-    };
-
-    /// The keys extracted from the set are all the first run needs (see buildChunkFromKeys). The set is
-    /// freed right after the extraction, before the sorting: this way the transient peak is the set plus
-    /// the raw keys, not plus the sorted copies.
+    /// Suppression rows need only the extracted keys. Release the set before sorting, so the transient
+    /// peak contains the set and raw keys without also retaining their sorted copies.
     auto key_batches = distinct_set.extractKeyColumns(max_block_size_rows);
     distinct_set.clear();
 
     for (auto & key_columns : key_batches)
-        add_run_chunk(buildChunkFromKeys(std::move(key_columns)));
+    {
+        auto prepared = sortSpillChunk(
+            spill_layout.prepareSuppressionChunk(std::move(key_columns)), /*already_emitted=*/ true);
+        run_bytes += prepared.allocatedBytes();
+        run_chunks.push_back(std::move(prepared));
+    }
 
     startSpillRun(std::move(run_chunks), run_bytes, /*is_first_run=*/ true);
 }
 
 void ExternalDistinctTransform::startSpillRun(Chunks run_chunks, size_t run_bytes, bool is_first_run)
 {
+    const auto & spill_header = spill_layout.getSpillHeader();
+    const auto & merged_header = spill_layout.getMergedHeader();
+    const auto & description = spill_layout.getKeySortDescription();
+
     if (!tmp_data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryDataOnDisk is not set for ExternalDistinctTransform");
     ++temporary_files_num;
@@ -561,10 +192,12 @@ void ExternalDistinctTransform::startSpillRun(Chunks run_chunks, size_t run_byte
         processors.emplace_back(external_merging_sorted);
 
         merged_stream_processors.emplace_back(std::make_shared<MergedRunsDistinctTransform>(
-            spill_header, merged_header, spill_key_columns_pos, description, spill_header->columns() - 1));
+            spill_header, merged_header, spill_layout.getKeyColumnsPositions(), description, spill_layout.getFlagColumnPosition()));
 
-        if (preserve_input_order)
+        if (spill_layout.preservesInputOrder())
         {
+            const auto & arrival_number_description = spill_layout.getArrivalNumberSortDescription();
+
             /// The merge returns the rows in DISTINCT-key order; sort them back by their arrival numbers:
             /// each chunk on its own first, then a merge of the sorted chunks, which spills under the same
             /// conditions as the runs are written. The limit hint bounds the sort: the rows it cuts off
@@ -607,7 +240,7 @@ IProcessor::PipelineUpdate ExternalDistinctTransform::updatePipeline()
             output = &processor->getOutputs().front();
         }
 
-        inputs.emplace_back(*merged_header, this);
+        inputs.emplace_back(*spill_layout.getMergedHeader(), this);
         connect(*output, inputs.back());
     }
 
@@ -620,7 +253,7 @@ IProcessor::PipelineUpdate ExternalDistinctTransform::updatePipeline()
     {
         auto & sink = *std::next(processors.begin());
         /// Serialize: the run flows out through a new output port into the sink.
-        outputs.emplace_back(*spill_header, this);
+        outputs.emplace_back(*spill_layout.getSpillHeader(), this);
         connect(sink->getOutputs().front(), source->getInputs().front());
         connect(getOutputs().back(), sink->getInputs().back());
     }
@@ -835,7 +468,8 @@ void ExternalDistinctTransform::consume(Chunk chunk)
     }
     else
     {
-        auto prepared = prepareSpillChunk(stripConstantColumns(std::move(chunk)), /*already_emitted=*/ false, first_arrival_number);
+        auto prepared = sortSpillChunk(
+            spill_layout.prepareInputChunk(std::move(chunk), first_arrival_number), /*already_emitted=*/ false);
         sum_bytes_in_chunks += prepared.allocatedBytes();
         chunks.push_back(std::move(prepared));
 
@@ -890,7 +524,8 @@ void ExternalDistinctTransform::generate()
             /// deduplicated: the merge-phase deduplication collapses binary-equal rows within one input
             /// just as well.
             processors.emplace_back(std::make_shared<MergeSorterSource>(
-                spill_header, std::move(chunks), description, max_block_size_rows, /*limit=*/ 0));
+                spill_layout.getSpillHeader(), std::move(chunks), spill_layout.getKeySortDescription(),
+                max_block_size_rows, /*limit=*/ 0));
         }
 
         return;
@@ -901,7 +536,7 @@ void ExternalDistinctTransform::generate()
 
     /// The chunk is merged, deduplicated and, when the input order is preserved, sorted back by the
     /// arrival numbers, which have done their job by now.
-    Chunk chunk = restoreConstantColumns(deserializeKeyColumns(dropArrivalNumbers(std::move(current_chunk))));
+    Chunk chunk = spill_layout.restoreOutputChunk(std::move(current_chunk));
 
     emitted_rows += chunk.getNumRows();
     generated_chunk = std::move(chunk);

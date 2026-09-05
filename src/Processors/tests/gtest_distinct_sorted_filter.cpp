@@ -8,8 +8,9 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Sources/SourceFromChunks.h>
-#include <Processors/Transforms/ExternalDistinctTransform.h>
+#include <Processors/Transforms/DistinctSortedFilter.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <Common/assert_cast.h>
 
 using namespace DB;
 
