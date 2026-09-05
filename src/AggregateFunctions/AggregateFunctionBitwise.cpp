@@ -75,7 +75,7 @@ struct AggregateFunctionGroupBitAndData
     static void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * value_ptr)
     {
         auto type = toNativeType<T>(builder);
-        builder.CreateStore(llvm::ConstantInt::get(type, -1), value_ptr)->setAlignment(llvm::Align(alignof(T)));
+        builder.CreateStore(llvm::Constant::getAllOnesValue(type), value_ptr)->setAlignment(llvm::Align(alignof(T)));
     }
 
     static llvm::Value* compileUpdate(llvm::IRBuilderBase & builder, llvm::Value * lhs, llvm::Value * rhs)
