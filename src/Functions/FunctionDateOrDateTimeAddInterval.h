@@ -708,6 +708,15 @@ struct SubtractIntervalImpl : public Transform
         return Transform::execute(t, negated, time_zone, utc_time_zone, scale);
     }
 
+    /// Reached only for delta == INT64_MIN, where the negation wraps. Kept out of line: in a
+    /// fixed-offset time zone every other row takes the arithmetic shortcut.
+    template <typename T>
+    static NO_INLINE auto executeNegationOverflow(
+        T t, Int64 negated, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        return Transform::template executeWithOffsetMode<false>(t, negated, time_zone, utc_time_zone, scale);
+    }
+
     template <bool fixed_offset, typename T>
     auto executeWithOffsetMode(
         T t,
@@ -718,7 +727,7 @@ struct SubtractIntervalImpl : public Transform
     {
         Int64 negated = 0;
         if (!negate(delta, negated))
-            return Transform::template executeWithOffsetMode<false>(t, negated, time_zone, utc_time_zone, scale);
+            return executeNegationOverflow(t, negated, time_zone, utc_time_zone, scale);
         return Transform::template executeWithOffsetMode<fixed_offset>(t, negated, time_zone, utc_time_zone, scale);
     }
 
