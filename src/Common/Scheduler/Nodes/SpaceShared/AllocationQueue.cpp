@@ -134,7 +134,9 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
     {
         /// A regular request remains in the same eviction-queue entry while its one spill pass is
         /// active or waiting to acquire suction. Re-hide it without opening another spill epoch.
-        if (allocation.increase.kind == IncreaseRequest::Kind::Regular)
+        if (allocation.increase.kind == IncreaseRequest::Kind::Regular
+            && allocation.isProtectedFromEviction()
+            && allocation.memory_growth_eviction_order != 0)
         {
             allocation.memory_growth_suspended = true;
             memory_growth_suspension_changed = true;
@@ -199,6 +201,7 @@ bool AllocationQueue::retrySuction(ResourceAllocation & allocation)
         if (!canEnterSuction(allocation))
             return false;
         allocation.memory_growth_suction_priority = true;
+        suction_growth = &allocation;
         allocation.memory_growth_eviction_order = 0;
         if (suspended_growth == &allocation)
             suspended_growth = nullptr;
@@ -231,6 +234,7 @@ void AllocationQueue::consumeSuctionClaim(ResourceAllocation & recovering)
     chassert(recovering.memory_growth_recovery_pending);
     chassert(recovering.memory_growth_suction_priority);
 
+    suction_growth = &recovering;
     recovering.memory_growth_recovery_pending = false;
     recovering.memory_growth_eviction_order = 0;
     recovering.memory_growth_suspended = false;
@@ -251,6 +255,7 @@ void AllocationQueue::consumeSuctionClaim(ResourceAllocation & recovering)
         else
         {
             recovering.memory_growth_suction_priority = false;
+            suction_growth = nullptr;
             recovering.onGrowthPressureResolved();
             recovering.increaseCancelled();
         }
@@ -274,30 +279,33 @@ bool AllocationQueue::tryPromoteEvictionQueueHead(IncreaseRequest * & preferred_
     }
 
     const auto queue_policy = first_nominated->getSuctionQueuePolicy();
-    auto next = std::min_element(
-        increasing_allocations.begin(), increasing_allocations.end(), [queue_policy](const ResourceAllocation & lhs, const ResourceAllocation & rhs)
-        {
-            const UInt64 lhs_order = lhs.memory_growth_eviction_order;
-            const UInt64 rhs_order = rhs.memory_growth_eviction_order;
-            if (lhs_order == 0)
-                return false;
-            if (rhs_order == 0)
-                return true;
-            if (queue_policy == ResourceAllocation::SuctionQueuePolicy::LargestMemoryFirst
-                && lhs.allocated != rhs.allocated)
-                return lhs.allocated > rhs.allocated;
-            return lhs_order < rhs_order;
-        });
-    chassert(next != increasing_allocations.end() && next->memory_growth_eviction_order != 0);
-    suspended_growth = &*next;
+    auto has_higher_priority = [queue_policy](const ResourceAllocation & lhs, const ResourceAllocation & rhs)
+    {
+        if (queue_policy == ResourceAllocation::SuctionQueuePolicy::LargestMemoryFirst
+            && lhs.allocated != rhs.allocated)
+            return lhs.allocated > rhs.allocated;
+        return lhs.memory_growth_eviction_order < rhs.memory_growth_eviction_order;
+    };
 
+    ResourceAllocation * next = nullptr;
+    for (ResourceAllocation & candidate : increasing_allocations)
+    {
+        const bool waiting_for_suction = candidate.memory_growth_eviction_order != 0
+            && candidate.memory_growth_recovery_pending
+            && !candidate.memory_growth_suspended;
+        if (waiting_for_suction && (!next || has_higher_priority(candidate, *next)))
+            next = &candidate;
+    }
+    if (!next)
+        return false;
+
+    suspended_growth = next;
     ResourceAllocation & recovering = *suspended_growth;
-    if (!recovering.memory_growth_recovery_pending
-        || recovering.memory_growth_suspended
-        || !canEnterSuction(recovering))
+    if (!canEnterSuction(recovering))
         return false;
 
     recovering.memory_growth_suction_priority = true;
+    suction_growth = &recovering;
     consumeSuctionClaim(recovering);
     if (recovering.increasing_hook.is_linked() && recovering.memory_growth_suction_priority)
         preferred_suction = &recovering.increase;
@@ -320,11 +328,7 @@ bool AllocationQueue::hasSuspendedIncrease() const
 
 ResourceAllocation * AllocationQueue::getSuctionAllocation() const
 {
-    auto suction = std::find_if(running_allocations.begin(), running_allocations.end(), [](const ResourceAllocation & allocation)
-    {
-        return allocation.memory_growth_suction_priority;
-    });
-    return suction == running_allocations.end() ? nullptr : const_cast<ResourceAllocation *>(&*suction);
+    return suction_growth && suction_growth->memory_growth_suction_priority ? suction_growth : nullptr;
 }
 
 void AllocationQueue::removeAllocation(ResourceAllocation & allocation)
@@ -351,6 +355,7 @@ void AllocationQueue::purgeQueue()
     chassert(parent == nullptr);
     cancelActivation();
     suspended_growth = nullptr;
+    suction_growth = nullptr;
     memory_growth_suspension_retry_requested = false;
 
     auto reason = std::make_exception_ptr(
@@ -458,6 +463,8 @@ void AllocationQueue::approveIncrease()
     {
         allocation.memory_growth_eviction_order = 0;
         allocation.memory_growth_suction_priority = false;
+        if (suction_growth == &allocation)
+            suction_growth = nullptr;
         allocation.onGrowthPressureResolved();
     }
 
@@ -503,6 +510,8 @@ void AllocationQueue::approveDecrease()
     apply(*decrease);
     allocation.allocated -= decrease->size;
     allocation.fair_key -= decrease->size;
+    if (decrease->removing_allocation && suction_growth == &allocation)
+        suction_growth = nullptr;
     // Reinsert into the appropriate data structures unless this is a removal
     if (!decrease->removing_allocation)
     {
@@ -901,6 +910,8 @@ void AllocationQueue::clearMemoryGrowthSuspension() // TSA_REQUIRES(mutex)
         suspended_growth->memory_growth_eviction_order = 0;
         suspended_growth->memory_growth_recovery_pending = false;
         suspended_growth->memory_growth_suction_priority = false;
+        if (suction_growth == suspended_growth)
+            suction_growth = nullptr;
     }
     suspended_growth = nullptr;
     memory_growth_suspension_retry_requested = false;

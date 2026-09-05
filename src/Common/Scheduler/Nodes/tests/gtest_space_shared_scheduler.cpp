@@ -1649,6 +1649,39 @@ TEST(SchedulerSpaceShared, UnprotectedGrowthUsesExistingEvictionPath)
 }
 
 
+/// Another query's protected recovery episode must not repeatedly re-hide an unprotected regular
+/// increase. It may yield once for the recovery search, then must use the existing eviction path
+/// when a later release makes it resurface and it still does not fit.
+TEST(SchedulerSpaceShared, UnprotectedGrowthDoesNotJoinProtectedRecoveryEpisode)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation protected_heavy(queue, "protected_heavy", 8000, true, protectedFromEvictionPolicy());
+    ManualAllocation unprotected(queue, "unprotected", 1000);
+    protected_heavy.protectAfterPressureRounds(1);
+
+    protected_heavy.increaseAsync(5000);
+    unprotected.increaseAsync(2000);
+    protected_heavy.waitPressureCount(1);
+
+    /// The first release guarantees that the unprotected request has participated in a complete
+    /// search round. The second makes it resurface again while both increases remain impossible.
+    protected_heavy.decreaseAsync(1);
+    protected_heavy.waitDecreaseSynced();
+    protected_heavy.decreaseAsync(1);
+    protected_heavy.waitDecreaseSynced();
+
+    ASSERT_TRUE(unprotected.waitKillsFor(1, std::chrono::seconds(5)))
+        << "Unprotected growth stayed parked behind a protected recovery episode";
+    EXPECT_EQ(unprotected.pressureCount(), 0u);
+    EXPECT_EQ(protected_heavy.killCount(), 0u);
+}
+
+
 
 
 /// Spill completion moves the eviction-queue head into the single suction slot. The suctioned
@@ -2627,6 +2660,8 @@ TEST(SchedulerSpaceShared, DetachingLimitCancelsQueuedSuction)
             /// The child exits without normal object teardown, so this allocation deliberately
             /// remains alive while the scheduler destroys its owning subtree.
             auto * heavy = new ManualAllocation(queue, "heavy", 8000, true, protectedFromEvictionPolicy());
+            std::promise<void> recovery_queued;
+            auto recovery_queued_future = recovery_queued.get_future();
             heavy->protectAfterPressureRounds(1);
             heavy->runOnNextPressure([&]
             {
@@ -2639,13 +2674,20 @@ TEST(SchedulerSpaceShared, DetachingLimitCancelsQueuedSuction)
                     r.root_node.reset();
                 });
                 heavy->recoveryCheckpoint();
+                recovery_queued.set_value();
             });
 
             heavy->increaseAsync(5000);
-            if (!heavy->waitPressureCountFor(1, std::chrono::seconds(5)))
+            if (recovery_queued_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready)
                 std::_Exit(2);
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            /// This sentinel is queued after both destruction and suction. Reaching it proves that
+            /// the scheduler processed the complete sequence without using the destroyed limit.
+            std::promise<void> drained;
+            auto drained_future = drained.get_future();
+            t.scheduler.event_queue.enqueue([&] { drained.set_value(); });
+            if (drained_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready)
+                std::_Exit(3);
             std::_Exit(0);
         },
         ::testing::ExitedWithCode(0),
@@ -2753,6 +2795,61 @@ TEST(SchedulerSpaceShared, DetachingSuspendedPrecedenceChildUnblocksLowerWork)
     EXPECT_EQ(lower->size(), 3000);
 }
 
+TEST(SchedulerSpaceShared, DetachingNestedSuspendedPrecedenceChildUnblocksLowerWork)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+
+    auto limit = std::make_shared<AllocationLimit>(t.scheduler.event_queue, SchedulerNodeInfo{}, 10000);
+    auto outer = std::make_shared<PrecedenceAllocation>(t.scheduler.event_queue, SchedulerNodeInfo{});
+    outer->basename = "outer";
+    limit->attachChild(outer);
+
+    SchedulerNodeInfo inner_info;
+    inner_info.setPrecedence(0);
+    auto inner = std::make_shared<PrecedenceAllocation>(t.scheduler.event_queue, inner_info);
+    inner->basename = "inner";
+    outer->attachChild(inner);
+
+    auto high_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, SchedulerNodeInfo{});
+    high_queue->basename = "high";
+    AllocationQueue * high_queue_ptr = high_queue.get();
+    inner->attachChild(high_queue);
+
+    SchedulerNodeInfo low_info;
+    low_info.setPrecedence(1);
+    auto low_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, low_info);
+    low_queue->basename = "low";
+    AllocationQueue * low_queue_ptr = low_queue.get();
+    outer->attachChild(low_queue);
+
+    r.root_node = limit;
+    low_queue.reset();
+    r.registerResource();
+
+    auto heavy = std::make_unique<ManualAllocation>(
+        high_queue_ptr, "heavy", 8000, true, protectedFromEvictionPolicy());
+    heavy->protectAfterPressureRounds(1);
+    heavy->increaseAsync(5000);
+    auto lower = std::make_unique<ManualAllocation>(low_queue_ptr, "lower", 3000, false);
+    heavy->waitPressureCount(1);
+
+    std::promise<void> detached;
+    auto detached_future = detached.get_future();
+    t.scheduler.event_queue.enqueue([&]
+    {
+        inner->removeChild(high_queue.get());
+        high_queue.reset();
+        detached.set_value();
+    });
+    detached_future.get();
+
+    ASSERT_TRUE(lower->waitSyncedFor(std::chrono::seconds(5)))
+        << "Nested detached suspension remained as a parent precedence barrier";
+    EXPECT_EQ(lower->size(), 3000);
+}
+
+
 
 /// Suction uses the existing victim order. It reclaims the largest competing allocation before
 /// considering the suctioned requester as the final fallback.
@@ -2844,6 +2941,39 @@ TEST(SchedulerSpaceShared, LargestMemoryFirstSuctionQueuePolicy)
     EXPECT_EQ(largest.size(), 7000);
     EXPECT_EQ(first.size(), 3000);
 }
+
+TEST(SchedulerSpaceShared, LargestMemoryFirstConsidersOnlyRequestsWaitingForSuction)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ResourceAllocation::MemoryPressurePolicy policy;
+    policy.protect_from_eviction = true;
+    policy.suction_queue_policy = ResourceAllocation::SuctionQueuePolicy::LargestMemoryFirst;
+    policy.suction_reserved_bytes = 2000;
+
+    ManualAllocation first(queue, "first", 3000, true, policy);
+    ManualAllocation largest(queue, "largest", 4000, true, policy);
+    ManualAllocation releaser(queue, "releaser", 1000);
+    first.protectAfterPressureRounds(1);
+    largest.protectAfterPressureRounds(1);
+
+    first.increaseAsync(2000);
+    first.waitPressureCount(1);
+    largest.increaseAsync(3000);
+    largest.waitPressureCount(1);
+
+    first.recoveryCheckpoint();
+
+    ASSERT_TRUE(first.waitSyncedFor(std::chrono::seconds(5)))
+        << "A larger request still spilling blocked a request waiting for suction";
+    EXPECT_EQ(first.size(), 5000);
+    EXPECT_TRUE(largest.recoveryActive());
+}
+
 
 
 TEST(SchedulerSpaceShared, SuctionMaxAllocationRejectsProspectiveTotalAfterSpill)

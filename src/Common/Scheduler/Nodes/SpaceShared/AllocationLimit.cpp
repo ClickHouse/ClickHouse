@@ -404,8 +404,15 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
                         getPath(), allocated, new_increase->size, effective_limit, new_increase->allocation.id);
 
                 }
-                else if (!suspended_growth)
+                else if (!suspended_growth
+                    || (new_increase->kind == IncreaseRequest::Kind::Regular
+                        && !new_increase->allocation.isProtectedFromEviction()))
+                {
+                    /// An unprotected request only yields once to let the current recovery search
+                    /// advance. If it still cannot fit when it resurfaces, retain the old eviction
+                    /// behavior instead of making another query's opt-in policy park it indefinitely.
                     selectAndKill(*new_increase);
+                }
             }
             // Block until there is enough resource to process child's increase request
             increase = nullptr;

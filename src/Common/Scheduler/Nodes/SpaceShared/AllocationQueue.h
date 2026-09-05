@@ -77,6 +77,8 @@ private:
 
     /// A running allocation whose growth is parked at a hard limit.
     ResourceAllocation * suspended_growth = nullptr;
+    /// Scheduler-thread state published through Update; avoids scanning mutex-protected containers.
+    ResourceAllocation * suction_growth = nullptr;
     UInt64 last_eviction_order = 0;
 
     size_t last_unique_id = 0;
