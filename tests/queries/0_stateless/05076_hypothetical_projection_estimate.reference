@@ -8,7 +8,7 @@ verdict: would be chosen, it reads fewer marks than the base table
 source: empirical
 real:
 ReadFromMergeTree (p_b)
-Granules: 4/100
+Granules: 4
 --- range on the projection key ---
 hypothetical:
 marks: 100
@@ -19,7 +19,7 @@ verdict: would be chosen, it reads fewer marks than the base table
 source: empirical
 real:
 ReadFromMergeTree (p_b)
-Granules: 13/100
+Granules: 13
 --- composite key, leading column ---
 hypothetical:
 marks: 100
@@ -30,7 +30,7 @@ verdict: would be chosen, it reads fewer marks than the base table
 source: empirical
 real:
 ReadFromMergeTree (p_ba)
-Granules: 4/100
+Granules: 4
 --- base PK already prunes to one granule, the projection cannot beat it ---
 hypothetical:
 marks: 1
@@ -41,7 +41,7 @@ verdict: would not be chosen, it does not read fewer marks than the base table
 source: empirical
 real:
 ReadFromMergeTree (default.t_real)
-Granules: 1/100
+Granules: 1
 --- key over a computed expression ---
 hypothetical:
 marks: 100
@@ -52,7 +52,7 @@ verdict: would be chosen, it reads fewer marks than the base table
 source: empirical
 real:
 ReadFromMergeTree (p_c)
-Granules: 4/100
+Granules: 4
 --- not applicable cases ---
 With p_key (projection (normal), hypothetical):
 reason: Projection sort key cannot filter this predicate (always unknown or true)

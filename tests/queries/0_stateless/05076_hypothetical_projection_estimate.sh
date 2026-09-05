@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# the estimate must match what a really materialized projection reads, so every case has a twin table with the real one
+# every case has a twin table with the same projection materialized, the estimate must match what it reads
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# count() must go through the read step and the real projection must be allowed to win
+# count() must reach the read step and the real projection must be allowed to win
 PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 1"
 
 $CLICKHOUSE_CLIENT -q "
@@ -26,7 +26,7 @@ $CLICKHOUSE_CLIENT -q "
     INSERT INTO t_real SELECT number, number % 100, number FROM numbers(6000, 4000);
 "
 
-# prints the hypothetical estimate next to the granules the real projection selects for the same query
+# the read-step header holds the final granule count, the per-index lines vary by build
 compare()
 {
     local projection_name="$1" projection_body="$2" query="$3"
@@ -37,7 +37,7 @@ compare()
     " | grep -E '^\s+(status|marks|skip_ratio|verdict|source):' | awk '{$1=$1; print}'
     echo "real:"
     $CLICKHOUSE_CLIENT -q "EXPLAIN indexes = 1 ${query/TABLE/t_real} SETTINGS ${PIN}, preferred_optimize_projection_name = '${projection_name}'" \
-        | grep -oE 'ReadFromMergeTree \([^)]*\)|Granules: [0-9]+/[0-9]+'
+        | grep -oE 'ReadFromMergeTree \([^)]*\)|Granules: [0-9]+$'
 }
 
 echo "--- point query on the projection key, three parts ---"
@@ -82,7 +82,7 @@ $CLICKHOUSE_CLIENT -q "
     EXPLAIN WHATIF SELECT count() FROM t_est WHERE b = 42 SETTINGS ${PIN}, max_rows_to_read = 100, read_overflow_mode = 'break';
 " | grep -E '^\s+(status|source|empirical_status|empirical_reason):' | awk '{$1=$1; print}'
 
-# the estimate reads the projection's columns, so SELECT on them is checked at estimate time
+# the scan reads the projection columns, so SELECT is checked at estimate time
 echo "--- estimating needs SELECT on the projection columns ---"
 user="u_estimate_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT -q "
