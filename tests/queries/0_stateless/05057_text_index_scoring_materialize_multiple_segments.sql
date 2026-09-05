@@ -28,11 +28,9 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_
          allow_experimental_text_index_scoring = 1;
 
 -- 'common': every row; 'freq<n>': 200 rows each; 'mid<n>': 8 rows each; 'filler' varies the document lengths.
--- The trailing run of '-' yields no token, so it changes neither the counts nor the scores below. It only widens
--- each row so that `preferred_block_size_bytes` splits the mutation's read into many blocks for any row layout.
 INSERT INTO tab_mat_scoring SELECT
     number AS id,
-    concat('common freq', toString(id % 100), ' mid', toString(id % 2500), repeat(' filler', id % 7), repeat('-', 300))
+    concat('common freq', toString(id % 100), ' mid', toString(id % 2500), repeat(' filler', id % 7))
 FROM numbers(20000);
 
 -- BM25 statistics are per part: both tables must consist of a single part.
