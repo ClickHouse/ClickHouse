@@ -6,19 +6,28 @@ env:
 
 concurrency:
   group: cherry-pick
-  # Never run two cherry-pick jobs at the same time: a new scheduled run waits
-  # for the in-progress one to finish instead of cancelling it.
+  # Never cancel the run that is already looping. GitHub keeps exactly one newer
+  # run pending, so it takes over the moment this one exits, and it cancels any
+  # pending run older than that: the in-progress loop is never interrupted and no
+  # more than one successor is ever waiting.
   cancel-in-progress: false
 on: # yamllint disable-line rule:truthy
   schedule:
     # Every 20 minutes. Offset from round values (e.g. */20 -> :00/:20/:40),
     # which are popular and get their launches delayed by GitHub.
+    #
+    # A tick that fires while the loop below is running is not wasted work: it is
+    # the successor that starts as soon as the loop exits, and it is what restarts
+    # the loop within 20 minutes if a run dies early.
     - cron: '9,29,49 * * * *'
   workflow_dispatch:
 
 jobs:
   CherryPick:
     runs-on: [self-hosted, style-checker-aarch64]
+    # The loop stops on its own well before this; the timeout only bounds a
+    # single hung iteration.
+    timeout-minutes: 200
     steps:
       - name: Set envs
         # https://docs.github.com/en/actions/learn-github-actions/workflow-commands-for-github-actions#multiline-strings
@@ -43,7 +52,78 @@ jobs:
       - name: Cherry pick
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 cherry_pick.py
+
+          # Checking the repository out dominates this job: the runner is
+          # ephemeral, so `actions/checkout` re-fetches the whole history on every
+          # run. Measured at 1052 s of `git fetch` against 7 min of actual work,
+          # which is also why the job took longer than its own 20-minute cron and
+          # the cadence was really the run time.
+          #
+          # Iterate inside one job instead of paying that per tick. The clone is
+          # amortised over the window, ~9% of the job instead of ~70%, and every
+          # iteration after the first re-fetches into a warm repository in about a
+          # second. PERIOD_SECONDS keeps the cadence the cron already asks for;
+          # now that the clone is not in the way it could be lowered.
+          LOOP_SECONDS=$((170 * 60))
+          PERIOD_SECONDS=$((20 * 60))
+          MAX_CONSECUTIVE_FAILURES=3
+
+          deadline=$(( $(date +%s) + LOOP_SECONDS ))
+          iteration=0
+          failures=0
+          consecutive=0
+
+          while :; do
+            iteration=$(( iteration + 1 ))
+            started=$(date +%s)
+
+            echo "::group::Iteration ${iteration}"
+            if python3 cherry_pick.py; then
+              consecutive=0
+            else
+              failures=$(( failures + 1 ))
+              consecutive=$(( consecutive + 1 ))
+              # cherry_pick.py reports the error itself through CIBuddy. Keep the
+              # loop going so one transient failure does not cost the rest of the
+              # window, and fail the job at the end.
+              echo "::error::cherry_pick.py failed on iteration ${iteration}"
+            fi
+            echo "::endgroup::"
+
+            # `clear_repo` in git_helper puts HEAD back, but the local branches a
+            # run creates are left behind, and a stale `backport/<release>/<PR>`
+            # makes the next iteration's `git pull --ff-only` fail once its remote
+            # counterpart has moved. Return to the state a fresh checkout gives.
+            git -C "$GITHUB_WORKSPACE" checkout -f master
+            git -C "$GITHUB_WORKSPACE" for-each-ref --format='%(refname:lstrip=2)' refs/heads \
+            | while read -r branch; do
+                if [ "${branch}" != "master" ]; then
+                  git -C "$GITHUB_WORKSPACE" branch -D "${branch}"
+                fi
+              done
+
+            if [ "${consecutive}" -ge "${MAX_CONSECUTIVE_FAILURES}" ]; then
+              # Something is broken rather than flaky. Give up the window and let
+              # the next run start from a clean checkout.
+              echo "::error::${consecutive} consecutive failures, ending the loop"
+              break
+            fi
+
+            now=$(date +%s)
+            if [ "${now}" -ge "${deadline}" ]; then
+              break
+            fi
+            remaining=$(( PERIOD_SECONDS - (now - started) ))
+            if [ "${remaining}" -gt 0 ]; then
+              sleep "${remaining}"
+            fi
+          done
+
+          echo "Ran ${iteration} iteration(s), ${failures} failed" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "${failures}" -gt 0 ]; then
+            exit 1
+          fi
       - name: Cleanup
         if: always()
         run: |
