@@ -2024,8 +2024,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         /// would be enforced with the session spelling in memory and with `toTimeWithFixedDate` after a
         /// reload, accepting and rejecting the same row on the two sides of a restart.
         if (create.columns_list)
-            properties.constraints
-                = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
+            properties.constraints = getConstraintsDescription(
+                create.columns_list->constraints, properties.columns, getContext(),
+                !is_secondary_query && isFreshTableDefinition(mode, create.attach_short_syntax));
     }
 
     DatabasePtr database;
