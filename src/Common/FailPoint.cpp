@@ -371,6 +371,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(mysql_output_format_mid_loop_pause) \
     PAUSEABLE_ONCE(postgresql_output_format_mid_loop_pause) \
     ONCE(hash_join_throw_after_data_release) \
+    ONCE(stored_columns_index_throw_on_add) \
     REGULAR(smt_force_takeover_predicate_true) \
     REGULAR(smt_takeover_fake_hardware_error_after_set) \
     PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas)
