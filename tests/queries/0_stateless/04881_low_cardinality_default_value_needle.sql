@@ -50,11 +50,12 @@ SELECT arrayMap(x -> reinterpretAsUInt64(x), a) AS stored_bits, has(a, CAST('z',
 SELECT has(materialize(CAST(['', 'a'], 'Array(LowCardinality(String))')), 'zzz') AS absent_needle, has(materialize(CAST(['a', 'b'], 'Array(LowCardinality(String))')), '') AS default_absent;
 SELECT has(materialize(CAST(['', 'a'], 'Array(LowCardinality(String))')), materialize('')) AS non_const_needle, indexOfAssumeSorted(materialize(CAST(['', 'a'], 'Array(LowCardinality(String))')), '') AS assume_sorted;
 
--- Two answers that only the dictionary shortcut produces, so a build that stopped taking it would
--- move them. Both disagree with the plain-array oracle printed beside them, and both are known
--- defects of the value comparison tracked elsewhere, not of the lookup this test covers: a NaN is
--- one dictionary entry but never equal to itself, and a negative needle is compared to an unsigned
--- element as a raw number.
+-- One answer that only the dictionary shortcut produces, so a build that stopped taking it would
+-- move it: a NaN is one dictionary entry but never equal to itself, so it disagrees with the
+-- plain-array oracle printed beside it, a known defect of the value comparison tracked elsewhere and
+-- not of the lookup this test covers. A negative needle over an unsigned element used to disagree
+-- the same way; it now agrees, because a constant that does not survive the cast to the dictionary
+-- type equals no element.
 SELECT has(materialize(CAST([nan, 1.5], 'Array(LowCardinality(Float64))')), nan) AS nan_needle, has(materialize(CAST([nan, 1.5], 'Array(Float64)')), nan) AS oracle;
 SELECT has(materialize(CAST([0, 255], 'Array(LowCardinality(UInt8))')), toInt8(-1)) AS negative_needle, has(materialize(CAST([0, 255], 'Array(UInt8)')), toInt8(-1)) AS oracle;
 

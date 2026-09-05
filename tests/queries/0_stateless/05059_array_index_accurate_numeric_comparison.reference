@@ -1,0 +1,55 @@
+ground truth
+0	0
+sign wraparound
+0	0
+0	0
+0	0
+float precision
+0	0
+0	0
+arrayExists rewrite
+matching pairs still match
+1	1	1
+1	1
+2
+0	0
+2
+LowCardinality dictionary path
+0
+LowCardinality matching pairs still match
+2
+1
+2
+2
+1	1	1
+2	0	0
+LowCardinality strings keep their padding semantics
+1
+1
+1
+LowCardinality lossy casts outside the numeric domain
+0	0
+0	0
+0	0
+1	1
+LowCardinality NULL needle
+0	0
+0	0
+0	0
+0	0
+2	2
+2	2
+3	3
+a needle counting another unit is compared in the type the pair meets in
+1	1
+1	1	1
+2	2	2
+2	2	2
+1	1	1
+2	2	2
+2	2	2
+1	1	1
+1	1	1
+1	1
+0	0	0	0
+1	1
