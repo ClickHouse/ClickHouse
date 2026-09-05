@@ -15,9 +15,7 @@ ClickHouse は、ClickHouse サーバー に対して直接 SQL クエリを実�
 このクライアントは、進捗バー、読み取った行数、処理したバイト数、クエリ実行時間を通じて、クエリ実行に関するリアルタイムのフィードバックを提供します。
 [コマンドラインオプション](#command-line-options)と[設定ファイル](#configuration_files)の両方をサポートしています。
 
-<div id="install">
-  ## インストール
-</div>
+## インストール {#install}
 
 ClickHouse をダウンロードするには、次を実行します。
 
@@ -35,9 +33,7 @@ sudo ./clickhouse install
 
 異なるバージョンのクライアントとサーバー間でも互換性はありますが、古いクライアントでは一部の機能を利用できない場合があります。クライアントとサーバーには同じバージョンを使用することを推奨します。
 
-<div id="run">
-  ## 実行
-</div>
+## 実行 {#run}
 
 <Note>
   ClickHouse をダウンロードしただけでインストールしていない場合は、`clickhouse-client` ではなく `./clickhouse client` を使用してください。
@@ -68,9 +64,7 @@ Connected to ClickHouse server version 24.12.2.
 
 コマンドラインオプションの完全な一覧については、[コマンドラインオプション](#command-line-options) を参照してください。
 
-<div id="connecting-cloud">
-  ### ClickHouse Cloud への接続
-</div>
+### ClickHouse Cloud への接続 {#connecting-cloud}
 
 ClickHouse Cloud サービスの接続情報は、ClickHouse Cloud コンソールで確認できます。接続先のサービスを選択し、**Connect** をクリックします。
 
@@ -84,9 +78,7 @@ ClickHouse Cloud サービスの接続情報は、ClickHouse Cloud コンソー�
 
 <Image img="/images/_snippets/connection-details-native.webp" size="md" alt="ClickHouse Cloud の Native TCP 接続情報" />
 
-<div id="connection-credentials">
-  ### 設定ファイルに接続情報を保存する
-</div>
+### 設定ファイルに接続情報を保存する {#connection-credentials}
 
 1 つ以上の ClickHouse サーバーの接続情報を、[設定ファイル](#configuration_files)に保存できます。
 
@@ -117,13 +109,9 @@ ClickHouse Cloud サービスの接続情報は、ClickHouse Cloud コンソー�
   クエリの構文に集中できるよう、以降の例では接続情報 (`--host`、`--port` など) を省略しています。コマンドを使用する際は、忘れずに追加してください。
 </Note>
 
-<div id="interactive-mode">
-  ## 対話型モード
-</div>
+## 対話型モード {#interactive-mode}
 
-<div id="using-interactive-mode">
-  ### 対話型モードを使用する
-</div>
+### 対話型モードを使用する {#using-interactive-mode}
 
 ClickHouse を対話型モードで実行するには、以下を実行します。
 
@@ -165,9 +153,7 @@ ClickHouse Client は `replxx` (`readline` に類似) をベースにしてい�
 * `q`、`Q` または `:q`
 * `logout` または `logout;`
 
-<div id="getting-help">
-  ### ヘルプの表示
-</div>
+### ヘルプの表示 {#getting-help}
 
 クライアントを離れずに、任意の関数、テーブルエンジン、データ型、フォーマット、設定、その他のシステム要素のドキュメントを参照できます。`help` に続けて名前を入力してください (`/help`、`man`、`/man` も同様に使用できます) :
 
@@ -185,9 +171,7 @@ help maxx_threads
 
 `help` を単独で入力すると、簡単な使い方の概要が表示されます。
 
-<div id="slash-commands">
-  ### コマンド
-</div>
+### コマンド {#slash-commands}
 
 Client は、サーバー に送信する代わりに、`/` で始まるいくつかのコマンドを自ら実行します。
 
@@ -205,9 +189,7 @@ Exception on client:
 Code: 36. DB::Exception: Unknown command `/hepl`. Maybe you meant: ['/help']. Type `/` at the beginning of the line to see all the commands. (BAD_ARGUMENTS)
 ```
 
-<div id="processing-info">
-  ### クエリ処理情報
-</div>
+### クエリ処理情報 {#processing-info}
 
 クエリの処理中、クライアントには次の情報が表示されます。
 
@@ -226,9 +208,7 @@ Code: 36. DB::Exception: Unknown command `/hepl`. Maybe you meant: ['/help']. Ty
 ClickHouse Client では、クエリ実行用に外部データ (外部一時テーブル) を渡すことができます。
 詳しくは、[クエリ処理用の外部データ](/ja/reference/engines/table-engines/special/external-data) のセクションを参照してください。
 
-<div id="cli_aliases">
-  ### 別名
-</div>
+### 別名 {#cli_aliases}
 
 REPL では、次の別名を使用できます。
 
@@ -237,9 +217,7 @@ REPL では、次の別名を使用できます。
 * `\c <DATABASE>` - USE DATABASE
 * `.` - 直前のクエリを再実行
 
-<div id="keyboard_shortcuts">
-  ### キーボードショートカット
-</div>
+### キーボードショートカット {#keyboard_shortcuts}
 
 * `Alt (Option) + Shift + e` - 現在のクエリを使ってエディタを開きます。使用するエディタは環境変数 `EDITOR` で指定できます。デフォルトでは `vim` が使用されます。
 * `Alt (Option) + #` - 行をコメントアウトします。
@@ -253,13 +231,9 @@ REPL では、次の別名を使用できます。
   iTerm2: Preferences -&gt; Profile -&gt; Keys -&gt; Left Option key に移動し、Esc+ をクリックします
 </Tip>
 
-<div id="batch-mode">
-  ## バッチモード
-</div>
+## バッチモード {#batch-mode}
 
-<div id="using-batch-mode">
-  ### バッチモードを使う
-</div>
+### バッチモードを使う {#using-batch-mode}
 
 ClickHouse Client を対話モードで使う代わりに、バッチモードで実行できます。
 バッチモードでは、ClickHouse は 1 つのクエリを実行するとすぐに終了し、対話型の入力待ちやループはありません。
@@ -293,9 +267,7 @@ $ echo "Hello\nGoodbye" | clickhouse-client --query "INSERT INTO messages FORMAT
 
 `--query` を指定すると、入力内容はすべて、改行の後にリクエストへ追加されます。
 
-<div id="cloud-example">
-  ### リモートのClickHouseサービスにCSVファイルを挿入する
-</div>
+### リモートのClickHouseサービスにCSVファイルを挿入する {#cloud-example}
 
 この例では、サンプルデータセットのCSVファイル `cell_towers.csv` を、`default` データベース内の既存の `cell_towers` テーブルに挿入します。
 
@@ -308,9 +280,7 @@ clickhouse-client --host HOSTNAME.clickhouse.cloud \
   < cell_towers.csv
 ```
 
-<div id="more-examples">
-  ### コマンドラインからデータを挿入する例
-</div>
+### コマンドラインからデータを挿入する例 {#more-examples}
 
 コマンドラインからデータを挿入する方法はいくつかあります。
 以下の例では、バッチモードを使用して 2 行の CSV データを ClickHouse のテーブルに挿入します。
@@ -338,9 +308,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 バッチモードでは、デフォルトのデータ[フォーマット](/ja/reference/formats/index)は`TabSeparated`です。
 上記の例に示したように、クエリの`FORMAT`句でフォーマットを設定できます。
 
-<div id="cli-queries-with-parameters">
-  ## パラメータ付きクエリ
-</div>
+## パラメータ付きクエリ {#cli-queries-with-parameters}
 
 クエリ内でパラメータを指定し、コマンドラインオプションでその値を渡すことができます。
 これにより、クライアント側で特定の動的な値を使ってクエリをフォーマットする必要がなくなります。
@@ -380,9 +348,7 @@ Query id: 0358a729-7bbe-4191-bb48-29b063c548a7
 1 row in set. Elapsed: 0.006 sec.
 ```
 
-<div id="cli-queries-with-parameters-syntax">
-  ### クエリ構文
-</div>
+### クエリ構文 {#cli-queries-with-parameters-syntax}
 
 クエリでは、コマンドラインパラメーターを使って補完する値を、次の形式で波括弧内に記述します。
 
@@ -395,9 +361,7 @@ Query id: 0358a729-7bbe-4191-bb48-29b063c548a7
 | `name`      | プレースホルダーの識別子です。対応するコマンドラインオプションは `--param_<name> = value` です。                                                                                                                                                                                                                                                        |
 | `data type` | パラメータの[データ型](/ja/reference/data-types/index)です。 <br /><br />たとえば、`(integer, ('string', integer))` のようなデータ構造には、`Tuple(UInt8, Tuple(String, UInt8))` というデータ型を指定できます (ほかの[integer](/ja/reference/data-types/int-uint)型も使用できます) 。 <br /><br />また、テーブル名、データベース名、カラム名をパラメータとして渡すこともできます。その場合は、データ型として `Identifier` を使用する必要があります。 |
 
-<div id="cli-queries-with-parameters-examples">
-  ### 例
-</div>
+### 例 {#cli-queries-with-parameters-examples}
 
 ```bash
 $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" \
@@ -407,17 +371,13 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
     --query "SELECT {col:Identifier} as {alias:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
 ```
 
-<div id="ai-sql-generation">
-  ## AI 搭載の SQL 生成
-</div>
+## AI 搭載の SQL 生成 {#ai-sql-generation}
 
 ClickHouse Client には、自然言語の説明から SQL クエリを生成する AI 支援機能が標準で組み込まれています。この機能により、SQL の深い知識がなくても複雑なクエリを作成できます。
 
 `OPENAI_API_KEY` または `ANTHROPIC_API_KEY` のいずれかの環境変数が設定されていれば、AI 支援はそのまま利用できます。さらに高度な設定については、[設定](#ai-sql-generation-configuration) セクションを参照してください。
 
-<div id="ai-sql-generation-usage">
-  ### 使用方法
-</div>
+### 使用方法 {#ai-sql-generation-usage}
 
 AI 搭載の SQL 生成を使用するには、自然言語によるクエリの先頭に `??` を付けます。
 
@@ -431,9 +391,7 @@ AI は次のことを行います。
 2. 検出されたテーブルとカラムに基づいて適切な SQL を生成します
 3. 生成されたクエリをすぐに実行します
 
-<div id="cli-queries-with-parameters-examples">
-  ### 例
-</div>
+### 例 {#ai-sql-generation-example}
 
 ```bash
 :) ?? count orders by product category
@@ -466,15 +424,11 @@ GROUP BY c.name
 ORDER BY order_count DESC
 ```
 
-<div id="ai-sql-generation-configuration">
-  ### 設定
-</div>
+### 設定 {#ai-sql-generation-configuration}
 
 AI 搭載の SQL 生成を使用するには、ClickHouse Clientの設定ファイルでAIプロバイダーを設定する必要があります。使用できるのは、OpenAI、Anthropic、またはOpenAI互換のAPIサービスです。
 
-<div id="ai-sql-generation-fallback">
-  #### 環境変数ベースのフォールバック
-</div>
+#### 環境変数ベースのフォールバック {#ai-sql-generation-fallback}
 
 設定ファイルに AI の設定が指定されていない場合、ClickHouse Client は自動的に環境変数を参照します:
 
@@ -494,9 +448,7 @@ export ANTHROPIC_API_KEY=your-anthropic-key
 clickhouse-client
 ```
 
-<div id="ai-sql-generation-configuration-file">
-  #### 設定ファイル
-</div>
+#### 設定ファイル {#ai-sql-generation-configuration-file}
 
 AI 設定をより細かく制御するには、以下の場所にある ClickHouse Client の設定ファイルで構成します。
 
@@ -604,9 +556,7 @@ ai:
   model: gpt-3.5-turbo
 ```
 
-<div id="ai-sql-generation-parameters">
-  ### パラメータ
-</div>
+### パラメータ {#ai-sql-generation-parameters}
 
 <Accordion title="必須パラメータ">
   * `api_key` - AI サービス用の API キー。環境変数で設定している場合は省略できます。
@@ -640,9 +590,7 @@ ai:
   * `system_prompt` - AI へのカスタム指示 (任意)
 </Accordion>
 
-<div id="ai-sql-generation-how-it-works">
-  ### 仕組み
-</div>
+### 仕組み {#ai-sql-generation-how-it-works}
 
 AI SQL ジェネレーターは、複数のステップで処理を行います。
 
@@ -666,30 +614,22 @@ AI は組み込みツールを使ってデータベースを調査します
 
 生成された SQL は自動的に実行され、結果が表示されます
 
-<div id="ai-sql-generation-limitations">
-  ### 制限事項
-</div>
+### 制限事項 {#ai-sql-generation-limitations}
 
 * 有効なインターネット接続が必要です
 * API の利用には、AIプロバイダーによるレート制限やコストが伴います
 * 複雑なクエリでは、複数回の調整が必要になる場合があります
 * AI が読み取り専用でアクセスできるのはスキーマ情報のみで、実際のデータにはアクセスできません
 
-<div id="ai-sql-generation-security">
-  ### セキュリティ
-</div>
+### セキュリティ {#ai-sql-generation-security}
 
 * API キーが ClickHouse サーバーに送信されることはありません
 * AI が参照するのはスキーマ情報 (テーブル名 / カラム名 / 型) のみで、実際のデータは参照しません
 * 生成されるすべてのクエリは、既存のデータベース権限に従います
 
-<div id="connection_string">
-  ## 接続文字列
-</div>
+## 接続文字列 {#connection_string}
 
-<div id="ai-sql-generation-usage">
-  ### 使用方法
-</div>
+### 使用方法 {#connection-string-usage}
 
 ClickHouse Client は、[MongoDB](https://www.mongodb.com/docs/manual/reference/connection-string/)、[PostgreSQL](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING)、[MySQL](https://dev.mysql.com/doc/refman/8.0/en/connecting-using-uri-or-key-value-pairs.html#connecting-using-uri) と同様の接続文字列を使って ClickHouse server に接続することもできます。構文は次のとおりです。
 
@@ -705,9 +645,7 @@ clickhouse:[//[user[:password]@][hosts_and_ports]][/database][?query_parameters]
 | `database`         | データベース名。                                                                                          | `default`        |
 | `query_parameters` | キー・バリューのペアのリスト `param1=value1[,&param2=value2], ...`。一部のパラメーターでは値は不要です。パラメーター名と値では大文字と小文字が区別されます。 | -                |
 
-<div id="connection-string-notes">
-  ### 注記
-</div>
+### 注記 {#connection-string-notes}
 
 ユーザー名、パスワード、またはデータベースを接続文字列で指定した場合、`--user`、`--password`、`--database` では指定できません (逆も同様です) 。
 
@@ -741,9 +679,7 @@ ClickHouse Client は、これらのホストへの接続を左から右の順�
 * `database`
 * `query parameters`
 
-<div id="cli-queries-with-parameters-examples">
-  ### 例
-</div>
+### 例 {#connection_string_examples}
 
 `localhost` のポート9000に接続し、クエリ `SELECT 1` を実行します。
 
@@ -823,9 +759,7 @@ clickhouse-client clickhouse://some_user%40some_mail.com@localhost:9000
 clickhouse-client clickhouse://192.168.1.15,192.168.1.25
 ```
 
-<div id="query-id-format">
-  ## クエリ IDの形式
-</div>
+## クエリ IDの形式 {#query-id-format}
 
 対話型モードでは、ClickHouse Client は各クエリの クエリ ID を表示します。デフォルトでは、ID は次の形式になります。
 
@@ -852,9 +786,7 @@ Query id: 927f137d-00f1-4175-8914-0dd066365e96
 speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-42cddfb98b7d
 ```
 
-<div id="configuration_files">
-  ## 設定ファイル
-</div>
+## 設定ファイル {#configuration_files}
 
 ClickHouse Client は、以下のうち存在する最初のファイルを使用します。
 
@@ -894,22 +826,16 @@ ClickHouse Client は、以下のうち存在する最初のファイルを使�
   </Tab>
 </Tabs>
 
-<div id="environment-variable-options">
-  ## 環境変数オプション
-</div>
+## 環境変数オプション {#environment-variable-options}
 
 ユーザー名、パスワード、ホストは、環境変数 `CLICKHOUSE_USER`、`CLICKHOUSE_PASSWORD`、`CLICKHOUSE_HOST` で設定できます。
 コマンドライン引数 `--user`、`--password`、`--host`、または[接続文字列](#connection_string) (指定した場合) は、環境変数よりも優先されます。
 
-<div id="command-line-options">
-  ## コマンドラインオプション
-</div>
+## コマンドラインオプション {#command-line-options}
 
 すべてのコマンドラインオプションは、コマンドラインで直接指定することも、[設定ファイル](#configuration_files)で既定値として指定することもできます。
 
-<div id="command-line-options-general">
-  ### 一般オプション
-</div>
+### 一般オプション {#command-line-options-general}
 
 | Option                                              | Description                                                                                      | Default              |
 | --------------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------- |
@@ -921,24 +847,22 @@ ClickHouse Client は、以下のうち存在する最初のファイルを使�
 | `--verbose`                                         | 出力の詳細度を上げます。                                                                                     | -                    |
 | `-V [ --version ]`                                  | バージョンを表示して終了します。                                                                                 | -                    |
 
-<div id="command-line-options-connection">
-  ### 接続オプション
-</div>
+### 接続オプション {#command-line-options-connection}
 
 | Option                               | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Default                                                                                                                                                                              |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--connection <name>`                | 設定ファイルに事前設定された接続情報の名前です。[接続認証情報](#connection-credentials)を参照してください。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | -                                                                                                                                                                                    |
+| `--connection <name>`                | 設定ファイルに事前設定された接続情報の名前です。[接続認証情報](#connection-credentials)を参照してください。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | *                                                                                                                                                                                    |
 | `-d [ --database ] <database>`       | この接続のデフォルトとして使用するデータベースを選択します。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | サーバー設定の現在のデータベース (デフォルトは `default`)                                                                                                                                                  |
 | `-h [ --host ] <host>`               | 接続先の ClickHouse server のホスト名です。ホスト名、IPv4 アドレス、IPv6 アドレスのいずれかを指定できます。複数の引数を指定して複数のホストを渡すこともできます。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `localhost`                                                                                                                                                                          |
 | `--jwt <value>`                      | 認証に JSON Web Token (JWT) を使用します。<br /><br />サーバー側の JWT 認可は ClickHouse Cloud でのみ利用できます。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | -                                                                                                                                                                                    |
-| `--login`                            | IdP 経由で認証するために、デバイス grant の OAuth フローを開始します。<br /><br />ClickHouse Cloud ホストでは OAuth 変数は自動的に推定されます。それ以外の場合は、`--oauth-url`、`--oauth-client-id`、`--oauth-audience` を指定する必要があります。                                                                                                                                                                                                                                                                                                                                                                                                                    | -                                                                                                                                                                                    |
+| `--login`                            | IdP 経由で認証するために、デバイス grant の OAuth フローを開始します。<br /><br />ClickHouse Cloud ホストでは OAuth 変数は自動的に推定されます。それ以外の場合は、`--oauth-url`、`--oauth-client-id`、`--oauth-audience` を指定する必要があります。                                                                                                                                                                                                                                                                                                                                                                                                                    | *                                                                                                                                                                                    |
 | `--no-warnings`                      | クライアントがサーバーに接続した際、`system.warnings` の警告を表示しないようにします。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | -                                                                                                                                                                                    |
-| `--no-server-client-version-message` | クライアントがサーバーに接続した際、サーバーとクライアントのバージョン不一致メッセージを表示しないようにします。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | -                                                                                                                                                                                    |
+| `--no-server-client-version-message` | クライアントがサーバーに接続した際、サーバーとクライアントのバージョン不一致メッセージを表示しないようにします。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | *                                                                                                                                                                                    |
 | `--password <password>`              | データベースユーザーのパスワードです。設定ファイルで接続のパスワードを指定することもできます。パスワードを指定しない場合、クライアントが入力を求めます。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | -                                                                                                                                                                                    |
 | `--port <port>`                      | サーバーが接続を受け付けているポートです。デフォルトのポートは 9440 (TLS) と 9000 (TLS なし) です。<br /><br />注: クライアントは HTTP(S) ではなくネイティブプロトコルを使用します。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | `--secure` が指定されている場合は `9440`、それ以外は `9000`。ホスト名が `.clickhouse.cloud` で終わる場合は常に `9440` がデフォルトです。`--port` と `--secure` のいずれも指定されていない場合は、ポート `9000` と `9440` を同時にプローブし、先に応答したポートを使用します。 |
 | `-s [ --secure ]`                    | TLS を使用するかどうかを指定します。<br /><br />ポート 9440 (デフォルトのセキュアポート) または ClickHouse Cloud に接続する場合、または `--port` と `--secure` のいずれも指定されておらず、セキュアポートがプローブに先に応答した場合に自動的に有効になります。これは、セキュアポートでのみ応答するサーバー (例: プレーンポートがファイアウォールで遮断されている `play.clickhouse.com`) では常に該当し、両方のポートで待ち受けるサーバーでも該当する場合があります。この場合は TLS が要求されていないため、使用不能なセキュアポート (信頼されていない証明書など) であってもエラーにはなりません。クライアントは、自動選択がなければ接続していたプレーンポートにフォールバックします。TLS を必須にするには `--secure` を指定してください。<br /><br />[設定ファイル](#configuration_files)で CA 証明書を設定する必要がある場合があります。使用できる設定項目は、[サーバー側の TLS 設定](/ja/reference/settings/server-settings/settings/other#openssl) と同じです。 | ポート 9440 または ClickHouse Cloud への接続時に自動的に有効                                                                                                                                           |
-| `--ssh-key-file <path-to-file>`      | サーバー認証に使用する SSH 秘密鍵を含むファイルです。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | -                                                                                                                                                                                    |
-| `--ssh-key-passphrase <value>`       | `--ssh-key-file` で指定した SSH 秘密鍵のパスフレーズです。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | -                                                                                                                                                                                    |
+| `--ssh-key-file [path-to-file]`      | サーバー認証に使用する SSH 秘密鍵を含むファイルです。<br /><br />ファイル名は省略できます。その場合、クライアントは `~/.ssh/config` でこのホストに対して設定されている最初の利用可能な identity ファイルを選択し、次に `~/.ssh/id_ed25519` などのデフォルトの identity ファイルを選択します。各 identity については、パスフレーズが不要であるため、`ssh-agent` が保持しているコピーが優先されます。agent は対応する `IdentityAgent` 設定によって選択され、設定されていない場合は `SSH_AUTH_SOCK` によって選択されます。                                                                                                                                                                                                                                                                  | *                                                                                                                                                                                    |
+| `--ssh-key-passphrase <value>`       | `--ssh-key-file` で指定した SSH 秘密鍵のパスフレーズです。<br /><br />指定されておらず、鍵ファイルが暗号化されている場合は、対話的にパスフレーズの入力を求められます。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | -                                                                                                                                                                                    |
 | `--tls-sni-override <server name>`   | TLS を使用する場合に、ハンドシェイクで渡すサーバー名 (SNI) です。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `-h` または `--host` で指定したホスト。                                                                                                                                                          |
 | `-u [ --user ] <username>`           | 接続に使用するデータベースユーザーです。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `default`                                                                                                                                                                            |
 
@@ -946,9 +870,7 @@ ClickHouse Client は、以下のうち存在する最初のファイルを使�
   `--host`、`--port`、`--user`、`--password` オプションの代わりに、クライアントは[接続文字列](#connection_string)もサポートしています。
 </Note>
 
-<div id="command-line-options-query">
-  ### クエリオプション
-</div>
+### クエリオプション {#command-line-options-query}
 
 | オプション                           | 説明                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -958,9 +880,7 @@ ClickHouse Client は、以下のうち存在する最初のファイルを使�
 | `-m [ --multiline ]`            | 指定すると、複数行のクエリを入力できます (Enter を押してもクエリは送信されません) 。クエリが送信されるのは、セミコロンで終了したときだけです。                                                                                                                                                                                                                                                                                                                                                              |
 | `--inline-insert-data`          | `INSERT ... VALUES` (およびその他のインラインフォーマット) を、データをネイティブフォーマットのブロックに変換せず、クエリテキスト内にそのまま含めて送信します。サーバー側でインラインデータを直接解析するため、テーブル構造やカラムのデフォルト値をクライアントに返すための往復を省けます。これにより、ネイティブプロトコル経由で多数の小さな insert を行う場合のパフォーマンスが向上することがあります。[`send_table_structure_on_insert_with_inline_data`](/ja/reference/settings/session-settings/send#send_table_structure_on_insert_with_inline_data) は自動的に `0` に設定されます。インラインデータと外部データ (stdin または `INFILE` からのデータ) は併用できません。 |
 
-<div id="command-line-options-query-settings">
-  ### クエリ設定
-</div>
+### クエリ設定 {#command-line-options-query-settings}
 
 クエリ設定は、たとえばクライアントのコマンドラインオプションとして指定できます。
 
@@ -970,9 +890,7 @@ $ clickhouse-client --max_threads 1
 
 設定の一覧は、[設定](/ja/reference/settings/session-settings)を参照してください。
 
-<div id="command-line-options-formatting">
-  ### フォーマットオプション
-</div>
+### フォーマットオプション {#command-line-options-formatting}
 
 | Option                            | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Default                                  |
 | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
@@ -986,9 +904,7 @@ $ clickhouse-client --max_threads 1
 | `--highlight [ --hilite ] <bool>` | コマンドプロンプトと表示されるクエリの構文ハイライトを切り替えます。                                                                                                                                                                                                                                                                                                                                                                                                                                               | `true`                                   |
 | `--hints <bool>`                  | カーソルが入力の末尾にあるとき、最もよく一致する候補について、入力中にオートコンプリートのヒント (インラインの「ゴースト」テキスト) を表示します。ヒントの移動には Up/Down (または Ctrl-Up/Ctrl-Down) を使用し、インラインヒントの確定には Tab または Right を使用します。`Enter` は、ヒントが明示的に選択されている場合にのみそのヒントを確定し、それ以外の場合はクエリを実行します。`Tab` では従来の補完リストも開きます。`--highlight` (ヒントの表示には色が必要) が必要です。候補ヒントには候補提示の仕組みも必要なため、`--disable_suggestion` を指定するとそれらは無効になります。クライアントの [`/` コマンド](#slash-commands) は静的なリストであり、`--hints` と `--highlight` が有効である限りヒントとして表示されます。ヒントが無効の場合でも、`Tab` で `/` コマンドを補完できます。 | `true`                                   |
 
-<div id="command-line-options-execution-details">
-  ### 実行の詳細
-</div>
+### 実行の詳細 {#command-line-options-execution-details}
 
 | Option                           | Description                                                                                                                                                                                                                                                                                | Default                             |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------- |

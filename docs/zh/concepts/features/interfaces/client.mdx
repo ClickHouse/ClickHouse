@@ -15,9 +15,7 @@ ClickHouse 提供原生命令行客户端，可直接向 ClickHouse 服务器执
 该客户端可通过进度条、已读取的行数、已处理的字节数以及查询执行时间，实时反馈查询执行进度。
 它同时支持[命令行选项](#command-line-options)和[配置文件](#configuration_files)。
 
-<div id="install">
-  ## 安装
-</div>
+## 安装 {#install}
 
 下载 ClickHouse，请运行：
 
@@ -35,9 +33,7 @@ sudo ./clickhouse install
 
 不同版本的客户端和 server 彼此兼容，但某些功能在较旧版本的客户端中可能不可用。我们建议客户端和 server 使用相同的版本。
 
-<div id="run">
-  ## 运行
-</div>
+## 运行 {#run}
 
 <Note>
   如果你只是下载了 ClickHouse 但未安装，请使用 `./clickhouse client`，不要使用 `clickhouse-client`。
@@ -68,9 +64,7 @@ Connected to ClickHouse server version 24.12.2.
 
 有关命令行选项的完整列表，请参见[命令行选项](#command-line-options)。
 
-<div id="connecting-cloud">
-  ### 连接到 ClickHouse Cloud
-</div>
+### 连接到 ClickHouse Cloud {#connecting-cloud}
 
 你可以在 ClickHouse Cloud 控制台中查看 ClickHouse Cloud 服务的详细信息。选择要连接的服务，然后点击 **Connect**：
 
@@ -84,9 +78,7 @@ Connected to ClickHouse server version 24.12.2.
 
 <Image img="/images/_snippets/connection-details-native.webp" size="md" alt="ClickHouse Cloud Native TCP 连接详细信息" />
 
-<div id="connection-credentials">
-  ### 在配置文件中存储连接信息
-</div>
+### 在配置文件中存储连接信息 {#connection-credentials}
 
 你可以在[配置文件](#configuration_files)中存储一个或多个 ClickHouse 服务器的连接信息。
 
@@ -117,13 +109,9 @@ Connected to ClickHouse server version 24.12.2.
   为了突出查询语法，其余示例省略了连接信息 (`--host`、`--port` 等) 。使用这些命令时，请记得补上。
 </Note>
 
-<div id="interactive-mode">
-  ## 交互模式
-</div>
+## 交互模式 {#interactive-mode}
 
-<div id="using-interactive-mode">
-  ### 使用 交互模式
-</div>
+### 使用 交互模式 {#using-interactive-mode}
 
 要以 交互模式 运行 ClickHouse，只需执行：
 
@@ -165,9 +153,7 @@ ClickHouse 客户端 基于 `replxx` (类似于 `readline`) ，因此支持常�
 * `q`、`Q` 或 `:q`
 * `logout` 或 `logout;`
 
-<div id="getting-help">
-  ### 获取帮助
-</div>
+### 获取帮助 {#getting-help}
 
 你无需离开客户端，即可查阅系统中任意函数、表引擎、数据类型、格式、设置及其他组件的文档。输入 `help` 后接名称即可 (`/help`、`man` 和 `/man` 这几种等效形式也可用) ：
 
@@ -185,9 +171,7 @@ help maxx_threads
 
 单独输入 `help` 会显示简短的用法摘要。
 
-<div id="slash-commands">
-  ### 命令
-</div>
+### 命令 {#slash-commands}
 
 客户端会自行执行一些以 `/` 开头的命令，而不是将其发送到服务器：
 
@@ -205,9 +189,7 @@ Exception on client:
 Code: 36. DB::Exception: Unknown command `/hepl`. Maybe you meant: ['/help']. Type `/` at the beginning of the line to see all the commands. (BAD_ARGUMENTS)
 ```
 
-<div id="processing-info">
-  ### 查询处理信息
-</div>
+### 查询处理信息 {#processing-info}
 
 在处理查询时，客户端会显示：
 
@@ -226,9 +208,7 @@ Code: 36. DB::Exception: Unknown command `/hepl`. Maybe you meant: ['/help']. Ty
 ClickHouse 客户端 允许在查询时传递外部数据 (外部临时表) 。
 更多信息，请参见 [查询处理的外部数据](/zh/reference/engines/table-engines/special/external-data) 一节。
 
-<div id="cli_aliases">
-  ### 别名
-</div>
+### 别名 {#cli_aliases}
 
 你可以在 REPL 中使用以下别名：
 
@@ -237,9 +217,7 @@ ClickHouse 客户端 允许在查询时传递外部数据 (外部临时表) 。
 * `\c <DATABASE>` - USE DATABASE
 * `.` - 重复上一条查询
 
-<div id="keyboard_shortcuts">
-  ### 键盘快捷键
-</div>
+### 键盘快捷键 {#keyboard_shortcuts}
 
 * `Alt (Option) + Shift + e` - 使用当前查询打开编辑器。可通过环境变量 `EDITOR` 指定要使用的编辑器，默认使用 `vim`。
 * `Alt (Option) + #` - 注释当前行。
@@ -253,13 +231,9 @@ ClickHouse 客户端 允许在查询时传递外部数据 (外部临时表) 。
   iTerm2：依次进入 Preferences -&gt; Profile -&gt; Keys -&gt; Left Option key，然后点击 Esc+
 </Tip>
 
-<div id="batch-mode">
-  ## 批次模式
-</div>
+## 批次模式 {#batch-mode}
 
-<div id="using-batch-mode">
-  ### 使用批次模式
-</div>
+### 使用批次模式 {#using-batch-mode}
 
 你可以不以交互方式使用 ClickHouse 客户端，而是让它以批次模式运行。
 在批次模式下，ClickHouse 只执行一条查询并立即退出——不会出现交互式提示符，也不会进入循环。
@@ -293,9 +267,7 @@ $ echo "Hello\nGoodbye" | clickhouse-client --query "INSERT INTO messages FORMAT
 
 指定 `--query` 时，所有输入都会在一个换行符后追加到请求中。
 
-<div id="cloud-example">
-  ### 将 CSV 文件插入远程 ClickHouse 服务
-</div>
+### 将 CSV 文件插入远程 ClickHouse 服务 {#cloud-example}
 
 本示例将样本数据集 CSV 文件 `cell_towers.csv` 插入到 `default` 数据库中现有的 `cell_towers` 表：
 
@@ -308,9 +280,7 @@ clickhouse-client --host HOSTNAME.clickhouse.cloud \
   < cell_towers.csv
 ```
 
-<div id="more-examples">
-  ### 从命令行插入数据示例
-</div>
+### 从命令行插入数据示例 {#more-examples}
 
 可以通过多种方式从命令行插入数据。
 下面的示例使用批次模式将两行 CSV 数据插入 ClickHouse 表中：
@@ -338,9 +308,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 在批次模式下，默认的数据[格式](/zh/reference/formats/index)为 `TabSeparated`。
 如上例所示，你可以在查询的 `FORMAT` 子句中设置格式。
 
-<div id="cli-queries-with-parameters">
-  ## 带参数的查询
-</div>
+## 带参数的查询 {#cli-queries-with-parameters}
 
 你可以在查询中指定参数，并通过命令行选项为其传入值。
 这样可以避免在客户端使用特定的动态值来格式化查询。
@@ -380,9 +348,7 @@ Query id: 0358a729-7bbe-4191-bb48-29b063c548a7
 1 row in set. Elapsed: 0.006 sec.
 ```
 
-<div id="cli-queries-with-parameters-syntax">
-  ### 查询语法
-</div>
+### 查询语法 {#cli-queries-with-parameters-syntax}
 
 在查询中，将要通过命令行参数填入的值用花括号括起来，格式如下：
 
@@ -395,9 +361,7 @@ Query id: 0358a729-7bbe-4191-bb48-29b063c548a7
 | `name`      | 占位符标识符。对应的命令行选项为 `--param_<name> = value`。                                                                                                                                                                                                                             |
 | `data type` | 参数的[数据类型](/zh/reference/data-types/index)。 <br /><br />例如，`(integer, ('string', integer))` 这样的数据结构可以使用 `Tuple(UInt8, Tuple(String, UInt8))` 数据类型 (也可以使用其他[整数](/zh/reference/data-types/int-uint)类型) 。 <br /><br />表名、database 名和列名也可以作为参数传递；在这种情况下，需要使用 `Identifier` 作为数据类型。 |
 
-<div id="cli-queries-with-parameters-examples">
-  ### 示例
-</div>
+### 示例 {#cli-queries-with-parameters-examples}
 
 ```bash
 $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" \
@@ -407,17 +371,13 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
     --query "SELECT {col:Identifier} as {alias:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
 ```
 
-<div id="ai-sql-generation">
-  ## AI SQL 生成
-</div>
+## AI SQL 生成 {#ai-sql-generation}
 
 ClickHouse Client 内置了 AI 辅助功能，可根据自然语言描述生成 SQL 查询。该功能可帮助用户在无需深入了解 SQL 的情况下编写复杂查询。
 
 如果已设置 `OPENAI_API_KEY` 或 `ANTHROPIC_API_KEY` 环境变量，AI 辅助功能即可开箱即用。有关更高级的配置，请参阅[配置](#ai-sql-generation-configuration)部分。
 
-<div id="ai-sql-generation-usage">
-  ### 用法
-</div>
+### 用法 {#ai-sql-generation-usage}
 
 如需使用 AI SQL 生成功能，请在自然语言查询前加上 `??`：
 
@@ -431,9 +391,7 @@ AI 将：
 2. 根据发现的表和列生成合适的 SQL
 3. 立即执行生成的查询
 
-<div id="cli-queries-with-parameters-examples">
-  ### 示例
-</div>
+### 示例 {#ai-sql-generation-example}
 
 ```bash
 :) ?? count orders by product category
@@ -466,15 +424,11 @@ GROUP BY c.name
 ORDER BY order_count DESC
 ```
 
-<div id="ai-sql-generation-configuration">
-  ### 配置
-</div>
+### 配置 {#ai-sql-generation-configuration}
 
 要使用 AI SQL 生成功能，您需要在 ClickHouse 客户端 的配置文件中配置 AI 提供商。您可以使用 OpenAI、Anthropic 或任何兼容 OpenAI 的 API 服务。
 
-<div id="ai-sql-generation-fallback">
-  #### 基于环境变量的回退机制
-</div>
+#### 基于环境变量的回退机制 {#ai-sql-generation-fallback}
 
 如果配置文件中未指定 AI 配置，ClickHouse 客户端 会自动尝试使用环境变量：
 
@@ -494,9 +448,7 @@ export ANTHROPIC_API_KEY=your-anthropic-key
 clickhouse-client
 ```
 
-<div id="ai-sql-generation-configuration-file">
-  #### 配置文件
-</div>
+#### 配置文件 {#ai-sql-generation-configuration-file}
 
 如需更精细地控制 AI 设置，请在位于以下位置的 ClickHouse 客户端配置文件中进行配置：
 
@@ -604,9 +556,7 @@ ai:
   model: gpt-3.5-turbo
 ```
 
-<div id="ai-sql-generation-parameters">
-  ### 参数
-</div>
+### 参数 {#ai-sql-generation-parameters}
 
 <Accordion title="必填参数">
   * `api_key` - AI 服务的 API 密钥。如果已通过环境变量设置，则可省略：
@@ -640,9 +590,7 @@ ai:
   * `system_prompt` - 提供给 AI 的自定义指令 (可选)
 </Accordion>
 
-<div id="ai-sql-generation-how-it-works">
-  ### 工作原理
-</div>
+### 工作原理 {#ai-sql-generation-how-it-works}
 
 AI SQL 生成器采用多步骤流程：
 
@@ -666,30 +614,22 @@ AI 使用内置工具探索你的数据库：
 
 生成的 SQL 会自动执行，并显示结果
 
-<div id="ai-sql-generation-limitations">
-  ### 局限性
-</div>
+### 局限性 {#ai-sql-generation-limitations}
 
 * 需要可用的互联网连接
 * API 的使用受 AI 提供商的速率限制和费用约束
 * 复杂查询可能需要多次调整
 * AI 仅对 schema 信息具有只读访问权限，无法访问实际数据
 
-<div id="ai-sql-generation-security">
-  ### 安全性
-</div>
+### 安全性 {#ai-sql-generation-security}
 
 * API 密钥绝不会发送到 ClickHouse 服务器
 * AI 只能看到 schema 信息 (表名/列名和类型) ，看不到实际数据
 * 所有生成的查询都会遵循您现有的数据库权限
 
-<div id="connection_string">
-  ## 连接字符串
-</div>
+## 连接字符串 {#connection_string}
 
-<div id="ai-sql-generation-usage">
-  ### 用法
-</div>
+### 用法 {#connection-string-usage}
 
 ClickHouse Client 还支持通过与 [MongoDB](https://www.mongodb.com/docs/manual/reference/connection-string/)、[PostgreSQL](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING) 和 [MySQL](https://dev.mysql.com/doc/refman/8.0/en/connecting-using-uri-or-key-value-pairs.html#connecting-using-uri) 类似的连接字符串连接到 ClickHouse 服务器。其语法如下：
 
@@ -705,9 +645,7 @@ clickhouse:[//[user[:password]@][hosts_and_ports]][/database][?query_parameters]
 | `database`         | 数据库名称。                                                                 | `default`        |
 | `query_parameters` | 键值对列表 `param1=value1[,&param2=value2], ...`。对于某些参数，可以不提供值。参数名称和值区分大小写。 | -                |
 
-<div id="connection-string-notes">
-  ### 注意事项
-</div>
+### 注意事项 {#connection-string-notes}
 
 如果用户名、密码或数据库已在连接字符串中指定，则不能再通过 `--user`、`--password` 或 `--database` 指定 (反之亦然) 。
 
@@ -741,9 +679,7 @@ ClickHouse 客户端会按顺序 (从左到右) 尝试连接这些主机。
 * `database`
 * `query parameters`
 
-<div id="cli-queries-with-parameters-examples">
-  ### 示例
-</div>
+### 示例 {#connection_string_examples}
 
 连接到 `localhost` 的 9000 端口，并执行查询 `SELECT 1`。
 
@@ -823,9 +759,7 @@ clickhouse-client clickhouse://some_user%40some_mail.com@localhost:9000
 clickhouse-client clickhouse://192.168.1.15,192.168.1.25
 ```
 
-<div id="query-id-format">
-  ## 查询 ID 格式
-</div>
+## 查询 ID 格式 {#query-id-format}
 
 在交互模式中，ClickHouse 客户端 会为每个查询显示查询 ID。默认情况下，该 ID 的格式如下：
 
@@ -852,9 +786,7 @@ Query id: 927f137d-00f1-4175-8914-0dd066365e96
 speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-42cddfb98b7d
 ```
 
-<div id="configuration_files">
-  ## 配置文件
-</div>
+## 配置文件 {#configuration_files}
 
 ClickHouse 客户端 会使用以下列表中第一个存在的文件：
 
@@ -894,22 +826,16 @@ ClickHouse 客户端 会使用以下列表中第一个存在的文件：
   </Tab>
 </Tabs>
 
-<div id="environment-variable-options">
-  ## 环境变量选项
-</div>
+## 环境变量选项 {#environment-variable-options}
 
 可通过环境变量 `CLICKHOUSE_USER`、`CLICKHOUSE_PASSWORD` 和 `CLICKHOUSE_HOST` 设置用户名、密码和主机。
 命令行参数 `--user`、`--password` 或 `--host`，或者[连接字符串](#connection_string) (如果已指定) ，其优先级均高于环境变量。
 
-<div id="command-line-options">
-  ## 命令行选项
-</div>
+## 命令行选项 {#command-line-options}
 
 所有命令行选项都可以直接在命令行中指定，也可以在[配置文件](#configuration_files)中设置默认值。
 
-<div id="command-line-options-general">
-  ### 常规选项
-</div>
+### 常规选项 {#command-line-options-general}
 
 | 选项                                                  | 描述                                                             | 默认值                     |
 | --------------------------------------------------- | -------------------------------------------------------------- | ----------------------- |
@@ -921,24 +847,22 @@ ClickHouse 客户端 会使用以下列表中第一个存在的文件：
 | `--verbose`                                         | 提高输出的详细程度。                                                     | -                       |
 | `-V [ --version ]`                                  | 打印版本信息并退出。                                                     | -                       |
 
-<div id="command-line-options-connection">
-  ### 连接选项
-</div>
+### 连接选项 {#command-line-options-connection}
 
 | 选项                                   | 描述                                                                                                                                                                                                                                                                                                                                                                                                                                                    | 默认值                                                                                                                                               |
 | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--connection <name>`                | 配置文件中预先配置的连接信息名称。请参见[连接凭据](#connection-credentials)。                                                                                                                                                                                                                                                                                                                                                                                                  | -                                                                                                                                                 |
+| `--connection <name>`                | 配置文件中预先配置的连接信息名称。请参见[连接凭据](#connection-credentials)。                                                                                                                                                                                                                                                                                                                                                                                                  | *                                                                                                                                                 |
 | `-d [ --database ] <database>`       | 选择此连接默认使用的数据库。                                                                                                                                                                                                                                                                                                                                                                                                                                        | 服务器设置中的当前数据库 (默认为 `default`)                                                                                                                      |
 | `-h [ --host ] <host>`               | 要连接的 ClickHouse 服务器主机名。可以是主机名，也可以是 IPv4 或 IPv6 地址。也可以通过多次传入该参数指定多个主机。                                                                                                                                                                                                                                                                                                                                                                                 | `localhost`                                                                                                                                       |
 | `--jwt <value>`                      | 使用 JSON Web Token (JWT) 进行身份验证。<br /><br />服务器 JWT 授权仅在 ClickHouse Cloud 中可用。                                                                                                                                                                                                                                                                                                                                                                         | -                                                                                                                                                 |
-| `--login`                            | 调用设备授权 OAuth 流程，通过 IdP 进行身份验证。<br /><br />对于 ClickHouse Cloud 主机，OAuth 变量会自动推断；否则必须通过 `--oauth-url`、`--oauth-client-id` 和 `--oauth-audience` 提供。                                                                                                                                                                                                                                                                                                      | -                                                                                                                                                 |
+| `--login`                            | 调用设备授权 OAuth 流程，通过 IdP 进行身份验证。<br /><br />对于 ClickHouse Cloud 主机，OAuth 变量会自动推断；否则必须通过 `--oauth-url`、`--oauth-client-id` 和 `--oauth-audience` 提供。                                                                                                                                                                                                                                                                                                      | *                                                                                                                                                 |
 | `--no-warnings`                      | 禁止在客户端连接到服务器时显示来自 `system.warnings` 的警告。                                                                                                                                                                                                                                                                                                                                                                                                              | -                                                                                                                                                 |
-| `--no-server-client-version-message` | 禁止在客户端连接到服务器时显示服务端与客户端版本不匹配的消息。                                                                                                                                                                                                                                                                                                                                                                                                                       | -                                                                                                                                                 |
+| `--no-server-client-version-message` | 禁止在客户端连接到服务器时显示服务端与客户端版本不匹配的消息。                                                                                                                                                                                                                                                                                                                                                                                                                       | *                                                                                                                                                 |
 | `--password <password>`              | 数据库用户的密码。你也可以在配置文件中为连接指定密码。如果未指定密码，客户端会提示你输入。                                                                                                                                                                                                                                                                                                                                                                                                         | -                                                                                                                                                 |
 | `--port <port>`                      | 服务器接受连接的端口。默认端口为 9440 (TLS) 和 9000 (无 TLS)。<br /><br />注意：客户端使用的是原生协议，而不是 HTTP(S)。                                                                                                                                                                                                                                                                                                                                                                    | 如果指定了 `--secure`，则为 `9440`，否则为 `9000`。如果主机名以 `.clickhouse.cloud` 结尾，则始终默认为 `9440`。如果未指定 `--port` 和 `--secure`，将并发探测端口 `9000` 和 `9440`，并使用最先响应的端口。 |
 | `-s [ --secure ]`                    | 是否使用 TLS。<br /><br />连接到端口 9440 (默认安全端口) 或 ClickHouse Cloud 时会自动启用；当未指定 `--port` 和 `--secure` 且安全端口最先响应探测时，也会自动启用。对于仅在安全端口响应的服务器，这始终如此 (例如 `play.clickhouse.com`，其普通端口受防火墙阻断)；对于同时监听两个端口的服务器，也可能如此。由于在这种情况下并未请求 TLS，因此即使安全端口最终无法使用 (例如证书不受信任)，也不会视为错误：客户端会回退到普通端口，即未进行自动选择时原本会连接的端口。指定 `--secure` 以强制使用 TLS。<br /><br />你可能需要在[配置文件](#configuration_files)中配置 CA 证书。可用配置项与[服务端 TLS 配置](/zh/reference/settings/server-settings/settings/other#openssl)相同。 | 连接到端口 9440 或 ClickHouse Cloud 时自动启用                                                                                                               |
-| `--ssh-key-file <path-to-file>`      | 包含用于向服务器进行身份验证的 SSH 私钥的文件。                                                                                                                                                                                                                                                                                                                                                                                                                            | -                                                                                                                                                 |
-| `--ssh-key-passphrase <value>`       | `--ssh-key-file` 中指定的 SSH 私钥的密码短语。                                                                                                                                                                                                                                                                                                                                                                                                                    | -                                                                                                                                                 |
+| `--ssh-key-file [path-to-file]`      | 包含用于向服务器进行身份验证的 SSH 私钥的文件。<br /><br />文件名可以省略：客户端会先选择 `~/.ssh/config` 中为该主机配置的第一个可用身份文件，然后是默认身份文件，例如 `~/.ssh/id_ed25519`。对于每个身份，优先使用 `ssh-agent` 中保存的副本，因为它不需要密码短语；agent 通过匹配的 `IdentityAgent` 设置选择，若未配置则使用 `SSH_AUTH_SOCK`。                                                                                                                                                                                                                          | *                                                                                                                                                 |
+| `--ssh-key-passphrase <value>`       | `--ssh-key-file` 中指定的 SSH 私钥的密码短语。<br /><br />如果未指定该项且密钥文件已加密，将以交互方式提示输入密码短语。                                                                                                                                                                                                                                                                                                                                                                         | -                                                                                                                                                 |
 | `--tls-sni-override <server name>`   | 如果使用 TLS，则在握手时传递的服务器名称 (SNI)。                                                                                                                                                                                                                                                                                                                                                                                                                         | 通过 `-h` 或 `--host` 提供的主机名。                                                                                                                        |
 | `-u [ --user ] <username>`           | 用于连接的数据库用户。                                                                                                                                                                                                                                                                                                                                                                                                                                           | `default`                                                                                                                                         |
 
@@ -946,9 +870,7 @@ ClickHouse 客户端 会使用以下列表中第一个存在的文件：
   除了 `--host`、`--port`、`--user` 和 `--password` 选项外，客户端还支持[连接字符串](#connection_string)。
 </Note>
 
-<div id="command-line-options-query">
-  ### 查询选项
-</div>
+### 查询选项 {#command-line-options-query}
 
 | 选项                              | 描述                                                                                                                                                                                                                                                                                                                                      |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -958,9 +880,7 @@ ClickHouse 客户端 会使用以下列表中第一个存在的文件：
 | `-m [ --multiline ]`            | 如果指定此选项，则允许输入多行查询 (按 Enter 时不会发送查询) 。只有当查询以分号结尾时才会发送。                                                                                                                                                                                                                                                                                   |
 | `--inline-insert-data`          | 将 `INSERT ... VALUES` (以及其他内联格式) 按原样作为查询文本发送，而不是先将数据转换为原生格式中的块。服务器会自行解析内联数据，从而避免将表结构和列默认值回传给客户端所需的往返通信。对于通过原生协议执行的大量小型插入操作，这可以提升性能。会自动将 [`send_table_structure_on_insert_with_inline_data`](/zh/reference/settings/session-settings/send#send_table_structure_on_insert_with_inline_data) 设置为 `0`。不能与内联数据和外部数据 (来自 stdin 或 `INFILE`) 同时使用。 |
 
-<div id="command-line-options-query-settings">
-  ### 查询设置
-</div>
+### 查询设置 {#command-line-options-query-settings}
 
 可以在客户端中通过命令行选项指定查询设置，例如：
 
@@ -970,9 +890,7 @@ $ clickhouse-client --max_threads 1
 
 设置列表请参见[设置](/zh/reference/settings/session-settings)。
 
-<div id="command-line-options-formatting">
-  ### 格式选项
-</div>
+### 格式选项 {#command-line-options-formatting}
 
 | Option                            | Description                                                                                                                                                                                                                                                                                                                                     | Default                             |
 | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
@@ -986,9 +904,7 @@ $ clickhouse-client --max_threads 1
 | `--highlight [ --hilite ] <bool>` | 切换命令提示符和回显查询的语法高亮显示。                                                                                                                                                                                                                                                                                                                            | `true`                              |
 | `--hints <bool>`                  | 当光标位于输入末尾时，显示键入时的自动补全提示 (内联“幽灵”文本) ，给出最佳匹配建议。使用 Up/Down (或 Ctrl-Up/Ctrl-Down) 浏览提示；使用 Tab 或 Right 接受内联提示；`Enter` 仅在已显式选择某个提示后才会接受该提示，否则会运行查询；`Tab` 还会打开传统补全列表。需要启用 `--highlight` (提示需要颜色)。建议提示还需要建议机制，因此 `--disable_suggestion` 会将其关闭；只要启用了 `--hints` 和 `--highlight`，客户端的 [`/` 命令](#slash-commands) 就是静态列表，并会始终显示提示。即使关闭了提示，`Tab` 仍可补全 `/` 命令。 | `true`                              |
 
-<div id="command-line-options-execution-details">
-  ### 执行细节
-</div>
+### 执行细节 {#command-line-options-execution-details}
 
 | 选项                               | 说明                                                                                                                                                                                                               | 默认值                              |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
