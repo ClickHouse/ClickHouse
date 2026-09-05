@@ -16,7 +16,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
 <View title="v0.8+">
   Клиентская библиотека Java для взаимодействия с сервером базы данных через его протоколы. Текущая реализация поддерживает только [HTTP-интерфейс](/ru/concepts/features/interfaces/http).
-  Библиотека предоставляет собственный API для отправки запросов на сервер, а также инструменты для работы с различными бинарными форматами данных (RowBinary* &amp; Native*).
+  Библиотека предоставляет собственный API для отправки запросов на сервер. Также библиотека содержит инструменты для работы с различными бинарными форматами данных (RowBinary* &amp; Native*).
 
   ## Setup
 
@@ -55,7 +55,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   ## Инициализация
 
-  Объект Client инициализируется с помощью `com.clickhouse.client.api.Client.Builder#build()`. Каждый клиент имеет собственный контекст, и объекты между клиентами не являются общими.
+  Объект Client инициализируется с помощью `com.clickhouse.client.api.Client.Builder#build()`. Каждый клиент имеет собственный контекст, и между клиентами не разделяются объекты.
   Builder предоставляет методы конфигурации для удобной настройки.
 
   Пример:
@@ -264,7 +264,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   my-app-01/1.0 clickhouse-java-v2/0.9.6-SNAPSHOT (Linux; jvm:17.0.17) Apache-HttpClient/5.4.4
   ```
 
-  Приложение может задать собственный HTTP-заголовок `User-Agent` для самоидентификации. При этом строка `clickhouse-java-v2/0.9.6-SNAPSHOT` будет добавлена в конец заголовка.
+  Приложение может задать собственный HTTP-заголовок `User-Agent` для идентификации. При этом строка `clickhouse-java-v2/0.9.6-SNAPSHOT` будет добавлена в конец заголовка.
 
   ### Идентификация операции
 
@@ -479,7 +479,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   `tableName` — имя целевой таблицы.
 
-  `data` — объекты DTO (Data Transfer Object) коллекции.
+  `data` — коллекция объектов DTO (Data Transfer Object).
 
   `settings` - параметры запроса.
 
@@ -533,7 +533,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   ### query(String sqlQuery)
 
-  Отправляет `sqlQuery` без изменений. Формат ответа задаётся настройками запроса. `QueryResponse` будет содержать ссылку на поток ответа, который должен быть обработан ридером для соответствующего формата.
+  Отправляет `sqlQuery` как есть. Формат ответа задаётся настройками запроса. `QueryResponse` будет содержать ссылку на поток ответа, который должен быть прочитан (consumed) ридер-ом для поддерживаемого формата.
 
   **Сигнатуры**
 
@@ -544,7 +544,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   **Параметры**
 
-  `sqlQuery` — один SQL-оператор. Запрос отправляется на сервер без изменений.
+  `sqlQuery` — один SQL-оператор. Запрос отправляется на сервер как есть.
 
   `settings` - параметры запроса.
 
@@ -582,7 +582,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   ### query(String sqlQuery, Map&lt;String, Object&gt; queryParams, QuerySettings settings)
 
-  Отправляет `sqlQuery` без изменений. Также передаёт параметры запроса, чтобы сервер мог скомпилировать SQL-выражение.
+  Отправляет `sqlQuery` без изменений. Также отправляет параметры запроса, чтобы сервер мог скомпилировать SQL-выражение.
 
   **Сигнатуры**
 
@@ -632,7 +632,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   Запрашивает данные в формате `RowBinaryWithNamesAndTypes`. Возвращает результат в виде коллекции. Производительность чтения аналогична reader, однако для хранения всего набора данных требуется больше памяти.
 
-  **Сигнатуры**
+  **Подписи**
 
   ```java
   List<GenericRecord> queryAll(String sqlQuery)
@@ -640,7 +640,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   **Параметры**
 
-  `sqlQuery` — SQL-выражение для запроса данных с сервера.
+  `sqlQuery` — SQL-выражение для запроса данных на сервере.
 
   **Возвращаемое значение**
 
@@ -672,18 +672,18 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   **Методы конфигурации**
 
-  | Метод                                             | Описание                                                                                                                                             |
-  | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | `setQueryId(String queryId)`                      | Устанавливает Query id, который будет присвоен операции.                                                                                             |
-  | `setFormat(ClickHouseFormat format)`              | Задает формат ответа. Полный список см. в `RowBinaryWithNamesAndTypes`.                                                                              |
-  | `setMaxExecutionTime(Integer maxExecutionTime)`   | Устанавливает время выполнения операции на сервере. Не влияет на тайм-аут чтения.                                                                    |
-  | `waitEndOfQuery(Boolean waitEndOfQuery)`          | Указывает серверу дождаться завершения запроса перед отправкой ответа.                                                                               |
-  | `setUseServerTimeZone(Boolean useServerTimeZone)` | Часовой пояс сервера (см. конфигурацию клиента) будет использоваться для разбора типов date/time в результате операции. По умолчанию — `false`.      |
-  | `setUseTimeZone(String timeZone)`                 | Просит сервер использовать `timeZone` для преобразования времени. См. [session&#95;timezone](/ru/reference/settings/session-settings#session_timezone). |
-  | `serverSetting(String name, String value)`        | Устанавливает отдельные настройки сервера для операции.                                                                                              |
-  | `serverSetting(String name, Collection values)`   | Устанавливает отдельные настройки сервера с несколькими значениями для операции. Элементы коллекции должны иметь тип `String`.                       |
-  | `setDBRoles(Collection dbRoles)`                  | Задает роли БД, которые будут установлены перед выполнением операции. Элементы коллекции должны быть строковыми значениями `String`.                 |
-  | `setOption(String option, Object value)`          | Задаёт параметр конфигурации в исходном формате. Это не настройка сервера.                                                                           |
+  | Метод                                             | Описание                                                                                                                                                   |
+  | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `setQueryId(String queryId)`                      | Устанавливает Query id, который будет присвоен операции.                                                                                                   |
+  | `setFormat(ClickHouseFormat format)`              | Задает формат ответа. Полный список см. в `RowBinaryWithNamesAndTypes`.                                                                                    |
+  | `setMaxExecutionTime(Integer maxExecutionTime)`   | Устанавливает время выполнения операции на сервере. Не влияет на тайм-аут чтения.                                                                          |
+  | `waitEndOfQuery(Boolean waitEndOfQuery)`          | Указывает серверу дождаться завершения запроса перед отправкой ответа.                                                                                     |
+  | `setUseServerTimeZone(Boolean useServerTimeZone)` | Часовой пояс сервера (см. конфигурацию клиента) будет использоваться для разбора типов date/time в результате операции. По умолчанию — `false`.            |
+  | `setUseTimeZone(String timeZone)`                 | Просит сервер использовать `timeZone` для преобразования времени. См. [session&#95;timezone](/ru/reference/settings/session-settings/other#session_timezone). |
+  | `serverSetting(String name, String value)`        | Устанавливает отдельные настройки сервера для операции.                                                                                                    |
+  | `serverSetting(String name, Collection values)`   | Устанавливает отдельные настройки сервера с несколькими значениями для операции. Элементы коллекции должны иметь тип `String`.                             |
+  | `setDBRoles(Collection dbRoles)`                  | Задает роли БД, которые будут установлены перед выполнением операции. Элементы коллекции должны быть строковыми значениями `String`.                       |
+  | `setOption(String option, Object value)`          | Задаёт параметр конфигурации в исходном формате. Это не настройка сервера.                                                                                 |
 
   ### QueryResponse
 
@@ -861,7 +861,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   * `com.clickhouse.client.config.ClickHouseClientOption` — параметры конфигурации, относящиеся непосредственно к клиенту. Например, `HEALTH_CHECK_INTERVAL`.
   * `com.clickhouse.client.http.config.ClickHouseHttpOption` — параметры конфигурации, характерные для HTTP-интерфейса. Например, `RECEIVE_QUERY_PROGRESS`.
 
-  Они были разработаны для группировки параметров и обеспечения чёткого разделения. Однако в ряде случаев это приводило к путанице (например, есть ли разница между `com.clickhouse.client.config.ClickHouseDefaults#ASYNC` и
+  Они были разработаны для группировки параметров и обеспечения чёткого разделения. Однако в некоторых случаях это приводило к путанице (например, есть ли разница между `com.clickhouse.client.config.ClickHouseDefaults#ASYNC` и
   `com.clickhouse.client.config.ClickHouseClientOption#ASYNC`). Новый клиент V2 использует `com.clickhouse.client.api.Client.Builder` как единый словарь всех возможных параметров конфигурации клиента. В классе
   `com.clickhouse.client.api.ClientConfigProperties` перечислены все имена параметров конфигурации.
 
@@ -988,7 +988,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
       | `ClickHouseClientOption#MAX_CORE_THREAD_TTL`                   | ✗                                 |                                  |
     </Tab>
 
-    <Tab title="HTTP & заголовки">
+    <Tab title="HTTP и заголовки">
       | Конфигурация V1                                      | Метод построителя V2           | Комментарии                                         |
       | ---------------------------------------------------- | ------------------------------ | --------------------------------------------------- |
       | `ClickHouseHttpOption#CUSTOM_HEADERS`                | `Client.Builder#httpHeaders`   |                                                     |

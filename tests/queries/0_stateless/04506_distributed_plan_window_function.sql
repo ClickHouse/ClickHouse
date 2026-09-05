@@ -2,10 +2,9 @@
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
 
 -- Window functions can be executed under make_distributed_plan=1: WindowStep is serialized for remote
--- execution and produces the same result as the non-distributed plan. Only windows whose feeding sort
--- is serializable (no PARTITION BY) can be distributed for now; a PARTITION BY window is rejected (see
--- the fail-close assertion at the end) because its partitioned sort cannot preserve per-partition order
--- across the exchange yet.
+-- execution and produces the same result as the non-distributed plan. This includes windows with
+-- PARTITION BY, which may run per bucket below a sorted gather (see
+-- 04837_distributed_plan_window_partition_shuffle for the plan shape); this file only checks results.
 
 DROP TABLE IF EXISTS t_window_dist;
 
@@ -24,8 +23,13 @@ SELECT v, row_number() OVER (ORDER BY v) AS rn FROM t_window_dist ORDER BY v;
 SELECT '-- rolling frame (ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)';
 SELECT v, sum(v) OVER (ORDER BY v ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS roll FROM t_window_dist ORDER BY v;
 
-SELECT '-- PARTITION BY window is not serializable for remote execution yet -> fail closed';
-SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) FROM t_window_dist ORDER BY a, v; -- { serverError SUPPORT_IS_DISABLED }
+SELECT '-- sum OVER (PARTITION BY a ORDER BY v)';
+SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) FROM t_window_dist ORDER BY a, v;
+
+-- The empty window is the only shape with no sort below the WindowStep, so it exercises the plain
+-- gather (no order to maintain) rather than the sorted one.
+SELECT '-- sum OVER () (empty window)';
+SELECT v, sum(v) OVER () AS s FROM t_window_dist ORDER BY v;
 
 DROP TABLE t_window_dist;
 

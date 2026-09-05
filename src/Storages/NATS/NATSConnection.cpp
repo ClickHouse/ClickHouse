@@ -3,9 +3,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
 
-#include <boost/algorithm/string/join.hpp>
-
-
 namespace DB
 {
 
@@ -77,9 +74,9 @@ String NATSConnection::connectionInfoForLog() const
 {
     if (!configuration.url.empty())
     {
-        return "url : " + configuration.url;
+        return "url: [hidden]";
     }
-    return "cluster: " + boost::algorithm::join(configuration.servers, ", ");
+    return "cluster: [hidden]";
 }
 
 bool NATSConnection::isConnected()
@@ -136,7 +133,7 @@ void NATSConnection::connectImpl(const Lock &)
     if (status != NATS_OK)
     {
         LOG_DEBUG(log, "New connection to {} failed. Nats status text: {}. Last error message: {}",
-                  connectionInfoForLog(), natsStatus_GetText(status), nats_GetLastError(nullptr));
+                  connectionInfoForLog(), natsStatus_GetText(status), getNATSLastError());
         return;
     }
     connection.reset(new_conection);

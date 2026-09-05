@@ -16,7 +16,7 @@ O motor PostgreSQL permite consultas `SELECT` e `INSERT` em dados armazenados em
 </Note>
 
 <Tip>
-  Conheça nosso serviço [Managed Postgres](/pt-BR/products/managed-postgres/overview). Com armazenamento NVMe fisicamente no mesmo local que a computação, ele oferece desempenho até 10x mais rápido para cargas de trabalho limitadas por disco em comparação com alternativas que usam armazenamento conectado à rede, como o EBS, e permite replicar seus dados do Postgres para o ClickHouse usando o conector Postgres CDC no ClickPipes.
+  Conheça nosso serviço [ClickHouse Managed Postgres](/pt-BR/products/managed-postgres/overview). Com armazenamento NVMe fisicamente no mesmo local que a computação, ele oferece desempenho até 10x mais rápido para cargas de trabalho limitadas por disco em comparação com alternativas que usam armazenamento conectado à rede, como o EBS, e permite replicar seus dados do Postgres para o ClickHouse usando o conector Postgres CDC no ClickPipes.
 </Tip>
 
 <div id="creating-a-table">
@@ -45,7 +45,7 @@ A estrutura da tabela pode ser diferente da estrutura da tabela PostgreSQL origi
 
 * Os nomes das colunas devem ser os mesmos da tabela PostgreSQL original, mas você pode usar apenas algumas delas e em qualquer ordem.
 * Os tipos das colunas podem ser diferentes dos da tabela PostgreSQL original. O ClickHouse tenta [converter](/pt-BR/reference/engines/database-engines/postgresql#data_types-support) os valores para os tipos de dados do ClickHouse.
-* A configuração [external&#95;table&#95;functions&#95;use&#95;nulls](/pt-BR/reference/settings/session-settings#external_table_functions_use_nulls) define como tratar colunas Nullable. Valor padrão: 1. Se for 0, a função de tabela não cria colunas Nullable e insere valores padrão em vez de valores nulos. Isso também se aplica a valores NULL dentro de arrays.
+* A configuração [external&#95;table&#95;functions&#95;use&#95;nulls](/pt-BR/reference/settings/session-settings/external-table#external_table_functions_use_nulls) define como tratar colunas Nullable. Valor padrão: 1. Se for 0, a função de tabela não cria colunas Nullable e insere valores padrão em vez de valores nulos. Isso também se aplica a valores NULL dentro de arrays.
 
 **Parâmetros do motor**
 
@@ -75,6 +75,40 @@ Alguns parâmetros podem ser substituídos por argumentos de chave-valor:
 
 ```sql
 SELECT * FROM postgresql(postgres_creds, table='table1');
+```
+
+<div id="tls-ssl">
+  ### TLS/SSL
+</div>
+
+Os parâmetros TLS/SSL são encaminhados ao `libpq` e podem ser definidos como chaves de uma coleção nomeada ou como argumentos chave-valor finais: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` ou `verify-full`), além dos certificados e da chave, em uma de duas formas. Quando não são definidos, aplicam-se os padrões do `libpq` (`sslmode=prefer`).
+
+* `sslrootcert` (certificado da CA ou o valor especial `system`), `sslcert` (certificado do cliente) e `sslkey` (chave privada do cliente) são caminhos para arquivos locais do servidor. Eles só podem ser especificados em uma coleção nomeada definida no arquivo de configuração do servidor e não podem ser substituídos em uma consulta: o servidor abre os arquivos com seus próprios privilégios.
+* `sslrootcert_pem`, `sslcert_pem` e `sslkey_pem` aceitam o conteúdo literal do arquivo correspondente em vez de um caminho. Podem ser especificados em qualquer lugar — em uma consulta, em uma coleção nomeada criada com SQL ou como substituição de uma coleção nomeada — e são mascarados nos logs e em consultas `SHOW`, como uma senha.
+
+Por exemplo, para exigir uma conexão criptografada e verificar o certificado do servidor:
+
+```xml
+<named_collections>
+    <postgres_creds>
+        <host>localhost</host>
+        <port>5432</port>
+        <user>postgres</user>
+        <password>****</password>
+        <sslmode>verify-full</sslmode>
+        <sslrootcert>/etc/clickhouse-server/postgresql-ca.crt</sslrootcert>
+    </postgres_creds>
+</named_collections>
+```
+
+O mesmo, sem um arquivo de configuração, passando o conteúdo do certificado na consulta:
+
+```sql
+CREATE TABLE postgres_table (id UInt64, value String)
+ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
+                    sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----');
 ```
 
 <div id="settings">
@@ -162,7 +196,7 @@ Isso é útil para delegar junções, agregações ou qualquer outro processamen
 <Note>
   A forma de subconsulta `(SELECT ...)` é analisada pelo ClickHouse e reserializada no dialeto PostgreSQL (aspas de identificadores do PostgreSQL e escapamento de literais de string) antes de ser enviada ao servidor. Portanto, ela deve ser um ClickHouse SQL válido. Para passar sintaxe específica do PostgreSQL que o ClickHouse não analisa, use a forma `query('...')`, cujo texto é enviado ao PostgreSQL literalmente.
 
-  Qualquer `WHERE`, `LIMIT`, agregação etc. externo da consulta ClickHouse circundante **não** é delegado à consulta passada — ele é aplicado no ClickHouse após a obtenção do resultado completo da consulta. Para restringir os dados lidos do PostgreSQL, coloque o filtro dentro da consulta passada. Com [`external_table_strict_query = 1`](/pt-BR/reference/settings/session-settings#external_table_strict_query), um filtro externo que não pode ser delegado é rejeitado com uma exceção em vez de ser aplicado localmente.
+  Qualquer `WHERE`, `LIMIT`, agregação etc. externo da consulta ClickHouse circundante **não** é delegado à consulta passada — ele é aplicado no ClickHouse após a obtenção do resultado completo da consulta. Para restringir os dados lidos do PostgreSQL, coloque o filtro dentro da consulta passada. Com [`external_table_strict_query = 1`](/pt-BR/reference/settings/session-settings/external-table#external_table_strict_query), um filtro externo que não pode ser delegado é rejeitado com uma exceção em vez de ser aplicado localmente.
 </Note>
 
 As consultas `INSERT` no PostgreSQL são executadas como `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` dentro de uma transação PostgreSQL, com commit automático após cada instrução `INSERT`.

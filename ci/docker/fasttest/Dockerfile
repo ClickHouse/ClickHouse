@@ -17,9 +17,9 @@ RUN find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -print0 | xa
         -e "s|http://ports.ubuntu.com|$apt_ports_archive|g" \
         -e "s|https://ports.ubuntu.com|$apt_ports_archive|g" \
     && printf 'Acquire::ForceIPv4 "true";\nAcquire::Retries "5";\n' > /etc/apt/apt.conf.d/99-clickhouse-ci
-ARG LLVM_APT_VERSION="1:21.1.5~"
+ARG LLVM_APT_VERSION="1:22.1.8~"
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=21
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=22
 
 # We need ca-certificates first to be able to update all repos. This is why it's run twice
 RUN apt-get update \

@@ -48,7 +48,7 @@ Les requêtes `CREATE`, `DROP`, `ATTACH`, `DETACH` et `RENAME` sont exécutées 
 
 ClickHouse utilise [ClickHouse Keeper](/fr/guides/oss/deployment-and-scaling/keeper/index) pour stocker les métadonnées des répliques. Il est possible d’utiliser ZooKeeper version 3.4.5 ou ultérieure, mais ClickHouse Keeper est recommandé.
 
-Pour utiliser la réplication, définissez les paramètres dans la section [zookeeper](/fr/reference/settings/server-settings/settings#zookeeper) de la configuration du serveur.
+Pour utiliser la réplication, définissez les paramètres dans la section [zookeeper](/fr/reference/settings/server-settings/settings/zookeeper#zookeeper) de la configuration du serveur.
 
 <Note>
   Ne négligez pas la configuration de sécurité. ClickHouse prend en charge le [schéma ACL](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) `digest` du sous-système de sécurité de ZooKeeper.
@@ -114,21 +114,21 @@ Vous pouvez spécifier n’importe quel cluster ZooKeeper existant, et le systè
 
 Si ZooKeeper n’est pas défini dans le fichier de configuration, vous ne pouvez pas créer de tables répliquées, et toutes les tables répliquées existantes seront en lecture seule.
 
-ZooKeeper n&#39;est pas utilisé dans les requêtes `SELECT`, car la réplication n&#39;affecte pas les performances de `SELECT` et les requêtes s&#39;exécutent tout aussi rapidement que sur des tables non répliquées. Lors de l&#39;interrogation de tables distribuées répliquées, le comportement de ClickHouse est contrôlé par les paramètres [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/fr/reference/settings/session-settings#max_replica_delay_for_distributed_queries) et [fallback&#95;to&#95;stale&#95;replicas&#95;for&#95;distributed&#95;queries](/fr/reference/settings/session-settings#fallback_to_stale_replicas_for_distributed_queries).
+ZooKeeper n&#39;est pas utilisé dans les requêtes `SELECT`, car la réplication n&#39;affecte pas les performances de `SELECT` et les requêtes s&#39;exécutent tout aussi rapidement que sur des tables non répliquées. Lors de l&#39;interrogation de tables distribuées répliquées, le comportement de ClickHouse est contrôlé par les paramètres [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/fr/reference/settings/session-settings/max#max_replica_delay_for_distributed_queries) et [fallback&#95;to&#95;stale&#95;replicas&#95;for&#95;distributed&#95;queries](/fr/reference/settings/session-settings/other#fallback_to_stale_replicas_for_distributed_queries).
 
 Pour chaque requête `INSERT`, environ dix entrées sont ajoutées à ZooKeeper au travers de plusieurs transactions. (Plus précisément, cela s&#39;applique à chaque bloc de données inséré ; une requête `INSERT` contient un bloc, ou un bloc par `max_insert_block_size = 1048576` lignes.) Cela entraîne des latences légèrement plus élevées pour `INSERT` par rapport aux tables non répliquées. Mais si vous suivez les recommandations consistant à insérer les données par lots, à raison de pas plus d&#39;un `INSERT` par seconde, cela ne pose aucun problème. L&#39;ensemble du cluster ClickHouse utilisant un cluster ZooKeeper pour la coordination prend en charge au total plusieurs centaines d&#39;`INSERTs` par seconde. Le débit des insertions de données (le nombre de lignes par seconde) est tout aussi élevé que pour les données non répliquées.
 
 Pour les très grands clusters, vous pouvez utiliser différents clusters ZooKeeper pour différents shards. Cependant, d&#39;après notre expérience, cela ne s&#39;est pas révélé nécessaire sur des clusters de production d&#39;environ 300 serveurs.
 
-La réplication est asynchrone et multi-maître. Les requêtes `INSERT` (ainsi que `ALTER`) peuvent être envoyées à n&#39;importe quel serveur disponible. Les données sont insérées sur le serveur où la requête est exécutée, puis elles sont copiées vers les autres serveurs. Comme elle est asynchrone, les données récemment insérées apparaissent sur les autres répliques avec une certaine latence. Si une partie des répliques n&#39;est pas disponible, les données sont écrites lorsqu&#39;elles redeviennent disponibles. Si une réplique est disponible, la latence correspond au temps nécessaire pour transférer le bloc de données compressées sur le réseau. Le nombre de threads effectuant des tâches d&#39;arrière-plan pour les tables répliquées peut être défini par le paramètre [background&#95;schedule&#95;pool&#95;size](/fr/reference/settings/server-settings/settings#background_schedule_pool_size).
+La réplication est asynchrone et multi-maître. Les requêtes `INSERT` (ainsi que `ALTER`) peuvent être envoyées à n&#39;importe quel serveur disponible. Les données sont insérées sur le serveur où la requête est exécutée, puis elles sont copiées vers les autres serveurs. Comme elle est asynchrone, les données récemment insérées apparaissent sur les autres répliques avec une certaine latence. Si une partie des répliques n&#39;est pas disponible, les données sont écrites lorsqu&#39;elles redeviennent disponibles. Si une réplique est disponible, la latence correspond au temps nécessaire pour transférer le bloc de données compressées sur le réseau. Le nombre de threads effectuant des tâches d&#39;arrière-plan pour les tables répliquées peut être défini par le paramètre [background&#95;schedule&#95;pool&#95;size](/fr/reference/settings/server-settings/settings/background-schedule#background_schedule_pool_size).
 
-Le moteur `ReplicatedMergeTree` utilise un pool de threads distinct pour les fetches répliqués. La taille du pool est limitée par le paramètre [background&#95;fetches&#95;pool&#95;size](/fr/reference/settings/server-settings/settings#background_fetches_pool_size), qui peut être ajusté après redémarrage du serveur.
+Le moteur `ReplicatedMergeTree` utilise un pool de threads distinct pour les fetches répliqués. La taille du pool est limitée par le paramètre [background&#95;fetches&#95;pool&#95;size](/fr/reference/settings/server-settings/settings/background#background_fetches_pool_size), qui peut être ajusté après redémarrage du serveur.
 
 Par défaut, une requête `INSERT` attend uniquement la confirmation de l&#39;écriture des données par une seule réplique. Si les données n&#39;ont été écrites avec succès que sur une seule réplique et que le serveur hébergeant cette réplique cesse d&#39;exister, les données stockées seront perdues. Pour obtenir la confirmation des écritures de données depuis plusieurs répliques, utilisez l&#39;option `insert_quorum`.
 
 Chaque bloc de données est écrit de manière atomique. La requête `INSERT` est divisée en blocs allant jusqu&#39;à `max_insert_block_size = 1048576` lignes. En d&#39;autres termes, si la requête `INSERT` contient moins de 1048576 lignes, elle est effectuée de manière atomique.
 
-Les blocs de données sont dédupliqués. En cas d&#39;écritures multiples du même bloc de données (des blocs de même taille contenant les mêmes lignes dans le même ordre), le bloc n&#39;est écrit qu&#39;une seule fois. L&#39;objectif est de gérer les défaillances réseau, lorsque l&#39;application cliente ne sait pas si les données ont été écrites dans la base de données, de sorte que la requête `INSERT` peut simplement être relancée. Peu importe à quelle réplique les `INSERTs` contenant des données identiques ont été envoyés. Les `INSERTs` sont idempotents. Les paramètres de déduplication sont contrôlés par les paramètres serveur [merge&#95;tree](/fr/reference/settings/server-settings/settings#merge_tree).
+Les blocs de données sont dédupliqués. En cas d&#39;écritures multiples du même bloc de données (des blocs de même taille contenant les mêmes lignes dans le même ordre), le bloc n&#39;est écrit qu&#39;une seule fois. L&#39;objectif est de gérer les défaillances réseau, lorsque l&#39;application cliente ne sait pas si les données ont été écrites dans la base de données, de sorte que la requête `INSERT` peut simplement être relancée. Peu importe à quelle réplique les `INSERTs` contenant des données identiques ont été envoyés. Les `INSERTs` sont idempotents. Les paramètres de déduplication sont contrôlés par les paramètres serveur [merge&#95;tree](/fr/reference/settings/server-settings/settings/merge#merge_tree).
 
 Pendant la réplication, seules les données source à insérer sont transférées sur le réseau. Les transformations ultérieures des données (merging) sont coordonnées et effectuées de la même manière sur toutes les répliques. Cela minimise l&#39;utilisation du réseau, ce qui signifie que la réplication fonctionne bien lorsque les répliques se trouvent dans différents datacenters. (Notez que la duplication des données dans différents datacenters est l&#39;objectif principal de la réplication.)
 
@@ -187,7 +187,7 @@ SAMPLE BY intHash32(UserID);
   ```
 </details>
 
-Comme le montre l’exemple, ces paramètres peuvent contenir des substitutions entre `{}`. Les valeurs de substitution proviennent de la section [macros](/fr/reference/settings/server-settings/settings#macros) du fichier de configuration.
+Comme le montre l’exemple, ces paramètres peuvent contenir des substitutions entre `{}`. Les valeurs de substitution proviennent de la section [macros](/fr/reference/settings/server-settings/settings/other#macros) du fichier de configuration.
 
 Exemple :
 
@@ -348,8 +348,8 @@ Si les données de ClickHouse Keeper ont été perdues ou endommagées, vous pou
 
 **Voir aussi**
 
-* [background&#95;schedule&#95;pool&#95;size](/fr/reference/settings/server-settings/settings#background_schedule_pool_size)
-* [background&#95;fetches&#95;pool&#95;size](/fr/reference/settings/server-settings/settings#background_fetches_pool_size)
-* [execute&#95;merges&#95;on&#95;single&#95;replica&#95;time&#95;threshold](/fr/reference/settings/merge-tree-settings#execute_merges_on_single_replica_time_threshold)
-* [max&#95;replicated&#95;fetches&#95;network&#95;bandwidth](/fr/reference/settings/merge-tree-settings#max_replicated_fetches_network_bandwidth)
-* [max&#95;replicated&#95;sends&#95;network&#95;bandwidth](/fr/reference/settings/merge-tree-settings#max_replicated_sends_network_bandwidth)
+* [background&#95;schedule&#95;pool&#95;size](/fr/reference/settings/server-settings/settings/background-schedule#background_schedule_pool_size)
+* [background&#95;fetches&#95;pool&#95;size](/fr/reference/settings/server-settings/settings/background#background_fetches_pool_size)
+* [execute&#95;merges&#95;on&#95;single&#95;replica&#95;time&#95;threshold](/fr/reference/settings/merge-tree-settings/other#execute_merges_on_single_replica_time_threshold)
+* [max&#95;replicated&#95;fetches&#95;network&#95;bandwidth](/fr/reference/settings/merge-tree-settings/max-replicated#max_replicated_fetches_network_bandwidth)
+* [max&#95;replicated&#95;sends&#95;network&#95;bandwidth](/fr/reference/settings/merge-tree-settings/max-replicated#max_replicated_sends_network_bandwidth)

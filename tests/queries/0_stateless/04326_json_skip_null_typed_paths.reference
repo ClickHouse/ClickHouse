@@ -1,0 +1,167 @@
+serialization without setting
+{"a":42,"b":"hello"}
+{"a":null,"b":null}
+{"a":null,"b":"world"}
+{"a":null,"b":null}
+serialization with setting
+{"a":42,"b":"hello"}
+{}
+{"b":"world"}
+{}
+JSONAllPaths without setting
+['a','b']
+['a','b']
+['a','b']
+['a','b']
+JSONAllPaths with setting
+['a','b']
+[]
+['b']
+[]
+JSONAllPathsWithTypes without setting
+{'a':'Nullable(Int64)','b':'Nullable(String)'}
+{'a':'Nullable(Int64)','b':'Nullable(String)'}
+{'a':'Nullable(Int64)','b':'Nullable(String)'}
+{'a':'Nullable(Int64)','b':'Nullable(String)'}
+JSONAllPathsWithTypes with setting
+{'a':'Nullable(Int64)','b':'Nullable(String)'}
+{}
+{'b':'Nullable(String)'}
+{}
+empty without setting
+0
+0
+0
+0
+empty with setting
+0
+1
+0
+1
+JSONHas without setting
+1	1
+1	1
+1	1
+1	1
+JSONHas with setting
+1	1
+0	0
+0	1
+0	0
+JSONExtractRaw without setting
+42	"hello"
+null	null
+null	"world"
+null	null
+JSONExtractRaw with setting
+42	"hello"
+	
+	"world"
+	
+JSONAllValues without setting
+['42','hello']
+['ᴺᵁᴸᴸ','ᴺᵁᴸᴸ']
+['ᴺᵁᴸᴸ','world']
+['ᴺᵁᴸᴸ','ᴺᵁᴸᴸ']
+JSONAllValues with setting
+['42','hello']
+[]
+['world']
+[]
+non-nullable typed path with setting
+{"a":0}
+{"a":0}
+non-nullable JSONHas with setting
+1
+1
+mixed typed+dynamic with setting
+{"a":42,"d":100}
+{"d":200}
+{}
+mixed JSONAllPaths with setting
+['a','d']
+['d']
+[]
+mixed empty with setting
+0
+0
+1
+nested JSONHas without setting
+1
+1
+1
+nested JSONHas with setting
+1
+0
+0
+nested JSONExtractRaw without setting
+{"b":42}
+{"b":null}
+{"b":null}
+nested JSONExtractRaw with setting
+{"b":42}
+
+
+inner JSON serialization without setting
+{"a":{"b":42}}
+{"a":{"b":null}}
+{"a":{"b":null}}
+inner JSON serialization with setting
+{"a":{"b":42}}
+{"a":{}}
+{"a":{}}
+inner JSON JSONAllValues without setting
+['{"b":42}']
+['{"b":null}']
+['{"b":null}']
+inner JSON JSONAllValues with setting
+['{"b":42}']
+['{}']
+['{}']
+has without setting
+1	1
+1	1
+1	1
+1	1
+has with setting
+1	1
+0	0
+0	1
+0	0
+has with non-constant path with setting
+1	1
+0	0
+0	1
+0	0
+non-nullable has with setting
+1	1
+1	1
+mixed has with setting
+1	1
+0	1
+0	0
+nested has without setting
+1	1
+1	1
+1	1
+nested has with setting
+1	1	1
+0	0	0
+0	0	0
+Pretty without setting
+   ┌─json─────────────────┐
+1. │ {"a":42,"b":"hello"} │
+2. │ {"a":null,"b":null}  │
+   └──────────────────────┘
+Pretty with setting
+   ┌─json─────────────────┐
+1. │ {"a":42,"b":"hello"} │
+2. │ {}                   │
+   └──────────────────────┘
+Pretty keeps default JSON settings
+   ┌─t─────────────┐
+1. │ {            ↴│
+   │↳  "x": "nan",↴│
+   │↳  "y": 1     ↴│
+   │↳}             │
+   └───────────────┘

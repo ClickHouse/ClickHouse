@@ -25,7 +25,7 @@ Se houver um driver nativo disponível (por exemplo, [DBeaver](/pt-BR/integratio
 Se o seu caso de uso envolver uma ferramenta específica que não tenha um driver nativo do ClickHouse, e você quiser usá-la por meio da interface MySQL e tiver encontrado incompatibilidades, [crie uma issue](https://github.com/ClickHouse/ClickHouse/issues) no repositório do ClickHouse.
 
 <Note>
-  Para oferecer melhor suporte ao dialeto SQL das ferramentas de BI acima, a interface MySQL do ClickHouse executa implicitamente consultas SELECT com a configuração [prefer&#95;column&#95;name&#95;to&#95;alias = 1](/pt-BR/reference/settings/session-settings#prefer_column_name_to_alias).
+  Para oferecer melhor suporte ao dialeto SQL das ferramentas de BI acima, a interface MySQL do ClickHouse executa implicitamente consultas SELECT com a configuração [prefer&#95;column&#95;name&#95;to&#95;alias = 1](/pt-BR/reference/settings/session-settings/prefer#prefer_column_name_to_alias).
   Isso não pode ser desativado e, em raros casos extremos, pode levar a um comportamento diferente entre as consultas enviadas às interfaces de consulta padrão e MySQL do ClickHouse.
 </Note>
 
@@ -115,7 +115,7 @@ Nesse caso, certifique-se de que o nome de usuário siga o formato `mysql4<subdo
   ## Ativando a interface MySQL no ClickHouse autogerenciado
 </div>
 
-Adicione a configuração [mysql&#95;port](/pt-BR/reference/settings/server-settings/settings#mysql_port) ao arquivo de configuração do servidor. Por exemplo, você pode definir a porta em um novo arquivo XML na [pasta](/pt-BR/concepts/features/configuration/server-config/configuration-files) `config.d/`:
+Adicione a configuração [mysql&#95;port](/pt-BR/reference/settings/server-settings/settings/mysql#mysql_port) ao arquivo de configuração do servidor. Por exemplo, você pode definir a porta em um novo arquivo XML na [pasta](/pt-BR/concepts/features/configuration/server-config/configuration-files) `config.d/`:
 
 ```xml
 <clickhouse>

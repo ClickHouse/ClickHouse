@@ -1,0 +1,51 @@
+---
+description: 'Puffinフォーマットのリファレンス'
+keywords: ['Puffin']
+slug: /interfaces/formats/Puffin
+title: 'Puffin'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+[Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/)ファイルを読み取るための入力フォーマットです。
+
+このフォーマットは、`deletion-vector-v1` ブロブから削除された行位置を取得します。サポートされるブロブタイプはこれのみで、ほかのブロブタイプ (例: `apache-datasketches-theta-v1`) を含むファイルは拒否されます。
+puffin ファイルに複数の `deletion-vector-v1` ブロブが含まれる場合、このフォーマットはブロブごとに1行を出力します。
+
+固定の出力カラム:
+
+* `referenced_data_file` (`String`) - 削除ベクトルが適用されるデータファイルの場所 (`referenced-data-file` ブロブプロパティ) 
+* `deleted_rows` (`Array(UInt64)`) - 削除ベクトルの roaring bitmap に基づいて削除された64ビットの行位置
+
+宣言された `cardinality` がマテリアライズの絶対上限を超える削除ベクトルは、`deleted_rows` が要求された場合に拒否されます。フッターの `deletion-vector-v1` プロパティ (`cardinality` が符号なし整数としてパースできることを含む) は常に検証されます。`referenced_data_file` のみを選択した場合、オンディスクのペイロード I/O はスキップされるため、envelope、CRC、roaring のデシリアライズ、およびマテリアライズ上限もスキップされます。これは、パスのみを対象とするプロジェクションでブロブサイズ上限まで読み取らないようにするための意図的な動作です。
+
+オンディスクの `deletion-vector-v1` ブロブの長さは絶対上限によって制限されます (Iceberg の 2 GiB コンテンツサイズチェックに準拠) 。`deleted_rows` が要求された場合、リーダーはペイロード全体を割り当てる前に envelope ヘッダー (結合長と magic) を確認します。CRC は制限付き読み取り後に検証されます。
+
+LZ4 圧縮および非圧縮の puffin フッターがサポートされています。フッターペイロードサイズ (および宣言された LZ4 コンテンツサイズ) は、該当する場合、圧縮率と絶対上限によって制限されます。大きすぎるフッターは割り当て前に拒否されます。
+
+要求できる出力カラムは一部に限られます。想定外のカラム名または型を含むユーザー提供の構造は、フォーマットの作成時に拒否されます。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+参照先のデータファイルで削除された行位置を読み取ります：
+
+```sql
+SELECT referenced_data_file, deleted_rows
+FROM file(deletes.puffin, Puffin);
+```
+
+削除された位置を個別の行に展開します。
+
+```sql
+SELECT referenced_data_file, row_number
+FROM file(deletes.puffin, Puffin)
+ARRAY JOIN deleted_rows AS row_number
+ORDER BY referenced_data_file, row_number;
+```
+
+削除ベクトルを読み取る前に、`PuffinMetadata` を使用してフッター内のブロブディスクリプタを確認します。
