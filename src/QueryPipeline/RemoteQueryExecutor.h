@@ -231,7 +231,8 @@ public:
 
     /// Reports a skipped shard to `unavailable_shard_tracker` (if any), enforcing the
     /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio` limits.
-    /// Throws `TOO_MANY_UNAVAILABLE_SHARDS` once the limits are exceeded.
+    /// Throws `TOO_MANY_UNAVAILABLE_SHARDS` once the limits are exceeded, and
+    /// `ALL_CONNECTION_TRIES_FAILED` once every execution unit was skipped without returning data.
     void reportShardSkipped();
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
