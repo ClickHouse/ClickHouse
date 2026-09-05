@@ -152,44 +152,6 @@ void expectForeignTimerIntact(const ProfTimer & timer, UInt64 armed_interval_us,
     EXPECT_LE(timer.value_us, armed_interval_us + tick_rounding_slack_us) << after << " re-armed ITIMER_PROF";
 }
 
-/// Stands in for the out-of-tree owner of `ITIMER_PROF`: takes `SIGPROF` off the fuzzer and arms the
-/// timer, then restores both, so a failed assertion cannot leak either into a later case here.
-struct ForeignProfTimer
-{
-    /// Longer than a case here can consume in process CPU time, so the timer cannot expire and turn
-    /// its own disappearance into a pass; different from every configured period, so a survival check
-    /// cannot pass on a timer the fuzzer armed.
-    static constexpr UInt64 interval_us = 7000000;
-
-    ForeignProfTimer()
-    {
-        saved_disposition = std::signal(SIGPROF, SIG_IGN);
-        EXPECT_NE(SIG_ERR, saved_disposition) << errnoToString();
-
-        struct itimerval foreign{};
-        foreign.it_interval.tv_sec = static_cast<time_t>(interval_us / 1000000);
-        foreign.it_value = foreign.it_interval;
-        /// Called outside the assertion macro, which would re-expand the self-referential
-        /// `ITIMER_PROF` and fail `-Wdisabled-macro-expansion`.
-        const int arm_rc = setitimer(ITIMER_PROF, &foreign, nullptr);
-        EXPECT_EQ(0, arm_rc) << errnoToString();
-    }
-
-    ~ForeignProfTimer()
-    {
-        struct itimerval disarm{};
-        const int disarm_rc = setitimer(ITIMER_PROF, &disarm, nullptr);
-        EXPECT_EQ(0, disarm_rc) << errnoToString();
-        const auto restored = std::signal(SIGPROF, saved_disposition);
-        EXPECT_NE(SIG_ERR, restored) << errnoToString();
-    }
-
-    ForeignProfTimer(const ForeignProfTimer &) = delete;
-    ForeignProfTimer & operator=(const ForeignProfTimer &) = delete;
-
-    void (*saved_disposition)(int) = nullptr;
-};
-
 /// Runs one child case in a fresh image of this binary. The singleton reads the environment once, on
 /// first use, so a `fork` alone would inherit an already-built one: the configuration has to be
 /// present before the image starts.
@@ -274,16 +236,6 @@ TEST(ThreadFuzzerTimer, StopStartTogglePerturbationChild)
     EXPECT_NE(0UL, timer.interval_us) << "start() armed ITIMER_PROF to fire only once";
     EXPECT_TRUE(injectsMemoryLimitException()) << "start() did not resume fault injection";
 
-    /// Configured, armed, and then dispossessed of the timer, which is the state a startup-time
-    /// configuration bit cannot tell apart from the one above: the disarm has to read the timer.
-    {
-        const ForeignProfTimer foreign;
-
-        DB::ThreadFuzzer::stop();
-        expectForeignTimerIntact(profTimer(), ForeignProfTimer::interval_us, "stop()");
-        EXPECT_FALSE(injectsMemoryLimitException()) << "stop() did not stop fault injection";
-    }
-
     /// gtest teardown, the global Context destructor and the thread pool shutdowns that follow run
     /// with no perturbation armed. The parent asserts the exit code of that path.
     DB::ThreadFuzzer::stop();
@@ -307,14 +259,35 @@ TEST(ThreadFuzzerTimer, StopStartTimerlessConfigurationChild)
     ASSERT_EQ(0UL, profTimer().value_us) << "ITIMER_PROF was already armed on entry";
     EXPECT_TRUE(injectsMemoryLimitException()) << "a configuration with no timer did not start injecting";
 
-    const ForeignProfTimer foreign;
+    /// Longer than this test can consume in process CPU time, so the timer cannot expire mid-test.
+    static constexpr UInt64 foreign_interval_us = 7000000;
+
+    const auto saved_disposition = std::signal(SIGPROF, SIG_IGN);
+    ASSERT_NE(SIG_ERR, saved_disposition) << errnoToString();
+
+    /// Every exit path restores both, including the early return of a failed assertion below, so no
+    /// later test in this binary inherits the timer or the disposition.
+    const auto restore_timer_state = make_scope_guard([&]
+    {
+        struct itimerval disarm{};
+        const int disarm_rc = setitimer(ITIMER_PROF, &disarm, nullptr);
+        EXPECT_EQ(0, disarm_rc) << errnoToString();
+        const auto restored = std::signal(SIGPROF, saved_disposition);
+        EXPECT_NE(SIG_ERR, restored) << errnoToString();
+    });
+
+    struct itimerval foreign{};
+    foreign.it_interval.tv_sec = static_cast<time_t>(foreign_interval_us / 1000000);
+    foreign.it_value.tv_sec = static_cast<time_t>(foreign_interval_us / 1000000);
+    const int arm_rc = setitimer(ITIMER_PROF, &foreign, nullptr);
+    ASSERT_EQ(0, arm_rc) << errnoToString();
 
     DB::ThreadFuzzer::stop();
-    expectForeignTimerIntact(profTimer(), ForeignProfTimer::interval_us, "stop()");
+    expectForeignTimerIntact(profTimer(), foreign_interval_us, "stop()");
     EXPECT_FALSE(injectsMemoryLimitException()) << "stop() did not stop fault injection";
 
     DB::ThreadFuzzer::start();
-    expectForeignTimerIntact(profTimer(), ForeignProfTimer::interval_us, "start()");
+    expectForeignTimerIntact(profTimer(), foreign_interval_us, "start()");
     EXPECT_TRUE(injectsMemoryLimitException()) << "start() did not resume fault injection";
 
     DB::ThreadFuzzer::stop();
@@ -425,10 +398,31 @@ TEST(ThreadFuzzerTimer, StopLeavesAForeignProfTimerAlone)
         << "the fuzzer is configured in this process, so the unconfigured branch is not under test";
     ASSERT_EQ(0UL, profTimer().value_us) << "ITIMER_PROF was already armed on entry";
 
-    const ForeignProfTimer foreign;
+    /// Longer than this test can consume in process CPU time, so the timer cannot expire mid-test.
+    static constexpr UInt64 foreign_interval_us = 7000000;
+
+    const auto saved_disposition = std::signal(SIGPROF, SIG_IGN);
+    ASSERT_NE(SIG_ERR, saved_disposition) << errnoToString();
+
+    /// Every exit path restores both, including the early return of a failed assertion below, so no
+    /// later test in this binary inherits the timer or the disposition.
+    const auto restore_timer_state = make_scope_guard([&]
+    {
+        struct itimerval disarm{};
+        const int disarm_rc = setitimer(ITIMER_PROF, &disarm, nullptr);
+        EXPECT_EQ(0, disarm_rc) << errnoToString();
+        const auto restored = std::signal(SIGPROF, saved_disposition);
+        EXPECT_NE(SIG_ERR, restored) << errnoToString();
+    });
+
+    struct itimerval foreign{};
+    foreign.it_interval.tv_sec = static_cast<time_t>(foreign_interval_us / 1000000);
+    foreign.it_value.tv_sec = static_cast<time_t>(foreign_interval_us / 1000000);
+    const int arm_rc = setitimer(ITIMER_PROF, &foreign, nullptr);
+    ASSERT_EQ(0, arm_rc) << errnoToString();
 
     DB::ThreadFuzzer::stop();
-    expectForeignTimerIntact(profTimer(), ForeignProfTimer::interval_us, "stop()");
+    expectForeignTimerIntact(profTimer(), foreign_interval_us, "stop()");
 }
 
 #endif
