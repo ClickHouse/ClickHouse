@@ -32,6 +32,7 @@
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -1031,6 +1032,32 @@ bool ColumnsDescription::hasCompressionCodec(const String & column_name) const
     const auto it = columns.get<1>().find(column_name);
 
     return it != columns.get<1>().end() && it->codec != nullptr;
+}
+
+bool ColumnsDescription::hasExplicitDefaultCompressionCodec(const String & column_name) const
+{
+    const auto it = columns.get<1>().find(column_name);
+    if (it == columns.get<1>().end() || it->codec == nullptr)
+        return false;
+
+    /// The stored codec descriptor is a `CODEC(...)` function whose arguments are the pipeline
+    /// stages; a `Default` stage is kept as a bare `Default` identifier (see
+    /// `CompressionCodecFactory::validateCodecAndGetPreprocessedAST`) and means "the part's default
+    /// codec". It can be the only stage (`CODEC(Default)`) or the generic-compression stage of a
+    /// longer pipeline (`CODEC(Delta, Default)`, `CODEC(NONE, Default)`), so look for it among all
+    /// stages rather than requiring the degenerate single-stage form.
+    const auto * codec_func = it->codec->as<ASTFunction>();
+    if (!codec_func || !codec_func->arguments)
+        return false;
+
+    for (const auto & stage : codec_func->arguments->children)
+    {
+        const auto * identifier = stage->as<ASTIdentifier>();
+        if (identifier && identifier->name() == DEFAULT_CODEC_NAME)
+            return true;
+    }
+
+    return false;
 }
 
 ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const

@@ -2201,8 +2201,10 @@ Ask more streams when reading from Merge table. Streams will be spread across ta
 The number of streams that read simultaneously is capped by this multiplier as well - except for a `Merge` table read with plan-based parallel replicas ([parallel_replicas_allow_merge_tables](#parallel_replicas_allow_merge_tables)), which is expanded into a union of the reads from its underlying tables and is therefore capped by [max_streams_for_union_step](#max_streams_for_union_step), like any other union.
 )", 0) \
     \
-    DECLARE(String, network_compression_method, "LZ4", R"(
-The codec for compressing the client/server and server/server communication.
+    DECLARE(String, network_compression_method, "ZSTD", R"(
+The codec for compressing the client/server and server/server communication over the native protocol.
+
+The setting does not apply to the streaming-exchange channel of distributed queries, which always uses the server default codec: every compressed frame is self-describing, so the receiver detects the codec automatically.
 
 Possible values:
 
@@ -2216,7 +2218,7 @@ Possible values:
 - [network_zstd_compression_level](#network_zstd_compression_level)
 )", 0) \
     \
-    DECLARE(Int64, network_zstd_compression_level, 1, R"(
+    DECLARE(Int64, network_zstd_compression_level, 3, R"(
 Adjusts the level of ZSTD compression. Used only when [network_compression_method](#network_compression_method) is set to `ZSTD`.
 
 Possible values:
@@ -9437,6 +9439,7 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
 
     bool hasSettingsChangedByCompatibility() const { return !settings_changed_by_compatibility_setting.empty(); }
     void resetSettingsChangedByCompatibility();
+    void markSettingsChangedByCompatibilityAsUnchanged();
 
 private:
     void applyCompatibilitySetting(const String & compatibility);
@@ -9605,6 +9608,14 @@ void SettingsImpl::resetSettingsChangedByCompatibility()
     settings_changed_by_compatibility_setting.clear();
 }
 
+void SettingsImpl::markSettingsChangedByCompatibilityAsUnchanged()
+{
+    for (const auto & setting_name : settings_changed_by_compatibility_setting)
+        markUnchanged(setting_name);
+
+    settings_changed_by_compatibility_setting.clear();
+}
+
 void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
 {
     /// First, revert all changes applied by previous compatibility setting
@@ -9738,6 +9749,11 @@ bool Settings::hasSettingsChangedByCompatibility() const
 void Settings::resetSettingsChangedByCompatibility()
 {
     impl->resetSettingsChangedByCompatibility();
+}
+
+void Settings::markSettingsChangedByCompatibilityAsUnchanged()
+{
+    impl->markSettingsChangedByCompatibilityAsUnchanged();
 }
 
 VectorWithMemoryTracking<String> Settings::getHints(const String & name) const
