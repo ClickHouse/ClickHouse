@@ -105,7 +105,7 @@ void MergeTreeReaderStream::init()
                     estimated_sum_mark_range_bytes);
             },
             uncompressed_cache,
-            settings.allow_different_codecs);
+            /* allow_different_codecs */ true);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -123,7 +123,7 @@ void MergeTreeReaderStream::init()
             data_part_storage->readFile(
                 path_prefix + data_file_extension,
                 read_settings,
-                estimated_sum_mark_range_bytes), settings.allow_different_codecs);
+                estimated_sum_mark_range_bytes), /* allow_different_codecs */ true);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);

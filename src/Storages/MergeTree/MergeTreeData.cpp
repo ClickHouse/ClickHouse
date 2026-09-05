@@ -14,6 +14,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/Increment.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/Stopwatch.h>
@@ -50,6 +51,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -341,6 +343,15 @@ namespace ErrorCodes
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
     extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    /// Throws once from the background data-parts refresh of a read-only table to emulate a
+    /// transient error (e.g. temporary disk unavailability). Used to test that the refresh task
+    /// reschedules itself after such an error instead of stopping permanently.
+    extern const char merge_tree_refresh_parts_throw_once[];
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -686,10 +697,7 @@ MergeTreeData::MergeTreeData(
     /// Check sanity of MergeTreeSettings. Only when table is created.
     if (sanity_checks)
     {
-        const auto & ac = getContext()->getAccessControl();
-        bool allow_experimental = ac.getAllowExperimentalTierSettings();
-        bool allow_beta = ac.getAllowBetaTierSettings();
-        settings->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount(), allow_experimental, allow_beta);
+        settings->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount());
     }
 
     if (!date_column_name.empty())
@@ -1160,6 +1168,21 @@ void MergeTreeData::checkProperties(
     }
 
     checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key_);
+}
+
+void MergeTreeData::checkMetadataProperties(
+    const StorageInMemoryMetadata & new_metadata,
+    const StorageInMemoryMetadata & old_metadata,
+    ContextPtr local_context) const
+{
+    checkProperties(
+        new_metadata,
+        old_metadata,
+        /*attach=*/false,
+        /*allow_empty_sorting_key=*/false,
+        allow_reverse_key,
+        allow_nullable_key,
+        local_context);
 }
 
 void MergeTreeData::setProperties(
@@ -2590,6 +2613,11 @@ void MergeTreeData::startStatisticsCache()
 void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
 try
 {
+    fiu_do_on(FailPoints::merge_tree_refresh_parts_throw_once,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected transient failure into MergeTreeData::refreshDataParts");
+    });
+
     for (auto & disk : getStoragePolicy()->getDisks())
         disk->refresh(interval_milliseconds);
 
@@ -2686,6 +2714,10 @@ try
 catch (...)
 {
     tryLogCurrentException(log, "Failed to refresh parts");
+    /// A transient error (e.g. temporary disk unavailability) must not permanently disable the background
+    /// refresh task; otherwise the read-only table stays stale until the server restarts. Mirror the
+    /// reschedule that refreshStatistics performs in its own catch block.
+    refresh_parts_task->scheduleAfter(interval_milliseconds);
 }
 
 void MergeTreeData::refreshStatistics(UInt64 interval_seconds)
@@ -4625,6 +4657,35 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 
     checkColumnFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
+
+    /// A `Replicated` database runs the same ALTER again on every other replica. Only the first run of it,
+    /// the one the database queue executes, decides whether the change is allowed. Checking it again on the
+    /// other replicas only adds a way to fail: `allow_feature_tier` comes from each replica's own config, so
+    /// a replica set to a stricter tier would refuse a change that is already in the queue. That stops the
+    /// queue and leaves the replicas with different table metadata. `CREATE` skips the same check on replay,
+    /// see `is_fresh_definition` in `registerStorageMergeTree.cpp`.
+    const auto txn = local_context->getZooKeeperMetadataTransaction();
+    const bool is_replay_on_another_replica = txn && !txn->isInitialQuery();
+
+    /// What this ALTER changes for the table, however it was written: `MODIFY SETTING`, `RESET SETTING`, or
+    /// an override simply gone from the new list.
+    if (!is_replay_on_another_replica)
+    {
+        /// `checkAlterIsPossible` runs before `changeSettings`, so the live settings still hold the OLD
+        /// values. Reconstruct the effective post-ALTER settings the same way the real settings-update
+        /// path does: the defaults overlaid with the full post-ALTER override list.
+        MergeTreeSettingsPtr alter_effective_settings = getSettings();
+        if (new_metadata.settings_changes)
+        {
+            auto copy = getDefaultSettings();
+            copy->applyChanges(new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
+            alter_effective_settings = std::move(copy);
+        }
+
+        local_context->checkMergeTreeSettingsConstraints(
+            *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
+    }
+
     checkProperties(new_metadata, old_metadata, false, false, allow_reverse_key, allow_nullable_key, local_context);
     checkTTLExpressions(new_metadata, old_metadata);
 
@@ -4638,7 +4699,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     {
         const auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
         const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
-        local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
 
         bool found_disk_setting = false;
         bool found_storage_policy_setting = false;
@@ -4871,10 +4931,7 @@ void MergeTreeData::changeSettings(
         /// Reset to default settings before applying existing.
         auto copy = getDefaultSettings();
         copy->applyChanges(new_changes);
-        const auto & ac = getContext()->getAccessControl();
-        bool allow_experimental = ac.getAllowExperimentalTierSettings();
-        bool allow_beta = ac.getAllowBetaTierSettings();
-        copy->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount(), allow_experimental, allow_beta);
+        copy->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount());
 
         bool has_escape_index_filenames_changed
             = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames] != (*copy)[MergeTreeSetting::escape_index_filenames];
@@ -7026,6 +7083,12 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
     /// Subdirectories in the part's directory. It's used to restore projections.
     std::unordered_set<String> subdirs;
 
+    /// A restored part is committed data the moment RESTORE is acknowledged, so it must get the same
+    /// durability an inserted part gets: fsync the file contents when the table enables fsync_after_insert.
+    /// Only meaningful on a local disk - on object storage the object is durable once finalized. The part
+    /// directory itself is fsynced later by IMergeTreeDataPart::renameTo (gated on fsync_part_directory).
+    const bool fsync_files = (*getSettings())[MergeTreeSetting::fsync_after_insert] && !disk->isRemote();
+
     /// Copy files from the backup to the directory `tmp_part_dir`.
     disk->createDirectories(temp_part_dir);
 
@@ -7049,7 +7112,7 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
             continue;
         }
 
-        size_t file_size = backup->copyFileToDisk(part_path_in_backup_fs / filename, disk, temp_part_dir / filename, WriteMode::Rewrite);
+        size_t file_size = backup->copyFileToDisk(part_path_in_backup_fs / filename, disk, temp_part_dir / filename, WriteMode::Rewrite, fsync_files);
         reservation->update(reservation->getSize() - file_size);
     }
 
@@ -7196,7 +7259,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
                     auto first_arg = tuple_ast->arguments->as<ASTExpressionList>()->children.at(0);
                     if (const auto * inner_tuple = first_arg->as<ASTFunction>(); inner_tuple && inner_tuple->name == "tuple")
                     {
-                        const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
+                        const auto * arguments_ast = inner_tuple->arguments->as<ASTExpressionList>();
                         if (arguments_ast)
                             partition_ast_fields_count = arguments_ast->children.size();
                         else
@@ -7262,16 +7325,22 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     if (fields_count == 0)
     {
         /// Function tuple(...) requires at least one argument, so empty key is a special case
-        assert(!partition_ast_fields_count);
-        assert(typeid_cast<ASTFunction *>(partition_value_ast.get()));
-        assert(partition_value_ast->as<ASTFunction>()->name == "tuple");
-        assert(partition_value_ast->as<ASTFunction>()->arguments);
-        auto args = partition_value_ast->as<ASTFunction>()->arguments;
-        if (!args)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected at least one argument in partition AST");
-        bool empty_tuple = partition_value_ast->as<ASTFunction>()->arguments->children.empty();
-        if (!empty_tuple)
-            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition key is empty, expected 'tuple()' as partition key");
+        chassert(!partition_ast_fields_count);
+        const auto * function_ast = partition_value_ast->as<ASTFunction>();
+        if (function_ast && function_ast->name == "tuple")
+        {
+            if (!function_ast->arguments)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected at least one argument in partition AST");
+            if (!function_ast->arguments->children.empty())
+                throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition key is empty, expected 'tuple()' as partition key");
+        }
+        else
+        {
+            /// E.g. a cast of an empty tuple, produced by a substituted query parameter of type `Tuple()`.
+            Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
+            if (partition_key_value.getType() != Field::Types::Tuple || !partition_key_value.safeGet<Tuple>().empty())
+                throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition key is empty, expected 'tuple()' as partition key");
+        }
     }
     else if (fields_count == 1)
     {
@@ -7298,6 +7367,18 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         }
         /// Simple partition key, need to evaluate and cast
         Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
+
+        /// A cast of a one-element tuple (e.g. a substituted query parameter of type `Tuple(T)`)
+        /// evaluates to a tuple; unwrap it, unless the partition key column itself is a tuple.
+        if (partition_key_value.getType() == Field::Types::Tuple && !isTuple(key_sample_block.getByPosition(0).type))
+        {
+            Tuple tuple_value = partition_key_value.safeGet<Tuple>();
+            if (tuple_value.size() != 1)
+                throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                                "Wrong number of fields in the partition expression: {}, must be: 1", tuple_value.size());
+            partition_key_value = std::move(tuple_value[0]);
+        }
+
         partition_row[0] = convertFieldToTypeOrThrow(partition_key_value, *key_sample_block.getByPosition(0).type);
     }
     else

@@ -223,6 +223,11 @@ private:
 
 ColumnsInfo::ColumnsInfo(Columns && columns_) : columns(std::move(columns_))
 {
+    rebuildReplicatedColumns();
+}
+
+void ColumnsInfo::rebuildReplicatedColumns()
+{
     replicated_columns.resize(columns.size());
     for (size_t i = 0; i != columns.size(); ++i)
         replicated_columns[i] = typeid_cast<const ColumnReplicated *>(columns[i].get());

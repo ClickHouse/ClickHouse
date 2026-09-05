@@ -1,0 +1,4 @@
+-- hide user (sees only v < 50), PREWHERE v >= 50 -> 0
+0
+-- show user (always-true policy), same PREWHERE v >= 50 -> 50
+50

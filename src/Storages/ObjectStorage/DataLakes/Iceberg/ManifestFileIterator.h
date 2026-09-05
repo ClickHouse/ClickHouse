@@ -77,7 +77,6 @@ public:
     static std::shared_ptr<ManifestFileIterator> create(
         std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer,
         const String & manifest_file_name,
-        Int32 format_version_,
         const String & common_path,
         IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,

@@ -60,13 +60,16 @@ static struct InitFiu
     ONCE(smt_merge_task_sleep_in_prepare) \
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
     ONCE(rmt_merge_task_sleep_in_prepare) \
+    ONCE(merge_tree_refresh_parts_throw_once) \
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
+    ONCE(object_storage_queue_skip_one_file_in_batch) \
     ONCE(distributed_cache_fail_continue_request) \
     ONCE(distributed_cache_fail_choose_server) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
+    PAUSEABLE(file_segment_pause_before_write) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
     REGULAR(write_through_cache_fail) \
@@ -98,6 +101,9 @@ static struct InitFiu
     ONCE(libcxx_hardening_out_of_bounds_assertion) \
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
+    REGULAR(delta_kernel_force_credentials_fingerprint_drift) \
+    ONCE(delta_kernel_force_stale_token_error) \
+    REGULAR(object_storage_force_refresh_callback_success) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(keeper_fault_on_watch_request) \
@@ -146,6 +152,10 @@ static struct InitFiu
     PAUSEABLE(mt_merge_selecting_task_pause_when_scheduled) \
     REGULAR(mt_select_parts_to_mutate_no_free_threads) \
     REGULAR(mt_select_parts_to_mutate_max_part_size) \
+    ONCE(mt_alter_throw_in_start_mutation) \
+    ONCE(mt_alter_throw_after_mutation_registered) \
+    ONCE(mt_throw_after_mutation_commit) \
+    ONCE(mt_alter_throw_in_durable_rollback) \
     REGULAR(rmt_merge_selecting_task_no_free_threads) \
     REGULAR(rmt_merge_selecting_task_max_part_size) \
     PAUSEABLE(smt_mutate_task_pause_in_prepare) \
@@ -162,12 +172,14 @@ static struct InitFiu
     REGULAR(lightweight_show_tables) \
     PAUSEABLE(truncate_database_tables_pause) \
     REGULAR(datalake_try_get_table_return_nullptr) \
+    REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     REGULAR(patch_parts_reverse_column_order) \
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
-    REGULAR(query_metric_log_delay_collect)
+    REGULAR(query_metric_log_delay_collect) \
+    ONCE(zk_send_thread_request_window_throw)
 
 namespace FailPoints
 {

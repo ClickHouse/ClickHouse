@@ -13,6 +13,7 @@ target_compile_options (_poco_xml_expat
         -Wno-extra-semi-stmt
         -Wno-implicit-fallthrough
         -Wno-reserved-identifier
+        -Wno-unreachable-code-fallthrough
         -Wno-unused-macros
         -Wno-implicit-int-conversion
 )
@@ -30,9 +31,11 @@ add_compile_definitions (_poco_xml PRIVATE XML_GE=0)
 # TODO: remove these warning exclusions
 target_compile_options (_poco_xml
     PRIVATE
+        -Wno-c99-extensions
         -Wno-cast-qual
         -Wno-covered-switch-default
         -Wno-deprecated-dynamic-exception-spec
+        -Wno-disabled-macro-expansion
         -Wno-implicit-fallthrough
         -Wno-missing-noreturn
         -Wno-old-style-cast
@@ -45,6 +48,7 @@ target_compile_options (_poco_xml
         -Wno-tautological-unsigned-zero-compare
         -Wno-unreachable-code
         -Wno-unreachable-code-break
+        -Wno-unreachable-code-fallthrough
         -Wno-unused-macros
         -Wno-unused-parameter
         -Wno-zero-as-null-pointer-constant

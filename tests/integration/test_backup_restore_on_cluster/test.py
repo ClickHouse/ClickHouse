@@ -365,6 +365,47 @@ def test_replicated_table_with_uuid_in_zkpath():
         )
 
 
+def test_replicated_table_restore_keeps_duplicate_parts():
+    try:
+        node1.query(
+            "CREATE TABLE tbl ON CLUSTER 'cluster' ("
+            "key UInt64, value String, array Array(String)"
+            ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/{uuid}', '{replica}')"
+            "ORDER BY tuple() SETTINGS replicated_deduplication_window = 0, "
+            "replicated_deduplication_window_for_async_inserts = 0"
+        )
+
+        node1.query("SYSTEM STOP MERGES ON CLUSTER 'cluster' tbl")
+
+        node1.query("INSERT INTO tbl VALUES (0, 'same', ['same'])")
+        node1.query("INSERT INTO tbl VALUES (0, 'same', ['same'])")
+        node1.query(
+            "ALTER TABLE tbl ON CLUSTER 'cluster' MODIFY SETTING "
+            "replicated_deduplication_window = 10000, "
+            "replicated_deduplication_window_for_async_inserts = 10000"
+        )
+
+        assert node1.query("SELECT count() FROM tbl") == "2\n"
+        assert (
+            node1.query("SELECT count() FROM system.parts WHERE table = 'tbl' AND active")
+            == "2\n"
+        )
+
+        backup_name = new_backup_name()
+        node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+
+        node2.query(f"RESTORE TABLE tbl AS tbl2 ON CLUSTER 'cluster' FROM {backup_name}")
+        node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl2")
+
+        expected = node1.query("SELECT count(), sum(sipHash64(*)) FROM tbl")
+        for instance in [node1, node2]:
+            assert instance.query("SELECT count() FROM tbl2") == "2\n"
+            assert instance.query("SELECT count(), sum(sipHash64(*)) FROM tbl2") == expected
+    finally:
+        node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' SYNC")
+        node1.query("DROP TABLE IF EXISTS tbl2 ON CLUSTER 'cluster' SYNC")
+
+
 def test_replicated_table_with_not_synced_insert():
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("

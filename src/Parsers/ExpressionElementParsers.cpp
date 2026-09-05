@@ -1286,7 +1286,9 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
         binStringDecode(str_begin, str_end, res_pos, word_size);
     }
 
-    return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), res.size()), expected);
+    /// The buffer is sized for the worst case; a binary literal whose length is not a multiple of
+    /// eight can write fewer bytes than that, and the unwritten tail is uninitialized memory.
+    return makeStringLiteral(pos, node, String(res_begin, res_pos - res_begin), expected);
 }
 
 bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -1395,7 +1397,11 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
                     return true;
                 }
 
-                layers.back().arr.push_back(literal->value);
+                /// Move the just-finished nested collection into its parent instead of copying it.
+                /// `literal` is a local that is discarded right after (only the outermost layer is
+                /// kept as `node`), so moving its value out is safe. Copying here made parsing a
+                /// deeply nested literal such as `[[[ ... ]]]` quadratic in its depth.
+                layers.back().arr.push_back(std::move(literal->value));
                 continue;
             }
             if (pos->type == TokenType::Comma)

@@ -49,7 +49,7 @@ private:
     std::unordered_map<String, UUID> profiles_by_name;
     bool all_profiles_read = false;
     /// Set by the per-entity handler; the rebuild is coalesced to once per notification batch.
-    bool need_merge_settings_and_constraints = false;
+    bool need_merge_settings_and_constraints TSA_GUARDED_BY(mutex) = false;
     scope_guard subscription;
     scope_guard batch_subscription;
     std::map<EnabledSettings::Params, std::weak_ptr<EnabledSettings>> enabled_settings;

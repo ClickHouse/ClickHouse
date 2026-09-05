@@ -15,6 +15,7 @@
 #include <Core/SettingsTierType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/S3Defines.h>
+#include <Access/resolveSetting.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <base/types.h>
 #include <Common/NamePrompter.h>
@@ -4135,6 +4136,18 @@ Possible values:
     DECLARE(Bool, allow_drop_detached, false, R"(
 Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries
 )", 0) \
+    DECLARE(Bool, dynamic_disk_allow_from_env, false, R"(
+Allow using `from_env` substitutions in the dynamic disk configuration (i.e. in the `disk()` function arguments).
+Disabled by default to prevent users from reading arbitrary environment variables when defining table storage.
+)", 0) \
+    DECLARE(Bool, dynamic_disk_allow_include, false, R"(
+Allow using `include` in the dynamic disk configuration (i.e. in the `disk()` function arguments).
+Disabled by default.
+)", 0) \
+    DECLARE(Bool, dynamic_disk_allow_from_zk, false, R"(
+Allow using `from_zk` substitutions in the dynamic disk configuration (i.e. in the `disk()` function arguments).
+Disabled by default.
+)", 0) \
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
     \
     DECLARE(UInt64, max_table_size_to_drop, default_max_size_to_drop, R"(
@@ -6215,6 +6228,9 @@ Limit on size of a single batch of file segments that a read buffer can request 
     DECLARE(UInt64, filesystem_cache_reserve_space_wait_lock_timeout_milliseconds, 1000, R"(
 Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
+    DECLARE(UInt64, filesystem_cache_wait_for_concurrent_download_timeout_milliseconds, 1000, R"(
+Maximum time to wait for a file segment which is being downloaded to the filesystem cache by a concurrent query. When the timeout is reached, the read bypasses the filesystem cache for that range and reads directly from remote storage, while the concurrent download continues to fill the cache. Value `0` means do not wait at all: bypass the cache immediately if the needed range is not downloaded yet. Lowering this value bounds the tail latency of cache-hit reads which would otherwise wait for another query's download pace at the cost of additional requests to remote storage.
+)", 0) \
     DECLARE(Bool, filesystem_cache_prefer_bigger_buffer_size, true, R"(
 Prefer bigger buffer size if filesystem cache is enabled to avoid writing small file segments which deteriorate cache performance. On the other hand, enabling this setting might increase memory usage.
 )", 0) \
@@ -6865,7 +6881,7 @@ Traverse frozen data (shadow directory) in addition to actual table data when qu
 If all four arguments to `geoDistance`, `greatCircleDistance`, `greatCircleAngle` functions are Float64, return Float64 and use double precision for internal calculations. In previous ClickHouse versions, the functions always returned Float32.
 )", 0) \
     DECLARE(Bool, allow_get_client_http_header, false, R"(
-Allow to use the function `getClientHTTPHeader` which lets to obtain a value of an the current HTTP request's header. It is not enabled by default for security reasons, because some headers, such as `Cookie`, could contain sensitive info. Note that the `X-ClickHouse-*` and `Authentication` headers are always restricted and cannot be obtained with this function.
+Allow to use the function `getClientHTTPHeader` which lets to obtain a value of the current HTTP request's header. It is not enabled by default for security reasons, because some headers, such as `Cookie`, could contain sensitive info. Note that the `X-ClickHouse-*`, `Authentication` and `Authorization` headers are always restricted and cannot be obtained with this function.
 )", 0) \
     DECLARE(Bool, cast_string_to_dynamic_use_inference, false, R"(
 Use types inference during String to Dynamic conversion
@@ -6982,9 +6998,12 @@ Query Iceberg table using the snapshot that was current at a specific timestamp.
     DECLARE(Int64, iceberg_snapshot_id, 0, R"(
 Query Iceberg table using the specific snapshot id.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, show_remote_databases_in_system_tables, false, R"(
-Enables showing remote databases (data lake catalogs, MySQL, PostgreSQL) in system tables.
-)", 0, show_data_lake_catalogs_in_system_tables) \
+    DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
+Enables showing data lake catalogs in system tables.
+)", 0) \
+    DECLARE(Bool, show_remote_databases_in_system_tables, true, R"(
+Enables showing `MySQL` and `PostgreSQL` databases in system tables.
+)", 0) \
     DECLARE(Bool, delta_lake_enable_expression_visitor_logging, false, R"(
 Enables Test level logs of DeltaLake expression visitor. These logs can be too verbose even for test logging.
 )", 0) \
@@ -7360,6 +7379,9 @@ As each series represents a node in Keeper, it is recommended to have no more th
 )", 0) \
     DECLARE(Bool, use_hive_partitioning, true, R"(
 When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](/sql-reference/table-functions/file#hive-style-partitioning)/[S3](/sql-reference/table-functions/s3#hive-style-partitioning)/[URL](/sql-reference/table-functions/url#hive-style-partitioning)/[HDFS](/sql-reference/table-functions/hdfs#hive-style-partitioning)/[AzureBlobStorage](/sql-reference/table-functions/azureBlobStorage#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
+)", 0) \
+    DECLARE(Bool, throw_on_hive_partitioning_resolution_failure, false, R"(
+Throw an exception instead of logging a warning when Hive-style partitioning detection for an object storage table fails to list the storage. When disabled, the query runs without the Hive partition columns, which may change its result.
 )", 0) \
     DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
 When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available).
@@ -7934,6 +7956,15 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
 DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(SettingsTraits, LIST_OF_SETTINGS)
 
+/// A `merge_tree_`-prefixed name is a `MergeTreeSettings` setting kept here as a custom setting, and it can
+/// have two names. Store it under the canonical one, so that a value written under either name is the value
+/// read under either name, instead of the two names holding two values of one setting.
+template <>
+std::string_view resolveCustomSettingName<SettingsTraits>(std::string_view name)
+{
+    return canonicalSettingName(name);
+}
+
 /** Settings of query execution.
   * These settings go to users.xml.
   */
@@ -8428,6 +8459,11 @@ Field Settings::stringToValueUtil(std::string_view name, const String & str)
 bool Settings::hasBuiltin(std::string_view name)
 {
     return SettingsImpl::hasBuiltin(name);
+}
+
+std::optional<SettingsTierType> Settings::tryGetTierOfBuiltin(std::string_view name)
+{
+    return SettingsImpl::tryGetTierOfBuiltin(name);
 }
 
 std::string_view Settings::resolveName(std::string_view name)

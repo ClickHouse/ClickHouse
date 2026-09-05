@@ -1,5 +1,7 @@
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <algorithm>
+#include <chrono>
+#include <optional>
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
@@ -425,7 +427,18 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
                     return create(ReadType::CACHED);
                 }
 
-                download_state = file_segment.wait(offset);
+                download_state = file_segment.wait(
+                    offset, info_.settings.filesystem_cache_wait_for_concurrent_download_timeout_milliseconds);
+
+                if (download_state == FileSegment::State::DOWNLOADING && !canStartFromCache(offset, file_segment))
+                {
+                    LOG_TEST(
+                        log, "Bypassing cache because waiting for a concurrent download did not succeed within the timeout. "
+                        "File segment info: {}", file_segment.getInfoForLog());
+
+                    return create(ReadType::REMOTE_FS_READ_BYPASS_CACHE);
+                }
+
                 continue;
             }
             case FileSegment::State::DOWNLOADED:
@@ -1010,7 +1023,10 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
             auto & file_segment = info.file_segments->front();
 
-            if (file_segment.isDownloader())
+            const bool could_be_downloader
+                = !state || state->read_type != ReadType::CACHED || std::uncaught_exceptions() > 0;
+
+            if (could_be_downloader && file_segment.isDownloader())
             {
                 if (!implementation_buffer_can_be_reused)
                     file_segment.resetRemoteFileReader();
@@ -1094,7 +1110,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + size);
 
-    if (file_segment.isDownloader())
+    if (state->read_type != ReadType::CACHED && file_segment.isDownloader())
         file_segment.completePartAndResetDownloader();
 
     chassert(!file_segment.isDownloader(), "!isDownloader() failed in the end of nextImpl: " + getInfoForLog());
@@ -1144,13 +1160,13 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
 #endif
 
     auto do_download = state.read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
-    if (do_download != file_segment.isDownloader())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Incorrect segment state. Having read type: {}, file segment info: {}",
-            toString(state.read_type), file_segment.getInfoForLog());
-    }
+    /// Debug-only check to avoid taking the file segment lock on the hot cache-hit path.
+    /// In release builds FileSegment::write and FileSegment::reserve still throw
+    /// if the caller is not the downloader.
+    chassert(
+        do_download == file_segment.isDownloader(),
+        fmt::format("Incorrect segment state. Having read type: {}, file segment info: {}",
+                    toString(state.read_type), file_segment.getInfoForLog()));
 
     if (!size)
     {

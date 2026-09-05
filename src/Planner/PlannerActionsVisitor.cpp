@@ -7,6 +7,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SetUtils.h>
@@ -49,6 +50,7 @@ namespace Setting
     extern const SettingsBool enable_named_columns_in_function_tuple;
     extern const SettingsBool transform_null_in;
     extern const SettingsInt64 optimize_const_name_size;
+    extern const SettingsBool format_display_secrets_in_show_and_select;
 }
 
 namespace ErrorCodes
@@ -136,6 +138,13 @@ public:
             case QueryTreeNodeType::CONSTANT:
             {
                 const auto & constant_node = node->as<ConstantNode &>();
+                /// A masked secret must be named by its placeholder, never by its value or source expression,
+                /// identically on initiator and secondary servers so distributed headers still match.
+                if (constant_node.isMasked())
+                {
+                    result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+                    break;
+                }
                 /* To ensure that headers match during distributed query we need to simulate action node naming on
                 * secondary servers. If we don't do that headers will mismatch due to constant folding.
                 *
@@ -586,7 +595,8 @@ public:
         return node;
     }
 
-    const ActionsDAG::Node * addConstantIfNecessary(const std::string & node_name, const ColumnWithTypeAndName & column, bool is_deterministic)
+    const ActionsDAG::Node * addConstantIfNecessary(
+        const std::string & node_name, const ColumnWithTypeAndName & column, bool is_deterministic, bool is_masked_secret = false)
     {
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
@@ -601,7 +611,7 @@ public:
                 return it->second;
         }
 
-        const auto * node = &actions_dag.addColumn(column, is_deterministic);
+        const auto * node = &actions_dag.addColumn(column, is_deterministic, is_masked_secret);
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -831,6 +841,11 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     auto constant_node_name = !override_column_name.empty() ? override_column_name : [&]()
     {
+        /// A masked secret must be named by its placeholder, never by its value or source expression,
+        /// identically on initiator and secondary servers so distributed headers still match.
+        if (constant_node.isMasked())
+            return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+
         /* To ensure that headers match during distributed query we need to simulate action node naming on
          * secondary servers. If we don't do that headers will mismatch due to constant folding.
          *
@@ -877,7 +892,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     column.type = constant_type;
     column.column = constant_node.getColumn();
 
-    actions_stack[0].addConstantIfNecessary(constant_node_name, column, constant_node.isDeterministic());
+    actions_stack[0].addConstantIfNecessary(
+        constant_node_name, column, constant_node.isDeterministic(), /* is_masked_secret= */ constant_node.isMasked());
 
     size_t actions_stack_size = actions_stack.size();
     for (size_t i = 1; i < actions_stack_size; ++i)
@@ -1098,6 +1114,33 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     return { function_node_name, Levels(exists_function_level) };
 }
 
+/// A secret function argument can be a constant that the planner folds in from a column or subquery
+/// after the query-tree masking ran, so it is not flagged as a secret in the tree (e.g. the key of
+/// `encrypt(..., k)` where `k` is `'secret' AS k` in a subquery). Flag such constant argument nodes so
+/// plan dumps render them as `[HIDDEN]`. The finder runs only when secrets are hidden (the caller
+/// gates on the setting).
+void markFoldedSecretConstants(const FunctionNode & function_node, const ActionsDAG::NodeRawConstPtrs & children)
+{
+    auto secret_arguments = FunctionSecretArgumentsFinderTreeNode(function_node).getResult();
+    if (!secret_arguments.hasSecrets())
+        return;
+
+    auto mark = [&](size_t index)
+    {
+        /// Any node carrying a constant column is a folded secret value, whether it is a plain COLUMN
+        /// node or a FUNCTION node folded to a constant (e.g. `concat(k1, k2)`); flag either.
+        if (index < children.size() && children[index]->column && !children[index]->is_masked_secret)
+            const_cast<ActionsDAG::Node *>(children[index])->is_masked_secret = true;
+    };
+
+    for (size_t i = secret_arguments.start; i < secret_arguments.start + secret_arguments.count; ++i)
+        mark(i);
+    for (const auto & [index, _] : secret_arguments.masked_arguments)
+        mark(index);
+    for (const auto & [index, _] : secret_arguments.replaced_arguments)
+        mark(index);
+}
+
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitFunction(const QueryTreeNodePtr & node)
 {
     const auto & function_node = node->as<FunctionNode &>();
@@ -1174,6 +1217,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     size_t level = levels.max();
     for (auto & function_argument_node_name : function_arguments_node_names)
         children.push_back(actions_stack[level].getNodeOrThrow(function_argument_node_name));
+
+    if (!planner_context->getQueryContext()->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+        markFoldedSecretConstants(function_node, children);
 
     if (function_node.getFunctionName() == "arrayJoin")
     {

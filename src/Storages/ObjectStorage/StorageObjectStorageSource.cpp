@@ -257,6 +257,25 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     }
     else if (configuration->supportsFileIterator())
     {
+        /// For datalake configurations, ensure datalake_table_state is present in the metadata
+        /// before calling iterate(). The state is normally set by
+        /// updateExternalDynamicMetadataIfExists() during query analysis, but it can be missing
+        /// due to race conditions between concurrent queries (TOCTOU between setInMemoryMetadata
+        /// and getInMemoryMetadataPtr), or when called from code paths that bypass the
+        /// analyzer/interpreter (e.g. schema inference, cluster functions with nullptr metadata).
+        if (configuration->isDataLakeConfiguration()
+            && (!storage_metadata || !storage_metadata->datalake_table_state.has_value()))
+        {
+            if (auto state = configuration->getTableStateSnapshot(local_context))
+            {
+                auto fixed_metadata = storage_metadata
+                    ? std::make_shared<StorageInMemoryMetadata>(*storage_metadata)
+                    : std::make_shared<StorageInMemoryMetadata>();
+                fixed_metadata->setDataLakeTableState(*state);
+                storage_metadata = std::move(fixed_metadata);
+            }
+        }
+
         auto iter = configuration->iterate(
             filter_actions_dag, file_progress_callback, query_settings.list_object_keys_size, storage_metadata, local_context);
 
@@ -1138,7 +1157,19 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         context_->getAsyncReadCounters(),
         context_->getFilesystemReadPrefetchesLog());
 
-    if (use_prefetch && !impl->supportsReadAt())
+    /// For small objects prefetch the file ahead of consumption: when reading lots of tiny files
+    /// this almost doubles throughput; bigger objects use parallel reading instead (`use_prefetch`
+    /// already implies the object is small, see `object_too_small` above). This covers random-access
+    /// formats (Parquet/ORC/Arrow) too: AsynchronousBoundedReadBuffer::readBigAt serves the requested
+    /// range from the prefetched buffer when it is covered (the common case for a fully prefetched
+    /// small file) and otherwise drops the prefetch and falls back to a positioned read.
+    ///
+    /// The prefetch is issued also when the read goes through the filesystem cache: the cache does
+    /// no read-ahead of its own, and files read via object storage engines (e.g. fresh `S3Queue`
+    /// files) are typically cache misses, so without the prefetch the first read of each small file
+    /// is a synchronous, latency-bound round trip to object storage. The prefetch runs the cache
+    /// miss (and the cache fill) in the background instead.
+    if (use_prefetch && impl)
     {
         impl->setReadUntilEnd();
         impl->prefetch(DEFAULT_PREFETCH_PRIORITY);

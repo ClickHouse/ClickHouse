@@ -580,6 +580,7 @@ void Reader::initializePrefetches()
                 {
                     size_t len = size_t(column.meta->meta_data.bloom_filter_length);
                     max_header_length = std::min(max_header_length, len);
+                    column.bloom_filter_data_bytes = len;
                     column.bloom_filter_data_prefetch = prefetcher.registerRange(
                         size_t(column.meta->meta_data.bloom_filter_offset),
                         len, /*likely_to_be_used=*/ false);
@@ -665,6 +666,7 @@ void Reader::initializePrefetches()
                 auto it = std::upper_bound(all_offsets.begin(), all_offsets.end(), offset);
                 size_t end = it == all_offsets.end() ? prefetcher.getFileSize() : *it;
 
+                column.bloom_filter_data_bytes = end - offset;
                 column.bloom_filter_data_prefetch = prefetcher.registerRange(
                     offset, end - offset, /*likely_to_be_used=*/ false);
             }
@@ -801,6 +803,13 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
     const size_t bytes_per_block = 32;
     if (column.bloom_filter_header.numBytes <= 0 || column.bloom_filter_header.numBytes % bytes_per_block != 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid bloom filter size.");
+    /// The bitset must fit in the bloom filter byte range the file declared, otherwise the block
+    /// subranges below would point outside the data we fetched.
+    if (header_size > column.bloom_filter_data_bytes ||
+        size_t(column.bloom_filter_header.numBytes) > column.bloom_filter_data_bytes - header_size)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Bloom filter bitset of {} bytes doesn't fit in {} bytes of bloom filter "
+            "data (including a {}-byte header) at offset {}. Use setting input_format_parquet_bloom_filter_push_down=0 to ignore.",
+            column.bloom_filter_header.numBytes, column.bloom_filter_data_bytes, header_size, column.meta->meta_data.bloom_filter_offset);
     size_t num_blocks = size_t(column.bloom_filter_header.numBytes) / bytes_per_block;
 
     const auto & hashes = column_info.bloom_filter_hashes;
@@ -1361,11 +1370,20 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     /// use_filter_in_decoder path reads ALL pages sequentially, so it would crash trying to access
     /// those reset handles. Only use this optimization when reading the whole column chunk
     /// sequentially (no offset index, i.e. data_pages is empty).
+    ///
+    /// Also disabled for nullable columns (need_null_map): the filter-in-decoder path processes
+    /// ALL rows (passing + non-passing) through processDefLevelsForInnermostColumn, so the
+    /// null_map ends up with entries for all rows rather than just filtered rows. Additionally,
+    /// the decoder applies the filter at consecutive encoded-value indices, but with nulls the
+    /// encoded values don't correspond 1:1 to rows (null rows have no encoded values), causing
+    /// the filter to be applied at wrong positions. The standard row-range iteration path
+    /// correctly handles both issues by only reading rows in passing filter ranges.
     const bool use_filter_in_decoder = (column_info.levels.back().rep == 0) &&
         !row_subgroup.filter.filter.empty() &&
         column.page.initialized &&
         !column.page.is_dictionary_encoded &&
-        column.data_pages.empty();
+        column.data_pages.empty() &&
+        !column.need_null_map;
     const size_t subgroup_end_row_idx = row_subgroup.start_row_idx + row_subgroup.filter.rows_total;
 
     if (use_filter_in_decoder)
@@ -1444,7 +1462,9 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     if (subchunk.null_map && !column_info.output_nullable && !options.format.null_as_default)
     {
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
-        if (memchr(null_map.data(), 0, null_map.size()) != nullptr)
+        /// null_map uses standard ClickHouse convention: 1 = NULL, 0 = NOT NULL.
+        /// Check if any values are null — those can't be inserted into a non-Nullable column.
+        if (memchr(null_map.data(), 1, null_map.size()) != nullptr)
             throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type for column {}", column_info.name);
         subchunk.null_map = nullptr;
     }

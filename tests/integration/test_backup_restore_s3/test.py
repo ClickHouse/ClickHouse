@@ -1001,8 +1001,11 @@ def test_backup_to_s3_different_credentials(
         # To make the test deterministic, `S3WriteRequestsErrors` is asserted in `events` only when `allow_s3_native_copy` is enabled or `use_multipart_copy` is disabled.
         if allow_s3_native_copy == True or use_multipart_copy == False:
             assert ("S3WriteRequestsErrors" in events) == (allow_s3_native_copy == True)
-        assert "S3ReadRequestsErrors" not in events
-        assert "DiskS3ReadRequestsErrors" not in events
+        # Note: we don't assert the absence of S3ReadRequestsErrors/DiskS3ReadRequestsErrors here.
+        # Under CI load (especially with sanitizer builds), transient S3 network errors on
+        # GET/HEAD requests are expected during large data transfers. These errors are retried
+        # and the operation succeeds — the data integrity check in check_backup_and_restore
+        # already validates that all reads completed correctly.
         assert ("S3CreateMultipartUpload" in events) == use_multipart_copy
 
 

@@ -5,6 +5,7 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
 #include <Core/MergeSelectorAlgorithm.h>
+#include <Core/MergeTreeSerializationEnums.h>
 #include <Core/SettingsChangesHistory.h>
 #include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -43,7 +44,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int READONLY;
 }
 
 // clang-format off
@@ -1685,8 +1685,11 @@ namespace ErrorCodes
     Name of storage disk. Can be specified instead of storage policy.
     )", 0) \
     DECLARE(Bool, table_disk, false, R"(
-    This is table disk, the path/endpoint should point to the table data, not to
-    the database data. Can be set only for s3_plain/s3_plain_rewritable/web.
+    This is table disk: the path/endpoint points to the table data, not the database data.
+    Supported for object-storage disks whose metadata lives on the object storage itself
+    (s3_plain, s3_plain_rewritable, web, web_index) and their cached variants. Encrypted
+    variants are supported only over the writable s3_plain / s3_plain_rewritable disks, not
+    over the read-only web / web_index disks.
     )", 0) \
     DECLARE(Bool, allow_nullable_key, false, R"(
     Allow Nullable types as primary keys.
@@ -2193,26 +2196,34 @@ DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
 struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 {
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata);
 
     /// Check that the values are sane taking also query-level settings into account.
-    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const;
+    void sanityCheck(size_t background_pool_tasks) const;
 };
 
 static void validateTableDisk(const DiskPtr & disk)
 {
     if (!disk)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` requires `disk` setting.");
-    const auto * disk_object_storage = dynamic_cast<const DiskObjectStorage *>(disk.get());
-    if (!disk_object_storage)
+
+    const auto description = disk->getDataSourceDescription();
+    if (description.type != DataSourceType::ObjectStorage)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` is not supported for non-ObjectStorage disks");
-    if (!(disk_object_storage->isReadOnly() || disk_object_storage->isPlain()))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` is not supported for {}", disk_object_storage->getStructure());
+
+    /// table_disk loads the table straight from the disk root (no database/UUID path), so its metadata must be
+    /// reconstructable from the object storage alone; random blob keys (Local, Keeper) keep the map elsewhere.
+    const auto metadata_storage = disk->getMetadataStorage();
+    if (metadata_storage->areBlobPathsRandom())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "MergeTree settings `table_disk` is not supported for {}: it requires metadata stored on the object storage.",
+            description.toString());
 }
 
 IMPLEMENT_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
 
-void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach)
+void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     if (storage_def.settings)
     {
@@ -2235,7 +2246,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 
                     if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
                     {
-                        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_attach);
+                        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata);
                         LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
                         value = disk_name;
                     }
@@ -2255,7 +2266,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
                 else if (name == "table_disk")
                     table_disk = value.safeGet<bool>();
 
-                if (!is_attach && found_disk_setting && found_storage_policy_setting)
+                if (!is_loading_from_existing_metadata && found_disk_setting && found_storage_policy_setting)
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
@@ -2295,35 +2306,8 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 #undef ADD_IF_ABSENT
 }
 
-void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const
+void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks) const
 {
-    if (!allow_experimental || !allow_beta)
-    {
-        for (const auto & setting : all())
-        {
-            if (!setting.isValueChanged())
-                continue;
-
-            auto tier = setting.getTier();
-            if (!allow_experimental && tier == EXPERIMENTAL)
-            {
-                throw Exception(
-                    ErrorCodes::READONLY,
-                    "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config "
-                    "('allow_feature_tier')",
-                    setting.getName());
-            }
-            if (!allow_beta && tier == BETA)
-            {
-                throw Exception(
-                    ErrorCodes::READONLY,
-                    "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allow_feature_tier')",
-                    setting.getName());
-            }
-        }
-    }
-
-
     if (number_of_free_entries_in_pool_to_execute_mutation > background_pool_tasks)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_execute_mutation' setting"
@@ -2438,22 +2422,24 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             map_buckets_coefficient.value);
     }
 
-    if (object_shared_data_buckets_for_compact_part > max_allowed_buckets)
+    /// The reader validates the on-wire bucket count against the same bound
+    /// (`MAX_OBJECT_SHARED_DATA_BUCKETS`), so keep this cap and that guard in sync via the constant.
+    if (object_shared_data_buckets_for_compact_part > MAX_OBJECT_SHARED_DATA_BUCKETS)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of object_shared_data_buckets_for_compact_part setting ({}) exceeds the maximum allowed value of {}",
             object_shared_data_buckets_for_compact_part.value,
-            max_allowed_buckets);
+            MAX_OBJECT_SHARED_DATA_BUCKETS);
     }
 
-    if (object_shared_data_buckets_for_wide_part > max_allowed_buckets)
+    if (object_shared_data_buckets_for_wide_part > MAX_OBJECT_SHARED_DATA_BUCKETS)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of object_shared_data_buckets_for_wide_part setting ({}) exceeds the maximum allowed value of {}",
             object_shared_data_buckets_for_wide_part.value,
-            max_allowed_buckets);
+            MAX_OBJECT_SHARED_DATA_BUCKETS);
     }
 
     if (zero_copy_merge_mutation_min_parts_size_sleep_before_lock != 0
@@ -2540,6 +2526,18 @@ SettingsChanges MergeTreeSettings::changes() const
     return impl->changes();
 }
 
+SettingsChanges MergeTreeSettings::changesFrom(const MergeTreeSettings & base) const
+{
+    SettingsChanges res;
+    for (const auto & setting : impl->all())
+    {
+        auto value = setting.getValue();
+        if (value != base.impl->get(setting.getName()))
+            res.emplace_back(String{setting.getName()}, value);
+    }
+    return res;
+}
+
 void MergeTreeSettings::applyChanges(const SettingsChanges & changes)
 {
     impl->applyChanges(changes);
@@ -2591,9 +2589,18 @@ std::vector<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
     return setting_names;
 }
 
-void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach)
+std::vector<std::string_view> MergeTreeSettings::getAllAliasNames()
 {
-    impl->loadFromQuery(storage_def, context, is_attach);
+    std::vector<std::string_view> alias_names;
+    const auto & settings_to_aliases = MergeTreeSettingsImpl::Traits::settingsToAliases();
+    for (const auto & [_, aliases] : settings_to_aliases)
+        alias_names.insert(alias_names.end(), aliases.begin(), aliases.end());
+    return alias_names;
+}
+
+void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
+{
+    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata);
 }
 
 void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
@@ -2624,9 +2631,9 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
         || (impl->min_compressed_bytes_to_fsync_after_merge && input_bytes >= impl->min_compressed_bytes_to_fsync_after_merge));
 }
 
-void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const
+void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
 {
-    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_beta);
+    impl->sanityCheck(background_pool_tasks);
 }
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const
@@ -2752,6 +2759,11 @@ Field MergeTreeSettings::stringToValueUtil(std::string_view name, const String &
 bool MergeTreeSettings::hasBuiltin(std::string_view name)
 {
     return MergeTreeSettingsImpl::hasBuiltin(name);
+}
+
+std::optional<SettingsTierType> MergeTreeSettings::tryGetTierOfBuiltin(std::string_view name)
+{
+    return MergeTreeSettingsImpl::tryGetTierOfBuiltin(name);
 }
 
 std::string_view MergeTreeSettings::resolveName(std::string_view name)

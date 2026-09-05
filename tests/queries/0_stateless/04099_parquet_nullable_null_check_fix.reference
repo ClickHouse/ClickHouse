@@ -1,0 +1,14 @@
+--- null_as_default=1 non-nullable ---
+0	
+3	
+6	
+--- nullable output ---
+0	\N
+3	\N
+6	\N
+--- non-nullable null_as_default=0 should error ---
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
+--- non-nullable null_as_default=0 no nulls in file ---
+1	1
+2	2
+4	4

@@ -349,6 +349,8 @@ String getNameForSubstreamPath(
             stream_name += "." + std::to_string(it->bucket);
         else if (it->type == SubstreamType::MapBucketsInfo)
             stream_name += ".buckets_info";
+        else if (it->type == SubstreamType::MapBucketIndexes)
+            stream_name += ".bucket_indexes";
         else if (it->type == SubstreamType::ObjectSharedDataStructure)
             stream_name += ".structure";
         else if (it->type == SubstreamType::ObjectSharedDataStructurePrefix)
@@ -485,7 +487,7 @@ std::optional<std::pair<ColumnPtr, size_t>> ISerialization::getColumnWithNumRead
 
 void ISerialization::addElementToSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element)
 {
-    if (!cache || path.empty())
+    if (!cache)
         return;
 
     cache->insert_or_assign(getSubcolumnNameForStream(path, true), std::move(element));
@@ -493,7 +495,7 @@ void ISerialization::addElementToSubstreamsCache(ISerialization::SubstreamsCache
 
 ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path)
 {
-    if (!cache || path.empty())
+    if (!cache)
         return nullptr;
 
     auto it = cache->find(getSubcolumnNameForStream(path, true));
@@ -502,7 +504,7 @@ ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstrea
 
 void ISerialization::addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state)
 {
-    if (!cache || path.empty())
+    if (!cache)
         return;
 
     cache->emplace(getSubcolumnNameForStream(path, true), state);
@@ -510,7 +512,7 @@ void ISerialization::addToSubstreamsDeserializeStatesCache(SubstreamsDeserialize
 
 ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path)
 {
-    if (!cache || path.empty())
+    if (!cache)
         return nullptr;
 
     auto it = cache->find(getSubcolumnNameForStream(path, true));
@@ -802,9 +804,9 @@ bool ISerialization::isVariantSubcolumn(const SubstreamPath & substream_path)
 
 bool ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(const ISerialization::SubstreamPath & substream_path, ISerialization::StreamFileNameSettings & stream_file_name_settings)
 {
-    if (isVariantSubcolumn(substream_path) && stream_file_name_settings.escape_variant_substreams)
+    if (isVariantSubcolumn(substream_path))
     {
-        stream_file_name_settings.escape_variant_substreams = false;
+        stream_file_name_settings.escape_variant_substreams = !stream_file_name_settings.escape_variant_substreams;
         return true;
     }
 

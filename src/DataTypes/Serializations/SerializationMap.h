@@ -149,8 +149,12 @@ private:
     template <typename ReturnType>
     ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
 
-    Columns splitMapToBuckets(const IColumn & map_column, size_t start, size_t end, size_t buckets) const;
+    Columns splitMapToBuckets(const IColumn & map_column, size_t start, size_t end, size_t buckets, IColumn & bucket_index_column) const;
     void collectMapFromBuckets(const Columns & map_buckets, IColumn & map_column) const;
+    void collectMapFromBucketsWithOrder(
+        const Columns & map_buckets,
+        const IColumn & bucket_index_column,
+        IColumn & map_column) const;
 };
 
 }

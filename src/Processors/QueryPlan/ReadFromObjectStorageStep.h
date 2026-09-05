@@ -32,7 +32,6 @@ public:
 
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
-
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
 
