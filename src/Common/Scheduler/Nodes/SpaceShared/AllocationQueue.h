@@ -6,6 +6,7 @@
 #include <boost/intrusive/set.hpp>
 #include <boost/intrusive/options.hpp>
 
+#include <atomic>
 #include <mutex>
 #include <exception>
 
@@ -84,7 +85,7 @@ private:
     size_t last_unique_id = 0;
     ResourceCost pending_allocations_size = 0;
     /// Scheduler-thread only; forces parent re-evaluation even if the same increase is restored.
-    bool memory_growth_suspension_changed = false;
+    std::atomic_bool memory_growth_suspension_changed = false;
     bool memory_growth_suspension_retry_requested = false;
 
     UInt64 rejects = 0; /// Number of rejected allocations
