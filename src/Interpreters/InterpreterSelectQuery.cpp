@@ -49,7 +49,6 @@
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
-#include <Interpreters/RewriteCountDistinctVisitor.h>
 #include <Interpreters/RewriteUniqToCountVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/Context.h>
@@ -145,7 +144,6 @@ namespace Setting
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool compile_sort_description;
-    extern const SettingsBool count_distinct_optimization;
     extern const SettingsUInt64 cross_to_inner_join_rewrite;
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool distributed_aggregation_memory_efficient;
@@ -635,12 +633,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     query_info.query = query_ptr->clone();
 
-    if (settings[Setting::count_distinct_optimization])
-    {
-        RewriteCountDistinctFunctionMatcher::Data data_rewrite_countdistinct;
-        RewriteCountDistinctFunctionVisitor(data_rewrite_countdistinct).visit(query_ptr);
-    }
-
+    /// `count_distinct_optimization` is applied only by the analyzer's `CountDistinctPass`. The legacy AST-level
+    /// `RewriteCountDistinctFunctionMatcher` used to be invoked here, but it never fired (its `table_expr->size() != 1`
+    /// guard uses the recursive `IAST::size`, which is always >= 2 for a real table expression) and it lacked the
+    /// safety guards `CountDistinctPass` has: running before type resolution it cannot skip `Nullable` /
+    /// `LowCardinality(Nullable)` arguments (rewriting `uniqExact(x)` to `count()` over `GROUP BY x` would count the
+    /// `NULL` group and over-count), and it also did not reject `WHERE` / `GROUP BY` / `HAVING` / `ORDER BY` / `LIMIT`,
+    /// `JOIN`, or remote storages. It was therefore removed rather than resurrected into the deprecated legacy analyzer.
     if (settings[Setting::optimize_uniq_to_count])
     {
         RewriteUniqToCountMatcher::Data data_rewrite_uniq_count;

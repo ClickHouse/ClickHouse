@@ -994,6 +994,7 @@ void SystemLog<LogElement>::prepareTable()
 
         auto query_context = Context::createCopy(context);
         query_context->makeQueryContext();
+
         addSettingsForQuery(query_context, IAST::QueryKind::Create);
 
         auto create_query_ast = getCreateTableQuery();
@@ -1122,6 +1123,21 @@ void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_cont
         /// with an unlimited query size, so the limit must not fail this internal `ALTER`
         /// (e.g. marking a rotated table as readonly).
         mutable_context->setSetting("max_query_size", Field{UInt64{0}});
+    }
+    else if (query_kind == IAST::QueryKind::Create)
+    {
+        /// Ensure system tables keep a stable schema.
+        /// Disable user-configurable type-related settings to avoid implicit data type changes.
+        /// This applies to the log table as well as to its union table: both are created from
+        /// the same explicit column list, so a session that flips one of these settings would
+        /// otherwise be able to give them different structures, which makes the union table
+        /// mismatch its definition on every check and be recreated on every flush.
+        /// Note: `data_type_default_nullable` is the live half of this pin (several log tables
+        /// declare plain types that it would wrap into `Nullable`), while `flatten_nested` is
+        /// defensive: no system log element currently declares a `Nested` column, so it only
+        /// protects future schema additions and cannot be exercised by a regression test today.
+        mutable_context->setSetting("flatten_nested", false);
+        mutable_context->setSetting("data_type_default_nullable", false);
     }
 }
 
