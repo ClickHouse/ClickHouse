@@ -1020,4 +1020,46 @@ ColumnPtr removeSpecialRepresentations(const ColumnPtr & column)
     return recursiveRemoveSparse(column->convertToFullColumnIfReplicated());
 }
 
+/// Expand replicated and sparse wrappers, recursing through every composite child, so the raw
+/// `IColumn::compareAt` used by the sort cursors (and by `FinishSortingTransform`'s cross-chunk
+/// `less()`) never receives a sparse or replicated column (it handles neither). A single top-level
+/// strip is not enough: `compareAt` of `ColumnTuple`, `ColumnNullable`, `ColumnArray` and
+/// `ColumnMap` all delegate to their children, so a sparse or replicated column nested at any depth
+/// (e.g. `Tuple(Replicated)` or `Nullable(Tuple(Sparse))`) still reaches the same bad cast one
+/// level deeper. `recursiveRemoveSparse` only recurses through `Replicated` and `Tuple`, so it
+/// leaves such a column intact under `Nullable`/`Array`/`Map`. This mirrors
+/// `IColumn::convertToFullIfNeeded` but keeps LowCardinality (a distinct data type, part of the
+/// block header) intact; const columns are already removed before sorting.
+ColumnPtr materializeSortKeyColumn(const ColumnPtr & column)
+{
+    /// `Replicated(Sparse)` is possible (but not `Sparse(Replicated)`), so expand replicated first,
+    /// then strip the sparse wrapper it may reveal.
+    ColumnPtr full = column->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse();
+
+    /// LowCardinality is preserved as-is; its dictionary and indexes are always dense.
+    if (full->lowCardinality())
+        return full;
+
+    Columns materialized_subcolumns;
+    bool any_changed = false;
+    full->forEachSubcolumn([&](const auto & subcolumn)
+    {
+        auto materialized = materializeSortKeyColumn(subcolumn);
+        any_changed |= (materialized.get() != subcolumn.get());
+        materialized_subcolumns.push_back(std::move(materialized));
+    });
+
+    if (!any_changed)
+        return full;
+
+    auto mutable_column = IColumn::mutate(std::move(full));
+    size_t i = 0;
+    mutable_column->forEachMutableSubcolumn([&](auto & subcolumn)
+    {
+        subcolumn = std::move(materialized_subcolumns[i++]);
+    });
+
+    return std::move(mutable_column);
+}
+
 }

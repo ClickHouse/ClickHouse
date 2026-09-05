@@ -284,4 +284,10 @@ bool recursiveHasSparse(const ColumnPtr & column);
 /// Remove all special representations (for now Sparse and Replicated).
 ColumnPtr removeSpecialRepresentations(const ColumnPtr & column);
 
+/// Expand replicated and sparse wrappers of a sort-key column, recursing through every composite
+/// child, so the raw `IColumn::compareAt` used by the sort cursors, by the merge algorithms and by
+/// `FinishSortingTransform`'s cross-chunk `less()` never receives a sparse or replicated column
+/// (it handles neither). See the definition for why a single top-level strip is not enough.
+ColumnPtr materializeSortKeyColumn(const ColumnPtr & column);
+
 }

@@ -6,6 +6,7 @@
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnSparse.h>
 
 namespace DB
 {
@@ -69,6 +70,13 @@ public:
             removeConstAndSparse(input);
     }
 
+    /// The sort cursors below compare sort keys with a raw `IColumn::compareAt` that handles neither
+    /// replicated nor sparse columns, including when they are nested inside a composite key (a
+    /// tuple/nullable/array/map child). A top-level `convertToFullColumnIfReplicated` here plus the
+    /// `removeConstAndSparse` that follows is not enough: `recursiveRemoveSparse` recurses only
+    /// through `Replicated`/`Tuple`, so a key like `Tuple(Replicated(UInt16))` or
+    /// `Nullable(Tuple(Sparse(UInt16)))` still reaches `compareAt` with one side dense and the other
+    /// wrapped. Materialize each sort-key column recursively so that can never happen.
     static void removeReplicatedFromSortingColumns(const SharedHeader & header, Input & input, const SortDescription & description)
     {
         if (!input.chunk)
@@ -79,7 +87,7 @@ public:
         for (const auto & column_desc : description)
         {
             size_t column_number = header->getPositionByName(column_desc.column_name);
-            columns[column_number] = columns[column_number]->convertToFullColumnIfReplicated();
+            columns[column_number] = materializeSortKeyColumn(columns[column_number]);
         }
         input.chunk.setColumns(std::move(columns), num_rows);
     }
@@ -98,7 +106,7 @@ public:
         size_t num_rows = input.chunk.getNumRows();
         auto columns = input.chunk.detachColumns();
         for (const auto & column_desc : description)
-            columns[column_desc.column_number] = columns[column_desc.column_number]->convertToFullColumnIfReplicated();
+            columns[column_desc.column_number] = materializeSortKeyColumn(columns[column_desc.column_number]);
         input.chunk.setColumns(std::move(columns), num_rows);
     }
 
