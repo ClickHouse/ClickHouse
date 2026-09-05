@@ -13,10 +13,12 @@ doc_type: 'reference'
 
 أُضيفت في: v25.6.0
 
-دالة تجميع تأخذ بيانات السلاسل الزمنية على شكل أزواج من الطوابع الزمنية والقيم، وتحسب [مشتقة شبيهة بـ PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#deriv) من هذه البيانات على شبكة زمنية منتظمة يحددها الطابع الزمني للبداية والطابع الزمني للنهاية و`step`. ولكل نقطة على هذه الشبكة، تُؤخذ العينات اللازمة لحساب `deriv` ضمن النافذة الزمنية المحددة.
+دالة تجميع تأخذ بيانات السلاسل الزمنية على شكل أزواج من الطوابع الزمنية والقيم، وتحسب [مشتقة شبيهة بـ PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#deriv) من هذه البيانات على شبكة زمنية منتظمة يحددها طابع البداية الزمني وطابع النهاية الزمني و`step`. ولكل نقطة على هذه الشبكة، تُؤخذ العينات اللازمة لحساب `deriv` ضمن نافذة الزمن المحددة.
+
+إذا كانت عدة عينات تحمل الطابع الزمني نفسه، فلا يُستخدم منها سوى واحدة: العينة ذات القيمة الأكبر. وتخسر قيمة NaN أمام أي قيمة أخرى، لذا لا تُستخدم قيمة NaN إلا إذا كانت جميع العينات عند هذا الطابع الزمني NaN.
 
 <Note>
-  هذه الدالة تجريبية. لتمكينها، عيّن `allow_experimental_ts_to_grid_aggregate_function=true`.
+  هذه الدالة تجريبية. لتمكينها، عيّن `allow_experimental_time_series_aggregate_functions=true`.
 </Note>
 
 **الصياغة**
@@ -27,7 +29,10 @@ timeSeriesDerivToGrid(start_timestamp, end_timestamp, grid_step, staleness)(time
 
 **المعلمات**
 
-* `start_timestamp` — يحدد بداية الشبكة. - `end_timestamp` — يحدد نهاية الشبكة. - `grid_step` — يحدد خطوة الشبكة بالثواني. - `staleness` — يحدد الحد الأقصى لـ &quot;التقادم&quot; بالثواني للعينات التي أُخذت في الحسبان. نافذة التقادم هي فترة مفتوحة من اليسار ومغلقة من اليمين.
+* `start_timestamp` — يحدد بداية الشبكة. مع وسيطة طابع زمني من نوع `DateTime64`، يمكن أن يكون أيضاً رقماً كسرياً، أو سلسلة تحتوي على رقم أو نص تاريخ ووقت. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
+* `end_timestamp` — يحدد نهاية الشبكة. مع وسيطة طابع زمني من نوع `DateTime64`، يمكن أن يكون أيضاً رقماً كسرياً، أو سلسلة تحتوي على رقم أو نص تاريخ ووقت. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
+* `grid_step` — يحدد خطوة الشبكة بالثواني. مع وسيطة طابع زمني من نوع `DateTime64`، يمكن أن يكون أيضاً رقماً كسرياً، أو سلسلة تحتوي على رقم أو مدة مثل &#39;15s&#39; أو &#39;1m&#39;. [`UInt32`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
+* `staleness` — يحدد الحد الأقصى لـ &quot;التقادم&quot; بالثواني للعينات التي أُخذت في الحسبان. نافذة التقادم هي فترة مفتوحة من اليسار ومغلقة من اليمين. مع وسيطة طابع زمني من نوع `DateTime64`، يمكن أن يكون أيضاً رقماً كسرياً، أو سلسلة تحتوي على رقم أو مدة مثل &#39;15s&#39; أو &#39;1m&#39;. [`UInt32`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
 
 **الوسيطات**
 
@@ -35,7 +40,7 @@ timeSeriesDerivToGrid(start_timestamp, end_timestamp, grid_step, staleness)(time
 
 **القيمة المعادة**
 
-قيم `deriv` على الشبكة المحددة بصيغة `Array(Nullable(Float64))`. تحتوي المصفوفة المعادة على قيمة واحدة لكل نقطة في الشبكة الزمنية. وتكون القيمة NULL إذا لم تتوفر عينات كافية داخل النافذة لحساب قيمة المشتقة لنقطة شبكة معيّنة.
+قيم `deriv` على الشبكة المحددة بصيغة `Array(Nullable(Float64))`. تحتوي المصفوفة المرجعة على قيمة واحدة لكل نقطة في الشبكة الزمنية. وتكون القيمة NULL إذا لم تتوفر عينات كافية داخل النافذة لحساب قيمة المشتقة لنقطة شبكة معينة.
 
 **أمثلة**
 
@@ -64,7 +69,7 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.1,0.11,0.15,NULL,NULL,0.15]                                              │
+│ [NULL,NULL,0,0.1,0.11,0.1,NULL,NULL,0.15]                                               │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -84,7 +89,7 @@ SELECT timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
 
 ```response title=Response
 ┌─timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.1,0.11,0.15,NULL,NULL,0.15]                                                │
+│ [NULL,NULL,0,0.1,0.11,0.1,NULL,NULL,0.15]                                                 │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

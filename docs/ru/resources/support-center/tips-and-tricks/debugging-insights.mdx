@@ -149,7 +149,7 @@ WHERE is_done = 0;
   ### Внешняя агрегация
 </div>
 
-Включите внешнюю агрегацию для операций, интенсивно использующих память. Она работает медленнее, но помогает избежать сбоев из-за нехватки памяти, выгружая промежуточные данные на диск. Для этого можно использовать `max_bytes_before_external_group_by` — этот параметр помогает предотвратить сбои из-за нехватки памяти при больших операциях `GROUP BY`. Подробнее об этой настройке читайте [здесь](/ru/reference/settings/session-settings#max_bytes_before_external_group_by).
+Включите внешнюю агрегацию для операций, интенсивно использующих память. Она работает медленнее, но помогает избежать сбоев из-за нехватки памяти, выгружая промежуточные данные на диск. Для этого можно использовать `max_bytes_before_external_group_by` — этот параметр помогает предотвратить сбои из-за нехватки памяти при больших операциях `GROUP BY`. Подробнее об этой настройке читайте [здесь](/ru/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by).
 
 ```sql
 SELECT 
@@ -159,7 +159,7 @@ SELECT
     SUM(value) as total
 FROM large_table
 GROUP BY column1, column2
-SETTINGS max_bytes_before_external_group_by = 1000000000; -- порог 1 ГБ
+SETTINGS max_bytes_before_external_group_by = 1000000000; -- 1GB threshold
 ```
 
 <div id="async-insert-details">

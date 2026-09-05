@@ -109,8 +109,6 @@ public:
     ASTColumns * columns_list = nullptr;
     ASTExpressionList * aliases_list = nullptr; /// Aliases such as "(a, b)" in "CREATE VIEW my_view (a, b) AS SELECT 1, 2"
     ASTStorage * storage = nullptr;
-    IAST * watermark_function = nullptr;
-    IAST * lateness_function = nullptr;
     IAST * as_table_function = nullptr;
     ASTSelectWithUnionQuery * select = nullptr;
     ASTViewTargets * targets = nullptr;
@@ -129,25 +127,28 @@ public:
     /// Optional bool (3 states)
     std::optional<bool> attach_as_replicated = std::nullopt;
 
-    /// Bit-packed bools (20 bools packed into ~3 bytes instead of 20 bytes)
+    /// Bit-packed bools (16 bools packed into 2 bytes instead of 16 bytes)
     bool attach : 1 = false;               /// Query ATTACH TABLE, not CREATE TABLE.
     bool if_not_exists : 1 = false;
     bool is_ordinary_view : 1 = false;
     bool is_materialized_view : 1 = false;
-    bool is_window_view : 1 = false;
     bool is_time_series_table : 1 = false; /// CREATE TABLE ... ENGINE=TimeSeries() ...
     bool is_populate : 1 = false;
     bool is_create_empty : 1 = false;      /// CREATE TABLE ... EMPTY AS SELECT ...
     bool is_clone_as : 1 = false;          /// CREATE TABLE ... CLONE AS ...
     bool replace_view : 1 = false;         /// CREATE OR REPLACE VIEW
     bool has_uuid : 1 = false;             /// CREATE TABLE x UUID '...' with a non-`Nil` value (see `has_uuid_clause` for clause-presence tracking)
-    bool has_uuid_clause : 1 = false;      /// Parser saw an explicit `UUID '...'` clause, true even when the value is `Nil`
+    /// Parser saw an explicit `UUID '...'` clause, true even when the value is `Nil`.
+    /// Deliberately outside the tree hash: formatting prints the clause only when `uuid` is not `Nil`
+    /// (and many places - `SHOW CREATE`, `system.tables`, backups - zero `uuid` for display), so a hash
+    /// that depended on this flag would differ from the hash of the reparsed formatted query and
+    /// `ATTACH TABLE t UUID '00000000-0000-0000-0000-000000000000'` would raise `Inconsistent AST
+    /// formatting` in a debug build. The only pair of queries that collide because of that -
+    /// an explicit `Nil` clause and no clause at all - never both execute: `ATTACH` rejects the
+    /// former, and for `CREATE` the clause carries no meaning.
+    bool has_uuid_clause : 1 = false;
     bool has_inner_uuid_clause : 1 = false; /// Parser saw an explicit `TO INNER UUID '...'` clause
     bool is_dictionary : 1 = false;        /// CREATE DICTIONARY
-    bool is_watermark_strictly_ascending : 1 = false; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
-    bool is_watermark_ascending : 1 = false;          /// ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
-    bool is_watermark_bounded : 1 = false;            /// BOUNDED OUT OF ORDERNESS WATERMARK STRATEGY FOR WINDOW VIEW
-    bool allowed_lateness : 1 = false;     /// ALLOWED LATENESS FOR WINDOW VIEW
     bool attach_short_syntax : 1 = false;
     bool replace_table : 1 = false;
     bool create_or_replace : 1 = false;
@@ -165,7 +166,7 @@ public:
         return removeOnCluster<ASTCreateQuery>(clone(), params.default_database);
     }
 
-    bool isView() const { return is_ordinary_view || is_materialized_view || is_window_view; }
+    bool isView() const { return is_ordinary_view || is_materialized_view; }
 
     bool isParameterizedView() const;
 
@@ -201,6 +202,8 @@ public:
     bool isCreateQueryWithImmediateInsertSelect() const;
 
 protected:
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
@@ -212,6 +215,8 @@ protected:
         f(&as_table_function, nullptr);
         f(reinterpret_cast<IAST **>(&select), nullptr);
         f(&comment, nullptr);
+        f(&sql_security, nullptr);
+        f(reinterpret_cast<IAST **>(&refresh_strategy), nullptr);
         f(reinterpret_cast<IAST **>(&table_overrides), nullptr);
         f(reinterpret_cast<IAST **>(&dictionary_attributes_list), nullptr);
         f(reinterpret_cast<IAST **>(&dictionary), nullptr);

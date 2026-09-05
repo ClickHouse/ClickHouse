@@ -1,0 +1,40 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE promql_set_operator_presence_mask_ts ENGINE = TimeSeries
+    </create_query>
+
+    <fill_query>
+        INSERT INTO promql_set_operator_presence_mask_ts (metric_name, tags, time_series)
+        SELECT
+            if(number &lt; 4000, 'foo', 'bar'),
+            map('instance', toString(number % 4000)),
+            arrayMap(step -&gt; (toDateTime64(100 + step * 10, 3), (sipHash64(number, step) % 1000000) / 1000), range(300))
+        FROM numbers_mt(8000)
+        UNION ALL
+        SELECT
+            if(number &lt; 4000, 'foo_sparse', 'bar_sparse'),
+            map(
+                'instance', toString(intDiv(number, 4) % 1000),
+                'replica', toString(number % 4)),
+            arrayMap(
+                step -&gt; (toDateTime64(100 + step * 10, 3), (sipHash64(number, step) % 1000000) / 1000),
+                arrayFilter(step -&gt; sipHash64(number, step) % 2 = 0, range(300)))
+        FROM numbers_mt(8000)
+    </fill_query>
+
+    <query>SELECT * FROM prometheusQueryRange('promql_set_operator_presence_mask_ts', 'last_over_time(foo[10]) and on(instance) last_over_time(bar[10])', 100, 3090, 10) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQueryRange('promql_set_operator_presence_mask_ts', 'last_over_time(foo[10]) or on(instance) last_over_time(bar[10])', 100, 3090, 10) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQueryRange('promql_set_operator_presence_mask_ts', 'last_over_time(foo[10]) unless on(instance) last_over_time(bar[10])', 100, 3090, 10) FORMAT Null</query>
+
+    <!-- Four physical replicas per instance with staggered sample gaps. -->
+    <query>SELECT * FROM prometheusQueryRange('promql_set_operator_presence_mask_ts', 'last_over_time(foo_sparse[10]) and on(instance) last_over_time(bar_sparse[10])', 100, 3090, 10) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQueryRange('promql_set_operator_presence_mask_ts', 'last_over_time(foo_sparse[10]) or on(instance) last_over_time(bar_sparse[10])', 100, 3090, 10) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQueryRange('promql_set_operator_presence_mask_ts', 'last_over_time(foo_sparse[10]) unless on(instance) last_over_time(bar_sparse[10])', 100, 3090, 10) FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS promql_set_operator_presence_mask_ts</drop_query>
+</test>

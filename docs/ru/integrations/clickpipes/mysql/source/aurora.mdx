@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/ru/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.mdx";
 
 Это пошаговое руководство показывает, как настроить Amazon Aurora MySQL для репликации данных в ClickHouse Cloud с помощью [MySQL ClickPipe](/ru/integrations/clickpipes/mysql/index). Ответы на часто задаваемые вопросы о CDC в MySQL см. на [странице с часто задаваемыми вопросами по MySQL](/ru/integrations/clickpipes/mysql/faq).
 
@@ -136,13 +137,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ### Использование аутентификации IAM (необязательно)
 </div>
 
-Вместо пароля можно аутентифицировать пользователя ClickPipes с помощью ролевого доступа AWS IAM. Создайте пользователя, как показано ниже, а затем выдайте ему то же право на схему и привилегии на репликацию, что и выше:
-
-```sql
-CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
-```
-
-См. [AWS IAM DB authentication (RDS/Aurora)](/ru/integrations/clickpipes/postgres/auth), где приведены полные инструкции по настройке роли IAM и политики, необходимых для аутентификации ClickPipes таким способом.
+<IAMAuthentication engine="mysql" service="aurora" />
 
 <div id="configure-network-access">
   ## Настройте сетевой доступ
@@ -152,7 +147,7 @@ CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RD
   ### Управление доступом по IP
 </div>
 
-Чтобы ограничить трафик к вашему экземпляру Aurora MySQL, добавьте [задокументированные статические NAT IP-адреса](/ru/integrations/clickpipes/home#list-of-static-ips) в **Inbound rules** вашей группы безопасности Aurora.
+Чтобы ограничить трафик к вашему экземпляру Aurora MySQL, добавьте [задокументированные статические NAT IP-адреса](/ru/integrations/clickpipes/networking/static-ips) в **Inbound rules** вашей группы безопасности Aurora.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Где найти группу безопасности в Aurora MySQL?" size="lg" border />
 

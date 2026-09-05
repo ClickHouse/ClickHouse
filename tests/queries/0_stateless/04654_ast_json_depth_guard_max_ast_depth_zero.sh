@@ -50,9 +50,9 @@ ${CLICKHOUSE_CLIENT} --max_ast_depth 0 --query "
         = formatQuerySingleLine('SELECT 1 + 2 AS x FROM numbers(10) WHERE x > 0')"
 
 # 6. The server-side `clickhouse_json` dialect entry point.
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&allow_experimental_json_ast_dialect=1&dialect=clickhouse_json&max_ast_depth=0" \
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_json_ast_dialect=1&dialect=clickhouse_json&max_ast_depth=0" \
     --data-binary "$BRACKET_BOMB" 2>&1 | grep -om1 'TOO_DEEP_AST'
 
 # 7. The `clickhouse-local` `clickhouse_json` dialect entry point.
-${CLICKHOUSE_LOCAL} --allow_experimental_json_ast_dialect 1 --dialect clickhouse_json --max_ast_depth 0 \
+${CLICKHOUSE_LOCAL} --enable_json_ast_dialect 1 --dialect clickhouse_json --max_ast_depth 0 \
     --query "$BRACKET_BOMB" 2>&1 | grep -om1 'TOO_DEEP_AST'

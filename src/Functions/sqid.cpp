@@ -180,9 +180,9 @@ Transforms a [sqid](https://sqids.org/) back into an array of numbers.
         "Usage example",
         "SELECT sqidDecode('gXHfJ1C6dN');",
         R"(
-┌─sqidDecode('gXHfJ1C6dN')─────┐
-│ [1, 2, 3, 4, 5]              │
-└──────────────────────────────┘
+┌─sqidDecode('gXHfJ1C6dN')─┐
+│ [1,2,3,4,5]              │
+└──────────────────────────┘
         )"
     }
     };

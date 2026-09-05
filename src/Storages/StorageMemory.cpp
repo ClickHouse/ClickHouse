@@ -25,6 +25,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -53,7 +54,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 max_compress_block_size;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
 namespace MemorySetting
@@ -193,14 +194,37 @@ VirtualColumnsDescription StorageMemory::createVirtuals()
 
 StorageMemory::~StorageMemory() = default;
 
-StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
+StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
+    /// A pinned snapshot is captured in advance for atomic `CREATE MATERIALIZED VIEW ... POPULATE`,
+    /// so the population reads exactly the data that existed when the view was subscribed to new inserts.
+    /// The pin is stored on the query context, so consult it as well: the population's read runs under
+    /// contexts derived from the query context rather than the exact context the pin was set on (the same
+    /// reason `MergeTreeData::getStorageSnapshot` consults the query context).
+    if (query_context)
+    {
+        if (auto pinned = query_context->getPinnedStorageSnapshot(getStorageID().uuid))
+            return pinned;
+        if (query_context->hasQueryContext())
+        {
+            if (auto pinned = query_context->getQueryContext()->getPinnedStorageSnapshot(getStorageID().uuid))
+                return pinned;
+        }
+    }
+
     auto snapshot_data = std::make_unique<SnapshotData>();
     snapshot_data->blocks = data.get();
     /// Not guaranteed to match `blocks`, but that's ok. It would probably be better to move
     /// rows and bytes counters into the MultiVersion-ed struct, then everything would be consistent.
     snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
+}
+
+size_t StorageMemory::getMaxReadStreams(size_t num_streams, ContextPtr)
+{
+    /// `ReadFromMemoryStorageStep::makePipe` clamps the stream count by the number of blocks
+    /// and produces a single source for an empty table or a delayed global-subquery read.
+    return std::min(num_streams, std::max(1uz, data.get()->size()));
 }
 
 void StorageMemory::readImpl(
@@ -313,19 +337,14 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
         out.push_back(block);
     }
 
-    /// `pull` returns `false` either on normal end-of-stream or on cancellation (including soft timeout
-    /// with `timeout_overflow_mode = 'break'`). On true cancellation the pipeline may not have produced
-    /// all expected blocks, and a partial result must not be swapped into a `Memory` table.
-    const auto final_status = executor.getExecutionStatus();
-    const bool cancelled
-        = final_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
-        || final_status == PipelineExecutor::ExecutionStatus::CancelledByUser;
-
+    const auto process_list_element = pipeline.getProcessListElement();
+    const bool cancelled = process_list_element && !process_list_element->checkTimeLimitSoft();
     auto throw_on_cancellation = [&]
     {
-        if (final_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while mutating `Memory` table");
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while mutating `Memory` table");
+        if (process_list_element->isKilled() && process_list_element->getCancelReason() != CancelReason::TIMEOUT)
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while mutating `Memory` table");
+
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while mutating `Memory` table");
     };
 
     std::unique_ptr<Blocks> new_data;
@@ -592,8 +611,7 @@ void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector
     }
 
     TemporaryDataOnDiskSettings tmp_data_settings;
-    auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
-    tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
+    tmp_data_settings.buffer_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::temporary_files_buffer_size];
     auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
     const auto & read_settings = backup_entries_collector.getReadSettings();
 
@@ -756,7 +774,7 @@ void registerStorageMemory(StorageFactory & factory)
 :::note
 When using the Memory table engine on ClickHouse Cloud, data is not replicated across all nodes (by design). To guarantee that all queries are routed to the same node and that the Memory table engine works as expected, you can do one of the following:
 - Execute all operations in the same session
-- Use a client that uses TCP or the native interface (which enables support for sticky connections) such as [clickhouse-client](/interfaces/client)
+- Use a client that uses TCP or the native interface (which enables support for sticky connections) such as [clickhouse-client](/concepts/features/interfaces/client)
 :::
 
 The Memory engine stores data in RAM, in uncompressed form. Data is stored in exactly the same form as it is received when read. In other words, reading from this table is completely free.

@@ -50,6 +50,9 @@ Renvoie une chaîne constituée des valeurs concaténées de la colonne ou de l�
 **Utilisation de base sans délimiteur**
 
 ```sql title=Query
+CREATE TABLE Employees (Name String) ENGINE = Memory;
+INSERT INTO Employees VALUES ('John'), ('Jane'), ('Bob');
+
 SELECT groupConcat(Name) FROM Employees;
 ```
 
