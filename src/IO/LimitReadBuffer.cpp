@@ -26,7 +26,14 @@ bool LimitReadBuffer::nextImpl()
             throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Limit for LimitReadBuffer exceeded: {}", settings.excetion_hint);
 
         if (bytes >= settings.read_no_more)
+        {
+            /// Fail closed: if more data is available past the cap, reject it instead of silently
+            /// reporting EOF at the exact boundary (which would truncate the input).
+            if (settings.throw_if_exceeded && !in->eof())
+                throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Limit for LimitReadBuffer exceeded: {}", settings.excetion_hint);
+
             return false;
+        }
 
         //throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected data, got {} bytes, expected {}", bytes, settings.read_atmost);
     }

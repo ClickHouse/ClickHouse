@@ -69,9 +69,47 @@ public:
     /// Uploaded files are silently discarded.
     void load(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody);
 
+    /// Reads only the body of the given HTTP request, keeping the fields that are already in the form.
+    /// Unlike `load`, the URL query string is not re-parsed: it was parsed before authentication (the name
+    /// of the user is one of its parameters) and re-validated against the authenticated user's limits by
+    /// `checkFieldLimits`, which exempts the parameters that select the session. Re-parsing it here would
+    /// apply the user's limits to those exempt parameters as well, and only after the named session has
+    /// already been acquired.
+    /// Uploaded files are passed to the given PartHandler.
+    void loadBody(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, PartHandler & handler);
+
     /// Reads the URL-encoded form data from the given input stream.
     /// Note that read() does not clear the form before reading the new values.
     void read(ReadBuffer & in);
+
+    /// Set the limits used while reading the form data: the limit on the size of the content of
+    /// a multipart/form-data part (`http_max_multipart_form_data_size`) and the limits on the
+    /// number of form fields and on a field name/value size (`http_max_fields`,
+    /// `http_max_field_name_size`, `http_max_field_value_size`).
+    /// The multipart parser reads part content line by line to detect boundary lines, so content
+    /// with no CRLF would otherwise be accumulated in memory in full, regardless of any limit
+    /// imposed on the part size by the reader of the part (in particular, while such a reader
+    /// only probes whether more data follows after its limit was reached). The multipart parser
+    /// therefore bounds a buffered content line by the content size limit. Boundary and header
+    /// lines, which are part of the request syntax rather than of the uploaded content, are
+    /// bounded by the (larger) `http_max_request_header_size` instead, so that a small content
+    /// limit does not reject a valid request whose boundary or `Content-Disposition` line is
+    /// longer than the limit.
+    /// The constructor initializes the limits from the settings it is given (typically the server
+    /// defaults); this method reapplies all of them once the authenticated user's settings are
+    /// known, since the request body is parsed after authentication. A zero limit disables the
+    /// corresponding check.
+    void applyBodyLimits(const Settings & settings);
+
+    /// Re-validates the fields that are already in the form against `http_max_fields`,
+    /// `http_max_field_name_size` and `http_max_field_value_size` of the given settings.
+    /// The URL query string of an HTTP request has to be parsed before authentication, because the
+    /// name of the user is one of its parameters, so it is bounded by the server default settings.
+    /// This method re-validates the result once the authenticated user's settings are known, so
+    /// that a user whose profile lowers these limits does not have the server act on parameters
+    /// that exceed them. Names and values are checked after percent-decoding, i.e. as the server
+    /// holds them. A zero `http_max_fields` disables the check of the number of fields.
+    void checkFieldLimits(const Settings & settings) const;
 
     static const std::string ENCODING_URL; /// "application/x-www-form-urlencoded"
     static const std::string ENCODING_MULTIPART; /// "multipart/form-data"
@@ -93,7 +131,14 @@ private:
 
     using PartVec = std::vector<Part>;
 
-    const size_t max_fields_number, max_field_name_size, max_field_value_size, max_request_header_size;
+    const size_t max_request_header_size;
+
+    /// See applyBodyLimits. These limits are initialized from the constructor's settings and
+    /// reapplied from the authenticated user's settings before the request body is parsed.
+    size_t max_fields_number = 0;
+    size_t max_field_name_size = 0;
+    size_t max_field_value_size = 0;
+    size_t max_multipart_form_data_size = 0;
 
     std::string encoding;
     std::string boundary;
@@ -110,16 +155,31 @@ public:
 class HTMLForm::MultipartReadBuffer : public ReadBuffer
 {
 public:
-    MultipartReadBuffer(ReadBuffer & in, const std::string & boundary);
+    MultipartReadBuffer(ReadBuffer & in, const std::string & boundary, size_t max_content_size, size_t max_syntax_line_size);
 
     /// Returns false if last boundary found.
     bool skipToNextBoundary();
 
     bool isActualEOF() const { return found_last_boundary; }
 
+    /// While a part's content is being consumed, a buffered line is bounded by the content size
+    /// limit; while boundary lines and part headers are being scanned, by the structural HTTP
+    /// limit. readMultipart toggles this around the consumption of each part's content.
+    void setReadingContent(bool value) { reading_content = value; }
+
 private:
     PeekableReadBuffer in;
     const std::string boundary;
+    /// The boundary line as it appears while a part's content is being read: the boundary
+    /// preceded by the CRLF that, per RFC 2046, belongs to the boundary line.
+    const std::string boundary_line;
+    /// Maximum size of a buffered content line, 0 means no limit (see HTMLForm::applyBodyLimits).
+    /// The boundary line that terminates the part may outgrow this limit; readLine allows that
+    /// only while the line keeps matching |boundary_line|.
+    const size_t max_content_line_size;
+    /// Maximum size of a buffered boundary or header line, 0 means no limit.
+    const size_t max_syntax_line_size;
+    bool reading_content = false;
     bool boundary_hit = true;
     bool found_last_boundary = false;
 

@@ -306,6 +306,21 @@ void HTTPHandler::processQuery(
     /// after releasing the session below, this whole call will be no-op (due to named_session being nullptr already inside a session).
     SCOPE_EXIT_SAFE({ releaseOrCloseSession(session_id, close_session); });
 
+    /// The URL query string was parsed with the server default settings, because the name of the
+    /// user is one of its parameters and therefore it has to be parsed before authentication.
+    /// Re-validate the parameters that have not already been used against the authenticated user's
+    /// limits before the query context applies the settings they carry. In particular, do not fail
+    /// after acquiring a named session because a session selector exceeds that session's limits.
+    static const NameSet parameters_used_before_revalidation{
+        "user", "password", "quota_key", "stacktrace", "close_session", "session_id", "session_timeout", "session_check"};
+    HTMLForm parameters_to_revalidate(session->sessionContext()->getSettingsRef());
+    for (const auto & [name, value] : params)
+    {
+        if (!parameters_used_before_revalidation.contains(name))
+            parameters_to_revalidate.add(name, value);
+    }
+    parameters_to_revalidate.checkFieldLimits(session->sessionContext()->getSettingsRef());
+
     bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
 
     const AccessControl & access_control = session->sessionContext()->getAccessControl();
@@ -332,11 +347,11 @@ void HTTPHandler::processQuery(
 
         if (has_external_data)
         {
-            /// For external data we have unspecified parameters which literally are {'<temp_table_name>_format', '<temp_table_name>_types', '<temp_table_name>_structure'}.
+            /// For external data we have unspecified parameters which literally are {'<temp_table_name>_format', '<temp_table_name>_types', '<temp_table_name>_structure', '<temp_table_name>_decompress', '<temp_table_name>_disable_checksum'}.
             /// That parameters are not supposed to be used in the query as a settings. They have to be skipped.
             /// But we could not just skip all parameters with suffixes '_format', '_types', '_structure',
             /// because some of them are used in the query as a settings, like 'date_time_input_format',
-            static const Names reserved_param_suffixes = {"_format", "_types", "_structure"};
+            static const Names reserved_param_suffixes = {"_format", "_types", "_structure", "_decompress", "_disable_checksum"};
             for (const String & suffix : reserved_param_suffixes)
             {
                 if (endsWith(name, suffix))
@@ -1669,7 +1684,10 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
     /// Support for "external data for query processing".
     /// Used in case of POST request with form-data, but it isn't expected to be deleted after that scope.
     ExternalTablesHandler handler(context, params);
-    params.load(request, body, handler);
+    /// The form was constructed with the server default settings before authentication;
+    /// re-apply the body-parsing limits from the authenticated user's settings.
+    params.applyBodyLimits(context->getSettingsRef());
+    params.loadBody(request, body, handler);
 
     std::string full_query;
     NameToNameMap query_parameters = context->getQueryParameters();
@@ -1801,6 +1819,10 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
     const bool wants_request_body
         = receive_params.contains("_request_body") && !context->getQueryParameters().contains("_request_body");
 
+    /// The form was constructed with the server default settings before authentication;
+    /// re-apply the body-parsing limits from the authenticated user's settings.
+    params.applyBodyLimits(context->getSettingsRef());
+
     if (unlikely(startsWith(request.getContentType(), "multipart/form-data")))
     {
         /// Support for "external data for query processing".
@@ -1808,10 +1830,10 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
         if (wants_request_body)
         {
             auto body_copy = preserve_raw_body();
-            params.load(request, *body_copy, handler);
+            params.loadBody(request, *body_copy, handler);
         }
         else
-            params.load(request, body, handler);
+            params.loadBody(request, body, handler);
         body_fields_loaded = true;
     }
     else if (unlikely(startsWith(request.getContentType(), "application/x-www-form-urlencoded")))
