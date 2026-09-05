@@ -378,6 +378,13 @@ void considerEnablingParallelReplicas(
 
     /// Hand the probe plan the sets this plan has already filled. It is built and optimized purely to
     /// decide whether replicas pay off, and optimizing it would otherwise re-run every `IN` subquery.
+    ///
+    /// Collecting here, before the analysis forced below, is early enough. The sets worth adopting are
+    /// already filled: `optimizePrimaryKeyConditionAndLimit` runs earlier in this same pass and ends in
+    /// `applyFilters`, where `buildIndexes` constructs the `KeyCondition` that calls
+    /// `buildOrderedSetInplace` for every `IN` whose left argument maps to key columns. The
+    /// `selectRangesToRead` below reuses those `indexes` (it builds them only `if (!indexes)`), so it
+    /// adds no set that collecting later would catch.
     auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
     if (!plan_with_parallel_replicas)
         return;
