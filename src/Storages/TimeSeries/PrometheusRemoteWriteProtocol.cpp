@@ -8,6 +8,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/logger_useful.h>
+#include <Common/saturatedDuration.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -25,6 +26,7 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 #include <chrono>
@@ -265,9 +267,9 @@ void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutableP
             /// `ASYNC_INSERT_FLUSH_TIMEOUT` is returned to the client as HTTP 503: the remote-write protocol
             /// treats 4xx statuses (other than 429) as permanent failures and drops the data without a retry,
             /// while the data here is still in the queue and its fate is unknown, so the status must be retryable.
-            const auto timeout_ms = context->getSettingsRef()[Setting::wait_for_async_insert_timeout].totalMilliseconds();
-            if (result.future.wait_for(std::chrono::milliseconds(timeout_ms)) == std::future_status::timeout)
-                throw Exception(ErrorCodes::ASYNC_INSERT_FLUSH_TIMEOUT, "Wait for asynchronous insert timeout ({} ms) exceeded", timeout_ms);
+            const auto timeout = saturatedMilliseconds(context->getSettingsRef()[Setting::wait_for_async_insert_timeout].totalMilliseconds());
+            if (result.future.wait_for(timeout) == std::future_status::timeout)
+                throw Exception(ErrorCodes::ASYNC_INSERT_FLUSH_TIMEOUT, "Wait for asynchronous insert timeout ({} ms) exceeded", timeout.count());
 
             const auto progress = result.future.get();
             if (auto process_list_element = context->getProcessListElement())
@@ -302,6 +304,7 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
     , time_series_storage(storagePtrToTimeSeries(time_series_storage_))
     , log(getLogger("PrometheusRemoteWriteProtocol"))
 {
+    checkTimeSeriesVersionIsWritable(*time_series_storage);
 }
 
 PrometheusRemoteWriteProtocol::~PrometheusRemoteWriteProtocol() = default;
