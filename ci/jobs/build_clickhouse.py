@@ -112,8 +112,13 @@ def run_shell(name, command, **kwargs):
 
 def warn_on_low_sccache_hit_rate(info):
     """Post a non-blocking workflow warning when the sccache hit rate is below 40% (issue #46502)."""
-    stats = Shell.get_output("sccache --show-stats --stats-format json")
-    if not stats:
+    exit_code, stats, stderr = Shell.get_res_stdout_stderr(
+        "sccache --show-stats --stats-format json", verbose=False
+    )
+    if exit_code != 0 or not stats:
+        info.add_workflow_warning(
+            f"sccache stats unavailable ({stderr or 'no output'}) - the compiler cache may be broken or missing"
+        )
         return
     # Best-effort observability: an unexpected stats blob (unparseable, or a
     # future sccache renaming these fields) must never fail an already-green build.
