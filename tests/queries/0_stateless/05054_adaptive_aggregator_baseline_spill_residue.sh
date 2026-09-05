@@ -11,12 +11,17 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #
 # The sweeps detach the shared table once it reaches the part bound, which is a key count and a byte
 # bound derived from `max_bytes_before_external_group_by` - an eighth of it, never below 32 MiB. The
-# scenarios that need the residue resident therefore keep it well under that bound: 150000 keys of
-# about 70 bytes make a table of some 20 MB, and a threshold of 30 MB keeps every sweep in the tail
-# regime, so the residue is the whole drained stream and the dominant resident term when a thread
-# back on the baseline path reaches the spill decision. A low threshold also means many small parts,
-# and the merge holds a reader per part, so the row counts are kept low enough for the merge itself to
-# stay well inside the memory limit.
+# scenarios that need the residue resident therefore keep it well under that bound, and the bound is
+# read against the table's real footprint, not its key bytes: the drain table is two-level, so it
+# carries a hash table and an arena per bucket, and measured with this binary a table of these
+# 70-byte keys crossed 32 MiB at about 74000 keys. The residue holds every distinct key of the
+# stream, so the streams here have 50000 distinct keys, which keeps the residue near half the bound
+# with the states of the last scenario included. A threshold of 20 MB keeps every sweep in the tail
+# regime and is crossed while the stream is still staged - about 35 MB of staged records precede the
+# thaw - so the sweeps run before the thaw whatever the timing, and the tables the thawed threads
+# build afterwards cross it again on their own. A low threshold also means many small parts, and the
+# merge holds a reader per part, so the row counts are kept low enough for the merge itself to stay
+# well inside the memory limit.
 #
 # The scenarios spill on every one of their rows, and a sanitizer build pays several times over for
 # each part written and read back, so every scenario processes only as many rows as its assertions
@@ -34,7 +39,7 @@ SET adaptive_aggregator_freeze_threshold = 1000;
 SET adaptive_aggregator_freeze_threshold_bytes = 0;
 SET group_by_two_level_threshold = 1000;
 SET group_by_two_level_threshold_bytes = 1000000;
-SET max_bytes_before_external_group_by = 30000000;
+SET max_bytes_before_external_group_by = 20000000;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET max_memory_usage = 300000000;
 -- The hash-table statistics remember the thaw verdict and a marked query skips the adaptive
@@ -44,25 +49,25 @@ SET collect_hash_table_stats_during_aggregation = 0;
 -- A repeat-dominated stream of wide keys: the tables freeze, the staged stream proves
 -- repeat-dominated and thaws every thread back to the baseline path, and the records swept before
 -- the thaw stay in the shared table, which holds fewer keys and bytes than the part bound. The
--- residue is the dominant resident term through the count and the width of its keys, so releasing
--- it is what brings query memory back under the threshold.
+-- residue is a resident term the thawed threads cannot free by flushing their own tables, so
+-- releasing it is part of what brings query memory back under the threshold.
 SELECT count() FROM
 (
-    SELECT concat(toString(number % 150000), repeat('x', 60)) AS k
-    FROM numbers_mt(1500000)
+    SELECT concat(toString(number % 50000), repeat('x', 60)) AS k
+    FROM numbers_mt(1000000)
     GROUP BY k
 );
 
 -- The sweep and thaw counters are asserted next to the release, so the test cannot pass by never
 -- engaging the adaptive aggregator or never reaching memory pressure at all. The parts are bounded
--- against the block count - 1500000 rows in blocks of 8192 - because one part per block is the
+-- against the block count - 1000000 rows in blocks of 8192 - because one part per block is the
 -- defect: a thread that finds the residue resident on every block writes its own few keys out on
 -- every block. A released residue lets a table grow over several blocks before it is written, and
 -- the sweeps' own parts hold hundreds of thousands of records each.
 SELECT 'residue released', sumIf(value, event = 'AdaptiveAggregationResidueReleases') > 0 FROM system.events;
 SELECT 'parts stay far below the block count',
        sumIf(value, event = 'ExternalAggregationWritePart') > 0
-       AND sumIf(value, event = 'ExternalAggregationWritePart') * 2 < intDiv(1500000, 8192)
+       AND sumIf(value, event = 'ExternalAggregationWritePart') * 2 < intDiv(1000000, 8192)
 FROM system.events;
 SELECT 'swept under pressure', coalesce(max(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationPressureSweeps';
 SELECT 'thawed', coalesce(max(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationThaws';
@@ -78,7 +83,13 @@ SELECT 'thawed', coalesce(max(value), 0) > 0 FROM system.events WHERE event = 'A
 # from the tail and freezes on it. Every block here has the same mix instead - one row in
 # thirty-two carries a unique key, the rest the hot one - so a thread holds about five hundred
 # keys when it gives up and could not reach a thousand before then, in any order of the blocks.
-# The unique keys carry query memory over the external threshold early in the scan, and the parts
+#
+# A learning thread also stands down without giving up when query memory is over the external
+# threshold at the end of one of its blocks, and that reading is query-wide. Through the first two
+# blocks of every thread the query holds a few small tables and the blocks in flight, measured at
+# under 7 MB with this binary, so the threshold sits at 15 MB: it cannot be crossed until some
+# thread has grown past its own give-up. The unique keys are wide so that the tables the threads
+# build afterwards carry the query well over the threshold - near 30 MB at the end - and the parts
 # that follow are as small as the blocks: what the scenario asserts is the decision, not their size.
 $CLICKHOUSE_LOCAL --query "
 SET max_threads = 4;
@@ -88,13 +99,13 @@ SET adaptive_aggregator_freeze_threshold = 1000;
 SET adaptive_aggregator_freeze_threshold_bytes = 0;
 SET group_by_two_level_threshold = 1000;
 SET group_by_two_level_threshold_bytes = 1000000;
-SET max_bytes_before_external_group_by = 5000000;
+SET max_bytes_before_external_group_by = 15000000;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET collect_hash_table_stats_during_aggregation = 0;
 
 SELECT count() FROM
 (
-    SELECT if(number % 32 = 0, concat(toString(number), repeat('x', 60)), 'hot') AS k
+    SELECT if(number % 32 = 0, concat(toString(number), repeat('x', 400)), 'hot') AS k
     FROM numbers_mt(2000000)
     GROUP BY k
 );
@@ -125,14 +136,14 @@ SET adaptive_aggregator_freeze_threshold_bytes = 0;
 -- outright turns the adaptive aggregator off, and then there is no shared table to leave alone.
 SET group_by_two_level_threshold = 100000000;
 SET group_by_two_level_threshold_bytes = 100000000000;
-SET max_bytes_before_external_group_by = 30000000;
+SET max_bytes_before_external_group_by = 20000000;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET collect_hash_table_stats_during_aggregation = 0;
 
 SELECT count() FROM
 (
-    SELECT concat(toString(number % 150000), repeat('x', 60)) AS k
-    FROM numbers_mt(1500000)
+    SELECT concat(toString(number % 50000), repeat('x', 60)) AS k
+    FROM numbers_mt(1000000)
     GROUP BY k
 );
 
@@ -156,14 +167,14 @@ SET adaptive_aggregator_freeze_threshold = 1000;
 SET adaptive_aggregator_freeze_threshold_bytes = 0;
 SET group_by_two_level_threshold = 1000;
 SET group_by_two_level_threshold_bytes = 1000000;
-SET max_bytes_before_external_group_by = 30000000;
+SET max_bytes_before_external_group_by = 20000000;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET collect_hash_table_stats_during_aggregation = 0;
 
 SELECT count(), sum(s), sum(c) FROM
 (
-    SELECT concat(toString(number % 150000), repeat('x', 60)) AS k, sum(number) AS s, count() AS c
-    FROM numbers_mt(1500000)
+    SELECT concat(toString(number % 50000), repeat('x', 60)) AS k, sum(number) AS s, count() AS c
+    FROM numbers_mt(1000000)
     GROUP BY k
 );
 
