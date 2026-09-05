@@ -418,6 +418,24 @@ Use lazy materialization optimization for reading Parquet files from object stor
 
 Allow to push down filter to PREWHERE expression for supported storages
 
+## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "New setting that lifts filter conjuncts across equi-join keys so primary-key pruning fires on both sides."}]}]}/>
+
+Toggles a query-plan-level optimization which copies filter conjuncts from one side of an
+equi-join onto the other side via equi-key substitution, so that primary-key/index pruning
+on the other side can use them.
+
+Applies when the filter and the `MergeTree` read are separated from the join only by expression
+and filter steps, and when the copied conjunct compares a primary key column with a constant
+(including `IN` with a constant set). A predicate below a nested join or below `DISTINCT`, or a
+comparison between two key columns, is left alone: it could not drive primary key pruning on the
+other side, so copying it would only add work.
+
+Only takes effect if `query_plan_enable_optimizations` is 1.
+
 ## query_plan_push_down_limit {#query_plan_push_down_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
