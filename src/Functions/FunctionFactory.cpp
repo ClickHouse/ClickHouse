@@ -46,7 +46,7 @@ void FunctionFactory::registerFunction(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the function name '{}' is not unique", name);
 
     String function_name_lowercase = Poco::toLower(name);
-    if (isAlias(name) || isAlias(function_name_lowercase))
+    if (isAlias(name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the function name '{}' is already registered as alias",
                         name);
 

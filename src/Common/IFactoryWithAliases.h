@@ -107,7 +107,10 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: name '{}' is not alias", getFactoryName(), name);
     }
 
-    bool isAlias(const String & name) const { return aliases.contains(name) || case_insensitive_aliases.contains(name); }
+    bool isAlias(const String & name) const
+    {
+        return aliases.contains(name) || case_insensitive_aliases.contains(Poco::toLower(name));
+    }
 
     bool hasNameOrAlias(const String & name) const
     {

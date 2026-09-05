@@ -293,7 +293,7 @@ void DataTypeFactory::registerDataType(const String & family_name, Value creator
 
     String family_name_lowercase = Poco::toLower(family_name);
 
-    if (isAlias(family_name) || isAlias(family_name_lowercase))
+    if (isAlias(family_name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family name '{}' is already registered as alias", family_name);
 
     if (!data_types.emplace(family_name, creator).second)
