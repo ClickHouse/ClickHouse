@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeDynamic.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 
 #include <Common/checkStackSize.h>
@@ -295,7 +296,8 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     if (!processSubtreePrimitive(node) &&
         !processSubtreeMap(node) &&
         !processSubtreeArrayOuter(node) &&
-        !processSubtreeArrayInner(node))
+        !processSubtreeArrayInner(node) &&
+        !processSubtreeDynamic(node))
     {
         processSubtreeTuple(node);
     }
@@ -664,6 +666,70 @@ static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & s
         if (elem.__isset.num_children && elem.num_children > 0)
             stack.push_back(size_t(elem.num_children));
     }
+    return true;
+}
+
+bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
+{
+    if (node.element->num_children != 2)
+        return false;
+    if (schema_idx + 1 >= file_metadata.schema.size())
+        return false;
+
+    const bool group_annotated_variant = node.element->logicalType.__isset.VARIANT;
+
+    auto is_variant_leaf = [&](const parq::SchemaElement & element, std::string_view name)
+    {
+        return element.name == name
+            && isPrimitiveNode(element)
+            && element.type == parq::Type::BYTE_ARRAY
+            && element.repetition_type != parq::FieldRepetitionType::REPEATED
+            && (group_annotated_variant || (!element.logicalType.__isset.STRING && !element.__isset.converted_type));
+    };
+
+    const parq::SchemaElement & first = file_metadata.schema[schema_idx];
+    const parq::SchemaElement & second = file_metadata.schema[schema_idx + 1];
+    size_t metadata_child = 0;
+    if (is_variant_leaf(first, "metadata") && is_variant_leaf(second, "value"))
+        metadata_child = 0;
+    else if (is_variant_leaf(first, "value") && is_variant_leaf(second, "metadata"))
+        metadata_child = 1;
+    else
+        return false;
+
+    if (node.type_hint && !WhichDataType(node.type_hint->getTypeId()).isDynamic())
+        return false;
+
+    size_t primitive_start = primitive_columns.size();
+    size_t output_start = output_columns.size();
+
+    std::optional<size_t> child_output_idx[2];
+    for (auto & i : child_output_idx)
+    {
+        TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, nullptr);
+        subnode.requested = node.requested;
+        processSubtree(subnode);
+        i = subnode.output_idx;
+    }
+
+    if (!node.requested)
+        return true;
+
+    if (!child_output_idx[0].has_value() || !child_output_idx[1].has_value())
+    {
+        primitive_columns.resize(primitive_start);
+        output_columns.resize(output_start);
+        return true;
+    }
+
+    node.output_idx = output_columns.size();
+    OutputColumnInfo & output = output_columns.emplace_back();
+    output.name = node.name;
+    output.primitive_start = primitive_start;
+    output.primitive_end = primitive_columns.size();
+    output.input_type = std::make_shared<DataTypeDynamic>();
+    output.output_type = output.input_type;
+    output.nested_columns = {child_output_idx[metadata_child].value(), child_output_idx[1 - metadata_child].value()};
     return true;
 }
 
