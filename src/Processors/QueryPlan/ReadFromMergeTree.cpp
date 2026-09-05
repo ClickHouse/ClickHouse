@@ -131,7 +131,7 @@ size_t countPartitions(const RangesInDataParts & parts_with_ranges)
 }
 
 /// check if a DAG node only depends on sorting key columns
-/// (ActionsDAG version of isExpressionOverSortingKey)
+/// (ActionsDAG version of isDeterministicExpressionOverSortingKey, minus determinism - see isNodeDeterministic)
 bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting_key_set)
 {
     if (sorting_key_set.contains(node->result_name))

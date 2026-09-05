@@ -487,6 +487,9 @@ public:
     String getName() const override { return function_name; }
     bool isVariadic() const override { return false; }
     bool isDeterministic() const override { return user_defined_function->getIsDeterministic(); }
+    /// a non-deterministic WASM function may keep state across calls (compartments are pooled),
+    /// so it cannot be assumed stable even within a single query
+    bool isDeterministicInScopeOfQuery() const override { return user_defined_function->getIsDeterministic(); }
     bool isSpatialPredicate() const override
     {
         auto val = user_defined_function->getSettings().getValue("is_spatial_predicate");

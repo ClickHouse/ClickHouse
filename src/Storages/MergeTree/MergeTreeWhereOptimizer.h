@@ -165,7 +165,7 @@ private:
 
     bool columnsSupportPrewhere(const NameSet & columns) const;
 
-    bool isExpressionOverSortingKey(const RPNBuilderTreeNode & node) const;
+    bool isDeterministicExpressionOverSortingKey(const RPNBuilderTreeNode & node, const ContextPtr & context) const;
 
     bool isSortingKey(const String & column_name) const;
 

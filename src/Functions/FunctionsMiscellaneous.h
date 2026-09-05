@@ -292,6 +292,29 @@ public:
         return true;
     }
 
+    /// Same reasoning as in isSuitableForConstantFolding: the default flags cannot see the lambda body,
+    /// e.g. `x -> x + rand()` must not report itself as deterministic.
+    /// The COLUMN check is defence in depth: today the planner adds every constant to the outermost
+    /// scope (see `visitConstant`) and the lambda body references it as an INPUT, so a query-time
+    /// constant such as `now()` shows up as a non-deterministic COLUMN in the *outer* DAG - where the
+    /// callers already reject it - and never inside the captured DAG.
+    bool isDeterministic() const override
+    {
+        for (const auto & inner_node : expression_actions->getActionsDAG().getNodes())
+            if ((inner_node.type == ActionsDAG::ActionType::FUNCTION && !inner_node.function_base->isDeterministic())
+                || (inner_node.type == ActionsDAG::ActionType::COLUMN && !inner_node.is_deterministic_constant))
+                return false;
+        return true;
+    }
+
+    bool isDeterministicInScopeOfQuery() const override
+    {
+        for (const auto & inner_node : expression_actions->getActionsDAG().getNodes())
+            if (inner_node.type == ActionsDAG::ActionType::FUNCTION && !inner_node.function_base->isDeterministicInScopeOfQuery())
+                return false;
+        return true;
+    }
+
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
     const DataTypePtr & getResultType() const override { return return_type; }
 
