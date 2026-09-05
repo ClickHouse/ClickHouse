@@ -3767,6 +3767,17 @@ bool ReadFromMergeTree::isParallelReplicasLocalPlanForFollower() const
 
 bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit)
 {
+    /// The prefix is not always computed from the sorting key of *this* step.
+    /// `ReadFromMerge::requestReadingInOrder` computes one prefix from the metadata of the tables the
+    /// `Merge` selected and then hands it, through `recursivelyApplyToReadingSteps`, to every
+    /// `ReadFromMergeTree` reachable from the child plans - including reads whose own sorting key is
+    /// shorter than that prefix. Such a read cannot deliver the requested order, and announcing it
+    /// anyway makes `spreadMarkRangesAmongStreamsWithOrder` pad the sorting-key expression list with
+    /// null children and index `column_names` past its end. Refuse instead: the caller already treats
+    /// `false` as "this child cannot read in order" and gives up the optimization.
+    if (prefix_size > getStorageMetadata()->getSortingKey().column_names.size())
+        return false;
+
     /// if direction is not set, use current one
     if (!direction)
         direction = getSortDirection();
