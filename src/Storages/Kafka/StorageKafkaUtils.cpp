@@ -917,16 +917,12 @@ void stopConsumerImpl(
         LOG_ERROR(log, "Error during pause (stopConsumerImpl): {}", e.what());
     }
 
-    const auto start_time = std::chrono::steady_clock::now();
-    const bool wait_for_empty_member_id
-        = leave_group && consumer.get_configuration().get("group.protocol") == "classic";
+    const auto deadline = std::chrono::steady_clock::now() + drain_timeout;
 
     if (leave_group)
     {
         try
         {
-            /// `unsubscribe` is asynchronous. For the classic group protocol librdkafka clears the member id when it
-            /// hands `LeaveGroup` to the broker connection. The consumer protocol does not clear it on this path.
             consumer.unsubscribe();
         }
         catch (const cppkafka::HandleException & e)
@@ -935,29 +931,48 @@ void stopConsumerImpl(
         }
     }
 
-    StorageKafkaUtils::drainConsumer(consumer, drain_timeout, log, std::move(error_handler));
+    /// Serve the unsubscribe callbacks before closing: `cppkafka` acknowledges them with synchronous
+    /// `assign` or `unassign` calls, which need the consumer group operations queue to remain active.
+    const auto drain_remaining = std::max(
+        0ms, std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()));
+    StorageKafkaUtils::drainConsumer(consumer, drain_remaining, log, error_handler);
 
-    if (!wait_for_empty_member_id)
+    if (!leave_group)
         return;
 
-    /// Keep serving the event queue until librdkafka has handed `LeaveGroup` to the broker connection. Reuse the drain
-    /// budget because consumers are stopped one by one during table teardown.
-    while (true)
+    /// An empty member ID only means that librdkafka has queued `LeaveGroup`: destruction with
+    /// `RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE` can still discard the request before it is sent.
+    /// Asynchronous close keeps the consumer alive until its outstanding leave request completes.
+    auto * handle = consumer.get_handle();
+    cppkafka::Queue close_queue(rd_kafka_queue_new(handle));
+    std::unique_ptr<rd_kafka_error_t, decltype(&rd_kafka_error_destroy)> close_error(
+        rd_kafka_consumer_close_queue(handle, close_queue.get_handle()), rd_kafka_error_destroy);
+    if (close_error)
     {
-        const auto member_id = consumer.get_member_id();
-        if (member_id.empty())
-            return;
+        LOG_ERROR(log, "Error closing Kafka consumer: {}", rd_kafka_error_string(close_error.get()));
+        error_handler(cppkafka::Error(rd_kafka_error_code(close_error.get())));
+        return;
+    }
 
-        if (std::chrono::steady_clock::now() - start_time > drain_timeout)
+    /// Reuse the drain budget because consumers are stopped one by one during table teardown.
+    /// Serve the close queue, including rebalance callbacks, until close finishes or the deadline expires.
+    while (!rd_kafka_consumer_closed(handle))
+    {
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+        if (remaining <= 0ms)
         {
             LOG_WARNING(
                 log,
-                "Timeout waiting for Kafka consumer member {} to leave the group; the broker will keep it until `session.timeout.ms` expires",
-                member_id);
+                "Timeout closing Kafka consumer; its group membership may persist until the session timeout expires");
             return;
         }
 
-        consumer.poll(100ms);
+        auto message = close_queue.consume(std::min(100ms, remaining));
+        if (message && message.get_error() && !message.is_eof())
+        {
+            LOG_ERROR(log, "Error closing Kafka consumer: {}", message.get_error());
+            error_handler(message.get_error());
+        }
     }
 }
 
@@ -993,12 +1008,14 @@ void consumerGracefulStop(
     // the toppar queues simultaneously, potentially locking them in a different order, which risks a deadlock.
     //
     // To avoid the lock inversion while still sending `LeaveGroup`, we:
-    //   (1) Set up different rebalance callbacks to repeat (2) if a rebalance occurs before consumer destruction.
+    //   (1) Replace the rebalance callbacks so a pending assignment cannot attach new partition queues.
     //   (2) Pause the consumer to stop processing new messages.
     //   (3) Disconnect the toppar queues before `unsubscribe` to remove the cascading queue locks.
     //   (4) Unsubscribe from the consumer group.
-    //   (5) Poll the event queue to process the revocation and any remaining callbacks. With the classic group protocol,
-    //       wait until librdkafka has handed `LeaveGroup` to the broker connection.
+    //   (5) Poll the event queue to process the revocation and any remaining callbacks.
+    //   (6) Close asynchronously and serve the close queue until the outstanding leave request completes,
+    //       using the same deadline as draining. Keep `RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE` for destruction
+    //       after a timeout so an unavailable broker cannot make this wait unbounded.
 
     stopConsumerImpl(
         consumer,
@@ -1006,16 +1023,11 @@ void consumerGracefulStop(
         {
             // we don't care during the destruction
         },
-        /*assignment*/ [&consumer](const cppkafka::TopicPartitionList & topic_partitions)
+        /*assignment*/ [](cppkafka::TopicPartitionList & topic_partitions)
         {
-            if (!topic_partitions.empty())
-            {
-                consumer.pause_partitions(topic_partitions);
-            }
-
-            // it's not clear if get_partition_queue will work in that context
-            // as just after processing the callback cppkafka will call run assign
-            // and that can reset the queues
+            /// `cppkafka` calls `assign` with this list after the callback. Acknowledge the assignment
+            /// with an empty list so draining cannot start fetching or reconnect partition queues.
+            topic_partitions.clear();
         },
         /*leave_group*/ true,
         drain_timeout, log, std::move(error_handler));

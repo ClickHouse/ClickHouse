@@ -6,6 +6,7 @@ import math
 import random
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from kafka import KafkaProducer
 import kafka.errors
@@ -561,7 +562,8 @@ def test_kafka_consumer_hang2(kafka_cluster):
     k.kafka_delete_topic(admin_client, topic_name)
 
 
-def test_kafka_consumer_leaves_group_on_restart(kafka_cluster):
+@pytest.mark.parametrize("leave_response", ["normal", "delayed", "lost"])
+def test_kafka_consumer_leaves_group_on_restart(kafka_cluster, leave_response):
     # A stopped consumer must send `LeaveGroup`. Otherwise it remains a member for the configured 45-second
     # `session.timeout.ms` and prevents the replacement consumer from getting an assignment after restart.
     suffix = k.random_string(6)
@@ -572,8 +574,7 @@ def test_kafka_consumer_leaves_group_on_restart(kafka_cluster):
     k.kafka_create_topic(admin_client, topic_name)
 
     try:
-        instance.query(
-            f"""
+        instance.query(f"""
             CREATE TABLE test.{kafka_table} (key UInt64, value UInt64)
                 ENGINE = Kafka
                 SETTINGS kafka_broker_list = 'kafka1:19092',
@@ -585,8 +586,7 @@ def test_kafka_consumer_leaves_group_on_restart(kafka_cluster):
                 ORDER BY key;
             CREATE MATERIALIZED VIEW test.{kafka_table}_mv TO test.{kafka_table}_dst AS
                 SELECT * FROM test.{kafka_table};
-            """
-        )
+            """)
 
         k.kafka_produce(kafka_cluster, topic_name, [json.dumps({"key": 1, "value": 1})])
         assert 1 == int(
@@ -597,29 +597,94 @@ def test_kafka_consumer_leaves_group_on_restart(kafka_cluster):
             )
         )
 
-        instance.restart_clickhouse()
+        # Wait for the insert's offset commit before withholding broker responses.
+        assert (
+            int(
+                instance.query_with_retry(
+                    f"SELECT sum(num_commits) FROM system.kafka_consumers WHERE database = 'test' AND table = '{kafka_table}'",
+                    check_callback=lambda result: int(result) >= 1,
+                )
+            )
+            >= 1
+        )
+        group = admin_client.describe_consumer_groups([kafka_table])[0]
+        assert group.error_code == 0
+        assert len(group.members) == 1
 
-        k.kafka_produce(kafka_cluster, topic_name, [json.dumps({"key": 2, "value": 2})])
+        # Include shutdown and startup in the deadline so session expiry cannot masquerade as a successful leave.
         resume_timeout_sec = 25
         start = time.monotonic()
-        result = instance.query_with_retry(
-            f"SELECT count() FROM test.{kafka_table}_dst",
-            check_callback=lambda result: int(result) == 2,
-            retry_count=resume_timeout_sec,
-            sleep_time=1,
-        )
+        deadline = start + resume_timeout_sec
+        try:
+            if leave_response != "normal":
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    with PartitionManager() as pm:
+                        pm.add_rule(
+                            {
+                                "instance": instance,
+                                "chain": "INPUT",
+                                "protocol": "tcp",
+                                "source_port": 19092,
+                                "action": "DROP",
+                            }
+                        )
+                        stop = executor.submit(
+                            instance.stop_clickhouse, stop_wait_sec=20
+                        )
+                        instance.wait_for_log_line(
+                            f"{kafka_table}.*Sent LeaveGroupRequest", timeout=10
+                        )
+                        # Sending the request is insufficient: destruction must wait for its response.
+                        with pytest.raises(TimeoutError):
+                            stop.result(timeout=1)
+                        assert not instance.contains_in_log(
+                            f"{kafka_table}.*Terminating instance"
+                        )
+                        if leave_response == "lost":
+                            # The close deadline must also allow shutdown when the response never arrives.
+                            stop.result(timeout=10)
+                            assert instance.contains_in_log(
+                                f"{kafka_table}.*Timeout closing Kafka consumer"
+                            )
+                    stop.result(timeout=20)
+                if leave_response == "delayed":
+                    assert instance.contains_in_log(
+                        f"{kafka_table}.*Received LeaveGroupResponse"
+                    )
+            else:
+                instance.stop_clickhouse(stop_wait_sec=20)
+
+            group = admin_client.describe_consumer_groups([kafka_table])[0]
+            assert group.error_code == 0
+            assert (
+                not group.members
+            ), f"Stopped consumer still belongs to the group: {group.members}"
+            assert (
+                time.monotonic() < deadline
+            ), "Shutdown exceeded the deadline before checking group membership"
+        finally:
+            instance.start_clickhouse()
+
+        k.kafka_produce(kafka_cluster, topic_name, [json.dumps({"key": 2, "value": 2})])
+        result = None
+        while time.monotonic() < deadline:
+            result = instance.query(
+                f"SELECT count() FROM test.{kafka_table}_dst",
+                timeout=max(1, deadline - time.monotonic()),
+            )
+            if int(result) == 2:
+                break
+            time.sleep(0.5)
         elapsed = time.monotonic() - start
-        assert int(result) == 2, (
-            f"Consumption did not resume within {elapsed:.0f} seconds after restart, got {result!r}"
-        )
+        assert (
+            result is not None and int(result) == 2 and elapsed < resume_timeout_sec
+        ), f"Consumption did not resume within {resume_timeout_sec} seconds of shutdown; elapsed {elapsed:.1f}, got {result!r}"
     finally:
-        instance.query(
-            f"""
+        instance.query(f"""
             DROP TABLE IF EXISTS test.{kafka_table}_mv;
             DROP TABLE IF EXISTS test.{kafka_table}_dst;
             DROP TABLE IF EXISTS test.{kafka_table};
-            """
-        )
+            """)
         k.kafka_delete_topic(admin_client, topic_name)
 
 
