@@ -2218,9 +2218,15 @@ static void serializeNodeList(
     }
 }
 
+/// Bits of the flags byte written by `JoinStepLogical::serialize`. A reader that does not know a bit
+/// ignores it, so adding one keeps both directions of the wire compatible.
+static constexpr UInt8 JOIN_LOGICAL_FLAG_DISJUNCTIONS_OPTIMIZATION_APPLIED = 1 << 0;
+
 void JoinStepLogical::serialize(Serialization & ctx) const
 {
     UInt8 flags = 0;
+    if (disjunctions_optimization_applied)
+        flags |= JOIN_LOGICAL_FLAG_DISJUNCTIONS_OPTIMIZATION_APPLIED;
     writeIntBinary(flags, ctx.out);
 
     writeVarUInt(1, ctx.out);
@@ -2281,7 +2287,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     SortingStep::Settings sort_settings(ctx.settings);
     JoinSettings join_settings(ctx.settings);
 
-    return std::make_unique<JoinStepLogical>(
+    auto step = std::make_unique<JoinStepLogical>(
         std::move(left_header),
         std::move(right_header),
         std::move(join_operator),
@@ -2289,6 +2295,12 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         std::move(actions_after_join),
         std::move(join_settings),
         std::move(sort_settings));
+
+    /// The remote side optimizes the plan it receives, so the guard has to survive the wire: without it
+    /// the disjunction push-down runs a second time there and duplicates a predicate the read already
+    /// applies through PREWHERE.
+    step->setDisjunctionsOptimizationApplied(flags & JOIN_LOGICAL_FLAG_DISJUNCTIONS_OPTIMIZATION_APPLIED);
+    return step;
 }
 
 QueryPlanStepPtr JoinStepLogical::clone() const
