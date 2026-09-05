@@ -866,7 +866,8 @@ private:
         propagateUpdate(*child, Update()
             .setAttached(child.get())
             .setIncrease(child->increase)
-            .setDecrease(child->decrease));
+            .setDecrease(child->decrease)
+            .setSuction(child->getSuctionAllocation()));
     }
 
     /// Removes an immediate child (used through `reparent()`)

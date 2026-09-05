@@ -73,7 +73,8 @@ public:
         propagateUpdate(*child, Update()
             .setAttached(child.get())
             .setIncrease(child->increase)
-            .setDecrease(child->decrease));
+            .setDecrease(child->decrease)
+            .setSuction(child->getSuctionAllocation()));
     }
 
     void removeChild(ISchedulerNode * child_) override

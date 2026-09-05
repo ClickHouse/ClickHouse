@@ -39,7 +39,8 @@ void PrecedenceAllocation::attachChild(const std::shared_ptr<ISchedulerNode> & c
     propagateUpdate(*child, Update()
         .setAttached(child.get())
         .setIncrease(child->increase)
-        .setDecrease(child->decrease));
+        .setDecrease(child->decrease)
+        .setSuction(child->getSuctionAllocation()));
 }
 
 void PrecedenceAllocation::removeChild(ISchedulerNode * child_base)

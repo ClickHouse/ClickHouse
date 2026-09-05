@@ -1134,6 +1134,59 @@ TEST(SchedulerSpaceShared, ChildSuctionIsFollowedByParentLimit)
 }
 
 
+/// An evicted suction owner remains present until it releases its allocation. Its increase is
+/// hidden at the limit, so reparenting must carry ownership separately from the visible requests.
+TEST(SchedulerSpaceShared, AttachingSubtreePublishesParkedSuction)
+{
+    for (const String & parent_kind : {String("limit"), String("fair"), String("precedence")})
+    {
+        SCOPED_TRACE(parent_kind);
+        SpaceSharedTest t;
+        SpaceSharedResourceHolder r(t);
+        AllocationLimit * inner = r.addLimit("/", 7000);
+        AllocationQueue * queue = r.addQueue("/queue");
+        r.registerResource();
+
+        ManualAllocation requester(queue, "requester", 6000, true, protectedFromEvictionPolicy());
+        requester.increaseAsync(2000);
+        ASSERT_TRUE(requester.waitKillsFor(1, std::chrono::seconds(5)));
+
+        std::promise<void> attached;
+        t.scheduler.event_queue.enqueue([&]
+        {
+            EXPECT_EQ(inner->increase, nullptr);
+            EXPECT_EQ(inner->getLocalSuctionAllocation(), &requester);
+            auto subtree = r.root_node;
+            t.scheduler.removeChild(subtree.get());
+
+            auto outer = std::make_shared<AllocationLimit>(t.scheduler.event_queue, SchedulerNodeInfo{}, 7000);
+            r.root_node = outer;
+            if (parent_kind == "limit")
+            {
+                outer->attachChild(subtree);
+                t.scheduler.attachChild(outer);
+            }
+            else
+            {
+                SpaceSharedNodePtr policy;
+                if (parent_kind == "fair")
+                    policy = std::make_shared<FairAllocation>(t.scheduler.event_queue, SchedulerNodeInfo{});
+                else
+                    policy = std::make_shared<PrecedenceAllocation>(t.scheduler.event_queue, SchedulerNodeInfo{});
+                policy->basename = "policy";
+                outer->attachChild(policy);
+                t.scheduler.attachChild(outer);
+                policy->attachChild(subtree);
+            }
+
+            EXPECT_EQ(outer->getLocalSuctionAllocation(), &requester);
+            attached.set_value();
+        });
+        attached.get_future().get();
+    }
+}
+
+
 TEST(SchedulerSpaceShared, ParentSpillingPreventsDescendantSuction)
 {
     SpaceSharedTest t;

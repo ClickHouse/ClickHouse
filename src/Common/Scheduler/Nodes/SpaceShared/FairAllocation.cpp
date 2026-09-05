@@ -40,7 +40,8 @@ void FairAllocation::attachChild(const std::shared_ptr<ISchedulerNode> & child_b
     propagateUpdate(*child, Update()
         .setAttached(child.get())
         .setIncrease(child->increase)
-        .setDecrease(child->decrease));
+        .setDecrease(child->decrease)
+        .setSuction(child->getSuctionAllocation()));
 }
 
 void FairAllocation::removeChild(ISchedulerNode * child_base)
