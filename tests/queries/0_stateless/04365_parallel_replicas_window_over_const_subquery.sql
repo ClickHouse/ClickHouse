@@ -104,4 +104,10 @@ SELECT DISTINCT count(*) OVER () FROM (SELECT arrayFilter(x -> ignore(s IN ('1',
 -- A higher-order function whose lambda body is non-constant must stay a plain column.
 SELECT DISTINCT count(*) OVER () FROM (SELECT arrayMap(x -> toUInt8(s IN ('1', '2')), [1]) FROM t_window_const) SETTINGS cluster_for_parallel_replicas = 'not_exists'; -- { serverError CLUSTER_DOESNT_EXIST }
 
+-- Every assertion above is a row count, which a local plan returns just as well, so on their own they
+-- stay green even when parallel replicas are declined and no mergeable-state read happens. The first
+-- column keeps this from passing vacuously when the filter below matches nothing.
+SYSTEM FLUSH LOGS query_log;
+SELECT count() > 0, countIf(ProfileEvents['ParallelReplicasUsedCount'] = 0) FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_kind = 'Select' AND initial_query_id = query_id AND has(tables, currentDatabase() || '.t_window_const') SETTINGS enable_parallel_replicas = 0;
+
 DROP TABLE t_window_const;
