@@ -797,8 +797,10 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         if (auto cached = cache->get(catalog_cache_key))
         {
             auto age_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now() - cached->cached_at).count();
-            if (static_cast<UInt64>(age_ms) <= catalog_staleness_ms)
+                std::chrono::steady_clock::now() - cached->cached_at).count();
+            /// A loader that started before `ALTER DATABASE` may finish after the
+            /// cache was cleared. Never reuse that entry with the new settings.
+            if (cached->settings_version == settings_version && static_cast<UInt64>(age_ms) <= catalog_staleness_ms)
             {
                 ProfileEvents::increment(ProfileEvents::DataLakeCatalogCacheHits);
                 if (cached->storage)
@@ -1035,7 +1037,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         if (use_catalog_cache)
         {
             auto cache = getOrCreateCatalogCache(settings);
-            cache->set(catalog_cache_key, std::make_shared<::DataLake::DataLakeCatalogCacheEntry>(storage_cluster));
+            cache->set(catalog_cache_key, std::make_shared<::DataLake::DataLakeCatalogCacheEntry>(storage_cluster, settings_version));
         }
 #endif
         return storage_cluster;
@@ -1081,7 +1083,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     if (use_catalog_cache)
     {
         auto cache = getOrCreateCatalogCache(settings);
-        cache->set(catalog_cache_key, std::make_shared<::DataLake::DataLakeCatalogCacheEntry>(result_storage));
+        cache->set(catalog_cache_key, std::make_shared<::DataLake::DataLakeCatalogCacheEntry>(result_storage, settings_version));
     }
 #endif
     return result_storage;
@@ -1868,7 +1870,7 @@ The following settings are supported:
 | `dlf_access_key_id`     | Access key ID for DLF access                                                            |
 | `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
 | `force_add_bucket`      | When constructing object-storage URLs from the catalog-provided table location and `storage_endpoint`, prepend the bucket/container name even if the endpoint already contains it. Default: `false`. Set to `true` for catalogs that hand back paths without the bucket and require it to be added at the URL-construction step (Polaris-style paths). |
-| `catalog_cache_staleness_ms` | Staleness window for cached DataLake table storage objects (ms). `0` disables the cache. Default `10000` (10s). The underlying data-lake metadata still follows its own refresh settings. |
+| `catalog_cache_staleness_ms` | Opt-in staleness window for cached table storage objects (ms). Default `0` disables this cache. When enabled, catalog changes can remain invisible until expiry or explicit invalidation. The underlying data-lake metadata follows its own refresh settings. |
 | `catalog_cache_max_entries` | Maximum number of DataLake table metadata entries cached per database (LRU). Default `1000`. Evicts oldest on insert. Metrics: `DataLakeCatalogCacheHits/Misses/StaleMisses` (`system.events`), `DataLakeCatalogCacheBytes/Files` (`system.metrics`). |
 
 ## Examples {#examples}

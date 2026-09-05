@@ -1757,6 +1757,44 @@ def test_catalog_cache_concurrent_first_use(started_cluster):
         node.query(f"DROP DATABASE IF EXISTS {database}")
 
 
+def test_catalog_cache_auth_change_invalidates_storage(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    name = "cache_settings_" + uuid.uuid4().hex
+    catalog.create_namespace(name)
+    table = create_table(
+        catalog, name, "t",
+        schema=Schema(NestedField(field_id=1, name="id", field_type=LongType(), required=False)),
+        partition_spec=PartitionSpec(), sort_order=SortOrder(),
+    )
+    table.append(pa.table({"id": pa.array([1], type=pa.int64())}))
+    create_clickhouse_iceberg_database(
+        started_cluster, node, name,
+        additional_settings={
+            "catalog_cache_staleness_ms": 600000,
+            "auth_header": "Authorization: Bearer before",
+        },
+    )
+    query = f"SELECT sum(id) FROM {name}.`{name}.t`"
+
+    def event(query_id, event_name):
+        node.query("SYSTEM FLUSH LOGS query_log")
+        return int(node.query(
+            f"SELECT ProfileEvents['{event_name}'] FROM system.query_log "
+            f"WHERE query_id='{query_id}' AND type='QueryFinish'"
+        ))
+
+    try:
+        assert node.query(query) == "1\n"
+        assert node.query(query, query_id=name + "_hit") == "1\n"
+        assert event(name + "_hit", "DataLakeCatalogCacheHits") > 0
+        node.query(f"ALTER DATABASE {name} MODIFY SETTING auth_header='Authorization: Bearer after'")
+        assert node.query(query, query_id=name + "_miss") == "1\n"
+        assert event(name + "_miss", "DataLakeCatalogCacheMisses") > 0
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {name}")
+
+
 def test_writes_schema_evolution(started_cluster):
     node = started_cluster.instances["node1"]
 

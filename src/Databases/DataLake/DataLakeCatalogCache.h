@@ -46,13 +46,15 @@ namespace DataLake
 struct DataLakeCatalogCacheEntry
 {
     DB::StoragePtr storage;
-    std::chrono::system_clock::time_point cached_at;
+    std::shared_ptr<const DB::DatabaseDataLakeSettings> settings_version;
+    std::chrono::steady_clock::time_point cached_at;
     size_t weight_bytes;
 
     DataLakeCatalogCacheEntry() = default;
-    explicit DataLakeCatalogCacheEntry(DB::StoragePtr storage_)
+    DataLakeCatalogCacheEntry(DB::StoragePtr storage_, std::shared_ptr<const DB::DatabaseDataLakeSettings> settings_version_)
         : storage(std::move(storage_))
-        , cached_at(std::chrono::system_clock::now())
+        , settings_version(std::move(settings_version_))
+        , cached_at(std::chrono::steady_clock::now())
         , weight_bytes(estimateWeight(storage))
     {
     }
