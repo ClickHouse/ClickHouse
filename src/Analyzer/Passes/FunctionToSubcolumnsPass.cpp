@@ -29,6 +29,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Common/SipHash.h>
@@ -1021,6 +1022,13 @@ public:
             /// Push a placeholder for this query level; needChildVisit will update it
             /// to true when we descend into WHERE or PREWHERE.
             in_where_prewhere_stack.push_back(false);
+            enterCorrelatedColumns(query_node->getCorrelatedColumns());
+            return;
+        }
+
+        if (const auto * union_node = node->as<UnionNode>())
+        {
+            enterCorrelatedColumns(union_node->getCorrelatedColumns());
             return;
         }
     }
@@ -1031,7 +1039,14 @@ public:
             return;
 
         if (node->as<QueryNode>())
+        {
             in_where_prewhere_stack.pop_back();
+            correlated_columns_stack.pop_back();
+        }
+        else if (node->as<UnionNode>())
+        {
+            correlated_columns_stack.pop_back();
+        }
     }
 
     bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child)
@@ -1124,6 +1139,9 @@ private:
     /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
     std::vector<bool> in_where_prewhere_stack;
 
+    /// The correlated columns of every subquery on the way down, one entry per query or union level.
+    std::vector<ColumnInSourceSet> correlated_columns_stack;
+
     std::unordered_set<const IQueryTreeNode *> processed_sources;
     bool can_wrap_result_columns_with_nullable = false;
     bool has_where_prewhere_or_group_by = false;
@@ -1132,6 +1150,30 @@ private:
     /// Prevents double-counting in multi-level chains like
     /// tupleElement(tupleElement(arrayElement(col, N), 'b'), 'c').
     std::unordered_set<const IQueryTreeNode *> chained_pattern_inner_nodes;
+
+    void enterCorrelatedColumns(const ListNode & correlated_columns)
+    {
+        ColumnInSourceSet columns;
+        for (const auto & correlated_column : correlated_columns.getNodes())
+        {
+            const auto * column_node = correlated_column->as<ColumnNode>();
+            if (!column_node)
+                continue;
+
+            columns.insert(makeColumnInSource(column_node->getColumnSource(), column_node->getColumnName()));
+        }
+
+        correlated_columns_stack.push_back(std::move(columns));
+    }
+
+    bool isCorrelatedColumn(const ColumnInSource & column_in_source) const
+    {
+        for (const auto & columns : correlated_columns_stack)
+            if (columns.contains(column_in_source))
+                return true;
+
+        return false;
+    }
 
     void enterColumnSource(const QueryTreeNodePtr & column_source)
     {
@@ -1181,6 +1223,14 @@ private:
         auto qualified_name = makeColumnInSource(column_source, column.name);
 
         if (has_where_prewhere_or_group_by && !canOptimizeWithWherePrewhereOrGroupBy(function_node.getFunctionName()))
+            return;
+
+        /// The column belongs to an outer query, and the subquery reading it lists it among its
+        /// correlated columns. Replacing the function with a subcolumn of that column would leave
+        /// that list naming a column the subquery no longer reads, and decorrelation would then look
+        /// for the subcolumn in a join that carries the whole column - the query fails with
+        /// `NOT_FOUND_COLUMN_IN_BLOCK`. Leave every use of such a column alone.
+        if (isCorrelatedColumn(qualified_name))
             return;
 
         auto transformer_key = std::make_pair(column.type->getTypeId(), function_node.getFunctionName());
