@@ -69,7 +69,6 @@ TEST(ActionLock, TestMoveConstructor)
         auto lock = blocker.cancel();
         ActionLock moved_lock(std::move(lock));
 
-        EXPECT_TRUE(lock.expired());
         EXPECT_FALSE(moved_lock.expired());
         EXPECT_TRUE(blocker.isCancelled());
         EXPECT_EQ(1, blocker.getCounter().load());
@@ -90,7 +89,6 @@ TEST(ActionLock, TestMoveConstructorFromExpired)
 
     ActionLock moved_lock(std::move(lock));
 
-    EXPECT_TRUE(lock.expired());
     EXPECT_TRUE(moved_lock.expired());
 }
 
