@@ -31,6 +31,16 @@ If true, subquery for IN will be executed on every follower replica.
 
 Allow usage of materialized views with parallel replicas
 
+## parallel_replicas_allow_merge_tables {#parallel_replicas_allow_merge_tables}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting to allow reading from a `Merge` table with plan-based parallel replicas, by expanding the `Merge` read into a union of the reads from the underlying `MergeTree` tables. It only has an effect together with `parallel_replicas_plan_based`."}]}]}/>
+
+Allow reading from a `Merge` table with parallel replicas. Effective only together with [parallel_replicas_plan_based](/reference/settings/session-settings/parallel-replicas#parallel_replicas_plan_based): the read from the `Merge` table is expanded into a union of the reads from the underlying `MergeTree` tables, which is then distributed like any other union. A `Merge` table is left to a single replica when any of its underlying tables cannot be read that way (a non-`MergeTree` table, a `FINAL` read). Set it to `false` to read every `Merge` table on a single replica, as before the support was added. Experimental.
+
 ## parallel_replicas_allow_view_over_mergetree {#parallel_replicas_allow_view_over_mergetree}
 
 <BetaBadge/>

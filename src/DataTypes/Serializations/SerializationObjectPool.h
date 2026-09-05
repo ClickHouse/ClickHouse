@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
-#include <functional>
+#include <absl/functional/function_ref.h>
 
 namespace DB
 {
@@ -11,7 +11,8 @@ namespace DB
 /// same type share one object.
 namespace SerializationObjectPool
 {
-    using SerializationCreator = std::function<ISerialization *()>;
+    /// Non-owning: the creator is only borrowed for the duration of the call.
+    using SerializationCreator = absl::FunctionRef<ISerialization *()>;
 
     /// Look up the pool by key.  On cache miss the creator is called
     /// (outside any pool lock) to build the object, which is then inserted.

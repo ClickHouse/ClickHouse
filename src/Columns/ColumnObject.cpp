@@ -104,6 +104,10 @@ ColumnObject::ColumnObject(
     }
     std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end());
 
+    sorted_typed_path_columns.reserve(sorted_typed_paths.size());
+    for (const auto & path : sorted_typed_paths)
+        sorted_typed_path_columns.push_back(typed_paths.find(path)->second.get());
+
     dynamic_paths.reserve(dynamic_paths_.size());
     dynamic_paths_ptrs.reserve(dynamic_paths_.size());
     for (auto & [path, column] : dynamic_paths_)
@@ -133,6 +137,10 @@ ColumnObject::ColumnObject(
 
     std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end());
 
+    sorted_typed_path_columns.reserve(sorted_typed_paths.size());
+    for (const auto & path : sorted_typed_paths)
+        sorted_typed_path_columns.push_back(typed_paths.find(path)->second.get());
+
     MutableColumns paths_and_values;
     paths_and_values.emplace_back(ColumnString::create());
     paths_and_values.emplace_back(ColumnString::create());
@@ -158,9 +166,22 @@ ColumnObject::ColumnObject(const ColumnObject & other)
         sorted_typed_paths.emplace_back(path);
     std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end());
 
+    sorted_typed_path_columns.clear();
+    sorted_typed_path_columns.reserve(sorted_typed_paths.size());
+    for (const auto & path : sorted_typed_paths)
+        sorted_typed_path_columns.push_back(typed_paths.find(path)->second.get());
+
     sorted_dynamic_paths.clear();
     for (const auto & [path, _] : dynamic_paths)
         sorted_dynamic_paths.emplace(path);
+}
+
+void ColumnObject::rebuildSortedTypedPathColumns()
+{
+    sorted_typed_path_columns.clear();
+    sorted_typed_path_columns.reserve(sorted_typed_paths.size());
+    for (const auto & path : sorted_typed_paths)
+        sorted_typed_path_columns.push_back(typed_paths.find(path)->second.get());
 }
 
 ColumnObject::Ptr ColumnObject::create(
@@ -458,6 +479,23 @@ UInt64 ColumnObject::getNumberOfDefaultRows() const
     add_non_defaults_of(*shared_data);
 
     return num_rows - num_non_default;
+}
+
+bool ColumnObject::hasOnlyTypeDefaults() const
+{
+    for (const auto & [path, column] : typed_paths)
+    {
+        if (!column->hasOnlyTypeDefaults())
+            return false;
+    }
+
+    for (const auto & [path, column] : dynamic_paths_ptrs)
+    {
+        if (!column->hasOnlyTypeDefaults())
+            return false;
+    }
+
+    return shared_data->hasOnlyTypeDefaults();
 }
 
 std::string_view ColumnObject::getDataAt(size_t) const
@@ -1239,28 +1277,6 @@ void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in
     }
 }
 
-void ColumnObject::skipSerializedInArena(ReadBuffer & in) const
-{
-    /// First, skip all values of typed paths;
-    for (auto path : sorted_typed_paths)
-        typed_paths.find(path)->second->skipSerializedInArena(in);
-
-    /// Second, skip all other paths and values.
-    size_t num_paths = 0;
-    readBinaryLittleEndian<size_t>(num_paths, in);
-
-    for (size_t i = 0; i != num_paths; ++i)
-    {
-        size_t path_size = 0;
-        readBinaryLittleEndian<size_t>(path_size, in);
-        in.ignore(path_size);
-
-        size_t value_size = 0;
-        readBinaryLittleEndian<size_t>(value_size, in);
-        in.ignore(value_size);
-    }
-}
-
 void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
 {
     for (auto path : sorted_typed_paths)
@@ -1663,6 +1679,7 @@ void ColumnObject::forEachMutableSubcolumn(DB::IColumn::MutableColumnCallback ca
 {
     for (const auto & path : sorted_typed_paths)
         callback(typed_paths.find(path)->second);
+    rebuildSortedTypedPathColumns();
     for (const auto & path : sorted_dynamic_paths)
     {
         auto it = dynamic_paths.find(path);
@@ -1680,6 +1697,9 @@ void ColumnObject::forEachMutableSubcolumnRecursively(DB::IColumn::RecursiveMuta
         callback(*column);
         column->forEachMutableSubcolumnRecursively(callback);
     }
+
+    rebuildSortedTypedPathColumns();
+
     for (const auto & path : sorted_dynamic_paths)
     {
         auto it = dynamic_paths.find(path);
@@ -2639,32 +2659,43 @@ void ColumnObject::validateDynamicPathsSizes() const
     }
 }
 
-bool ColumnObject::isEmptyAt(size_t n) const
+bool ColumnObject::isEmptyAt(size_t n, bool skip_null_typed_paths) const
 {
-    /// If object column has at least 1 typed path, it will never be empty, because these paths always have values.
     if (!typed_paths.empty())
-        return false;
+    {
+        if (!skip_null_typed_paths)
+            /// If object column has at least 1 typed path, it will never be empty, because these paths always have values.
+            return false;
 
-    /// Check if all dynamic paths have NULL at this row
+        /// When skip_null_typed_paths is true, check each typed path individually:
+        /// only non-NULL values count as present.
+        for (const auto & [path, column] : typed_paths)
+        {
+            if (!column->isNullAt(n))
+                return false;
+        }
+    }
+
+    /// Check if all dynamic paths have NULL at this row.
     for (const auto & [path, column] : dynamic_paths_ptrs)
     {
         if (!column->isNullAt(n))
             return false;
     }
 
-    /// Check if there is no paths in shared data.
+    /// Check if there are no paths in shared data.
     return shared_data->isDefaultAt(n);
 }
 
-bool ColumnObject::hasNonEmptyRows() const
+bool ColumnObject::hasNonEmptyRows(bool skip_null_typed_paths) const
 {
     /// If object column has at least 1 typed path, it will never be empty, because these paths always have values.
-    if (!typed_paths.empty())
+    if (!skip_null_typed_paths && !typed_paths.empty())
         return true;
 
     for (size_t i = 0; i != size(); ++i)
     {
-        if (!isEmptyAt(i))
+        if (!isEmptyAt(i, skip_null_typed_paths))
             return true;
     }
 

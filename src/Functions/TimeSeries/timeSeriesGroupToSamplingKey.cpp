@@ -63,13 +63,9 @@ public:
     {
         auto groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0);
 
-        auto sampling_keys = tags_collector->getSamplingKeyByGroup(groups);
-        chassert(sampling_keys.size() == input_rows_count);
-
         auto result_column = ColumnUInt64::create();
-        result_column->reserve(sampling_keys.size());
-        for (UInt64 key : sampling_keys)
-            result_column->insertValue(key);
+        tags_collector->getSamplingKeyByGroup(groups, result_column->getData());
+        chassert(result_column->size() == input_rows_count);
         return result_column;
     }
 

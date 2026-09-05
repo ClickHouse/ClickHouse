@@ -21,7 +21,6 @@ const Card = ({title, icon, iconUrl, isSelected, onClick}) => (
         : '1px solid rgba(156, 163, 175, 0.4)',
       background: isSelected ? 'rgba(250, 255, 105, 0.08)' : 'transparent',
       cursor: 'pointer',
-      transition: 'border-color 0.15s, background 0.15s',
       font: 'inherit',
       color: 'inherit',
     }}
