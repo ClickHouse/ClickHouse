@@ -1446,10 +1446,12 @@ def print_c_stacktraces(
             backtraces = lldb_backtraces_only(block)
             print(trim_for_log(backtraces, 100))
             # Distinct numbers over the whole dump: the two sections share one
-            # numbering, and either alone can be short (the summary skips threads
-            # with no stop reason, the timeout truncates the backtraces).
+            # numbering, and either alone can be short (the summary omits threads
+            # with no stop reason, the timeout truncates the backtraces), so the
+            # total is exact only while lldb ran to completion.
+            named = len(set(LLDB_THREAD_HEADER_RE.findall(block)))
             threads = (
-                f" for {len(set(LLDB_THREAD_HEADER_RE.findall(block)))} threads"
+                f" for {'at least ' if truncated else ''}{named} threads"
                 if LLDB_BACKTRACE_MARKER in block
                 else ""
             )
