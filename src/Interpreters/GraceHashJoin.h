@@ -11,6 +11,7 @@
 
 #include <Common/MultiVersion.h>
 #include <Common/SharedMutex.h>
+#include <base/defines.h>
 
 #include <mutex>
 
@@ -132,6 +133,10 @@ private:
 
     /// Add right table block to the @join. Calls @rehash on overflow.
     void addBlockToJoinImpl(Block block);
+    /// Doubles the buckets and rebuilds the in-memory join from the rows that stay in the current
+    /// bucket, the rest goes to disk.
+    void spillInMemoryJoin(Block extra_block) TSA_REQUIRES(hash_join_mutex);
+    bool canRehash() const;
 
     /// Check that join satisfies limits on rows/bytes in table_join.
     bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;
