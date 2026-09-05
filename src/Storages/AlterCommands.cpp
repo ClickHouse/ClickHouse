@@ -2055,6 +2055,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
+    /// The constraint names the table has, followed through the adds and drops of this same `ALTER`
+    /// - `apply()` runs the commands one after another - so that a command is screened below only when
+    /// it will really install a declaration.
+    NameSet constraint_names;
+    for (const auto & constraint : metadata->constraints.getConstraints())
+        constraint_names.insert(constraint->as<const ASTConstraintDeclaration &>().name);
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
     for (size_t i = 0; i < size(); ++i)
     {
@@ -2062,6 +2068,30 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
         if (command.ttl && !table->supportsTTL())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support TTL clause", table->getName());
+
+        /// A constraint expression is evaluated per block and read by block row, so an `arrayJoin` inside
+        /// it would check a row against another row's value, or read past the end of a shorter column.
+        /// `MODIFY CONSTRAINT` replaces the stored declaration in place, so it installs a new expression
+        /// just like `ADD CONSTRAINT` does.
+        ///
+        /// Only a declaration that `apply()` will really install is screened. An
+        /// `ADD CONSTRAINT IF NOT EXISTS` of a name that is taken, and a `MODIFY CONSTRAINT` of a name
+        /// that is not there, install nothing, so they keep meaning what they meant before this check
+        /// existed - the same way a no-op `ADD COLUMN IF NOT EXISTS` skips the validation of its column
+        /// below, and the way a missing name is reported by `apply()` rather than pre-empted here.
+        if (command.type == AlterCommand::ADD_CONSTRAINT)
+        {
+            if (command.constraint_decl && !(command.if_not_exists && constraint_names.contains(command.constraint_name)))
+                ConstraintsDescription({command.constraint_decl}).checkExpressionsPreserveRowCount();
+            constraint_names.insert(command.constraint_name);
+        }
+        else if (command.type == AlterCommand::MODIFY_CONSTRAINT)
+        {
+            if (command.constraint_decl && constraint_names.contains(command.constraint_name))
+                ConstraintsDescription({command.constraint_decl}).checkExpressionsPreserveRowCount();
+        }
+        else if (command.type == AlterCommand::DROP_CONSTRAINT)
+            constraint_names.erase(command.constraint_name);
 
         /// `column_statistics_decl` covers the column-declaration spelling
         /// `ALTER TABLE t ADD/MODIFY COLUMN c UInt64 STATISTICS(...)`, which must honor the same
@@ -2076,13 +2106,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         /// doesn't depend on how the same logical alter is spelled.
         if (command.column_statistics_decl != nullptr && !table->supportsStatistics())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support statistics", table->getName());
-
-        /// A `CHECK` constraint whose expression changes the number of rows cannot be checked at insert
-        /// time - see `ConstraintsDescription::assertConstraintPreservesRowCount`. `CREATE TABLE` enforces
-        /// the same invariant in `InterpreterCreateQuery::getTableProperties`, so an alter must not be a
-        /// way around it.
-        if (command.type == AlterCommand::ADD_CONSTRAINT || command.type == AlterCommand::MODIFY_CONSTRAINT)
-            ConstraintsDescription::assertConstraintPreservesRowCount(command.constraint_decl);
 
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)

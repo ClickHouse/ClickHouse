@@ -26,6 +26,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Core/Joins.h>
+#include <Functions/astContainsArrayJoin.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -393,31 +394,6 @@ bool hasArrayJoin(const ASTSelectQuery & select)
         if (elem && elem->array_join)
             return true;
     }
-    return false;
-}
-
-/// Recursively walks `ast` looking for any call to `arrayJoin(...)`
-/// — the function form, distinct from the ARRAY JOIN clause caught by
-/// `hasArrayJoin` above. Both forms multiply rows, so any of them in a
-/// SELECT list breaks oracle invariants like NoREC's
-/// `count(SELECT ... arrayJoin ...) == countIf(WHERE)`.
-bool hasArrayJoinFunction(const ASTPtr & ast)
-{
-    if (!ast)
-        return false;
-    if (const auto * func = ast->as<ASTFunction>())
-    {
-        /// `unnest` is registered as a case-insensitive alias of `arrayJoin`,
-        /// and the parser preserves the caller's spelling, so match both names
-        /// lowercased. Over-matching a spelling that would not resolve merely
-        /// skips one more query, which is the safe direction for this gate.
-        const String name_lower = Poco::toLower(func->name);
-        if (name_lower == "arrayjoin" || name_lower == "unnest")
-            return true;
-    }
-    for (const auto & child : ast->children)
-        if (hasArrayJoinFunction(child))
-            return true;
     return false;
 }
 
@@ -1023,12 +999,11 @@ bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select)
     /// Regular JOINs (INNER, LEFT, RIGHT, FULL, CROSS) are safe — the FROM clause
     /// stays identical across all TLP partitions, only WHERE changes.
     /// ARRAY JOIN clause and PASTE JOIN are NOT safe. Neither is the `arrayJoin()`
-    /// *function* appearing anywhere in the query: it multiplies rows, breaking
+    /// *function* in this query's own scope: it multiplies rows, breaking
     /// `count(Q) == countIf(WHERE)` (NoREC) and the partitioned-vs-whole-table
-    /// row-count equality the TLP oracles depend on.
-    if (hasArrayJoin(select) || hasPasteJoin(select))
-        return false;
-    if (hasArrayJoinFunction(select.clone()))
+    /// row-count equality the TLP oracles depend on. A nested query keeps its
+    /// `arrayJoin` to itself, so it does not disturb these invariants.
+    if (hasArrayJoin(select) || hasPasteJoin(select) || astContainsArrayJoin(select))
         return false;
     /// `system.*` / `INFORMATION_SCHEMA.*` views are non-deterministic.
     if (referencesNonDeterministicDatabase(select))
@@ -1562,9 +1537,7 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
     /// The `arrayJoin(...)` *function* multiplies rows just like the ARRAY JOIN
     /// clause; partitioning by WHERE then breaks the row-count invariant the
     /// oracle relies on. `isSafeForOracle` rejects both — mirror that here.
-    if (hasArrayJoin(select) || hasPasteJoin(select))
-        return false;
-    if (hasArrayJoinFunction(select.clone()))
+    if (hasArrayJoin(select) || hasPasteJoin(select) || astContainsArrayJoin(select))
         return false;
     if (select.limitLength() || select.limitBy() || select.limitOffset() || select.prewhere() || select.qualify())
         return false;
@@ -2362,10 +2335,10 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
     if (hasWindowFunctionWithoutOrderByAnywhere(select))
         return false;
 
-    /// `stripOrderAndLimit` removes ORDER BY. Reject row-expanding functions
-    /// anywhere in the query before it can remove an `ORDER BY arrayJoin(...)`
+    /// `stripOrderAndLimit` removes ORDER BY. Reject row-expanding functions in
+    /// this query's own scope before it can remove an `ORDER BY arrayJoin(...)`
     /// expression and make the oracle validate a different query shape.
-    if (hasArrayJoin(select) || hasPasteJoin(select) || hasArrayJoinFunction(select.clone()))
+    if (hasArrayJoin(select) || hasPasteJoin(select) || astContainsArrayJoin(select))
         return false;
 
     auto ref_ast = select.clone();
