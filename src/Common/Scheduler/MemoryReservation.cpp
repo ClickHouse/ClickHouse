@@ -27,6 +27,7 @@ namespace CurrentMetrics
 {
     extern const Metric MemoryReservationApproved;
     extern const Metric MemoryReservationDemand;
+    extern const Metric MemoryReservationReclaimable;
 }
 
 namespace DB
@@ -49,6 +50,7 @@ MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, Reso
     , reserved_size(reserved_size_)
     , approved_increment(CurrentMetrics::MemoryReservationApproved, 0)
     , demand_increment(CurrentMetrics::MemoryReservationDemand, 0)
+    , reclaimable_increment(CurrentMetrics::MemoryReservationReclaimable, 0)
 {
     chassert(link.allocation_queue);
     actual_size = reserved_size;
@@ -209,6 +211,7 @@ void MemoryReservation::updateReclaimable(const ISpillable * spillable, Resource
         auto & entry = reclaimable[spillable];
         if (entry == bytes)
             return;
+        ProfileEvents::increment(ProfileEvents::MemoryReservationReclaimableBytes, std::max<ResourceCost>(bytes - entry, 0));
         reclaimable_total = reclaimable_total - entry + bytes;
         entry = bytes;
 
@@ -217,6 +220,7 @@ void MemoryReservation::updateReclaimable(const ISpillable * spillable, Resource
             return;
         reported_reclaimable = reclaimable_total;
         total = reclaimable_total;
+        reclaimable_increment.changeTo(total);
     }
     reportReclaimable(total);
 }
@@ -235,6 +239,7 @@ void MemoryReservation::removeReclaimable(const ISpillable * spillable)
             return;
         reported_reclaimable = reclaimable_total;
         total = reclaimable_total;
+        reclaimable_increment.changeTo(total);
     }
     reportReclaimable(total);
 }
@@ -243,7 +248,6 @@ void MemoryReservation::reportReclaimable(ResourceCost total)
 {
     // Called outside mutex to respect lock ordering (AllocationQueue::mutex -> this mutex).
     queue.setReclaimable(*this, total);
-    ProfileEvents::increment(ProfileEvents::MemoryReservationReclaimableBytes, total);
 }
 
 ResourceCost MemoryReservation::takeSpillRequest()
@@ -273,6 +277,7 @@ void MemoryReservation::finishSpill(const ISpillable * spillable, ResourceCost r
         entry = remaining_bytes;
         reported_reclaimable = reclaimable_total;
         total = reclaimable_total;
+        reclaimable_increment.changeTo(total);
     }
 
     /// The scheduler re-evaluates the limits on the reply, so the released memory must be

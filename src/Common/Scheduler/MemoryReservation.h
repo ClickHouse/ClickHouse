@@ -130,6 +130,7 @@ private:
     /// Introspection
     CurrentMetrics::Increment approved_increment;
     CurrentMetrics::Increment demand_increment;
+    CurrentMetrics::Increment reclaimable_increment;
 };
 
 using MemoryReservationPtr = std::unique_ptr<MemoryReservation>;
