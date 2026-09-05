@@ -4162,13 +4162,22 @@ def test_restore_broken_part_as_detached_fenced_to_admission_epoch(started_clust
     try:
         create_table_on_first_node(node1, src, SHARED_UUID_RESTORE_BROKEN_SRC)
         create_table_on_first_node(node1, dst, SHARED_UUID_RESTORE_BROKEN_DST)
+        # The backup holds every active part of the source: the probe-row part written by
+        # `wait_for_leader` as well as the part of the INSERT below. Merges are stopped so that
+        # set is exactly what `system.parts` reports right before the BACKUP.
+        node1.query(f"SYSTEM STOP MERGES {src}")
         wait_for_leader([node1], table_name=src)
         wait_for_leader([node1], table_name=dst)
 
-        # A single INSERT, so the backup holds exactly one data part and the always-on
-        # (`REGULAR`) load-failure failpoint breaks precisely that part.
         node1.query(f"INSERT INTO {src} VALUES (1), (2), (3)")
+        backed_up_parts = node1.query(
+            f"SELECT name FROM system.parts WHERE table = '{src}' AND active ORDER BY name"
+        ).split()
+        assert len(backed_up_parts) >= 2, f"Unexpected part set in the source: {backed_up_parts}"
         node1.query(f"BACKUP TABLE {src} TO {backup_destination}")
+        # The always-on (`REGULAR`) load-failure failpoint breaks every restored part, so a
+        # RESTORE admitted under a fresh epoch detaches each of them.
+        expected_broken_parts = sorted(f"broken-from-backup_{part}" for part in backed_up_parts)
 
         node1.query(f"SYSTEM ENABLE FAILPOINT {load_failure}")
         node1.query(f"SYSTEM ENABLE FAILPOINT {stale_epoch}")
@@ -4212,8 +4221,8 @@ def test_restore_broken_part_as_detached_fenced_to_admission_epoch(started_clust
         # proves the failpoint really drives the `restore_broken_parts_as_detached` branch, so
         # the assertions above are not vacuous.
         node1.query(f"RESTORE TABLE {src} AS {dst} FROM {backup_destination} {restore_settings}")
-        assert detached_broken_parts(dst) == ["broken-from-backup_all_1_1_0"], (
-            "The broken part was not detached by a RESTORE admitted under a fresh epoch"
+        assert detached_broken_parts(dst) == expected_broken_parts, (
+            "The broken parts were not detached by a RESTORE admitted under a fresh epoch"
         )
     finally:
         for failpoint in (load_failure, stale_epoch):
@@ -4221,6 +4230,156 @@ def test_restore_broken_part_as_detached_fenced_to_admission_epoch(started_clust
                 node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
             except Exception:
                 pass
+        for table in (src, dst):
+            try:
+                node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass
+
+
+SHARED_UUID_RESTORE_ADMISSION_SRC = "12345678-abcd-abcd-abcd-12345678ab46"
+SHARED_UUID_RESTORE_ADMISSION_DST = "12345678-abcd-abcd-abcd-12345678ab47"
+
+
+def find_lease_object_key(uuid):
+    """Locate the S3 key of a table's `leader_election` lease file.
+
+    The lease is written through the disk's object storage with the table's relative data path
+    as the raw key - it is not remapped like the `plain_rewritable` part directories - so it is
+    identified by its `<uuid>/leader_election` suffix.
+    """
+    suffix = f"/{uuid}/leader_election"
+    for obj in cluster.minio_client.list_objects(cluster.minio_bucket, recursive=True):
+        if obj.object_name.endswith(suffix):
+            return obj.object_name
+    return None
+
+
+def profile_event(node, name):
+    result = node.query(f"SELECT value FROM system.events WHERE event = '{name}'").strip()
+    return int(result) if result else 0
+
+
+def test_restore_epoch_captured_at_admission(started_cluster):
+    """
+    Regression for WHEN the `RESTORE` admission epoch is sampled. Every stage of a restore is
+    fenced to the leadership epoch of its admission (carried in `RestoredPartsHolder`), but the
+    epoch used to be sampled only in `restorePartsFromBackup`, i.e. after `backup->hasFiles(...)`
+    and the non-empty-table check had already run. A lease lost and reacquired in that window
+    handed the restore the NEW epoch: it then passed every fence and restored into a table an
+    interim leader may have written to meanwhile - the exact race the fence exists to close. The
+    epoch is now captured in `StorageMergeTree::restoreDataFromBackup`, together with the
+    admission check, before any backup metadata is read.
+
+    The `merge_tree_leader_election_pause_after_restore_admission` failpoint holds the restore
+    exactly in that window. While it is paused, the lease file on the shared storage is
+    overwritten with a fresh lease of a foreign leader, so the node observes a genuine leadership
+    loss (`MergeTreeLeaderElectionLost`); once that foreign lease expires the node reclaims it as
+    a NEW epoch (`MergeTreeLeaderElectionAcquired`) and becomes writable again. This is a real
+    lose-and-reacquire, not a simulated stale epoch. The resumed restore was admitted under the
+    old epoch and must be rejected by the fence, leaving nothing on the shared storage.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_pause_after_restore_admission"
+    src = "test_restore_admission_src"
+    dst = "test_restore_admission_dst"
+    backup_destination = (
+        "S3('http://minio1:9001/root/backups/test_restore_admission_epoch', "
+        "'minio', 'ClickHouse_Minio_P@ssw0rd')"
+    )
+    # Same rationale as `test_restore_fenced_to_admission_epoch`: the destination is pre-created
+    # (and its leadership awaited) so the restore is admitted deterministically and can only be
+    # rejected at a fence. The probe rows of `wait_for_leader` make it non-empty, and its UUID
+    # differs from the backed-up one.
+    restore_settings = "SETTINGS allow_non_empty_tables = true, allow_different_table_def = true"
+    restore_thread = None
+    try:
+        create_table_on_first_node(node1, src, SHARED_UUID_RESTORE_ADMISSION_SRC)
+        create_table_on_first_node(node1, dst, SHARED_UUID_RESTORE_ADMISSION_DST)
+        wait_for_leader([node1], table_name=src)
+        wait_for_leader([node1], table_name=dst)
+
+        node1.query(f"INSERT INTO {src} VALUES (1), (2), (3)")
+        node1.query(f"BACKUP TABLE {src} TO {backup_destination}")
+
+        lease_key = find_lease_object_key(SHARED_UUID_RESTORE_ADMISSION_DST)
+        assert lease_key is not None, "The lease file of the destination table was not found"
+
+        lost_before = profile_event(node1, "MergeTreeLeaderElectionLost")
+        acquired_before = profile_event(node1, "MergeTreeLeaderElectionAcquired")
+
+        restore_error = []
+
+        def run_restore():
+            try:
+                node1.query(
+                    f"RESTORE TABLE {src} AS {dst} FROM {backup_destination} {restore_settings}"
+                )
+            except Exception as e:
+                restore_error.append(e)
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        restore_thread = threading.Thread(target=run_restore)
+        restore_thread.start()
+        node1.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+
+        # The restore is admitted and paused before its first backup metadata read. Make node1
+        # lose the lease for real: the next heartbeat reads a fresh lease of another leader.
+        fake_lease = (
+            '{"version":1,"leader_id":"interim-leader-of-test_restore_epoch_captured_at_admission",'
+            f'"timestamp":{int(time.time())}}}'
+        ).encode()
+        cluster.minio_client.put_object(
+            cluster.minio_bucket, lease_key, io.BytesIO(fake_lease), len(fake_lease)
+        )
+        deadline = time.monotonic() + 30
+        while profile_event(node1, "MergeTreeLeaderElectionLost") == lost_before:
+            assert time.monotonic() < deadline, "node1 did not observe the loss of its lease"
+            time.sleep(0.5)
+
+        # The foreign lease expires after `leader_election_session_timeout` (5 s) and node1, the
+        # only participant, reclaims it: a new leadership epoch, the takeover sync, writability.
+        wait_for_leader([node1], table_name=dst)
+        assert profile_event(node1, "MergeTreeLeaderElectionAcquired") > acquired_before, (
+            "node1 became writable again without a new leadership acquisition"
+        )
+
+        # Resume the restore. It was admitted under the previous epoch, so it must be rejected.
+        node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        restore_thread.join(timeout=120)
+        assert not restore_thread.is_alive(), "RESTORE did not finish after the pause was released"
+        restore_thread = None
+        assert restore_error, (
+            "A RESTORE admitted under a lease that was lost and reacquired before its first "
+            "backup metadata read was not rejected"
+        )
+        msg = str(restore_error[0])
+        assert "Leadership epoch" in msg or "stale lease" in msg, (
+            f"RESTORE was rejected, but not by the leadership-epoch fence: {msg}"
+        )
+        assert int(node1.query(f"SELECT count() FROM {dst} WHERE x > 0").strip()) == 0, (
+            "The rejected RESTORE published parts into the destination"
+        )
+
+        # The decisive check: reload the destination's part set from shared storage, as the next
+        # leader would after a failover.
+        node1.query(f"DETACH TABLE {dst}")
+        node1.query(f"ATTACH TABLE {dst}")
+        wait_for_leader([node1], table_name=dst)
+        assert int(node1.query(f"SELECT count() FROM {dst} WHERE x > 0").strip()) == 0, (
+            "The rejected RESTORE left parts on the destination's shared storage"
+        )
+
+        # Positive control: with no leadership change in between, the same RESTORE succeeds.
+        node1.query(f"RESTORE TABLE {src} AS {dst} FROM {backup_destination} {restore_settings}")
+        assert int(node1.query(f"SELECT count() FROM {dst} WHERE x > 0").strip()) == 3
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        if restore_thread is not None:
+            restore_thread.join(timeout=120)
         for table in (src, dst):
             try:
                 node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
