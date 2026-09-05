@@ -687,12 +687,12 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(co
         subcolumn_name = *declared_it;
     }
 
-    auto subcolumn_type = root->type->tryGetSubcolumnType(subcolumn_name);
+    const auto subcolumn_type = root->type->tryGetSubcolumnType(subcolumn_name);
     if (!subcolumn_type)
         return {};
 
     return ColumnWithTypeAndName{
-        root->type->getSubcolumn(subcolumn_name, root->column), std::move(subcolumn_type), column_name};
+        root->type->getSubcolumn(subcolumn_name, root->column), subcolumn_type, column_name};
 }
 
 DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements)
