@@ -1127,6 +1127,13 @@ def test_flush_error_discards_until_sync(started_cluster):
     assert types.count("Z") == 1, (
         f"FLUSH pipeline must emit one ReadyForQuery per Sync, got {types}"
     )
+    # A discarded `Execute` leaves nothing queued, so an empty query that answers with
+    # `EmptyQueryResponse` alone is what distinguishes discarding from executing late.
+    sock.sendall(_fe("Q", b"\x00"))
+    types = read_until_ready()
+    assert types == ["I", "Z"], (
+        f"nothing but the empty query may answer after a discarded Execute, got {types}"
+    )
     # The same connection must stay usable.
     sock.sendall(_fe("Q", b"SELECT 7\x00"))
     types = read_until_ready()
