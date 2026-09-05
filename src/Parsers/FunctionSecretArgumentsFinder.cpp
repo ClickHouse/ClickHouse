@@ -35,6 +35,22 @@ namespace
     }
 }
 
+void FunctionSecretArgumentsFinder::maskEveryArgument()
+{
+    for (size_t i = 0, size = function->arguments->size(); i < size; ++i)
+        markSecretArgument(i);
+}
+
+bool FunctionSecretArgumentsFinder::hasOnlyLiteralArguments(const AbstractFunction & function)
+{
+    if (!function.hasArguments())
+        return true;
+    for (size_t i = 0, size = function.arguments->size(); i < size; ++i)
+        if (!function.arguments->at(i)->tryGetLiteralText(nullptr))
+            return false;
+    return true;
+}
+
 void FunctionSecretArgumentsFinder::markSecretArgument(size_t index, bool argument_is_named)
 {
     if (index >= function->arguments->size())
@@ -1176,8 +1192,14 @@ void FunctionSecretArgumentsFinder::findDataLakeCatalogSecretArguments()
 
 void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
 {
-    if (function->arguments->size() < 2)
+    /// `Backup(database_name, locator)` is the only valid shape, and a locator carrying credentials can
+    /// be written in either position, so any other shape hides every argument. The arity and the engine
+    /// name are not secrets, and the query is formatted for logging before validation rejects it.
+    if (function->arguments->size() != 2 || !function->arguments->at(0)->tryGetLiteralText(nullptr))
+    {
+        maskEveryArgument();
         return;
+    }
 
     auto storage_arg = function->arguments->at(1);
     auto storage_function = storage_arg->getFunction();
@@ -1196,7 +1218,7 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
 
     if (storage_function->name() != "S3")
     {
-        if (isCredentialFreeBackupEngine(storage_function->name()))
+        if (isCredentialFreeBackupEngine(storage_function->name()) && hasOnlyLiteralArguments(*storage_function))
             return;
 
         /// Any other locator holds a credential no rule below reconstructs (`AzureBlobStorage` holds
@@ -1399,6 +1421,12 @@ void FunctionSecretArgumentsFinder::findBackupNameSecretArguments()
     else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
     {
         findAzureBlobStorageTableEngineSecretArguments();
+    }
+    else if (!hasOnlyLiteralArguments(*function))
+    {
+        /// The remaining engines name a destination with literals and hold no credential, but an
+        /// override or map they never read can carry one, and no rule here reconstructs it.
+        maskEveryArgument();
     }
 }
 

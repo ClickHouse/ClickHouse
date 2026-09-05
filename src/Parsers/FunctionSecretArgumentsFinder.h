@@ -180,6 +180,13 @@ protected:
     bool tryGetStringFromArgument(size_t arg_idx, String * res, bool allow_identifier = true) const;
     static bool tryGetStringFromArgument(const AbstractFunction::Argument & argument, String * res, bool allow_identifier = true);
 
+    /// `BackupInfo` keeps named overrides and a trailing map for every backup engine, including the
+    /// ones that read neither, so an argument that is not a plain literal can carry a credential.
+    static bool hasOnlyLiteralArguments(const AbstractFunction & function);
+
+    /// Hides every argument, for a shape whose valid slots cannot be established.
+    void maskEveryArgument();
+
     void findRemoteFunctionSecretArguments();
 
     /// Tries to get either a database name or a qualified table name from an argument.

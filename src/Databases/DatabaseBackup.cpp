@@ -72,6 +72,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -502,7 +503,16 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr)
 
     DatabaseBackup::Configuration result;
 
-    result.database_name = checkAndGetLiteralArgument<String>(engine_args[0], "database_name");
+    /// `checkAndGetLiteralArgument` formats the argument it rejects, and a locator written in this
+    /// position would format its credentials in plaintext.
+    try
+    {
+        result.database_name = checkAndGetLiteralArgument<String>(engine_args[0], "database_name");
+    }
+    catch (const Exception &)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'database_name' must be a string literal");
+    }
     result.backup_info = BackupInfo::fromAST(*engine_args[1]);
 
     return result;

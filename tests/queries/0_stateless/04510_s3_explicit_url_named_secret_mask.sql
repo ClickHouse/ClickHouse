@@ -272,13 +272,46 @@ CREATE DATABASE db_04510_mixed ENGINE = Backup('', S3('url_dbmixed',
 CREATE DATABASE db_04510_ncurl ENGINE = Backup('', S3(nc_dburl_missing,
                  url = concat('https://user:SEKRIT_PW@', 'localhost/x?X-Amz-Signature=SEKRIT_SIG'))); -- { serverError BAD_ARGUMENTS }
 
--- The reconstructor must fail closed on an unsupported tail (headers), not emit it verbatim.
+-- The reconstructor must fail closed on an unsupported tail (headers), not emit it verbatim, and the
+-- rejection message must not echo it either: a nested map's values are hidden only by its parent's
+-- formatter, so such a node formatted on its own carries them in plaintext.
 CREATE DATABASE db_04510_hdr ENGINE = Backup('', S3('url_dbhdr', 'ak', 'SEKRIT_SAK',
-                 headers('X-Auth' = 'SEKRIT_HDR'))); -- { serverError BAD_ARGUMENTS }
+                 headers('X-Auth' = 'SEKRIT_DBHDR'))); -- { serverError BAD_ARGUMENTS }
 
 -- The reconstructor must also fail closed on a constant-expression extra_credentials key.
 CREATE DATABASE db_04510_expr ENGINE = Backup('', S3('url_dbexpr', 'ak', 'SEKRIT_SAK',
                  extra_credentials(concat('extern', 'al_id') = 'SEKRIT_EXPR'))); -- { serverError BAD_ARGUMENTS }
+
+-- `Backup(database_name, locator)` is the only valid shape. The statement is logged before the arity
+-- is validated, so a credential parked in a surplus argument must be hidden as well.
+CREATE DATABASE db_04510_tail ENGINE = Backup('', S3('url_dbtail', 'ak', 'SEKRIT_SAK'),
+                 'SEKRIT_DBTAIL'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+CREATE DATABASE db_04510_tmap ENGINE = Backup('', S3('url_dbtmap', 'ak', 'SEKRIT_SAK'),
+                 extra_credentials(external_id = 'SEKRIT_DBTMAP')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+CREATE DATABASE db_04510_lone ENGINE = Backup(S3('url_dblone', 'ak',
+                 'SEKRIT_DBLONE')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+-- A locator is also a credential carrier in the database-name position, where the argument is neither
+-- masked by the S3 rule below nor safe to echo: the message that rejects it formats it standalone.
+CREATE DATABASE db_04510_swap ENGINE = Backup(S3('url_dbswap', 'ak', 'SEKRIT_DBSWAP'),
+                 ''); -- { serverError BAD_ARGUMENTS }
+
+-- An identifier is not a literal either, and the parsers evaluate one as a literal, so the
+-- database-name position must hold a literal before the rest of the shape is trusted.
+CREATE DATABASE db_04510_ident ENGINE = Backup(SEKRIT_DBIDENT,
+                 S3('url_dbident', 'ak', 'SEKRIT_SAK')); -- { serverError BAD_ARGUMENTS }
+
+-- A credential-free locator (Disk, File, Memory, Null) names its destination with literals and holds
+-- no credential, but it keeps a named override or nested map that it never reads, and that can carry
+-- one. Both the logged text and the not-found message identify the locator, so both must hide it.
+CREATE DATABASE db_04510_ftail ENGINE = Backup('src_04510',
+                 File('nonexistent_04510', extra_credentials(external_id = 'SEKRIT_DBFTAIL'))); -- { serverError BACKUP_NOT_FOUND }
+
+-- A credential value given as an expression is hidden in the logged text, but evaluating it can fail
+-- with a message that quotes its input, so the rejection must not carry that message either. The url
+-- has to parse for the locator to reach credential evaluation at all.
+CREATE DATABASE db_04510_eval ENGINE = Backup('', S3('http://localhost:11111/test/04510eval', 'ak', 'SEKRIT_SAK',
+                 extra_credentials(external_id = toUInt64('SEKRIT_DBEVAL')))); -- { serverError BAD_ARGUMENTS }
 
 -- A locator that is not a function cannot be reconstructed, so the whole argument must be hidden
 -- rather than echoed, both in the logged query text and in the recorded exception message. The
@@ -357,12 +390,14 @@ ORDER BY event_time_microseconds;
 -- logs each DDL from the replay worker, which re-masks a rewritten AST independently, so assert
 -- the masking property over every row this test produced, replay rows included. count() > 0 keeps
 -- an empty row set from passing vacuously.
--- The third column covers the recorded exception messages of the two unreconstructible-locator
+-- The third column covers the recorded exception messages of the six unreconstructible-locator
 -- statements above, whose rejections used to echo the locator verbatim - one tag per message, since
 -- they are thrown at different sites. It is scoped to those tags because widening it to every
 -- deliberately-failing statement here would report unrelated pre-existing echoes.
 SELECT count() > 0, countIf(query LIKE '%SEKRIT%'),
-       countIf(exception LIKE '%SEKRIT_QUOTED%' OR exception LIKE '%SEKRIT_NONLIT%')
+       countIf(exception LIKE '%SEKRIT_QUOTED%' OR exception LIKE '%SEKRIT_NONLIT%'
+               OR exception LIKE '%SEKRIT_DBHDR%' OR exception LIKE '%SEKRIT_DBSWAP%'
+               OR exception LIKE '%SEKRIT_DBEVAL%' OR exception LIKE '%SEKRIT_DBFTAIL%')
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND type != 'QueryStart'
