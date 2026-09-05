@@ -6,6 +6,7 @@
 
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/parseQuery.h>
 
 #include <Interpreters/Context.h>
@@ -49,6 +50,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int NAMED_COLLECTION_DOESNT_EXIST;
 }
 
 namespace ActionLocks
@@ -132,6 +134,80 @@ static void loadDatabase(
     {
         e.addMessage(fmt::format("while loading database {} from file {}", backQuote(database), metadata_file_path));
         throw;
+    }
+}
+
+/// Engines holding no local table definitions or data: omitting such a database loses only a
+/// read-through view of a remote catalog. Their metadata lives in metadata/<name>/, not
+/// store/<uuid>/, so an omitted one is out of reach of the unused-store-directory cleanup.
+static const std::unordered_set<String> skippable_database_engines
+    = {"S3", "Remote", "RemoteSecure", "MySQL", "PostgreSQL"};
+
+static std::optional<String> tryGetDatabaseEngineName(ContextMutablePtr context, const fs::path & metadata_file_path)
+{
+    try
+    {
+        auto default_db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
+        if (!default_db_disk->existsFile(metadata_file_path))
+            return {};
+
+        const String query = readMetadataFile(default_db_disk, metadata_file_path);
+        const Settings & settings = context->getSettingsRef();
+        ParserCreateQuery parser;
+        ASTPtr ast = parseQuery(
+            parser,
+            query.data(),
+            query.data() + query.size(),
+            "in file " + metadata_file_path.string(),
+            0,
+            settings[Setting::max_parser_depth],
+            settings[Setting::max_parser_backtracks]);
+
+        const auto & create = ast->as<const ASTCreateQuery &>();
+        if (!create.storage || !create.storage->engine)
+            return {};
+        return create.storage->engine->name;
+    }
+    catch (...)
+    {
+        return {};
+    }
+}
+
+/// Returns false if the database was not loaded and must be omitted from the catalog.
+static bool loadDatabaseAtStartup(
+    ContextMutablePtr context,
+    const String & database,
+    const fs::path & metadata_file_path,
+    bool force_restore_data,
+    const String & default_database_name,
+    LoggerPtr log)
+{
+    try
+    {
+        loadDatabase(context, database, metadata_file_path, force_restore_data);
+        return true;
+    }
+    catch (const Exception & e)
+    {
+        if (context->getApplicationType() != Context::ApplicationType::SERVER)
+            throw;
+        if (e.code() != ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST)
+            throw;
+
+        /// The default database must exist: the server asserts that right after loading metadata.
+        if (database == default_database_name)
+            throw;
+
+        auto engine_name = tryGetDatabaseEngineName(context, metadata_file_path);
+        if (!engine_name || !skippable_database_engines.contains(*engine_name))
+            throw;
+
+        tryLogCurrentException(
+            log,
+            fmt::format(
+                "Skipping database {}, it will be absent until the server is restarted", backQuoteIfNeed(database)));
+        return false;
     }
 }
 
@@ -294,7 +370,8 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     std::unordered_set<String> restoring_database_for_table_dropping_names;
     for (const auto & [name, metadata_file] : databases)
     {
-        loadDatabase(context, name, metadata_file, has_force_restore_data_flag);
+        if (!loadDatabaseAtStartup(context, name, metadata_file, has_force_restore_data_flag, default_database_name, log))
+            continue;
         loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
         if (name.starts_with(InterpreterSystemQuery::RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX))
             restoring_database_for_table_dropping_names.insert(name);
@@ -302,7 +379,8 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
 
     for (const auto & [name, metadata_file] : orphan_directories_and_symlinks)
     {
-        loadDatabase(context, name, metadata_file, has_force_restore_data_flag);
+        if (!loadDatabaseAtStartup(context, name, metadata_file, has_force_restore_data_flag, default_database_name, log))
+            continue;
         loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
         if (name.starts_with(InterpreterSystemQuery::RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX))
             restoring_database_for_table_dropping_names.insert(name);
