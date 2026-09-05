@@ -12,12 +12,6 @@ VIEWS="v_arity0 v_arity1 v_arity2 v_arity3 v_arity4 v_arity5 v_params v_window v
 
 VIEWS_SQL_LIST=$(for v in $VIEWS; do printf "'%s'," "$v"; done | sed 's/,$//')
 
-# `DROP VIEW` must pin `ignore_drop_queries_probability`: the stress runner injects 0.2, and for a
-# storage whose `storesDataOnDisk` is false (a view) `InterpreterDropQuery` rewrites the DROP to a
-# TRUNCATE, which `StorageView` does not implement, so the statement would fail with
-# `NOT_IMPLEMENTED`. The setting is pinned per statement, not with `SET`, because the runner passes
-# its value as a client option, which beats a session `SET`; a statement-level `SETTINGS` clause is
-# applied per statement inside a batch too, so all the DROPs share one client invocation.
 drop_views() {
     local sql
     # A view left detached by an attempt that died between DETACH and ATTACH keeps its metadata
@@ -31,7 +25,7 @@ FROM system.detached_tables
 WHERE database = currentDatabase() AND table IN (${VIEWS_SQL_LIST})
 ")
     for v in $VIEWS; do
-        sql+="DROP VIEW IF EXISTS $v SETTINGS ignore_drop_queries_probability = 0; "
+        sql+="DROP VIEW IF EXISTS $v; "
     done
     $CLICKHOUSE_CLIENT -q "$sql"
 }

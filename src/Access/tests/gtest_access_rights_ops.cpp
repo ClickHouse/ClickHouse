@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <Access/AccessRights.h>
 #include <Access/AccessRights.cpp>  // NOLINT(bugprone-suspicious-include)
+#include <Access/Common/AccessRightsElement.h>
+#include <Access/Common/AccessType.h>
 #include <IO/WriteBufferFromString.h>
 
 using namespace DB;
@@ -1235,4 +1237,38 @@ TEST(AccessRights, MultipleAccessTypesPartialRevoke)
     // Wildcard checks
     ASSERT_FALSE(root.isGrantedWildcard(AccessType::SELECT, "readonl"));
     ASSERT_TRUE(root.isGrantedWildcard(AccessType::INSERT, "readonl"));
+}
+
+/// A per-authentication-method GRANTS clause (see CREATE/ALTER USER) is a token-style credential limit, and
+/// its serialized form is used as part of a session's privilege identity in the query-result cache and the
+/// asynchronous-insert queue keys. That serialization must be *precise*: the backward-compatibility widening
+/// that `formatElementsWithoutOptions(precise=false)` / `toString` apply for the benefit of old replicas
+/// collapses distinct source-level limits (e.g. `READ ON FILE` and `WRITE ON FILE`, which both fold to the
+/// whole `FILE` source when `enable_read_write_grants` is off) into one string. If the identity used that
+/// widened form, a read-only source token and a write-only source token would share a cache entry / flush
+/// bucket, so `AccessRightsElements::toStringPrecise` must keep them distinct.
+TEST(AccessRightsElementsSerialization, PreciseAvoidsBackwardCompatibleWidening)
+{
+    AccessRightsElements read_file;
+    read_file.emplace_back(AccessFlags(AccessType::READ), "FILE");
+    AccessRightsElements write_file;
+    write_file.emplace_back(AccessFlags(AccessType::WRITE), "FILE");
+
+    /// The backward-compatibility widening (used by the rest of the PR for old-replica compatibility) folds
+    /// both source limits to the same string. `makeBackwardCompatible` treats `enable_read_write_grants` as
+    /// off by default, so this holds regardless of whether a global context is present.
+    WriteBufferFromOwnString widened_read;
+    WriteBufferFromOwnString widened_write;
+    read_file.formatElementsWithoutOptions(widened_read, /*precise=*/false);
+    write_file.formatElementsWithoutOptions(widened_write, /*precise=*/false);
+    ASSERT_EQ(widened_read.str(), widened_write.str());
+
+    /// The precise serialization (used to derive credential identity) keeps them distinct.
+    ASSERT_NE(read_file.toStringPrecise(), write_file.toStringPrecise());
+
+    /// A deny-all clause (semantically empty) still has a stable precise form, and it must not collide with a
+    /// real source grant.
+    AccessRightsElements deny_all;
+    ASSERT_EQ(deny_all.toStringPrecise(), "USAGE ON *.*");
+    ASSERT_NE(deny_all.toStringPrecise(), read_file.toStringPrecise());
 }

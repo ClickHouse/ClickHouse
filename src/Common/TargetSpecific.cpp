@@ -73,6 +73,14 @@ UInt32 getSupportedArchs()
         result |= static_cast<UInt32>(TargetArch::x86_64_sapphirerapids);
     }
 
+    // VAES: v3 + VAES. Kept separate from the levels above because the CPUs that have it do not line
+    // up with any of them: Zen 3 has VAES and no AVX-512, Intel has it only from Ice Lake onwards.
+    if ((result & static_cast<UInt32>(TargetArch::x86_64_v3)) == static_cast<UInt32>(TargetArch::x86_64_v3)
+        && CPU::CPUFlagsCache::have_VAES)
+    {
+        result |= static_cast<UInt32>(TargetArch::x86_64_vaes);
+    }
+
     // CPU vendor detection
     if (CPU::CPUFlagsCache::have_GenuineIntel)
         result |= static_cast<UInt32>(TargetArch::GenuineIntel);
@@ -91,6 +99,7 @@ String toString(TargetArch arch)
         case TargetArch::x86_64_icelake:        return "x86-64-icelake";
         case TargetArch::x86_64_sapphirerapids: return "x86-64-sapphirerapids";
         case TargetArch::GenuineIntel:          return "GenuineIntel";
+        case TargetArch::x86_64_vaes:           return "x86-64-vaes";
     }
 
     // This should never be reached. If it is, someone added a new TargetArch

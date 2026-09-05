@@ -14,6 +14,11 @@ keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhou
 このチュートリアルは [ClickHouse チュートリアル] に沿って進めますが、すべてのクエリを
 pg&#95;clickhouse 経由で実行します。
 
+`pg_clickhouse` の構成方法を選択します。
+
+* ClickHouse Managed Postgres を使用している場合は、[Console から](#from-console)。
+* 拡張機能を自分でインストールして構成する場合は、[PSQL から](#from-psql)。
+
 <div id="start-clickhouse">
   ## ClickHouse を起動する
 </div>
@@ -164,6 +169,41 @@ SELECT count() FROM taxi.trips;
 quit
 ```
 
+<div id="from-console">
+  ## コンソールから
+</div>
+
+ClickHouse Managed Postgres を使用している場合は、`pg_clickhouse` を設定し、ClickHouse Cloud
+コンソールから ClickHouse サービスに接続できます。Managed Postgres サービスを開き、**Settings** を選択して、
+**ClickHouse integration** セクションを探します。**Enable pg&#95;clickhouse** をクリックします。
+
+セットアップフォームで、foreign server の名前を入力します。接続に使用する ClickHouse
+サービス、データベース、ユーザーを選択します。ClickHouse のパスワードを入力し、ClickHouse
+テーブルのインポート先となる Postgres データベースと宛先スキーマを選択します。**Connect** をクリックして foreign
+server を作成し、スキーマをインポートします。
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="ClickHouse Cloud コンソールの taxi データベース用 pg_clickhouse セットアップフォーム" size="lg" border />
+
+セットアップが完了すると、コンソールに確認メッセージが表示され、foreign
+server がサーバーリストに表示されます。
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="ClickHouse Cloud コンソールの taxi データベース用 pg_clickhouse セットアップ完了画面" size="lg" border />
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="taxi pg_clickhouse 接続を示す foreign server リスト" size="lg" border />
+
+これで Postgres の **SQL console** を開き、インポートしたテーブルをクエリできます。
+
+```sql
+SELECT * FROM <schema>.<table>;
+```
+
+このチュートリアルのタクシーの例に従うには、`taxi` ClickHouse
+データベースを選択し、`taxi` 宛先スキーマにインポートします。
+
+<div id="from-psql">
+  ## PSQL から
+</div>
+
 <div id="install-pg_clickhouse">
   ### pg_clickhouse をインストールする
 </div>
@@ -205,6 +245,14 @@ CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
 プロトコルを使用するバイナリドライバーを選択しています。HTTP インターフェイスを使用する
 &quot;http&quot; ドライバーを使うこともできます。
 
+<Note>
+  ClickHouse Cloud console を使用して SQL を実行する場合は、console admin user に foreign server へのアクセスを許可します:
+
+  ```sql
+  GRANT USAGE ON FOREIGN SERVER taxi_srv TO chpg_console_admin;
+  ```
+</Note>
+
 次に、PostgreSQL ユーザーを ClickHouse ユーザーに対応付けます。これを行う最も簡単な方法は、
 現在の PostgreSQL ユーザーを foreign
 server のリモートユーザーにそのまま対応付けることです:
@@ -228,7 +276,7 @@ IMPORT FOREIGN SCHEMA taxi FROM SERVER taxi_srv INTO taxi;
 
 ```pgsql
 taxi=# \det+ taxi.*
-                                       外部テーブルの一覧
+                                       List of foreign tables
  Schema | Table |  Server  |                        FDW options                        | Description
 --------+-------+----------+-----------------------------------------------------------+-------------
  taxi   | trips | taxi_srv | (database 'taxi', table_name 'trips', engine 'MergeTree') | [null]
@@ -485,8 +533,8 @@ ClickHouseサービス内のテーブルに関連付けられた Dictionary を�
 地区に対応する 1 行を含む CSVファイルに基づいています。
 
 各地区は、ニューヨーク市の 5 つの行政区
-(Bronx、Brooklyn、Manhattan、Queens、Staten Island)
-と Newark Airport (EWR) の名前に対応付けられています。
+(Bronx、Brooklyn、Manhattan、Queens、Staten Island) と Newark
+Airport (EWR) の名前に対応付けられています。
 
 以下は、使用する CSVファイルをテーブル形式で抜粋したものです。この
 ファイル内の `LocationID` カラムは、trips テーブル内の `pickup_nyct2010_gid` と
@@ -502,10 +550,10 @@ ClickHouseサービス内のテーブルに関連付けられた Dictionary を�
 
 1. 引き続き Postgres で、`clickhouse_raw_query` 関数を使用して
    ClickHouse の [dictionary] `taxi_zone_dictionary` を作成し、
-   S3 上の CSVファイルから Dictionary にデータを読み込みます。
+   S3 上の CSVファイルから Dictionary にデータを読み込みます:
 
    ```sql
-   SELECT clickhouse_raw_query($$
+   CALL clickhouse_perform('taxi_srv', $$
        CREATE DICTIONARY taxi.taxi_zone_dictionary (
            LocationID Int64 DEFAULT 0,
            Borough String,
@@ -516,66 +564,66 @@ ClickHouseサービス内のテーブルに関連付けられた Dictionary を�
        SOURCE(HTTP(URL 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv' FORMAT 'CSVWithNames'))
        LIFETIME(MIN 0 MAX 0)
        LAYOUT(HASHED_ARRAY())
-   $$, 'host=localhost dbname=taxi');
+   $$);
    ```
 
-<Note>
-  `LIFETIME` を 0 に設定すると、自動更新が無効になり、S3 bucket への不要な
-  トラフィックを回避できます。ほかのケースでは、異なる設定にする
-  場合もあります。詳細については、[LIFETIME を使用した Dictionary データの更新](/ja/reference/statements/create/dictionary/lifetime)を参照してください。
-</Note>
+   <Note>
+     `LIFETIME` を 0 に設定すると、自動更新が無効になり、S3 bucket への不要な
+     トラフィックを回避できます。ほかのケースでは、異なる設定にする
+     場合もあります。詳細については、[LIFETIME を使用した Dictionary データの更新](/ja/reference/statements/create/dictionary/lifetime)を参照してください。
+   </Note>
 
-2. 次に、これをインポートします。
+   2. 次に、これをインポートします。
 
-```sql
-    IMPORT FOREIGN SCHEMA taxi LIMIT TO (taxi_zone_dictionary)
-    FROM SERVER taxi_srv INTO taxi;
-```
+   ```sql
+   IMPORT FOREIGN SCHEMA taxi LIMIT TO (taxi_zone_dictionary)
+   FROM SERVER taxi_srv INTO taxi;
+   ```
 
-3. クエリを実行できることを確認します:
+   3. クエリを実行できることを確認します:
 
-```pgsql
-    taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
-     LocationID |  Borough  |                     Zone                      | service_zone
-    ------------+-----------+-----------------------------------------------+--------------
-             77 | Brooklyn  | East New York/Pennsylvania Avenue             | Boro Zone
-            106 | Brooklyn  | Gowanus                                       | Boro Zone
-            103 | Manhattan | Governor's Island/Ellis Island/Liberty Island | Yellow Zone
-    (3 rows)
-```
+   ```pgsql
+   taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
+    LocationID |  Borough  |                     Zone                      | service_zone
+   ------------+-----------+-----------------------------------------------+--------------
+            77 | Brooklyn  | East New York/Pennsylvania Avenue             | Boro Zone
+           106 | Brooklyn  | Gowanus                                       | Boro Zone
+           103 | Manhattan | Governor's Island/Ellis Island/Liberty Island | Yellow Zone
+   (3 rows)
+   ```
 
-4. すばらしいです。次に、`dictGet` 関数を使って、クエリ内で
-   行政区名を取得します。このクエリでは、LaGuardia または JFK 空港で
-   終了するタクシー乗車数を行政区ごとに合計します:
+   4. すばらしいです。次に、`dictGet` 関数を使って、クエリ内で
+      行政区名を取得します。このクエリでは、LaGuardia または JFK 空港で
+      終了するタクシー乗車数を行政区ごとに合計します:
 
-```pgsql
-    taxi=# SELECT
-            count(1) AS total,
-            COALESCE(NULLIF(dictGet(
-                'taxi.taxi_zone_dictionary', 'Borough',
-                toUInt64(pickup_nyct2010_gid)
-            ), ''), 'Unknown') AS borough_name
-        FROM taxi.trips
-        WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
-        GROUP BY borough_name
-        ORDER BY total DESC;
-     total | borough_name
-    -------+---------------
-     23683 | Unknown
-      7053 | Manhattan
-      6828 | Brooklyn
-      4458 | Queens
-      2670 | Bronx
-       554 | Staten Island
-        53 | EWR
-    (7 rows)
+   ```pgsql
+   taxi=# SELECT
+           count(1) AS total,
+           COALESCE(NULLIF(dictGet(
+               'taxi.taxi_zone_dictionary', 'Borough',
+               toUInt64(pickup_nyct2010_gid)
+           ), ''), 'Unknown') AS borough_name
+       FROM taxi.trips
+       WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
+       GROUP BY borough_name
+       ORDER BY total DESC;
+    total | borough_name
+   -------+---------------
+    23683 | Unknown
+     7053 | Manhattan
+     6828 | Brooklyn
+     4458 | Queens
+     2670 | Bronx
+      554 | Staten Island
+       53 | EWR
+   (7 rows)
 
-    Time: 66.245 ms
-```
+   Time: 66.245 ms
+   ```
 
-このクエリは、LaGuardia または JFK 空港で降車したタクシーの乗車回数を
-borough ごとに合計します。乗車地の地区が不明なケースがかなり多いことに
-注目してください。
+   このクエリは、LaGuardia または JFK 空港で降車したタクシーの乗車回数を
+   行政区ごとに合計します。乗車地の地区が不明なケースがかなり多いことに
+   注目してください。
 
 <div id="perform-a-join">
   ## JOIN を行う
@@ -656,7 +704,7 @@ borough ごとに合計します。乗車地の地区が不明なケースがか
   実際に必要なカラムだけを取得してください。
 </Note>
 
-[ClickHouse tutorial]: /get-started/quickstarts/tutorial "ClickHouse 上級チュートリアル"
+[ClickHouse tutorial]: /get-started/quickstarts/tutorial "ClickHouse チュートリアル"
 
 [psql]: https://www.postgresql.org/docs/current/app-psql.html "PostgreSQL クライアントアプリケーション: psql"
 

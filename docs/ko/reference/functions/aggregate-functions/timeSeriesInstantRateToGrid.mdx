@@ -13,10 +13,12 @@ doc_type: 'reference'
 
 도입 버전: v25.6.0
 
-timestamp와 값의 쌍으로 이루어진 시계열 데이터를 받아, 시작 timestamp, 종료 timestamp, 간격으로 정의된 규칙적인 시간 그리드에서 이 데이터로부터 [PromQL과 유사한 irate](https://prometheus.io/docs/prometheus/latest/querying/functions/#irate)를 계산하는 집계 함수입니다. 그리드의 각 지점에서는 지정된 시간 윈도우 내의 샘플을 사용해 `irate`를 계산합니다.
+타임스탬프와 값의 쌍으로 이루어진 시계열 데이터를 받아, 시작 타임스탬프, 종료 타임스탬프, 간격으로 정의된 규칙적인 시간 그리드에서 이 데이터로부터 [PromQL과 유사한 irate](https://prometheus.io/docs/prometheus/latest/querying/functions/#irate)를 계산하는 집계 함수입니다. 그리드의 각 지점에서는 지정된 시간 윈도우 내의 샘플을 사용해 `irate`를 계산합니다.
+
+여러 샘플의 타임스탬프가 같으면 값이 가장 큰 샘플 하나만 사용됩니다. NaN 값은 다른 모든 값보다 우선순위가 낮으므로, 해당 타임스탬프의 모든 샘플이 NaN인 경우에만 NaN 값이 사용됩니다.
 
 <Warning>
-  이 함수는 실험적 기능이므로, `allow_experimental_ts_to_grid_aggregate_function=true`를 설정하여 활성화하십시오.
+  이 함수는 실험적 기능이므로, `allow_experimental_time_series_aggregate_functions=true`를 설정하여 활성화하십시오.
 </Warning>
 
 **구문**
@@ -27,10 +29,10 @@ timeSeriesInstantRateToGrid(start_timestamp, end_timestamp, grid_step, staleness
 
 **매개변수**
 
-* `start_timestamp` — 그리드의 시작점을 지정합니다. [`UInt32`](/ko/reference/data-types/int-uint) 또는 [`DateTime`](/ko/reference/data-types/datetime)
-* `end_timestamp` — 그리드의 끝점을 지정합니다. [`UInt32`](/ko/reference/data-types/int-uint) 또는 [`DateTime`](/ko/reference/data-types/datetime)
-* `grid_step` — 초 단위 그리드 간격을 지정합니다. [`UInt32`](/ko/reference/data-types/int-uint)
-* `staleness` — 고려할 샘플이 초 단위로 얼마나 오래되어도 되는지의 최대값을 지정합니다. 이 staleness 윈도우는 좌측 개방, 우측 폐구간입니다. [`UInt32`](/ko/reference/data-types/int-uint)
+* `start_timestamp` — 그리드의 시작점을 지정합니다. `DateTime64` 타임스탬프 인수를 사용할 때는 소수 값 또는 숫자나 날짜-시간 텍스트가 포함된 문자열도 사용할 수 있습니다. [`UInt32`](/ko/reference/data-types/int-uint) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`String`](/ko/reference/data-types/string)
+* `end_timestamp` — 그리드의 끝점을 지정합니다. `DateTime64` 타임스탬프 인수를 사용할 때는 소수 값 또는 숫자나 날짜-시간 텍스트가 포함된 문자열도 사용할 수 있습니다. [`UInt32`](/ko/reference/data-types/int-uint) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`String`](/ko/reference/data-types/string)
+* `grid_step` — 초 단위 그리드 간격을 지정합니다. `DateTime64` 타임스탬프 인수를 사용할 때는 소수 값 또는 숫자나 &#39;15s&#39; 또는 &#39;1m&#39; 같은 기간이 포함된 문자열도 사용할 수 있습니다. [`UInt32`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`String`](/ko/reference/data-types/string)
+* `staleness` — 고려할 샘플이 초 단위로 얼마나 오래되어도 되는지의 최대값을 지정합니다. 이 staleness 윈도우는 좌측 개방, 우측 폐구간입니다. `DateTime64` 타임스탬프 인수를 사용할 때는 소수 값 또는 숫자나 &#39;15s&#39; 또는 &#39;1m&#39; 같은 기간이 포함된 문자열도 사용할 수 있습니다. [`UInt32`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`String`](/ko/reference/data-types/string)
 
 **인수**
 

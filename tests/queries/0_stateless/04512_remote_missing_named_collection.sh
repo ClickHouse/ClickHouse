@@ -20,10 +20,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # keep working for that form; the arms below pin both directions.
 #
 # Named collections are server-global, so the collection names are scoped to the (unique) test
-# database to avoid collisions across concurrent runs. A table left DETACHED while its collection
-# is missing keeps on-disk metadata that cannot be loaded, so each such table is re-attached and
-# dropped as soon as its assertion is made: a restart between the assertion and the cleanup is
-# what turned this defect into a startup failure in the first place.
+# database to avoid collisions across concurrent runs. The arms detach PERMANENTLY so that a server
+# restart while the collection is missing still boots: startup skips a permanently detached table
+# without constructing its storage, while `ATTACH TABLE` still replays the on-disk definition.
 NC_TF="nc_missing_tf_${CLICKHOUSE_DATABASE}"
 NC_SK="nc_missing_sk_${CLICKHOUSE_DATABASE}"
 NC_LIVE="nc_live_${CLICKHOUSE_DATABASE}"
@@ -56,7 +55,7 @@ ${CLICKHOUSE_CLIENT} --query "
 SET check_named_collection_dependencies = 0;
 CREATE TABLE t_engine_tf ENGINE = Remote(${NC_TF}, database = merge(currentDatabase(), '^nc_target\$'));
 SELECT count() FROM t_engine_tf;
-DETACH TABLE t_engine_tf SYNC;
+DETACH TABLE t_engine_tf PERMANENTLY SYNC;
 DROP NAMED COLLECTION ${NC_TF};
 "
 run_and_classify '(a) engine, database = merge(...):' "${NC_TF}" "ATTACH TABLE t_engine_tf"
@@ -76,7 +75,7 @@ ${CLICKHOUSE_CLIENT} --query "
 SET check_named_collection_dependencies = 0;
 CREATE TABLE t_engine_sk ENGINE = Remote(${NC_SK}, sharding_key = rand());
 SELECT count() FROM t_engine_sk;
-DETACH TABLE t_engine_sk SYNC;
+DETACH TABLE t_engine_sk PERMANENTLY SYNC;
 DROP NAMED COLLECTION ${NC_SK};
 "
 run_and_classify '(b) engine, sharding_key = rand():' "${NC_SK}" "ATTACH TABLE t_engine_sk"

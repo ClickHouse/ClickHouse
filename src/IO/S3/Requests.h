@@ -236,9 +236,9 @@ private:
 
 size_t getSDKAttemptNumber(const Aws::Http::HttpRequest & request);
 
-size_t getClickhouseAttemptNumber(const Aws::AmazonWebServiceRequest & request);
-size_t getClickhouseAttemptNumber(const Aws::Http::HttpRequest & request);
-void setClickhouseAttemptNumber(Aws::AmazonWebServiceRequest & request, size_t attempt);
+size_t getClickHouseAttemptNumber(const Aws::AmazonWebServiceRequest & request);
+size_t getClickHouseAttemptNumber(const Aws::Http::HttpRequest & request);
+void setClickHouseAttemptNumber(Aws::AmazonWebServiceRequest & request, size_t attempt);
 
 }
 

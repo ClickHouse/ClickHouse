@@ -10,6 +10,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
@@ -17,6 +18,7 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 
@@ -40,16 +42,16 @@ namespace
 /// Read a required String literal argument as a value, without materializing a `Field`.
 String getStringConstArgument(const ASTPtr & arg, const ContextPtr & context, std::string_view arg_name)
 {
-    auto [column, type] = evaluateConstantExpressionAsColumn(arg, context);
+    const auto value = evaluateConstantExpressionAsColumn(arg, context);
     /// Accept `Nullable`/`LowCardinality` wrappers: the previous `Field`-based code read the value
     /// via `operator[]`, which flattens wrappers, so a non-NULL `Nullable(String)`/
     /// `LowCardinality(String)` constant passed the String check. Preserve that, and still reject a
     /// NULL value as before.
-    if (!isStringOrFixedString(removeLowCardinalityAndNullable(type)))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got {}", arg_name, type->getName());
-    if (column->isNullAt(0))
+    if (!isStringOrFixedString(removeLowCardinalityAndNullable(value.getType())))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got {}", arg_name, value.getType()->getName());
+    if (value.isNull())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got NULL", arg_name);
-    return String(column->getDataAt(0));
+    return String(value.getDataAt());
 }
 
 }
@@ -104,6 +106,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
+    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
     auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
         time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
@@ -185,6 +188,9 @@ void StoragePrometheusQuery::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
+    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.evaluation_settings.time_series_storage_id, context));
+    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
+
     LOG_INFO(log, "Building SQL to evaluate promql: {}", *config.promql_query);
     PrometheusQueryToSQL::Converter converter{config.promql_query, config.evaluation_settings};
     ASTPtr select_query = converter.getSQL();
@@ -192,16 +198,11 @@ void StoragePrometheusQuery::readImpl(
     LOG_INFO(log, "Will execute query:\n{}", select_query->formatForLogging());
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
-    /// The generated SQL relies on `AS MATERIALIZED` to avoid evaluating subqueries referenced more than once
-    /// repeatedly (see SQLSubqueryType::MATERIALIZED_TABLE), and that mark has effect only with the setting
-    /// `enable_materialized_cte` enabled. Enable it unless the user set it explicitly.
-    auto query_context = context;
+    /// Isolate the settings required by generated PromQL from the outer query.
+    auto query_context = Context::createCopy(context);
     if (!context->getSettingsRef()[Setting::enable_materialized_cte].changed)
-    {
-        auto context_copy = Context::createCopy(context);
-        context_copy->setSetting("enable_materialized_cte", true);
-        query_context = context_copy;
-    }
+        query_context->setSetting("enable_materialized_cte", true);
+    query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
     InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);

@@ -20,7 +20,7 @@ TEST(BackgroundSchedulePool, Schedule)
 {
     auto pool = BackgroundSchedulePool::create(4, 4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
 
-    std::atomic<size_t> counter;
+    std::atomic<size_t> counter{0};
     std::mutex mutex;
     std::condition_variable condvar;
 
@@ -28,6 +28,9 @@ TEST(BackgroundSchedulePool, Schedule)
     BackgroundSchedulePoolTaskHolder task;
     task = pool->createTask(StorageID::createEmpty(), "test", [&]
     {
+        /// counter is published under the waiter's mutex, so the increment that completes it is
+        /// visible to a waiter that has already evaluated its predicate.
+        std::lock_guard lock(mutex);
         ++counter;
         if (counter < ITERATIONS)
             ASSERT_EQ(task->schedule(), true);
@@ -36,19 +39,28 @@ TEST(BackgroundSchedulePool, Schedule)
     });
     ASSERT_EQ(task->activateAndSchedule(), true);
 
-    std::unique_lock lock(mutex);
-    condvar.wait(lock, [&] { return counter == ITERATIONS; });
+    bool timed_out = false;
+    {
+        std::unique_lock lock(mutex);
+        /// The wait status decides, not the predicate: a dropped notification leaves the predicate
+        /// true, so the predicate overload of wait_for would report success after the deadline.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while (counter != ITERATIONS && !timed_out)
+            timed_out = condvar.wait_until(lock, deadline) == std::cv_status::timeout;
+    }
 
-    ASSERT_EQ(counter, ITERATIONS);
-
+    /// The pool's destructor requires join(), so a fatal assertion must not precede it.
     pool->join();
+
+    EXPECT_FALSE(timed_out) << "timed out with " << counter << " of " << ITERATIONS << " iterations run";
+    ASSERT_EQ(counter, ITERATIONS);
 }
 
 TEST(BackgroundSchedulePool, ScheduleAfter)
 {
     auto pool = BackgroundSchedulePool::create(4, 4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
 
-    std::atomic<size_t> counter;
+    std::atomic<size_t> counter{0};
     std::mutex mutex;
     std::condition_variable condvar;
 
@@ -56,6 +68,9 @@ TEST(BackgroundSchedulePool, ScheduleAfter)
     BackgroundSchedulePoolTaskHolder task;
     task = pool->createTask(StorageID::createEmpty(), "test", [&]
     {
+        /// counter is published under the waiter's mutex, so the increment that completes it is
+        /// visible to a waiter that has already evaluated its predicate.
+        std::lock_guard lock(mutex);
         ++counter;
         if (counter < ITERATIONS)
             ASSERT_EQ(task->scheduleAfter(1), true);
@@ -64,14 +79,21 @@ TEST(BackgroundSchedulePool, ScheduleAfter)
     });
     ASSERT_EQ(task->activateAndSchedule(), true);
 
+    bool timed_out = false;
     {
         std::unique_lock lock(mutex);
-        condvar.wait(lock, [&] { return counter == ITERATIONS; });
+        /// The wait status decides, not the predicate: a dropped notification leaves the predicate
+        /// true, so the predicate overload of wait_for would report success after the deadline.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while (counter != ITERATIONS && !timed_out)
+            timed_out = condvar.wait_until(lock, deadline) == std::cv_status::timeout;
     }
 
-    ASSERT_EQ(counter, ITERATIONS);
-
+    /// The pool's destructor requires join(), so a fatal assertion must not precede it.
     pool->join();
+
+    EXPECT_FALSE(timed_out) << "timed out with " << counter << " of " << ITERATIONS << " iterations run";
+    ASSERT_EQ(counter, ITERATIONS);
 }
 
 /// Previously leads to UB

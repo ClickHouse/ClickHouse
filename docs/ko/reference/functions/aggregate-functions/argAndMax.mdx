@@ -13,7 +13,7 @@ doc_type: 'reference'
 
 도입 버전: v1.1.0
 
-최대 `val` 값에 대한 `arg`와 `val` 값을 계산합니다.
+`val`의 최댓값에 대한 `arg`와 `val` 값을 계산합니다.
 최대값과 같은 `val`을 가진 행이 여러 개인 경우, 해당하는 `arg`와 `val` 중 어떤 값이 반환될지는 결정적이지 않습니다.
 `arg`와 `max` 두 부분은 모두 [집계 함수](/ko/reference/functions/aggregate-functions/index)처럼 동작하며, 처리 중에 [`Null`을 건너뛰고](/ko/reference/functions/aggregate-functions/index#null-processing) `Null`이 아닌 값을 사용할 수 있으면 `Null`이 아닌 값을 반환합니다.
 
@@ -39,13 +39,22 @@ argAndMax(arg, val)
 
 **반환 값**
 
-최대 `val` 값에 대응하는 `arg` 값과 최대 `val` 값을 포함하는 튜플을 반환합니다. [`Tuple`](/ko/reference/data-types/tuple)
+`val`의 최댓값에 대응하는 `arg` 값과 `val`의 최댓값을 포함하는 튜플을 반환합니다. [`Tuple`](/ko/reference/data-types/tuple)
 
 **예시**
 
 **기본 사용법**
 
 ```sql title=Query
+CREATE TABLE salary
+(
+    user String,
+    salary UInt32
+)
+ENGINE = Memory AS
+SELECT *
+FROM VALUES(('worker', 1000), ('manager', 3000), ('director', 5000));
+
 SELECT argAndMax(user, salary) FROM salary;
 ```
 

@@ -5,6 +5,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Utils.h>
 #include <Common/assert_cast.h>
 
@@ -17,6 +18,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
+#include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 
 namespace DB
@@ -204,7 +206,15 @@ bool traverseDAGFilterSingleColumn(
         }
         else
         {
-            const auto casted_set_ptr = castColumnAccurateOrNull(set_column, primary_key_type);
+            // The rows below become Fields and the caller re-derives the serialization from the
+            // declared key type, so the cast may run against the stripped type. It has to:
+            // castColumnAccurateOrNull refuses a target it cannot wrap in Nullable.
+            const auto cast_target_type = removeLowCardinality(primary_key_type);
+
+            if (!canBeAccurateCastOrNullTarget(cast_target_type))
+                return false;
+
+            const auto casted_set_ptr = castColumnAccurateOrNull(set_column, cast_target_type);
             const auto & casted_set_nullable = assert_cast<const ColumnNullable &>(*casted_set_ptr);
             const auto & casted_set_null_map = casted_set_nullable.getNullMapData();
             for (char8_t i : casted_set_null_map)

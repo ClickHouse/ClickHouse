@@ -325,6 +325,7 @@ struct FormatSettings
         bool empty_as_default = false;
         bool type_json_skip_invalid_typed_paths = false;
         bool type_json_skip_duplicated_paths = false;
+        bool type_json_skip_null_typed_paths = false;
         std::optional<size_t> max_dynamic_subcolumns_in_json_type_parsing = std::nullopt;
         bool type_json_allow_duplicated_key_with_literal_and_nested_object = false;
         bool type_json_use_partial_match_to_skip_paths_by_regexp = true;
@@ -390,6 +391,7 @@ struct FormatSettings
         UInt64 row_group_bytes = 512 * 1024 * 1024;
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
+        bool output_wide_integer_as_decimal = false;
         bool output_datetime_as_uint32 = false;
         bool output_date_as_uint16 = false;
         bool output_enum_as_byte_array = false;

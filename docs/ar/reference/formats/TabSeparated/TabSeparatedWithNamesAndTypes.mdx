@@ -19,10 +19,10 @@ doc_type: 'reference'
 يختلف عن تنسيق [`TabSeparated`](/ar/reference/formats/TabSeparated/TabSeparated) في أن أسماء الأعمدة تُكتب في الصف الأول، بينما تُكتب أنواع الأعمدة في الصف الثاني.
 
 <Note>
-  * إذا كان الإعداد [`input_format_with_names_use_header`](/ar/reference/settings/formats#input_format_with_names_use_header) مضبوطًا على `1`،
-    فستُطابَق أعمدة بيانات الإدخال مع أعمدة الجدول حسب أسمائها، وسيُتخطّى أي عمود يحمل اسمًا غير معروف إذا كان الإعداد [`input_format_skip_unknown_fields`](/ar/reference/settings/formats#input_format_skip_unknown_fields) مضبوطًا على `1`.
+  * إذا كان الإعداد [`input_format_with_names_use_header`](/ar/reference/settings/formats/input-format#input_format_with_names_use_header) مضبوطًا على `1`،
+    فستُطابَق أعمدة بيانات الإدخال مع أعمدة الجدول حسب أسمائها، وسيُتخطّى أي عمود يحمل اسمًا غير معروف إذا كان الإعداد [`input_format_skip_unknown_fields`](/ar/reference/settings/formats/input-format#input_format_skip_unknown_fields) مضبوطًا على `1`.
     وإلا فسيُتخطّى الصف الأول.
-  * إذا كان الإعداد [`input_format_with_types_use_header`](/ar/reference/settings/formats#input_format_with_types_use_header) مضبوطًا على `1`،
+  * إذا كان الإعداد [`input_format_with_types_use_header`](/ar/reference/settings/formats/input-format#input_format_with_types_use_header) مضبوطًا على `1`،
     فستُقارَن أنواع بيانات الإدخال بأنواع الأعمدة المقابلة في الجدول. وإلا فسيُتخطّى الصف الثاني.
 </Note>
 

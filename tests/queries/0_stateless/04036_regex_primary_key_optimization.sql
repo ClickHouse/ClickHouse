@@ -25,8 +25,8 @@ SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_
 SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa-1') SETTINGS force_primary_key = 1, max_rows_to_read = 1;
 SELECT * FROM test_regex_prefix WHERE match(id, '^aaa-1') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 1;
 
--- No optimization: match patterns containing NUL bytes are not optimized
-SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa\0bbb') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- A NUL byte is an ordinary literal character, so the prefix "aaa\0bbb" is used and matches nothing
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa\0bbb') SETTINGS force_primary_key = 1;
 
 -- Escaped special chars become literal prefix characters
 SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa\\.')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';

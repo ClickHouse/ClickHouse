@@ -2,7 +2,7 @@
 slug: /cloud/managed-postgres/pricing
 sidebarTitle: 'التسعير'
 title: 'التسعير'
-description: 'نموذج التسعير، والفئات، وأنواع المثيلات، وتفاصيل تسعير Beta لـ Postgres المُدار بواسطة ClickHouse'
+description: 'نموذج التسعير، والفئات، وأنواع المثيلات، وتفاصيل تسعير Beta لـ ClickHouse Managed Postgres'
 keywords: ['تسعير Postgres', 'تكلفة Managed Postgres', 'تسعير Postgres في Beta', 'حاسبة تسعير Postgres', 'تسعير NVMe', 'تسعير فئات Postgres']
 doc_type: 'reference'
 ---
@@ -11,11 +11,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.pricing-beta" />
 
-تعتمد خدمة Postgres managed by ClickHouse على تخزين NVMe محلي، ما يتيح لها تقديم أداء بمستوى الإنتاج وتكامل أصلي مع ClickHouse من دون التكلفة الإضافية المرتبطة ببنيات التخزين المتصل بالشبكة التقليدية. تغطي هذه الصفحة نموذج التسعير، وأنواع المثيلات المتاحة، ومقارنة الفئات.
-
-أصبحت خدمة Postgres managed by ClickHouse متاحة الآن في Beta. وستظل الخدمة مجانية حتى يبدأ احتساب الاستخدام في 15 يونيو 2026، مما يمنح الفرق وقتًا لتحديد أحجام المثيلات بالشكل المناسب قبل بدء الفوترة.
-
-خلال فترة Beta، تتضمن جميع الخطط خصمًا بنسبة 50%، تأكيدًا على التزامنا تجاه عملائنا الأوائل. يبدأ التسعير من نحو **30 دولارًا شهريًا** مقابل 1 vCPU و8 GB RAM وتهيئة تخزين NVMe بسعة 59 GB.
+تعتمد خدمة ClickHouse Managed Postgres على تخزين NVMe محلي، ما يتيح لها تقديم أداء بمستوى الإنتاج وتكامل أصلي مع ClickHouse من دون التكلفة الإضافية المرتبطة ببنيات التخزين المتصل بالشبكة التقليدية. تغطي هذه الصفحة نموذج التسعير، وأنواع المثيلات المتاحة، ومقارنة الفئات لهذه الخدمة المتاحة في Beta.
 
 <Tip>
   **حاسبة التسعير**
@@ -62,7 +58,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
       <li><a href="/ar/products/managed-postgres/extensions">أكثر من 90 إضافة لـ Postgres</a></li>
       <li><a href="/ar/products/managed-postgres/clickhouse-integration">Native CDC إلى ClickHouse</a></li>
       <li><a href="/ar/products/managed-postgres/extensions">إضافة <code>pg&#95;clickhouse</code></a></li>
-      <li><a href="/ar/products/managed-postgres/migrations/clickhouse-cloud">ترحيل بيانات مُدار بالكامل</a></li>
+      <li><a href="/ar/products/managed-postgres/migrations/clickpipes">ترحيل بيانات مُدار بالكامل</a></li>
       <li>دعم خبراء بزمن استجابة يبلغ يوم عمل واحد</li>
       <li><a href="/ar/products/cloud/guides/security/cloud-access-management/manage-my-account">المصادقة عبر تسجيل الدخول الأحادي (SSO)</a> باستخدام تسجيل الدخول الاجتماعي من Google أو Microsoft</li>
       <li><a href="/ar/products/cloud/guides/security/cloud-access-management/manage-my-account#mfa">المصادقة متعددة العوامل</a></li>
@@ -79,6 +75,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
       <li><a href="/ar/products/managed-postgres/scaling">حتى 96 vCPU و768 جيجابايت من RAM</a></li>
       <li><a href="/ar/products/managed-postgres/scaling">التوسّع التلقائي للتخزين</a></li>
       <li><a href="/ar/products/managed-postgres/read-replicas">النسخ المتماثلة للقراءة</a></li>
+      <li><a href="/ar/products/managed-postgres/upgrades#scheduled-upgrades">الترقيات المجدولة</a></li>
       <li><a href="/ar/products/managed-postgres/security">الشبكات الخاصة</a></li>
       <li><a href="/ar/products/managed-postgres/backup-and-restore">نسخ احتياطية مع فترة احتفاظ لمدة 7 أيام</a></li>
       <li><a href="/ar/products/managed-postgres/monitoring/query-insights">Query Insights</a> مع فترة احتفاظ لمدة 7 أيام</li>
@@ -96,8 +93,8 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
       <li>مناطق خاصة</li>
       <li>مهندس دعم رئيسي مخصص</li>
       <li><a href="/ar/products/managed-postgres/extensions">إضافات مخصصة</a> (*بانتظار الموافقة)</li>
-      <li><a href="/ar/products/managed-postgres/migrations/clickhouse-cloud">أدلة إرشادية استشارية لعمليات الترحيل</a></li>
-      <li><a href="/ar/products/managed-postgres/upgrades">الترقيات المجدولة</a></li>
+      <li><a href="/ar/products/managed-postgres/migrations/clickpipes">أدلة إرشادية استشارية لعمليات الترحيل</a></li>
+      <li><a href="/ar/products/managed-postgres/upgrades#days-of-the-week">اختيار يوم من الأسبوع للترقيات المجدولة</a></li>
     </ul>
   </div>
 </div>
@@ -106,11 +103,11 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
   ### أنواع المثيلات
 </div>
 
-تُقسَّم تكوينات المثيلات إلى ثلاث فئات لتسهيل اختيار البنية التحتية بناءً على خصائص أعباء العمل.
+تُقسَّم تكوينات المثيلات إلى ثلاث فئات لتسهيل اختيار البنية التحتية بناءً على خصائص أعباء العمل. لا تتوفر جميع أنواع المثيلات في كل منطقة AWS.
 
-* **محسّنة للذاكرة:** مُصمَّمة لأعباء العمل كثيفة الذاكرة ذات نسب الذاكرة إلى CPU الأعلى (مثل 1:8 أو 1:4). تدعم عائلات AWS Graviton المستندة إلى `r8gd` و`r6gd` و`m6gd` و`m8gd`. وهي الأنسب لمجموعات العمل الكبيرة، وارتفاع معدلات الإصابة في ذاكرة التخزين المؤقت، وأعباء عمل قواعد البيانات المقيّدة بالذاكرة.
-* **محسّنة للتخزين:** مُصمَّمة لأعباء العمل التي تتطلب كميات كبيرة من تخزين NVMe المحلي دون توسيع القدرة الحاسوبية بشكل متناسب. تدعم عائلات AWS Graviton المستندة إلى `i8g` و`i8ge` و`i7i` و`i7ie`، مع تكوينات توفّر ما يصل إلى 60 تيرابايت من تخزين NVMe المحلي. وهي الأنسب لمجموعات البيانات الكبيرة، وأعباء العمل الخاصة بالسلاسل الزمنية، وتخزين السجلات والأحداث، وأعباء عمل OLTP كثيفة التخزين.
-* **محسّنة لـ CPU:** مُصمَّمة لأعباء العمل كثيفة القدرة الحاسوبية ذات نسب الذاكرة إلى CPU الأقل (عادةً ما تكون في حدود 1:2). تدعم عائلات `c6gd`، وهي الأنسب لأعباء العمل المعاملية عالية التزامن والاستعلامات المقيّدة بـ CPU.
+* **محسّنة للذاكرة:** مُصمَّمة لأعباء العمل كثيفة الذاكرة بنسبة ذاكرة إلى CPU تبلغ 1:8. تدعم عائلات `r8id` و`r6id` المستندة إلى x86، وعائلتي `r8gd` و`r6gd` المستندتين إلى ARM64 (AWS Graviton). وهي الأنسب لمجموعات العمل الكبيرة، وارتفاع معدلات الإصابة في ذاكرة التخزين المؤقت، وأعباء عمل قواعد البيانات المقيّدة بالذاكرة.
+* **محسّنة للتخزين:** مُصمَّمة لأعباء العمل التي تتطلب كميات كبيرة من تخزين NVMe المحلي دون توسيع القدرة الحاسوبية بشكل متناسب. تدعم عائلتي `i8g` و`i8ge` المستندتين إلى ARM64 (AWS Graviton)، وعائلتي `i7i` و`i7ie` المستندتين إلى x86، مع تكوينات توفّر ما يصل إلى 60 تيرابايت من تخزين NVMe المحلي. وهي الأنسب لمجموعات البيانات الكبيرة، وأعباء العمل الخاصة بالسلاسل الزمنية، وتخزين السجلات والأحداث، وأعباء عمل OLTP كثيفة التخزين.
+* **محسّنة لـ CPU:** مُصمَّمة لأعباء العمل مكثفة حوسوبيًا بنسبة ذاكرة إلى CPU تبلغ 1:4. تدعم عائلتي `m8id` و`m6id` المستندتين إلى x86، وعائلتي `m8gd` و`m6gd` المستندتين إلى ARM64 (AWS Graviton). وهي الأنسب لأعباء العمل المعاملية عالية التزامن والاستعلامات المقيّدة بـ CPU.
 
 <div id="pricing-calculator">
   ## حاسبة التسعير

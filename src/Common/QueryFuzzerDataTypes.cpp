@@ -62,6 +62,27 @@ const std::unordered_set<String> & QueryFuzzer::geoAliasNames()
     return names;
 }
 
+/// `Nullable`, `LowCardinality(Nullable)`, `Variant` and `Dynamic` are not allowed inside `Variant`,
+/// and the constructor of `DataTypeVariant` throws on them. The fuzzer may produce such a type for a
+/// variant alternative, so coerce it into something the type is allowed to hold.
+static DataTypePtr makeTypeAllowedInsideVariant(const DataTypePtr & type)
+{
+    if (isNullableOrLowCardinalityNullable(type))
+        return makeTypeAllowedInsideVariant(removeNullableOrLowCardinalityNullable(type));
+
+    const auto type_id = type->getTypeId();
+    if (type_id == TypeIndex::Variant || type_id == TypeIndex::Dynamic)
+        return std::make_shared<DataTypeString>();
+
+    return type;
+}
+
+static void makeTypesAllowedInsideVariant(DataTypes & types)
+{
+    for (auto & type : types)
+        type = makeTypeAllowedInsideVariant(type);
+}
+
 DataTypePtr QueryFuzzer::fuzzContainerChildren(const DataTypePtr & type)
 {
     if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
@@ -76,6 +97,7 @@ DataTypePtr QueryFuzzer::fuzzContainerChildren(const DataTypePtr & type)
     {
         DataTypes variants = type_variant->getVariants();
         fuzzDataTypes(variants);
+        makeTypesAllowedInsideVariant(variants);
         return std::make_shared<DataTypeVariant>(variants);
     }
     return nullptr;
@@ -281,6 +303,7 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         /// Occasionally drop an alternative (keep at least 1)
         if (variants.size() > 1 && fuzz_rand() % 4 == 0)
             variants.erase(variants.begin() + fuzz_rand() % variants.size());
+        makeTypesAllowedInsideVariant(variants);
         return std::make_shared<DataTypeVariant>(variants);
     }
 
@@ -573,7 +596,7 @@ DataTypePtr QueryFuzzer::getRandomType()
             const size_t tuple_size = fuzz_rand() % 6 + 1;
             DataTypes elements;
             for (size_t i = 0; i < tuple_size; ++i)
-                elements.push_back(getRandomType());
+                elements.push_back(makeTypeAllowedInsideVariant(getRandomType()));
             return std::make_shared<DataTypeVariant>(elements);
         }
         case TypeIndex::Array: return std::make_shared<DataTypeArray>(getRandomType());

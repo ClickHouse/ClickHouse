@@ -17,9 +17,11 @@
 
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Common/threadPoolCallbackRunner.h>
 
-#include <optional>
+#include <atomic>
+#include <future>
+#include <mutex>
+#include <vector>
 #include <base/defines.h>
 
 #include <Core/BackgroundSchedulePool.h>
@@ -27,7 +29,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 
 namespace DB
 {
@@ -35,45 +36,54 @@ namespace DB
 namespace Iceberg
 {
 
-class SingleThreadIcebergKeysIterator
+class DataFileEntriesStream
 {
 public:
-    SingleThreadIcebergKeysIterator(
-        ObjectStoragePtr object_storage_,
-        ContextPtr local_context_,
-        Iceberg::ManifestFileContentType manifest_file_content_type_,
-        const ActionsDAG * filter_dag_,
-        TableStateSnapshotPtr table_snapshot_,
+    using CreateManifestIterator = std::function<ManifestIteratorPtr(const ManifestFileCacheKey &, const std::atomic<bool> *)>;
+
+    DataFileEntriesStream(
+        size_t queue_size_,
+        size_t decode_concurrency_,
         IcebergDataSnapshotPtr data_snapshot_,
-        PersistentTableComponents persistent_components);
+        std::function<void()> prepare_,
+        CreateManifestIterator create_manifest_iterator_);
 
-    ~SingleThreadIcebergKeysIterator();
+    ~DataFileEntriesStream();
 
-    std::optional<DB::Iceberg::ProcessedManifestFileEntryPtr> next();
+    bool pop(ProcessedManifestFileEntryPtr & entry);
+    void clearAndFinish();
+    std::exception_ptr getException() const;
 
 private:
-    void schedulePrefetchIfPossible();
-
-    ObjectStoragePtr object_storage;
-    std::shared_ptr<const ActionsDAG> filter_dag;
-    ContextPtr local_context;
-    Iceberg::TableStateSnapshotPtr table_snapshot;
-    Iceberg::IcebergDataSnapshotPtr data_snapshot;
-    PersistentTableComponents persistent_components;
-    LoggerPtr log;
-
-    size_t manifest_file_index = 0;
-    Iceberg::ManifestIteratorPtr current_manifest_file_iterator;
-
-    const Iceberg::ManifestFileContentType manifest_file_content_type;
-
-    struct PrefetchedManifest
+    struct InFlightManifest
     {
-        size_t manifest_list_index;
-        std::future<Iceberg::ManifestFileCacheableInfo> future;
+        explicit InFlightManifest(ManifestFileCacheKey key_)
+            : key(std::move(key_))
+        {
+        }
+
+        ManifestFileCacheKey key;
+        ManifestIteratorPtr iterator;
+        std::vector<ProcessedManifestFileEntryPtr> chunk;
+        bool exhausted = false;
+        std::future<void> future;
     };
-    std::optional<PrefetchedManifest> prefetched_manifest;
-    ThreadPoolCallbackRunnerUnsafe<Iceberg::ManifestFileCacheableInfo> prefetch_runner;
+
+    void run();
+    void decodeChunk(InFlightManifest & manifest);
+    void stop();
+
+    const size_t chunk_size;
+    const size_t decode_concurrency;
+    const IcebergDataSnapshotPtr data_snapshot;
+
+    const std::function<void()> prepare;
+    const CreateManifestIterator create_manifest_iterator;
+    ConcurrentBoundedQueue<ProcessedManifestFileEntryPtr> queue;
+    std::atomic<bool> stopped{false};
+    mutable std::mutex exception_mutex;
+    std::exception_ptr exception TSA_GUARDED_BY(exception_mutex);
+    std::unique_ptr<ThreadFromGlobalPool> producer;
 };
 
 }
@@ -96,20 +106,30 @@ public:
     ~IcebergIterator() override;
 
 private:
+    void ensureDeletesReady();
+    void decodeDeleteManifests();
+    Iceberg::ManifestIteratorPtr createManifestIterator(const ManifestFileCacheKey & manifest_list_entry, const std::atomic<bool> * stop_flag) const;
+    std::vector<Iceberg::ProcessedManifestFileEntryPtr> decodeManifest(const ManifestFileCacheKey & manifest_list_entry, const std::atomic<bool> * stop_flag) const;
+
     LoggerPtr logger;
-    std::shared_ptr<ActionsDAG> filter_dag;
     ObjectStoragePtr object_storage;
+    ContextPtr local_context;
     const Iceberg::TableStateSnapshotPtr table_state_snapshot;
+    Iceberg::IcebergDataSnapshotPtr data_snapshot;
     Iceberg::PersistentTableComponents persistent_components;
-    Iceberg::SingleThreadIcebergKeysIterator data_files_iterator;
-    Iceberg::SingleThreadIcebergKeysIterator deletes_iterator;
-    ConcurrentBoundedQueue<Iceberg::ProcessedManifestFileEntryPtr> blocking_queue;
-    std::unique_ptr<ThreadFromGlobalPool> producer_task;
+    /// Shared read-only by the concurrent data- and delete-manifest decode tasks.
+    std::shared_ptr<const ActionsDAG> manifest_filter_dag;
     IDataLakeMetadata::FileProgressCallback callback;
+    /// Filled once under `deletes_mutex` and never mutated afterwards, so `next` may read them
+    /// unguarded once it has gone through `ensureDeletesReady`.
     std::vector<Iceberg::ProcessedManifestFileEntryPtr> position_deletes_files;
     std::vector<Iceberg::ProcessedManifestFileEntryPtr> equality_deletes_files;
-    std::exception_ptr exception;
-    std::mutex exception_mutex;
+    std::mutex deletes_mutex;
+    bool deletes_ready TSA_GUARDED_BY(deletes_mutex) = false;
+    std::exception_ptr deletes_exception TSA_GUARDED_BY(deletes_mutex);
+    /// Declared last: its tasks call back into `createManifestIterator`, so it must be destroyed
+    /// (producer joined, tasks drained) before any other member.
+    std::unique_ptr<Iceberg::DataFileEntriesStream> data_files_stream;
 };
 }
 

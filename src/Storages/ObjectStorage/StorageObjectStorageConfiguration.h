@@ -2,7 +2,6 @@
 
 #include <Storages/IPartitionStrategy.h>
 #include <Formats/FormatSettings.h>
-#include <Processors/Formats/IInputFormat.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -130,6 +129,8 @@ public:
     virtual String getDataSourceDescription() const = 0;
     virtual String getNamespace() const = 0;
 
+    virtual String getDataSourceDescriptionForNamespace(const String &) const { return getDataSourceDescription(); }
+
     virtual StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const = 0;
 
     /// Add/replace structure and format arguments in the AST arguments if they have 'auto' values.
@@ -151,6 +152,8 @@ public:
     virtual bool isDataLakeConfiguration() const { return false; }
     virtual bool isIcebergConfiguration() const { return false; }
 
+    virtual bool supportsFullyQualifiedPaths() const { return false; }
+
     virtual bool supportsTotalRows(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
     virtual bool supportsTotalBytes(ContextPtr, ObjectStorageType) const { return false; }
@@ -160,7 +163,7 @@ public:
     /// However snapshot_id is specified in StorageMetadataPtr, so we can extract necessary information from it.
     virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
 
-    virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
+    virtual std::shared_ptr<IDataLakeMetadata> getExternalMetadata() { return {}; }
 
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
 
@@ -284,7 +287,7 @@ public:
 
     virtual bool optimize(ObjectStoragePtr /*object_storage*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
     {
-        return false;
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support optimize", getTypeName());
     }
 
     virtual bool supportsPrewhere() const
@@ -335,6 +338,8 @@ public:
     String compression_method = "auto";
     String structure = "auto";
     PartitionStrategyFactory::StrategyType partition_strategy_type = PartitionStrategyFactory::StrategyType::NONE;
+    /// Tracks whether `partition_strategy` was explicitly provided in the engine arguments or a named collection.
+    bool partition_strategy_was_set = false;
     /// Whether partition column values are contained in the actual data.
     /// And alternative is with hive partitioning, when they are contained in file path.
     bool partition_columns_in_data_file = true;
@@ -342,6 +347,8 @@ public:
     /// When false, `initPartitionStrategy` recomputes the default once the effective strategy is known
     /// (which may have been chosen implicitly via `file_like_engine_default_partition_strategy`).
     bool partition_columns_in_data_file_was_set = false;
+    /// Set when `initPartitionStrategy` evaluates an omitted partition strategy.
+    bool partition_strategy_was_inferred = false;
     std::shared_ptr<IPartitionStrategy> partition_strategy;
 
     /// Set by the storage when it is being loaded from existing metadata (server startup or RESTORE), so the

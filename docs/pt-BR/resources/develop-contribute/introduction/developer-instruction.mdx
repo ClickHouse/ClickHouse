@@ -145,8 +145,8 @@ Lá você encontrará links diretos para os pacotes .deb gerados do ClickHouse, 
   ## Escreva a documentação
 </div>
 
-Todo pull request que adicionar um novo recurso deve vir acompanhado da documentação adequada.
-Se você quiser visualizar as alterações na documentação, as instruções de como gerar a página de documentação localmente estão disponíveis no arquivo README.md [aqui](https://github.com/ClickHouse/clickhouse-docs).
+Todo pull request que adicionar uma nova funcionalidade deve vir acompanhado da documentação adequada.
+Se você quiser visualizar as alterações na documentação, siga as instruções no [README da documentação](https://github.com/ClickHouse/ClickHouse/tree/master/docs#readme) (`mint dev` a partir de `docs/`).
 Ao adicionar uma nova função ao ClickHouse, você pode usar o modelo abaixo como guia:
 
 ````markdown
@@ -162,9 +162,9 @@ newFunctionName(arg1, arg2[, arg3])
 
 **Arguments**
 
-- `arg1` — Description of the argument. [DataType](/pt-BR/reference/data-types/float)
-- `arg2` — Description of the argument. [DataType](/pt-BR/reference/data-types/float)
-- `arg3` — Description of optional argument (optional). [DataType](/pt-BR/reference/data-types/float)
+- `arg1` — Description of the argument. [DataType](/reference/data-types/float)
+- `arg2` — Description of the argument. [DataType](/reference/data-types/float)
+- `arg3` — Description of optional argument (optional). [DataType](/reference/data-types/float)
 
 **Implementation Details**
 
@@ -172,7 +172,7 @@ A description of implementation details if relevant.
 
 **Returned value**
 
-- Returns {insert what the function returns here}. [DataType](/pt-BR/reference/data-types/float)
+- Returns {insert what the function returns here}. [DataType](/reference/data-types/float)
 
 **Example**
 

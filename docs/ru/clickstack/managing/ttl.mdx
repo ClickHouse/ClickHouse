@@ -33,7 +33,7 @@ Time-to-Live (TTL) — важная возможность ClickStack для э�
 <Warning>
   **`ttl_only_drop_parts`**
 
-  Мы рекомендуем всегда использовать настройку [`ttl_only_drop_parts=1`](/ru/reference/settings/merge-tree-settings#ttl_only_drop_parts). Когда эта настройка включена, ClickHouse удаляет часть целиком, если срок хранения истек для всех строк в ней. Удаление частей целиком вместо частичной очистки строк по TTL (которая достигается за счет ресурсоемких мутаций, когда `ttl_only_drop_parts=0`) позволяет использовать меньшие значения `merge_with_ttl_timeout` и снижает нагрузку на систему. Если данные разбиты на партиции по той же единице, по которой выполняется истечение TTL, например по дням, части естественным образом будут содержать данные только из заданного интервала. Это обеспечивает эффективное применение `ttl_only_drop_parts=1`.
+  Мы рекомендуем всегда использовать настройку [`ttl_only_drop_parts=1`](/ru/reference/settings/merge-tree-settings/other#ttl_only_drop_parts). Когда эта настройка включена, ClickHouse удаляет часть целиком, если срок хранения истек для всех строк в ней. Удаление частей целиком вместо частичной очистки строк по TTL (которая достигается за счет ресурсоемких мутаций, когда `ttl_only_drop_parts=0`) позволяет использовать меньшие значения `merge_with_ttl_timeout` и снижает нагрузку на систему. Если данные разбиты на партиции по той же единице, по которой выполняется истечение TTL, например по дням, части естественным образом будут содержать данные только из заданного интервала. Это обеспечивает эффективное применение `ttl_only_drop_parts=1`.
 </Warning>
 
 По умолчанию данные с истекшим TTL удаляются, когда ClickHouse [выполняет слияние частей данных](/ru/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage). Когда ClickHouse обнаруживает, что срок хранения данных истек, он выполняет внеплановое слияние.
@@ -50,7 +50,7 @@ Time-to-Live (TTL) — важная возможность ClickStack для э�
 
 Чтобы изменить TTL, можно сделать одно из следующего:
 
-1. **Изменить схемы таблиц (рекомендуется)**. Для этого нужно подключиться к экземпляру ClickHouse, например с помощью [clickhouse-client](/ru/concepts/features/interfaces/cli) или [Cloud SQL Console](/ru/products/cloud/features/sql-console-features/sql-console). Например, TTL таблицы `otel_logs` можно изменить с помощью следующего DDL:
+1. **Изменить схемы таблиц (рекомендуется)**. Для этого нужно подключиться к экземпляру ClickHouse, например с помощью [clickhouse-client](/ru/concepts/features/interfaces/client) или [Cloud SQL Console](/ru/products/cloud/features/sql-console-features/sql-console). Например, TTL таблицы `otel_logs` можно изменить с помощью следующего DDL:
 
 ```sql
 ALTER TABLE default.otel_logs

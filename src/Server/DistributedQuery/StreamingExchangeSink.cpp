@@ -57,6 +57,36 @@ void StreamingExchangeSink::extractSocket()
 
     /// Prepare initial in-memory buffer for serializing chunks
     out = std::make_shared<WriteBufferFromOwnString>();
+
+    /// Register the socket so the sink hears an inbound `NoMoreDataNeeded` while it waits.
+    updateSocketWaitEvents();
+}
+
+void StreamingExchangeSink::updateSocketWaitEvents()
+{
+    uint32_t desired_events = EPOLLIN | EPOLLRDHUP | EPOLLERR;
+    if (hasUnsentBytes())
+        desired_events |= EPOLLOUT;
+
+    if (desired_events == registered_socket_events)
+        return;
+
+    /// `Epoll` has no modify operation; re-add the socket with the new event mask.
+    if (registered_socket_events != 0)
+    {
+        wait_events_epoll.remove(socket->sockfd());
+        registered_socket_events = 0;
+    }
+    wait_events_epoll.add(socket->sockfd(), desired_events);
+    registered_socket_events = desired_events;
+}
+
+void StreamingExchangeSink::onUpdatePorts()
+{
+    /// Called by the executor on every port update while the sink is not idle, possibly from
+    /// another thread. An extra wake is harmless: `work` drains it and `prepare` re-checks
+    /// everything.
+    port_update_wakeup.notify();
 }
 
 /// Send data to socket until the buffer is empty or until socket would block.
@@ -148,6 +178,15 @@ ISink::Status StreamingExchangeSink::prepare()
     if (!socket)
         return Status::Async;
 
+    /// The peer will not read this stream anymore (for example, its LIMIT is satisfied).
+    /// Close the input so the stop propagates to the upstream stages; without this they
+    /// would keep computing data that nobody reads.
+    if (no_more_data_needed)
+    {
+        input.close();
+        return Status::Finished;
+    }
+
     if (has_input)
         return canAddChunk() ? Status::Ready : Status::Async;
 
@@ -180,7 +219,14 @@ ISink::Status StreamingExchangeSink::prepare()
 
     input.setNeeded();
     if (!input.hasData())
-        return Status::NeedData;
+    {
+        /// Wait on the socket, not only on the input port: an inbound `NoMoreDataNeeded`
+        /// must wake the sink even if this stage never produces another chunk. Pending bytes
+        /// go out on the same wait even below `FLUSH_BUFFER_TO_SOCKET_THRESHOLD`; without
+        /// that they would sit here until the next chunk arrives, and that can take a long
+        /// time. `onUpdatePorts` wakes the sink when input arrives.
+        return Status::Async;
+    }
 
     current_chunk = input.pull(true);
     has_input = true;
@@ -195,6 +241,9 @@ void StreamingExchangeSink::work()
         extractSocket();
         return;
     }
+
+    /// Drain the wakeup pipe; otherwise it would stay readable and wake the sink again at once.
+    port_update_wakeup.drain();
 
     /// React to EPOLLIN / EPOLLRDHUP wakeups (see scheduleForEvent).
     tryReceiveControlPacket();
@@ -229,7 +278,10 @@ void StreamingExchangeSink::work()
         return;
     }
 
-    if (!was_on_finish_called)
+    /// Without the `final_chunk_added` check, a wake with an empty input and empty buffers
+    /// (for example the port-update wakeup) would call `onFinish` while the stream is still
+    /// open.
+    if (final_chunk_added && !was_on_finish_called)
     {
         was_on_finish_called = true;
         onFinish();
@@ -239,26 +291,25 @@ void StreamingExchangeSink::work()
 
 std::tuple<int, uint32_t, int64_t> StreamingExchangeSink::scheduleForEvent()
 {
-    /// If socket is not ready yet, wait on the eventfd
-    if (!socket)
-    {
-        if (!future_connection)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Future connection is not set for exchange stream {}", stream_name);
-
-        if (future_connection->isReady())
-            extractSocket();
-    }
-
     if (socket)
     {
+        updateSocketWaitEvents();
         LOG_TEST(log, "Schedule exchange stream sink {}, socket is ready, fd: {}", stream_name, socket->sockfd());
-        /// EPOLLIN | EPOLLRDHUP wake us on peer-initiated NoMoreDataNeeded / half-close.
-        return {
-            socket->sockfd(),
-            EPOLLOUT | EPOLLIN | EPOLLRDHUP | EPOLLERR,
-            -1};
+        /// `wait_events_epoll` becomes readable on socket events (inbound `NoMoreDataNeeded`,
+        /// peer close, writability while there are unsent bytes) and on the port-update wakeup.
+        /// No timeout: socket events and port updates each wake the sink explicitly; a timeout
+        /// would only hide a missed wakeup as a delay instead of a visible hang.
+        return {wait_events_epoll.getFileDescriptor(), EPOLLIN | EPOLLERR, -1};
     }
 
+    if (!future_connection)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Future connection is not set for exchange stream {}", stream_name);
+
+    /// Wait on the eventfd; `work` extracts the socket after the wake. The eventfd stays
+    /// readable once the connection is ready, so the wake is immediate even if the connection
+    /// got ready before this call. Extracting the socket here instead would skip that wake and
+    /// `prepare` would never run with the socket: the sink would sleep on a quiet socket
+    /// without ever marking its input as needed, and the fragment would never start.
     int fd = future_connection->getEventFd();
 
     LOG_TEST(log, "Schedule exchange stream sink {} waiting for connection, eventfd: {}", stream_name, fd);
@@ -269,10 +320,8 @@ void StreamingExchangeSink::consume(Chunk chunk)
 {
     if (no_more_data_needed)
     {
-        /// We have to consume all chunks from input even if we have already received NoMoreDataNeeded packet.
-        /// This is needed to avoid stuck pipeline in case of some buckets of ShuffleExchange don't need data while others still do.
-        /// So we just drop the chunk and continue.
-        /// TODO: is there a better way to figure out when when all buckets don't need data and close the inputs in pipeline?
+        /// `prepare` stops the sink when it sees `no_more_data_needed`, but the sink can pull
+        /// a chunk before the packet arrives - drop it.
         LOG_TEST(log, "No more data needed for exchange stream {}, dropping chunk with {} rows", stream_name, chunk.getNumRows());
         return;
     }
@@ -310,6 +359,13 @@ void StreamingExchangeSink::consume(Chunk chunk)
 
     if (chunk.getNumColumns() > 0)
     {
+        /// The exchange stream uses the server default codec (now `ZSTD(3)`): `network_compression_method`
+        /// is a per-query setting and the sink has no query settings at hand (it is constructed from a
+        /// header, a connection and a stream name), so the setting is not plumbed here. This is safe:
+        /// each compressed frame is self-describing (the receiver auto-detects the codec via
+        /// `CompressedReadBuffer`), and the exchange is a transient, same-version channel —
+        /// `StreamingExchangeProtocol` rejects peers on a different protocol version during the
+        /// handshake, so a stream is never read back by a node expecting a different codec.
         auto compressed_buf = std::make_unique<CompressedWriteBuffer>(*out);
         auto writer = std::make_unique<NativeWriter>(*compressed_buf, DBMS_TCP_PROTOCOL_VERSION, input.getSharedHeader());
 

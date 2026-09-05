@@ -14,6 +14,7 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/fr/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/fr/clickpipes/_changing_tls_settings.mdx';
+import SettingPartitionBy from '/snippets/fr/clickpipes/_target_ch_partition_by.mdx';
 
 Vous pouvez utiliser ClickPipes pour ingérer des données depuis votre base de données source Postgres vers ClickHouse Cloud. La base de données source Postgres peut être hébergée sur site ou dans le cloud, notamment sur Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase et d&#39;autres services.
 
@@ -76,7 +77,7 @@ Assurez-vous d’être connecté à votre compte ClickHouse Cloud. Si vous n’a
 4. Renseignez les informations de connexion de votre base de données source Postgres que vous avez configurée à l&#39;étape des prérequis.
 
 <Info>
-  Avant de commencer à ajouter vos informations de connexion, assurez-vous d&#39;avoir autorisé les adresses IP de ClickPipes dans les règles de votre pare-feu. Vous trouverez la liste des adresses IP de ClickPipes [ici](/fr/integrations/clickpipes/home#list-of-static-ips).
+  Avant de commencer à ajouter vos informations de connexion, assurez-vous d&#39;avoir autorisé les adresses IP de ClickPipes dans les règles de votre pare-feu. Vous trouverez la liste des adresses IP de ClickPipes [ici](/fr/integrations/clickpipes/networking/static-ips).
   Pour plus d&#39;informations, consultez les guides de configuration de la source Postgres dont les liens figurent [en haut de cette page](#prerequisites).
 </Info>
 
@@ -88,7 +89,7 @@ Assurez-vous d’être connecté à votre compte ClickHouse Cloud. Si vous n’a
 
 Vous pouvez utiliser AWS Private Link pour vous connecter à votre base de données source Postgres si elle est hébergée sur AWS. Cela est utile si vous
 souhaitez garder votre transfert de données privé.
-Vous pouvez suivre le [guide de configuration pour établir la connexion](/fr/integrations/clickpipes/aws-privatelink).
+Vous pouvez suivre le [guide de configuration pour établir la connexion](/fr/integrations/clickpipes/networking/aws-privatelink).
 
 <div id="optional-changing-tls-settings">
   #### (Facultatif) Modification de la configuration TLS
@@ -113,7 +114,7 @@ Vous pouvez spécifier les informations du tunnel SSH si votre base de données 
 4. Cliquez sur &quot;Vérifier la connexion&quot; pour la vérifier.
 
 <Note>
-  Assurez-vous d&#39;autoriser les [adresses IP de ClickPipes](/fr/integrations/clickpipes/home#list-of-static-ips) dans les règles de pare-feu de l&#39;hôte bastion SSH afin que ClickPipes puisse établir le tunnel SSH.
+  Assurez-vous d&#39;autoriser les [adresses IP de ClickPipes](/fr/integrations/clickpipes/networking/static-ips) dans les règles de pare-feu de l&#39;hôte bastion SSH afin que ClickPipes puisse établir le tunnel SSH.
 </Note>
 
 Une fois les informations de connexion renseignées, cliquez sur &quot;Suivant&quot;.
@@ -149,18 +150,16 @@ Vous pouvez configurer les paramètres avancés si nécessaire. Une brève descr
 7. Vous pouvez sélectionner les tables que vous souhaitez répliquer depuis la base de données source Postgres. Lors de la sélection des tables, vous pouvez également choisir de renommer les tables dans la base de données ClickHouse de destination et d’exclure certaines colonnes.
 
 <Warning>
-  Si vous définissez dans ClickHouse une clé d’ordonnancement différente de la clé primaire de Postgres, n’oubliez pas de consulter toutes les [considérations](/fr/integrations/clickpipes/postgres/ordering-keys) à ce sujet
+  Si vous définissez dans ClickHouse une clé de tri différente de la clé primaire de Postgres, n’oubliez pas de consulter toutes les [considérations](/fr/integrations/clickpipes/postgres/ordering-keys) à ce sujet
 </Warning>
 
-8. En outre, vous pouvez fournir une expression `PARTITION BY <expr>` personnalisée pour contrôler le [partitionnement des tables ClickHouse](/partitions) dans la destination.
-
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/partition-by.png" alt="Partition by" size="lg" border />
+8. <SettingPartitionBy />
 
 <div id="review-permissions-and-start-the-clickpipe">
   ### Vérifier les autorisations et démarrer le ClickPipe
 </div>
 
-8. Sélectionnez le rôle « Accès complet » dans le menu déroulant des autorisations, puis cliquez sur « Terminer la configuration ».
+9. Sélectionnez le rôle « Accès complet » dans le menu déroulant des autorisations, puis cliquez sur « Terminer la configuration ».
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Vérifier les autorisations" size="lg" border />
 

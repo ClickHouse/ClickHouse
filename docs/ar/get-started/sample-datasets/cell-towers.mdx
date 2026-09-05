@@ -109,7 +109,7 @@ import SupersetDocker from '/snippets/ar/_add_superset_detail.mdx';
     2. استورد مجموعة البيانات من حاوية S3 عامة (686 MB):
 
     ```sql
-    INSERT INTO cell_towers SELECT * FROM s3('https://datasets-documentation.s3.amazonaws.com/cell_towers/cell_towers.csv.xz', 'CSVWithNames')
+    INSERT INTO cell_towers SELECT * FROM s3('https://datasets-documentation.s3.amazonaws.com/cell_towers/cell_towers.csv.xz', NOSIGN, 'CSVWithNames')
     ```
   </Tab>
 </Tabs>

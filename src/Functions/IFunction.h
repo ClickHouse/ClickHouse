@@ -203,6 +203,14 @@ public:
 
     virtual bool isStateful() const { return false; }
 
+    /** Returns true if the function maps a variable-size argument (`String`, `FixedString`, `Array`, `Map`)
+      * to a small fixed-size result, so that computing it early and carrying the result instead of the
+      * argument strictly reduces the volume of data flowing through the query plan.
+      * Examples: `length`, `lengthUTF8`, `empty`, `notEmpty`.
+      * Used by the `pushDownVolumeReducingFunction` query plan optimization.
+      */
+    virtual bool isVolumeReducing() const { return false; }
+
     /** Returns true if this is a spatial predicate for which bbox-disjoint pruning is safe.
       * Specifically: if the bounding boxes of the geometry arguments are disjoint,
       * the function is guaranteed to return 0/false for all such rows.
@@ -350,6 +358,12 @@ public:
         bool is_positive = true;     /// true if the function is non-decreasing, false if non-increasing. If is_monotonic = false, then it does not matter.
         bool is_always_monotonic = false; /// Is true if function is monotonic on the whole input range I
         bool is_strict = false;      /// true if the function is strictly decreasing or increasing.
+        /// Is true if the function is monotonic over the whole subset of the input range on which its
+        /// evaluation succeeds, but the evaluation may throw an exception for the rest of the range
+        /// (so it is weaker than is_always_monotonic, which requires the whole range to be mapped).
+        /// It is enough to push a comparison constant through a sorting key expression: stored key
+        /// values always belong to the subset on which the evaluation succeeds.
+        bool is_always_monotonic_where_defined = false;
     };
 
     /** Get information about monotonicity on a range of values. Call only if hasInformationAboutMonotonicity.
@@ -404,6 +418,7 @@ public:
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
     virtual bool isServerConstant() const { return false; }
+    virtual bool isVolumeReducing() const { return false; }
     virtual bool isShortCircuit(IFunctionBase::ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
     /// Returns true for higher-order functions that accept a lambda expression as an argument
     /// (e.g. `arrayMap`, `arrayFilter`, `arrayFold`, `mapApply`). Used as a non-throwing
@@ -632,6 +647,8 @@ public:
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isServerConstant() const { return false; }
     virtual bool isStateful() const { return false; }
+    /// See `IFunctionBase::isVolumeReducing`.
+    virtual bool isVolumeReducing() const { return false; }
     virtual bool isSpatialPredicate() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;

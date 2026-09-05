@@ -46,6 +46,57 @@ ClickHouse 提供了一组用于处理简化 JSON 的特殊函数。所有这些
   这些函数的性能可能不如对应的区分大小写版本，因此如无必要，建议使用常规的 JSONExtract 函数。
 </Note>
 
+<div id="jsonpath-syntax">
+  ## JSONPath 语法
+</div>
+
+`JSON_EXISTS`、`JSON_VALUE` 和 `JSON_QUERY` 函数的第二个参数接受 JSONPath
+表达式。ClickHouse 实现了 JSONPath 的一个小型子集，
+该子集大致基于 SQL/JSON 标准 (ISO/IEC TR 19075-6) ，且其支持范围有意比 [RFC 9535](https://www.rfc-editor.org/rfc/rfc9535)
+和其他常见实现更窄。支持的运算符如下。
+
+权威实现位于
+[`src/Functions/JSONPath/Parsers`](https://github.com/ClickHouse/ClickHouse/tree/master/src/Functions/JSONPath/Parsers)。
+
+<div id="supported-operators">
+  ### 支持的运算符
+</div>
+
+| 语法            | 描述                                     | 示例                                |
+| ------------- | -------------------------------------- | --------------------------------- |
+| `$`           | 根元素。所有路径都必须以它开头。                       | `$`                               |
+| `.key`        | 不带引号的点表示法成员访问。键可以以数字开头，也可以仅由数字组成。      | `$.store.book`, `$.1key`, `$.123` |
+| `."key"`      | 带引号的点表示法成员访问。用于包含空格或特殊字符的键。可使用双引号或反引号。 | `$."foo bar"`                     |
+| `[key]`       | 不带引号的方括号表示法成员访问。                       | `$[hello]`                        |
+| `['key']`     | 带引号的方括号表示法成员访问。可使用单引号、双引号或反引号。         | `$['foo bar']`                    |
+| `[n]`         | 按索引访问数组元素 (索引从 0 开始) 。                 | `$.items[0]`                      |
+| `[n, m, ...]` | 访问多个数组元素。                              | `$.items[0, 2, 4]`                |
+| `[n to m]`    | 数组元素范围。结束索引 `m` 不包含在内。                 | `$.items[0 to 3]`                 |
+| `[*]`         | 通配符，匹配数组中的所有元素。                        | `$.items[*]`                      |
+
+注意：
+
+* 可以在同一对方括号内组合使用索引和范围 (例如 `[0 to 2, 4]`) 。
+* 不能在同一对方括号内组合使用索引范围和通配符 (例如，`[* , 0]` 无效) 。
+* 在范围 `[n to m]` 中，起始索引 `n` 必须严格小于结束索引 `m`，否则会引发异常。
+* 单个索引 `[n]` 等同于范围 `[n to n+1]`。
+
+<div id="unsupported-operators">
+  ### 不支持的运算符
+</div>
+
+以下 JSONPath 运算符在 RFC 9535 或其他实现中可用，但 ClickHouse **不**支持：
+
+| 语法                      | 描述                           |
+| ----------------------- | ---------------------------- |
+| `..`                    | 递归下降。                        |
+| `?(@.expr)`             | 过滤表达式。                       |
+| `[start:end:step]`      | 切片表示法。请改用 `[n to m]`。        |
+| `@`                     | 当前节点引用。                      |
+| `[-n]`                  | 负数 (从末尾开始) 数组索引。             |
+| 脚本表达式                   | 路径中的算术表达式或函数表达式。             |
+| `ON ERROR` / `ON EMPTY` | 用于控制错误和空结果行为的标准 SQL/JSON 子句。 |
+
 {/* 
   下方标签内的内容会在文档框架构建时被替换为
   根据 system.functions 生成的文档。请不要修改或删除这些标签。
@@ -82,16 +133,16 @@ JSONAllPaths(json)
 
 ```sql title=Query
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}};
 SELECT json, JSONAllPaths(json) FROM test;
 ```
 
 ```response title=Response
-┌─json─────────────────────────────────┬─JSONAllPaths(json)─┐
-│ {"a":"42"}                           │ ['a']              │
-│ {"b":"Hello"}                        │ ['b']              │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ ['a','c']          │
-└──────────────────────────────────────┴────────────────────┘
+┌─json───────────────────────────┬─JSONAllPaths(json)─┐
+│ {"a":42}                       │ ['a']              │
+│ {"b":"Hello"}                  │ ['b']              │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ ['a','c']          │
+└────────────────────────────────┴────────────────────┘
 ```
 
 <div id="JSONAllPathsWithTypes">
@@ -122,16 +173,16 @@ JSONAllPathsWithTypes(json)
 
 ```sql title=Query
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}};
 SELECT json, JSONAllPathsWithTypes(json) FROM test;
 ```
 
 ```response title=Response
-┌─json─────────────────────────────────┬─JSONAllPathsWithTypes(json)───────────────┐
-│ {"a":"42"}                           │ {'a':'Int64'}                             │
-│ {"b":"Hello"}                        │ {'b':'String'}                            │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))','c':'Date'} │
-└──────────────────────────────────────┴───────────────────────────────────────────┘
+┌─json───────────────────────────┬─JSONAllPathsWithTypes(json)───────────────┐
+│ {"a":42}                       │ {'a':'Int64'}                             │
+│ {"b":"Hello"}                  │ {'b':'String'}                            │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))','c':'Date'} │
+└────────────────────────────────┴───────────────────────────────────────────┘
 ```
 
 <div id="JSONAllValues">
@@ -163,16 +214,16 @@ JSONAllValues(json)
 
 ```sql title=Query
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json": {"a": 42}}, {"json": {"b": "Hello"}}, {"json": {"a": [1, 2, 3], "c": "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json": {"a": 42}}, {"json": {"b": "Hello"}}, {"json": {"a": [1, 2, 3], "c": "2020-01-01"}};
 SELECT json, JSONAllValues(json) FROM test;
 ```
 
 ```response title=Response
-┌─json─────────────────────────────────┬─JSONAllValues(json)──────┐
-│ {"a":42}                             │ ['42']                   │
-│ {"b":"Hello"}                        │ ['Hello']                │
-│ {"a":[1,2,3],"c":"2020-01-01"}       │ ['[1,2,3]','2020-01-01'] │
-└──────────────────────────────────────┴──────────────────────────┘
+┌─json───────────────────────────┬─JSONAllValues(json)──────┐
+│ {"a":42}                       │ ['42']                   │
+│ {"b":"Hello"}                  │ ['Hello']                │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ ['[1,2,3]','2020-01-01'] │
+└────────────────────────────────┴──────────────────────────┘
 ```
 
 <div id="JSONArrayLength">
@@ -222,7 +273,7 @@ SELECT
 
 引入版本：v24.8.0
 
-返回以单独子列形式存储在 JSON 列中的动态路径列表。
+返回以独立子列形式存储在 JSON 列中的动态路径列表。
 
 **语法**
 
@@ -244,16 +295,16 @@ JSONDynamicPaths(json)
 
 ```sql title=Query
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}};
 SELECT json, JSONDynamicPaths(json) FROM test;
 ```
 
 ```response title=Response
-┌─json─────────────────────────────────┬─JSONDynamicPaths(json)─┐
-│ {"a":"42"}                           │ ['a']                  │
-│ {"b":"Hello"}                        │ []                     │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ ['a']                  │
-└──────────────────────────────────────┴────────────────────────┘
+┌─json───────────────────────────┬─JSONDynamicPaths(json)─┐
+│ {"a":42}                       │ ['a']                  │
+│ {"b":"Hello"}                  │ []                     │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ ['a']                  │
+└────────────────────────────────┴────────────────────────┘
 ```
 
 <div id="JSONDynamicPathsWithTypes">
@@ -284,16 +335,16 @@ JSONDynamicPathsWithTypes(json)
 
 ```sql title=Query
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}};
 SELECT json, JSONDynamicPathsWithTypes(json) FROM test;
 ```
 
 ```response title=Response
-┌─json─────────────────────────────────┬─JSONDynamicPathsWithTypes(json)─┐
-│ {"a":"42"}                           │ {'a':'Int64'}                   │
-│ {"b":"Hello"}                        │ {}                              │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))'}  │
-└──────────────────────────────────────┴─────────────────────────────────┘
+┌─json───────────────────────────┬─JSONDynamicPathsWithTypes(json)─┐
+│ {"a":42}                       │ {'a':'Int64'}                   │
+│ {"b":"Hello"}                  │ {}                              │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))'}  │
+└────────────────────────────────┴─────────────────────────────────┘
 ```
 
 <div id="JSONExtract">
@@ -329,9 +380,9 @@ SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Arr
 ```
 
 ```response title=Response
-┌─res──────────────────────────────┐
-│ ('hello',[-100,200,300])         │
-└──────────────────────────────────┘
+┌─res──────────────────────┐
+│ ('hello',[-100,200,300]) │
+└──────────────────────────┘
 ```
 
 <div id="JSONExtractArrayRaw">
@@ -366,9 +417,9 @@ SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') A
 ```
 
 ```response title=Response
-┌─res──────────────────────────┐
-│ ['-100','200.0','"hello"']   │
-└──────────────────────────────┘
+┌─res──────────────────────┐
+│ ['-100','200','"hello"'] │
+└──────────────────────────┘
 ```
 
 <div id="JSONExtractArrayRawCaseInsensitive">
@@ -710,9 +761,9 @@ SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}') AS res;
 ```
 
 ```response title=Response
-┌─res─────────┐
-│ ['a','b']   │
-└─────────────┘
+┌─res───────┐
+│ ['a','b'] │
+└───────────┘
 ```
 
 <div id="JSONExtractKeysAndValues">
@@ -938,9 +989,9 @@ SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') AS res;
 ```
 
 ```response title=Response
-┌─res──────────────┐
-│ [-100,200.0,300] │
-└──────────────────┘
+┌─res────────────┐
+│ [-100,200,300] │
+└────────────────┘
 ```
 
 <div id="JSONExtractRawCaseInsensitive">
@@ -1166,7 +1217,7 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0;
 
 ```response title=Response
 1
-0
+1
 ```
 
 <div id="JSONKey">
@@ -1308,16 +1359,16 @@ JSONSharedDataPaths(json)
 
 ```sql title=Query
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}};
 SELECT json, JSONSharedDataPaths(json) FROM test;
 ```
 
 ```response title=Response
-┌─json─────────────────────────────────┬─JSONSharedDataPaths(json)─┐
-│ {"a":"42"}                           │ []                        │
-│ {"b":"Hello"}                        │ ['b']                     │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ ['c']                     │
-└──────────────────────────────────────┴───────────────────────────┘
+┌─json───────────────────────────┬─JSONSharedDataPaths(json)─┐
+│ {"a":42}                       │ []                        │
+│ {"b":"Hello"}                  │ ['b']                     │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ ['c']                     │
+└────────────────────────────────┴───────────────────────────┘
 ```
 
 <div id="JSONSharedDataPathsWithTypes">
@@ -1348,16 +1399,16 @@ JSONSharedDataPathsWithTypes(json)
 
 ```sql title=Query
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}};
 SELECT json, JSONSharedDataPathsWithTypes(json) FROM test;
 ```
 
 ```response title=Response
-┌─json─────────────────────────────────┬─JSONSharedDataPathsWithTypes(json)─┐
-│ {"a":"42"}                           │ {}                                 │
-│ {"b":"Hello"}                        │ {'b':'String'}                     │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                       │
-└──────────────────────────────────────┴────────────────────────────────────┘
+┌─json───────────────────────────┬─JSONSharedDataPathsWithTypes(json)─┐
+│ {"a":42}                       │ {}                                 │
+│ {"b":"Hello"}                  │ {'b':'String'}                     │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ {'c':'Date'}                       │
+└────────────────────────────────┴────────────────────────────────────┘
 ```
 
 <div id="JSONType">
@@ -1435,18 +1486,18 @@ SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[0]');
 ```
 
 ```response title=Response
-┌─JSON_EXISTS(⋯ '$.hello')─┐
-│                        1 │
-└──────────────────────────┘
-┌─JSON_EXISTS(⋯llo.world')─┐
-│                        1 │
-└──────────────────────────┘
-┌─JSON_EXISTS(⋯.hello[*]')─┐
-│                        1 │
-└──────────────────────────┘
-┌─JSON_EXISTS(⋯.hello[0]')─┐
-│                        1 │
-└──────────────────────────┘
+┌─JSON_EXISTS('{"hello":1}', '$.hello')─┐
+│                                     1 │
+└───────────────────────────────────────┘
+┌─JSON_EXISTS('{"hello":{"world":1}}', '$.hello.world')─┐
+│                                                     1 │
+└───────────────────────────────────────────────────────┘
+┌─JSON_EXISTS('{"hello":["world"]}', '$.hello[*]')─┐
+│                                                1 │
+└──────────────────────────────────────────────────┘
+┌─JSON_EXISTS('{"hello":["world"]}', '$.hello[0]')─┐
+│                                                1 │
+└──────────────────────────────────────────────────┘
 ```
 
 <div id="JSON_QUERY">
@@ -1534,7 +1585,7 @@ SELECT JSON_VALUE('{"hello":"world"}', '$.b') settings function_json_value_retur
 world
 0
 2
-ᴺᵁᴸᴸ
+\N
 ```
 
 <div id="dynamicElement">
@@ -1666,7 +1717,7 @@ SELECT d, isDynamicElementInSharedData(d) FROM test;
 ┌─d─────────────┬─isDynamicElementInSharedData(d)─┐
 │ ᴺᵁᴸᴸ          │ false                           │
 │ 42            │ false                           │
-│ Hello, World! │ true                            │
+│ Hello, World! │ false                           │
 │ [1,2,3]       │ true                            │
 └───────────────┴─────────────────────────────────┘
 ```
@@ -1704,7 +1755,7 @@ SELECT isValidJSON('not JSON') = 0;
 
 ```response title=Response
 1
-0
+1
 ```
 
 **使用整数访问 JSON 数组和 JSON 对象**
@@ -1720,7 +1771,6 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 3);
 
 ```response title=Response
 0
-1
 1
 1
 1
@@ -1760,10 +1810,7 @@ SELECT prettyPrintJSON('{"a":1,"b":"hello"}');
 ```
 
 ```response title=Response
-{
-    "a": 1,
-    "b": "hello"
-}
+{\n    "a": 1,\n    "b": "hello"\n}
 ```
 
 **自定义缩进**
@@ -1773,9 +1820,7 @@ SELECT prettyPrintJSON('{"a":1}', 8);
 ```
 
 ```response title=Response
-{
-        "a": 1
-}
+{\n        "a": 1\n}
 ```
 
 <div id="simpleJSONExtractBool">
@@ -2165,14 +2210,14 @@ SELECT simpleJSONHas(json, 'bar') FROM jsons;
 引入版本：v21.7.0
 
 将一个值序列化为其 JSON 表示形式。支持多种数据类型和嵌套结构。
-默认情况下，64 位[整数](/zh/reference/data-types/int-uint)或更大的整数 (例如 `UInt64` 或 `Int128`) 会以引号括起来。[output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/zh/reference/settings/formats#output_format_json_quote_64bit_integers) 控制此行为。
-特殊值 `NaN` 和 `inf` 会被替换为 `null`。启用 [output&#95;format&#95;json&#95;quote&#95;denormals](/zh/reference/settings/formats#output_format_json_quote_denormals) 设置可显示它们。
+默认情况下，64 位[整数](/zh/reference/data-types/int-uint)或更大的整数 (例如 `UInt64` 或 `Int128`) 会以引号括起来。[output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/zh/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) 控制此行为。
+特殊值 `NaN` 和 `inf` 会被替换为 `null`。启用 [output&#95;format&#95;json&#95;quote&#95;denormals](/zh/reference/settings/formats/output-format#output_format_json_quote_denormals) 设置可显示它们。
 序列化 [枚举](/zh/reference/data-types/enum) 值时，该函数会输出其名称。
 
 另请参见：
 
-* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/zh/reference/settings/formats#output_format_json_quote_64bit_integers)
-* [output&#95;format&#95;json&#95;quote&#95;denormals](/zh/reference/settings/formats#output_format_json_quote_denormals)
+* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/zh/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
+* [output&#95;format&#95;json&#95;quote&#95;denormals](/zh/reference/settings/formats/output-format#output_format_json_quote_denormals)
 
 **语法**
 
@@ -2209,9 +2254,9 @@ SELECT toJSONString(tuple(1.25, NULL, NaN, +inf, -inf, [])) SETTINGS output_form
 ```
 
 ```response title=Response
-┌─toJSONString(tuple(1.25, NULL, NaN, plus(inf), minus(inf), []))─┐
-│ [1.25,null,"nan","inf","-inf",[]]                               │
-└─────────────────────────────────────────────────────────────────┘
+┌─toJSONString((1.25, NULL, nan, inf, -inf, []))─┐
+│ [1.25,null,"nan","inf","-inf",[]]              │
+└────────────────────────────────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

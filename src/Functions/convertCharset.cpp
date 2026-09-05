@@ -236,9 +236,9 @@ Returns string `s` converted from the encoding `from` to encoding `to`.
         "Usage example",
         "SELECT convertCharset('Café', 'UTF-8', 'ISO-8859-1');",
         R"(
-┌─convertChars⋯SO-8859-1')─┐
-│ Caf�                     │
-└──────────────────────────┘
+┌─convertCharset('Café', 'UTF-8', 'ISO-8859-1')─┐
+│ Caf�                                           │
+└───────────────────────────────────────────────┘
         )"
     }
     };
