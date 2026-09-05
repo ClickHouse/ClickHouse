@@ -144,10 +144,11 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_tokenbf WHERE
 SELECT 'ngrambf hasToken LowCardinality(Nullable)';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngrambf WHERE hasToken(s, CAST('rareword', 'LowCardinality(Nullable(String))'))) WHERE explain ILIKE '%Granules: 1/128%';
 
--- `hasToken` rejects a needle holding a token separator. The index must leave such a predicate to
--- the scan: pruning the granule that owes the exception would turn the error into an empty result.
-SELECT 'tokenbf hasToken separator needle raises';
-SELECT count() FROM t_tokenbf WHERE hasToken(s, 'bad needle'); -- { serverError BAD_ARGUMENTS }
+-- `hasToken` rejects a needle holding a token separator, and unwrapping must not extend the index to
+-- such a needle: pruning the granule that owes the exception would turn the error into an empty result.
+-- A plain-String needle is not unwrapped, so it keeps pruning the granule away.
+SELECT 'tokenbf hasToken separator needle: String prunes, LowCardinality raises';
+SELECT count() FROM t_tokenbf WHERE hasToken(s, 'bad needle');
 SELECT count() FROM t_tokenbf WHERE hasToken(s, toLowCardinality('bad needle')); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE t_fixed_ngrambf;

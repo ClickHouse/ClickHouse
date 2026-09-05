@@ -625,10 +625,11 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     if (const auto is_case_insensitive_scenario = is_has_token_case_insensitive && lowercase_key_index;
         function_name.starts_with("hasToken") && ((!is_has_token_case_insensitive && key_index) || is_case_insensitive_scenario))
     {
-        /// A separator-bearing needle is invalid for the throwing `hasToken` variants, so pruning here
-        /// would swallow the exception the scan owes; `OrNull` variants return NULL and may prune.
-        /// `value_field`, not `const_value`, which the map branches above replace with the map key.
-        if (!function_name.ends_with("OrNull") && value_field.getType() == Field::Types::String
+        /// A separator-bearing needle is invalid for the throwing `hasToken` variants, which raise during
+        /// the scan, so the unwrapping above must not let such a needle prune the granule that owes the
+        /// exception. `value_field` is the needle; `const_value` may hold a map key here.
+        if (WhichDataType(value_type).isLowCardinality() && !function_name.ends_with("OrNull")
+            && value_field.getType() == Field::Types::String
             && std::ranges::any_of(value_field.safeGet<String>(), isTokenSeparator))
             return false;
 
