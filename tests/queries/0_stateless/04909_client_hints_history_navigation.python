@@ -1,0 +1,378 @@
+import multiprocessing
+import os
+import pty
+import re
+import select
+import shlex
+import sys
+import time
+
+TIMEOUT_SECONDS = 30
+
+# How long to keep reading after the last keystroke while waiting for the expected output. The
+# committed-query case only sees the result once the query has executed, which can take longer
+# than the inter-keystroke drain on slow (sanitizer) builds.
+FINAL_WAIT_SECONDS = 20
+
+# How long to wait for the client to print the next `:) ` prompt after a committed query.
+PROMPT_WAIT_SECONDS = 30
+
+# Idle window after every keystroke, long enough for `replxx` to repaint the line.
+DRAIN_IDLE_SECONDS = 0.4
+
+# Extra slack for the supervisor on top of everything the worker itself may legitimately wait for.
+SUPERVISOR_SLACK_SECONDS = 15
+
+# A pseudo-keystroke: wait for the next prompt instead of writing anything. Sending the keys of the
+# next line while the previous query is still running would let the terminal driver echo them
+# instead of `replxx` interpreting them - a bracketed paste would then appear verbatim as
+# `^[[200~...^[[201~` in the output and never reach the line editor.
+WAIT_FOR_PROMPT = object()
+
+# `clickhouse-test` dumps this file into the failure report, but only under the name it derives
+# from the testcase (the `.sh` wrapper), so take the path from there.
+DEBUG_LOG = os.environ["CLICKHOUSE_TEST_DEBUG_LOG"]
+
+# The gray SGR sequence replxx uses for the as-you-type hint (Color::GRAY -> "0;90").
+HINT_COLOR = "\x1b[0;90m"
+
+
+def make_history_file(name, entries):
+    """Write a replxx-format history file with the given entries, oldest first."""
+    path = os.path.join(
+        os.environ["CLICKHOUSE_TMP"],
+        os.path.splitext(os.path.basename(os.path.abspath(__file__)))[0]
+        + f".{name}.history",
+    )
+    with open(path, "w") as f:
+        for i, entry in enumerate(entries):
+            f.write(f"### 2020-01-01 00:00:{i:02}.000\n{entry}\n")
+    return path
+
+
+def read_until(master, debug_log_fd, predicate, timeout):
+    output = ""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r, _, _ = select.select([master], [], [], 0.3)
+        if not r:
+            if predicate(output):
+                return output
+            continue
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+        if predicate(output):
+            return output
+    return output
+
+
+def drain(master, debug_log_fd, idle):
+    output = ""
+    while True:
+        r, _, _ = select.select([master], [], [], idle)
+        if not r:
+            break
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+    return output
+
+
+def report_failure(name, shell_pid, output, debug_log_fd):
+    """A PTY case that fails prints just `FAIL`, which says nothing about why. Record what the
+    terminal actually showed and whether the client is still alive - the client dying (the read
+    loop hitting EOF) looks exactly like the expected text never being printed."""
+    try:
+        reaped_pid, wait_status = os.waitpid(shell_pid, os.WNOHANG)
+    except ChildProcessError:
+        reaped_pid, wait_status = shell_pid, -1
+    running = reaped_pid == 0
+    banner = (
+        f"=== {name}: FAIL ===\n"
+        f"client still running: {running}, wait status: {wait_status}\n"
+        f"terminal output: {output[-8000:]!r}\n"
+    )
+    debug_log_fd.write(banner)
+    debug_log_fd.flush()
+    sys.stderr.write(banner)
+    sys.stderr.flush()
+
+
+def run_case(program, argv, name, keystrokes, check, state=None):
+    """Fork a PTY, wait for the prompt, send keystrokes (with a small pause between
+    them so replxx repaints), then run `check` over the collected output."""
+    shell_pid, master = pty.fork()
+    if shell_pid == 0:
+        os.environ["TERM"] = "xterm"
+        os.execv(program, argv)
+        return
+
+    debug_log_fd = open(DEBUG_LOG, "a")
+    try:
+        read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
+
+        output = ""
+        # Only what arrived after the last keystroke - a prompt seen earlier in `output` says
+        # nothing about the prompt this step is waiting for.
+        since_last_keystroke = ""
+        for keys in keystrokes:
+            if keys is WAIT_FOR_PROMPT:
+                extra = read_until(
+                    master,
+                    debug_log_fd,
+                    lambda more, seen=since_last_keystroke: ":)" in seen + more,
+                    PROMPT_WAIT_SECONDS,
+                )
+                output += extra
+                since_last_keystroke += extra
+                continue
+            os.write(master, keys)
+            since_last_keystroke = drain(master, debug_log_fd, DRAIN_IDLE_SECONDS)
+            output += since_last_keystroke
+
+        # The expected output may arrive only after the committed query executes, which can
+        # outlast the inter-keystroke drain on slow builds. Keep reading until the check passes
+        # instead of giving up after a single drain window.
+        if not check(output):
+            output += read_until(
+                master,
+                debug_log_fd,
+                lambda extra: check(output + extra),
+                FINAL_WAIT_SECONDS,
+            )
+
+        ok = check(output)
+        print(f"{name}: {'OK' if ok else 'FAIL'}")
+        if not ok:
+            report_failure(name, shell_pid, output, debug_log_fd)
+        state.value = 0 if ok else 1
+    finally:
+        os.close(master)
+        debug_log_fd.close()
+
+
+def worker_budget(keystrokes):
+    """Everything `run_case` may legitimately spend: the wait for the first prompt, the idle window
+    after every keystroke, every explicit prompt wait, and the final wait for the expected output.
+    The supervisor must not expire before that, or ordinary slowness looks like a failure."""
+    prompt_waits = sum(1 for keys in keystrokes if keys is WAIT_FOR_PROMPT)
+    return (
+        TIMEOUT_SECONDS
+        + PROMPT_WAIT_SECONDS * prompt_waits
+        + DRAIN_IDLE_SECONDS * len(keystrokes)
+        + FINAL_WAIT_SECONDS
+        + SUPERVISOR_SLACK_SECONDS
+    )
+
+
+def run_with_timeout(program, argv, name, keystrokes, check):
+    for attempt in range(5):
+        state = multiprocessing.Value("i", -1)
+        process = multiprocessing.Process(
+            target=run_case,
+            args=(program, argv, name, keystrokes, check),
+            kwargs={"state": state},
+        )
+        process.start()
+        process.join(worker_budget(keystrokes))
+        if process.is_alive():
+            process.terminate()
+        if state.value in (0, 1):
+            return
+        # transient timeout on a loaded machine - retry
+    print(f"{name}: FAIL")
+    sys.stderr.write(f"=== {name}: FAIL === the case timed out on every attempt\n")
+
+
+def main():
+    program = os.environ["CLICKHOUSE_LOCAL"]
+    base = shlex.split(program)
+    args = base + ["--wait_for_suggestions_to_load", "--hints", "1"]
+
+    # A line displayed programmatically (recalled from history, pasted) must not pop the
+    # as-you-type hints by itself: with hints visible, the next Up/Down press would navigate
+    # the hints instead of the history. An edit shows the hints again.
+
+    # 1. Up recalls an entry; no hint appears at its end ("ive" would be the ghost suffix of
+    #    "concatAssumeInjective").
+    history = make_history_file("up_recall", ["SELECT concatAssumeInject"])
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "up_recall_no_hints",
+        [b"\x1b[A"],
+        lambda o: "concatAssumeInject" in o and (HINT_COLOR + "ive") not in o,
+    )
+
+    # Meta-Up is replxx's direct history-previous binding. It must use the same suppression as
+    # plain Up, rather than leaving the default action to regenerate hints.
+    history = make_history_file("meta_up_recall", ["SELECT concatAssumeInject"])
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "meta_up_recall_no_hints",
+        [b"\x1b\x1b[A"],
+        lambda o: "concatAssumeInject" in o and (HINT_COLOR + "ive") not in o,
+    )
+
+    # Ctrl-G restores the currently recalled history entry after an edit. It is another whole
+    # line display, so Down must return to the scratch line rather than navigate the hint list.
+    history = make_history_file("restore_current", ["SELECT concatAssumeInjec"])
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "restore_current_down_navigates_history",
+        [b"SELECT 111 AS rand", b"\x1b[A", b"t", b"\x07", b"\x1b[B", b"\r"],
+        lambda o: re.search(r"(?:│\s*111\s*│|\x1b\[\?25h111\r?\n)", o) is not None,
+    )
+
+    # 2. Up, Up, Down walks the history (the entries end in "rand", which has many hint
+    #    matches - Down must not step into the hint list); Enter then runs the recalled entry,
+    #    so its result (222) is printed. The result can use either Pretty or TabSeparated output
+    #    depending on the client's default format.
+    history = make_history_file(
+        "down_navigates", ["SELECT 111 AS rand", "SELECT 222 AS rand"]
+    )
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "down_navigates_history",
+        [b"\x1b[A", b"\x1b[A", b"\x1b[B", b"\r"],
+        lambda o: re.search(r"(?:│\s*222\s*│|\x1b\[\?25h222\r?\n)", o) is not None,
+    )
+
+    # 3. Recalling a history entry with the same text as the scratch line is still a programmatic
+    # display. Down must return from that entry to the scratch line instead of selecting a hint.
+    history = make_history_file("same_text_recall", ["SELECT 222 AS rand", "SELECT 111 AS rand"])
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "same_text_recall_down_navigates_history",
+        [b"SELECT 111 AS rand", b"\x1b[A", b"\x1b[B", b"\r"],
+        lambda o: re.search(r"(?:│\s*111\s*│|\x1b\[\?25h111\r?\n)", o) is not None,
+    )
+
+    # 3b. An incremental history search (Ctrl-T, the ClickHouse binding for the regular non-fuzzy
+    # reverse search) that accepts an entry is another whole-line display: it goes through a
+    # different `replxx` code path than the plain history recall, so it needs its own proof that
+    # Down keeps walking the history. Ctrl-T, then the search text, then Ctrl-E leaves the search
+    # keeping the found line ("SELECT 111 AS rand") and puts the cursor at its end, where the hints
+    # would render. The accepted entry is committed as the most recent recall, so the first Down
+    # re-displays it (`replxx` emulates the Windows down-arrow there) and the second one moves on
+    # to "SELECT 222 AS rand", which Enter then runs.
+    history = make_history_file(
+        "incremental_search", ["SELECT 111 AS rand", "SELECT 222 AS rand"]
+    )
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "incremental_search_down_navigates_history",
+        [b"\x14", b"111", b"\x05", b"\x1b[B", b"\x1b[B", b"\r"],
+        lambda o: re.search(r"(?:│\s*222\s*│|\x1b\[\?25h222\r?\n)", o) is not None,
+    )
+
+    # 4. Editing a recalled entry shows the hints again: after Up, typing the "t" completes the
+    #    prefix "concatAssumeInject" and the ghost "ive" appears.
+    history = make_history_file("edit_after_recall", ["SELECT concatAssumeInjec"])
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "edit_after_recall_shows_hints",
+        [b"\x1b[A", b"t"],
+        lambda o: (HINT_COLOR + "ive") in o,
+    )
+
+    # 5. A (bracketed) paste is also a whole new line displayed at once - no hint at its end.
+    history = make_history_file("paste", [])
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "paste_no_hints",
+        [b"\x1b[200~SELECT concatAssumeInject\x1b[201~"],
+        lambda o: "concatAssumeInject" in o and (HINT_COLOR + "ive") not in o,
+    )
+
+    # 5b. Pasting the exact text that carried a visible hint on an earlier prompt: replxx caches
+    # the hints by the buffer text and the cache outlives the prompt, so without invalidating it
+    # the paste would redisplay the stale ghost without ever asking our hint callback. The first
+    # line is typed (so the hints for it are generated and cached) and committed - it is not a
+    # valid query, which is irrelevant here, only the cache state matters - and then the very same
+    # text is pasted on the next prompt, where no hint may appear. Only the output after the last
+    # prompt is examined: the first, typed line legitimately shows the ghost.
+    history = make_history_file("same_text_paste", [])
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "same_text_paste_no_hints",
+        [
+            b"SELECT concatAssumeInject",
+            b"\r",
+            WAIT_FOR_PROMPT,
+            b"\x1b[200~SELECT concatAssumeInject\x1b[201~",
+        ],
+        lambda o: "concatAssumeInject" in o.rsplit(":)", 1)[-1]
+        and (HINT_COLOR + "ive") not in o.rsplit(":)", 1)[-1],
+    )
+
+    # 6. An unchanged editor round-trip redisplays the line programmatically. It must invalidate
+    # replxx's cached hints, so Down remains history navigation.
+    editor = os.path.join(os.environ["CLICKHOUSE_TMP"], "client_hints_unchanged_editor.sh")
+    with open(editor, "w") as f:
+        f.write("#!/bin/sh\nexit 0\n")
+    os.chmod(editor, 0o755)
+    previous_editor = os.environ.get("EDITOR")
+    os.environ["EDITOR"] = editor
+    try:
+        history = make_history_file("unchanged_editor", [])
+        run_with_timeout(
+            base[0],
+            args + [f"--history_file={history}"],
+            "unchanged_editor_down_navigates_history",
+            [b"SELECT 111 AS rand", b"\x1bE", b"\x1b[B", b"\r"],
+            lambda o: re.search(r"(?:│\s*111\s*│|\x1b\[\?25h111\r?\n)", o) is not None,
+        )
+    finally:
+        if previous_editor is None:
+            del os.environ["EDITOR"]
+        else:
+            os.environ["EDITOR"] = previous_editor
+
+    # 7. An editor that exits unsuccessfully brings the original line back - also a whole-line
+    # programmatic display, and one that happens while the hints of the line typed before the
+    # editor was opened are still live. Down must remain history navigation there too.
+    editor = os.path.join(os.environ["CLICKHOUSE_TMP"], "client_hints_failing_editor.sh")
+    with open(editor, "w") as f:
+        f.write("#!/bin/sh\nexit 1\n")
+    os.chmod(editor, 0o755)
+    previous_editor = os.environ.get("EDITOR")
+    os.environ["EDITOR"] = editor
+    try:
+        history = make_history_file("failing_editor", [])
+        run_with_timeout(
+            base[0],
+            args + [f"--history_file={history}"],
+            "failing_editor_down_navigates_history",
+            [b"SELECT 111 AS rand", b"\x1bE", b"\x1b[B", b"\r"],
+            lambda o: re.search(r"(?:│\s*111\s*│|\x1b\[\?25h111\r?\n)", o) is not None,
+        )
+    finally:
+        if previous_editor is None:
+            del os.environ["EDITOR"]
+        else:
+            os.environ["EDITOR"] = previous_editor
+
+
+if __name__ == "__main__":
+    # The check lambdas are not picklable, so the subprocesses must be forked (not spawned,
+    # which became the default on newer Python).
+    multiprocessing.set_start_method("fork")
+    main()
