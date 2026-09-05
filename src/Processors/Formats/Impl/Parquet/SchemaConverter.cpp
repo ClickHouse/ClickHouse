@@ -929,13 +929,17 @@ void SchemaConverter::processPrimitiveColumn(
         else switch (which.idx)
         {
             case TypeIndex::IPv4:
-                if (allow_datetime_and_ipv4)
-                {
-                    converter.field_ipv4 = true;
-                    converter.field_signed = false;
-                }
-                else
+                /// Fail closed unless the input is an unsigned 32-bit integer. A signed input has no
+                /// `... -> IPv4` cast at all, so enabling stats could prune every row group and hide
+                /// the unsupported-cast error behind an empty result. An unsigned 64-bit input does
+                /// have a cast, but it wraps (`static_cast<UInt32>`) instead of saturating, so its
+                /// min/max stats are not monotonic and could misprune. Only an unsigned 32-bit input
+                /// (physical `INT32` with a `UINT_8`/`UINT_16`/`UINT_32` annotation) casts
+                /// monotonically; `field_ipv4` then drops any out-of-range bound.
+                if (!allow_datetime_and_ipv4 || converter.input_signed || converter.input_size != sizeof(IPv4))
                     return false;
+                converter.field_ipv4 = true;
+                converter.field_signed = false;
                 break;
             case TypeIndex::Date:
                 converter.field_signed = false;
@@ -944,6 +948,7 @@ void SchemaConverter::processPrimitiveColumn(
                 if (!allow_datetime_and_ipv4)
                     return false;
                 converter.field_signed = false;
+                converter.field_datetime = true;
                 break;
             case TypeIndex::Enum8:
             case TypeIndex::Enum16:
@@ -1496,7 +1501,7 @@ void SchemaConverter::processPrimitiveColumn(
             out_inferred_type = std::make_shared<DataTypeInt64>();
             auto converter = std::make_shared<IntConverter>();
             converter->input_size = 8;
-            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
+            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ true, *converter);
             out_decoder.fixed_size_converter = std::move(converter);
             return;
         }
