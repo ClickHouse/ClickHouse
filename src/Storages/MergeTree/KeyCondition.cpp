@@ -2944,6 +2944,13 @@ public:
 
     IFunctionBase::Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
+        /// `toDayOfWeek` declares that it is monotonic inside the enclosing Monday-based week: its factor
+        /// transform is `ToMondayImpl`. That holds for the Monday-first modes 0 and 1, but not for the
+        /// Sunday-first modes 2 and 3, where the value drops back at Sunday - in the middle of the factor's
+        /// interval. Pruning a key range with the unsound claim silently loses matching rows.
+        if (kind == Kind::RIGHT_CONST && func->getName() == "toDayOfWeek" && !isMondayFirstDayOfWeekMode())
+            return {};
+
         if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(func.get()))
         {
             if (dynamic_cast<FunctionDateOrDateTimeBase *>(adaptor->getFunction().get()) && kind == Kind::RIGHT_CONST)
@@ -2975,6 +2982,25 @@ public:
     const ColumnWithTypeAndName & getConstArg() const { return const_arg; }
 
 private:
+    /// Whether the constant argument is a `toDayOfWeek` mode that numbers the week from Monday.
+    /// A mode of an unexpected shape is reported as not Monday-first, which only declines monotonicity.
+    bool isMondayFirstDayOfWeekMode() const
+    {
+        const Field mode = (*const_arg.column)[0];
+
+        UInt64 mode_value;
+        if (mode.getType() == Field::Types::UInt64)
+            mode_value = mode.safeGet<UInt64>();
+        else if (mode.getType() == Field::Types::Int64)
+            mode_value = static_cast<UInt64>(mode.safeGet<Int64>());
+        else
+            return false;
+
+        /// Only the two lowest bits of the mode are significant, see `DateLUTImpl::check_week_day_mode`,
+        /// and the second one selects the Sunday-first numbering.
+        return (mode_value & 2) == 0;
+    }
+
     FunctionBasePtr func;
     ColumnWithTypeAndName const_arg;
     Kind kind = Kind::NO_CONST;
