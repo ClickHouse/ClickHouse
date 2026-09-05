@@ -81,6 +81,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
 void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
 {
     prefetched_streams.clear();
+    issued_prefetches = 0;
 
     if (all_mark_ranges.getNumberOfMarks() == 0)
         return;
@@ -153,6 +154,7 @@ size_t MergeTreeReaderWide::readRows(
     if (prefetched_from_mark != -1 && static_cast<size_t>(prefetched_from_mark) != from_mark)
     {
         prefetched_streams.clear();
+        issued_prefetches = 0;
         prefetched_from_mark = -1;
     }
 
@@ -216,6 +218,7 @@ size_t MergeTreeReaderWide::readRows(
         }
 
         prefetched_streams.clear();
+        issued_prefetches = 0;
         caches.clear();
 
         /// NOTE: positions for all streams must be kept in sync.
@@ -531,18 +534,27 @@ void MergeTreeReaderWide::deserializePrefixForAllColumns(size_t num_columns, siz
     deserializePrefixForAllColumnsImpl(num_columns, from_mark, {});
 }
 
+bool MergeTreeReaderWide::canIssuePrefetch() const
+{
+    return !settings.filesystem_prefetches_limit || issued_prefetches < settings.filesystem_prefetches_limit;
+}
+
 void MergeTreeReaderWide::deserializePrefixForAllColumnsWithPrefetch(size_t num_columns, size_t from_mark, Priority priority)
 {
     auto prefixes_prefetch_callback_getter = [&](const NameAndTypePair & name_and_type)
     {
         return [&](const ISerialization::SubstreamPath & substream_path)
         {
+            if (!canIssuePrefetch())
+                return;
+
             auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
             if (stream_name && !prefetched_streams.contains(*stream_name))
             {
                 if (ReadBuffer * buf = getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), name_and_type, 0, /* seek_to_mark = */false, caches[name_and_type.getNameInStorage()]))
                 {
                     buf->prefetch(priority);
+                    ++issued_prefetches;
                     prefetched_streams.insert(*stream_name);
                 }
             }
@@ -570,6 +582,9 @@ void MergeTreeReaderWide::prefetchForColumn(
         if (!ISerialization::isPrefetchNeededForSubstream(substream_path, substream_path.size(), settings.prefetch_json_shared_data_substreams))
             return;
 
+        if (!canIssuePrefetch())
+            return;
+
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
 
         if (stream_name && !prefetched_streams.contains(*stream_name))
@@ -578,6 +593,7 @@ void MergeTreeReaderWide::prefetchForColumn(
             if (ReadBuffer * buf = getStream(false, substream_path, data_part_info_for_read->getChecksums(), name_and_type, from_mark, seek_to_mark, cache))
             {
                 buf->prefetch(priority);
+                ++issued_prefetches;
                 prefetched_streams.insert(*stream_name);
             }
         }
