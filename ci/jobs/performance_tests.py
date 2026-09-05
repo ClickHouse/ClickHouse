@@ -1315,10 +1315,20 @@ def find_master_build(commits, build_type):
     return None
 
 
+def local_master_track_commits(local_master_commits_to_check_for_build):
+    """Master shas below the merge base for a local run, which has no `master_track_commits_sha` kv data."""
+    return Shell.get_output(
+        f"git log --first-parent --format=%H -n {local_master_commits_to_check_for_build} "
+        "$(git merge-base HEAD origin/master)"
+    ).split()
+
+
 def find_prev_build(info, build_type):
-    return find_master_build(
-        info.get_kv_data("master_track_commits_sha") or [], build_type
-    )
+    commits = info.get_kv_data("master_track_commits_sha") or []
+    if not commits and info.is_local_run:
+        # for a local run let's check 50 commits
+        commits = local_master_track_commits(50)
+    return find_master_build(commits, build_type)
 
 
 def find_base_release_build(info, build_type):
