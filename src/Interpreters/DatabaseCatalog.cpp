@@ -1725,16 +1725,8 @@ void DatabaseCatalog::dropTableDataTask()
     rescheduleDropTableTask();
 }
 
-void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
+void DatabaseCatalog::removeTableDataFromDisk(const StorageID & table_id, const StoragePtr & table)
 {
-    auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::dropTableFinally");
-    auto db_disk = table.db_disk;
-
-    if (table.table)
-    {
-        table.table->drop();
-    }
-
     /// Check if we are interested in a particular disk
     ///   or it is better to bypass it e.g. to avoid interactions with a remote storage
     auto is_disk_eligible_for_search = [](DiskPtr disk, std::shared_ptr<MergeTreeData> storage)
@@ -1754,14 +1746,27 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     /// Even if table is not loaded, try remove its data from disks.
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
-        String data_path = getStoreDirPath(table.table_id.uuid);
-        auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table.table);
+        String data_path = getStoreDirPath(table_id.uuid);
+        auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table);
         if (!is_disk_eligible_for_search(disk, table_merge_tree) || !disk->existsDirectory(data_path))
             continue;
 
-        LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);
+        LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table_id.getNameForLogs(), disk_name);
         disk->removeRecursive(data_path);
     }
+}
+
+void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
+{
+    auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::dropTableFinally");
+    auto db_disk = table.db_disk;
+
+    if (table.table)
+    {
+        table.table->drop();
+    }
+
+    removeTableDataFromDisk(table.table_id, table.table);
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
     db_disk->removeFileIfExists(fs::path(table.metadata_path));

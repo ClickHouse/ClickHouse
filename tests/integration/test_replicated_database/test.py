@@ -2510,3 +2510,46 @@ def test_mixed_alter_races_replicated_alter_metadata(started_cluster):
     )
     main_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
     competing_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
+
+
+def test_commit_create_table_failure(started_cluster):
+    db_name = "test_commit_create_table_failure"
+
+    main_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+    dummy_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+    dummy_node.replace_in_config(
+      "/etc/clickhouse-server/config.d/config.xml",
+      "<allow_moving_table_directory_to_trash>1</allow_moving_table_directory_to_trash>",
+      "<allow_moving_table_directory_to_trash>0</allow_moving_table_directory_to_trash>")
+    dummy_node.restart_clickhouse()
+
+    main_node.query(
+        f"CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}');"
+    )
+
+    dummy_node.query(
+        f"CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}');"
+    )
+
+    dummy_node.query("SYSTEM ENABLE FAILPOINT database_atomic_commit_create_table_failure")
+
+    main_node.query(
+        f"CREATE TABLE {db_name}.rmt (n UInt64) ENGINE=ReplicatedMergeTree ORDER BY n;"
+    )
+    assert (
+        dummy_node.query(
+            f"SELECT count() FROM system.tables WHERE database='{db_name}' AND name='rmt'"
+        ).strip()
+        == "1"
+    )
+
+    dummy_node.replace_in_config(
+      "/etc/clickhouse-server/config.d/config.xml",
+      "<allow_moving_table_directory_to_trash>0</allow_moving_table_directory_to_trash>",
+      "<allow_moving_table_directory_to_trash>1</allow_moving_table_directory_to_trash>")
+    dummy_node.restart_clickhouse()
+
+    # Cleanup
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
