@@ -231,20 +231,16 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
         return;
     }
 
-    /// The hash-based DISTINCT. Whether it spills is one decision for both roles of the step: the final
-    /// DISTINCT spills itself, while a preliminary DISTINCT uses it as a proxy for its final sibling
-    /// (a separate step whose actual transform choice cannot be observed from here, but which dispatches
-    /// on the same conditions).
     const size_t external_threshold = getMaxBytesBeforeExternalDistinct(
         settings.max_bytes_before_external_distinct, settings.max_bytes_ratio_before_external_distinct);
-    /// Constant columns are not part of the DISTINCT key; if there are only constant columns, the result is
-    /// a single row and spilling makes no sense.
-    const bool has_key_columns = !calculateDistinctKeyColumnsPositions(*pipeline.getSharedHeader(), columns).empty();
-    const auto shared_tmp_data = Context::getGlobalContextInstance()->getSharedTempDataOnDisk();
-    const bool final_distinct_spills = external_threshold != 0 && has_key_columns && shared_tmp_data != nullptr;
-
-    if (!pre_distinct && final_distinct_spills)
+    /// Constant keys produce at most one row and need no external storage.
+    if (!pre_distinct && external_threshold
+        && !calculateDistinctKeyColumnsPositions(*pipeline.getSharedHeader(), columns).empty())
     {
+        const auto shared_tmp_data = Context::getGlobalContextInstance()->getSharedTempDataOnDisk();
+        if (!shared_tmp_data)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external DISTINCT is not provided");
+
         auto tmp_data_on_disk = shared_tmp_data->childScope(
             {.current_metric = CurrentMetrics::TemporaryFilesForDistinct,
              .bytes_compressed = ProfileEvents::ExternalDistinctCompressedBytes,
@@ -273,21 +269,9 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
         return;
     }
 
-    if (!pre_distinct && settings.max_bytes_before_external_distinct != 0 && external_threshold != 0)
-    {
-        if (!has_key_columns)
-            LOG_DEBUG(getLogger("DistinctStep"), "External DISTINCT is not used: all the DISTINCT columns are constant");
-        else
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external DISTINCT is not provided");
-    }
-
-    /// A preliminary DISTINCT may shed its set under memory pressure only when the final DISTINCT is
-    /// expected to spill: shedding never grows the final set (the first occurrence of every value passes
-    /// the preliminary step either way), but it does convert the parallel per-stream deduplication into
-    /// serial re-hashing of the duplicates on the single-stream final, which is only worth it when the
-    /// final is memory-bounded by the spilling.
-    const UInt64 pass_through_threshold = (pre_distinct && final_distinct_spills) ? external_threshold : 0;
+    /// Preliminary hashing is optional: a downstream step deduplicates its output exactly. Releasing
+    /// its set under memory pressure can send more duplicates through intervening steps such as sorting.
+    const UInt64 pass_through_threshold = pre_distinct ? external_threshold : 0;
 
     /// The preliminary deduplication is best-effort (a deduplicating consumer follows), so on
     /// mostly-unique input the transform may abandon it and free its hash table - unless a limit

@@ -1215,12 +1215,29 @@ Take this implementation specificity into account when programming queries.
 It is possible to obtain the same result by applying [GROUP BY](/reference/statements/select/group-by) across the same set of values as specified as `SELECT` clause, without using any aggregate functions. But there are few differences from `GROUP BY` approach:
 
 - `DISTINCT` can be applied together with `GROUP BY`.
-- When [ORDER BY](/reference/statements/select/order-by) is omitted and [LIMIT](/reference/statements/select/limit) is defined, the query stops running immediately after the required number of different rows has been read.
-- Data blocks are output as they are processed, without waiting for the entire query to finish running.
+- Before external execution starts, a query without [ORDER BY](/reference/statements/select/order-by) can stop as soon as it has read enough different rows to satisfy [LIMIT](/reference/statements/select/limit).
+- Data blocks are output as they are processed until external execution starts.
 
 ## DISTINCT in External Memory {#distinct-in-external-memory}
 
-`DISTINCT` can spill temporary data to the disk to restrict its memory usage, and by default it is allowed to do so once the memory usage of the query exceeds half of the available memory: the threshold is controlled by the `max_bytes_ratio_before_external_distinct` setting (`0.5` by default) as a ratio of the available memory. The available memory is what remains, when the query starts, under the strictest memory limit that applies to it: the server memory limit (configured by default through `max_server_memory_usage_to_ram_ratio`) or the memory limit of the user. When no memory limit is configured at all, the ratio cannot be computed and only the absolute threshold below applies. Additionally, the `max_bytes_before_external_distinct` setting can specify the threshold as an absolute amount of bytes (unset by default); if both settings are set, the smaller resulting threshold is used. To disable spilling completely, set both settings to `0`.
+`DISTINCT` can spill temporary data to disk when tracked memory used by the whole query exceeds a
+threshold. By default, `max_bytes_ratio_before_external_distinct` derives this threshold from half of
+the available memory (`0.5`). Available memory is measured when the execution pipeline is built,
+under the strictest applicable server or user memory limit. The query's `max_memory_usage` is not
+used to calculate this fraction. When no applicable limit is configured, the ratio contributes no
+threshold. The absolute setting `max_bytes_before_external_distinct` can also supply a threshold in
+bytes; when both thresholds apply, the smaller is used. Set both settings to `0` to disable spilling
+and its associated preliminary memory shedding.
+
+These settings are triggers, not hard memory bounds: processing blocks, preparing runs, and merging
+files require additional memory. Key shapes that need serialized storage retain their key values
+even before spilling, and the first spill needs memory to materialize keys from the hash set.
+
+Preliminary hash-based `DISTINCT` steps can release their optional hash sets under the same memory
+policy and pass subsequent rows to the final deduplicating step. This is independent of whether the
+final step uses hashing or sorted-prefix deduplication, and can increase work in intervening steps
+such as sorting. The sorted-prefix optimization itself does not spill and may retain a large range
+of rows sharing the same prefix in memory.
 
 When the threshold is exceeded, the distinct rows collected so far are sorted and written into a temporary file, and the rest of the data is processed the same way. After all data is read, the sorted files are merged and the remaining distinct rows are output. Rows stop streaming to the client as soon as the first spill happens: the remaining distinct rows are returned only after the merge. If a `LIMIT` is reached before the memory threshold, no spilling happens and the query still finishes early.
 

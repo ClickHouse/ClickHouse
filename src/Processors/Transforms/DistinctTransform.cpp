@@ -84,11 +84,12 @@ void DistinctTransform::transform(Chunk & chunk)
     const size_t num_rows = chunk.getNumRows();
     chunk = distinct_set.filter(std::move(chunk));
 
-    /// In case of overflow_mode = 'break' the limits check inside the filter does not throw. Stop
-    /// reading, but still emit the new rows of the current chunk (their keys are already in the set):
-    /// 'break' means return a partial result as if the source data ran out, not discard it.
-    if (distinct_set.isLimitReached())
+    /// Return the current chunk and stop before releasing the set if a size limit or the hint is reached.
+    if (distinct_set.isLimitReached() || (limit_hint && distinct_set.getTotalRowCount() >= limit_hint))
+    {
         stopReading();
+        return;
+    }
 
     if (abandon_controller)
     {
@@ -107,10 +108,9 @@ void DistinctTransform::transform(Chunk & chunk)
         }
     }
 
-    /// A preliminary DISTINCT is only an optimization, its result does not have to be exact. When the
-    /// memory usage of the query exceeds the threshold, free the set and let the final DISTINCT (which is
-    /// able to spill to disk) deal with the duplicates. This check does not depend on the chunk: the set
-    /// must be freed under memory pressure even when the chunks stop producing new rows.
+    /// Preliminary hashing can release its set under memory pressure because a downstream step
+    /// deduplicates the output exactly. This also gives up any remaining local limit hint. The set
+    /// can be released even when the current chunk produces no new rows.
     if (max_bytes_before_pass_through && getCurrentQueryMemoryUsage() > static_cast<Int64>(max_bytes_before_pass_through))
     {
         LOG_DEBUG(
@@ -123,14 +123,6 @@ void DistinctTransform::transform(Chunk & chunk)
         ProfileEvents::increment(ProfileEvents::DistinctTransformsSwitchedToPassThrough);
         return;
     }
-
-    /// Nothing new in this chunk.
-    if (!chunk.hasRows())
-        return;
-
-    /// Stop reading if we already reached the limit.
-    if (limit_hint && distinct_set.getTotalRowCount() >= limit_hint)
-        stopReading();
 }
 
 }
