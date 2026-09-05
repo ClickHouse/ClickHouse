@@ -1277,6 +1277,11 @@ def test_nats_jet_stream_resumes_consuming_after_broker_hard_kill(nats_cluster):
     _publish_and_expect("test_subject", range(100, 110), total_expected)
 
 
+IN_SOURCE_RESUBSCRIBE_LOG_LINE = (
+    "A subscription stopped consuming from the NATS server, resubscribing within a running query"
+)
+
+
 def test_nats_jet_stream_direct_select_resumes_after_broker_hard_kill(nats_cluster):
     # Unlike the materialized-view path, a direct SELECT owns its consumer until the query ends.
     # Keep that query waiting on a parked pull request, then hard-kill the broker: a reconnect
@@ -1312,9 +1317,48 @@ def test_nats_jet_stream_direct_select_resumes_after_broker_hard_kill(nats_clust
     assert TSV(select.get_answer()) == TSV("42")
 
 
-IN_SOURCE_RESUBSCRIBE_LOG_LINE = (
-    "A subscription stopped consuming from the NATS server, resubscribing within a running query"
-)
+def test_nats_jet_stream_direct_select_resumes_after_broker_graceful_restart(nats_cluster):
+    # The recovery inside a running query keys on two things, and a graceful restart is the one
+    # that reaches the other: the broker answers the parked pull request on its way down, and the
+    # client closes the subscription in response, so the query is holding a subscription that is
+    # invalid long before the connection comes back. The hard kill above never produces that
+    # state; it leaves handles that look healthy until the reconnect count says otherwise. So
+    # this is a separate contract on the direct-`SELECT` path, where the query performs the
+    # `unsubscribe` and `subscribe` itself rather than through the retry loop of the background
+    # task: a subscription that turns out to be closed while the broker is still unreachable must
+    # not fail the query, it must be replaced once the broker is back.
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
+
+    instance.query(
+        """
+        CREATE TABLE test.consume (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow',
+                     nats_row_delimiter = '\\n';
+        """
+    )
+
+    # Anchored before the query starts, so a recovery counts however early in the query it runs.
+    anchor = nats_helpers.log_line_count(instance)
+
+    select = instance.get_query_request(
+        "SELECT key FROM test.consume SETTINGS stream_like_engine_allow_direct_select = 1, rabbitmq_max_wait_ms = 120000",
+        timeout=180,
+    )
+    _wait_for_parked_pull_request()
+    _restart_nats(nats_cluster, kill = nats_helpers.kill_nats)
+
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", [json.dumps({"key": 42, "value": 42})]))
+    assert TSV(select.get_answer()) == TSV("42")
+
+    # The row alone would also be explained by a recovery the background task performed on a
+    # consumer the query had already handed back, so require the query to have done it itself.
+    assert nats_helpers.count_in_log_after(instance, IN_SOURCE_RESUBSCRIBE_LOG_LINE, anchor) > 0, (
+        "the query did not recover its subscription itself")
 
 
 def test_nats_jet_stream_streaming_drains_local_backlog_after_in_source_recovery(nats_cluster):
@@ -1843,15 +1887,23 @@ def test_nats_jet_stream_hands_back_the_backlog_of_a_consumer_a_direct_select_le
     nats_helpers.wait_for_mv_attached_to_table(instance, "test.consume")
     _publish_and_expect("test_subject", range(20), 20)
 
-    # The `SELECT` waits on an idle queue for longer than a streaming cycle: it is already waiting
-    # for the consumer when the cycle that noticed the view is gone hands it back, and the task only
-    # runs again half a second later, by which time the consumer is out of its reach. Whether the
-    # query really found the consumer subscribed shows in the log: a consumer the query had to
-    # subscribe itself is unsubscribed again when the query ends, and one it found subscribed is not.
+    # The streaming task notices the dropped view on its next run, up to half a second after the
+    # `DROP VIEW`, and unsubscribes whatever consumer is in the pool at that moment. The `SELECT`
+    # has to take the consumer out of the pool before that run: both statements go over a single
+    # client connection, so the query is planned a few milliseconds after the drop completes, not
+    # after a second round trip into the container, which is slower than the task on a sanitizer
+    # build. The query then holds the consumer well past that run, and the task, which is not
+    # rescheduled once it finds no view, never reaches it again. Whether the query really found
+    # the consumer subscribed shows in the log: a consumer the query had to subscribe itself is
+    # unsubscribed again when the query ends, and one it found subscribed is not.
     for _ in range(5):
         anchor = nats_helpers.log_line_count(instance)
-        instance.query("DROP VIEW test.consumer")
-        instance.query("SELECT * FROM test.consume SETTINGS rabbitmq_max_wait_ms = 5000")
+        instance.query(
+            """
+            DROP VIEW test.consumer;
+            SELECT * FROM test.consume SETTINGS rabbitmq_max_wait_ms = 5000;
+            """
+        )
         time.sleep(1)
         if nats_helpers.count_in_log_after(instance, UNSUBSCRIBED_LOG_LINE, anchor) == 0:
             break
