@@ -34,6 +34,7 @@
 #include <Storages/StorageMerge.h>
 
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/lambdaBodySafety.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/TableJoin.h>
 #include <fmt/format.h>
@@ -1146,7 +1147,12 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (!filter)
         return 0;
 
-    if (filter->getExpression().hasStatefulFunctions())
+    /// hasStatefulFunctions only sees the outer DAG, and a lambda body is not part of it, so a
+    /// stateful call hidden in a lambda would pass this veto and be pushed below the step.
+    /// The check stays step-level for both: a per-conjunct veto would let a deterministic sibling
+    /// move and change the row set the stateful function sees.
+    if (filter->getExpression().hasStatefulFunctions()
+        || hasStatefulFunctionsInLambdaBodies(filter->getExpression()))
         return 0;
 
     const auto * merging_aggregated = typeid_cast<MergingAggregatedStep *>(child.get());

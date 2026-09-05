@@ -5,6 +5,7 @@
 #include <Columns/IColumn.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/lambdaBodySafety.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 
@@ -121,7 +122,13 @@ bool dagContainsNonDeterministicFunction(const ActionsDAG & dag)
                 return true;
         }
     }
-    return false;
+
+    /// A lambda body is not part of `dag`, so the loop above cannot see the `rand` inside
+    /// `arrayExists(z -> rand(z) % 2 = 0, [a])`. Filter push-down now correctly leaves such a
+    /// predicate above the JOIN, which is exactly where this guard reads it, so without this the
+    /// JOIN-conversion rewrites would trust one dry-run row for a per-row-varying predicate.
+    /// Checked second so the cheap outer scan still decides the common case.
+    return hasNonDeterministicFunctionsInLambdaBodies(dag);
 }
 
 FilterResult filterResultForNotMatchedRows(

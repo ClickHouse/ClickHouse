@@ -22,6 +22,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/SetSerialization.h>
+#include <Interpreters/lambdaBodySafety.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Core/SortDescription.h>
@@ -3227,9 +3228,21 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
         {
             if (cur.num_allowed_children == cur.node->children.size())
             {
+                /// A lambda body is not part of this DAG, so the metadata of the node holding it says
+                /// nothing about what the body computes. Ask inspectLambdaBodies too, or a conjunct
+                /// such as `arrayExists(z -> rand(z) % 2 = 0, [a])` is classified pushable and moved
+                /// below a JOIN, where it is evaluated on the pre-join rows only.
+                /// Statefulness is deliberately not tested here: it is vetoed for the whole step by
+                /// ActionsDAG::hasStatefulFunctions, so vetoing it per conjunct would let a
+                /// deterministic sibling move and change the row set the stateful function sees.
+                /// The order of the disjuncts is deliberate: the cheap metadata test decides the
+                /// visible non-deterministic case without entering the helper at all. The helper
+                /// itself costs one typeid_cast per node until a real lambda carrier is found, so the
+                /// common path does not walk a body either.
                 bool is_deprecated_function = !allow_non_deterministic_functions
-                    && cur.node->type == ActionsDAG::ActionType::FUNCTION
-                    && !cur.node->function_base->isDeterministicInScopeOfQuery();
+                    && ((cur.node->type == ActionsDAG::ActionType::FUNCTION
+                         && !cur.node->function_base->isDeterministicInScopeOfQuery())
+                        || inspectLambdaBodies(*cur.node).has_non_deterministic);
 
                 if (cur.node->type != ActionsDAG::ActionType::ARRAY_JOIN
                     && cur.node->type != ActionsDAG::ActionType::INPUT
