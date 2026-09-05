@@ -498,6 +498,26 @@ Features:
 
 ## Commercial {#commercial}
 
+<Accordion title="ADQM Notebook">
+
+[ADQM Notebook](https://docs.arenadata.io/en/ADQM/current/notebook.html) is a notebook-style SQL workspace included in the Enterprise edition of [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html), the column-oriented DBMS built on ClickHouse by Arenadata. It extends the built-in ClickHouse web interface with multi-cell notebooks, interactive results, query plan analysis, and a cluster-wide schema browser, and is available out of the box at `/notebook` on the HTTP port (`8123`) of an ADQM host, next to `/play`, or through Chproxy.
+
+Features:
+
+- SQL and Markdown cells, up to five statements per cell, and memory, time, and thread limits per notebook or cell.
+- SQL editor with syntax highlighting, autocompletion, `{{variable}}` substitution, and `Beautify SQL`.
+- Results as a sortable, searchable grid with per-column NULL share, unique count, and value range.
+- Line, area, and bar charts; downloads as CSV, TSV, JSON, JSONLines, or Parquet.
+- Estimated and actual query plans, `EXPLAIN PIPELINE` and logical views, and findings with suggested fixes.
+- Query statistics from `system.query_log` with a per-node breakdown; run history for the last five runs.
+- Databases panel for the local host or the whole cluster with column statistics and ready-made queries.
+- Dependency graph of tables, views, materialized views, dictionaries, and projections.
+- Live view of running queries with a `KILL` button.
+- Access through Chproxy as a single entry point to the cluster, with queries balanced across all hosts.
+- Auto-save, JSON export and import, notebook storage on the ClickHouse server, and sharing by link.
+
+</Accordion>
+
 <Accordion title="ProbeDeck">
 
 [ProbeDeck](https://probedeck.app) is an iOS and iPadOS client for monitoring and querying ClickHouse.
