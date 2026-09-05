@@ -177,6 +177,15 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression COMPRES
 " 2>&1 | grep -c -o "only supported for data supplied via stdin"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
 
+# Negative check: same rejection applies to the mirrored input() branch -- COMPRESSION next to
+# SELECT ... FROM input() ... FORMAT is rejected the same way for inline query-text data, since
+# both carriers share one ClientBase guard (insert->data && insert->compression && !insert->infile).
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression COMPRESSION 'gzip' SELECT * FROM input('id UInt32, text String') FORMAT CSV
+6,F
+" 2>&1 | grep -c -o "only supported for data supplied via stdin"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
+
 # Edge case: a real query follows the rejected inline-COMPRESSION INSERT in the same multiquery script.
 # The true data boundary of compressed inline data can only be known by decompressing it, which is
 # exactly what is being refused here so the rejection necessarily treats the rest of the script as
@@ -203,21 +212,30 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
 
 # Regression: COMPRESSION 'auto' must resolve against the actual source of the data being
 # decompressed, not blindly reuse whatever was auto-detected from a redirected stdin descriptor.
-# Here the INSERT data is embedded inline in the query text (plain, uncompressed), while stdin is
-# separately redirected from an unrelated real .gz file. 'auto' on the inline chunk must resolve to
-# no compression (there is nothing to sniff from query-embedded bytes), or it would try to gunzip
-# plain CSV text and fail. The trailing stdin content is then appended to the same INSERT (existing
-# inline+stdin continuation behavior) and, since it really is gzip-compressed, must still be
-# transparently decompressed via the correct (stdin-derived) detection.
+# Here the INSERT data is embedded inline in the query text (plain, uncompressed) with no stdin
+# involved at all. 'auto' on the inline chunk must resolve to no compression (there is nothing to
+# sniff from query-embedded bytes), or it would try to gunzip plain CSV text and fail.
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression COMPRESSION 'auto' FORMAT CSV
+22,V
+23,W
+"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_insert_format_compression ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
+
+# Negative check: combining inline query-text data with stdin/infile data is unsupported
+# independently of COMPRESSION -- the "Processing inline insert data with both inlined and
+# external data" guard in ClientBase rejects it outright whenever inline-insert-data mode is
+# active (send_table_structure_on_insert_with_inline_data = 0), regardless of whether the
+# inline chunk or the stdin chunk is compressed.
 printf '24,X\n' > "${CLICKHOUSE_TMP}"/04506_data9.csv
 gzip -k -f "${CLICKHOUSE_TMP}"/04506_data9.csv
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
-${CLICKHOUSE_CLIENT} --async_insert 0 --query "INSERT INTO test_insert_format_compression COMPRESSION 'auto' FORMAT CSV
+${CLICKHOUSE_CLIENT} --send_table_structure_on_insert_with_inline_data 0 --query "INSERT INTO test_insert_format_compression COMPRESSION 'auto' FORMAT CSV
 22,V
 23,W
-" < "${CLICKHOUSE_TMP}"/04506_data9.csv.gz
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_insert_format_compression ORDER BY id"
+" < "${CLICKHOUSE_TMP}"/04506_data9.csv.gz 2>&1 | grep -c -o "Processing inline insert data with both inlined and external data"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
 
 rm -f "${CLICKHOUSE_TMP}"/04506_data9.csv "${CLICKHOUSE_TMP}"/04506_data9.csv.gz
