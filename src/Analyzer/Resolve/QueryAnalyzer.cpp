@@ -38,6 +38,7 @@
 
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
+#include <Common/NamePrompter.h>
 #include <Common/quoteString.h>
 
 #include <Core/Settings.h>
@@ -183,9 +184,10 @@ void removeAliasesRecursive(QueryTreeNodePtr & node)
 
 }
 
-QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
+QueryAnalyzer::QueryAnalyzer(bool only_analyze_, std::optional<Names> identifier_typo_hint_columns_)
     : identifier_resolver(node_to_projection_name)
     , only_analyze(only_analyze_)
+    , identifier_typo_hint_columns(std::move(identifier_typo_hint_columns_))
 {}
 
 QueryAnalyzer::~QueryAnalyzer() = default;
@@ -3413,6 +3415,18 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     valid_identifiers);
 
                 auto hints = TypoCorrection::collectIdentifierTypoHints(unresolved_identifier, valid_identifiers);
+
+                /// The caller may accept only a part of the columns the expression is resolved over,
+                /// in which case suggesting any other one sends the user down a dead end: the name
+                /// would resolve and then be rejected by that caller's own check.
+                if (identifier_typo_hint_columns)
+                {
+                    VectorWithMemoryTracking<String> prompting_strings;
+                    prompting_strings.reserve(identifier_typo_hint_columns->size());
+                    for (const auto & name : *identifier_typo_hint_columns)
+                        prompting_strings.push_back(name);
+                    hints = NamePrompter<2>::getHints(unresolved_identifier.getFullName(), prompting_strings);
+                }
 
                 std::string from_clause_hint;
                 if (auto * query_node = scope.scope_node->as<QueryNode>())

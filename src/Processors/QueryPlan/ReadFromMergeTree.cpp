@@ -24,10 +24,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PredicateStatisticsLog.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -2101,10 +2100,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     {
         size_t prefix_size = input_order_info->used_prefix_of_sorting_key_size;
         auto order_key_prefix_ast = storage_snapshot->metadata->getSortingKey().expression_list_ast->clone();
+        /// `resize` must only ever cut here: growing the list would pad it with null `ASTPtr`s, and the
+        /// `sorting_columns` loop below would index past the end for the same reason. The prefix is
+        /// bounded by this table's sorting key in `requestReadingInOrder`, which is the only way an
+        /// `input_order_info` gets installed.
         order_key_prefix_ast->children.resize(prefix_size);
 
-        auto syntax_result = TreeRewriter(context).analyze(order_key_prefix_ast, storage_snapshot->metadata->getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
-        auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActionsDAG(false);
+        auto sorting_key_prefix_expr = analyzeExpressionToActionsDAG(order_key_prefix_ast, storage_snapshot->metadata->getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()), context);
         const auto & sorting_columns = storage_snapshot->metadata->getSortingKey().column_names;
         std::vector<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
 
@@ -3769,6 +3771,17 @@ bool ReadFromMergeTree::isParallelReplicasLocalPlanForFollower() const
 
 bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit)
 {
+    /// The prefix is not always computed from the sorting key of *this* step.
+    /// `ReadFromMerge::requestReadingInOrder` computes one prefix from the metadata of the tables the
+    /// `Merge` selected and then hands it, through `recursivelyApplyToReadingSteps`, to every
+    /// `ReadFromMergeTree` reachable from the child plans - including reads whose own sorting key is
+    /// shorter than that prefix. Such a read cannot deliver the requested order, and announcing it
+    /// anyway makes `spreadMarkRangesAmongStreamsWithOrder` pad the sorting-key expression list with
+    /// null children and index `column_names` past its end. Refuse instead: the caller already treats
+    /// `false` as "this child cannot read in order" and gives up the optimization.
+    if (prefix_size > getStorageMetadata()->getSortingKey().column_names.size())
+        return false;
+
     /// if direction is not set, use current one
     if (!direction)
         direction = getSortDirection();

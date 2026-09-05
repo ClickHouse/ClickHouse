@@ -17,7 +17,9 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTFunction.h>
@@ -1235,6 +1237,12 @@ static ExpressionAndSets analyzeExpressionAndSets(
     const ContextPtr & context,
     NamesAndTypesList * required_source_columns = nullptr)
 {
+    /// TTL uses the legacy `TreeRewriter` + `ExpressionAnalyzer` path because the TTL
+    /// WHERE clause supports subqueries (e.g. `TTL t WHERE a IN (SELECT ...)`), and
+    /// those subqueries must be built lazily via `FutureSetFromSubquery`.  The Analyzer
+    /// helper `analyzeExpressionToActionsDAG` eagerly builds subquery sets at analysis
+    /// time — that would execute the subquery during DDL (CREATE TABLE) and also
+    /// during every merge, which is undesirable.
     ExpressionAndSets result;
     /// `TreeRewriter::analyze` mutates the AST in place; clone so a failed attempt does
     /// not leave a half-rewritten AST behind for the fallback analysis to choke on.
@@ -1432,6 +1440,9 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             if (ASTPtr where_expr_ast = ttl_element->where())
             {
+                /// Do not check for subqueries here: TTL WHERE supports subqueries
+                /// (e.g. `TTL t WHERE a IN (SELECT ...)`), which are built lazily
+                /// via `FutureSetFromSubquery` inside `buildExpressionAndSets`.
                 result.where_expression_ast = where_expr_ast->clone();
 
                 ASTPtr ast = where_expr_ast->clone();

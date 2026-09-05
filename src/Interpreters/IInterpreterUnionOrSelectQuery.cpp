@@ -14,10 +14,10 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/Logger.h>
+#include <unordered_map>
 
 
 namespace DB
@@ -169,15 +169,40 @@ static ASTPtr parseAdditionalPostFilter(const Context & context)
 
 static ActionsDAG makeAdditionalPostFilter(ASTPtr & ast, ContextPtr context, const Block & header)
 {
-    auto syntax_result = TreeRewriter(context).analyze(ast, header.getNamesAndTypesList());
     String result_column_name = ast->getColumnName();
-    auto dag = ExpressionAnalyzer(ast, syntax_result, context).getActionsDAG(false, false);
+    auto dag = analyzeExpressionToActionsDAG(ast, header.getNamesAndTypesList(), context);
     const ActionsDAG::Node * result_node = &dag.findInOutputs(result_column_name);
     auto & outputs = dag.getOutputs();
     outputs.clear();
     outputs.reserve(dag.getInputs().size() + 1);
+
+    /// The DAG inputs are registered in expression first-use order, but the filter must
+    /// not change the result column order: `FilterStep` materializes the header from the
+    /// DAG outputs, so list the inputs in the order of the result header (the legacy
+    /// `ExpressionAnalyzer` DAG kept its inputs in source-column order, preserving the
+    /// header for e.g. `SELECT *` with `additional_result_filter = 'b > a'`).
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> input_nodes_by_name;
     for (const auto * node : dag.getInputs())
-        outputs.push_back(node);
+        input_nodes_by_name.emplace(node->result_name, node);
+
+    for (const auto & column : header)
+    {
+        const auto it = input_nodes_by_name.find(column.name);
+        if (it != input_nodes_by_name.end() && it->second != nullptr)
+        {
+            outputs.push_back(it->second);
+            it->second = nullptr;
+        }
+    }
+
+    /// Paranoia: keep any input that did not match a header column (should not happen —
+    /// the expression is analyzed over the header columns).
+    for (const auto * node : dag.getInputs())
+    {
+        const auto it = input_nodes_by_name.find(node->result_name);
+        if (it != input_nodes_by_name.end() && it->second == node)
+            outputs.push_back(node);
+    }
 
     outputs.push_back(result_node);
 

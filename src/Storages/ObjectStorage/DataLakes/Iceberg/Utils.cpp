@@ -45,6 +45,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/sortBlock.h>
 #include <Poco/String.h>
+#include <Planner/AnalyzeExpression.h>
 
 #if USE_AVRO
 
@@ -1573,8 +1574,7 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
     }
     ASTPtr combined_expr_list = sort_description.expression_list_ast;
 
-    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, block.getNamesAndTypesList());
-    auto analyzer = ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
+    auto analyzer = analyzeExpressionToActions(combined_expr_list, block.getNamesAndTypesList(), context);
     analyzer->execute(block);
 
     ColumnsWithTypeAndName reordered_columns;

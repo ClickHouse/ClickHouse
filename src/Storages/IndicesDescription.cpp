@@ -1,7 +1,7 @@
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Storages/IndicesDescription.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -111,7 +111,10 @@ IndexDescription IndexDescription::getIndexFromAST(
     bool escape_filenames,
     ContextPtr context)
 {
-    const auto * index_definition = definition_ast->as<ASTIndexDeclaration>();
+    ASTPtr expanded_definition_ast = definition_ast->clone();
+    UserDefinedSQLFunctionVisitor::visit(expanded_definition_ast, context);
+
+    const auto * index_definition = expanded_definition_ast->as<ASTIndexDeclaration>();
     if (!index_definition)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create skip index from non ASTIndexDeclaration AST");
 
@@ -134,7 +137,7 @@ IndexDescription IndexDescription::getIndexFromAST(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index GRANULARITY must be a positive integer");
 
     IndexDescription result;
-    result.definition_ast = index_definition->clone();
+    result.definition_ast = expanded_definition_ast;
     result.name = index_definition->name;
     result.type = Poco::toLower(index_type->name);
     result.granularity = index_definition->granularity;
@@ -185,14 +188,21 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     ReplaceAliasToExprVisitor::Data data{columns, {}};
     ReplaceAliasToExprVisitor{data}.visit(expr_list);
 
+    /// The stored `definition_ast` keeps the matcher text, and `recalculateWithNewColumns`
+    /// rebuilds the index from it after a column-layout change, so a wildcard or a column
+    /// matcher would silently resolve to a different column set on `ALTER TABLE ... ADD COLUMN`
+    /// while existing parts keep index files built with the previous schema. Checked after
+    /// alias replacement, so a matcher hidden in an `ALIAS` column is rejected too.
+    checkExpressionDoesntContainMatchers(*expr_list);
+    checkExpressionDoesntContainSubqueries(*expr_list);
+
     expression_list_ast = expr_list->clone();
 
-    TreeRewriterResultPtr syntax = TreeRewriter(context).analyze(
+    expression = analyzeExpressionToActions(
         expr_list,
-        columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns())
-    );
-
-    expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
+        columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()),
+        context,
+        true);
 
     sample_block = expression->getSampleBlock();
 }
@@ -303,8 +313,7 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
         for (const auto & index_expr : index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
 
-    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
-    return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
+    return analyzeExpressionToActions(combined_expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()), context);
 }
 
 VectorWithMemoryTracking<String> IndicesDescription::getAllRegisteredNames() const

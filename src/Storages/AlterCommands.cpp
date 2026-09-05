@@ -19,8 +19,8 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/RenameColumnVisitor.h>
@@ -2076,6 +2076,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         /// doesn't depend on how the same logical alter is spelled.
         if (command.column_statistics_decl != nullptr && !table->supportsStatistics())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support statistics", table->getName());
+
+        /// Reject a `CHECK` constraint that can never be evaluated before it gets into the metadata.
+        if (command.type == AlterCommand::ADD_CONSTRAINT || command.type == AlterCommand::MODIFY_CONSTRAINT)
+            ConstraintsDescription::validateNoSubqueries({command.constraint_decl}, context);
 
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
