@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Storages/ReplaceAliasByExpressionVisitor.h>
 #include <Common/CurrentThread.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -1009,16 +1010,40 @@ namespace
 {
 
 /// Collects every ALIAS column named anywhere in `ast`.
-void collectAliasColumnsInExpression(const ASTPtr & ast, const ColumnsDescription & columns, std::set<String> & result)
+/// Collects every ALIAS column named anywhere in `ast`.
+///
+/// A lambda parameter is a name bound by the expression itself, not a reference to a table column,
+/// so it is masked while its body is walked - otherwise `arrayMap(x -> lower(x), arr)` would be read
+/// as naming a table ALIAS that happens to be called `x`. `ReplaceAliasByExpressionMatcher` masks
+/// them the same way, and for the same reason.
+void collectAliasColumnsInExpression(
+    const ASTPtr & ast, const ColumnsDescription & columns, NameSet & bound_names, std::set<String> & result)
 {
     if (!ast)
         return;
 
-    if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && columns.hasAlias(identifier->name()))
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+    {
+        Names parameters;
+        for (const auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
+            if (bound_names.insert(name).second)
+                parameters.push_back(name);
+
+        if (function->arguments && function->arguments->children.size() > 1)
+            collectAliasColumnsInExpression(function->arguments->children[1], columns, bound_names, result);
+
+        for (const auto & name : parameters)
+            bound_names.erase(name);
+
+        return;
+    }
+
+    if (const auto * identifier = ast->as<ASTIdentifier>();
+        identifier && !bound_names.contains(identifier->name()) && columns.hasAlias(identifier->name()))
         result.insert(identifier->name());
 
     for (const auto & child : ast->children)
-        collectAliasColumnsInExpression(child, columns, result);
+        collectAliasColumnsInExpression(child, columns, bound_names, result);
 }
 
 /// The type an ALIAS column's own expression produces, resolved the same way
@@ -1082,8 +1107,35 @@ std::map<String, DataTypePtr> findMistypedAliasColumnsOfTextIndex(
     if (!index_expression)
         return {};
 
+    NameSet bound_names;
     std::set<String> referenced_aliases;
-    collectAliasColumnsInExpression(index_expression, columns, referenced_aliases);
+    collectAliasColumnsInExpression(index_expression, columns, bound_names, referenced_aliases);
+
+    /// An ALIAS may be written in terms of another, and the index is built over the whole chain
+    /// expanded, so a mistyped ALIAS anywhere in it makes the index unreachable just as surely as one
+    /// named in the index expression: `b ALIAS toJSONString(a)` is typed consistently with its own
+    /// expression while `a` under it is not. Follow the bodies, guarding against a cycle.
+    std::set<String> pending = referenced_aliases;
+    while (!pending.empty())
+    {
+        auto current = std::move(pending);
+        pending.clear();
+
+        for (const auto & name : current)
+        {
+            auto column_default = columns.getDefault(name);
+            if (!column_default)
+                continue;
+
+            std::set<String> nested;
+            NameSet nested_bound_names;
+            collectAliasColumnsInExpression(column_default->expression, columns, nested_bound_names, nested);
+
+            for (const auto & nested_name : nested)
+                if (referenced_aliases.insert(nested_name).second)
+                    pending.insert(nested_name);
+        }
+    }
 
     std::map<String, DataTypePtr> mistyped;
     for (const auto & name : referenced_aliases)

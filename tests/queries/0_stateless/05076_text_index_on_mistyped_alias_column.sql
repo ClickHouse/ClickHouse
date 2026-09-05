@@ -118,3 +118,27 @@ ALTER TABLE db_05076_ord.t_grandfathered DROP INDEX fts_paths;
 SELECT count() FROM system.data_skipping_indices WHERE database = 'db_05076_ord' AND table = 't_grandfathered';
 
 DROP DATABASE db_05076_ord;
+
+-- A lambda parameter is bound by the expression, not a reference to a table column, so an index
+-- expression whose lambda happens to name a column is not an index over that column.
+DROP TABLE IF EXISTS t_lambda_shadow;
+CREATE TABLE t_lambda_shadow
+(
+    event String,
+    x String ALIAS JSONExtractKeys(event),
+    arr Array(String),
+    INDEX fts_lambda arrayMap(x -> lower(x), arr) TYPE text(tokenizer = array)
+) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_lambda_shadow (event, arr) VALUES ('{}', ['Foo']);
+SELECT count() FROM t_lambda_shadow WHERE hasAllTokens(arrayMap(x -> lower(x), arr), ['foo']);
+DROP TABLE t_lambda_shadow;
+
+-- The index is built over the ALIAS chain fully expanded, so a mistyped ALIAS anywhere under it
+-- leaves the index unreachable even when the one named in the index is typed consistently.
+CREATE TABLE t_chained_alias
+(
+    event String,
+    a String ALIAS JSONExtractKeys(event),
+    b String ALIAS toJSONString(a),
+    INDEX fts_chained b TYPE text(tokenizer = splitByNonAlpha)
+) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
