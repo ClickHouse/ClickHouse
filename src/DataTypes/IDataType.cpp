@@ -163,7 +163,7 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
             size_t prefix_len = i + 1;
             if (!subpath[i].visited && ISerialization::hasSubcolumnForPath(subpath, prefix_len))
             {
-                auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len, false, initial_array_level);
+                auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len, initial_array_level);
                 /// Create data from path only if it's requested subcolumn.
                 /// Use the first exact match to be consistent with ColumnsDescription::addSubcolumns
                 /// which also keeps the first subcolumn when there are name collisions
