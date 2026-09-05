@@ -16,6 +16,8 @@ public:
 
     String getName() const override { return "IntersectOrExcept"; }
 
+    Operator getOperator() const { return current_operator; }
+
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
     void describePipeline(FormatSettings & settings) const override;
@@ -24,6 +26,9 @@ public:
 
     /// Both inputs are hash-scattered by the whole row, so the output streams are disjoint by all columns.
     bool isPartitioned() const { return max_threads > 1; }
+    bool isSerializable() const override { return true; }
+    void serialize(Serialization & ctx) const override;
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
 private:
     void updateOutputHeader() override;

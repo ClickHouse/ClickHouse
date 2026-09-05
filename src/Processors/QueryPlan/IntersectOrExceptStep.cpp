@@ -12,7 +12,13 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/IntersectOrExceptTransform.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/ResizeProcessor.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <base/EnumReflection.h>
 
 #include <numeric>
 
@@ -22,6 +28,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static bool containsAggregateStateColumn(const IColumn & column)
@@ -120,7 +128,7 @@ void IntersectOrExceptStep::updateOutputHeader()
     output_header = checkHeaders(input_headers);
 }
 
-QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
+QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
 {
     auto pipeline = std::make_unique<QueryPipelineBuilder>();
 
@@ -132,7 +140,9 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
         return pipeline;
     }
 
-    size_t num_partitions = isPartitioned() ? max_threads : 1;
+    /// Zero means the step was deserialized on a worker; use the executing server's own setting.
+    size_t new_max_threads = max_threads ? max_threads : settings.max_threads;
+    size_t num_partitions = new_max_threads > 1 ? new_max_threads : 1;
     if (num_partitions > 1)
     {
         /// Every partition costs one connection per input stream of every branch (the scatters), plus one
@@ -189,7 +199,7 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
         processors.insert(processors.end(), added_processors.begin(), added_processors.end());
     }
 
-    *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), max_threads, &processors);
+    *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), new_max_threads, &processors);
 
     if (num_partitions == 1)
     {
@@ -228,6 +238,47 @@ void IntersectOrExceptStep::describePipeline(FormatSettings & settings) const
 QueryPlanStepPtr IntersectOrExceptStep::clone() const
 {
     return std::make_unique<IntersectOrExceptStep>(*this);
+}
+
+/// First query-plan serialization version that registers the "IntersectOrExcept" step.
+static constexpr auto MIN_SERIALIZATION_VERSION_WITH_INTERSECT_OR_EXCEPT_STEP = 14;
+
+void IntersectOrExceptStep::serialize(Serialization & ctx) const
+{
+    /// Throw rather than send a step name an older peer does not know.
+    if (ctx.version < MIN_SERIALIZATION_VERSION_WITH_INTERSECT_OR_EXCEPT_STEP)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan: serializing an IntersectOrExceptStep requires query plan serialization "
+            "version >= {}; all nodes must run the same version", MIN_SERIALIZATION_VERSION_WITH_INTERSECT_OR_EXCEPT_STEP);
+
+    /// `max_threads` is not serialized: zero makes `updatePipeline` use the executing server's own setting.
+    writeIntBinary(static_cast<UInt8>(current_operator), ctx.out);
+}
+
+QueryPlanStepPtr IntersectOrExceptStep::deserialize(Deserialization & ctx)
+{
+    /// Mirrors the guard in `serialize`: a peer below this version cannot have written this step.
+    if (ctx.version < MIN_SERIALIZATION_VERSION_WITH_INTERSECT_OR_EXCEPT_STEP)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan: deserializing an IntersectOrExceptStep requires query plan serialization "
+            "version >= {}; all nodes must run the same version", MIN_SERIALIZATION_VERSION_WITH_INTERSECT_OR_EXCEPT_STEP);
+
+    if (ctx.input_headers.size() != 2)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "IntersectOrExceptStep must have two input streams");
+
+    UInt8 operator_value = 0;
+    readIntBinary(operator_value, ctx.in);
+    const auto current_operator = magic_enum::enum_cast<Operator>(operator_value);
+    /// `UNKNOWN` is a member of the enum but not a valid operator, reject it too.
+    if (!current_operator || *current_operator == Operator::UNKNOWN)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected intersect/except operator value {}", static_cast<UInt32>(operator_value));
+    return std::make_unique<IntersectOrExceptStep>(ctx.input_headers, *current_operator, /*max_threads_=*/0);
+}
+
+void registerIntersectOrExceptStep(QueryPlanStepRegistry & registry);
+void registerIntersectOrExceptStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("IntersectOrExcept", &IntersectOrExceptStep::deserialize);
 }
 
 }
