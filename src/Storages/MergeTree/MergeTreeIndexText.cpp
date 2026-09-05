@@ -1963,6 +1963,8 @@ void normalizeColumnExpression(ASTPtr & ast)
     ast = makeASTFunction(function->name == "equals" ? "empty" : "notEmpty", expression);
 }
 
+}
+
 /// Queries are analyzed with `optimize_empty_string_comparisons`, index expressions are not, so an index such as
 /// `arrayFilter(s -> s != '', arr)` is never matched by name (issue #111788). Returns the name of the index
 /// expression after the same rewrite, or `std::nullopt` if it does not change.
@@ -1980,8 +1982,6 @@ std::optional<String> getNormalizedIndexColumnName(const IndexDescription & inde
         return {};
 
     return name;
-}
-
 }
 
 MergeTreeIndexText::MergeTreeIndexText(
@@ -2160,6 +2160,16 @@ std::unordered_map<String, ASTPtr> convertArgumentsToOptionsMap(const ASTPtr & a
     return options;
 }
 
+}
+
+String getTextIndexTokenizerDescription(const IndexDescription & index)
+{
+    if (index.type != TEXT_INDEX_NAME)
+        return {};
+
+    auto options = convertArgumentsToOptionsMap(index.arguments);
+    auto tokenizer_ast = extractASTOption(options, ARGUMENT_TOKENIZER, true);
+    return TokenizerFactory::instance().get(tokenizer_ast)->getDescription();
 }
 
 MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings)
