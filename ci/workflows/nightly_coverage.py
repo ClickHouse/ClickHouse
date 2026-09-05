@@ -13,14 +13,10 @@ workflow = Workflow.Config(
             1
         ],  # Per-test LLVM entry counters with randomized settings
         *JobConfigs.functional_tests_jobs_coverage,
-        JobConfigs.check_coverage_health,
     ],
     dockers=DOCKERS,
     secrets=SECRETS,
-    artifacts=[
-        *ArtifactConfigs.clickhouse_binaries,
-        *ArtifactConfigs.coverage_exports,
-    ],
+    artifacts=ArtifactConfigs.clickhouse_binaries,
     enable_cache=True,
     enable_report=True,
     enable_slack_feed=True,

@@ -914,11 +914,6 @@ def main():
                 files=[selection_report],
             ).complete_job()
 
-    if is_per_test_coverage:
-        Path(selection_events).write_text("")
-        runner_options += f" --selection-events {selection_events}"
-        debug_files.append(selection_events)
-
     stage = args.param or JobStages.INSTALL_CLICKHOUSE
     if stage:
         assert stage in JobStages, f"--param must be one of [{list(JobStages)}]"
@@ -1518,13 +1513,9 @@ def main():
                     src=CH,
                     dest=cidb_cluster,
                     job_name=info.job_name,
-                    events_path=selection_events if is_per_test_coverage else None,
                 ).do(),
             )
         )
-        coverage_metadata = Path(temp_dir) / f"coverage-export-{batch_num}.json"
-        if coverage_metadata.exists():
-            results[-1].files.append(str(coverage_metadata))
         if results[-1].is_ok():
             reset_success = True
 

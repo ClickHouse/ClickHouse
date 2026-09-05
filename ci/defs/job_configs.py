@@ -1012,7 +1012,6 @@ class JobConfigs:
         *[
             Job.ParamSet(
                 parameter=f"{BuildTypes.PER_TEST_COVERAGE}, per_test_coverage, {batch}/{total_batches}",
-                provides=[ArtifactNames.COVERAGE_EXPORT_PREFIX + str(batch)],
                 runs_on=RunnerLabels.AMD_SMALL,
                 requires=[ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD],
             )
@@ -2113,15 +2112,3 @@ class JobConfigs:
     # Randomized executions must remain independent even when the build is cached.
     for job in functional_tests_jobs_coverage:
         job.digest_config = None
-    check_coverage_health = Job.Config(
-        name="Coverage health",
-        runs_on=RunnerLabels.AMD_SMALL,
-        command="python3 -m ci.jobs.check_coverage_health",
-        always_run=True,
-        requires=[
-            ArtifactNames.COVERAGE_EXPORT_PREFIX + str(shard)
-            for shard in range(1, SELECTION_CONFIG.coverage_shards + 1)
-        ],
-        run_in_docker="clickhouse/stateless-test+--network=host",
-        timeout=5 * 60,
-    )

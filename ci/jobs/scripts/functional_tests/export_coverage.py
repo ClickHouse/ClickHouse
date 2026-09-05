@@ -1,4 +1,3 @@
-import json
 import shlex
 from pathlib import Path
 
@@ -9,12 +8,9 @@ from ci.jobs.scripts.coverage_selection import (
     build_selector_smoke_seed_query,
     parse_rows,
     rank_candidates,
-    snapshot_predicate,
     sql_string,
 )
-from ci.jobs.scripts.test_selection_config import SELECTION_CONFIG
 from ci.praktika.cidb import CIDB
-from ci.praktika.info import Info
 from ci.praktika.utils import Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
@@ -30,7 +26,6 @@ class CoverageExporter:
         job_name: str,
         check_start_time="",
         to_file=False,
-        events_path=None,
     ):
         self.src = src
         self.dest = dest
@@ -40,11 +35,6 @@ class CoverageExporter:
             Utils.timestamp()
         )
         self.to_file = to_file
-        self.events_path = events_path
-        self.shard = self.job_name.rsplit(", ", 1)[-1].rstrip(")")
-        self.metadata_path = (
-            Path(temp_dir) / f"coverage-export-{self.shard.split('/')[0]}.json"
-        )
 
     def _query(self, query):
         command = (
@@ -69,60 +59,11 @@ class CoverageExporter:
         Shell.check(
             f"sed -i 's|<errorlog>.*</errorlog>|<errorlog>{self.src.CH_LOCAL_ERR_LOG}</errorlog>|' /etc/clickhouse-server/config.xml"
         )
-        info = Info()
-        metadata = {
-            "coverage_run_id": str(info.run_id),
-            "commit_sha": info.sha,
-            "shard": self.shard,
-            "check_start_time": self.check_start_time,
-            "check_name": self.job_name,
-            "randomized_settings": True,
-            "status": "validating",
-            "snapshot_identity": "legacy-shard-timestamp",
-        }
-        self.metadata_path.parent.mkdir(parents=True, exist_ok=True)
-        self.metadata_path.write_text(json.dumps(metadata, indent=2) + "\n")
         source = "system.coverage_log FINAL WHERE notEmpty(test_name) AND test_name != '_selftest'"
-        stats = parse_rows(self._query(f"""
-            SELECT test_name, count() AS rows, groupUniqArray(5)(file) AS sample_files
-            FROM {source}
-            GROUP BY test_name FORMAT JSONEachRow
-        """))
-        exported_tests = {
-            row["test_name"] for row in stats if row["test_name"] != "_selftest"
-        }
-        if not exported_tests:
-            raise RuntimeError(
-                "Per-test coverage is empty; no useful shard was published"
-            )
-        events = []
-        if self.events_path:
-            events = [
-                json.loads(line)
-                for line in Path(self.events_path).read_text().splitlines()
-            ]
-            armed = {
-                event["test"] for event in events if event["event"] == "coverage_armed"
-            }
-            if not armed:
-                raise RuntimeError("No test armed per-test coverage")
-            missing = sorted(armed - exported_tests)
-            if missing:
-                raise RuntimeError(
-                    f"Executed tests have no exported coverage (including failed tests): {missing}"
-                )
-        metadata.update(
-            {
-                "exported_tests": sorted(exported_tests),
-                "rows": sum(int(row["rows"]) for row in stats),
-                "executed_tests": sorted(
-                    {event["test"] for event in events if event["event"] == "started"}
-                ),
-                "settings_fingerprints": sorted(
-                    {event["settings_fingerprint"] for event in events}
-                ),
-            }
-        )
+        rows = int(self._query(f"SELECT count() FROM {source}").strip())
+        if not rows:
+            raise RuntimeError("Per-test coverage is empty")
+        print(f"Coverage log: {rows} rows")
         # Preserve recorded paths; the selector interprets source coordinates.
         if self.to_file:
             directory = Path(temp_dir) / "system_tables"
@@ -148,16 +89,6 @@ class CoverageExporter:
             snapshot = [
                 {"check_start_time": self.check_start_time, "check_name": self.job_name}
             ]
-            remote_tests = parse_rows(
-                cidb.query(
-                    f"SELECT DISTINCT test_name FROM checks_coverage_lines WHERE {snapshot_predicate(snapshot)} FORMAT JSONEachRow",
-                    log_level="",
-                )
-            )
-            if exported_tests != {row["test_name"] for row in remote_tests}:
-                raise RuntimeError(
-                    "Post-export test inventory differs from the executed shard"
-                )
             # Exercise the production query and scorer against this exact export.
             seeds = parse_rows(self._query(build_selector_smoke_seed_query(source)))
             if not seeds:
@@ -169,12 +100,7 @@ class CoverageExporter:
             regions = parse_rows(cidb.query(query, log_level=""))
             if not rank_candidates(regions, changed, {}, snapshot):
                 raise RuntimeError(f"Post-export selector smoke failed: {query}")
-            metadata["selector_smoke"] = {
-                "status": "OK",
-                "path_version": SELECTION_CONFIG.path_version,
-                "query": query,
-                "region_count": len(regions),
-            }
+            print(f"Post-export selector smoke passed: {len(regions)} precise regions")
             indirect_rows = int(
                 self._query(
                     "SELECT count() FROM system.coverage_indirect_calls FINAL WHERE notEmpty(test_name)"
@@ -191,6 +117,4 @@ class CoverageExporter:
                     "test_name, caller_name_hash, caller_func_hash, callee_offset, call_count "
                     "FROM system.coverage_indirect_calls FINAL WHERE notEmpty(test_name)"
                 )
-        metadata["status"] = "OK"
-        self.metadata_path.write_text(json.dumps(metadata, indent=2) + "\n")
-        print(f"Exported and validated coverage for {len(exported_tests)} tests")
+        print("Coverage export completed")

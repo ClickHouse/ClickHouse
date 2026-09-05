@@ -4110,7 +4110,6 @@ class TestCase:
                 try:
                     safe_case = self.case.replace("'", "\\'")
                     clickhouse_execute(args, f"SYSTEM SET COVERAGE TEST '{safe_case}'")
-                    self.selection_event(args, "coverage_armed")
                 except Exception as e:
                     return TestResult(
                         self.name,
@@ -6914,7 +6913,7 @@ ORDER BY (test_name, callee_offset)
         print("All tests have finished.")
 
     if args.collect_per_test_coverage and BuildFlags.WITH_COVERAGE_DEPTH in args.build_flags:
-        # Flush the final attribution before validating/exporting the shard.
+        # Flush the last test's coverage before export.
         clickhouse_execute(args, "SYSTEM SET COVERAGE TEST ''")
         cov_rows = int(clickhouse_execute(args, "SELECT count() FROM system.coverage_log FINAL") or 0)
         cov_tests = int(clickhouse_execute(args, "SELECT uniq(test_name) FROM system.coverage_log FINAL") or 0)

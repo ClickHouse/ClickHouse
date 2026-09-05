@@ -1,8 +1,6 @@
 from praktika import Artifact, Docker, Secret
 from praktika.utils import MetaClasses, Utils
 
-from ci.jobs.scripts.test_selection_config import SELECTION_CONFIG
-
 # i.e. "ClickHouse/ci/tmp"
 TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == _Settings.TEMP_DIR != env_helper.TEMP_PATH
 
@@ -469,7 +467,6 @@ class ToolSet:
 
 
 class ArtifactNames:
-    COVERAGE_EXPORT_PREFIX = "COVERAGE_EXPORT_"
     STATELESS_SELECTION = "STATELESS_SELECTION"
     CH_AMD_DEBUG = "CH_AMD_DEBUG"
     CH_AMD_LLVM_COVERAGE_BUILD = (
@@ -609,14 +606,6 @@ BINARIES_WITH_LONG_RETENTION = [
 
 
 class ArtifactConfigs:
-    coverage_exports = [
-        Artifact.Config(
-            name=ArtifactNames.COVERAGE_EXPORT_PREFIX + str(shard),
-            type=Artifact.Type.S3,
-            path=f"{TEMP_DIR}/coverage-export-{shard}.json",
-        )
-        for shard in range(1, SELECTION_CONFIG.coverage_shards + 1)
-    ]
     stateless_selection = Artifact.Config(
         name=ArtifactNames.STATELESS_SELECTION,
         type=Artifact.Type.S3,

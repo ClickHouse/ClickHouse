@@ -24,12 +24,9 @@ are rejected when interpreting selection inputs. Generated protobuf coverage
 under `ci/tmp/build/` remains in the export; selection only considers changed
 source paths under `src/`.
 
-Each shard publishes `coverage-export-N.json`, including workflow run ID, SHA,
-shard, executed/exported test inventories, randomized-settings fingerprints, and
-post-export selector smoke status and its path interpretation version. Failed
-tests retain their coverage. Missing attribution for an armed test fails the
-export check. The final `Coverage health`
-job requires all eight exports to come from the same workflow run.
+Each shard runs a post-export smoke check through the production selector query
+and scorer against its uploaded coverage. The export step fails if the selector
+cannot retrieve and score a precise source region.
 
 CIDB still has the legacy eight-column `checks_coverage_lines` schema. Until an
 external migration adds durable workflow/shard identity to coverage rows, the
@@ -37,10 +34,8 @@ selector uses the latest three usable `(check_start_time, check_name)` snapshots
 per shard, searching 14 days and requiring a snapshot within 72 hours for every
 shard. At least 100 exported tests are required for a usable shard snapshot.
 These temporary keys are **not** workflow-run IDs; shards can start in different
-hours. New exports retain second-resolution timestamps. The JSON sidecars carry
-durable run identity, but selecting complete workflow runs directly in CIDB
-remains dependent on that schema migration. Partial rows remain available even
-when the final workflow health check fails.
+hours. New exports retain second-resolution timestamps. Selecting complete
+workflow runs directly in CIDB remains dependent on that schema migration.
 
 ## Validation and rollout
 
