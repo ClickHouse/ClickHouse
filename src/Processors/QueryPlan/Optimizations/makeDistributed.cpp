@@ -21,6 +21,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/QueryPlan/ScatterExchangeStep.h>
@@ -128,7 +129,6 @@ void tryMakeDistributedSorting(const Stack & stack, QueryPlan::Node & node, Quer
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node);
 void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
-bool keyTypeBreaksHashSharding(const IDataType & type);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
@@ -202,8 +202,11 @@ void checkDistributedReadSupported(const QueryPlan::Node & root)
         if (const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
         {
             /// The old interpreter plans read-in-order before the query plan is optimized (with
-            /// query_plan_read_in_order = 0). The shipped fragments do not carry the in-order contract,
-            /// so reject it cleanly here instead of failing on a non-serializable finish-sorting step.
+            /// query_plan_read_in_order = 0), building a FinishSorting this pass never revisits:
+            /// optimizeReadInOrder only converts a Type::Full sorting, so the exchange-safety check in
+            /// findReadingStep cannot see it, and the scatter placed under it may survive and feed it rows
+            /// that are no longer sorted. Reject such a plan instead of returning rows in the wrong order.
+            /// A read this optimizer asks for in order is requested later and has no order set here yet.
             if (read->getQueryInfo().input_order_info)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "make_distributed_plan does not support a read-in-order distributed read");
@@ -224,6 +227,13 @@ void checkDistributedReadSupported(const QueryPlan::Node & root)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "make_distributed_plan does not support a distributed read exposing the {} virtual column", column);
         }
+
+        if (const auto * sorting = typeid_cast<const SortingStep *>(node->step.get());
+            sorting
+            && (sorting->getType() == SortingStep::Type::FinishSorting
+                || sorting->getType() == SortingStep::Type::PartitionedFinishSorting))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan does not support a read-in-order distributed read");
 
         for (const auto * child : node->children)
             stack.push_back(child);
@@ -620,10 +630,20 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         const bool memory_bound_merging_of_aggregation_results_enabled = aggregating_step->usingMemoryBoundMerging();
         const bool original_step_was_final = aggregating_step->getFinal();   /// Save whether the original AggregatingStep was final or partial
 
-        /// Convert Aggregation step to partial aggregation
+        /// The memory-efficient merge does not support grouping sets.
+        const bool use_memory_efficient_merge = optimization_settings.distributed_aggregation_memory_efficient && !has_grouping_sets;
+
+        /// The memory-efficient merge consumes each input as a stream of buckets in ascending
+        /// order, so the partial aggregation must produce its result in bucket order; without
+        /// that its multi-stream output would reach the exchange in arbitrary order and the
+        /// merge would emit duplicated groups for buckets that arrive late.
         auto & partial_aggregation_node = nodes.emplace_back();
         partial_aggregation_node.step = aggregating_step->clone();
-        typeid_cast<AggregatingStep *>(partial_aggregation_node.step.get())->setFinal(false);
+        auto * partial_aggregation_step = typeid_cast<AggregatingStep *>(partial_aggregation_node.step.get());
+        partial_aggregation_step->setFinal(false);
+        /// Keep the bucket order when the original step already promised it to its consumer.
+        partial_aggregation_step->setProduceResultsInBucketOrder(
+            should_produce_results_in_order_of_bucket_number || use_memory_efficient_merge);
         partial_aggregation_node.step->setStepDescription("partial");
         partial_aggregation_node.children = {&exchange_scatter_node};
 
@@ -633,14 +653,13 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         gather_node.children = {&partial_aggregation_node};
 
         /// Replace original aggregation step with MergingAggregated step
-        aggregator_params.only_merge = true;    /// Merge partial aggregation results
+        aggregator_params.only_merge = true; /// Merge partial aggregation results
         QueryPlanStepPtr final_aggregation_step = std::make_unique<MergingAggregatedStep>(
             gather_node.step->getOutputHeader(),
             aggregator_params,
             grouping_sets_params,
             /* final */ original_step_was_final,
-            /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
-            optimization_settings.distributed_aggregation_memory_efficient && !has_grouping_sets,
+            use_memory_efficient_merge,
             aggregating_step->getTemporaryDataMergeThreads(),
             should_produce_results_in_order_of_bucket_number,
             aggregating_step->getMaxBlockSize(),
@@ -835,11 +854,14 @@ void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node)
     node->children = std::move(node->children[0]->children);
 }
 
-/// True if `column_name` is produced by `dag` as the unchanged input column of the same name (only
-/// possibly aliased). Such a column keeps its value, so a merge by it stays sort-preserving.
+/// True if `column_name` reaches the step's output with its value unchanged, so a merge by it stays
+/// sort-preserving. A column the `dag` does not mention is preserved: the step forwards it untouched.
+/// A column the `dag` does mention is preserved only if it is the input column of the same name.
 static bool isSortColumnPreserved(const ActionsDAG & dag, const String & column_name)
 {
-    const auto * node = &dag.findInOutputs(column_name);
+    const auto * node = dag.tryFindInOutputs(column_name);
+    if (!node)
+        return true;
     while (node->type == ActionsDAG::ActionType::ALIAS)
         node = node->children.front();
     return node->type == ActionsDAG::ActionType::INPUT && node->result_name == column_name;
@@ -1005,10 +1027,7 @@ void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettin
         else /// After all children were processed
         {
             /// Try to push up GatherExchange above Expression or Filter step
-            if (frame.node->children.size() == 1 &&
-                (typeid_cast<ExpressionStep *>(frame.node->step.get()) ||
-                typeid_cast<FilterStep *>(frame.node->step.get()) ||
-                typeid_cast<BuildRuntimeFilterStep *>(frame.node->step.get())))
+            if (frame.node->children.size() == 1 && canHoistGatherThroughStep(*frame.node->step))
             {
                 auto & child_node = *frame.node->children[0];
                 auto * gather_step = typeid_cast<GatherExchangeStep *>(child_node.step.get());
@@ -1023,12 +1042,6 @@ void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettin
                         dag = &filter->getExpression();
 
                     bool can_move_gather_up = true;
-
-                    /// Per-block functions (`rowNumberInAllBlocks`, `blockNumber`, `nowInBlock`, ...)
-                    /// depend on the whole block stream; below a gather they would run per shard and
-                    /// produce different values. Keep such a step above the gather.
-                    if (dag && dagContainsNonDeterministicFunction(*dag))
-                        can_move_gather_up = false;
 
                     /// Moving the sorted GatherExchange above the step is only valid if every sort column
                     /// survives the step unchanged - otherwise GatherReceive would merge by a sort

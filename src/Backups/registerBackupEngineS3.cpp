@@ -300,7 +300,11 @@ void registerBackupEngineS3(BackupFactory & factory)
             {
                 S3::S3AuthSettings auth_settings;
 
-                if (!StorageS3Configuration::collectCredentials(params.backup_info.function_arg, auth_settings, params.context))
+                /// `collectCredentials` resolves each value into the node it was given, so it is handed a
+                /// copy: `BackupImpl::writeBackupMetadata` decides whether the base backup may take this
+                /// backup's credentials by comparing the two locators as text, and a locator resolved on
+                /// one side alone no longer matches the other written the same way.
+                if (!StorageS3Configuration::collectCredentials(params.backup_info.function_arg->clone(), auth_settings, params.context))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid argument: {}", params.backup_info.function_arg->formatForErrorMessage());
 
                 role_arn = std::move(auth_settings[S3AuthSetting::role_arn]);

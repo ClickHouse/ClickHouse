@@ -14,6 +14,12 @@ keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhou
 Ce tutoriel suit le [tutoriel ClickHouse], mais exécute toutes ses requêtes via
 pg&#95;clickhouse.
 
+Choisissez comment vous souhaitez configurer `pg_clickhouse` :
+
+* [Depuis la console](#from-console) si vous utilisez ClickHouse Managed Postgres.
+* [Depuis PSQL](#from-psql) si vous installez et configurez l’extension
+  vous-même.
+
 <div id="start-clickhouse">
   ## Démarrer ClickHouse
 </div>
@@ -162,6 +168,43 @@ Vérifiez que nous pouvons l’interroger, puis quittez le client :
 SELECT count() FROM taxi.trips;
 quit
 ```
+
+<div id="from-console">
+  ## Depuis la console
+</div>
+
+Si vous utilisez ClickHouse Managed Postgres, vous pouvez configurer
+`pg_clickhouse` et vous connecter à un service ClickHouse depuis la ClickHouse Cloud console.
+Ouvrez votre service Managed Postgres, sélectionnez **Settings**, puis recherchez la
+section **ClickHouse integration**. Cliquez sur **Enable pg&#95;clickhouse**.
+
+Dans le formulaire de configuration, saisissez un nom pour le serveur foreign. Sélectionnez le
+service ClickHouse, la base de données et l&#39;utilisateur à utiliser pour la connexion. Saisissez le
+mot de passe ClickHouse, puis sélectionnez la base de données Postgres et le schéma de destination dans lesquels les
+tables ClickHouse doivent être importées. Cliquez sur **Connect** pour créer le serveur foreign
+et importer le schéma.
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="Formulaire de configuration de pg_clickhouse pour la base de données taxi dans la ClickHouse Cloud console" size="lg" border />
+
+Une fois la configuration terminée, la console affiche une confirmation et le serveur foreign
+apparaît dans la liste des serveurs.
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="Configuration de pg_clickhouse terminée pour la base de données taxi dans la ClickHouse Cloud console" size="lg" border />
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="Liste des serveurs foreign affichant la connexion pg_clickhouse de taxi" size="lg" border />
+
+Vous pouvez maintenant ouvrir la **SQL console** Postgres et interroger les tables importées :
+
+```sql
+SELECT * FROM <schema>.<table>;
+```
+
+Pour suivre les exemples de trajets en taxi de ce tutoriel, sélectionnez la base de données ClickHouse `taxi`
+et importez-la dans un schéma de destination nommé `taxi`.
+
+<div id="from-psql">
+  ## Depuis PSQL
+</div>
 
 <div id="install-pg_clickhouse">
   ### Installer pg_clickhouse

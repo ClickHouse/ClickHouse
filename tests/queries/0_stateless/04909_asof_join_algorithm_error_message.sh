@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-for enable_analyzer in 0 1
+for enable_analyzer in 1
 do
     echo "-- enable_analyzer = $enable_analyzer"
 

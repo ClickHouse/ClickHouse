@@ -7,6 +7,7 @@ ngrams
 sparseGrams
 sparse_grams
 splitByNonAlpha
+splitByRegexp
 splitByString
 tokenbf_v1
 unicodeWord

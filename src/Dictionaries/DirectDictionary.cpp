@@ -346,14 +346,14 @@ class SourceFromQueryPipeline : public ISource
 {
 public:
     explicit SourceFromQueryPipeline(QueryPipeline & pipeline_)
-        : ISource(pipeline_.getSharedHeader())
+        : ISource(std::make_shared<const Block>(pipeline_.getSharedHeader()->cloneEmpty()))
         , executor(pipeline_)
     {
         pipeline_.setConcurrencyControl(false);
     }
 
     explicit SourceFromQueryPipeline(BlockIO io)
-        : ISource(io.pipeline.getSharedHeader())
+        : ISource(std::make_shared<const Block>(io.pipeline.getSharedHeader()->cloneEmpty()))
         , io_holder(std::move(io))
         , executor(io_holder->pipeline)
     {
@@ -502,7 +502,43 @@ void registerDictionaryDirect(DictionaryFactory & factory);
 void registerDictionaryDirect(DictionaryFactory & factory)
 {
     factory.registerLayout("direct", createDirectDictionary<DictionaryKeyType::Simple>, false, true, Documentation{
-        .description = "Does not store any data in memory; every lookup queries the source directly. Suitable for sources that are fast to query and update frequently.",
+        .description = R"DOCS_MD(
+# direct dictionary layout
+
+## direct {#direct}
+
+The dictionary is not stored in memory and directly goes to the source during the processing of a request.
+
+The dictionary key has the [UInt64](/reference/data-types/int-uint) type.
+
+All types of [sources](/reference/statements/create/dictionary/sources/overview#dictionary-sources), except local files, are supported.
+
+Configuration example:
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+LAYOUT(DIRECT())
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<layout>
+  <direct />
+</layout>
+```
+
+</Tab>
+</Tabs>
+<br/>
+
+## complex_key_direct {#complex_key_direct}
+
+This type of storage is for use with composite [keys](/reference/statements/create/dictionary/attributes#composite-key). Similar to `direct`.
+)DOCS_MD",
         .syntax = "LAYOUT(DIRECT())",
         .related = {"cache"}});
     factory.registerLayout("complex_key_direct", createDirectDictionary<DictionaryKeyType::Complex>, true, true, Documentation{

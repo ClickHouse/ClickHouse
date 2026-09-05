@@ -171,7 +171,7 @@ dbt は、insert 後に読み取り結果の整合性が保たれることを前
 名前付きの設定辞書から S3 テーブル関数 のパラメーターを
 埋めることで動作します (辞書名は
 `s3` で終わっている必要があります) 。このマクロは
-まず プロファイル の `vars` から辞書を探し、次に model configuration を確認します。辞書には、
+まず プロファイル の `vars` から辞書を探し、次に モデル configuration を確認します。辞書には、
 S3 テーブル関数 のパラメーターを設定するための、以下の
 キーを任意に含めることができます。
 
@@ -184,11 +184,29 @@ S3 テーブル関数 のパラメーターを設定するための、以下の
 | aws&#95;access&#95;key&#95;id     | S3 access key id。                                                                                                                   |
 | aws&#95;secret&#95;access&#95;key | S3 secret key。                                                                                                                      |
 | role&#95;arn                      | 安全な S3 アクセスのために作成された IAM role の ARN。詳細は、この[documentation](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely)を参照してください。 |
+| external&#95;id                   | IAM role を引き受ける際に `role_arn` とともに渡す外部 ID。`role_arn` の設定が必要です。dbt-clickhouse 1.10.2 以降で利用可能です。                                       |
 | compression                       | S3 object で使われる圧縮方式。指定しない場合、ClickHouse はファイル名に基づいて圧縮を判定しようとします。                                                                     |
 
-このマクロの使用例については、
-[S3 test file](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py)
-を参照してください。
+<div id="s3source-example">
+  #### 例
+</div>
+
+共有設定を `dbt_project.yml` で定義します (辞書名は `s3` で終わっている必要があります)：
+
+```yaml
+vars:
+  taxi_s3:
+    bucket: 'datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi'
+    fmt: 'TabSeparatedWithNames'
+```
+
+次に、モデル 内でマクロを呼び出します。上記の argument はいずれも呼び出し時に直接渡すことができ、その場合は辞書の値より優先されます。
+
+```sql
+select * from {{ clickhouse_s3source('taxi_s3', path='/trips_4.gz') }}
+```
+
+その他の例については、[S3 test file](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py)を参照してください。
 
 <div id="cross-database-macro-support">
   ### クロスデータベース マクロのサポート

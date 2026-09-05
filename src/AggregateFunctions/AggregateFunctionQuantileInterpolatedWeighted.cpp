@@ -389,7 +389,7 @@ quantileInterpolatedWeighted(level)(expr, weight)
         R"(
 CREATE TABLE t (
     n Int32,
-    val Int32
+    val UInt32
 ) ENGINE = Memory;
 
 INSERT INTO t VALUES (0, 3), (1, 2), (2, 1), (5, 4);

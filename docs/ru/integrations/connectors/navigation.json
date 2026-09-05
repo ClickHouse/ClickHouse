@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "Источники данных",
+      "group": "Data sources",
       "pages": [
         "ru/integrations/connectors/data-sources/index",
         {
@@ -44,7 +44,7 @@
     },
     {
       "expanded": true,
-      "group": "Визуализация данных",
+      "group": "Data visualization",
       "pages": [
         "ru/integrations/connectors/data-visualization/index",
         {
@@ -77,7 +77,7 @@
         },
         {
           "expanded": false,
-          "group": "Интеграции сообщества",
+          "group": "Community integrations",
           "pages": [
             "ru/integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse",
             "ru/integrations/connectors/data-visualization/community-integrations/chartbrew-and-clickhouse",
@@ -100,9 +100,8 @@
     },
     {
       "expanded": true,
-      "group": "Ингестия данных",
+      "group": "Data ingestion",
       "pages": [
-        "ru/integrations/connectors/data-ingestion/index",
         "ru/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
         "ru/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
         "ru/integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
@@ -139,7 +138,7 @@
             "ru/integrations/connectors/data-ingestion/GCP/google-dataflow/templates",
             {
               "expanded": false,
-              "group": "Шаблоны Dataflow",
+              "group": "Dataflow templates",
               "pages": [
                 "ru/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse",
                 "ru/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse"
@@ -149,15 +148,7 @@
         },
         "ru/integrations/connectors/data-ingestion/etl-tools/bladepipe-and-clickhouse",
         {
-          "expanded": false,
-          "group": "dbt",
-          "pages": [
-            "ru/integrations/connectors/data-ingestion/etl-tools/dbt/index",
-            "ru/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations",
-            "ru/integrations/connectors/data-ingestion/etl-tools/dbt/materializations",
-            "ru/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view",
-            "ru/integrations/connectors/data-ingestion/etl-tools/dbt/guides"
-          ]
+          "$ref": "data-ingestion/etl-tools/dbt/navigation.json"
         },
         "ru/integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse",
         {
@@ -180,7 +171,7 @@
         },
         {
           "expanded": false,
-          "group": "Интеграции сообщества",
+          "group": "Community integrations",
           "pages": [
             "ru/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
             "ru/integrations/connectors/data-ingestion/community-integrations/erathos",
@@ -198,11 +189,12 @@
     },
     {
       "expanded": true,
-      "group": "Интеграции данных",
+      "group": "Data integrations",
       "pages": [
         "ru/integrations/connectors/tools/data-integration-index",
         "ru/integrations/connectors/data-integrations/integrations/retool",
         "ru/integrations/connectors/data-integrations/integrations/easypanel",
+        "ru/integrations/connectors/data-integrations/integrations/microsoft-fabric",
         "ru/integrations/connectors/data-integrations/integrations/middleware",
         "ru/integrations/connectors/data-integrations/integrations/notion",
         "ru/integrations/connectors/data-integrations/integrations/splunk"
@@ -210,7 +202,7 @@
     },
     {
       "expanded": true,
-      "group": "SQL-клиенты",
+      "group": "SQL-clients",
       "pages": [
         "ru/integrations/connectors/sql-clients/index",
         "ru/integrations/connectors/sql-clients/sql-console",
@@ -226,7 +218,7 @@
     },
     {
       "expanded": true,
-      "group": "Инструменты",
+      "group": "Tools",
       "pages": [
         "ru/integrations/connectors/tools/index",
         "ru/integrations/connectors/tools/misc-index",
@@ -237,5 +229,5 @@
     }
   ],
   "icon": "/images/icons/icon-connectors.svg",
-  "item": "Коннекторы"
+  "item": "Connectors"
 }

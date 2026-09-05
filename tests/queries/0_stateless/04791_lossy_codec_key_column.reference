@@ -3,3 +3,6 @@ CREATE, accepted
 ALTER, rejected
 ALTER, accepted
 3
+ALTER on the partition key, rejected
+ALTER on the partition key, accepted
+3

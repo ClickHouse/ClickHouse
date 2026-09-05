@@ -90,6 +90,10 @@ private:
     bool has_not_found_url = false;
 
     OutStreamCallback out_stream_callback;
+    /// When set, the request body produced by `out_stream_callback` is sent with a fixed
+    /// Content-Length instead of chunked transfer encoding. Some HTTP servers (e.g. the
+    /// Snowflake Horizon Iceberg REST catalog) reject chunked request bodies.
+    std::optional<size_t> out_stream_fixed_content_length;
     RedirectCallback redirect_callback;
 
     Poco::URI current_uri;
@@ -160,6 +164,7 @@ private:
         size_t max_redirects_,
         bool enable_url_encoding_,
         OutStreamCallback out_stream_callback_,
+        std::optional<size_t> out_stream_fixed_content_length_,
         bool use_external_buffer_,
         bool http_skip_not_found_url_,
         HTTPHeaderEntries http_header_entries_,
@@ -218,6 +223,7 @@ class BuilderRWBufferFromHTTP
     size_t max_redirects = 0;
     bool enable_url_encoding = false;
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = nullptr;
+    std::optional<size_t> out_stream_fixed_content_length = std::nullopt;
     ReadWriteBufferFromHTTP::RedirectCallback redirect_callback = nullptr;
     bool use_external_buffer = false;
     bool http_skip_not_found_url = false;
@@ -247,6 +253,7 @@ public:
     setterMember(withRedirects, max_redirects)
     setterMember(withEnableUrlEncoding, enable_url_encoding)
     setterMember(withOutCallback, out_stream_callback)
+    setterMember(withOutCallbackFixedContentLength, out_stream_fixed_content_length)
     setterMember(withRedirectCallback, redirect_callback)
     setterMember(withHeaders, http_header_entries)
     setterMember(withExternalBuf, use_external_buffer)

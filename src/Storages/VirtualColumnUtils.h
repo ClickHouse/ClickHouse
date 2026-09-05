@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -49,7 +50,10 @@ ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context);
 void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & block);
 
 /// Builds sets used by ActionsDAG inplace.
-void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
+/// Returns false if some set could not be built and is still not ready. Executing the DAG then throws
+/// "Not-ready Set is passed as the second argument", so a caller that executes the DAG right away must
+/// check the result.
+bool buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
 /// Builds sets used by ActionsDAG inplace, but skips sets that are arguments to
 /// GLOBAL IN functions (globalIn, globalNotIn, globalNullIn, globalNotNullIn).
@@ -157,6 +161,10 @@ struct VirtualsForFileLikeStorage
     /// Original file path as stored in Iceberg metadata (before resolution to storage path).
     /// Used by Iceberg position deletes to reference data files in the metadata path format.
     const String * iceberg_metadata_file_path { nullptr };
+    std::optional<UInt64> last_updated_sequence_number = std::nullopt;
+    std::optional<UInt64> first_row_id = std::nullopt;
+    ColumnPtr materialized_row_ids = {};
+    ColumnPtr materialized_last_updated_sequence_numbers = {};
 };
 
 void addRequestedFileLikeStorageVirtualsToChunk(

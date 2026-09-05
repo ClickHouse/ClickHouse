@@ -61,26 +61,38 @@ le code source [dans le dépôt GitHub](https://github.com/ClickHouse/terraform-
   ## Releases des providers Terraform
 </div>
 
-ClickHouse maintient deux providers Terraform officiels : le provider ClickHouse Cloud pour l’infrastructure cloud et le provider DBops pour les objets au niveau de la base de données. Ils suivent tous deux le même modèle de release.
+ClickHouse maintient deux providers Terraform officiels : le provider ClickHouse Cloud pour l’infrastructure cloud et le provider DBops pour les objets au niveau de la base de données. Ils suivent tous deux le même modèle de version.
 
-<div id="stable-vs-alpha">
-  ### Stable versus alpha
+<div id="ga-vs-beta-resources">
+  ### Ressources GA et Bêta
 </div>
 
-Les versions stables (par ex. 3.11.1, 1.9.0) incluent uniquement des ressources pour les fonctionnalités en GA. Les versions alpha (par ex. 3.12.0-alpha2, 1.10.0-alpha1) incluent tout ce qui est présent dans les versions stables, ainsi que des ressources pour les fonctionnalités encore en bêta ou en private preview, et doivent être explicitement épinglées pour être utilisées.
+Chaque version est une build unique qui contient toutes les ressources. Les ressources correspondant à des fonctionnalités qui n&#39;ont pas encore atteint la disponibilité générale sont livrées avec les ressources GA et marquées **bêta** — il n&#39;existe pas de build distincte et rien n&#39;est à épingler pour les utiliser.
+
+Une ressource bêta est signalée à deux endroits :
+
+* **Lors de la planification et de l&#39;application**, par un avertissement `Beta Resource`. Terraform n&#39;échoue jamais en raison d&#39;avertissements ; l&#39;exécution se poursuit donc normalement.
+* **Dans sa documentation**, par un encadré indiquant « Cette ressource est en bêta ».
+
+Bêta signifie que le schéma et le comportement peuvent changer dans une future version du provider. Toute ressource sans ce marqueur est en GA et couverte par les garanties de compatibilité habituelles.
+
+<Note>
+  Avant la v3.25.2, le provider marquait ces ressources comme *alpha* plutôt que *bêta*, et l&#39;avertissement lors de la planification indiquait `Alpha Resource`. Seul le libellé a changé — aucun schéma, comportement ou migration d&#39;état n&#39;est concerné — mais les outils qui recherchent `Alpha Resource` dans la sortie du plan cesseront silencieusement de trouver des correspondances. Les versions antérieures publiaient également une build alpha distincte.
+</Note>
 
 <div id="versioning">
   ### Gestion des versions
 </div>
 
-Les deux providers utilisent le versionnage sémantique (MAJEUR.MINEUR.CORRECTIF). La version majeure est incrémentée en cas de breaking changes, la version mineure pour les nouvelles fonctionnalités ou ressources, et la
-version corrective pour les corrections de bugs. Les versions alpha ajoutent un suffixe de préversion à la prochaine version mineure (par ex. 3.12.0-alpha1), le numéro alpha étant incrémenté à mesure que des correctifs ou modifications supplémentaires sont ajoutés avant la promotion (par ex. alpha1 → alpha2 → alpha3). Les releases sont publiées à la demande plutôt que selon une cadence fixe. Une nouvelle version alpha est créée lorsqu’une ressource est ajoutée pour une fonctionnalité qui n’est pas encore GA, ou lorsqu’un correctif nécessite une validation anticipée. Une nouvelle version stable est créée une fois que les changements accumulés — y compris les fonctionnalités qui ont depuis atteint le stade GA — sont prêts pour la production, généralement après une période de retours clients. Plusieurs versions mineures alpha peuvent s’accumuler avant d’être regroupées dans une seule release stable.
+Les deux providers utilisent le versionnage sémantique (MAJEUR.MINEUR.CORRECTIF). La version majeure est incrémentée en cas de breaking changes, la version mineure pour les nouvelles fonctionnalités ou ressources, et la version corrective pour les corrections de bugs. Les versions sont publiées à la demande plutôt que selon une cadence fixe.
+
+Les versions comportant le suffixe `-alphaN` (par ex. `3.15.0-alpha3`) sont antérieures au modèle de build unique. Elles restent disponibles, mais ne sont plus produites.
 
 <div id="promotion">
-  ### Passage d’alpha à stable
+  ### Passage de la bêta à la GA
 </div>
 
-Lorsqu’une fonctionnalité Terraform est prête pour la GA, la ressource Terraform passe d’alpha à stable dans la prochaine release stable. D’ici là, la ressource n’est disponible que dans les builds alpha.
+Lorsqu’une fonctionnalité atteint la disponibilité générale, la ressource correspondante perd son marqueur bêta dans la version suivante du provider : l’avertissement lors de la planification cesse de s’afficher et l’encadré de la documentation est supprimé. Rien d’autre ne change — aucune modification de configuration, aucune migration d’état et aucun basculement entre les builds.
 
 <div id="terraform-and-openapi-new-pricing---replica-settings-explained">
   ## Nouveau modèle tarifaire Terraform et OpenAPI : explication des paramètres de répliques

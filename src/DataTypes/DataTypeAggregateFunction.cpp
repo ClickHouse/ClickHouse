@@ -88,11 +88,6 @@ bool DataTypeAggregateFunction::isVersioned() const
     return function->isVersioned();
 }
 
-void DataTypeAggregateFunction::updateVersionFromRevision(size_t revision, bool if_empty) const
-{
-    setVersion(function->getVersionFromRevision(revision), if_empty);
-}
-
 String DataTypeAggregateFunction::getNameImpl(bool with_version) const
 {
     WriteBufferFromOwnString stream;
@@ -200,6 +195,19 @@ bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type,
             return false;
 
     return true;
+}
+
+bool DataTypeAggregateFunction::nameMatchesState(const String & state_type_name, const AggregateFunctionPtr & function, size_t version)
+{
+    auto state_type = DataTypeFactory::instance().tryGet(state_type_name);
+    const auto * aggregate_state_type = typeid_cast<const DataTypeAggregateFunction *>(state_type.get());
+    if (!aggregate_state_type)
+        return false;
+
+    if (aggregate_state_type->getVersion() != version)
+        return false;
+
+    return strictEquals(aggregate_state_type->function->getNormalizedStateType(), function->getNormalizedStateType());
 }
 
 void DataTypeAggregateFunction::updateHashImpl(SipHash & hash) const

@@ -3,6 +3,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Common/SipHash.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
@@ -24,6 +25,22 @@ ASTPtr ASTWithElement::clone() const
         res->aliases = aliases->clone();
     res->children.emplace_back(res->subquery);
     return res;
+}
+
+void ASTWithElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// The name selects which CTE a reference resolves to, and `aliases` renames the subquery
+    /// columns, but neither is a child, so without this both are absent from the hash.
+    /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 80, "If members were added to ASTWithElement, hash them here unless they are purely cosmetic.");
+    /// Length-prefixed, otherwise the name runs into whatever `getID` writes next.
+    hash_state.update(name.size());
+    hash_state.update(name);
+    hash_state.update(is_materialized);
+    hash_state.update(aliases != nullptr);
+    if (aliases)
+        aliases->updateTreeHash(hash_state, ignore_aliases);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTWithElement::writeJSON(WriteBuffer & out) const
@@ -63,7 +80,9 @@ void ASTWithElement::readJSON(const Poco::JSON::Object & json)
         for (const auto & alias : aliases->children)
             if (!alias || !alias->as<ASTIdentifier>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "`WithElement` aliases must be identifiers during AST JSON deserialization");
-        children.push_back(aliases);
+        /// `ParserWithElement` and `clone` keep `aliases` out of `children`, and
+        /// `updateTreeHashImpl` hashes the member explicitly, so adding it here would make a
+        /// JSON-built copy of the same definition hash the aliases twice and compare unequal.
     }
 }
 

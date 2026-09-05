@@ -12,6 +12,8 @@ import { Image } from "/snippets/components/Image.jsx";
 
 The feature supports integrating [Prometheus](https://prometheus.io/) to monitor ClickHouse Cloud services. Access to Prometheus metrics is exposed via the [ClickHouse Cloud API](/products/cloud/features/admin-features/api/api-overview) endpoint that allows you to securely connect and export metrics into your Prometheus metrics collector. These metrics can be integrated with dashboards e.g., Grafana, Datadog for visualization.
 
+Metrics for [ClickPipes](/integrations/clickpipes) attached to a service are included alongside that service's ClickHouse metrics.
+
 To get started, [generate an API key](/products/cloud/features/admin-features/api/openapi).
 
 If you're looking for the equivalent endpoint for [ClickHouse Managed Postgres](/products/managed-postgres/overview) services, see the [ClickHouse Managed Postgres Prometheus endpoint](/products/managed-postgres/monitoring/prometheus).
@@ -23,8 +25,12 @@ If you're looking for the equivalent endpoint for [ClickHouse Managed Postgres](
 | Method | Path                                                                                                               | Description                                                        |
 | ------ | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
 | GET    | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | Returns metrics for a specific service |
-| GET    | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]` | Returns metrics for all services in an organization |
+| GET    | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]` | **Deprecated.** Returns metrics for all services in an organization |
 | GET    | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus/discovery?filtered_metrics=[true \| false]` | Returns Prometheus scrape targets for all services in an organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) format |
+
+<Note>
+The organization-wide metrics endpoint (`GET /v1/organizations/{organizationId}/prometheus`) is deprecated in favor of [automatic service discovery](#automatic-service-discovery). Existing organizations can continue using it; newly created organizations use the discovery endpoint instead. Contact ClickHouse support if you need access to this endpoint.
+</Note>
 
 **Request Parameters**
 

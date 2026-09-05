@@ -712,7 +712,12 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         SizeLimits{},
         nullptr));
 
-    set_plan.optimize(optimization_settings);
+    /// The per-partition pre-deduplication for set builds (see `optimizeCreatingSetPerPartition`) is
+    /// scoped to `IN (subquery)` set fills; this internal set build has its own BREAK-mode size limits
+    /// above, so keep it out.
+    auto set_plan_optimization_settings = optimization_settings;
+    set_plan_optimization_settings.creating_set_partitions_independently = false;
+    set_plan.optimize(set_plan_optimization_settings);
 
     /// Shared state between LazyFinalKeyAnalysisTransform and LazyReadReplacingFinalSource.
     auto shared_state = std::make_shared<LazyFinalSharedState>();

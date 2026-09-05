@@ -40,7 +40,7 @@ import CloudUnsupportedFeatures from '/snippets/ar/_cloud_unsupported_features.m
 
 | ما تحدده                       | ما يستخدمه Cloud                     |
 | ------------------------------ | ------------------------------------ |
-| `MergeTree` (أو بدون محرك)   | `SharedMergeTree`                    |
+| `MergeTree` (أو بدون محرك)     | `SharedMergeTree`                    |
 | `ReplacingMergeTree`           | `SharedReplacingMergeTree`           |
 | `SummingMergeTree`             | `SharedSummingMergeTree`             |
 | `AggregatingMergeTree`         | `SharedAggregatingMergeTree`         |
@@ -59,6 +59,7 @@ import CloudUnsupportedFeatures from '/snippets/ar/_cloud_unsupported_features.m
 * Null
 * Buffer
 * Memory
+* محركا الجداول `IcebergS3` و`IcebergAzure`
 * Deltalake
 * Hudi
 * MySQL
@@ -68,6 +69,8 @@ import CloudUnsupportedFeatures from '/snippets/ar/_cloud_unsupported_features.m
 * PostgreSQL
 * S3
 * Kafka
+
+يمكن تمكين محركَي الجداول التجريبيين `PaimonS3` و`PaimonAzure` في خدمات ClickHouse Cloud محددة. اتصل بفريق Support لتأكيد التوافر.
 
 <div id="interfaces">
   ### الواجهات
@@ -87,6 +90,8 @@ import CloudUnsupportedFeatures from '/snippets/ar/_cloud_unsupported_features.m
 
 ندعم استعلامات ClickHouse الاتحادية للاتصال بين العناقيد في السحابة، وللاتصال بعناقيد ClickHouse الخارجية المُدارة ذاتيًا. يدعم ClickHouse Cloud حاليًا الاستعلامات الاتحادية باستخدام محركات التكامل التالية:
 
+* `IcebergS3` و`IcebergAzure`
+* `PaimonS3` و`PaimonAzure` (تجريبي؛ تواصل مع Support لمعرفة التوافر)
 * Deltalake
 * Hudi
 * MySQL
@@ -130,7 +135,7 @@ import CloudUnsupportedFeatures from '/snippets/ar/_cloud_unsupported_features.m
   ### المجموعات المسماة
 </div>
 
-[المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections) غير متاحة حاليًا في ClickHouse Cloud.
+يمكن تمكين [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections) التي أُنشئت باستخدام DDL في بعض خدمات ClickHouse Cloud. تواصل مع فريق الدعم لتأكيد التوافر. لا تتوفر المجموعات المسماة المُعرَّفة في ملفات التكوين لأن المستخدمين لا يمكنهم تعديل ملفات تكوين الخادم في ClickHouse Cloud.
 
 <div id="operational-defaults-and-considerations">
   ## الإعدادات والاعتبارات التشغيلية الافتراضية
