@@ -326,16 +326,12 @@ public:
 
     void read(DB::ReadBuffer & in)
     {
-        auto rank_state = rank_store.getSerializableState();
-        in.readStrict(reinterpret_cast<char *>(rank_state.data()), rank_state.size());
-
         if constexpr (std::endian::native == std::endian::little)
-        {
-            in.readStrict(reinterpret_cast<char *>(&denominator), sizeof(DenominatorCalculatorType));
-            in.readStrict(reinterpret_cast<char *>(&zeros), sizeof(ZerosCounterType));
-        }
+            in.readStrict(reinterpret_cast<char *>(this), sizeof(*this));
         else
         {
+            in.readStrict(reinterpret_cast<char *>(&rank_store), sizeof(RankStore));
+
             constexpr size_t denom_size = sizeof(DenominatorCalculatorType);
             std::array<char, denom_size> denominator_copy;
             in.readStrict(denominator_copy.data(), denom_size);
@@ -354,21 +350,17 @@ public:
 
     static void skip(DB::ReadBuffer & in)
     {
-        in.ignore(RankStore::serializedSize() + sizeof(DenominatorCalculatorType) + sizeof(ZerosCounterType));
+        in.ignore(sizeof(RankStore) + sizeof(DenominatorCalculatorType) + sizeof(ZerosCounterType));
     }
 
     void write(DB::WriteBuffer & out) const
     {
-        auto rank_state = rank_store.getSerializableState();
-        out.write(reinterpret_cast<const char *>(rank_state.data()), rank_state.size());
+       if constexpr (std::endian::native == std::endian::little)
+            out.write(reinterpret_cast<const char *>(this), sizeof(*this));
+       else
+       {
+            out.write(reinterpret_cast<const char *>(&rank_store), sizeof(RankStore));
 
-        if constexpr (std::endian::native == std::endian::little)
-        {
-            out.write(reinterpret_cast<const char *>(&denominator), sizeof(DenominatorCalculatorType));
-            out.write(reinterpret_cast<const char *>(&zeros), sizeof(ZerosCounterType));
-        }
-        else
-        {
             constexpr size_t denom_size = sizeof(DenominatorCalculatorType);
             std::array<char, denom_size> denominator_copy;
             memcpy(denominator_copy.data(), reinterpret_cast<const char *>(&denominator), denom_size);
@@ -383,7 +375,7 @@ public:
             auto zeros_copy = zeros;
             DB::transformEndianness<std::endian::little, std::endian::native>(zeros_copy);
             out.write(reinterpret_cast<const char *>(&zeros_copy), sizeof(ZerosCounterType));
-        }
+       }
     }
 
     /// Read and write in text mode is suboptimal (but compatible with OLAPServer and Metrage).
@@ -450,14 +442,15 @@ private:
     /// ALWAYS_INLINE is required to have better code layout for uniqCombined function
     void ALWAYS_INLINE update(HashValueType bucket, UInt8 rank)
     {
-        UInt8 cur_rank = rank_store.get(bucket);
+        typename RankStore::Locus content = rank_store[bucket];
+        UInt8 cur_rank = static_cast<UInt8>(content);
 
         if (rank > cur_rank)
         {
             if (cur_rank == 0)
                 --zeros;
             denominator.update(cur_rank, rank);
-            rank_store.set(bucket, rank);
+            content = rank;
         }
     }
 

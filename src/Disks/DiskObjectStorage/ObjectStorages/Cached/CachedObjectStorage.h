@@ -112,8 +112,6 @@ public:
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
-    bool supportsObjectGenerationComparison() const override { return object_storage->supportsObjectGenerationComparison(); }
-
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 
 #if USE_AZURE_BLOB_STORAGE
@@ -165,7 +163,6 @@ private:
     FileCacheKey getCacheKey(const std::string & path) const;
 
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
-    WriteSettings patchSettings(const WriteSettings & write_settings) const override;
 
     ObjectStoragePtr object_storage;
     FileCachePtr cache;

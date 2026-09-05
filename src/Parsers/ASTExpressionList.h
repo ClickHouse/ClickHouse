@@ -25,8 +25,6 @@ public:
     String getID(char) const override { return "ExpressionList"; }
 
     ASTPtr clone() const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
     void formatImplMultiline(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
 
     char getSeparator() const { return flags<ASTExpressionListFlags>().separator; }

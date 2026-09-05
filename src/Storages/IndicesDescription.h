@@ -110,7 +110,7 @@ struct IndicesDescription : public std::vector<IndexDescription>, IHints<>
     /// Return common expression for all stored indices
     ExpressionActionsPtr getSingleExpressionForIndices(const ColumnsDescription & columns, ContextPtr context) const;
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+    Names getAllRegisteredNames() const override;
 };
 
 /// Extract Field value from an index argument AST node.

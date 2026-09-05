@@ -50,7 +50,7 @@ String ParallelReadRequest::describe() const
 {
     String result
         = fmt::format("replica_num {}, stream {}, min_num_of_marks {}, ", replica_num, stream_id, min_marks_per_request);
-    result += description.describeShort();
+    result += description.describe();
     return result;
 }
 
@@ -102,7 +102,7 @@ void ParallelReadResponse::serialize(WriteBuffer & out, UInt64 replica_pr_protoc
 
 String ParallelReadResponse::describe() const
 {
-    return fmt::format("{}. Finish: {}", description.describeShort(), finish);
+    return fmt::format("{}. Finish: {}", description.describe(), finish);
 }
 
 void ParallelReadResponse::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)
@@ -148,7 +148,7 @@ void InitialAllRangesAnnouncement::serialize(
 
 String InitialAllRangesAnnouncement::describe()
 {
-    return fmt::format("replica {}, mode {}, {}", replica_num, mode, description.describeShort());
+    return fmt::format("replica {}, mode {}, {}", replica_num, mode, description.describe());
 }
 
 InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)
@@ -184,42 +184,6 @@ InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffe
     if (replica_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID)
         readStringBinary(stream_id, in);
     return InitialAllRangesAnnouncement{mode, description, replica_num, mark_segment_size, min_marks_per_request, std::move(stream_id)};
-}
-
-
-void InitialAllRangesAnnouncementResponse::serialize(
-    WriteBuffer & out, UInt64 replica_pr_protocol_version, UInt64 replica_tcp_protocol_version) const
-{
-    UInt64 version = replica_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL
-        ? DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION
-        : DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION;
-    writeIntBinary(version, out);
-
-    parts.serialize(out, replica_pr_protocol_version);
-    writeStringBinary(stream_id, out);
-}
-
-String InitialAllRangesAnnouncementResponse::describe() const
-{
-    return fmt::format("stream {}, {}", stream_id, parts.describe());
-}
-
-InitialAllRangesAnnouncementResponse
-InitialAllRangesAnnouncementResponse::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)
-{
-    UInt64 version = 0;
-    readIntBinary(version, in);
-    if (version < DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION)
-        throw Exception(
-            ErrorCodes::UNKNOWN_PROTOCOL,
-            "Parallel replicas protocol version is too old. Got: {}, min supported version: {}",
-            version,
-            DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION);
-
-    InitialAllRangesAnnouncementResponse response;
-    response.parts.deserialize(in, replica_pr_protocol_version);
-    readStringBinary(response.stream_id, in);
-    return response;
 }
 
 }

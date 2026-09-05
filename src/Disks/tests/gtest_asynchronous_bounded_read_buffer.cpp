@@ -114,7 +114,7 @@ TEST_F(AsynchronousBoundedReadBufferTest, concurrentReadBigAtWithPrefetch)
     /// Smaller than the file, so the prefetch is usually still in flight when the reads run.
     constexpr size_t buffer_size = 16384;
 
-    const auto prefetched_reads_before = ProfileEvents::global_counters[ProfileEvents::RemoteFSPrefetchedReads];
+    const ProfileEvents::Count prefetched_reads_before = ProfileEvents::global_counters[ProfileEvents::RemoteFSPrefetchedReads];
 
     for (size_t iteration = 0; iteration < num_iterations; ++iteration)
     {
@@ -197,7 +197,7 @@ TEST_F(AsynchronousBoundedReadBufferTest, readBigAtFromRetainedPrefetch)
 
     read_buffer.prefetch(Priority{0});
 
-    const auto prefetched_reads_before = ProfileEvents::global_counters[ProfileEvents::RemoteFSPrefetchedReads];
+    const ProfileEvents::Count prefetched_reads_before = ProfileEvents::global_counters[ProfileEvents::RemoteFSPrefetchedReads];
     auto prefetched_reads = [&] { return ProfileEvents::global_counters[ProfileEvents::RemoteFSPrefetchedReads] - prefetched_reads_before; };
 
     auto read_at = [&](size_t offset, size_t count)

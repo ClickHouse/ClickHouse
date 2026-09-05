@@ -64,11 +64,6 @@ QueryPlanStepPtr OffsetStep::deserialize(Deserialization & ctx)
     return std::make_unique<OffsetStep>(ctx.input_headers.front(), offset);
 }
 
-QueryPlanStepPtr OffsetStep::clone() const
-{
-    return std::make_unique<OffsetStep>(*this);
-}
-
 void registerOffsetStep(QueryPlanStepRegistry & registry);
 void registerOffsetStep(QueryPlanStepRegistry & registry)
 {

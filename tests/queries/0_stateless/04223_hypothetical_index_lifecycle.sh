@@ -6,12 +6,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# materialize_statistics_on_insert is randomized in CI. When on, the auto-statistics of the
-# indexed columns are materialized on INSERT and prune the baseline, flipping the hypothetical
-# index source from applicability_only to statistical. Pin it off so the hypothetical-index
-# logic is measured in isolation.
-CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --materialize_statistics_on_insert=0"
-
 # State is session-scoped, so each scenario sets up and asserts within one invocation.
 
 # A fresh session has no hypothetical indexes
@@ -360,7 +354,7 @@ $CLICKHOUSE_CLIENT -n -q "
     CREATE USER ${userq} NOT IDENTIFIED;
     GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_hypo_quota TO ${userq};
     DROP QUOTA IF EXISTS ${quotaq};
-    CREATE QUOTA ${quotaq} FOR INTERVAL 100 YEAR MAX read_rows = 100 TO ${userq};
+    CREATE QUOTA ${quotaq} FOR INTERVAL 1 hour MAX read_rows = 100 TO ${userq};
 "
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${userq}&session_id=${sessq}&session_timeout=60" \
     --data-binary "CREATE HYPOTHETICAL INDEX idx_b ON ${CLICKHOUSE_DATABASE}.t_hypo_quota (b) TYPE minmax GRANULARITY 1"

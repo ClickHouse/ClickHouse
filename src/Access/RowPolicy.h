@@ -4,7 +4,6 @@
 #include <Access/RolesOrUsersSet.h>
 #include <Access/Common/RowPolicyDefs.h>
 #include <Core/Types.h>
-#include <Parsers/IAST_fwd.h>
 #include <array>
 
 
@@ -70,9 +69,5 @@ private:
 };
 
 using RowPolicyPtr = std::shared_ptr<const RowPolicy>;
-
-/// A row policy filter is applied as a per-row predicate at the storage read stage, so a
-/// row-count-changing function like `arrayJoin` breaks the reader's invariants. Reject it.
-void checkRowPolicyFilterExpression(const ASTPtr & expression);
 
 }

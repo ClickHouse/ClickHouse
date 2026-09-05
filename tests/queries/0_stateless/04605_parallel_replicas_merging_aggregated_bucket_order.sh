@@ -19,7 +19,7 @@ $CLICKHOUSE_CLIENT -q "
 # The result is written to a table, because at the moment such a query cannot be used as a subquery.
 $CLICKHOUSE_CLIENT -q "
     INSERT INTO res SELECT x, sum(y) FROM d GROUP BY x
-    SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_plan_based = 1,
+    SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
         parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 0,
         distributed_aggregation_memory_efficient = 1, group_by_two_level_threshold = 1, max_threads = 8;
 "

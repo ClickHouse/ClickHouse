@@ -1,5 +1,4 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
@@ -48,6 +47,3 @@ void StorageSystemAggregateFunctionCombinators::fillData(MutableColumns & res_co
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemAggregateFunctionCombinators) }

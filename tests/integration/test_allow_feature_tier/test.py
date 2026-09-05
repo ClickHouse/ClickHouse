@@ -132,25 +132,10 @@ def test_allow_feature_tier_in_general_settings(start_cluster):
     assert error == ""
     assert "1" == output.strip()
 
-    # Disable experimental and private preview settings. Beta settings are still allowed.
+    # Disable experimental and beta settings
     instance.replace_in_config(feature_tier_path, "1", "2")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "2" == get_current_tier_value(instance)
-
-    output, error = instance.query_and_get_answer_with_error(
-        query_with_experimental_setting
-    )
-    assert output == ""
-    assert EXPERIMENTAL_BLOCKED in error
-
-    output, error = instance.query_and_get_answer_with_error(query_with_beta_setting)
-    assert error == ""
-    assert "1" == output.strip()
-
-    # Disable experimental, private preview and beta settings
-    instance.replace_in_config(feature_tier_path, "2", "3")
-    instance.query("SYSTEM RELOAD CONFIG")
-    assert "3" == get_current_tier_value(instance)
 
     output, error = instance.query_and_get_answer_with_error(
         query_with_experimental_setting
@@ -163,7 +148,7 @@ def test_allow_feature_tier_in_general_settings(start_cluster):
     assert BETA_BLOCKED in error
 
     # Leave the server as it was
-    instance.replace_in_config(feature_tier_path, "3", "0")
+    instance.replace_in_config(feature_tier_path, "2", "0")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "0" == get_current_tier_value(instance)
 
@@ -733,7 +718,7 @@ def test_custom_settings_belong_to_no_tier(start_cluster):
     assert "0" == get_current_tier_value(instance)
     instance.query("DROP USER IF EXISTS user_with_custom_setting")
 
-    for tier in ["0", "1", "2", "3"]:
+    for tier in ["0", "1", "2"]:
         if tier != "0":
             instance.replace_in_config(feature_tier_path, str(int(tier) - 1), tier)
             instance.query("SYSTEM RELOAD CONFIG")
@@ -752,7 +737,7 @@ def test_custom_settings_belong_to_no_tier(start_cluster):
         assert output == ""
         assert error == ""
 
-    instance.replace_in_config(feature_tier_path, "3", "0")
+    instance.replace_in_config(feature_tier_path, "2", "0")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "0" == get_current_tier_value(instance)
     instance.query("DROP USER IF EXISTS user_with_custom_setting")

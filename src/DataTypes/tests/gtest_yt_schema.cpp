@@ -209,7 +209,7 @@ TEST(YTDataType, CheckOptional) {
             optional->set("item", tuple);
             json->set("type_v3", optional);
 
-            DB::DataTypes types;
+            std::vector<std::shared_ptr<const DB::IDataType>> types;
 
             auto tuple_type = std::make_shared<DB::DataTypeTuple>(types);
 
