@@ -1574,6 +1574,26 @@ TEST(PromQLParser, DurationUnitOrder)
 }
 
 
+TEST(PromQLParser, LineComments)
+{
+    for (const auto * const query : {
+             "up #",
+             "up # comment",
+             "up # comment\n",
+             "up # comment\r",
+             "up # comment\r\n",
+         })
+        EXPECT_NO_THROW(PrometheusQueryTree{query}) << query;
+
+    PrometheusQueryTree query_tree;
+    String error_message;
+    size_t error_pos = String::npos;
+
+    EXPECT_FALSE(query_tree.tryParse("# comment", 3, &error_message, &error_pos));
+    EXPECT_EQ(error_pos, 9);
+}
+
+
 TEST(PromQLParser, ErrorPosition)
 {
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
