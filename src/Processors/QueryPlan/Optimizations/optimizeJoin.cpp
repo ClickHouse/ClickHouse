@@ -84,7 +84,7 @@ namespace QueryPlanOptimizations
 static String dumpStatsForLogs(const RelationStats & stats);
 
 /// If we have stats for storage column names, find the corresponding `ActionsDAG` outputs.
-/// Both identity and weaker NDV-bound lineage are valid for this existing statistics use.
+/// Identity and NDV-bound lineage are both valid for the NDV and width; the value range needs value-preserving lineage.
 void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
 {
     /// Column statistics are usually absent; do not pay for a full lineage walk of the
@@ -115,6 +115,15 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
         /// width to unknown.
         if (!output_lineage.input->preserves_width)
             stats.avg_bytes = 0;
+        /// The value range and NULL set survive only lineage known to pass the value through
+        /// unchanged; unlike NDV, they do not survive a generic deterministic function (e.g. `negate(k)`)
+        /// or a `CAST`, which may rewrite NULL rows into real values.
+        if (output_lineage.input->kind == ActionsDAGLineageKind::DistinctValuesBound)
+        {
+            stats.min_value.reset();
+            stats.max_value.reset();
+            stats.null_fraction = 0;
+        }
         mapped[outputs[output_lineage.output_position]->result_name] = stats;
     }
 }
@@ -287,7 +296,20 @@ static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggreg
     return aggregation_stats;
 }
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
+/// Rows dropped by a limit are not a value-uniform sample (e.g. a TopN keeps one end of the
+/// sorted range), so the child's value ranges and NULL fraction do not describe the output.
+/// Applied whenever a limit is present: the row estimate cannot prove the limit does not
+/// truncate (e.g. a TopN read is already scaled down by its `__topKFilter` prewhere).
+static void clearColumnValueRanges(std::unordered_map<String, ColumnStats> & column_stats)
+{
+    for (auto & [_, stats] : column_stats)
+    {
+        stats.min_value.reset();
+        stats.max_value.reset();
+        stats.null_fraction = 0;
+    }
+}
+
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
 {
     IQueryPlanStep * step = node.step.get();
@@ -421,6 +443,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         auto limit = limit_step->getLimit();
         if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
+        clearColumnValueRanges(estimated.column_stats);
         return estimated;
     }
 
@@ -465,6 +488,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         {
             if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
                 stats.estimated_rows = sorting_step->getLimit();
+            clearColumnValueRanges(stats.column_stats);
         }
         return stats;
     }

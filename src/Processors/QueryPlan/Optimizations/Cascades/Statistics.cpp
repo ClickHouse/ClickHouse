@@ -255,13 +255,6 @@ std::unordered_map<String, Float64> estimateReadColumnWidthsScaledToRow(const Re
 }
 
 
-namespace QueryPlanOptimizations
-{
-
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
-
-}
-
 void fillPhysicalReadBytes(ExpressionStatistics & statistics, Float64 physical_selected_rows)
 {
     /// Keep the output row width: the scan estimate then differs from the output estimate only

@@ -731,6 +731,10 @@ struct JoinPlanningContext
 {
     NameViewToNodeMapping actions_after_join_map;
     bool is_storage_join{};
+    /// Per-side column statistics of the join inputs, keyed by input header column name.
+    /// Filled only when the IEJoin key condition choice needs them; empty otherwise.
+    std::unordered_map<String, ColumnStats> left_column_stats;
+    std::unordered_map<String, ColumnStats> right_column_stats;
     bool is_prebuilt_hash_join{};
 };
 
@@ -984,6 +988,202 @@ tryGetIEJoinKeyCondition(const JoinActionRef & condition)
     return inequality;
 }
 
+using IEJoinKeyCandidate = std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>;
+
+/// P(x < y) (strict) or P(x <= y) for independent x ~ U[min_x, max_x] and y ~ U[min_y, max_y].
+/// Under the continuous model boundary ties have measure zero and strictness is ignored, except
+/// when both ranges degenerate to the same point: there the comparison always ties, so the strict
+/// probability is 0 and the non-strict one is 1.
+static Float64 uniformLessProbability(Float64 min_x, Float64 max_x, Float64 min_y, Float64 max_y, bool strict)
+{
+    if (min_x == max_x && min_y == max_y && min_x == min_y)
+        return strict ? 0.0 : 1.0;
+    if (max_x <= min_y)
+        return 1.0;
+    if (max_y <= min_x)
+        return 0.0;
+
+    /// The ranges properly overlap: min_x < max_y and min_y < max_x, and at most one is a point.
+    const Float64 width_x = max_x - min_x;
+    const Float64 width_y = max_y - min_y;
+    if (width_x <= 0)
+        return (max_y - min_x) / width_y;
+    if (width_y <= 0)
+        return (min_y - min_x) / width_x;
+
+    /// (x, y) is a uniform point in the rectangle [min_x, max_x] x [min_y, max_y], and
+    /// P(x < y) is the share of the rectangle above the line x = y. Summing that share
+    /// slice by slice in y: a slice with y < min_x adds 0, a slice with y > max_x adds 1,
+    /// and in between the share grows linearly with y, which sums to the quadratic term
+    /// over the overlap [lo, hi].
+    const Float64 lo = std::max(min_x, min_y);
+    const Float64 hi = std::min(max_x, max_y);
+    Float64 integral = ((hi - min_x) * (hi - min_x) - (lo - min_x) * (lo - min_x)) / (2 * width_x);
+    integral += std::max(0.0, max_y - std::max(min_y, max_x));
+    return std::clamp(integral / width_y, 0.0, 1.0);
+}
+
+/// The statistics min/max of a key operand as raw numbers, with the fraction of NULL values.
+struct IEJoinOperandRange
+{
+    Float64 min;
+    Float64 max;
+    Float64 null_fraction;
+};
+
+/// The numeric value of a statistics min/max Field. Basic statistics keep min/max only for
+/// values represented by numbers (`hasNumericMinMax`), so only the numeric Field types occur;
+/// anything else (e.g. a Decimal) yields no estimate rather than a wrong one.
+static std::optional<Float64> statisticsFieldToFloat64(const Field & value)
+{
+    switch (value.getType())
+    {
+        case Field::Types::UInt64:
+            return static_cast<Float64>(value.safeGet<UInt64>());
+        case Field::Types::Int64:
+            return static_cast<Float64>(value.safeGet<Int64>());
+        case Field::Types::Float64:
+            return value.safeGet<Float64>();
+        default:
+            return {};
+    }
+}
+
+/// The fraction of row pairs satisfying the condition, estimated from per-column min/max
+/// statistics under a uniformity assumption, or std::nullopt when the statistics do not cover
+/// the operands.
+static std::optional<Float64> estimateIEJoinConditionSelectivity(
+    JoinConditionOperator predicate_op,
+    const JoinActionRef & lhs,
+    const JoinActionRef & rhs,
+    const JoinPlanningContext & planning_context)
+{
+    /// The two ranges are compared as raw numbers, so the sides need a shared unit: the same
+    /// underlying type (e.g. two DateTime columns), or plain numbers, which all share one axis.
+    const DataTypePtr left_type = removeNullable(removeLowCardinality(lhs.getType()));
+    const DataTypePtr right_type = removeNullable(removeLowCardinality(rhs.getType()));
+    if (!left_type->equals(*right_type) && !(isNumber(left_type) && isNumber(right_type)))
+        return {};
+
+    auto get_range = [](const std::unordered_map<String, ColumnStats> & column_stats, const JoinActionRef & operand)
+        -> std::optional<IEJoinOperandRange>
+    {
+        auto it = column_stats.find(operand.getColumnName());
+        if (it == column_stats.end() || !it->second.min_value || !it->second.max_value)
+            return {};
+        auto min_value = statisticsFieldToFloat64(*it->second.min_value);
+        auto max_value = statisticsFieldToFloat64(*it->second.max_value);
+        if (!min_value || !max_value || !std::isfinite(*min_value) || !std::isfinite(*max_value))
+            return {};
+        return IEJoinOperandRange{.min = *min_value, .max = *max_value, .null_fraction = it->second.null_fraction};
+    };
+
+    auto left_range = get_range(planning_context.left_column_stats, lhs);
+    auto right_range = get_range(planning_context.right_column_stats, rhs);
+    if (!left_range || !right_range)
+        return {};
+
+    /// The Greater family goes through the complement, which flips strictness:
+    /// P(x > y) = 1 - P(x <= y) and P(x >= y) = 1 - P(x < y).
+    bool strict = predicate_op == JoinConditionOperator::Less || predicate_op == JoinConditionOperator::GreaterOrEquals;
+    Float64 result = uniformLessProbability(left_range->min, left_range->max, right_range->min, right_range->max, strict);
+    if (predicate_op == JoinConditionOperator::Greater || predicate_op == JoinConditionOperator::GreaterOrEquals)
+        result = 1.0 - result;
+
+    /// A NULL operand fails any inequality.
+    result *= (1.0 - left_range->null_fraction) * (1.0 - right_range->null_fraction);
+    return std::clamp(result, 0.0, 1.0);
+}
+
+static bool isLessFamily(JoinConditionOperator op)
+{
+    return op == JoinConditionOperator::Less || op == JoinConditionOperator::LessOrEquals;
+}
+
+/// Joint selectivity of a pair of key conditions. Independence is assumed for unrelated
+/// conditions. For two conditions reading the same column on one side independence is grossly
+/// wrong, and sharp Frechet bounds are used instead: with opposite directions
+/// (`lo < x AND x < hi`, the band shape) failing both requires the reversed band `hi <= x <= lo`,
+/// which is empty for a genuine band, so P(A and B) = P(A) + P(B) - 1; with the same direction
+/// one condition mostly implies the other, so P(A and B) = min(P(A), P(B)).
+static Float64 estimateIEJoinKeyPairSelectivity(
+    const IEJoinKeyCandidate & first, Float64 first_selectivity,
+    const IEJoinKeyCandidate & second, Float64 second_selectivity)
+{
+    const auto & [first_op, first_lhs, first_rhs] = first;
+    const auto & [second_op, second_lhs, second_rhs] = second;
+
+    bool same_column_on_one_side = first_lhs.getColumnName() == second_lhs.getColumnName()
+        || first_rhs.getColumnName() == second_rhs.getColumnName();
+    if (same_column_on_one_side)
+    {
+        if (isLessFamily(first_op) != isLessFamily(second_op))
+            return std::max(0.0, first_selectivity + second_selectivity - 1.0);
+        return std::min(first_selectivity, second_selectivity);
+    }
+    return first_selectivity * second_selectivity;
+}
+
+/// Positions of the two eligible conditions with the smallest estimated joint selectivity,
+/// or std::nullopt when an estimate is unavailable for any candidate (the caller keeps the
+/// syntax order then).
+static std::optional<std::pair<size_t, size_t>> chooseIEJoinKeyConditions(
+    const std::vector<IEJoinKeyCandidate> & candidates, const JoinPlanningContext & planning_context)
+{
+    std::vector<Float64> selectivities(candidates.size());
+    for (size_t i = 0; i < candidates.size(); ++i)
+    {
+        const auto & [predicate_op, lhs, rhs] = candidates[i];
+        auto selectivity = estimateIEJoinConditionSelectivity(predicate_op, lhs, rhs, planning_context);
+        if (!selectivity)
+            return {};
+        selectivities[i] = *selectivity;
+    }
+
+    std::pair<size_t, size_t> best{0, 1};
+    Float64 best_selectivity = std::numeric_limits<Float64>::infinity();
+
+    /// The exact pair enumeration is quadratic. A handwritten ON clause has a handful of
+    /// conjuncts, but a machine-generated one can have many: beyond the cap, take the two
+    /// smallest marginal selectivities independently, forgoing only the correlation
+    /// correction for pairs reading the same column.
+    static constexpr size_t max_candidates_to_rank_pairwise = 64;
+    if (candidates.size() > max_candidates_to_rank_pairwise)
+    {
+        /// Strict improvement only, here and below: ties resolve to the earliest in syntax order.
+        size_t first = 0;
+        for (size_t i = 1; i < selectivities.size(); ++i)
+            if (selectivities[i] < selectivities[first])
+                first = i;
+        size_t second = first == 0 ? 1 : 0;
+        for (size_t i = 0; i < selectivities.size(); ++i)
+            if (i != first && selectivities[i] < selectivities[second])
+                second = i;
+        best = std::minmax(first, second);
+        best_selectivity = selectivities[first] * selectivities[second];
+    }
+    else
+    {
+        for (size_t i = 0; i < candidates.size(); ++i)
+        {
+            for (size_t j = i + 1; j < candidates.size(); ++j)
+            {
+                Float64 pair_selectivity
+                    = estimateIEJoinKeyPairSelectivity(candidates[i], selectivities[i], candidates[j], selectivities[j]);
+                if (pair_selectivity < best_selectivity)
+                {
+                    best = {i, j};
+                    best_selectivity = pair_selectivity;
+                }
+            }
+        }
+    }
+
+    LOG_TRACE(getLogger("JoinStepLogical"), "Selected IEJoin key conditions {} and {} of {} eligible, estimated joint selectivity {}",
+        best.first, best.second, candidates.size(), best_selectivity);
+    return best;
+}
+
 /// Try to interpret the JOIN ON expression as two inequality conditions between the two tables
 /// to execute the join with the IEJoin algorithm. Returns std::nullopt when the join has a different shape.
 /// On success the conditions are consumed from `join_expression`: key expressions are casted
@@ -1005,21 +1205,38 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
     if (planning_context.is_storage_join)
         return {};
 
-    /// Which two of the eligible conditions become the IEJoin conditions is a planner degree
-    /// of freedom; fixed to the first two for now.
-    std::vector<std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>> keys;
-    std::vector<JoinActionRef> residual_conditions;
-    for (const auto & condition : join_expression)
+    std::vector<IEJoinKeyCandidate> candidates;
+    std::vector<size_t> candidate_positions;
+    for (size_t i = 0; i < join_expression.size(); ++i)
     {
-        auto inequality = keys.size() < 2 ? tryGetIEJoinKeyCondition(condition) : std::nullopt;
-        if (inequality)
-            keys.push_back(std::move(*inequality));
-        else
-            residual_conditions.push_back(condition);
+        if (auto inequality = tryGetIEJoinKeyCondition(join_expression[i]))
+        {
+            candidates.push_back(std::move(*inequality));
+            candidate_positions.push_back(i);
+        }
     }
 
-    if (keys.size() != 2)
+    if (candidates.size() < 2)
         return {};
+
+    /// Which two of the eligible conditions become the IEJoin conditions is a planner degree
+    /// of freedom: the conditions not chosen as keys are evaluated per pair of rows passing both
+    /// key conditions, so the pair with the smallest estimated joint selectivity minimizes that
+    /// work. Without an estimate for every candidate, the first two in syntax order are used.
+    std::pair<size_t, size_t> chosen{0, 1};
+    if (candidates.size() > 2)
+    {
+        if (auto best = chooseIEJoinKeyConditions(candidates, planning_context))
+            chosen = *best;
+    }
+
+    std::array<IEJoinKeyCandidate, 2> keys{std::move(candidates[chosen.first]), std::move(candidates[chosen.second])};
+    std::vector<JoinActionRef> residual_conditions;
+    for (size_t i = 0; i < join_expression.size(); ++i)
+    {
+        if (i != candidate_positions[chosen.first] && i != candidate_positions[chosen.second])
+            residual_conditions.push_back(join_expression[i]);
+    }
 
     /// Both conditions are validated, commit: mutate the DAG.
     IEJoinPlanDescription description;
@@ -1463,6 +1680,24 @@ static QueryPlanNode buildPhysicalJoinImpl(
     {
         if (node->type == ActionsDAG::ActionType::ALIAS)
         planning_context.actions_after_join_map[node->result_name] = node->children.at(0);
+    }
+
+    /// Selectivity estimates for the IEJoin key condition choice; only needed when the choice is
+    /// not forced, i.e. there are more eligible inequality conditions than the two the operator
+    /// uses as keys.
+    if (!planning_context.is_storage_join
+        && children.size() == 2
+        && TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::IE_JOIN)
+        && IEJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness))
+    {
+        size_t eligible_conditions = 0;
+        for (const auto & condition : join_operator.expression)
+            eligible_conditions += tryGetIEJoinKeyCondition(condition).has_value();
+        if (eligible_conditions > 2)
+        {
+            planning_context.left_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[0]).column_stats;
+            planning_context.right_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[1]).column_stats;
+        }
     }
 
 
