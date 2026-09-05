@@ -105,6 +105,8 @@ public:
     std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override;
 
 private:
+    void checkIfNotCancelled() const;
+
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);
 
     /// If true, if we destroy impl now, no work was wasted. Just for metrics.
@@ -116,7 +118,8 @@ private:
 
     size_t getObjectSizeFromS3() const;
 
-    Aws::S3::Model::GetObjectResult sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const;
+    Aws::S3::Model::GetObjectResult sendRequest(
+        size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl, bool * request_started = nullptr) const;
 
     ReadSettings read_settings;
 

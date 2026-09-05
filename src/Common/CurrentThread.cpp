@@ -17,6 +17,9 @@ constinit FiberLocal<ThreadStatus *, FiberLocalSlot::CURRENT_THREAD> current_thr
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 void CurrentThread::updatePerformanceCounters()
@@ -120,6 +123,26 @@ void CurrentThread::checkIfNotCancelled()
         return;
 
     current_thread->throwIfQueryCanceled();
+}
+
+bool CurrentThread::isQueryCancellationException(const std::exception_ptr & exception)
+{
+    const auto code = getExceptionErrorCode(exception);
+    if (code == ErrorCodes::QUERY_WAS_CANCELLED
+        || code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
+        || code == ErrorCodes::TIMEOUT_EXCEEDED)
+        return true;
+
+    try
+    {
+        checkIfNotCancelled();
+    }
+    catch (...)
+    {
+        return std::current_exception() == exception;
+    }
+
+    return false;
 }
 
 std::string_view CurrentThread::getQueryId()

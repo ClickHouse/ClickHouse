@@ -462,6 +462,21 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 storage_id = task->getInfo().data_part_info->getDataPart()->storage.getStorageID();
                 prewhere_step_offset = task->getInfo().mutation_steps.size();
             }
+
+            auto result = readCurrentTask(*task, *algorithm);
+
+            /// Emit a virtual row update after each block, carrying the next mark's PK boundary.
+            /// This allows MergingSortedTransform to reprioritize sources when:
+            /// - PREWHERE filters all rows (merge gets updated position without actual data)
+            /// - A downstream filter (WHERE, JOIN) removes all rows (virtual row passes through filters)
+            if (virtual_row_conversions && !result.is_finished)
+            {
+                auto vrow = buildVirtualRowFromIndex(*task, result.read_mark_ranges);
+                if (vrow.chunk)
+                    pending_virtual_row.emplace(std::move(vrow));
+            }
+
+            return result;
         }
         catch (const Exception & e)
         {
@@ -469,21 +484,6 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 break;
             throw;
         }
-
-        auto result = readCurrentTask(*task, *algorithm);
-
-        /// Emit a virtual row update after each block, carrying the next mark's PK boundary.
-        /// This allows MergingSortedTransform to reprioritize sources when:
-        /// - PREWHERE filters all rows (merge gets updated position without actual data)
-        /// - A downstream filter (WHERE, JOIN) removes all rows (virtual row passes through filters)
-        if (virtual_row_conversions && !result.is_finished)
-        {
-            auto vrow = buildVirtualRowFromIndex(*task, result.read_mark_ranges);
-            if (vrow.chunk)
-                pending_virtual_row.emplace(std::move(vrow));
-        }
-
-        return result;
     }
 
     return {Chunk(), 0, 0, true, {}};

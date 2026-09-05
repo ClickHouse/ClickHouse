@@ -10,10 +10,13 @@ ReplicatedMergeTree so reportBroken() is observable (plain MergeTree's callback 
 """
 import os
 import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 AZURITE_ACCOUNT = "devstoreaccount1"
 AZURITE_KEY = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
@@ -57,7 +60,8 @@ ERROR_KINDS = {
 }
 
 ALL_FAILPOINTS = [fp for triple in ERROR_KINDS.values() for fp in triple[:2]] + [
-    "azure_inject_bad_request"
+    "azure_inject_bad_request",
+    "merge_tree_reader_pause_before_report_broken",
 ]
 
 # The OSS-observable signal that reportBroken() was taken (part-check thread).
@@ -236,16 +240,56 @@ def test_transient_forbidden_compact_part_read_succeeds(started_cluster):
     assert not node.contains_in_log(BROKEN_PART_LOG)
 
 
-def test_non_retryable_error_still_marks_part_broken(started_cluster):
+@pytest.mark.parametrize(
+    "cancel_during_unwind", [False, True], ids=["plain", "cancellation-race"]
+)
+def test_non_retryable_error_still_marks_part_broken(
+    started_cluster, cancel_during_unwind
+):
     # Negative control: a non-retryable 400 must still reportBroken(), else real corruption is missed.
-    _create_table("t_negative")
+    table = f"t_negative_{int(cancel_during_unwind)}"
+    _create_table(table)
 
     node.query("SYSTEM ENABLE FAILPOINT azure_inject_bad_request")
+    pause_failpoint = "merge_tree_reader_pause_before_report_broken"
+    executor = None
+
     try:
-        node.query_and_get_error("SELECT sum(k) FROM t_negative")
+        if not cancel_during_unwind:
+            node.query_and_get_error(f"SELECT sum(k) FROM {table}")
+            node.wait_for_log_line(BROKEN_PART_LOG, timeout=60)
+            return
+
+        query_id = uuid.uuid4().hex
+        node.query(f"SYSTEM ENABLE FAILPOINT {pause_failpoint}")
+        executor = ThreadPoolExecutor(max_workers=1)
+        query_future = executor.submit(
+            node.query_and_get_error,
+            f"SELECT sum(k) FROM {table} SETTINGS "
+            "max_execution_time=1, timeout_overflow_mode='throw'",
+            query_id=query_id,
+        )
+        node.query(f"SYSTEM WAIT FAILPOINT {pause_failpoint} PAUSE", timeout=60)
+        assert_eq_with_retry(
+            node,
+            f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'",
+            "1",
+            retry_count=20,
+            sleep_time=0.25,
+        )
+        node.query(f"SYSTEM NOTIFY FAILPOINT {pause_failpoint}")
+
+        error = query_future.result(timeout=10)
+        assert "Bad request (injected by failpoint)" in error, error
+        assert "TIMEOUT_EXCEEDED" not in error, error
         node.wait_for_log_line(BROKEN_PART_LOG, timeout=60)
     finally:
+        if cancel_during_unwind:
+            node.query(f"SYSTEM NOTIFY FAILPOINT {pause_failpoint}")
+            node.query(f"SYSTEM DISABLE FAILPOINT {pause_failpoint}")
         node.query("SYSTEM DISABLE FAILPOINT azure_inject_bad_request")
+        if executor:
+            executor.shutdown(wait=False, cancel_futures=True)
 
 
 def test_permanent_forbidden_on_write_fails(started_cluster):

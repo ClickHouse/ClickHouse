@@ -12,6 +12,7 @@
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadStatus.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
@@ -21,6 +22,7 @@
 #include <Common/saturatedDuration.h>
 #include <array>
 #include <chrono>
+#include <exception>
 #include <memory>
 
 
@@ -74,6 +76,12 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int BAD_ARGUMENTS;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char query_status_cancel_with_injected_exception[];
 }
 
 
@@ -578,6 +586,15 @@ void QueryStatus::ExecutorHolder::remove()
 
 CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_ptr exception)
 {
+    if (reason == CancelReason::CANCELLED_BY_USER && !exception)
+    {
+        fiu_do_on(FailPoints::query_status_cancel_with_injected_exception,
+        {
+            exception = std::make_exception_ptr(
+                Exception(ErrorCodes::FAULT_INJECTED, "Injected query cancellation exception"));
+        });
+    }
+
     {
         std::lock_guard<std::mutex> lock(cancel_mutex);
 

@@ -53,6 +53,7 @@ namespace FailPoints
 {
     extern const char s3_read_buffer_throw_expired_token[];
     extern const char s3_send_request_throw_expired_token[];
+    extern const char s3_read_before_get_object[];
     extern const char s3_read_inject_etag_mismatch[];
 }
 
@@ -65,6 +66,7 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_INITIALIZED;
     extern const int S3_OBJECT_CHANGED_DURING_READ;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
 namespace
@@ -122,6 +124,13 @@ ReadBufferFromS3::ReadBufferFromS3(
     , blob_storage_log(std::move(blob_storage_log_))
 {
     file_size = file_size_;
+}
+
+void ReadBufferFromS3::checkIfNotCancelled() const
+{
+    CurrentThread::checkIfNotCancelled();
+    if (read_settings.isReadCancelled())
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "MergeTree read was cancelled by the client");
 }
 
 bool ReadBufferFromS3::nextImpl()
@@ -214,12 +223,17 @@ bool ReadBufferFromS3::nextImpl()
             }
 
             /// Try to read a next portion of data.
+            checkIfNotCancelled();
             next_result = impl->next();
             break;
         }
         catch (...)
         {
-            if (!processException(getPosition(), attempt) || last_attempt)
+            if (!processException(getPosition(), attempt))
+                throw;
+
+            checkIfNotCancelled();
+            if (last_attempt)
                 throw;
 
             /// Pause before next attempt.
@@ -307,13 +321,15 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3Microseconds);
 
         std::optional<Aws::S3::Model::GetObjectResult> result;
+        bool request_started = false;
 
         try
         {
-            result = sendRequest(attempt, range_begin, range_begin + n - 1);
+            result = sendRequest(attempt, range_begin, range_begin + n - 1, &request_started);
             std::istream & istr = result->GetBody();
 
             bool cancelled = false;
+            checkIfNotCancelled();
             copyFromIStreamWithProgressCallback(istr, to, n, progress_callback, &bytes_copied, &cancelled);
 
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, bytes_copied);
@@ -325,13 +341,19 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             }
 
             /// Read remaining bytes after the end of the payload
+            checkIfNotCancelled();
             istr.ignore(INT64_MAX);
         }
         catch (...)
         {
-            observe_request_metrics();
+            if (request_started)
+                observe_request_metrics();
 
-            if (!processException(range_begin, attempt) || last_attempt)
+            if (!processException(range_begin, attempt))
+                throw;
+
+            checkIfNotCancelled();
+            if (last_attempt)
                 throw;
 
             sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
@@ -350,6 +372,16 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
 
 bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) const
 {
+    const auto exception = std::current_exception();
+    /// Explicit query cancellation is not an S3 read error and must not be retried. In particular,
+    /// `sendRequest` can throw it before issuing a request, so do not report it in S3 error telemetry.
+    if (CurrentThread::isQueryCancellationException(exception))
+        return false;
+
+    const auto exception_code = getExceptionErrorCode(exception);
+
+    /// Callers check mutable query cancellation state only after this function classifies the caught
+    /// exception as retryable. This preserves a real non-retryable S3 error if cancellation races with unwinding.
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsErrors, 1);
 
     LOG_DEBUG(
@@ -381,7 +413,7 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
     }
 
     /// It doesn't make sense to retry allocator errors
-    if (getCurrentExceptionCode() == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
+    if (exception_code == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
     {
         tryLogCurrentException(log);
         return false;
@@ -389,7 +421,7 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
 
     /// The object was overwritten in place; re-fetching the same range would just return the new
     /// generation again. Fail fast and let the caller retry the whole read with fresh metadata.
-    if (getCurrentExceptionCode() == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ)
+    if (exception_code == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ)
         return false;
 
     return true;
@@ -553,7 +585,8 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
     return std::make_unique<S3::ReadBufferFromGetObjectResult>(std::move(read_result), buffer_size, std::move(watch));
 }
 
-Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const
+Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(
+    size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl, bool * request_started) const
 {
     S3::GetObjectRequest req;
     req.SetBucket(bucket);
@@ -582,6 +615,12 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
             log, "Read S3 object. Bucket: {}, Key: {}, Version: {}, Offset: {}",
             bucket, key, version_id.empty() ? "Latest" : version_id, range_begin);
     }
+
+    FailPointInjection::pauseFailPoint(FailPoints::s3_read_before_get_object);
+    checkIfNotCancelled();
+
+    if (request_started)
+        *request_started = true;
 
     ProfileEvents::increment(ProfileEvents::S3GetObject);
     if (client_ptr->isClientForDisk())

@@ -147,6 +147,7 @@ public:
     ChunkAndProgress read();
 
     void cancel() noexcept;
+    void cancelReading() noexcept { pool->cancelReading(); }
 
     const MergeTreeReaderSettings & getSettings() const { return reader_settings; }
 

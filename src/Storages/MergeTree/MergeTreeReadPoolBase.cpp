@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 
+#include <Common/FailPoint.h>
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -32,6 +34,31 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+}
+
+namespace FailPoints
+{
+    extern const char merge_tree_read_pool_pause_after_cancel[];
+}
+
+namespace
+{
+std::shared_ptr<std::atomic_bool> getOrCreateReadCancellation(const MergeTreeReaderSettings & reader_settings)
+{
+    if (reader_settings.read_settings.read_cancelled)
+        return reader_settings.read_settings.read_cancelled;
+
+    return std::make_shared<std::atomic_bool>(false);
+}
+
+MergeTreeReaderSettings withReadCancellation(
+    const MergeTreeReaderSettings & reader_settings, const std::shared_ptr<std::atomic_bool> & read_cancelled)
+{
+    auto result = reader_settings;
+    result.read_settings.read_cancelled = read_cancelled;
+    return result;
+}
 }
 
 
@@ -58,7 +85,8 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , row_level_filter(row_level_filter_)
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
-    , reader_settings(reader_settings_)
+    , read_cancelled(getOrCreateReadCancellation(reader_settings_))
+    , reader_settings(withReadCancellation(reader_settings_, read_cancelled))
     , column_names(column_names_)
     , pool_settings(pool_settings_)
     , block_size_params(block_size_params_)
@@ -87,7 +115,8 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , mutations_snapshot(std::move(mutations_snapshot_))
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
-    , reader_settings(reader_settings_)
+    , read_cancelled(getOrCreateReadCancellation(reader_settings_))
+    , reader_settings(withReadCancellation(reader_settings_, read_cancelled))
     , column_names(column_names_)
     , pool_settings(pool_settings_)
     , block_size_params(block_size_params_)
@@ -98,6 +127,19 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , ranges_in_patch_parts(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
     , profile_callback([this](ReadBufferFromFileBase::ProfileInfo info_) { profileFeedback(info_); })
 {
+}
+
+void MergeTreeReadPoolBase::cancelReading() noexcept
+{
+    if (!read_cancelled->exchange(true, std::memory_order_relaxed))
+        FailPointInjection::pauseFailPoint(FailPoints::merge_tree_read_pool_pause_after_cancel);
+}
+
+void MergeTreeReadPoolBase::checkIfNotCancelled() const
+{
+    CurrentThread::checkIfNotCancelled();
+    if (read_cancelled->load(std::memory_order_relaxed))
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "MergeTree read was cancelled by the client");
 }
 
 static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & columns_to_read, const Settings & settings)
