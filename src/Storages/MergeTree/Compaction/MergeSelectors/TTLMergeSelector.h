@@ -20,7 +20,7 @@ class ITTLMergeSelector : public IMergeSelector
     friend class MergeRangesConstructor;
 
 public:
-    ITTLMergeSelector(const PartitionIdToTTLs * merge_due_times_, time_t current_time_, size_t max_parts_to_merge_at_once_ = 0);
+    ITTLMergeSelector(const PartitionIdToTTLs * merge_due_times_, time_t current_time_, size_t max_parts_to_merge_at_once_ = 0, time_t min_ttl_age_ = 0);
 
     PartsRanges select(
         const PartsRanges & parts_ranges,
@@ -63,6 +63,10 @@ private:
     const time_t current_time;
     const PartitionIdToTTLs * merge_due_times;
     const size_t max_parts_to_merge_at_once;
+    /// If non-zero, a part is only considered once its earliest expired row has
+    /// been expired for at least this long. Derived from the part itself, so it
+    /// survives restarts and agrees across replicas.
+    const time_t min_ttl_age;
 };
 
 /// Select parts that must be fully deleted because of ttl for part.
@@ -82,7 +86,7 @@ private:
 class TTLRowDeleteMergeSelector : public ITTLMergeSelector
 {
 public:
-    explicit TTLRowDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_);
+    explicit TTLRowDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_, time_t min_ttl_age_ = 0);
 
 private:
     time_t getTTLForPart(const PartProperties & part) const override;
