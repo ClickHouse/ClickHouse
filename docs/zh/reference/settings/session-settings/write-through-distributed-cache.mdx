@@ -14,18 +14,6 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="write_through_distributed_cache">
-  ## write_through_distributed_cache
-</div>
-
-<CloudOnlyBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "ClickHouse Cloud 的一项设置"}]}]} />
-
-仅在 ClickHouse Cloud 中生效。允许写入分布式缓存 (写入 S3 也将由分布式缓存完成)
-
 <div id="write_through_distributed_cache_buffer_size">
   ## write_through_distributed_cache_buffer_size
 </div>

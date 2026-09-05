@@ -15,6 +15,8 @@ doc_type: 'reference'
 
 時系列データをタイムスタンプと値の組として受け取り、開始タイムスタンプ、終了タイムスタンプ、step で表される一定間隔の時間グリッド上で、このデータから [PromQL ライクな微分](https://prometheus.io/docs/prometheus/latest/querying/functions/#deriv) を計算する集約関数です。グリッド上の各点について、`deriv` の計算に使用するサンプルは指定された時間ウィンドウ内のものが考慮されます。
 
+複数のサンプルが同じタイムスタンプを持つ場合、使用されるのは値が最大のサンプル1つだけです。NaN 値は他のすべての値より優先度が低いため、このタイムスタンプのすべてのサンプルが NaN の場合にのみ NaN 値が使用されます。
+
 <Note>
   この関数は実験的機能です。`allow_experimental_time_series_aggregate_functions=true` を設定して有効にしてください。
 </Note>
@@ -67,7 +69,7 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.1,0.11,0.15,NULL,NULL,0.15]                                              │
+│ [NULL,NULL,0,0.1,0.11,0.1,NULL,NULL,0.15]                                               │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -87,7 +89,7 @@ SELECT timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
 
 ```response title=Response
 ┌─timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.1,0.11,0.15,NULL,NULL,0.15]                                                │
+│ [NULL,NULL,0,0.1,0.11,0.1,NULL,NULL,0.15]                                                 │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

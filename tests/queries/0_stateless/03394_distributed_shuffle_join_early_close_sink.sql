@@ -3,7 +3,6 @@
 -- execution, which is ~50x slower in debug builds; the flaky check's repeated runs exceed its budget.
 
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET query_plan_join_swap_table = 0;
 -- Distributed aggregation cannot enforce a global max_rows_to_group_by, so pin it to 0.
 SET max_rows_to_group_by = 0;

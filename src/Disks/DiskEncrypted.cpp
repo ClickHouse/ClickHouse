@@ -28,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DISK_INDEX;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -285,6 +286,39 @@ namespace
     {
         return typeid(one) == typeid(another);
     }
+
+    class DiskEncryptedDirectoryIterator final : public IDirectoryIterator
+    {
+    public:
+        DiskEncryptedDirectoryIterator(DirectoryIteratorPtr delegate_, String path_prefix_)
+            : delegate(std::move(delegate_))
+            , path_prefix(std::move(path_prefix_))
+        {
+        }
+
+        void next() override { delegate->next(); }
+        bool isValid() const override { return delegate->isValid(); }
+
+        String path() const override
+        {
+            auto delegate_path = delegate->path();
+
+            if (!delegate_path.starts_with(path_prefix))
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Encrypted disk iterator returned path {} without expected prefix {}",
+                    quoteString(delegate_path),
+                    quoteString(path_prefix));
+
+            return delegate_path.substr(path_prefix.size());
+        }
+
+        String name() const override { return delegate->name(); }
+
+    private:
+        DirectoryIteratorPtr delegate;
+        String path_prefix;
+    };
 }
 
 class DiskEncryptedReservation : public IReservation
@@ -464,6 +498,11 @@ size_t DiskEncrypted::getFileSize(const String & path) const
     auto wrapped_path = wrappedPath(path);
     size_t size = delegate->getFileSize(wrapped_path);
     return size > FileEncryption::Header::kSize ? (size - FileEncryption::Header::kSize) : 0;
+}
+
+DirectoryIteratorPtr DiskEncrypted::iterateDirectory(const String & path) const
+{
+    return std::make_unique<DiskEncryptedDirectoryIterator>(delegate->iterateDirectory(wrappedPath(path)), disk_path);
 }
 
 UInt128 DiskEncrypted::getEncryptedFileIV(const String & path) const

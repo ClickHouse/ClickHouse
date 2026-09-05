@@ -51,7 +51,6 @@ MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, Reso
     if (reserved_size > 0)
     {
         // Scheduler may call increaseApproved() immediately after insert, so set state beforehand
-        increase_enqueued = true;
         enqueued_demand = reserved_size;
         demand_increment.add(enqueued_demand);
     }
@@ -131,12 +130,12 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
 
         // Normal growth serializes all query threads. A parked request opens a narrow recovery lane:
         // the query may run spill/release work, but it still cannot acquire more reserved memory.
-        if (increase_enqueued && !growth_recovery_active)
-            cv.wait(lock, [this] { return !increase_enqueued || kill_reason || fail_reason || growth_recovery_active; });
+        if (enqueued_demand != 0 && !growth_recovery_active)
+            cv.wait(lock, [this] { return enqueued_demand == 0 || kill_reason || fail_reason || growth_recovery_active; });
 
         throwIfNeeded();
 
-        if (increase_enqueued && growth_recovery_active)
+        if (enqueued_demand != 0 && growth_recovery_active)
         {
             recovery_scheduler = memory_spill_scheduler.lock();
             observed_recovery_epoch = recovery_epoch;
@@ -145,26 +144,24 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
                     >= std::chrono::milliseconds(settings.suction_queue_timeout_ms);
         }
 
-        // Make sure reservation size is always respected.
+        // Make sure reservation size is always respected. Decreases are approved asynchronously,
+        // so compare against the allocation that will remain after the in-flight decrease.
         ResourceCost new_actual_size = std::max(memory_tracker->get(), reserved_size);
-        if (new_actual_size != actual_size)
-        {
-            actual_size = new_actual_size;
+        ResourceCost expected_allocated = allocated_size - enqueued_decrease;
+        actual_size = new_actual_size;
 
-            if (!fail_reason && actual_size > allocated_size && !increase_enqueued)
-            {
-                chassert(!removed);
-                pending_increase = actual_size - allocated_size;
-                increase_enqueued = true;
-                enqueued_demand = pending_increase;
-                demand_increment.add(enqueued_demand);
-            }
-            else if (!fail_reason && actual_size < allocated_size && !decrease_enqueued)
-            {
-                chassert(!removed);
-                pending_decrease = allocated_size - actual_size;
-                decrease_enqueued = true;
-            }
+        if (actual_size > expected_allocated && enqueued_demand == 0)
+        {
+            chassert(!removed);
+            pending_increase = actual_size - expected_allocated;
+            enqueued_demand = pending_increase;
+            demand_increment.add(enqueued_demand);
+        }
+        else if (actual_size < expected_allocated && enqueued_decrease == 0)
+        {
+            chassert(!removed);
+            pending_decrease = expected_allocated - actual_size;
+            enqueued_decrease = pending_decrease;
         }
     }
 
@@ -204,10 +201,15 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
         std::unique_lock lock(mutex);
         // Wait on increase to make sure memory is reserved when requested. The recovery lane is the
         // sole exception: it returns control to the pipeline only so a spillable processor can run.
-        if (actual_size > allocated_size && !growth_recovery_active)
+        // An in-flight decrease is counted as already released because its capacity may be granted
+        // elsewhere before the asynchronous approval reaches this allocation.
+        if (actual_size > allocated_size - enqueued_decrease && !growth_recovery_active)
         {
             auto increase_timer = CurrentThread::getProfileEvents().timer(ProfileEvents::MemoryReservationIncreaseMicroseconds);
-            cv.wait(lock, [this] { return kill_reason || fail_reason || actual_size <= allocated_size || growth_recovery_active; });
+            cv.wait(lock, [this]
+            {
+                return kill_reason || fail_reason || actual_size <= allocated_size - enqueued_decrease || growth_recovery_active;
+            });
         }
 
         metrics.apply();
@@ -271,7 +273,7 @@ bool MemoryReservation::isGrowthRecoveryActive()
 ResourceCost MemoryReservation::reconcilePendingIncrease(ResourceCost scheduler_allocated_size, ResourceCost requested_size)
 {
     std::unique_lock lock(mutex);
-    if (!increase_enqueued)
+    if (enqueued_demand == 0)
         return requested_size;
 
     const ResourceCost reconciled_size
@@ -288,7 +290,6 @@ void MemoryReservation::increaseCancelled()
 {
     std::unique_lock lock(mutex);
     enqueued_demand = 0;
-    increase_enqueued = false;
     cv.notify_all();
 }
 
@@ -333,7 +334,6 @@ void MemoryReservation::increaseApproved(const IncreaseRequest & increase)
     approved_increment.add(increase.size);
     demand_increment.sub(enqueued_demand);
     enqueued_demand = 0;
-    increase_enqueued = false;
     cv.notify_all();
 }
 
@@ -344,19 +344,17 @@ void MemoryReservation::decreaseApproved(const DecreaseRequest & decrease)
     chassert(allocated_size >= decrease.size);
     allocated_size -= decrease.size;
     approved_increment.sub(decrease.size);
-    decrease_enqueued = false;
+    enqueued_decrease = 0;
     if (decrease.removing_allocation)
     {
         // The queue cancels any pending increase as part of the removal path
         // (`processActivation` unlinks from `increasing_allocations` without calling
-        // `increaseApproved`). Roll back the demand metric and clear
-        // `increase_enqueued` so threads blocked on the serialization barrier in
-        // `syncWithMemoryTracker` are released and do not wait forever.
-        if (increase_enqueued)
+        // `increaseApproved`). Roll back the demand so threads blocked on the
+        // serialization barrier in `syncWithMemoryTracker` are released.
+        if (enqueued_demand != 0)
         {
             demand_increment.sub(enqueued_demand);
             enqueued_demand = 0;
-            increase_enqueued = false;
         }
         removed = true;
     }
@@ -370,7 +368,7 @@ void MemoryReservation::allocationFailed(const std::exception_ptr & reason)
     metrics.failed++;
     fail_reason = reason;
     removed = true; // failed allocation are auto-removed by the scheduler
-    if (increase_enqueued)
+    if (enqueued_demand != 0)
         demand_increment.sub(enqueued_demand);
     approved_increment.sub(allocated_size);
     allocated_size = 0;
