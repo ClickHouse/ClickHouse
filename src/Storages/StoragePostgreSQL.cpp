@@ -211,7 +211,7 @@ public:
                 storage_snapshot->storage.getStorageID(),
                 local_only_columns);
             query = buildQueryForExternalDatabaseSubquery(
-                remote_table_or_query.getQuery(), required_source_columns, IdentifierQuotingStyle::DoubleQuotes);
+                remote_table_or_query.getQuery(), required_source_columns, IdentifierQuotingStyle::DoubleQuotesStandard);
         }
         else
         {
@@ -225,7 +225,7 @@ public:
                 query_info,
                 required_source_columns,
                 storage_snapshot->metadata->getColumns().getOrdinary(),
-                IdentifierQuotingStyle::DoubleQuotes,
+                IdentifierQuotingStyle::DoubleQuotesStandard,
                 LiteralEscapingStyle::PostgreSQL,
                 remote_table_schema,
                 remote_table_or_query.getTableName(),
@@ -549,7 +549,7 @@ private:
             , statement_name("insert_" + getHexUIntLowercase(thread_local_rng()))
         {
             WriteBufferFromOwnString buf;
-            buf << getInsertQuery(schema, table, columns, IdentifierQuotingStyle::DoubleQuotes);
+            buf << getInsertQuery(schema, table, columns, IdentifierQuotingStyle::DoubleQuotesStandard);
             buf << " (";
             for (size_t i = 1; i <= columns.size(); ++i)
             {
@@ -849,7 +849,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
         /// would make `(SELECT Foo FROM t)` look for the column `Foo` instead of `foo` and break queries
         /// that rely on the ordinary unquoted name resolution.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL);
+            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::PostgreSQL);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 2 && maybe_query)
