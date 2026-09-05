@@ -13,8 +13,6 @@ ActionLock::ActionLock(const ActionBlocker & blocker) : counter_ptr(blocker.coun
 
 ActionLock::ActionLock(ActionLock && other) noexcept : counter_ptr(std::move(other.counter_ptr))
 {
-    /// After move other.counter_ptr still points to counter, reset it explicitly
-    other.counter_ptr.reset();
 }
 
 ActionLock & ActionLock::operator=(ActionLock && other) noexcept
