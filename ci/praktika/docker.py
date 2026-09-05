@@ -409,6 +409,10 @@ class Docker:
                 if SHELL_IDLE_TIMEOUT_MESSAGE in log_text
                 else "transient build failure"
             )
+            # Ahead of the tests that govern a next attempt: with no attempt left, neither
+            # the retry deadline nor the remaining budget is the cause of stopping.
+            if attempt == _IMAGE_BUILD_ATTEMPTS - 1:
+                break
             next_start = now + _IMAGE_BUILD_RETRY_INTERVAL_S
             if next_start >= ladder_deadline:
                 print(f"Retry deadline of {_IMAGE_BUILD_RETRY_DEADLINE_S}s reached")
@@ -417,8 +421,6 @@ class Docker:
                 job_deadline - next_start < _IMAGE_BUILD_MIN_ATTEMPT_S
             ):
                 return exhausted(job_deadline - next_start)
-            if attempt == _IMAGE_BUILD_ATTEMPTS - 1:
-                break
             print(
                 f"Transient failure [{matched}] building {name}, "
                 f"retrying in {_IMAGE_BUILD_RETRY_INTERVAL_S}s"
