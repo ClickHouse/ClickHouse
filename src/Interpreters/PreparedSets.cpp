@@ -518,6 +518,11 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     if (!context->getSettingsRef()[Setting::use_index_for_in_with_subqueries])
         return nullptr;
 
+    /// Concurrent index analyses may share this set through cloned filter DAGs, and the build mutates
+    /// `set_and_key->set` and `source`. A mutex and not `callOnce` because this build may stop without
+    /// creating the set (e.g. a subquery timeout with `overflow_mode = 'break'`) and then be retried.
+    std::lock_guard lock(inplace_build_mutex);
+
     if (auto set = get())
     {
         if (set->hasExplicitSetElements())

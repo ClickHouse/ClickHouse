@@ -17,8 +17,10 @@
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
@@ -111,6 +113,9 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     context->checkAccess(AccessType::SELECT, time_series_storage_id);
     auto time_series_storage = DatabaseCatalog::instance().getTable(time_series_storage_id, context);
     auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage);
+    /// The shard-local tables' versions are checked by the selector on each shard.
+    if (!distributed_target)
+        checkTimeSeriesVersionSupportedByPromQL(*storagePtrToTimeSeries(time_series_storage));
 
     /// A Distributed table created `AS <TimeSeries table>` declares the same `time_series` column,
     /// so the data types are taken from the target's own metadata in both cases.
@@ -212,6 +217,11 @@ void StoragePrometheusQuery::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
+    /// The shard-local tables' versions are checked by the selector on each shard.
+    if (config.evaluation_settings.cluster_name.empty())
+        checkTimeSeriesVersionSupportedByPromQL(
+            *storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.evaluation_settings.time_series_storage_id, context)));
+
     LOG_INFO(log, "Building SQL to evaluate promql: {}", *config.promql_query);
     PrometheusQueryToSQL::Converter converter{config.promql_query, config.evaluation_settings};
     ASTPtr select_query = converter.getSQL();

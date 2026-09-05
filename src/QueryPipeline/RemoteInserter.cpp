@@ -1,6 +1,7 @@
 #include <QueryPipeline/RemoteInserter.h>
 
 #include <Client/Connection.h>
+#include <Client/SecondaryQuerySettings.h>
 #include <Common/logger_useful.h>
 
 #include <Common/NetException.h>
@@ -47,6 +48,11 @@ void RemoteInserter::initialize()
     modified_client_info.current_roles.reset();
 
     Settings settings = insert_settings;
+
+    /// Demote the `compatibility`-derived values and force ClickHouse SQL, exactly as the `SELECT`
+    /// senders do. Runs before the overrides below, so they stay changed and are serialized.
+    prepareSecondaryQuerySettings(settings);
+
     /// With current protocol it is impossible to avoid deadlock in case of send_logs_level!=none.
     ///
     /// RemoteInserter send Data blocks/packets to the remote shard,

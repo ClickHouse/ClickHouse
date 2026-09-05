@@ -528,7 +528,6 @@ The hierarchy of privileges in ClickHouse is shown below:
         - `SYSTEM RELOAD DICTIONARY`
         - `SYSTEM RELOAD EMBEDDED DICTIONARIES`
         - `SYSTEM RELOAD FUNCTION`
-        - `SYSTEM RELOAD MODEL`
         - `SYSTEM RELOAD USERS`
     - `SYSTEM SENDS`
       - `SYSTEM DISTRIBUTED SENDS`
