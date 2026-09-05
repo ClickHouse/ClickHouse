@@ -13,7 +13,7 @@ Aggregating
 Output: a + 1, sum(c)
 
 Aggregating
-│  Keys: a + 1
+│  Keys: a
 │  Aggregates: sum(c)
 │  Skip merging: 0
 └──ReadFromMergeTree (default.t1)

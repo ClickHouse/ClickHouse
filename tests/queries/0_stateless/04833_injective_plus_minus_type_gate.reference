@@ -1,0 +1,94 @@
+-- { echo }
+
+-- ---------------------------------------------------------------------------
+-- Correctness: per-partition evaluation must agree with the merged evaluation. Each arm
+-- prints the forced count and then the merged count; they must be equal. The two settings
+-- apply to the outer query, so they reach the aggregation under test.
+-- ---------------------------------------------------------------------------
+
+-- Date + INTERVAL MONTH collapses the 29th, 30th and 31st of a month into one key
+DROP TABLE IF EXISTS t_month;
+CREATE TABLE t_month (d Date, x UInt32) ENGINE = MergeTree ORDER BY d PARTITION BY d;
+INSERT INTO t_month SELECT toDate(concat(toString(2001 + intDiv(number, 300)), '-01-', toString(29 + (intDiv(number, 100) % 3)))) AS d, number FROM numbers_mt(5100) WHERE toYear(d) NOT IN (2004, 2008, 2012, 2016, 2020);
+SELECT count() FROM (SELECT d + INTERVAL 1 MONTH AS k, count() FROM t_month GROUP BY k) SETTINGS force_aggregate_partitions_independently = 1;
+13
+SELECT count() FROM (SELECT d + INTERVAL 1 MONTH AS k, count() FROM t_month GROUP BY k) SETTINGS allow_aggregate_partitions_independently = 0;
+13
+SELECT count() FROM (SELECT DISTINCT d + INTERVAL 1 MONTH AS k FROM t_month) SETTINGS force_distinct_partitions_independently = 1;
+13
+SELECT count() FROM (SELECT DISTINCT d + INTERVAL 1 MONTH AS k FROM t_month) SETTINGS allow_distinct_partitions_independently = 0;
+13
+SELECT count() FROM (SELECT d + INTERVAL 1 MONTH AS k FROM t_month LIMIT 1 BY k) SETTINGS allow_limit_by_partitions_independently = 1;
+13
+SELECT count() FROM (SELECT d + INTERVAL 1 MONTH AS k FROM t_month LIMIT 1 BY k) SETTINGS allow_limit_by_partitions_independently = 0;
+13
+DROP TABLE t_month;
+-- the minus direction collapses the same way, going back into a shorter month
+DROP TABLE IF EXISTS t_month_minus;
+CREATE TABLE t_month_minus (d Date, x UInt32) ENGINE = MergeTree ORDER BY d PARTITION BY d;
+INSERT INTO t_month_minus SELECT toDate(concat(toString(2001 + intDiv(number, 300)), '-03-', toString(29 + (intDiv(number, 100) % 3)))) AS d, number FROM numbers_mt(5100) WHERE toYear(d) NOT IN (2004, 2008, 2012, 2016, 2020);
+SELECT count() FROM (SELECT d - INTERVAL 1 MONTH AS k, count() FROM t_month_minus GROUP BY k) SETTINGS force_aggregate_partitions_independently = 1;
+13
+SELECT count() FROM (SELECT d - INTERVAL 1 MONTH AS k, count() FROM t_month_minus GROUP BY k) SETTINGS allow_aggregate_partitions_independently = 0;
+13
+DROP TABLE t_month_minus;
+-- DateTime + INTERVAL DAY collapses across a DST spring-forward, so the interval kind alone
+-- does not decide safety
+DROP TABLE IF EXISTS t_dst;
+CREATE TABLE t_dst (t DateTime('Europe/Moscow'), x UInt32) ENGINE = MergeTree ORDER BY t PARTITION BY t;
+INSERT INTO t_dst SELECT toDateTime('2010-03-27 00:00:00', 'Europe/Moscow') + (intDiv(number, 100) * 1800) AS t, number FROM numbers_mt(600);
+SELECT count() FROM (SELECT t + INTERVAL 1 DAY AS k, count() FROM t_dst GROUP BY k) SETTINGS force_aggregate_partitions_independently = 1;
+4
+SELECT count() FROM (SELECT t + INTERVAL 1 DAY AS k, count() FROM t_dst GROUP BY k) SETTINGS allow_aggregate_partitions_independently = 0;
+4
+DROP TABLE t_dst;
+-- a Float64 addend collapses by mantissa rounding; a float column reaches the optimizer
+-- through a non-float partition key
+DROP TABLE IF EXISTS t_float;
+CREATE TABLE t_float (f Float64, x UInt32) ENGINE = MergeTree ORDER BY f PARTITION BY toUInt64(f - 1e16);
+INSERT INTO t_float SELECT 1e16 + intDiv(number, 100) AS f, number FROM numbers_mt(600);
+SELECT count() FROM (SELECT f + 1.0 AS k, count() FROM t_float GROUP BY k) SETTINGS force_aggregate_partitions_independently = 1;
+2
+SELECT count() FROM (SELECT f + 1.0 AS k, count() FROM t_float GROUP BY k) SETTINGS allow_aggregate_partitions_independently = 0;
+2
+-- the collapse the arm above depends on: fewer distinct sums than distinct addends
+SELECT uniqExact(f), uniqExact(f + 1.0) FROM t_float;
+3	2
+DROP TABLE t_float;
+-- a constant of a narrower date type narrows the result: every multiple of 65536 maps to
+-- 1970-01-01. A NULL constant maps every value to NULL.
+DROP TABLE IF EXISTS t_narrow;
+CREATE TABLE t_narrow (x UInt32, v UInt32) ENGINE = MergeTree ORDER BY x PARTITION BY x;
+INSERT INTO t_narrow SELECT intDiv(number, 100) * 65536 AS x, number FROM numbers_mt(600);
+SELECT count() FROM (SELECT x + toDate(0) AS k, count() FROM t_narrow GROUP BY k) SETTINGS force_aggregate_partitions_independently = 1;
+1
+SELECT count() FROM (SELECT x + toDate(0) AS k, count() FROM t_narrow GROUP BY k) SETTINGS allow_aggregate_partitions_independently = 0;
+1
+SELECT count() FROM (SELECT DISTINCT x + CAST(NULL, 'Nullable(UInt32)') AS k FROM t_narrow) SETTINGS force_distinct_partitions_independently = 1;
+1
+SELECT count() FROM (SELECT DISTINCT x + CAST(NULL, 'Nullable(UInt32)') AS k FROM t_narrow) SETTINGS allow_distinct_partitions_independently = 0;
+1
+SELECT uniqExact(x), uniqExact(x + toDate(0)) FROM t_narrow;
+6	1
+DROP TABLE t_narrow;
+-- a Decimal constant rescales the varying operand: every multiple of 2^32 maps to one
+-- Decimal(9, 1)
+DROP TABLE IF EXISTS t_decimal;
+CREATE TABLE t_decimal (x UInt64, v UInt32) ENGINE = MergeTree ORDER BY x PARTITION BY x;
+INSERT INTO t_decimal SELECT intDiv(number, 100) * 4294967296 AS x, number FROM numbers_mt(400);
+SELECT count() FROM (SELECT x + toDecimal32(0, 1) AS k, count() FROM t_decimal GROUP BY k) SETTINGS force_aggregate_partitions_independently = 1;
+1
+SELECT count() FROM (SELECT x + toDecimal32(0, 1) AS k, count() FROM t_decimal GROUP BY k) SETTINGS allow_aggregate_partitions_independently = 0;
+1
+SELECT uniqExact(x), uniqExact(x + toDecimal32(0, 1)) FROM t_decimal;
+4	1
+DROP TABLE t_decimal;
+-- two varying operands are not injective either: many pairs share one sum
+DROP TABLE IF EXISTS t_two_cols;
+CREATE TABLE t_two_cols (x UInt32, y UInt32) ENGINE = MergeTree ORDER BY x PARTITION BY x;
+INSERT INTO t_two_cols SELECT intDiv(number, 100) AS x, number % 100 AS y FROM numbers_mt(1000);
+SELECT count() FROM (SELECT x + y AS k, count() FROM t_two_cols GROUP BY k) SETTINGS force_aggregate_partitions_independently = 1;
+109
+SELECT count() FROM (SELECT x + y AS k, count() FROM t_two_cols GROUP BY k) SETTINGS allow_aggregate_partitions_independently = 0;
+109
+DROP TABLE t_two_cols;

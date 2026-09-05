@@ -3690,6 +3690,36 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 };
 
 
+/// Whether `plus`/`minus` is injective in its varying argument, given the other one fixed.
+/// Only integer arithmetic is recognized: the result type is widened, and integer wrap-around is a
+/// bijection. Every other operand class contains cases that map distinct arguments to one result -
+/// an `Interval` collapses end-of-month days and DST transitions, rounding or rescaling collapses a
+/// float or `Decimal`, a narrower date constant collapses many days into one, a NULL constant maps
+/// everything to NULL - and by type they are indistinguishable from the safe cases beside them.
+inline bool plusMinusWithConstantsIsInjective(
+    const ColumnWithTypeAndName & left, const ColumnWithTypeAndName & right, const DataTypePtr & return_type)
+{
+    /// Two varying operands are not injective (`x + y` maps many pairs to one sum), and with both
+    /// fixed there is no varying argument to be injective in.
+    const bool left_is_const = left.column && isColumnConst(*left.column);
+    const bool right_is_const = right.column && isColumnConst(*right.column);
+    if (left_is_const == right_is_const)
+        return false;
+
+    auto is_integer_type = [](const DataTypePtr & type)
+    { return type && isInteger(*removeNullable(recursiveRemoveLowCardinality(type))); };
+
+    if (!is_integer_type(left.type) || !is_integer_type(right.type) || !is_integer_type(return_type))
+        return false;
+
+    /// A NULL among the varying argument's values maps to NULL one-to-one, so only the fixed operand
+    /// matters. Its `ColumnConst` nests a column of size 1, so the value is readable even when the
+    /// constant itself was materialized with size 0, as query-plan constants are.
+    const ColumnWithTypeAndName & constant = left_is_const ? left : right;
+    return !constant.column->onlyNull();
+}
+
+
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true, bool division_by_nullable = false>
 class FunctionBinaryArithmeticWithConstants final : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>
 {
@@ -3733,6 +3763,20 @@ public:
             return Base::executeImpl(columns_with_constant, result_type, input_rows_count);
         }
         return Base::executeImpl(arguments, result_type, input_rows_count);
+    }
+
+    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
+    {
+        if constexpr (!IsOperation<Op>::plus && !IsOperation<Op>::minus)
+            return false;
+        else
+        {
+            /// When the caller supplies the arguments they describe the call being asked about; the
+            /// operands captured at build time are the fallback for the callers that pass nothing.
+            if (sample_columns.size() == 2)
+                return plusMinusWithConstantsIsInjective(sample_columns[0], sample_columns[1], return_type);
+            return plusMinusWithConstantsIsInjective(left, right, return_type);
+        }
     }
 
     bool hasInformationAboutMonotonicity() const override
@@ -4298,6 +4342,35 @@ public:
                 return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>::create(context, arguments[0].type, arguments[1].type));
         }
         return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>::create(context, arguments[0].type, arguments[1].type));
+    }
+
+    /// Agrees with `FunctionBinaryArithmeticWithConstants::isInjective` on two-argument calls. An
+    /// unresolved function has no operands of its own to fall back on, so it declines whenever it is
+    /// not given both arguments.
+    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
+    {
+        if constexpr (!IsOperation<Op>::plus && !IsOperation<Op>::minus)
+            return false;
+        else
+        {
+            if (sample_columns.size() != 2)
+                return false;
+
+            /// `getReturnType` applies the `Nullable` and `LowCardinality` default implementations,
+            /// which `getReturnTypeImpl` throws on. It still throws for arguments this overload
+            /// rejects, and an undecidable case is not injective.
+            DataTypePtr return_type;
+            try
+            {
+                return_type = getReturnType(sample_columns);
+            }
+            catch (const Exception &)
+            {
+                return false;
+            }
+
+            return plusMinusWithConstantsIsInjective(sample_columns[0], sample_columns[1], return_type);
+        }
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
