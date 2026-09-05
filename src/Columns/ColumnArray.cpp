@@ -17,6 +17,7 @@
 #include <IO/Operators.h>
 #include <algorithm>
 #include <cstring> // memcpy
+#include <limits>
 
 
 namespace DB
@@ -455,16 +456,21 @@ void ColumnArray::doInsertManyFrom(const IColumn & src_, size_t position, size_t
         return;
     }
 
+    auto & offsets_data = getOffsets();
+    const size_t old_rows = offsets_data.size();
+    if (length > std::numeric_limits<size_t>::max() - old_rows)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many rows in array column: {} + {}", old_rows, length);
+
+    const size_t new_rows = old_rows + length;
+    const size_t old_offset = offsets_data.back();
+
     /// Repeating an array with two or more elements requires interleaving the nested values,
     /// which cannot be expressed by one insertManyFrom call on the nested column.
     if (source_size > 1)
     {
         const size_t source_offset = src.offsetAt(position);
-        auto & offsets_data = getOffsets();
-        const size_t old_rows = offsets_data.size();
-        const size_t old_offset = offsets_data.back();
-        if (old_rows + length > offsets_data.capacity())
-            offsets_data.reserve(old_rows + length);
+        if (new_rows > offsets_data.capacity())
+            offsets_data.reserve(new_rows);
 
         const auto data_checkpoint = getData().getCheckpoint();
         try
@@ -478,17 +484,14 @@ void ColumnArray::doInsertManyFrom(const IColumn & src_, size_t position, size_t
             throw;
         }
 
-        offsets_data.resize_assume_reserved(old_rows + length);
+        offsets_data.resize_assume_reserved(new_rows);
         for (size_t i = 0; i < length; ++i)
             offsets_data[old_rows + i] = old_offset + (i + 1) * source_size;
         return;
     }
 
-    auto & offsets_data = getOffsets();
-    const size_t old_rows = offsets_data.size();
-    const size_t old_offset = offsets_data.back();
-    if (old_rows + length > offsets_data.capacity())
-        offsets_data.reserve(old_rows + length);
+    if (new_rows > offsets_data.capacity())
+        offsets_data.reserve(new_rows);
 
     if (source_size == 0)
     {
@@ -508,7 +511,7 @@ void ColumnArray::doInsertManyFrom(const IColumn & src_, size_t position, size_t
             }
         }
 
-        offsets_data.resize_assume_reserved(old_rows + length);
+        offsets_data.resize_assume_reserved(new_rows);
         std::fill(offsets_data.begin() + old_rows, offsets_data.end(), old_offset);
         return;
     }
@@ -526,7 +529,7 @@ void ColumnArray::doInsertManyFrom(const IColumn & src_, size_t position, size_t
         throw;
     }
 
-    offsets_data.resize_assume_reserved(old_rows + length);
+    offsets_data.resize_assume_reserved(new_rows);
     for (size_t i = 0; i < length; ++i)
         offsets_data[old_rows + i] = old_offset + i + 1;
 }
