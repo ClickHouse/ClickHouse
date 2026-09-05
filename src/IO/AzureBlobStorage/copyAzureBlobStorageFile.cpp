@@ -14,6 +14,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Common/getRandomASCIIString.h>
 
 
@@ -41,6 +42,7 @@ namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int AZURE_BLOB_STORAGE_ERROR;
+    extern const int FILE_CHANGED_DURING_READ;
     extern const int LOGICAL_ERROR;
 }
 
@@ -408,9 +410,20 @@ void copyAzureBlobStorageFile(
 
             auto source_uri = block_blob_client_src.GetUrl();
 
+            /// The native copy carries no bytes through this process, so nothing here can compare the
+            /// generation of the source with the one the caller selected: the only way to pin it is
+            /// the source-side precondition, which makes the endpoint transfer exactly that generation
+            /// or refuse the copy with `412 Precondition Failed` (mapped to `FILE_CHANGED_DURING_READ`
+            /// below, and never retried through the read-and-write fallback, which is pinned to the
+            /// same generation and would fail the same way). `ETag` conditions want the quoted form.
+            const Azure::ETag source_etag_condition = src_etag.empty()
+                ? Azure::ETag{}
+                : Azure::ETag(AzureBlobStorage::toQuotedETag(src_etag));
+
             if (size < settings->max_single_part_copy_size)
             {
                 Azure::Storage::Blobs::CopyBlobFromUriOptions copy_options;
+                copy_options.SourceAccessConditions.IfMatch = source_etag_condition;
                 if (object_to_attributes.has_value())
                 {
                     for (const auto & [key, value] : *object_to_attributes)
@@ -423,6 +436,7 @@ void copyAzureBlobStorageFile(
             else
             {
                 Azure::Storage::Blobs::StartBlobCopyFromUriOptions copy_options;
+                copy_options.SourceAccessConditions.IfMatch = source_etag_condition;
                 if (object_to_attributes.has_value())
                 {
                     for (const auto & [key, value] : *object_to_attributes)
@@ -459,6 +473,11 @@ void copyAzureBlobStorageFile(
         }
         catch (const Azure::Storage::StorageException & e)
         {
+            if (!src_etag.empty() && e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed)
+                throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
+                    "Azure Blob Storage object {} was replaced before it could be copied to {} (If-Match on etag {} failed)",
+                    src_blob, dest_blob, src_etag);
+
             if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Unauthorized)
             {
                 LOG_TRACE(log, "Copy operation has thrown unauthorized access error, which indicates that the storage account of the source & destination are not the same. "

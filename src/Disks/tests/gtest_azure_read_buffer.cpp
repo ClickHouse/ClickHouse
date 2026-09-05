@@ -143,6 +143,56 @@ public:
         /// read-and-write copy can be driven end to end through it. The bytes of every uploaded
         /// blob or block are appended to `uploaded` in the order they arrive; the block list itself
         /// is XML and is not part of the data.
+        /// A native blob-to-blob copy (`Copy Blob From URL` and `Copy Blob`, both a `PUT` with
+        /// `x-ms-copy-source`) transfers nothing through the client, so what it copies is whatever
+        /// generation of the source the endpoint holds at that moment; the generation is recorded so a
+        /// test can tell which one was copied. A real endpoint evaluates `x-ms-source-if-match` against
+        /// the source and answers `412 Precondition Failed` when it does not hold.
+        if (request.GetMethod() == Azure::Core::Http::HttpMethod::Put && request.GetHeader("x-ms-copy-source").HasValue())
+        {
+            if (auto source_if_match = request.GetHeader("x-ms-source-if-match"); source_if_match.HasValue())
+            {
+                source_if_match_headers.push_back(source_if_match.Value());
+                if (etags.honour_if_match && source_if_match.Value() != current_etag)
+                    return preconditionFailed();
+            }
+            else
+                source_if_match_headers.emplace_back();
+
+            natively_copied_generations.push_back(current_etag);
+
+            auto accepted = std::make_unique<Azure::Core::Http::RawResponse>(1, 1, Azure::Core::Http::HttpStatusCode::Accepted, "Accepted");
+            accepted->SetHeader("Content-Length", "0");
+            accepted->SetHeader("ETag", current_etag);
+            accepted->SetHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT");
+            accepted->SetHeader("x-ms-copy-id", "copy-id");
+            accepted->SetHeader("x-ms-copy-status", "success");
+            accepted->SetBodyStream(std::make_unique<LyingBodyStream>(std::vector<uint8_t>{}, 0));
+            return accepted;
+        }
+
+        /// The properties of the destination, polled by an asynchronous copy until it completes.
+        /// The headers below are the ones the SDK reads from every such response.
+        if (request.GetMethod() == Azure::Core::Http::HttpMethod::Head)
+        {
+            auto properties = std::make_unique<Azure::Core::Http::RawResponse>(1, 1, Azure::Core::Http::HttpStatusCode::Ok, "OK");
+            properties->SetHeader("Content-Length", std::to_string(blob_size));
+            properties->SetHeader("ETag", current_etag);
+            properties->SetHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT");
+            properties->SetHeader("x-ms-creation-time", "Wed, 21 Oct 2015 07:28:00 GMT");
+            properties->SetHeader("x-ms-blob-type", "BlockBlob");
+            properties->SetHeader("x-ms-lease-state", "available");
+            properties->SetHeader("x-ms-lease-status", "unlocked");
+            properties->SetHeader("x-ms-server-encrypted", "true");
+            properties->SetHeader("x-ms-copy-id", "copy-id");
+            properties->SetHeader("x-ms-copy-status", "success");
+            properties->SetHeader("x-ms-copy-progress", std::to_string(blob_size) + "/" + std::to_string(blob_size));
+            properties->SetHeader("x-ms-copy-source", "http://azure.invalid/container/blob");
+            properties->SetHeader("x-ms-copy-completion-time", "Wed, 21 Oct 2015 07:28:00 GMT");
+            properties->SetBodyStream(std::make_unique<LyingBodyStream>(std::vector<uint8_t>{}, 0));
+            return properties;
+        }
+
         if (request.GetMethod() == Azure::Core::Http::HttpMethod::Put)
         {
             const auto & query = request.GetUrl().GetQueryParameters();
@@ -169,13 +219,7 @@ public:
         if (etags.honour_if_match)
         {
             if (auto if_match = request.GetHeader("if-match"); if_match.HasValue() && if_match.Value() != current_etag)
-            {
-                auto failure = std::make_unique<Azure::Core::Http::RawResponse>(
-                    1, 1, Azure::Core::Http::HttpStatusCode::PreconditionFailed, "The condition specified using HTTP conditional header(s) is not met.");
-                failure->SetHeader("Content-Length", "0");
-                failure->SetBodyStream(std::make_unique<LyingBodyStream>(std::vector<uint8_t>{}, 0));
-                return failure;
-            }
+                return preconditionFailed();
         }
 
         /// "x-ms-range: bytes=<start>-<end>", where "-<end>" is optional.
@@ -217,7 +261,22 @@ public:
     /// Everything the endpoint has been asked to store, in upload order.
     const std::string & uploadedData() const { return uploaded; }
 
+    /// The generation of the source (its `ETag` at that moment) that each native copy transferred.
+    const std::vector<std::string> & nativelyCopiedGenerations() const { return natively_copied_generations; }
+
+    /// The `x-ms-source-if-match` header of each native copy request, empty when it carried none.
+    const std::vector<std::string> & sourceIfMatchHeaders() const { return source_if_match_headers; }
+
 private:
+    static std::unique_ptr<Azure::Core::Http::RawResponse> preconditionFailed()
+    {
+        auto failure = std::make_unique<Azure::Core::Http::RawResponse>(
+            1, 1, Azure::Core::Http::HttpStatusCode::PreconditionFailed, "The condition specified using HTTP conditional header(s) is not met.");
+        failure->SetHeader("Content-Length", "0");
+        failure->SetBodyStream(std::make_unique<LyingBodyStream>(std::vector<uint8_t>{}, 0));
+        return failure;
+    }
+
     size_t max_response_size;
     size_t served_size;
     size_t blob_size;
@@ -228,6 +287,8 @@ private:
     std::optional<size_t> blob_size_after_first;
     size_t responses_sent = 0;
     std::string uploaded;
+    std::vector<std::string> natively_copied_generations;
+    std::vector<std::string> source_if_match_headers;
 };
 
 /// Reads a blob from an endpoint that answers every ranged request with at most
@@ -460,6 +521,60 @@ std::string copyThroughReadAndWrite(
         /* object_to_attributes */ std::nullopt);
 
     return transport->uploadedData();
+}
+
+/// What a native (server-side) blob-to-blob copy left behind at the endpoint.
+struct NativeCopyOutcome
+{
+    /// The generation of the source that each native copy request transferred.
+    std::vector<std::string> copied_generations;
+    /// The `x-ms-source-if-match` header of each native copy request, empty when it carried none.
+    std::vector<std::string> source_if_match_headers;
+    /// Bytes the endpoint was asked to store through the read-and-write fallback, expected empty.
+    std::string uploaded;
+};
+
+/// Copies a `blob_size`-byte blob with the native copy enabled, pinned to `expected_etag`, against
+/// an endpoint whose object generation behaves as `etags` says. With `asynchronous`, the copy is
+/// the asynchronous `Copy Blob` (`StartCopyFromUri`, polled to completion) rather than the
+/// synchronous `Copy Blob From URL` (`CopyFromUri`).
+NativeCopyOutcome copyNatively(
+    size_t blob_size, const std::string & expected_etag, const ETagBehaviour & etags, bool asynchronous)
+{
+    Azure::Storage::Blobs::BlobClientOptions client_options;
+    client_options.Retry.MaxRetries = 0;
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        blob_size, blob_size, blob_size, /* send_etag */ true, /* reported_length */ std::nullopt,
+        /* ignore_range */ false, etags);
+    client_options.Transport.Transport = transport;
+
+    auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
+        Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", client_options), /* blob_prefix */ "");
+
+    auto settings = std::make_shared<DB::AzureBlobStorage::RequestSettings>();
+    settings->use_native_copy = true;
+    /// A blob of at least `max_single_part_copy_size` bytes is copied asynchronously.
+    settings->max_single_part_copy_size = asynchronous ? blob_size : blob_size + 1;
+    settings->max_single_read_retries = 1;
+    settings->max_single_download_retries = 1;
+
+    DB::copyAzureBlobStorageFile(
+        container_client,
+        container_client,
+        /* src_container_for_logging */ "container",
+        /* src_blob */ "blob",
+        /* src_size */ blob_size,
+        expected_etag,
+        /* dest_container_for_logging */ "container",
+        /* dest_blob */ "copy",
+        settings,
+        DB::ReadSettings{},
+        /* object_to_attributes */ std::nullopt);
+
+    return NativeCopyOutcome{
+        .copied_generations = transport->nativelyCopiedGenerations(),
+        .source_if_match_headers = transport->sourceIfMatchHeaders(),
+        .uploaded = transport->uploadedData()};
 }
 
 }
@@ -1065,6 +1180,74 @@ TEST(AzureCopyThroughReadAndWrite, ETagChangedOnReopenWithinPart)
     {
         ASSERT_EQ(e.code(), DB::ErrorCodes::FILE_CHANGED_DURING_READ);
     }
+}
+
+/// A native copy of a source whose generation is the one the caller selected goes through, pinned
+/// to that generation with a source-side `If-Match` in the quoted form the header wants.
+TEST(AzureNativeCopy, UnchangedObject)
+{
+    for (bool asynchronous : {false, true})
+    {
+        NativeCopyOutcome outcome;
+        ASSERT_NO_THROW(outcome = copyNatively(
+            /* blob_size */ 100, ETagBehaviour::first_generation,
+            ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true}, asynchronous));
+
+        ASSERT_EQ(outcome.copied_generations, (std::vector<std::string>{ETagBehaviour::first_generation})) << "asynchronous = " << asynchronous;
+        ASSERT_EQ(outcome.source_if_match_headers, (std::vector<std::string>{ETagBehaviour::first_generation})) << "asynchronous = " << asynchronous;
+        ASSERT_TRUE(outcome.uploaded.empty()) << "asynchronous = " << asynchronous;
+    }
+}
+
+/// The source blob is overwritten between the moment the caller looked at it (the listing or the
+/// `HEAD` that produced its size and `ETag`) and the native copy. The endpoint evaluates the
+/// source-side `If-Match`, so it refuses to copy the newer generation with `412 Precondition
+/// Failed`, which must surface as the object having changed rather than as a silent copy of the
+/// wrong generation, and must not be retried through the read-and-write fallback, which is pinned
+/// to the same generation.
+TEST(AzureNativeCopy, PreconditionFailedOnChangedSource)
+{
+    for (bool asynchronous : {false, true})
+    {
+        try
+        {
+            copyNatively(
+                /* blob_size */ 100, ETagBehaviour::first_generation,
+                ETagBehaviour{.etag = ETagBehaviour::second_generation, .etag_after_first = "", .honour_if_match = true}, asynchronous);
+            FAIL() << "Expected an exception on a native copy of a source blob overwritten after it was selected (asynchronous = " << asynchronous << ")";
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(e.code(), DB::ErrorCodes::FILE_CHANGED_DURING_READ) << "asynchronous = " << asynchronous;
+        }
+    }
+}
+
+/// The tag the caller selected was read from a blob listing, whose `Etag` element carries the bare
+/// tag: the source-side `If-Match` must still be sent in the quoted form, or a real endpoint would
+/// refuse every pinned native copy of a listed blob.
+TEST(AzureNativeCopy, BareExpectedETag)
+{
+    NativeCopyOutcome outcome;
+    ASSERT_NO_THROW(outcome = copyNatively(
+        /* blob_size */ 100, ETagBehaviour::first_generation_bare,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true}, /* asynchronous */ false));
+
+    ASSERT_EQ(outcome.copied_generations, (std::vector<std::string>{ETagBehaviour::first_generation}));
+    ASSERT_EQ(outcome.source_if_match_headers, (std::vector<std::string>{ETagBehaviour::first_generation}));
+}
+
+/// A caller that does not know the generation of the source (an empty `src_etag`) gets an
+/// unconditional native copy, with no source-side `If-Match` at all.
+TEST(AzureNativeCopy, NoETagMeansNoCondition)
+{
+    NativeCopyOutcome outcome;
+    ASSERT_NO_THROW(outcome = copyNatively(
+        /* blob_size */ 100, /* expected_etag */ "",
+        ETagBehaviour{.etag = ETagBehaviour::second_generation, .etag_after_first = "", .honour_if_match = true}, /* asynchronous */ false));
+
+    ASSERT_EQ(outcome.copied_generations, (std::vector<std::string>{ETagBehaviour::second_generation}));
+    ASSERT_EQ(outcome.source_if_match_headers, (std::vector<std::string>{""}));
 }
 
 #endif
