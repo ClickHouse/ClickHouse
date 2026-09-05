@@ -425,6 +425,14 @@ QueryPlanAndSets deserializeEnvelopeSets(
                 entry.hash.low64, entry.hash.high64, body.available());
     }
 
+    /// Every set a step referenced must have had its data in the outline. A binding left unfilled
+    /// means the plan points at a set with no serialized payload, which would fail only later at
+    /// execution ("No Set is passed"); reject it here at the serialization boundary instead.
+    for (const auto & [hash, columns] : registry.sets)
+        if (!columns.empty())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Set {}_{} is referenced by the plan but no serialized data for it is present", hash.low64, hash.high64);
+
     return res;
 }
 

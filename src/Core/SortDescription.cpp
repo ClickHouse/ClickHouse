@@ -329,6 +329,10 @@ void deserializeSortDescription(SortDescription & sort_description, ReadBuffer &
         readStringBinary(desc.column_name, in);
         UInt8 flags = 0;
         readIntBinary(flags, in);
+        /// Only four bits are defined; a set bit beyond them is a format this reader does not know
+        /// and must not silently ignore.
+        if (flags & ~UInt8(0b1111))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Sort description has unknown flag bits set: {}", static_cast<UInt16>(flags));
 
         desc.direction = (flags & 1) ? 1 : -1;
         desc.nulls_direction = (flags & 2) ? 1 : -1;
