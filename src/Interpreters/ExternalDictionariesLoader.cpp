@@ -252,26 +252,26 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
     /// If something went wrong, return name as is.
 
     String res = name;
-
-    auto qualified_name = QualifiedTableName::tryParseFromString(name);
-    if (!qualified_name)
+    if (name.empty())
         return res;
 
-    if (qualified_name->database.empty())
+    /// `db.dict`, or a hierarchical name: `a.b.dict`, or `dict` inside `USE a.b` (see `DatabaseCatalog`).
+    StorageID dictionary_id = DatabaseCatalog::parseHierarchicalName(name);
+
+    if (dictionary_id.database_name.empty())
     {
         /// Either database name is not specified and we should use current one
         /// or it's an XML dictionary.
         bool is_xml_dictionary = has(name);
         if (is_xml_dictionary)
             return res;
-
-        qualified_name->database = current_database_name;
-        res = current_database_name + '.' + name;
     }
 
-    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(
-        {qualified_name->database, qualified_name->table},
-        const_pointer_cast<Context>(getContext()));
+    auto context = const_pointer_cast<Context>(getContext());
+    dictionary_id = DatabaseCatalog::instance().resolveHierarchicalName(dictionary_id, current_database_name, context);
+    res = dictionary_id.getFullNameNotQuoted();
+
+    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(dictionary_id, context);
 
     if (!db)
         return res;

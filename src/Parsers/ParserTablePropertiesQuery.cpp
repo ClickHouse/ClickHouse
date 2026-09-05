@@ -1,4 +1,5 @@
 #include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/parseDatabaseAndTableName.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
@@ -22,7 +23,6 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     ParserKeyword s_table(Keyword::TABLE);
     ParserKeyword s_view(Keyword::VIEW);
     ParserKeyword s_dictionary(Keyword::DICTIONARY);
-    ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p(true);
 
     ASTPtr database;
@@ -119,14 +119,9 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
         query->setIsTemporary(temporary);
 
-        if (!name_p.parse(pos, table, expected))
+        /// [db.]table, possibly a hierarchical name `a.b.c`
+        if (!parseDatabaseAndTableAsAST(pos, expected, database, table))
             return false;
-        if (s_dot.ignore(pos, expected))
-        {
-            database = table;
-            if (!name_p.parse(pos, table, expected))
-                return false;
-        }
     }
 
     query->database = database;

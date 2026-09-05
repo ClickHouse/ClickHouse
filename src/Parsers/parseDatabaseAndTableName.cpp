@@ -1,4 +1,5 @@
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -10,32 +11,29 @@ namespace DB
 bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, String & database_str, String & table_str)
 {
     ParserToken s_dot(TokenType::Dot);
-    ParserIdentifier table_parser;
-
-    ASTPtr database;
-    ASTPtr table;
+    ParserIdentifier identifier_parser;
 
     database_str = "";
     table_str = "";
 
-    if (!table_parser.parse(pos, database, expected))
-        return false;
-
-    if (s_dot.ignore(pos))
+    /// Any number of dot-separated parts is accepted: `a.b.c` is a hierarchical name, and the database is
+    /// everything but the last part (`a.b`), the same way as `ASTTableIdentifier::getTableId` splits it.
+    /// The catalog tries the other splits when it resolves the name.
+    std::vector<String> parts;
+    do
     {
-        if (!table_parser.parse(pos, table, expected))
-        {
-            database_str = "";
+        ASTPtr identifier;
+        if (!identifier_parser.parse(pos, identifier, expected))
             return false;
-        }
+        parts.push_back(getIdentifierName(identifier));
+    } while (s_dot.ignore(pos));
 
-        tryGetIdentifierNameInto(database, database_str);
-        tryGetIdentifierNameInto(table, table_str);
-    }
-    else
+    table_str = parts.back();
+    for (size_t i = 0; i + 1 < parts.size(); ++i)
     {
-        database_str = "";
-        tryGetIdentifierNameInto(database, table_str);
+        if (i > 0)
+            database_str += '.';
+        database_str += parts[i];
     }
 
     return true;
@@ -44,16 +42,41 @@ bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, String &
 bool parseDatabaseAndTableAsAST(IParser::Pos & pos, Expected & expected, ASTPtr & database, ASTPtr & table)
 {
     ParserToken s_dot(TokenType::Dot);
-    ParserIdentifier table_parser(true);
+    ParserIdentifier identifier_parser(true);
 
-    if (!table_parser.parse(pos, table, expected))
-        return false;
-
-    if (s_dot.ignore(pos))
+    /// The same as above, with query parameters allowed in the parts.
+    ASTs identifiers;
+    do
     {
-        database = table;
-        if (!table_parser.parse(pos, table, expected))
+        ASTPtr identifier;
+        if (!identifier_parser.parse(pos, identifier, expected))
             return false;
+        identifiers.push_back(std::move(identifier));
+    } while (s_dot.ignore(pos));
+
+    table = identifiers.back();
+    if (identifiers.size() == 2)
+    {
+        database = identifiers.front();
+    }
+    else if (identifiers.size() > 2)
+    {
+        std::vector<String> database_parts;
+        ASTs database_params;
+        for (size_t i = 0; i + 1 < identifiers.size(); ++i)
+        {
+            const auto & identifier = identifiers[i]->as<ASTIdentifier &>();
+            if (identifier.isParam())
+            {
+                database_parts.emplace_back();
+                database_params.push_back(identifier.getParam());
+            }
+            else
+            {
+                database_parts.push_back(identifier.name());
+            }
+        }
+        database = make_intrusive<ASTIdentifier>(std::move(database_parts), false, std::move(database_params));
     }
 
     return true;

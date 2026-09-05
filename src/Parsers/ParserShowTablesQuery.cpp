@@ -39,7 +39,8 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_where(Keyword::WHERE);
     ParserKeyword s_limit(Keyword::LIMIT);
     ParserStringLiteral like_p(Highlight::string_like);
-    ParserIdentifier name_p(true);
+    /// `FROM a.b` accepts a hierarchical database name, the same as `USE a.b`.
+    ParserCompoundIdentifier name_p(/*table_name_with_optional_uuid*/ false, /*allow_query_parameter*/ true);
     ParserExpressionWithOptionalAlias exp_elem(false);
 
     ASTPtr like;
@@ -332,6 +333,8 @@ SHOW [FULL] [TEMPORARY] TABLES [{FROM | IN} <db>] [[NOT] LIKE | ILIKE '<pattern>
 ```
 
 If the `FROM` clause is not specified, the query returns a list of tables from the current database.
+
+The database name may be hierarchical (`a.b`, see the `USE` statement): the query then lists the tables of the database `a.b`, the tables `b.*` of the database `a` (as `*`), and the tables of the databases `a.b.*` (as `*.table`).
 
 This statement is identical to the query:
 

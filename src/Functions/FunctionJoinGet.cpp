@@ -164,8 +164,8 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
                         "Illegal type {} of first argument of function joinGet, expected a const string.",
                         arguments[0].type->getName());
 
-    const auto qualified_name = QualifiedTableName::parseFromString(join_name);
-    const auto storage_id = context->resolveStorageID({qualified_name.database, qualified_name.table});
+    /// `db.table`, or a hierarchical name `a.b.table` (see `DatabaseCatalog`).
+    const auto storage_id = context->resolveStorageID(DatabaseCatalog::parseHierarchicalName(join_name));
 
     auto table = DatabaseCatalog::instance().getTable(storage_id, std::const_pointer_cast<Context>(context));
     auto storage_join = std::dynamic_pointer_cast<StorageJoin>(table);

@@ -65,10 +65,10 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('SHOW TABLES FROM db'), '"fr
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('RENAME TABLE a TO b'), '"from_table_ast":{"type":"Identifier"', '"from_table_ast":{"type":"Function"')); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
--- ASTTableIdentifier: a table identifier has at most two parts (`database.table`); the parser
--- rejects more, and `getTableId` would otherwise mis-resolve a longer name.
+-- ASTTableIdentifier: a table identifier can have any number of parts (a hierarchical name
+-- `db.tbl.extra`, see `DatabaseCatalog`), and it round-trips as such.
 -- ---------------------------------------------------------------------------
-SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM db.tbl'), '"name_parts":["db","tbl"]', '"name_parts":["db","tbl","extra"]')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM db.tbl'), '"name_parts":["db","tbl"]', '"name_parts":["db","tbl","extra"]'));
 
 -- ---------------------------------------------------------------------------
 -- ASTSystemQuery: `is_drop_whole_replica` is parser-impossible together with a scoped DROP REPLICA

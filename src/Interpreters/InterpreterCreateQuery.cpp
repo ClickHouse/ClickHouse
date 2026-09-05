@@ -905,9 +905,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
     else if (!create.as_table.empty())
     {
-        String as_database_name = getContext()->resolveDatabase(create.as_database);
-        getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, create.as_table);
-        StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext());
+        /// `AS a.b.c` is a hierarchical name: the database and the table are those of the existing table it refers to.
+        StorageID as_table_id = DatabaseCatalog::instance().resolveHierarchicalName({create.as_database, create.as_table}, getContext());
+        String as_database_name = as_table_id.database_name;
+        getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, as_table_id.table_name);
+        StoragePtr as_storage = DatabaseCatalog::instance().getTable(as_table_id, getContext());
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -1533,8 +1535,10 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     {
         /// NOTE Getting the structure from the table specified in the AS is done not atomically with the creation of the table.
 
-        String as_database_name = getContext()->resolveDatabase(create.as_database);
-        String as_table_name = create.as_table;
+        /// `AS a.b.c` is a hierarchical name: the database and the table are those of the existing table it refers to.
+        StorageID as_table_id = DatabaseCatalog::instance().resolveHierarchicalName({create.as_database, create.as_table}, getContext());
+        String as_database_name = as_table_id.database_name;
+        String as_table_name = as_table_id.table_name;
 
         ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_name, getContext());
 
@@ -1741,6 +1745,64 @@ bool isReplicated(const ASTStorage & storage)
     return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
 }
 
+}
+
+void InterpreterCreateQuery::resolveHierarchicalNames(ASTCreateQuery & create, bool is_on_cluster) const
+{
+    /// Temporary tables are created out of databases.
+    if (!create.table || create.isTemporary())
+        return;
+
+    auto & catalog = DatabaseCatalog::instance();
+    String current_database = getContext()->getCurrentDatabase();
+
+    /// The table (`CREATE TABLE a.b.c`, or `CREATE TABLE c` inside `USE a.b`) is placed into an existing database, the rest
+    /// of the name becoming the table name (`a`.`b.c`). The current database of the context stays as selected by `USE`
+    /// (possibly `a.b`): the names inside the query (the `SELECT` of a view) are relative to it.
+    StorageID as_written(create.database ? create.getDatabase() : "", create.getTable());
+    std::optional<StorageID> placement;
+    if (is_on_cluster)
+    {
+        /// The database may exist on the other hosts of the cluster only: then the name is shipped as written, and every
+        /// host resolves it against its own catalog.
+        placement = catalog.tryResolveHierarchicalNameForCreation(as_written, getContext());
+    }
+    else
+    {
+        placement = catalog.resolveHierarchicalNameForCreation(as_written, getContext());
+    }
+
+    if (placement)
+    {
+        if (placement->table_name != create.getTable())
+            create.setTable(placement->table_name);
+        /// A database that was not written stays unwritten when the placement is the current database: `ON CLUSTER`
+        /// tells a name without a database from a name with one (the hosts of a cluster may have their own default
+        /// databases, see `executeDDLQueryOnCluster`), and a plain name must take the same code paths as before.
+        if (placement->database_name != (create.database ? create.getDatabase() : current_database))
+            create.setDatabase(placement->database_name);
+    }
+
+    /// The targets of a view (`TO a.b.t`, or `TO t` inside `USE a.b`) are the existing tables they refer to, or their placement.
+    if (create.targets)
+    {
+        bool current_database_is_hierarchical = !current_database.empty() && !catalog.isDatabaseExist(current_database);
+        for (size_t i = 0; i < create.targets->targets.size(); ++i)
+        {
+            auto kind = create.targets->targets[i].kind;
+            StorageID target_id = create.targets->targets[i].table_id;
+            if (!target_id)
+                continue;
+
+            bool is_hierarchical = target_id.database_name.contains('.') || target_id.table_name.contains('.')
+                || (target_id.database_name.empty() && current_database_is_hierarchical);
+            if (!is_hierarchical)
+                continue;
+
+            StorageID resolved = catalog.resolveHierarchicalName(target_id, getContext());
+            create.targets->setTableID(kind, StorageID(resolved.database_name, resolved.table_name));
+        }
+    }
 }
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
@@ -3115,7 +3177,9 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
     if (create.is_clone_as && !as_table_saved.empty() && !create.is_create_empty && !create.is_ordinary_view
         && (!create.is_materialized_view || create.is_populate))
     {
-        String as_database_name = getContext()->resolveDatabase(as_database_saved);
+        StorageID as_table_id = DatabaseCatalog::instance().resolveHierarchicalName({as_database_saved, as_table_saved}, getContext());
+        String as_database_name = as_table_id.database_name;
+        String as_table_name = as_table_id.table_name;
 
         auto partition = make_intrusive<ASTPartition>();
         partition->all = true;
@@ -3125,7 +3189,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
         command->type = ASTAlterCommand::REPLACE_PARTITION;
         command->partition = command->children.emplace_back(std::move(partition)).get();
         command->from_database = as_database_name;
-        command->from_table = as_table_saved;
+        command->from_table = as_table_name;
         command->to_database = create.getDatabase();
         command->to_table = create.getTable();
 
@@ -3582,7 +3646,15 @@ BlockIO InterpreterCreateQuery::execute()
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
 
     bool is_create_database = create.database && !create.table;
-    if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
+    bool is_on_cluster = !create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext());
+
+    /// Hierarchical names (see `DatabaseCatalog`) are bound to the database and the table they denote before the access
+    /// is checked, so that the check and the query agree on what is created: a grant on the (nonexistent) database `a.b`
+    /// must not allow `CREATE TABLE a.b.c` to create the table `b.c` in the database `a`.
+    if (!is_create_database)
+        resolveHierarchicalNames(create, is_on_cluster);
+
+    if (is_on_cluster)
     {
         if (create.attach_as_replicated.has_value())
             throw Exception(

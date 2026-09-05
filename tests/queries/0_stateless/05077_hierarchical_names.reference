@@ -1,0 +1,95 @@
+--- namespace of tables in a regular database
+1	a
+2	b
+1
+2
+1	a
+2	b
+1	a
+2	b
+1	a
+2	b
+1	a
+2	b
+--- creating a table in an existing namespace, but not in a new one
+2
+2
+CREATE TABLE db.`sales.customers`\n(\n    `id` UInt64\n)\n
+UNKNOWN_DATABASE
+UNKNOWN_DATABASE
+sales.customers
+sales.orders
+sales.customers
+sales.orders
+sales.orders	MergeTree
+1
+1
+0
+id	UInt64					
+x	String					
+2	2
+2	2
+--- DDL with hierarchical names
+2	n
+3	n
+2
+0
+sales.clients
+sales.clients_copy
+sales.orders
+--- errors
+UNKNOWN_TABLE
+UNKNOWN_TABLE
+UNKNOWN_DATABASE
+UNKNOWN_DATABASE
+--- USE with a namespace
+1
+2
+1	a
+2	b
+1
+5
+1
+5
+1
+orders
+returns
+orders
+returns
+1
+id	UInt64					
+1
+5
+9
+1	a
+2	b
+9	c
+orders
+returns
+returns_mv
+orders
+--- the database parameter of HTTP with a namespace
+3
+orders
+--- databases with dots in their names
+7
+7
+7
+sales.orders
+sub.t
+t
+1
+7
+t
+--- the longest database wins over a namespace
+7
+7
+8
+sales.orders
+sub.t
+sub.t
+--- USE of a common prefix of database names
+1
+10
+10
+a.t
