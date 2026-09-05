@@ -100,6 +100,8 @@
 #include <Storages/SelectQueryInfo.h>
 #include <TableFunctions/ITableFunction.h>
 
+#include <algorithm>
+#include <array>
 #include <filesystem>
 #include <iostream>
 #include <limits>
@@ -230,6 +232,29 @@ void cleanupTempFile(const DB::ASTPtr & parsed_query, const String & tmp_file)
                 fs::remove(tmp_file);
         }
     }
+}
+
+/// Whether the argument of the interactive `\d` command is the name of a table, as in `\d hits`,
+/// rather than a continuation of the `SHOW TABLES` query that a bare `\d` expands to, as in
+/// `\d FROM system` or `\d NOT LIKE 'hits%'`. A table named after one of these clauses has to be
+/// quoted, which is also what tells it apart from the clause.
+bool isTableNameArgument(std::string_view argument)
+{
+    static constexpr auto show_tables_clauses = std::to_array<std::string_view>(
+        {"FROM", "IN", "NOT", "LIKE", "ILIKE", "WHERE", "LIMIT", "INTO", "FORMAT", "SETTINGS", "PARALLEL"});
+
+    while (!argument.empty() && isWhitespaceASCII(argument.front()))
+        argument.remove_prefix(1);
+
+    /// An unquoted name begins an identifier, a quoted one starts with a backtick or a double
+    /// quote. Anything else is not a name: no argument at all, or the `;` of a bare command.
+    if (argument.empty()
+        || !(isValidIdentifierBegin(argument.front()) || argument.front() == '`' || argument.front() == '"'))
+        return false;
+
+    const std::string_view first_word(argument.begin(), std::ranges::find_if(argument, isWhitespaceASCII));
+
+    return std::ranges::none_of(show_tables_clauses, [&](std::string_view clause) { return boost::iequals(first_word, clause); });
 }
 
 void performAtomicRename(const DB::ASTPtr & parsed_query, const String & out_file)
@@ -4881,11 +4906,22 @@ void ClientBase::runInteractive()
     /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
     lr->enableBracketedPaste();
 
-    static const std::initializer_list<std::pair<String, String>> backslash_aliases =
+    /// The `psql`-style commands. `\d` follows `psql` in expanding to a listing of the tables when
+    /// it is used without an argument and to a description of a table when a table name is given.
+    struct BackslashAlias
+    {
+        std::string_view command;
+        std::string_view query;
+        /// The query to use when the argument is the name of a table; empty if the command has no
+        /// such form and the argument always continues `query`.
+        std::string_view query_for_table;
+    };
+
+    static const std::initializer_list<BackslashAlias> backslash_aliases =
         {
-            { "\\l", "SHOW DATABASES" },
-            { "\\d", "SHOW TABLES" },
-            { "\\c", "USE" },
+            { "\\l", "SHOW DATABASES", {} },
+            { "\\d", "SHOW TABLES", "DESCRIBE TABLE" },
+            { "\\c", "USE", {} },
         };
 
     static const std::initializer_list<String> repeat_last_input_aliases =
@@ -4931,18 +4967,20 @@ void ClientBase::runInteractive()
             has_vertical_output_suffix = true;
         }
 
-        for (const auto & [alias, command] : backslash_aliases)
+        for (const auto & [command, query, query_for_table] : backslash_aliases)
         {
-            auto it = std::search(input.begin(), input.end(), alias.begin(), alias.end());
+            auto it = std::search(input.begin(), input.end(), command.begin(), command.end());
             if (it != input.end() && std::all_of(input.begin(), it, isWhitespaceASCII))
             {
-                it += alias.size();
-                if (it == input.end() || isWhitespaceASCII(*it))
+                it += command.size();
+                if (it == input.end() || isWhitespaceASCII(*it) || *it == ';')
                 {
-                    String new_input = command;
-                    // append the rest of input to the command
+                    const std::string_view argument(it, input.end());
+
+                    String new_input{!query_for_table.empty() && isTableNameArgument(argument) ? query_for_table : query};
+                    // append the rest of input to the query
                     // for parameters support, e.g. \c db_name -> USE db_name
-                    new_input.append(it, input.end());
+                    new_input.append(argument);
                     input = std::move(new_input);
                     break;
                 }
