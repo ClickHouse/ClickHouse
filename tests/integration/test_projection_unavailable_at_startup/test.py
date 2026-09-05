@@ -114,11 +114,23 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     )
     assert "could not be analyzed" in error
 
+    # Re-adding the same name hits the guard in `ProjectionsDescription::add`, which runs before the
+    # blanket refusal: on master this silently replaced the declaration that is still on disk.
+    error = node.query_and_get_error(
+        "ALTER TABLE dl.t ADD PROJECTION pp (SELECT a GROUP BY a)"
+    )
+    assert "a projection with this name is declared but could not be analyzed" in error
+
     # Dropping is the way out, and it works one declaration at a time: the one that was not dropped is
     # still declared in the statement this ALTER rewrote.
     node.query("ALTER TABLE dl.t2 DROP PROJECTION pp")
     assert "PROJECTION qq" in node.query("SHOW CREATE TABLE dl.t2")
     assert declarations_on_disk("t2") == "1"
+
+    # `CLEAR PROJECTION` is exempt on purpose: it deletes the data the user named and keeps the
+    # declaration, so it never validates against a smaller set than the table declares.
+    node.query("ALTER TABLE dl.t2 CLEAR PROJECTION qq")
+    assert "PROJECTION qq" in node.query("SHOW CREATE TABLE dl.t2")
 
     node.query("ALTER TABLE dl.t2 DROP PROJECTION qq")
     assert "PROJECTION" not in node.query("SHOW CREATE TABLE dl.t2")
@@ -133,7 +145,16 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     # setting is back, and the projection data materialized before the restart is used as it is.
     assert projections("t") == "1"
     assert active_projection_parts("t") == "1"
-    assert node.query("SELECT count() FROM dl.t").strip() == "100"
+
+    # The declaration coming back is only half the claim: the projection data written before the
+    # restart must be readable. `force_optimize_projection_name` fails the query if `pp` is not used.
+    assert (
+        node.query(
+            "SELECT sum(a) FROM (SELECT b, a FROM dl.t GROUP BY b, a)",
+            settings={"force_optimize_projection_name": "pp"},
+        ).strip()
+        == "4950"
+    )
 
     # `t2` has no projections, because the user dropped those declarations.
     assert projections("t2") == "0"
