@@ -126,7 +126,8 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
     }
     try
     {
-        graph = std::make_unique<ExecutingGraph>(processors, profile_processors);
+        graph = std::make_unique<ExecutingGraph>(
+            processors, profile_processors, process_list_element ? process_list_element->getMemoryReservation() : nullptr);
     }
     catch (Exception & exception)
     {

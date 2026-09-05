@@ -6,12 +6,15 @@
 
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 #include <base/defines.h>
 
 class MemoryTracker;
 
 namespace DB
 {
+
+class ISpillable;
 
 /// `MemoryReservation` bridges a running query and the memory scheduler: the scheduler caps each
 /// workload's memory while the query's `MemoryTracker` stays the source of truth. It backs:
@@ -56,13 +59,22 @@ public:
     // Sync actual size with MemoryTracker, issues and waits increase/decrease requests as needed.
     void syncWithMemoryTracker(const MemoryTracker * memory_tracker);
 
-    void setReclaimable(ResourceCost reclaimable_total);
+    /// Reclaimable memory of the query's spillable processors, keyed by the object that owns the
+    /// state so that processors sharing it are counted once.
+    void updateReclaimable(const ISpillable * spillable, ResourceCost bytes);
+    void removeReclaimable(const ISpillable * spillable);
 
-    void finishSpill();
+    /// Claims the pending spill request for the calling thread: 0 when there is none or another
+    /// thread is already spilling. Reservation traffic of other threads is paused until the reply.
     [[nodiscard]] ResourceCost takeSpillRequest();
+    /// The reply: records what is left in the spilled object, issues the decrease for the released
+    /// memory before the scheduler re-evaluates the limits, and resumes reservation traffic.
+    void finishSpill(const ISpillable * spillable, ResourceCost remaining_bytes, const MemoryTracker * memory_tracker);
 
 private:
     void throwIfNeeded();
+    void syncImpl(const MemoryTracker * memory_tracker, bool spilling_thread);
+    void reportReclaimable(ResourceCost total);
 
     // Unlinks this allocation from the scheduler and waits until removal completes.
     // Used both by the destructor and by the constructor when admission fails, so a throwing
@@ -107,6 +119,13 @@ private:
     ResourceCost enqueued_spill = 0;
     /// Pipeline process spilling request
     ResourceCost processing_spill = 0;
+
+    /// Reclaimable bytes per spillable object
+    std::unordered_map<const ISpillable *, ResourceCost> reclaimable;
+    /// Sum of the map values
+    ResourceCost reclaimable_total = 0;
+    /// Last total sent to the scheduler (small updates are not sent)
+    ResourceCost reported_reclaimable = 0;
 
     /// Introspection
     CurrentMetrics::Increment approved_increment;

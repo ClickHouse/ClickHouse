@@ -71,28 +71,25 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
         if (auto * spillable = processor->getSpillable())
         {
             auto memory = spillable->getMemoryStats();
-            if (memory.spillable_memory_bytes > 0)
+            QueryStatusPtr process_list_element = read_progress_callback ? read_progress_callback->getProcessListElement() : nullptr;
+            auto * reservation = process_list_element ? process_list_element->getMemoryReservation() : nullptr;
+            if (reservation)
             {
-                if (auto * reservation = read_progress_callback->getProcessListElement()->getMemoryReservation())
+                reservation->updateReclaimable(spillable, memory.spillable_memory_bytes);
+                if (memory.spillable_memory_bytes > 0)
                 {
-                    auto spill_request = reservation->takeSpillRequest();
-                    if (spill_request > 0)
+                    if (auto spill_request = reservation->takeSpillRequest())
                     {
-                        size_t spilled = spillable->spill(memory.spillable_memory_bytes);
-                        LOG_TEST(getLogger("Scheduler"), "memory.spillable_memory_bytes={}, memory.need_reserved_memory_bytes={}, spill_requested={}, spilled={}", memory.spillable_memory_bytes, memory.need_reserved_memory_bytes, spill_request, spilled);
+                        size_t spilled = spillable->spill(spill_request);
+                        auto remaining = spillable->getMemoryStats().spillable_memory_bytes;
+                        LOG_TEST(getLogger("Scheduler"), "Spill requested {} bytes, spilled {} bytes of {}, {} left", spill_request, spilled, memory.spillable_memory_bytes, remaining);
                         ProfileEvents::increment(ProfileEvents::MemoryReservationSpilledBytes, spilled);
-                        reservation->finishSpill();
+                        reservation->finishSpill(spillable, remaining, process_list_element->getMemoryTracker());
                     }
-                    else
-                        reservation->setReclaimable(memory.spillable_memory_bytes);
-                }
-                else
-                {
-                    if (CurrentThread::getGroup())
-                        CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(spillable);
                 }
             }
-
+            else if (memory.spillable_memory_bytes > 0 && CurrentThread::getGroup())
+                CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(spillable);
         }
 
         /// Update read progress only for source nodes.

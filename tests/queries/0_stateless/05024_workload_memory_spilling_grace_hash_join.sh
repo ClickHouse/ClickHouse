@@ -28,11 +28,11 @@ CREATE OR REPLACE RESOURCE memory (MEMORY RESERVATION);
 
 -- { echo }
 CREATE WORKLOAD $workload IN $parent_workload SETTINGS max_memory = '1Gi', max_memory_before_spill = '500Mi';
-SELECT * FROM numbers(100e6) l LEFT JOIN numbers(100e6) r USING (number) FORMAT Null SETTINGS max_memory_usage='1Gi';
+SELECT count() FROM numbers(100e6) l INNER JOIN numbers(100e6) r USING (number) SETTINGS max_memory_usage='1Gi';
 
 CREATE OR REPLACE WORKLOAD $workload IN $parent_workload SETTINGS max_memory = '1Gi', max_memory_before_spill = '500Mi';
 SELECT * FROM numbers(100e6) l LEFT JOIN numbers(100e6) r USING (number) FORMAT Null SETTINGS max_memory_usage='500Mi'; -- { serverError MEMORY_LIMIT_EXCEEDED }
 
 CREATE OR REPLACE WORKLOAD $workload IN $parent_workload SETTINGS max_memory = '1Gi', max_memory_before_spill = '300Mi';
-SELECT * FROM numbers(100e6) l LEFT JOIN numbers(100e6) r USING (number) FORMAT Null SETTINGS max_memory_usage='500Mi';
+SELECT count() FROM numbers(100e6) l INNER JOIN numbers(100e6) r USING (number) SETTINGS max_memory_usage='500Mi';
 "

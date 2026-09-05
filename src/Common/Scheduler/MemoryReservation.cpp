@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <mutex>
 #include <utility>
 #include <Common/Scheduler/CostUnit.h>
@@ -8,6 +9,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <base/defines.h>
+#include <base/scope_guard.h>
 
 
 namespace ProfileEvents
@@ -34,6 +36,12 @@ namespace ErrorCodes
 {
     extern const int MEMORY_RESERVATION_KILLED;
     extern const int MEMORY_RESERVATION_FAILED;
+}
+
+namespace
+{
+    /// Reclaimable total is not sent to the scheduler if it changed less than 1/RECLAIMABLE_REPORT_RATIO
+    constexpr ResourceCost RECLAIMABLE_REPORT_RATIO = 8;
 }
 
 MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size_)
@@ -117,6 +125,11 @@ void MemoryReservation::detachFromQueue()
 
 void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_tracker)
 {
+    syncImpl(memory_tracker, /*spilling_thread=*/ false);
+}
+
+void MemoryReservation::syncImpl(const MemoryTracker * memory_tracker, bool spilling_thread)
+{
     ResourceCost pending_increase = 0;
     ResourceCost pending_decrease = 0;
     {
@@ -124,8 +137,8 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
 
         // All allocations are blocked if spilling is in progress
         // TODO: make this optional
-        if (processing_spill != 0)
-            cv.wait(lock, [this] { return processing_spill == 0; });
+        if (!spilling_thread && processing_spill != 0)
+            cv.wait(lock, [this] { return processing_spill == 0 || kill_reason || fail_reason; });
 
         // Serialization: block all threads while an increase is pending.
         // Multiple query threads may call syncWithMemoryTracker concurrently
@@ -188,33 +201,84 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
     }
 }
 
-void MemoryReservation::setReclaimable(ResourceCost reclaimable_total)
+void MemoryReservation::updateReclaimable(const ISpillable * spillable, ResourceCost bytes)
 {
-    queue.setReclaimable(*this, reclaimable_total);
-    ProfileEvents::increment(ProfileEvents::MemoryReservationReclaimableBytes, reclaimable_total);
-}
-
-void MemoryReservation::finishSpill()
-{
-    size_t reclaimed = 0;
+    ResourceCost total = 0;
     {
         std::lock_guard lock(mutex);
-        chassert(processing_spill == enqueued_spill);
-        reclaimed = processing_spill;
-        enqueued_spill = 0;
-        processing_spill = 0;
+        auto & entry = reclaimable[spillable];
+        if (entry == bytes)
+            return;
+        reclaimable_total = reclaimable_total - entry + bytes;
+        entry = bytes;
+
+        if (reported_reclaimable != 0 && reclaimable_total != 0
+            && std::abs(reclaimable_total - reported_reclaimable) * RECLAIMABLE_REPORT_RATIO < reported_reclaimable)
+            return;
+        reported_reclaimable = reclaimable_total;
+        total = reclaimable_total;
     }
-    queue.finishSpill(*this, reclaimed);
+    reportReclaimable(total);
+}
+
+void MemoryReservation::removeReclaimable(const ISpillable * spillable)
+{
+    ResourceCost total = 0;
+    {
+        std::lock_guard lock(mutex);
+        auto it = reclaimable.find(spillable);
+        if (it == reclaimable.end())
+            return;
+        reclaimable_total -= it->second;
+        reclaimable.erase(it);
+        if (reported_reclaimable == reclaimable_total)
+            return;
+        reported_reclaimable = reclaimable_total;
+        total = reclaimable_total;
+    }
+    reportReclaimable(total);
+}
+
+void MemoryReservation::reportReclaimable(ResourceCost total)
+{
+    // Called outside mutex to respect lock ordering (AllocationQueue::mutex -> this mutex).
+    queue.setReclaimable(*this, total);
+    ProfileEvents::increment(ProfileEvents::MemoryReservationReclaimableBytes, total);
 }
 
 ResourceCost MemoryReservation::takeSpillRequest()
 {
-    std::unique_lock lock(mutex);
-    // Only one concurrent request is allowed
-    if (processing_spill > 0)
-        cv.wait(lock, [this] { return processing_spill == 0; });
-    std::exchange(enqueued_spill, processing_spill);
+    std::lock_guard lock(mutex);
+    // Only one spill at a time; the other threads keep working and find the request gone.
+    if (processing_spill != 0)
+        return 0;
+    processing_spill = std::exchange(enqueued_spill, 0);
     return processing_spill;
+}
+
+void MemoryReservation::finishSpill(const ISpillable * spillable, ResourceCost remaining_bytes, const MemoryTracker * memory_tracker)
+{
+    SCOPE_EXIT({
+        std::lock_guard lock(mutex);
+        processing_spill = 0;
+        cv.notify_all();
+    });
+
+    ResourceCost total = 0;
+    {
+        std::lock_guard lock(mutex);
+        chassert(processing_spill != 0);
+        auto & entry = reclaimable[spillable];
+        reclaimable_total = reclaimable_total - entry + remaining_bytes;
+        entry = remaining_bytes;
+        reported_reclaimable = reclaimable_total;
+        total = reclaimable_total;
+    }
+
+    /// The scheduler re-evaluates the limits on the reply, so the released memory must be
+    /// decreased first. Other threads are held on `processing_spill` meanwhile.
+    syncImpl(memory_tracker, /*spilling_thread=*/ true);
+    queue.finishSpill(*this, total);
 }
 
 void MemoryReservation::throwIfNeeded()

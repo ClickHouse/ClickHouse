@@ -16,6 +16,8 @@
 namespace DB
 {
 
+struct MemoryReservation;
+
 /// Graph of executing pipeline.
 class ExecutingGraph
 {
@@ -137,7 +139,7 @@ public:
     using ProcessorsMap = std::unordered_map<const IProcessor *, Node *>;
     ProcessorsMap processors_map;
 
-    explicit ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_);
+    ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_, MemoryReservation * memory_reservation_);
 
     const Processors & getProcessors() const { return *processors; }
 
@@ -186,6 +188,8 @@ private:
     /// Shared with QueryPipeline.
     std::shared_ptr<Processors> processors;
     std::mutex processors_mutex;
+
+    MemoryReservation * memory_reservation = nullptr;
 
     struct PendingRemovalGroup
     {
