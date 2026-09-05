@@ -1,2 +1,3 @@
 7
 LowCardinality(Int16)
+FixedString(300)
