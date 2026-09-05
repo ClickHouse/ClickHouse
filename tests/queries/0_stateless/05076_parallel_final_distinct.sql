@@ -7,6 +7,8 @@ INSERT INTO t_parallel_distinct SELECT number % 1000, toString(number % 7) FROM 
 INSERT INTO t_parallel_distinct SELECT number % 1500 + 500, toString(number % 5) FROM numbers(100000);
 
 SET max_threads = 4;
+-- The CI test config sets the global size limits, which disable the parallel final DISTINCT.
+SET max_rows_in_distinct = 0, max_bytes_in_distinct = 0;
 
 SELECT 'results';
 SELECT count(), sum(a), sum(length(b)) FROM (SELECT DISTINCT a, b FROM t_parallel_distinct);
