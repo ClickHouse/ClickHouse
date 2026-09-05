@@ -1,10 +1,9 @@
 -- Tags: no-parallel
 
-DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
-CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
-USE {CLICKHOUSE_DATABASE_1:Identifier};
+DROP DATABASE IF EXISTS 01765_db;
+CREATE DATABASE 01765_db;
 
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_simple_attributes_source_table
+CREATE TABLE 01765_db.simple_key_simple_attributes_source_table
 (
    id UInt64,
    value_first String,
@@ -12,11 +11,11 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_simple_attributes_sou
 )
 ENGINE = TinyLog;
 
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_simple_attributes_source_table VALUES(0, 'value_0', 'value_second_0');
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_simple_attributes_source_table VALUES(1, 'value_1', 'value_second_1');
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_simple_attributes_source_table VALUES(2, 'value_2', 'value_second_2');
+INSERT INTO 01765_db.simple_key_simple_attributes_source_table VALUES(0, 'value_0', 'value_second_0');
+INSERT INTO 01765_db.simple_key_simple_attributes_source_table VALUES(1, 'value_1', 'value_second_1');
+INSERT INTO 01765_db.simple_key_simple_attributes_source_table VALUES(2, 'value_2', 'value_second_2');
 
-CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.hashed_dictionary_simple_key_simple_attributes
+CREATE DICTIONARY 01765_db.hashed_dictionary_simple_key_simple_attributes
 (
    id UInt64,
    value_first String DEFAULT 'value_first_default',
@@ -30,25 +29,25 @@ SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 
 SELECT 'Dictionary hashed_dictionary_simple_key_simple_attributes';
 SELECT 'dictGet existing value';
-SELECT dictGet('hashed_dictionary_simple_key_simple_attributes', 'value_first', number) as value_first,
-    dictGet('hashed_dictionary_simple_key_simple_attributes', 'value_second', number) as value_second FROM system.numbers LIMIT 3;
+SELECT dictGet('01765_db.hashed_dictionary_simple_key_simple_attributes', 'value_first', number) as value_first,
+    dictGet('01765_db.hashed_dictionary_simple_key_simple_attributes', 'value_second', number) as value_second FROM system.numbers LIMIT 3;
 SELECT 'dictGet with non existing value';
-SELECT dictGet('hashed_dictionary_simple_key_simple_attributes', 'value_first', number) as value_first,
-    dictGet('hashed_dictionary_simple_key_simple_attributes', 'value_second', number) as value_second FROM system.numbers LIMIT 4;
+SELECT dictGet('01765_db.hashed_dictionary_simple_key_simple_attributes', 'value_first', number) as value_first,
+    dictGet('01765_db.hashed_dictionary_simple_key_simple_attributes', 'value_second', number) as value_second FROM system.numbers LIMIT 4;
 SELECT 'dictGetOrDefault existing value';
-SELECT dictGetOrDefault('hashed_dictionary_simple_key_simple_attributes', 'value_first', number, toString('default')) as value_first,
-    dictGetOrDefault('hashed_dictionary_simple_key_simple_attributes', 'value_second', number, toString('default')) as value_second FROM system.numbers LIMIT 3;
+SELECT dictGetOrDefault('01765_db.hashed_dictionary_simple_key_simple_attributes', 'value_first', number, toString('default')) as value_first,
+    dictGetOrDefault('01765_db.hashed_dictionary_simple_key_simple_attributes', 'value_second', number, toString('default')) as value_second FROM system.numbers LIMIT 3;
 SELECT 'dictGetOrDefault non existing value';
-SELECT dictGetOrDefault('hashed_dictionary_simple_key_simple_attributes', 'value_first', number, toString('default')) as value_first,
-    dictGetOrDefault('hashed_dictionary_simple_key_simple_attributes', 'value_second', number, toString('default')) as value_second FROM system.numbers LIMIT 4;
+SELECT dictGetOrDefault('01765_db.hashed_dictionary_simple_key_simple_attributes', 'value_first', number, toString('default')) as value_first,
+    dictGetOrDefault('01765_db.hashed_dictionary_simple_key_simple_attributes', 'value_second', number, toString('default')) as value_second FROM system.numbers LIMIT 4;
 SELECT 'dictHas';
-SELECT dictHas('hashed_dictionary_simple_key_simple_attributes', number) FROM system.numbers LIMIT 4;
+SELECT dictHas('01765_db.hashed_dictionary_simple_key_simple_attributes', number) FROM system.numbers LIMIT 4;
 SELECT 'select all values as input stream';
-SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.hashed_dictionary_simple_key_simple_attributes ORDER BY id;
+SELECT * FROM 01765_db.hashed_dictionary_simple_key_simple_attributes ORDER BY id;
 
-DROP DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.hashed_dictionary_simple_key_simple_attributes;
+DROP DICTIONARY 01765_db.hashed_dictionary_simple_key_simple_attributes;
 
-CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.sparse_hashed_dictionary_simple_key_simple_attributes
+CREATE DICTIONARY 01765_db.sparse_hashed_dictionary_simple_key_simple_attributes
 (
    id UInt64,
    value_first String DEFAULT 'value_first_default',
@@ -61,27 +60,27 @@ LAYOUT(SPARSE_HASHED());
 
 SELECT 'Dictionary sparse_hashed_dictionary_simple_key_simple_attributes';
 SELECT 'dictGet existing value';
-SELECT dictGet('sparse_hashed_dictionary_simple_key_simple_attributes', 'value_first', number) as value_first,
-    dictGet('sparse_hashed_dictionary_simple_key_simple_attributes', 'value_second', number) as value_second FROM system.numbers LIMIT 3;
+SELECT dictGet('01765_db.sparse_hashed_dictionary_simple_key_simple_attributes', 'value_first', number) as value_first,
+    dictGet('01765_db.sparse_hashed_dictionary_simple_key_simple_attributes', 'value_second', number) as value_second FROM system.numbers LIMIT 3;
 SELECT 'dictGet with non existing value';
-SELECT dictGet('sparse_hashed_dictionary_simple_key_simple_attributes', 'value_first', number) as value_first,
-    dictGet('sparse_hashed_dictionary_simple_key_simple_attributes', 'value_second', number) as value_second FROM system.numbers LIMIT 4;
+SELECT dictGet('01765_db.sparse_hashed_dictionary_simple_key_simple_attributes', 'value_first', number) as value_first,
+    dictGet('01765_db.sparse_hashed_dictionary_simple_key_simple_attributes', 'value_second', number) as value_second FROM system.numbers LIMIT 4;
 SELECT 'dictGetOrDefault existing value';
-SELECT dictGetOrDefault('sparse_hashed_dictionary_simple_key_simple_attributes', 'value_first', number, toString('default')) as value_first,
-    dictGetOrDefault('sparse_hashed_dictionary_simple_key_simple_attributes', 'value_second', number, toString('default')) as value_second FROM system.numbers LIMIT 3;
+SELECT dictGetOrDefault('01765_db.sparse_hashed_dictionary_simple_key_simple_attributes', 'value_first', number, toString('default')) as value_first,
+    dictGetOrDefault('01765_db.sparse_hashed_dictionary_simple_key_simple_attributes', 'value_second', number, toString('default')) as value_second FROM system.numbers LIMIT 3;
 SELECT 'dictGetOrDefault non existing value';
-SELECT dictGetOrDefault('sparse_hashed_dictionary_simple_key_simple_attributes', 'value_first', number, toString('default')) as value_first,
-    dictGetOrDefault('sparse_hashed_dictionary_simple_key_simple_attributes', 'value_second', number, toString('default')) as value_second FROM system.numbers LIMIT 4;
+SELECT dictGetOrDefault('01765_db.sparse_hashed_dictionary_simple_key_simple_attributes', 'value_first', number, toString('default')) as value_first,
+    dictGetOrDefault('01765_db.sparse_hashed_dictionary_simple_key_simple_attributes', 'value_second', number, toString('default')) as value_second FROM system.numbers LIMIT 4;
 SELECT 'dictHas';
-SELECT dictHas('sparse_hashed_dictionary_simple_key_simple_attributes', number) FROM system.numbers LIMIT 4;
+SELECT dictHas('01765_db.sparse_hashed_dictionary_simple_key_simple_attributes', number) FROM system.numbers LIMIT 4;
 SELECT 'select all values as input stream';
-SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.sparse_hashed_dictionary_simple_key_simple_attributes ORDER BY id;
+SELECT * FROM 01765_db.sparse_hashed_dictionary_simple_key_simple_attributes ORDER BY id;
 
-DROP DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.sparse_hashed_dictionary_simple_key_simple_attributes;
+DROP DICTIONARY 01765_db.sparse_hashed_dictionary_simple_key_simple_attributes;
 
-DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_simple_attributes_source_table;
+DROP TABLE 01765_db.simple_key_simple_attributes_source_table;
 
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_complex_attributes_source_table
+CREATE TABLE 01765_db.simple_key_complex_attributes_source_table
 (
    id UInt64,
    value_first String,
@@ -89,11 +88,11 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_complex_attributes_so
 )
 ENGINE = TinyLog;
 
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_complex_attributes_source_table VALUES(0, 'value_0', 'value_second_0');
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_complex_attributes_source_table VALUES(1, 'value_1', NULL);
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_complex_attributes_source_table VALUES(2, 'value_2', 'value_second_2');
+INSERT INTO 01765_db.simple_key_complex_attributes_source_table VALUES(0, 'value_0', 'value_second_0');
+INSERT INTO 01765_db.simple_key_complex_attributes_source_table VALUES(1, 'value_1', NULL);
+INSERT INTO 01765_db.simple_key_complex_attributes_source_table VALUES(2, 'value_2', 'value_second_2');
 
-CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.hashed_dictionary_simple_key_complex_attributes
+CREATE DICTIONARY 01765_db.hashed_dictionary_simple_key_complex_attributes
 (
    id UInt64,
    value_first String DEFAULT 'value_first_default',
@@ -106,25 +105,25 @@ LAYOUT(HASHED());
 
 SELECT 'Dictionary hashed_dictionary_simple_key_complex_attributes';
 SELECT 'dictGet existing value';
-SELECT dictGet('hashed_dictionary_simple_key_complex_attributes', 'value_first', number) as value_first,
-    dictGet('hashed_dictionary_simple_key_complex_attributes', 'value_second', number) as value_second FROM system.numbers LIMIT 3;
+SELECT dictGet('01765_db.hashed_dictionary_simple_key_complex_attributes', 'value_first', number) as value_first,
+    dictGet('01765_db.hashed_dictionary_simple_key_complex_attributes', 'value_second', number) as value_second FROM system.numbers LIMIT 3;
 SELECT 'dictGet with non existing value';
-SELECT dictGet('hashed_dictionary_simple_key_complex_attributes', 'value_first', number) as value_first,
-    dictGet('hashed_dictionary_simple_key_complex_attributes', 'value_second', number) as value_second FROM system.numbers LIMIT 4;
+SELECT dictGet('01765_db.hashed_dictionary_simple_key_complex_attributes', 'value_first', number) as value_first,
+    dictGet('01765_db.hashed_dictionary_simple_key_complex_attributes', 'value_second', number) as value_second FROM system.numbers LIMIT 4;
 SELECT 'dictGetOrDefault existing value';
-SELECT dictGetOrDefault('hashed_dictionary_simple_key_complex_attributes', 'value_first', number, toString('default')) as value_first,
-    dictGetOrDefault('hashed_dictionary_simple_key_complex_attributes', 'value_second', number, toString('default')) as value_second FROM system.numbers LIMIT 3;
+SELECT dictGetOrDefault('01765_db.hashed_dictionary_simple_key_complex_attributes', 'value_first', number, toString('default')) as value_first,
+    dictGetOrDefault('01765_db.hashed_dictionary_simple_key_complex_attributes', 'value_second', number, toString('default')) as value_second FROM system.numbers LIMIT 3;
 SELECT 'dictGetOrDefault non existing value';
-SELECT dictGetOrDefault('hashed_dictionary_simple_key_complex_attributes', 'value_first', number, toString('default')) as value_first,
-    dictGetOrDefault('hashed_dictionary_simple_key_complex_attributes', 'value_second', number, toString('default')) as value_second FROM system.numbers LIMIT 4;
+SELECT dictGetOrDefault('01765_db.hashed_dictionary_simple_key_complex_attributes', 'value_first', number, toString('default')) as value_first,
+    dictGetOrDefault('01765_db.hashed_dictionary_simple_key_complex_attributes', 'value_second', number, toString('default')) as value_second FROM system.numbers LIMIT 4;
 SELECT 'dictHas';
-SELECT dictHas('hashed_dictionary_simple_key_complex_attributes', number) FROM system.numbers LIMIT 4;
+SELECT dictHas('01765_db.hashed_dictionary_simple_key_complex_attributes', number) FROM system.numbers LIMIT 4;
 SELECT 'select all values as input stream';
-SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.hashed_dictionary_simple_key_complex_attributes ORDER BY id;
+SELECT * FROM 01765_db.hashed_dictionary_simple_key_complex_attributes ORDER BY id;
 
-DROP DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.hashed_dictionary_simple_key_complex_attributes;
+DROP DICTIONARY 01765_db.hashed_dictionary_simple_key_complex_attributes;
 
-CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.sparse_hashed_dictionary_simple_key_complex_attributes
+CREATE DICTIONARY 01765_db.sparse_hashed_dictionary_simple_key_complex_attributes
 (
    id UInt64,
    value_first String DEFAULT 'value_first_default',
@@ -137,38 +136,38 @@ LAYOUT(HASHED());
 
 SELECT 'Dictionary sparse_hashed_dictionary_simple_key_complex_attributes';
 SELECT 'dictGet existing value';
-SELECT dictGet('sparse_hashed_dictionary_simple_key_complex_attributes', 'value_first', number) as value_first,
-    dictGet('sparse_hashed_dictionary_simple_key_complex_attributes', 'value_second', number) as value_second FROM system.numbers LIMIT 3;
+SELECT dictGet('01765_db.sparse_hashed_dictionary_simple_key_complex_attributes', 'value_first', number) as value_first,
+    dictGet('01765_db.sparse_hashed_dictionary_simple_key_complex_attributes', 'value_second', number) as value_second FROM system.numbers LIMIT 3;
 SELECT 'dictGet with non existing value';
-SELECT dictGet('sparse_hashed_dictionary_simple_key_complex_attributes', 'value_first', number) as value_first,
-    dictGet('sparse_hashed_dictionary_simple_key_complex_attributes', 'value_second', number) as value_second FROM system.numbers LIMIT 4;
+SELECT dictGet('01765_db.sparse_hashed_dictionary_simple_key_complex_attributes', 'value_first', number) as value_first,
+    dictGet('01765_db.sparse_hashed_dictionary_simple_key_complex_attributes', 'value_second', number) as value_second FROM system.numbers LIMIT 4;
 SELECT 'dictGetOrDefault existing value';
-SELECT dictGetOrDefault('sparse_hashed_dictionary_simple_key_complex_attributes', 'value_first', number, toString('default')) as value_first,
-    dictGetOrDefault('sparse_hashed_dictionary_simple_key_complex_attributes', 'value_second', number, toString('default')) as value_second FROM system.numbers LIMIT 3;
+SELECT dictGetOrDefault('01765_db.sparse_hashed_dictionary_simple_key_complex_attributes', 'value_first', number, toString('default')) as value_first,
+    dictGetOrDefault('01765_db.sparse_hashed_dictionary_simple_key_complex_attributes', 'value_second', number, toString('default')) as value_second FROM system.numbers LIMIT 3;
 SELECT 'dictGetOrDefault non existing value';
-SELECT dictGetOrDefault('sparse_hashed_dictionary_simple_key_complex_attributes', 'value_first', number, toString('default')) as value_first,
-    dictGetOrDefault('sparse_hashed_dictionary_simple_key_complex_attributes', 'value_second', number, toString('default')) as value_second FROM system.numbers LIMIT 4;
+SELECT dictGetOrDefault('01765_db.sparse_hashed_dictionary_simple_key_complex_attributes', 'value_first', number, toString('default')) as value_first,
+    dictGetOrDefault('01765_db.sparse_hashed_dictionary_simple_key_complex_attributes', 'value_second', number, toString('default')) as value_second FROM system.numbers LIMIT 4;
 SELECT 'dictHas';
-SELECT dictHas('sparse_hashed_dictionary_simple_key_complex_attributes', number) FROM system.numbers LIMIT 4;
+SELECT dictHas('01765_db.sparse_hashed_dictionary_simple_key_complex_attributes', number) FROM system.numbers LIMIT 4;
 SELECT 'select all values as input stream';
-SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.sparse_hashed_dictionary_simple_key_complex_attributes ORDER BY id;
+SELECT * FROM 01765_db.sparse_hashed_dictionary_simple_key_complex_attributes ORDER BY id;
 
-DROP DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.sparse_hashed_dictionary_simple_key_complex_attributes;
+DROP DICTIONARY 01765_db.sparse_hashed_dictionary_simple_key_complex_attributes;
 
-DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_complex_attributes_source_table;
+DROP TABLE 01765_db.simple_key_complex_attributes_source_table;
 
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_hierarchy_table
+CREATE TABLE 01765_db.simple_key_hierarchy_table
 (
     id UInt64,
     parent_id UInt64
 ) ENGINE = TinyLog();
 
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_hierarchy_table VALUES (1, 0);
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_hierarchy_table VALUES (2, 1);
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_hierarchy_table VALUES (3, 1);
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_hierarchy_table VALUES (4, 2);
+INSERT INTO 01765_db.simple_key_hierarchy_table VALUES (1, 0);
+INSERT INTO 01765_db.simple_key_hierarchy_table VALUES (2, 1);
+INSERT INTO 01765_db.simple_key_hierarchy_table VALUES (3, 1);
+INSERT INTO 01765_db.simple_key_hierarchy_table VALUES (4, 2);
 
-CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.hashed_dictionary_simple_key_hierarchy
+CREATE DICTIONARY 01765_db.hashed_dictionary_simple_key_hierarchy
 (
    id UInt64,
    parent_id UInt64 HIERARCHICAL
@@ -180,14 +179,14 @@ LAYOUT(HASHED());
 
 SELECT 'Dictionary hashed_dictionary_simple_key_hierarchy';
 SELECT 'dictGet';
-SELECT dictGet('hashed_dictionary_simple_key_hierarchy', 'parent_id', number) FROM system.numbers LIMIT 5;
+SELECT dictGet('01765_db.hashed_dictionary_simple_key_hierarchy', 'parent_id', number) FROM system.numbers LIMIT 5;
 SELECT 'dictGetHierarchy';
-SELECT dictGetHierarchy('hashed_dictionary_simple_key_hierarchy', toUInt64(1));
-SELECT dictGetHierarchy('hashed_dictionary_simple_key_hierarchy', toUInt64(4));
+SELECT dictGetHierarchy('01765_db.hashed_dictionary_simple_key_hierarchy', toUInt64(1));
+SELECT dictGetHierarchy('01765_db.hashed_dictionary_simple_key_hierarchy', toUInt64(4));
 
-DROP DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.hashed_dictionary_simple_key_hierarchy;
+DROP DICTIONARY 01765_db.hashed_dictionary_simple_key_hierarchy;
 
-CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.sparse_hashed_dictionary_simple_key_hierarchy
+CREATE DICTIONARY 01765_db.sparse_hashed_dictionary_simple_key_hierarchy
 (
    id UInt64,
    parent_id UInt64 HIERARCHICAL
@@ -199,13 +198,13 @@ LAYOUT(HASHED());
 
 SELECT 'Dictionary sparse_hashed_dictionary_simple_key_hierarchy';
 SELECT 'dictGet';
-SELECT dictGet('sparse_hashed_dictionary_simple_key_hierarchy', 'parent_id', number) FROM system.numbers LIMIT 5;
+SELECT dictGet('01765_db.sparse_hashed_dictionary_simple_key_hierarchy', 'parent_id', number) FROM system.numbers LIMIT 5;
 SELECT 'dictGetHierarchy';
-SELECT dictGetHierarchy('sparse_hashed_dictionary_simple_key_hierarchy', toUInt64(1));
-SELECT dictGetHierarchy('sparse_hashed_dictionary_simple_key_hierarchy', toUInt64(4));
+SELECT dictGetHierarchy('01765_db.sparse_hashed_dictionary_simple_key_hierarchy', toUInt64(1));
+SELECT dictGetHierarchy('01765_db.sparse_hashed_dictionary_simple_key_hierarchy', toUInt64(4));
 
-DROP DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.sparse_hashed_dictionary_simple_key_hierarchy;
+DROP DICTIONARY 01765_db.sparse_hashed_dictionary_simple_key_hierarchy;
 
-DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_hierarchy_table;
+DROP TABLE 01765_db.simple_key_hierarchy_table;
 
-DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+DROP DATABASE 01765_db;

@@ -21,8 +21,6 @@ public:
         : state(BrotliDecoderCreateInstance(nullptr, nullptr, nullptr))
         , result(BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT)
     {
-        if (!state)
-            throw Exception(ErrorCodes::BROTLI_READ_FAILED, "brotli decoder instance creation failed");
     }
 
     ~BrotliStateWrapper()

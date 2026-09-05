@@ -1,4 +1,4 @@
--- Tags: long, no-sanitizers, no-parallel, no-flaky-check, no-parallel-replicas, no-async-insert
+-- Tags: long, no-sanitizers, no-parallel, no-parallel-replicas, no-async-insert
 
 -- no-parallel-replicas -- https://github.com/ClickHouse/ClickHouse/issues/90063
 -- no-parallel -- the test requires fixed database name and table names to check deduplication blocks in part_log, which makes it incompatible with parallel execution of tests
@@ -166,14 +166,6 @@ CREATE TABLE 03711_database.03711_async_mixed
 SYSTEM STOP MERGES 03711_database.03711_async_mixed;
 
 SET deduplicate_blocks_in_dependent_materialized_views=1;
-
--- The test asserts a fixed mapping of deduplication block ids to part names.
--- With max_block_size=1 each two-row INSERT is split into two blocks, and since
--- max_insert_threads now parallelizes the write side of plain INSERTs, the assignment
--- of blocks to part numbers (all_1_1_0 vs all_2_2_0) becomes nondeterministic.
--- The deduplication hashes themselves are stable regardless of the number of threads,
--- so pin a single insert stream to keep the part layout deterministic.
-SET max_insert_threads = 1;
 
 SET max_block_size=1;
 SET max_insert_block_size=1;

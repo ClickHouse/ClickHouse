@@ -25,9 +25,9 @@ Checks whether a string begins with the provided string.
         "Usage example",
         "SELECT startsWith('ClickHouse', 'Click');",
         R"(
-┌─startsWith('ClickHouse', 'Click')─┐
-│                                 1 │
-└───────────────────────────────────┘
+┌─startsWith('⋯', 'Click')─┐
+│                        1 │
+└──────────────────────────┘
         )"
     }
     };
@@ -54,13 +54,13 @@ Checks whether a string begins with the provided case-insensitive string.
         "Usage example",
         "SELECT startsWithCaseInsensitive('ClickHouse', 'CLICK');",
         R"(
-┌─startsWithCaseInsensitive('ClickHouse', 'CLICK')─┐
-│                                                1 │
-└──────────────────────────────────────────────────┘
+┌─startsWithCaseInsensitive('⋯', 'CLICK')─┐
+│                                       1 │
+└─────────────────────────────────────────┘
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

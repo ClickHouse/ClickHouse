@@ -1,16 +1,12 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
-#include <Processors/Transforms/DistinctTransform.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <Core/Settings.h>
 #include <Interpreters/PreparedSets.h>
-#include <Interpreters/Set.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -57,40 +53,11 @@ CreatingSetStep::CreatingSetStep(
 
 void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    /// With a single input stream the set fill deduplicates just as well on its own; the pre-distinct
-    /// only pays off by deduplicating disjoint streams in parallel. The partition count can drop to one
-    /// after the flag was set (e.g. a later filter pushdown re-runs part selection), so check the final
-    /// stream count here. The external table is re-checked too: `GLOBAL IN` under the analyzer attaches
-    /// it only at pipeline build time (see `ReadFromRemote`), after the optimization passes checked it,
-    /// and pre-deduplication would change the table contents and what the
-    /// `max_{rows,bytes}_to_transfer` limits count.
-    if (preliminary_distinct && !usesExternalTable() && pipeline.getNumStreams() > 1)
-    {
-        /// With `transform_null_in = 0` the set fill skips rows with a NULL in any key component, so
-        /// the preliminary deduplication drops them too instead of hashing and counting them.
-        const auto & input_header = *getInputHeaders().front();
-        const bool skip_null_keys = !set_and_key->set->transformNullIn()
-            && std::any_of(
-                input_header.begin(), input_header.end(), [](const auto & col) { return isNullableOrLowCardinalityNullable(col.type); });
-
-        pipeline.addSimpleTransform(
-            [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-            {
-                if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                    return nullptr;
-
-                /// Deduplicate independently per stream. The set fill deduplicates anyway, so on
-                /// mostly-unique input the transform may abandon and pass rows through.
-                return std::make_shared<DistinctTransform>(
-                    header, SizeLimits{}, 0, Names{}, /*allow_abandoning_=*/true, skip_null_keys);
-            });
-    }
-
     pipeline.addCreatingSetsTransform(
         getOutputHeader(),
-        set_and_key,
+        std::move(set_and_key),
         network_transfer_limits,
-        prepared_sets_cache);
+        std::move(prepared_sets_cache));
 }
 
 void CreatingSetStep::updateOutputHeader()
@@ -100,25 +67,19 @@ void CreatingSetStep::updateOutputHeader()
 
 void CreatingSetStep::describeActions(FormatSettings & settings) const
 {
-    if (!set_and_key->set)
-        return ;
-
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, ' ');
 
     settings.out << prefix;
-    settings.out << "Set: ";
-    settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(set_and_key->key, settings.pretty_names) : set_and_key->key) << '\n';
+    if (set_and_key->set)
+        settings.out << "Set: ";
 
-    if (preliminary_distinct)
-        settings.out << prefix << "Pre-distinct: 1\n";
+    settings.out << set_and_key->key << '\n';
 }
 
 void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     if (set_and_key->set)
         map.add("Set", set_and_key->key);
-    if (preliminary_distinct)
-        map.add("Pre-distinct", true);
 }
 
 
@@ -252,32 +213,6 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSet
         auto plan = future_set->build(optimization_settings.network_transfer_limits, optimization_settings.prepared_sets_cache);
         if (!plan)
             continue;
-
-        /// The set's plan was built by the Planner under
-        /// `forceMaterializeCTE`, which plants a safety-net
-        /// `DelayedMaterializingCTEsStep` per dependency level on the
-        /// source plan so that `buildSetInplace` / `buildOrderedSetInplace`
-        /// can materialize the referenced CTEs synchronously if that path
-        /// fires first. Here we are attaching the plan for *runtime* set
-        /// construction; for the runtime path, we want the outer plan's
-        /// `MaterializingCTEsStep` to be the single canonical writer site
-        /// so its `DelayedPortsProcessor` lazily gates every reader,
-        /// including readers that sit on the "main" (always-eventually-pulled)
-        /// side of an inner `CreatingSets` gate. The outer plan can only
-        /// win that role if no surviving `DelayedMaterializingCTEsStep`
-        /// inside this sub-plan claims `is_materialization_planned` first
-        /// via the recursive `plan->optimize(...)` below — that includes
-        /// per-branch safety-nets planted by `buildPlanForQueryNode` below
-        /// each `UnionStep` / `IntersectOrExceptStep` branch, which sit
-        /// *below* the union-level safety-net.
-        ///
-        /// So strip every `DelayedMaterializingCTEsStep` in this sub-plan
-        /// tree, not just the top contiguous chain. Nested
-        /// `DelayedCreatingSetsStep` source plans (held in
-        /// `subqueries`, not as children of any node in this tree) are
-        /// untouched — they keep their safety-nets for their own
-        /// `buildSetInplace` / `buildOrderedSetInplace` consumers.
-        removeAllDelayedMaterializingCTEsStep(*plan);
 
         plan->optimize(optimization_settings);
         plans.emplace_back(std::move(plan));

@@ -22,7 +22,6 @@ def start_cluster():
             ],
             user_configs=[
                 "configs/users.d/dynamic_disk_settings.xml",
-                "configs/allow_server_credentials.xml",
             ],
             env_variables={
                 "MINIO_SECRET": minio_secret_key,
@@ -32,18 +31,14 @@ def start_cluster():
             with_minio=True,
             macros={"replica": "node1", "shard": "shard1"},
         )
-        # node2: the substitutions file lives at /etc/metrika.xml, which has no special
-        # meaning any more, so `include_from` has to point at it explicitly.
         cluster.add_instance(
             "node2",
             main_configs=[
                 "configs/config.d/storage_configuration.xml",
                 "configs/config.d/remote_servers.xml",
-                "configs/config.d/include_from_metrika_path.xml",
             ],
             user_configs=[
                 "configs/users.d/dynamic_disk_settings.xml",
-                "configs/allow_server_credentials.xml",
             ],
             metrika_xml="configs/metrika.xml",
             with_zookeeper=True,
@@ -658,10 +653,7 @@ def test_dynamic_disk_security_settings(start_cluster):
         "CREATE SETTINGS PROFILE IF NOT EXISTS allow_dynamic_disk_access "
         "SETTINGS dynamic_disk_allow_from_env = true, "
         "dynamic_disk_allow_include = true, "
-        "dynamic_disk_allow_from_zk = true, "
-        # The privileged user's `_ok` cases use `from_env` for a disk credential (a server env var), which the
-        # S3 user-credential restriction also blocks by default; allow it for this trusted profile.
-        "s3_allow_server_credentials_in_user_queries = 1"
+        "dynamic_disk_allow_from_zk = true"
     )
     node.query(
         "CREATE USER IF NOT EXISTS restricted_user SETTINGS PROFILE 'default'"

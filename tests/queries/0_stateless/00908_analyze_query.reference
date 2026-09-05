@@ -1,1 +1,2 @@
-SELECT *\nFROM a
+SELECT *
+FROM a

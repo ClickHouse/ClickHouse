@@ -66,7 +66,7 @@ void ExecutionSpeedLimits::throttle(
             if (min_execution_rps && rows_per_second < static_cast<double>(min_execution_rps))
                 throw Exception(
                     ErrorCodes::TOO_SLOW,
-                    "Query is executing too slow: {:.3f} rows/sec., minimum: {}",
+                    "Query is executing too slow: {} rows/sec., minimum: {}",
                     rows_per_second,
                     min_execution_rps);
 
@@ -74,7 +74,7 @@ void ExecutionSpeedLimits::throttle(
             if (min_execution_bps && bytes_per_second < static_cast<double>(min_execution_bps))
                 throw Exception(
                     ErrorCodes::TOO_SLOW,
-                    "Query is executing too slow: {:.3f} bytes/sec., minimum: {}",
+                    "Query is executing too slow: {} bytes/sec., minimum: {}",
                     bytes_per_second,
                     min_execution_bps);
 
@@ -92,7 +92,7 @@ void ExecutionSpeedLimits::throttle(
                     if (estimated_execution_time_seconds > max_estimated_execution_time.totalSeconds())
                         throw Exception(
                             ErrorCodes::TOO_SLOW,
-                            "Estimated query execution time ({:.3f} seconds) is too long. Maximum: {}. Estimated rows to process: {} ({} read in {:.3f} seconds).",
+                            "Estimated query execution time ({:.5f} seconds) is too long. Maximum: {}. Estimated rows to process: {} ({} read in {:.5f} seconds).",
                             estimated_execution_time_seconds,
                             max_estimated_execution_time.totalSeconds(),
                             total_rows_to_read,
@@ -130,16 +130,13 @@ bool ExecutionSpeedLimits::checkTimeLimit(const UInt64 & elapsed_ns, OverflowMod
 {
     if (max_execution_time != 0)
     {
-        /// Compare in whole microseconds: converting the timeout to nanoseconds overflows for values
-        /// above ~584 years, which `max_execution_time` accepts. Dividing the elapsed time instead can
-        /// only fire the timeout up to a microsecond later - never before it.
-        if (elapsed_ns / 1000 > static_cast<UInt64>(max_execution_time.totalMicroseconds()))
+        if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
             return handleOverflowMode(
                 overflow_mode,
                 ErrorCodes::TIMEOUT_EXCEEDED,
-                "Timeout exceeded: elapsed {:.3f} ms, maximum: {:.3f} ms",
+                "Timeout exceeded: elapsed {} ms, maximum: {} ms",
                 static_cast<double>(elapsed_ns) / 1000000ULL,
-                static_cast<double>(max_execution_time.totalMicroseconds()) / 1000);
+                max_execution_time.totalMilliseconds());
     }
 
     return true;

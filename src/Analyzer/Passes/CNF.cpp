@@ -96,7 +96,7 @@ public:
         }
         else
         {
-            chassert(name == "not");
+            assert(name == "not");
         }
 
         auto & arguments = function_node->getArguments().getNodes();
@@ -147,9 +147,9 @@ public:
             return;
         }
 
-        chassert(function_name == "not");
+        assert(function_name == "not");
         auto & arguments = function_node->getArguments().getNodes();
-        chassert(arguments.size() == 1);
+        assert(arguments.size() == 1);
         node = arguments[0];
         visit(node, !add_negation);
     }
@@ -196,7 +196,7 @@ public:
         if (name == "or")
         {
             auto & arguments = function_node->getArguments().getNodes();
-            chassert(arguments.size() == 2);
+            assert(arguments.size() == 2);
 
             size_t and_node_id = arguments.size();
 
@@ -279,7 +279,7 @@ private:
         }
         else
         {
-            chassert(name == "not");
+            assert(name == "not");
             auto & arguments = function_node->getArguments().getNodes();
             or_group.insert(CNFAtomicFormula{true, std::move(arguments[0])});
         }

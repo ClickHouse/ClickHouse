@@ -4,6 +4,7 @@
 #include <DataTypes/NumberTraits.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -30,7 +31,7 @@ enum class LeastGreatest : uint8_t
 
 
 template <LeastGreatest kind>
-class FunctionLeastGreatestGeneric final : public IFunction
+class FunctionLeastGreatestGeneric : public IFunction
 {
 public:
     static constexpr auto name = kind == LeastGreatest::Least ? "least" : "greatest";
@@ -110,15 +111,15 @@ private:
 };
 
 template <LeastGreatest kind, typename SpecializedFunction>
-class LeastGreatestOverloadResolver final : public IFunctionOverloadResolver
+class LeastGreatestOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = kind == LeastGreatest::Least ? "least" : "greatest";
-    static FunctionOverloadResolverPtr create(ContextPtr context_) { return std::make_unique<LeastGreatestOverloadResolver<kind, SpecializedFunction>>(context_); }
+    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<LeastGreatestOverloadResolver<kind, SpecializedFunction>>(context); }
 
     explicit LeastGreatestOverloadResolver(ContextPtr context_)
         : context(context_)
-        , legacy_null_behavior(context_->getSettingsRef()[Setting::least_greatest_legacy_null_behavior])
+        , legacy_null_behavior(context->getSettingsRef()[Setting::least_greatest_legacy_null_behavior])
     {
     }
 

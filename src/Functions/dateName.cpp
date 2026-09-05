@@ -53,7 +53,7 @@ template <> struct DataTypeToTimeTypeMap<DataTypeDateTime64>
 template <typename DataType>
 using DateTypeToTimeType = typename DataTypeToTimeTypeMap<DataType>::TimeType;
 
-class FunctionDateNameImpl final : public IFunction
+class FunctionDateNameImpl : public IFunction
 {
 public:
     static constexpr auto name = "dateName";
@@ -148,7 +148,7 @@ public:
 
         String date_part = date_part_column->getValue<String>();
 
-        const DateLUTImpl * time_zone_tmp = nullptr;
+        const DateLUTImpl * time_zone_tmp;
         if constexpr (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
             time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 1);
         else

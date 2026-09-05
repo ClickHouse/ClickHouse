@@ -139,21 +139,10 @@ public:
     /// sequentially at all times.
     /// Returns iterator pointing to the newly inserted value
     {
-        /// All entries with the same key sit next to each other, so the new
-        /// value belongs right after the last entry with this key. Look for
-        /// that entry starting from the back of the list. This makes adding
-        /// many values with the same key (e.g. a repeated HTTP query parameter)
-        /// cheap, because the match is usually the last element. If the key
-        /// is not in the map we still walk the whole list and append at the
-        /// end, same as before.
-        typename Container::reverse_iterator it = _list.rbegin();
-        typename Container::reverse_iterator itEnd = _list.rend();
-        for (; it != itEnd; ++it)
-        {
-            if (isEqual(it->first, val.first))
-                return _list.insert(it.base(), val);
-        }
-        return _list.insert(_list.end(), val);
+        Iterator it = find(val.first);
+        while (it != _list.end() && isEqual(it->first, val.first))
+            ++it;
+        return _list.insert(it, val);
     }
 
     void erase(Iterator it) { _list.erase(it); }

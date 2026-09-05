@@ -2,14 +2,12 @@
 
 #include <Columns/ColumnArray.h>
 #include <Common/OptimizedRegularExpression.h>
-#include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Set.h>
@@ -20,7 +18,6 @@
 #include <Interpreters/misc.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <Poco/Logger.h>
@@ -86,8 +83,7 @@ MergeTreeIndexAggregatorBloomFilterText::MergeTreeIndexAggregatorBloomFilterText
     : index_columns(index_columns_)
     , index_name (index_name_)
     , params(params_)
-    , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? tokenizer_->clone() : nullptr)
-    , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
+    , tokenizer(tokenizer_)
     , granule(
         std::make_shared<MergeTreeIndexGranuleBloomFilterText>(
             index_name, index_columns.size(), params))
@@ -159,8 +155,7 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     : index_columns(index_sample_block.getNames())
     , index_data_types(index_sample_block.getNamesAndTypesList().getTypes())
     , params(params_)
-    , owned_tokenizer(token_extactor_ && token_extactor_->isStateful() ? token_extactor_->clone() : nullptr)
-    , tokenizer(owned_tokenizer ? owned_tokenizer.get() : token_extactor_)
+    , tokenizer(token_extactor_)
 {
     if (!predicate)
     {
@@ -356,64 +351,6 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
         auto function_name = function_node.getFunctionName();
 
         size_t arguments_size = function_node.getArgumentsSize();
-
-        /// Handle isNotNull for JSON subcolumns: isNotNull(json.some.path)
-        /// When a JSON path is absent, the value is NULL (for Dynamic/Nullable types),
-        /// so isNotNull(NULL) = false — always safe to skip granules where path is absent.
-        if (function_name == "isNotNull" && arguments_size == 1)
-        {
-            auto arg = function_node.getArgumentAt(0);
-            if (auto json_info = tryMatchNodeToJSONIndex(arg, index_columns, "JSONAllPaths"))
-            {
-                auto arg_type = arg.getDAGNode()->result_type;
-                /// It doesn't make sense to use bloom filter for isNotNull on non-Nullable type, as isNotNull will be always true.
-                if (!canContainNull(*arg_type))
-                    return false;
-
-                out.key_column = json_info->header_position;
-                out.function = RPNElement::FUNCTION_EQUALS;
-                out.bloom_filter = std::make_unique<BloomFilter>(params);
-                tokenizer->stringToBloomFilter(json_info->path.data(), json_info->path.size(), *out.bloom_filter);
-                return true;
-            }
-        }
-
-        /// `LIKE pattern ESCAPE 'c'` and `NOT LIKE pattern ESCAPE 'c'` arrive here as a 3-argument
-        /// call `like(col, pattern, escape_char)` / `notLike(...)`. Fold the escape character into the
-        /// pattern and dispatch through the existing 2-argument handler. `ilike` is intentionally not
-        /// handled here because this index does not support case-insensitive LIKE.
-        if (arguments_size == 3 && (function_name == "like" || function_name == "notLike"))
-        {
-            auto lhs_argument = function_node.getArgumentAt(0);
-            auto pattern_argument = function_node.getArgumentAt(1);
-            auto escape_argument = function_node.getArgumentAt(2);
-
-            Field pattern_field;
-            DataTypePtr pattern_type;
-            Field escape_field;
-            DataTypePtr escape_type;
-            if (pattern_argument.tryGetConstant(pattern_field, pattern_type)
-                && escape_argument.tryGetConstant(escape_field, escape_type)
-                && pattern_field.getType() == Field::Types::String
-                && escape_field.getType() == Field::Types::String)
-            {
-                const String & escape_str = escape_field.safeGet<String>();
-                /// Mirror the execution-layer validation in `FunctionsStringSearch::executeImpl`, otherwise
-                /// skipping the granule would drop a `like` call that should have raised `BAD_ARGUMENTS`.
-                if (escape_str.size() != 1 || static_cast<unsigned char>(escape_str[0]) > 0x7F)
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "The ESCAPE argument of function {} must be a single ASCII character, got '{}'",
-                        function_name, escape_str);
-
-                Field rewritten_field(likePatternWithCustomEscapeToLikePattern(
-                    pattern_field.safeGet<String>(), escape_str[0]));
-                if (traverseTreeEquals(function_name, lhs_argument, pattern_type, rewritten_field, out))
-                    return true;
-            }
-            return false;
-        }
-
         if (arguments_size != 2)
             return false;
 
@@ -474,19 +411,6 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
     return false;
 }
 
-namespace
-{
-
-bool isLikePatternFunction(const String & function_name)
-{
-    return function_name == "like"
-        || function_name == "notLike"
-        || function_name == "mapContainsKeyLike"
-        || function_name == "mapContainsValueLike";
-}
-
-}
-
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
@@ -494,36 +418,11 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     const Field & value_field,
     RPNElement & out)
 {
-    /// Try JSON subcolumn detection early, before the string-type check.
-    /// JSON path comparison values may not be strings (e.g., json.a.b = 1 where value is UInt8),
-    /// but we tokenize the *path* string against the JSONAllPaths index, not the value.
-    if (function_name == "equals")
-    {
-        if (auto json_info = tryMatchNodeToJSONIndex(key_node, index_columns, "JSONAllPaths"))
-        {
-            auto key_type = key_node.getDAGNode()->result_type;
-            if (!isJSONPathFilterSafe(key_type, value_field))
-                return false;
-
-            out.key_column = json_info->header_position;
-            out.function = RPNElement::FUNCTION_EQUALS;
-            out.bloom_filter = std::make_unique<BloomFilter>(params);
-            tokenizer->stringToBloomFilter(json_info->path.data(), json_info->path.size(), *out.bloom_filter);
-            return true;
-        }
-    }
-
     auto value_data_type = WhichDataType(value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
     Field const_value = value_field;
-
-    /// The tokenizer would tokenize such a pattern differently than the scan does and could prune a
-    /// granule holding matching rows.
-    if (isLikePatternFunction(function_name) && const_value.getType() == Field::Types::String
-        && likePatternHasUnknownBackslashEscape(const_value.safeGet<String>()))
-        return false;
 
     const auto column_name = key_node.getColumnName();
     auto key_index = getKeyIndex(column_name);
@@ -703,8 +602,6 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "notEquals")
     {
-        if (!value_data_type.isStringOrFixedString())
-            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -714,8 +611,6 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "equals")
     {
-        if (!value_data_type.isStringOrFixedString())
-            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -743,8 +638,6 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "startsWith")
     {
-        if (!value_data_type.isStringOrFixedString())
-            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -754,8 +647,6 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "endsWith")
     {
-        if (!value_data_type.isStringOrFixedString())
-            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -912,7 +803,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
     return std::make_shared<MergeTreeConditionBloomFilterText>(predicate, context, index.sample_block, params, tokenizer.get());
 }
 
-MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
+MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index)
 {
     static std::set<ITokenizer::Type> allowed_tokenizers =
     {
@@ -946,10 +837,10 @@ MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapsh
         args[first_bf_param_idx+1].safeGet<size_t>(),
         args[first_bf_param_idx+2].safeGet<size_t>());
 
-    return std::make_shared<MergeTreeIndexBloomFilterText>(std::move(metadata_snapshot), index, params, std::move(tokenizer));
+    return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
 }
 
-void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & /*settings*/)
+void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach*/)
 {
     for (const auto & index_data_type : index.data_types)
     {

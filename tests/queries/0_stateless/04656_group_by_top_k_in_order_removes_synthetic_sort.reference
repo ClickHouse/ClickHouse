@@ -1,8 +1,0 @@
-in_order_off
-Sorting (Sorting for GROUP BY top-K)
-Top-K: limit=10, columns=1, directions=[1]
-in_order_on
-in_order_on_matches_optimization_off
-0
-results_match
-10	0

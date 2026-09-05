@@ -22,11 +22,8 @@ set (SRCS
   "${SRC_DIR}/sysinfo.cc"
   "${SRC_DIR}/timers.cc")
 
-add_library(google_benchmark_headers INTERFACE)
-target_include_directories(google_benchmark_headers SYSTEM INTERFACE "${SRC_DIR}/../include")
-
 add_library(google_benchmark "${SRCS}")
-target_link_libraries(google_benchmark PUBLIC google_benchmark_headers)
+target_include_directories(google_benchmark SYSTEM PUBLIC "${SRC_DIR}/../include")
 
 add_library(google_benchmark_main "${SRC_DIR}/benchmark_main.cc")
 target_link_libraries(google_benchmark_main PUBLIC google_benchmark)
@@ -34,5 +31,4 @@ target_link_libraries(google_benchmark_main PUBLIC google_benchmark)
 add_library(google_benchmark_all INTERFACE)
 target_link_libraries(google_benchmark_all INTERFACE google_benchmark google_benchmark_main)
 
-add_library(ch_contrib::gbenchmark_headers ALIAS google_benchmark_headers)
 add_library(ch_contrib::gbenchmark_all ALIAS google_benchmark_all)

@@ -6,8 +6,6 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 
-#include <atomic>
-
 #include <QueryPipeline/SizeLimits.h>
 
 #include <Interpreters/IKeyValueEntity.h>
@@ -46,8 +44,6 @@ public:
 
     size_t getTotalByteCount() const override { return 0; }
 
-    StepAnalysisReport getAnalysisReport() const override;
-
     bool alwaysReturnsEmptySet() const override { return false; }
 
     bool isFilled() const override { return true; }
@@ -62,8 +58,6 @@ private:
     Block sample_block_with_columns_to_add;
     LoggerPtr log;
 
-    std::atomic<UInt64> left_rows_total{0};
-    std::atomic<UInt64> left_rows_matched{0};
 };
 
 }
