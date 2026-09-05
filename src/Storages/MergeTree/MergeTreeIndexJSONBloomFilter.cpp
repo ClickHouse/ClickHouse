@@ -601,7 +601,12 @@ private:
         else if (plan.hash_prefix != hash_prefix)
         {
             for (auto & path : plan.paths)
-                path.hash_path = appendPath(hash_prefix, path.relative_path);
+            {
+                path.hash_path.assign(hash_prefix);
+                if (!hash_prefix.empty() && !path.relative_path.empty())
+                    path.hash_path += '.';
+                path.hash_path += path.relative_path;
+            }
             plan.hash_prefix = hash_prefix;
         }
         auto & paths = plan.paths;
