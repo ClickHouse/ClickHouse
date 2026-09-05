@@ -102,6 +102,37 @@ public:
         bool with_tags,
         const std::optional<std::string> & start_after) const override;
 
+    bool supportsDelimitedListing() const override { return true; }
+
+    /// Directory buckets accept a `Delimiter` only when the `Prefix` ends with '/', so the delimiter walk
+    /// must start at a '/' boundary (or the bucket root). For a glob whose fixed prefix ends mid-component,
+    /// the caller may widen the walk to the preceding boundary (see the base declaration).
+    bool supportsDelimitedListingFromPrefix(const std::string & key_prefix) const override
+    {
+        if (client.get()->isS3ExpressBucket())
+            return key_prefix.empty() || key_prefix.ends_with('/');
+        return true;
+    }
+
+    /// S3 Express / directory buckets reject `StartAfter` and only allow the '/' delimiter.
+    bool supportsStartAfterListing() const override { return !client.get()->isS3ExpressBucket(); }
+
+    /// Keyspace splitting of flat directories resumes by key, so it is available exactly where `StartAfter`
+    /// is; without it, flat ranges are paginated serially and only the hierarchical delimiter walk runs
+    /// in parallel.
+    bool supportsListingKeyspaceSplit() const override { return supportsStartAfterListing(); }
+
+    /// The same fallback `iterate` and `listObjectsSingleLevel` apply to `max_keys = 0`.
+    size_t getListObjectsDefaultPageSize() const override;
+
+    ObjectStorageListResult listObjectsSingleLevel(
+        const std::string & path_prefix,
+        const std::string & delimiter,
+        size_t max_keys,
+        bool with_tags,
+        const std::string & start_after,
+        const std::string & continuation_token) const override;
+
     /// Uses `DeleteObjectRequest`.
     void removeObjectIfExists(const StoredObject & object) override;
 

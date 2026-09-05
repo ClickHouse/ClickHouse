@@ -83,6 +83,10 @@ String StorageObjectStorageCluster::getPathSample(ContextPtr context)
     /// the query during analysis. A key that is really needed for reading is probed again by the reader,
     /// which does report the error.
     query_settings.ignore_non_existent_file = true;
+    /// Force serial listing: see StorageObjectStorage::getPathSample. The sample path must be
+    /// deterministic (independent of `s3_list_object_parallelism`) so hive-partitioning detection
+    /// is stable.
+    query_settings.list_object_parallelism = 1;
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         query_settings,

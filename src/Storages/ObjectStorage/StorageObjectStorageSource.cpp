@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <unordered_set>
@@ -12,6 +13,8 @@
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageParallelListingIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ParallelListingGlobPredicate.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -209,6 +212,14 @@ namespace Setting
     extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool s3_validate_etag_on_read;
 }
+
+/// Upper bound on the effective `s3_list_object_parallelism`. The setting comes straight from the user
+/// and becomes the size (and queue size) of the per-iterator `S3_LIST_POOL` thread pool, so an absurd
+/// value (e.g. set by mistake or a fuzzer) would otherwise try to grab the entire global thread pool for
+/// a single listing — starving the rest of the server — and overflow the buffered-keys bound derived from
+/// it. No real workload needs more than a few dozen parallel listing streams, so we clamp to a generous
+/// cap rather than reject the query, keeping the setting a pure performance knob.
+static constexpr size_t MAX_LIST_OBJECT_PARALLELISM = 1000;
 
 static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
 {
@@ -570,6 +581,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 local_context,
                 is_archive ? nullptr : read_keys,
                 query_settings.list_object_keys_size,
+                query_settings.list_object_parallelism,
                 query_settings.throw_on_zero_files_match,
                 with_tags,
                 file_progress_callback);
@@ -1946,6 +1958,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     ContextPtr context_,
     ObjectInfos * read_keys_,
     size_t list_object_keys_size,
+    size_t list_object_parallelism,
     bool throw_on_zero_files_match_,
     bool with_tags,
     std::function<void(FileProgress)> file_progress_callback_)
@@ -1967,8 +1980,6 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         const auto & key_with_globs = reading_path;
         const auto key_prefix = reading_path.cutGlobs(configuration->supportsPartialPathPrefix());
 
-        object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size, with_tags, std::nullopt);
-
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs.path));
         if (!matcher->ok())
         {
@@ -1976,6 +1987,122 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         }
 
         recursive = key_with_globs.path == "/**";
+
+        /// Clamp the user-provided parallelism to a sane maximum before it sizes the listing thread pool
+        /// (and the buffered-keys bound below): a huge value must not be able to grab the whole global
+        /// thread pool for a single listing or overflow the bound.
+        const size_t parallelism = std::min(list_object_parallelism, MAX_LIST_OBJECT_PARALLELISM);
+
+        /// List the matching files in parallel by walking the "directory" tree (the common prefixes
+        /// formed by the '/' delimiter), unless disabled or the path cannot be pruned per directory
+        /// level and would degrade to one request per directory: legacy recursive wildcard `**` forms and
+        /// '{...}' selectors spanning '/' (e.g. `root/{a/b,c/d}/*.csv`) both match across '/'.
+        /// Endpoints that accept a delimited listing only from a '/'-aligned prefix (S3 Express /
+        /// directory buckets) keep the parallel walk by starting it one '/' boundary earlier; see
+        /// `chooseDelimitedListingStartPrefix`.
+        std::optional<std::string> listing_start_prefix;
+
+        /// The request path treats `list_object_keys_size = 0` as "use the storage-configured
+        /// default page size", so resolve the zero the same way before it sizes the buffered-key
+        /// cap below: deriving the cap from the raw zero would collapse it to a single key while
+        /// every listed page still carries a full default-sized batch, blocking the workers on the
+        /// count budget and serializing the parallel listing.
+        const size_t page_size = list_object_keys_size ? list_object_keys_size : object_storage->getListObjectsDefaultPageSize();
+
+        if (parallelism > 1
+            && !globPathHasRecursiveWildcard(key_with_globs.path)
+            && !globSelectorSpansPathComponents(key_with_globs.path))
+        {
+            listing_start_prefix = chooseDelimitedListingStartPrefix(
+                key_with_globs.path,
+                key_prefix,
+                [&](const std::string & prefix) { return object_storage->supportsDelimitedListingFromPrefix(prefix); },
+                /// Invoked (once) only when the walk would start from a prefix wider than `key_prefix`:
+                /// samples every entry on the first delimited page of the widened level. Entries outside
+                /// the fixed prefix's region would force the widened walk to fetch pages the serial
+                /// listing never needs. Tags-free — only the paths matter here.
+                [&](const std::string & widened_prefix)
+                {
+                    auto page = object_storage->listObjectsSingleLevel(
+                        widened_prefix, "/", page_size, /* with_tags */ false, /* start_after */ {}, /* continuation_token */ {});
+                    std::vector<std::string> keys;
+                    keys.reserve(page.objects.size() + page.common_prefixes.size());
+                    for (const auto & object : page.objects)
+                        keys.push_back(object->getPath());
+                    keys.insert(keys.end(), page.common_prefixes.begin(), page.common_prefixes.end());
+                    return keys;
+                });
+        }
+
+        if (listing_start_prefix.has_value())
+        {
+            LOG_DEBUG(
+                log,
+                "Listing {} in parallel with {} threads, starting from the prefix {}",
+                key_with_globs.path,
+                parallelism,
+                *listing_start_prefix);
+
+            /// A walk started from a prefix wider than the glob's fixed prefix (directory buckets, see
+            /// `chooseDelimitedListingStartPrefix`) is cut off at the end of the fixed prefix's key
+            /// region, so loose objects of the widened level sorting after every possibly-matching key —
+            /// which the sampled first page cannot rule out — are not paged through.
+            std::string root_range_end;
+            if (*listing_start_prefix != key_prefix)
+                if (auto bound = leastKeyAfterPrefixRegion(key_prefix))
+                    root_range_end = std::move(*bound);
+
+            /// Capture the object storage by shared_ptr so it outlives the iterator's worker threads.
+            auto list_level = [storage = object_storage, page_size, with_tags]
+                (const std::string & prefix, const std::string & delimiter, const std::string & start_after, const std::string & continuation_token)
+            {
+                return storage->listObjectsSingleLevel(prefix, delimiter, page_size, with_tags, start_after, continuation_token);
+            };
+
+            /// The flat keyspace-split probe only checks whether any key exists past a boundary, so it lists a
+            /// single key and never fetches tags: without this, enabling `s3_list_object_parallelism` on a
+            /// `_tags` scan would eagerly `GetObjectTagging` for every object of a probe page it then discards.
+            auto probe_level = [storage = object_storage]
+                (const std::string & prefix, const std::string & delimiter, const std::string & start_after, const std::string & continuation_token)
+            {
+                return storage->listObjectsSingleLevel(prefix, delimiter, /* max_keys */ 1, /* with_tags */ false, start_after, continuation_token);
+            };
+
+            /// Make the parallel listing observe query cancellation: it waits on its own condition
+            /// variables, which a `KILL` or a timeout does not notify, so give it a way to throw the
+            /// proper exception instead of hanging (the parallel listing runs synchronously on the
+            /// query's main thread, e.g. inside `getPathSample`).
+            std::function<void()> check_cancellation;
+            if (auto query_status = local_context->getProcessListElementSafe())
+                check_cancellation = [query_status] { query_status->throwIfKilled(); };
+
+            /// The count cap below scales with the user-set parallelism and page size, so on its own it
+            /// would admit millions of buffered keys at extreme settings; the iterator's built-in
+            /// buffered-object byte budget (`DEFAULT_MAX_BUFFERED_OBJECT_BYTES`) bounds the buffered-key
+            /// memory independently of these settings.
+            object_storage_iterator = std::make_shared<ObjectStorageParallelListingIterator>(
+                *listing_start_prefix,
+                parallelism,
+                /* max_buffered_keys */ page_size * parallelism * 2,
+                std::move(list_level),
+                std::move(probe_level),
+                makeShouldDescendPredicate(key_with_globs.path),
+                /* allow_keyspace_split */ object_storage->supportsListingKeyspaceSplit(),
+                std::move(check_cancellation),
+                ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES,
+                ObjectStorageParallelListingIterator::DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
+                /* allow_start_after */ object_storage->supportsStartAfterListing(),
+                std::move(root_range_end),
+                /// A trailing-slash glob (`root/*/`) matches directory markers, and the walk descends one
+                /// level into every matching directory only to surface its marker. Tell the iterator so
+                /// that such a range stops after its first page instead of paginating (and splitting) the
+                /// whole subtree to prove a marker is absent.
+                makeIsMarkerOnlyPrefixPredicate(key_with_globs.path));
+        }
+        else
+        {
+            object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size, with_tags, std::nullopt);
+        }
         if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, getContext(), hive_columns))
         {
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());
