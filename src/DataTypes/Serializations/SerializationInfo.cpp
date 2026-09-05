@@ -23,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -260,7 +261,28 @@ void SerializationInfo::serialializeKindStackBinary(WriteBuffer & out) const
     }
 }
 
-void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
+void SerializationInfo::checkKindStack(ISerialization::KindSet allowed_kinds) const
+{
+    if (kind_stack.empty() || kind_stack.front() != ISerialization::Kind::DEFAULT)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Serialization kind stack must start with Default");
+
+    for (size_t i = 0; i != kind_stack.size(); ++i)
+    {
+        auto kind = kind_stack[i];
+
+        if (!allowed_kinds.contains(kind))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Unexpected serialization kind {} in the received data",
+                ISerialization::kindToString(kind));
+
+        /// A ColumnBLOB holds the serialized form of the whole column, so no other kind can wrap it.
+        if (kind == ISerialization::Kind::DETACHED && i + 1 != kind_stack.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Serialization kind Detached must be the last kind in a kind stack");
+    }
+}
+
+void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in, ISerialization::KindSet allowed_kinds)
 {
     UInt8 type = 0;
     readBinary(type, in);
@@ -289,6 +311,11 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
         {
             size_t num_kinds = 0;
             readVarUInt(num_kinds, in);
+            /// Every kind wraps the serialization once, so no writer produces a longer stack.
+            if (num_kinds > magic_enum::enum_count<ISerialization::Kind>())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many serialization kinds in a kind stack: {}", num_kinds);
+
+            kind_stack.clear();
             for (size_t i = 0; i != num_kinds; ++i)
             {
                 UInt8 kind = 0;
@@ -302,6 +329,8 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
             break;
         }
     }
+
+    checkKindStack(allowed_kinds);
 }
 
 void SerializationInfo::writeJSONFields(WriteBuffer & out, const String * name) const

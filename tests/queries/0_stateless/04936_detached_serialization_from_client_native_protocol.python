@@ -1,0 +1,298 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Regression test for a post-auth type confusion over the native TCP protocol.
+#
+# The serialization kind of every column of a block is chosen by the peer that sends the
+# block. `Kind::DETACHED` is an internal transport representation for parallel blocks
+# marshalling: it produces a `ColumnBLOB` holding raw peer-supplied bytes while the block
+# keeps the declared type of the column. A client that selects it for an external table
+# therefore puts a column that is not a `ColumnMap` into a block declared as `Map`, and
+# every later `assert_cast<const ColumnMap &>` (a plain `static_cast` in release builds)
+# reinterprets attacker-controlled bytes.
+#
+# `NativeReader` must accept `DETACHED` only from a peer whose pipeline unmarshalls blobs,
+# which never includes a client, and must reject kind stacks that no writer can produce.
+# All scenarios below expect INCORRECT_DATA (code 117) and a server that stays alive.
+#
+# The client speaks the raw native protocol pinned to revision 54482
+# (DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION), so the set of exchanged,
+# revision-gated fields is fixed and does not drift.
+
+import os
+import socket
+import struct
+import uuid
+
+CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
+CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "9000"))
+CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
+CLIENT_NAME = "detached serialization poc"
+
+REVISION = 54482
+
+# KindStackBinarySerializationType
+KIND_STACK_DEFAULT = 0
+KIND_STACK_DETACHED = 2
+KIND_STACK_DETACHED_OVER_SPARSE = 3
+KIND_STACK_COMBINATION = 5
+
+# ISerialization::Kind
+KIND_DEFAULT = 0
+KIND_SPARSE = 1
+KIND_DETACHED = 2
+
+
+def writeVarUInt(x, ba):
+    for _ in range(0, 9):
+        byte = x & 0x7F
+        if x > 0x7F:
+            byte |= 0x80
+        ba.append(byte)
+        x >>= 7
+        if x == 0:
+            return
+
+
+def writeStringBinary(s, ba):
+    b = bytes(s, "utf-8") if isinstance(s, str) else s
+    writeVarUInt(len(b), ba)
+    ba.extend(b)
+
+
+def readStrict(s, size=1):
+    res = bytearray()
+    while size:
+        cur = s.recv(size)
+        if not cur:
+            raise EOFError("Connection closed by server")
+        size -= len(cur)
+        res.extend(cur)
+    return res
+
+
+def readUInt(s, size=1):
+    res = readStrict(s, size)
+    val = 0
+    for i in range(len(res)):
+        val += res[i] << (i * 8)
+    return val
+
+
+def readUInt32(s):
+    return readUInt(s, 4)
+
+
+def readVarUInt(s):
+    x = 0
+    for i in range(9):
+        byte = readStrict(s)[0]
+        x |= (byte & 0x7F) << (7 * i)
+        if not byte & 0x80:
+            return x
+    return x
+
+
+def readStringBinary(s):
+    size = readVarUInt(s)
+    return readStrict(s, size).decode("utf-8")
+
+
+def sendHello(s):
+    ba = bytearray()
+    writeVarUInt(0, ba)  # Hello
+    writeStringBinary(CLIENT_NAME, ba)
+    writeVarUInt(24, ba)  # major
+    writeVarUInt(9, ba)  # minor
+    writeVarUInt(REVISION, ba)
+    writeStringBinary(CLICKHOUSE_DATABASE, ba)  # database
+    writeStringBinary("default", ba)  # user
+    writeStringBinary("", ba)  # password
+    s.sendall(ba)
+
+
+def receiveHello(s):
+    assert readVarUInt(s) == 0  # Hello
+    readStringBinary(s)  # server name
+    readVarUInt(s)  # major
+    readVarUInt(s)  # minor
+    readVarUInt(s)  # revision
+    readVarUInt(s)  # parallel replicas protocol version (>= 54471)
+    readStringBinary(s)  # timezone (>= 54058)
+    readStringBinary(s)  # display name (>= 54372)
+    readVarUInt(s)  # version patch (>= 54401)
+    readStringBinary(s)  # proto_send chunked (>= 54470)
+    readStringBinary(s)  # proto_recv chunked (>= 54470)
+    for _ in range(readVarUInt(s)):  # password complexity rules (>= 54461)
+        readStringBinary(s)
+        readStringBinary(s)
+    readStrict(s, 8)  # nonce, UInt64 (>= 54462)
+    # Server settings in STRINGS_WITH_FLAGS format: (name, flags, value)* terminated
+    # by an empty name (>= 54474).
+    while True:
+        if readStringBinary(s) == "":  # setting name
+            break
+        readVarUInt(s)  # flags
+        readStringBinary(s)  # value
+    readVarUInt(s)  # query plan serialization version (>= 54477)
+    readVarUInt(s)  # cluster function protocol version (>= 54479)
+
+
+def sendAddendum(s):
+    ba = bytearray()
+    writeStringBinary("", ba)  # quota key (>= 54458)
+    writeStringBinary("notchunked", ba)  # proto_send chunked (>= 54470)
+    writeStringBinary("notchunked", ba)  # proto_recv chunked (>= 54470)
+    writeVarUInt(0, ba)  # parallel replicas protocol version (>= 54471)
+    s.sendall(ba)
+
+
+def serializeClientInfo(ba, query_id):
+    ba.append(1)  # INITIAL_QUERY
+    writeStringBinary("default", ba)  # initial_user
+    writeStringBinary(query_id, ba)  # initial_query_id
+    writeStringBinary("127.0.0.1:9000", ba)  # initial_address
+    ba.extend([0] * 8)  # initial_query_start_time_microseconds (>= 54449)
+    ba.append(1)  # interface = TCP
+    writeStringBinary("os_user", ba)
+    writeStringBinary("client_hostname", ba)
+    writeStringBinary(CLIENT_NAME, ba)
+    writeVarUInt(24, ba)  # client major
+    writeVarUInt(9, ba)  # client minor
+    writeVarUInt(REVISION, ba)  # client tcp protocol version
+    writeStringBinary("", ba)  # quota key (>= 54060)
+    writeVarUInt(0, ba)  # distributed_depth (>= 54448)
+    writeVarUInt(1, ba)  # client version patch (>= 54401)
+    ba.append(0)  # opentelemetry: no trace id (>= 54442)
+    writeVarUInt(0, ba)  # parallel replicas: collaborate_with_initiator (>= 54453)
+    writeVarUInt(0, ba)  # parallel replicas: obsolete count
+    writeVarUInt(0, ba)  # parallel replicas: number_of_current_replica
+    writeVarUInt(0, ba)  # script query number (>= 54475)
+    writeVarUInt(0, ba)  # script line number (>= 54475)
+    ba.append(0)  # jwt: none (>= 54476)
+
+
+def sendQuery(s, query):
+    ba = bytearray()
+    query_id = uuid.uuid4().hex
+    writeVarUInt(1, ba)  # Query
+    writeStringBinary(query_id, ba)
+    serializeClientInfo(ba, query_id)
+    writeStringBinary("", ba)  # empty per-query settings
+    writeStringBinary("", ba)  # interserver externally granted roles (>= 54472)
+    writeStringBinary("", ba)  # interserver secret (>= 54441)
+    writeVarUInt(2, ba)  # stage = Complete
+    ba.append(0)  # no compression
+    writeStringBinary(query, ba)
+    writeStringBinary("", ba)  # query parameters terminator (>= 54459)
+    s.sendall(ba)
+
+
+def serializeBlockInfo(ba):
+    writeVarUInt(1, ba)  # field 1
+    ba.append(0)  # is_overflows = false
+    writeVarUInt(2, ba)  # field 2
+    ba.extend(struct.pack("<i", -1))  # bucket_num = -1
+    writeVarUInt(0, ba)  # end of block info
+
+
+def externalTableBlock(column_type, kind_stack_bytes, rows=1):
+    """A Data packet with one column of external table `e` carrying a crafted kind stack."""
+    ba = bytearray()
+    writeVarUInt(2, ba)  # Data
+    writeStringBinary("e", ba)  # external table name
+    serializeBlockInfo(ba)
+    writeVarUInt(1, ba)  # columns
+    writeVarUInt(rows, ba)
+    writeStringBinary("x", ba)  # column name
+    writeStringBinary(column_type, ba)
+    ba.append(1)  # has_custom serialization
+    ba.extend(kind_stack_bytes)
+    return bytes(ba)
+
+
+def combinationKindStack(kinds):
+    ba = bytearray()
+    ba.append(KIND_STACK_COMBINATION)
+    writeVarUInt(len(kinds), ba)
+    for kind in kinds:
+        ba.append(kind)
+    return bytes(ba)
+
+
+def readException(s):
+    code = readUInt32(s)
+    readStringBinary(s)  # name
+    text = readStringBinary(s)
+    readStringBinary(s)  # trace
+    readStrict(s)  # has_nested
+    return code, text
+
+
+def expectIncorrectData(s, must_contain):
+    packet_type = readVarUInt(s)
+    assert packet_type == 2, "Expected Exception packet, got {}".format(packet_type)
+    code, text = readException(s)
+    assert code == 117, "Expected INCORRECT_DATA (117), got {}: {}".format(code, text)
+    assert must_contain in text, text
+
+
+def runScenario(name, block, must_contain):
+    # An external table takes its structure from the declared types of the block, so a runtime
+    # column that does not match them reaches assert_cast<const ColumnMap &> inside mapConcat.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(30)
+        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
+        sendHello(s)
+        receiveHello(s)
+        sendAddendum(s)
+        sendQuery(s, "SELECT mapConcat(x) FROM e")
+        s.sendall(block)
+        expectIncorrectData(s, must_contain)
+        print("{}: caught expected exception INCORRECT_DATA".format(name))
+
+
+def main():
+    # The reported vector: a Map column whose runtime representation becomes a ColumnBLOB.
+    runScenario(
+        "detached",
+        externalTableBlock("Map(UInt64, UInt64)", bytes([KIND_STACK_DETACHED])),
+        "Unexpected serialization kind Detached",
+    )
+
+    # The same, reached through the dedicated Detached-over-Sparse encoding.
+    runScenario(
+        "detached over sparse",
+        externalTableBlock("UInt64", bytes([KIND_STACK_DETACHED_OVER_SPARSE])),
+        "Unexpected serialization kind Detached",
+    )
+
+    # The same, reached through the generic kind stack encoding.
+    runScenario(
+        "detached in a combination",
+        externalTableBlock("Map(UInt64, UInt64)", combinationKindStack([KIND_DEFAULT, KIND_DETACHED])),
+        "Unexpected serialization kind Detached",
+    )
+
+    # Kind stacks are per tuple element, so a blob can also be requested for a nested column.
+    tuple_block = externalTableBlock("Tuple(UInt64, UInt64)", bytes([KIND_STACK_DEFAULT]))
+    tuple_block += bytes([KIND_STACK_DETACHED])  # element 0
+    tuple_block += bytes([KIND_STACK_DEFAULT])  # element 1
+    runScenario("detached tuple element", tuple_block, "Unexpected serialization kind Detached")
+
+    # Every kind stack starts with Default.
+    runScenario(
+        "kind stack without default",
+        externalTableBlock("UInt64", combinationKindStack([KIND_SPARSE])),
+        "must start with Default",
+    )
+
+    # A huge kind stack must be rejected before it is materialized into nested serializations.
+    huge = bytearray()
+    huge.append(KIND_STACK_COMBINATION)
+    writeVarUInt(1000000, huge)
+    runScenario("too many kinds", externalTableBlock("UInt64", bytes(huge)), "Too many serialization kinds")
+
+
+if __name__ == "__main__":
+    main()
