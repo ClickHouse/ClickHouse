@@ -182,17 +182,17 @@ public:
         /// Hit only. A re-ask of the same run may return a fresh reader or a null one; the executor
         /// keeps exactly one per run either way.
         CacheReaderPtr reader;
-        /// Miss only: the segment's open writer. It is null on a bypass or read-only tier.
+        /// Miss only: the segment's open writer. Null when the segment will not be populated.
         CacheWriterPtr writer;
     };
 
     /// Resolve `range` in ONE pass. Return every resolution that covers it, in offset order, each
-    /// once. Hits carry readers. The provider decides whether a miss carries an open writer: a
-    /// populating tier opens it here, a read-only or bypass tier returns it writer-less. The caller
-    /// subtracts faster-tier hits before it asks. Edge segments may overhang `range` (segment-boundary
-    /// rounding, or the object-end clamp). Holds no per-call state, so many threads can resolve one
-    /// shared provider at once (parallel `readBigAt`). `range` is file-space; `object_offset` is
-    /// `range.offset`'s object-local position (so the object's file base is `range.offset - object_offset`).
+    /// once. Hits carry readers. A miss carries an open writer when this tier populates and the
+    /// segment can accept bytes, and is writer-less otherwise. The caller subtracts faster-tier hits
+    /// before it asks. Edge segments may overhang `range` (segment-boundary rounding, or the
+    /// object-end clamp). Holds no per-call state, so many threads can resolve one shared provider at
+    /// once (parallel `readBigAt`). `range` is file-space; `object_offset` is `range.offset`'s
+    /// object-local position (so the object's file base is `range.offset - object_offset`).
     virtual VectorWithMemoryTracking<CacheResolution> resolve(
         const StoredObject & object, size_t object_offset, ByteRange range) = 0;
 };

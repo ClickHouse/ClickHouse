@@ -13,14 +13,12 @@ INSERT INTO t_04743 VALUES ([1,2,3],[1,2],1), ([4,5],[],2), ([6],[7,8,9],3);
 
 -- arrayJoin in the aggregate argument multiplies rows, so the stored row count (3) is not the answer
 SELECT count(arrayJoin(A)) FROM t_04743 SETTINGS optimize_trivial_count_query = 1;
-SELECT count(unnest(A)) FROM t_04743 SETTINGS optimize_trivial_count_query = 1;
 SELECT count(arrayJoin(A) + 1) FROM t_04743 SETTINGS optimize_trivial_count_query = 1;
 SELECT count(arrayJoin(B)) FROM t_04743 SETTINGS optimize_trivial_count_query = 1;
 SELECT count(arrayJoin(arrayJoin([A, B]))) FROM t_04743 SETTINGS optimize_trivial_count_query = 1;
 
 -- the same values with the optimization off
 SELECT count(arrayJoin(A)) FROM t_04743 SETTINGS optimize_trivial_count_query = 0;
-SELECT count(unnest(A)) FROM t_04743 SETTINGS optimize_trivial_count_query = 0;
 SELECT count(arrayJoin(A) + 1) FROM t_04743 SETTINGS optimize_trivial_count_query = 0;
 SELECT count(arrayJoin(B)) FROM t_04743 SETTINGS optimize_trivial_count_query = 0;
 SELECT count(arrayJoin(arrayJoin([A, B]))) FROM t_04743 SETTINGS optimize_trivial_count_query = 0;

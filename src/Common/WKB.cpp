@@ -3,6 +3,7 @@
 #include <variant>
 #include <Common/Exception.h>
 #include <Common/WKB.h>
+#include <Common/checkStackSize.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -174,6 +175,10 @@ static MultiPolygon<CartesianPoint> readMultiPolygonWKB(ReadBuffer & in_buffer, 
 
 GeometricObject parseWKBFormat(ReadBuffer & in_buffer, UInt32 max_element_count)
 {
+    /// Multi* geometries contain nested geometries, and the nesting is not bounded by the element
+    /// count checks: every level can hold a single element. Guard the recursion against a stack overflow.
+    checkStackSize();
+
     UInt32 limit = effectiveLimit(max_element_count);
 
     char little_endian = 0;

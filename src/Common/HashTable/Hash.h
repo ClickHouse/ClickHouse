@@ -130,8 +130,8 @@ inline UInt64 intHashCRC32(T x, UInt64 updated_value)
 /// Default initial value for `updateWeakHash32` hashing chains (all bits set).
 inline constexpr UInt32 WEAK_HASH32_INITIAL_VALUE = ~UInt32(0);
 
-/// Canonical cross-column combiner for routing hashes (sharded aggregation, `grace_hash` joins,
-/// parallel-window partitioning, hash-join scatter).
+/// Canonical cross-column combiner for routing hashes (`grace_hash` joins, parallel-window
+/// partitioning, hash-join scatter).
 ///
 /// Chains a FINALIZED per-row hash `value` with the prior accumulator `prior` using one
 /// hardware CRC32C step. Every column type combines its own finalized per-row hash with

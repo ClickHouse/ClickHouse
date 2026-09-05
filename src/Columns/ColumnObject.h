@@ -56,6 +56,7 @@ private:
         UnorderedMapWithMemoryTracking<String, MutableColumnPtr> dynamic_paths_,
         MutableColumnPtr shared_data_,
         size_t max_dynamic_paths_,
+        size_t max_dynamic_paths_upper_bound_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
         const StatisticsPtr & statistics_ = {});
@@ -76,6 +77,7 @@ public:
         const UnorderedMapWithMemoryTracking<String, ColumnPtr> & dynamic_paths_,
         const ColumnPtr & shared_data_,
         size_t max_dynamic_paths_,
+        size_t max_dynamic_paths_upper_bound_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
         const StatisticsPtr & statistics_ = {});
@@ -85,6 +87,7 @@ public:
         UnorderedMapWithMemoryTracking<String, MutableColumnPtr> dynamic_paths_,
         MutableColumnPtr shared_data_,
         size_t max_dynamic_paths_,
+        size_t max_dynamic_paths_upper_bound_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
         const StatisticsPtr & statistics_ = {});
@@ -117,6 +120,7 @@ public:
 
     bool isDefaultAt(size_t n) const override;
     UInt64 getNumberOfDefaultRows() const override;
+    bool hasOnlyTypeDefaults() const override;
     std::string_view getDataAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
 
@@ -137,7 +141,6 @@ public:
 
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
-    void skipSerializedInArena(ReadBuffer & in) const override;
     std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
@@ -209,6 +212,10 @@ public:
     const PathToColumnMap & getTypedPaths() const { return typed_paths; }
     PathToColumnMap & getTypedPaths() { return typed_paths; }
 
+    /// Flat vector of typed path column pointers in the same order as sorted_typed_paths.
+    /// Used for cache-friendly iteration in hot loops (e.g., default filling).
+    const VectorWithMemoryTracking<IColumn *> & getSortedTypedPathColumns() const { return sorted_typed_path_columns; }
+
     const PathToColumnMap & getDynamicPaths() const { return dynamic_paths; }
     PathToColumnMap & getDynamicPaths() { return dynamic_paths; }
 
@@ -260,6 +267,7 @@ public:
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
+    size_t getMaxDynamicPathsUpperBound() const { return max_dynamic_paths_upper_bound; }
     size_t getGlobalMaxDynamicPaths() const { return global_max_dynamic_paths; }
     DataTypePtr getDynamicType() const { return std::make_shared<DataTypeDynamic>(max_dynamic_types); }
 
@@ -274,7 +282,10 @@ public:
     void setDynamicPaths(const VectorWithMemoryTracking<String> & paths);
     void setDynamicPaths(const VectorWithMemoryTracking<std::pair<String, ColumnPtr>> & paths);
     void setMaxDynamicPaths(size_t max_dynamic_paths_);
-    void setGlobalMaxDynamicPaths(size_t global_max_dynamic_paths_);
+    /// Lowers the upper bound on max_dynamic_paths (and max_dynamic_paths with it).
+    void setMaxDynamicPathsUpperBound(size_t max_dynamic_paths_upper_bound_);
+    /// Lowers this column's upper bound to the source's, so a parsing limit travels with the data.
+    void takeMaxDynamicPathsUpperBoundFrom(const ColumnObject & src);
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
 
     static void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const ColumnDynamic & column, size_t n);
@@ -294,11 +305,13 @@ public:
 
     void validateDynamicPathsSizes() const;
 
-    /// Returns true if the object is empty on the specified row (has no typed paths, no real values dynamic paths and no paths in shared data)
-    bool isEmptyAt(size_t n) const;
+    /// Returns true if the object is empty on the specified row (has no typed paths, no real values dynamic paths and no paths in shared data).
+    /// When skip_null_typed_paths is true, typed paths with NULL values are not considered present.
+    bool isEmptyAt(size_t n, bool skip_null_typed_paths = false) const;
 
     /// Returns true if the object has at least one non-empty path on at least one row.
-    bool hasNonEmptyRows() const;
+    /// When skip_null_typed_paths is true, typed paths with all NULL values are not considered present.
+    bool hasNonEmptyRows(bool skip_null_typed_paths = false) const;
 
     /// Class that allows to iterate over paths inside single row in ColumnObject in sorted order.
     class SortedPathsIterator
@@ -372,12 +385,19 @@ private:
     void serializePathAndValueIntoArena(Arena & arena, const char *& begin, std::string_view path, std::string_view value, std::string_view & res) const;
     void serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, std::string_view & res) const;
     void deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in);
+    /// Rebuild sorted_typed_path_columns from current typed_paths pointers.
+    /// Must be called after any operation that can replace typed path column pointers
+    /// (e.g. forEachMutableSubcolumn).
+    void rebuildSortedTypedPathColumns();
 
     /// Map path -> column for paths with explicitly specified types.
     /// This set of paths is constant and cannot be changed.
     PathToColumnMap typed_paths;
     /// Sorted list of typed paths. Used to avoid sorting paths every time in some methods.
     VectorWithMemoryTracking<std::string_view> sorted_typed_paths;
+    /// Flat vector of typed path column pointers in the same order as sorted_typed_paths.
+    /// Used for cache-friendly iteration in hot loops (e.g., default filling).
+    VectorWithMemoryTracking<IColumn *> sorted_typed_path_columns;
     /// Map path -> column for dynamically added paths. All columns
     /// here are Dynamic columns. This set of paths can be extended
     /// during inserts into the column.
@@ -398,8 +418,14 @@ private:
     /// This limit can be different for different instances of Object column. For example, we can decrease it
     /// in `chooseDynamicStructureForMerge` or `takeExactDynamicStructureFrom` before merge.
     size_t max_dynamic_paths;
+    /// The value max_dynamic_paths is restored to when it is raised back (see `prepareForSquashing`).
+    /// Usually equal to global_max_dynamic_paths, but a parsing setting can lower it for this instance.
+    size_t max_dynamic_paths_upper_bound;
     /// Global limit on number of dynamic paths for all column instances of this Object type. It's the limit specified
-    /// in the type definition (for example 'JSON(max_dynamic_paths=N)'). max_dynamic_paths is always not greater than this limit.
+    /// in the type definition (for example 'JSON(max_dynamic_paths=N)').
+    /// Never narrowed: it takes part in `getName`/`structureEquals`/`dynamicStructureEquals`, so narrowing it would
+    /// make a column mismatch the header built from its own type. Narrow max_dynamic_paths_upper_bound instead.
+    /// Invariant: max_dynamic_paths <= max_dynamic_paths_upper_bound <= global_max_dynamic_paths.
     size_t global_max_dynamic_paths;
     /// Maximum number of dynamic types for each dynamic path. Used while creating Dynamic columns for new dynamic paths.
     size_t max_dynamic_types;

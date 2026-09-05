@@ -49,8 +49,7 @@ ClickHouse поддерживает создание пользовательс�
 
 Доступные реализации движка:
 
-* `wasmtime` (по умолчанию; рекомендуется) — использует [WasmTime](https://github.com/bytecodealliance/wasmtime)
-* `wasmedge` — использует [WasmEdge](https://github.com/WasmEdge/WasmEdge)
+* `wasmtime` (по умолчанию и на данный момент единственная) — использует [Wasmtime](https://github.com/bytecodealliance/wasmtime)
 
 <div id="quick-start">
   ## Быстрый старт
@@ -239,9 +238,9 @@ RETURNS return_type
   * `ASSEMBLYSCRIPT`: Построчная обработка для модулей, созданных компилятором [AssemblyScript](https://www.assemblyscript.org). Числовые типы сопоставляются с примитивами AssemblyScript; ClickHouse `String` сопоставляется с типом AssemblyScript `string`.
 * `DETERMINISTIC`: Объявляет функцию детерминированной — она всегда возвращает один и тот же результат для одних и тех же входных данных. Если указан этот параметр, ClickHouse может выполнить константную свёртку вызовов, в которых все аргументы являются константами: функция вычисляется один раз на этапе анализа запроса, а результат затем повторно используется для каждой строки.
 * `SHA256_HASH`: Ожидаемый хеш модуля для проверки (заполняется автоматически, если опущен); может использоваться, чтобы гарантировать загрузку правильного WASM-модуля на разных репликах.
-* `SETTINGS`: Настройки функции
+* `SETTINGS`: Настройки уровня функции
   * `serialization_format` String — Формат, используемый для сериализации блоков аргументов, передаваемых модулю, и разбора возвращённого результата. Используется только с `ABI BUFFERED_V1`. Поддерживаемые значения: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary` и `Buffers`. По умолчанию: `MsgPack`. Форматы с блочной обработкой, такие как `Buffers`, должны возвращать один столбец, тип которого соответствует объявленной сигнатуре функции.
-  * `webassembly_udf_enable_fuel` Bool — Включает ограничение по fuel для функции. По умолчанию: `true`. Если указано `false`, настройка уровня запроса `webassembly_udf_max_fuel` для этой функции игнорируется. Отключение ограничений fuel может повысить производительность при использовании движка `wasmtime`. Однако для недоверенного или содержащего ошибки гостевого кода это может увеличить риск неконтролируемого выполнения.
+  * `webassembly_udf_enable_fuel` Bool — Включает ограничение по fuel для функции. По умолчанию: `true`. Если указано `false`, настройка уровня запроса `webassembly_udf_max_fuel` для этой функции игнорируется. Отключение ограничений fuel может повысить производительность. Однако для недоверенного или содержащего ошибки гостевого кода это может увеличить риск неконтролируемого выполнения.
 
 <div id="abis-versions">
   ## Версии ABI
@@ -337,7 +336,7 @@ WebAssembly не различает знаковые и беззнаковые �
 typedef struct {
     uint8_t * data;
     uint32_t size;
-} ClickhouseBuffer;
+} ClickHouseBuffer;
 
 #define HEAP_SIZE (1 << 24)
 static _Alignas(16) uint8_t heap[HEAP_SIZE];
@@ -345,13 +344,13 @@ static uint32_t heap_pos = 0;
 static uint32_t live_buffers = 0;
 
 __attribute__((export_name("clickhouse_create_buffer")))
-ClickhouseBuffer * clickhouse_create_buffer(uint32_t size)
+ClickHouseBuffer * clickhouse_create_buffer(uint32_t size)
 {
-    uint32_t total = (sizeof(ClickhouseBuffer) + size + 15u) & ~15u;
+    uint32_t total = (sizeof(ClickHouseBuffer) + size + 15u) & ~15u;
     if (heap_pos + total > HEAP_SIZE)
         return 0; /* a zero handle makes the host fail the query with an error */
-    ClickhouseBuffer * buf = (ClickhouseBuffer *) &heap[heap_pos];
-    buf->data = &heap[heap_pos + sizeof(ClickhouseBuffer)];
+    ClickHouseBuffer * buf = (ClickHouseBuffer *) &heap[heap_pos];
+    buf->data = &heap[heap_pos + sizeof(ClickHouseBuffer)];
     buf->size = size;
     heap_pos += total;
     ++live_buffers;
@@ -359,7 +358,7 @@ ClickhouseBuffer * clickhouse_create_buffer(uint32_t size)
 }
 
 __attribute__((export_name("clickhouse_destroy_buffer")))
-void clickhouse_destroy_buffer(ClickhouseBuffer * buf)
+void clickhouse_destroy_buffer(ClickHouseBuffer * buf)
 {
     if (--live_buffers == 0)
         heap_pos = 0;
@@ -390,9 +389,9 @@ static void write_varint(uint8_t ** pp, uint64_t value)
 
 /* Reverses the bytes of each input string */
 __attribute__((export_name("str_reverse")))
-ClickhouseBuffer * str_reverse(ClickhouseBuffer * input, uint32_t num_rows)
+ClickHouseBuffer * str_reverse(ClickHouseBuffer * input, uint32_t num_rows)
 {
-    ClickhouseBuffer * out = clickhouse_create_buffer(input->size);
+    ClickHouseBuffer * out = clickhouse_create_buffer(input->size);
     if (!out)
         return 0;
     const uint8_t * in = input->data;

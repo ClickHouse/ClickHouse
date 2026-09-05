@@ -163,7 +163,7 @@ ClickHouse Managed Postgres surveille l’utilisation du disque et augmente auto
 
 * **85 % d’utilisation du disque** : vous recevez une [notification](/fr/products/managed-postgres/monitoring/notifications) dans la console Cloud et par e-mail.
 * **90 % d’utilisation du disque** : la mise à l’échelle automatique démarre. La capacité de stockage passe à la taille immédiatement supérieure disponible pour votre famille d’instances. Le CPU et la mémoire restent inchangés, sauf si la taille actuelle de l’instance ne prend pas en charge un disque plus grand, auquel cas la taille de l’instance est également augmentée. Les [répliques de lecture](/fr/products/managed-postgres/read-replicas) sont mises à l’échelle en même temps que l’instance primaire.
-* **95 % d’utilisation du disque** : le basculement ne tient pas compte de toute fenêtre de maintenance configurée et s’effectue dès que le nouveau serveur est prêt.
+* **95 % d’utilisation du disque** : le basculement s’effectue dès que le nouveau serveur est prêt, sans aucune attente.
 
 Si votre instance utilise déjà la plus grande configuration disponible, la mise à l’échelle automatique ne peut pas aller plus loin. Libérez de l’espace disque ou contactez le [support](https://clickhouse.com/support/program).
 
@@ -173,7 +173,7 @@ Si votre instance utilise déjà la plus grande configuration disponible, la mis
 
 Le stockage ne peut pas être redimensionné sur place. La mise à l’échelle automatique suit le même [processus de mise à l&#39;échelle](#scaling-process) qu&#39;un changement manuel de type d&#39;instance : un serveur de remplacement disposant de davantage de stockage est provisionné, restauré à partir de la dernière sauvegarde, rattrape le WAL, puis est promu nouvelle instance primaire lors d&#39;un basculement contrôlé. Les instances dotées de la [haute disponibilité](/fr/products/managed-postgres/high-availability) reçoivent, dans le cadre de la même opération, des instances de secours de remplacement de la nouvelle taille.
 
-Le basculement est la seule étape entraînant une interruption de service, généralement inférieure à une minute. Si une [fenêtre de maintenance](/fr/products/managed-postgres/upgrades#maintenance-windows) est configurée, le basculement attend cette fenêtre, sauf si l&#39;utilisation du disque atteint 95 %. Pendant le basculement, les connexions ouvertes sont interrompues et les transactions en cours sont annulées. Votre chaîne de connexion ne change pas : le DNS est mis à jour pour pointer vers la nouvelle instance primaire, et les applications disposant d&#39;une logique de reconnexion standard se reconnectent automatiquement.
+Le basculement est la seule étape entraînant une interruption de service, généralement inférieure à une minute. Une [fenêtre de mise à niveau planifiée](/fr/products/managed-postgres/upgrades#scheduled-upgrades) configurée ne le retarde pas : cette fenêtre s’applique à la maintenance de la plateforme, et non à la mise à l’échelle. Pendant le basculement, les connexions ouvertes sont interrompues et les transactions en cours sont annulées. Votre chaîne de connexion ne change pas : le DNS est mis à jour pour pointer vers la nouvelle instance primaire, et les applications disposant d&#39;une logique de reconnexion standard se reconnectent automatiquement.
 
 <div id="autoscaling-read-only">
   ### Mode lecture seule
@@ -198,7 +198,7 @@ Une instance disposant de 1024 Go de stockage exécute une charge de travail in
 
 1. Lorsque 870 Go sont utilisés (85 %), vous recevez une notification concernant le stockage.
 2. Lorsque 922 Go sont utilisés (90 %), la mise à l’échelle automatique démarre. Un serveur de remplacement disposant de 2048 Go de stockage est provisionné et restauré à partir de la dernière sauvegarde, tandis que votre instance continue de traiter le trafic.
-3. Une fois le serveur de remplacement synchronisé, le basculement est effectué, pendant votre fenêtre de maintenance si elle est configurée. Les connexions sont interrompues pendant moins d’une minute, votre application se reconnecte au même nom d’hôte et l’utilisation retombe à environ 45 %.
+3. Une fois le serveur de remplacement synchronisé, le basculement est effectué. Les connexions sont interrompues pendant moins d’une minute, votre application se reconnecte au même nom d’hôte et l’utilisation retombe à environ 45 %.
 4. Si l’espace libre tombe sous 2 % (environ 20 Go) avant la fin du basculement, l’instance passe en lecture seule. Les écritures reprennent automatiquement une fois le basculement vers le disque plus grand terminé.
 
 <div id="resources">

@@ -2,7 +2,7 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
-#include <Processors/IProcessor.h>
+#include <Processors/IProcessor_fwd.h>
 
 #include <functional>
 
@@ -96,6 +96,9 @@ public:
 
     /// Changes the number of output ports if needed. Adds (Strict)ResizeProcessor.
     void resize(size_t num_streams, bool strict = false, UInt64 min_outstreams_per_resize_after_split = 0);
+
+    /// Watermark-aware pair to resize. Adds CalibrateWatermarksProcessor.
+    void calibrateWatermarks(size_t num_streams);
 
     using Transformer = std::function<Processors(const OutputPortRawPtrs & ports)>;
 

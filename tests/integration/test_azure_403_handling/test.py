@@ -48,6 +48,12 @@ ERROR_KINDS = {
         "azure_inject_poco_timeout",
         "TransportException",
     ),
+    # Poco network/IO error (connection reset) -> TransportException, like timeout (r3767770811).
+    "network": (
+        "azure_inject_poco_network_error_once",
+        "azure_inject_poco_network_error",
+        "TransportException",
+    ),
 }
 
 ALL_FAILPOINTS = [fp for triple in ERROR_KINDS.values() for fp in triple[:2]] + [
