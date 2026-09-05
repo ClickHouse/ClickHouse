@@ -34,4 +34,17 @@ namespace DB
             result_columns_order.push_back(name);
         }
     }
+
+    InterpolateDescription::InterpolateDescription(
+        ActionsDAG actions_,
+        UnorderedMapWithMemoryTracking<std::string, NameAndTypePair> required_columns_map_,
+        VectorWithMemoryTracking<std::string> result_columns_order_)
+        : actions(std::move(actions_))
+        , required_columns_map(std::move(required_columns_map_))
+        , result_columns_order(std::move(result_columns_order_))
+    {
+        /// The set is just the membership view of the order, so it is not carried separately.
+        for (const auto & name : result_columns_order)
+            result_columns_set.insert(name);
+    }
 }

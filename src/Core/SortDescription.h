@@ -10,7 +10,6 @@
 #include <cstddef>
 #include <string>
 #include <memory>
-#include <vector>
 
 namespace DB
 {
@@ -177,7 +176,10 @@ JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description)
 class WriteBuffer;
 class ReadBuffer;
 
-void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out);
-void deserializeSortDescription(SortDescription & sort_description, ReadBuffer & in);
+/// `version` is the query-plan serialization version of the stream: a `WITH FILL` column carries its
+/// bounds only since DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP.
+void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out, UInt64 version);
+void deserializeSortDescription(
+    SortDescription & sort_description, ReadBuffer & in, UInt64 version, size_t max_type_complexity = 0);
 
 }

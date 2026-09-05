@@ -1315,7 +1315,9 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     UsefulSets & useful_sets)
 {
     NameSet order_by_column_names;
-    SortDescription fill_description;
+    /// `FillingStep` derives the columns to fill from the sort description; this only has to know whether
+    /// there is anything to fill at all, and that every such column is readable here.
+    bool has_fill = false;
 
     const auto & header = query_plan.getCurrentHeader();
 
@@ -1326,11 +1328,11 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         {
             if (!header->findByName(description.column_name))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Filling column {} is not present in the block {}", description.column_name, header->dumpNames());
-            fill_description.push_back(description);
+            has_fill = true;
         }
     }
 
-    if (fill_description.empty())
+    if (!has_fill)
         return;
 
     InterpolateDescriptionPtr interpolate_description;
@@ -1413,7 +1415,6 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     auto filling_step = std::make_unique<FillingStep>(
         query_plan.getCurrentHeader(),
         query_analysis_result.sort_description,
-        std::move(fill_description),
         interpolate_description,
         settings[Setting::use_with_fill_by_sorting_prefix]);
     query_plan.addStep(std::move(filling_step));

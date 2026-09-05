@@ -100,7 +100,7 @@ void NegativeLimitStep::serialize(Serialization & ctx) const
     writeVarUInt(offset, ctx.out);
 
     if (with_ties)
-        serializeSortDescription(description, ctx.out);
+        serializeSortDescription(description, ctx.out, ctx.version);
 }
 
 QueryPlanStepPtr NegativeLimitStep::deserialize(Deserialization & ctx)
@@ -123,7 +123,7 @@ QueryPlanStepPtr NegativeLimitStep::deserialize(Deserialization & ctx)
 
     SortDescription sort_description;
     if (with_ties_v)
-        deserializeSortDescription(sort_description, ctx.in);
+        deserializeSortDescription(sort_description, ctx.in, ctx.version, ctx.max_type_complexity);
 
     return std::make_unique<NegativeLimitStep>(ctx.input_headers.front(), limit_v, offset_v, with_ties_v, std::move(sort_description));
 }

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <ranges>
 #include <tuple>
 #include <utility>
@@ -3669,14 +3670,11 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
     if (query.orderBy())
     {
         SortDescription sort_description = getSortDescription(query, context);
-        SortDescription fill_description;
-        for (auto & desc : sort_description)
-        {
-            if (desc.with_fill)
-                fill_description.push_back(desc);
-        }
+        /// `FillingStep` derives the columns to fill from the sort description.
+        const bool has_fill = std::any_of(
+            sort_description.begin(), sort_description.end(), [](const auto & desc) { return desc.with_fill; });
 
-        if (fill_description.empty())
+        if (!has_fill)
             return;
 
         InterpolateDescriptionPtr interpolate_descr =
@@ -3686,7 +3684,6 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
         auto filling_step = std::make_unique<FillingStep>(
             query_plan.getCurrentHeader(),
             std::move(sort_description),
-            std::move(fill_description),
             interpolate_descr,
             settings[Setting::use_with_fill_by_sorting_prefix]);
         query_plan.addStep(std::move(filling_step));

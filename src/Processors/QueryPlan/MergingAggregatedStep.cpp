@@ -302,7 +302,7 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
 
     serializeAggregateDescriptions(params.aggregates, ctx.out);
 
-    serializeSortDescription(group_by_sort_description, ctx.out);
+    serializeSortDescription(group_by_sort_description, ctx.out, ctx.version);
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
@@ -358,7 +358,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
 
     SortDescription group_by_sort_description;
-    deserializeSortDescription(group_by_sort_description, ctx.in);
+    deserializeSortDescription(group_by_sort_description, ctx.in, ctx.version, ctx.max_type_complexity);
 
     UInt64 stats_key = 0;
     if (has_stats_key)
