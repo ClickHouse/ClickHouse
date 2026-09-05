@@ -40,6 +40,14 @@ brand	item_id	item.brand
 item_id
 1
 2
+-- Matcher: a column transformer does not hide the source of the matched column
+plus(1, a)	plus(1, r.a)
+2	3
+plus(1, a)	plus(1, b)
+2	3
+plus(1, item_id)	plus(1, brand)	plus(1, other)
+2	101	2
+3	201	2
 -- Equally named columns of a single table expression do not need a qualification
 1	1
 1	1	3

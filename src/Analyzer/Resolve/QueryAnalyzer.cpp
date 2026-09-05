@@ -2463,12 +2463,34 @@ static const IQueryTreeNode * findInnermostJoinCombiningTableExpressions(
     return join_tree_node.get();
 }
 
+/// The table expression a matched node originates from. Subcolumns and `Nested` columns are resolved into functions
+/// (`getSubcolumn`, `nested`) over the actual columns, and the column is not necessarily the first argument.
+static const IQueryTreeNode * getMatchedColumnSource(const QueryTreeNodePtr & node)
+{
+    if (const auto * column_node = node->as<ColumnNode>())
+        return column_node->getColumnSourceOrNull().get();
+
+    if (const auto * function_node = node->as<FunctionNode>())
+    {
+        for (const auto & argument : function_node->getArguments().getNodes())
+        {
+            if (const auto * column_source = getMatchedColumnSource(argument))
+                return column_source;
+        }
+    }
+
+    return nullptr;
+}
+
 /** Columns matched from different table expressions of a join that end up with the same projection name can be told apart
   * only when the matcher qualifies them with the name or alias of their table expression (see qualifyColumnNodesWithProjectionNames).
   * A subquery, union or table function without an alias has no such name, so with `joined_subquery_requires_alias` enabled
   * a duplicate projection name coming from it is reported as a missing alias.
   *
   * Example: SELECT * FROM test_table, (SELECT 1 AS id);
+  *
+  * `matched_nodes` are the matched columns before the column transformers replaced them: a transformed node no longer
+  * carries the source of the column its projection name is derived from (`SELECT * APPLY (x -> 1 + x)`).
   */
 void QueryAnalyzer::validateMatchedColumnsFromJoinCanBeQualified(
     const QueryTreeNodePtr & matcher_node,
@@ -2488,24 +2510,6 @@ void QueryAnalyzer::validateMatchedColumnsFromJoinCanBeQualified(
     if (!join_tree_node)
         return;
 
-    /// The table expression a matched node originates from. Subcolumns and `Nested` columns are wrapped into functions.
-    auto get_column_source = [](const QueryTreeNodePtr & node) -> const IQueryTreeNode *
-    {
-        const IQueryTreeNode * current = node.get();
-        while (current)
-        {
-            if (const auto * column_node = current->as<ColumnNode>())
-                return column_node->getColumnSourceOrNull().get();
-
-            const auto * function_node = current->as<FunctionNode>();
-            if (!function_node || function_node->getArguments().getNodes().empty())
-                return nullptr;
-
-            current = function_node->getArguments().getNodes().front().get();
-        }
-        return nullptr;
-    };
-
     /// Only equally named columns of different table expressions matter. A single table expression is allowed to expose
     /// equally named columns (SELECT * FROM (SELECT x, x FROM t)), and they do not need a qualification.
     std::unordered_map<std::string_view, size_t> projection_name_to_first_node_index;
@@ -2517,8 +2521,8 @@ void QueryAnalyzer::validateMatchedColumnsFromJoinCanBeQualified(
             continue;
 
         const auto & first_node = matched_nodes[it->second];
-        const auto * first_column_source = get_column_source(first_node);
-        const auto * second_column_source = get_column_source(matched_nodes[i]);
+        const auto * first_column_source = getMatchedColumnSource(first_node);
+        const auto * second_column_source = getMatchedColumnSource(matched_nodes[i]);
         if (first_column_source == second_column_source)
             continue;
 
@@ -2702,6 +2706,13 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     ProjectionNames result_projection_names;
     ProjectionNames node_projection_names;
 
+    /** The matched columns before the transformers replaced them, in the same order as `result_projection_names`.
+      * A transformer turns the matched column into an arbitrary expression over it (`APPLY`) or into an unrelated
+      * expression (`REPLACE`), but the projection name of the result is still derived from the matched column, so the
+      * table expression that has to be qualified is the source of the matched column, not of the transformed node.
+      */
+    QueryTreeNodes matched_nodes_before_transformers;
+
     for (auto & [node, column_name] : matched_expression_nodes_with_names)
     {
         bool apply_transformer_was_used = false;
@@ -2714,6 +2725,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             result_projection_names.push_back(projection_name_it->second);
         else
             result_projection_names.push_back(column_name);
+
+        matched_nodes_before_transformers.push_back(node);
 
         for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
         {
@@ -2830,12 +2843,17 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
 
         if (node)
+        {
             list->getNodes().push_back(node);
+        }
         else
+        {
             result_projection_names.pop_back();
+            matched_nodes_before_transformers.pop_back();
+        }
     }
 
-    validateMatchedColumnsFromJoinCanBeQualified(matcher_node, list->getNodes(), result_projection_names, scope);
+    validateMatchedColumnsFromJoinCanBeQualified(matcher_node, matched_nodes_before_transformers, result_projection_names, scope);
 
     for (auto & [strict_transformer, used_column_names] : strict_transformer_to_used_column_names)
     {

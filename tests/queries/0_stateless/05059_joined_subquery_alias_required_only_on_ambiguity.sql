@@ -77,6 +77,15 @@ SELECT * FROM (SELECT 100 AS brand), item ORDER BY item_id FORMAT TSVWithNames;
 SELECT * EXCEPT (brand) FROM item, (SELECT 100 AS brand) ORDER BY item_id FORMAT TSVWithNames;
 SELECT COLUMNS('brand') FROM item, (SELECT 100 AS brand); -- { serverError ALIAS_REQUIRED }
 
+SELECT '-- Matcher: a column transformer does not hide the source of the matched column';
+SELECT * APPLY (x -> 1 + x) FROM (SELECT 1 AS a), (SELECT 2 AS a); -- { serverError ALIAS_REQUIRED }
+SELECT * APPLY (x -> concat('p', toString(x))) FROM (SELECT 1 AS a), (SELECT 2 AS a); -- { serverError ALIAS_REQUIRED }
+SELECT * APPLY (x -> 1 + x) FROM (SELECT 1 AS a) AS l, (SELECT 2 AS a); -- { serverError ALIAS_REQUIRED }
+SELECT * REPLACE (0 AS brand) FROM item, (SELECT 100 AS brand); -- { serverError ALIAS_REQUIRED }
+SELECT * APPLY (x -> 1 + x) FROM (SELECT 1 AS a) AS l, (SELECT 2 AS a) AS r FORMAT TSVWithNames;
+SELECT * APPLY (x -> 1 + x) FROM (SELECT 1 AS a), (SELECT 2 AS b) FORMAT TSVWithNames;
+SELECT * APPLY (x -> 1 + x) FROM item, (SELECT 1 AS other) ORDER BY item_id FORMAT TSVWithNames;
+
 SELECT '-- Equally named columns of a single table expression do not need a qualification';
 SELECT * FROM (SELECT x, x FROM (SELECT 1 AS x));
 SELECT * FROM (SELECT x, x FROM (SELECT 1 AS x)), (SELECT 3 AS y);
