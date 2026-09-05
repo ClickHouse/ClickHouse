@@ -91,6 +91,32 @@ extern const int TYPE_MISMATCH;
 using FieldVectorPtr = std::shared_ptr<FieldVector>;
 using RocksDBOptions = std::unordered_map<std::string, std::string>;
 
+/// `rocksdb::DB::Open` and `fs::create_directories` require a plain local filesystem path. With
+/// `user_files_policy` configured on a disk that is not plain local - a remote disk (e.g.
+/// `s3_plain`), or a local `DiskEncrypted` / cached disk - `user_files_path` resolves to a disk
+/// root that is not usable via local APIs. Testing only `isRemote` would let a local
+/// `DiskEncrypted` through and operate directly on its ciphertext backing files instead of going
+/// through `IDisk`, so reject any non-plain-local disk up front instead of failing later with an
+/// opaque I/O error.
+static void checkUserFilesPolicyDiskIsPlainLocal(const ContextPtr & context)
+{
+    if (context->getApplicationType() == Context::ApplicationType::LOCAL)
+        return;
+
+    auto user_files_volume = context->getUserFilesVolume();
+    if (!user_files_volume)
+        return;
+
+    for (const auto & disk : user_files_volume->getDisks())
+    {
+        if (!isPlainLocalDisk(*disk))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "EmbeddedRocksDB engine is not supported "
+                            "with non-plain-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
+                            disk->getName());
+    }
+}
+
 static RocksDBOptions getOptionsFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & path)
 {
     RocksDBOptions options;
@@ -260,28 +286,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
     {
         bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
 
-        /// `rocksdb::DB::Open` and `fs::create_directories` require a plain local
-        /// filesystem path. With `user_files_policy` configured on a disk that is not
-        /// plain local - a remote disk (e.g. `s3_plain`), or a local `DiskEncrypted` /
-        /// cached disk - `user_files_path` resolves to a disk root that is not usable
-        /// via local APIs. Testing only `isRemote` would let a local `DiskEncrypted`
-        /// through and operate directly on its ciphertext backing files instead of
-        /// going through `IDisk`, so reject any non-plain-local disk up front instead
-        /// of failing later with an opaque I/O error.
-        if (!is_local)
-        {
-            if (auto user_files_volume = context_->getUserFilesVolume())
-            {
-                for (const auto & disk : user_files_volume->getDisks())
-                {
-                    if (!isPlainLocalDisk(*disk))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                        "EmbeddedRocksDB engine is not supported "
-                                        "with non-plain-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
-                                        disk->getName());
-                }
-            }
-        }
+        checkUserFilesPolicyDiskIsPlainLocal(context_);
 
         const String user_files_path = is_local ? "" : getContext()->getUserFilesPath();
         if (fs::path(rocksdb_dir).is_relative())
@@ -894,16 +899,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (!rocksdb_dir.empty() && !from_existing_metadata
         && local_context->getApplicationType() != Context::ApplicationType::LOCAL)
     {
+        /// The same fence the constructor enforces. A non-plain-local `user_files_policy` disk has
+        /// no local path to resolve against at all, so refuse it before probing the filesystem.
+        checkUserFilesPolicyDiskIsPlainLocal(local_context);
+
         bool may_create_directory = !read_only;
         if (!may_create_directory)
         {
             /// Resolved exactly as the constructor resolves it. The `user_files` fence is enforced there
             /// and throws, so a path landing outside it is treated as creating: no existence of anything
             /// beyond the fence is probed, and the statement fails on the fence either way.
-            const fs::path user_files_path = fs::canonical(local_context->getUserFilesPath());
+            const fs::path user_files_path = local_context->getUserFilesPath();
             fs::path resolved = fs::path(rocksdb_dir).is_relative() ? user_files_path / rocksdb_dir : fs::path(rocksdb_dir);
             resolved = fs::absolute(resolved).lexically_normal();
-            may_create_directory = !fileOrSymlinkPathStartsWith(resolved, user_files_path) || !fs::exists(resolved);
+            may_create_directory = !local_context->isUserFilesPath(resolved) || !fs::exists(resolved);
         }
 
         const AccessFlags required
