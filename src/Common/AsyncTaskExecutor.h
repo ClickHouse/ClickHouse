@@ -114,6 +114,11 @@ protected:
     /// Can be called in cancelBefore().
     void resumeUnlocked();
 
+    /// True if the routine has already run to completion, normally or with an exception.
+    /// In that case resume() has already destroyed the coroutine, so resumeUnlocked() must not be
+    /// called and no further async event can ever be delivered.
+    bool isRoutineFinished() const { return routine_is_finished; }
+
 private:
     struct Routine;
 
