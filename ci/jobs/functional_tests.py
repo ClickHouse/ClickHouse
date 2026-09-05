@@ -10,9 +10,18 @@ from pathlib import Path
 from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
+from ci.jobs.scripts.test_selection_manifest import (
+    SELECTION_MANIFEST,
+    configuration_report,
+    load_selection,
+)
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.functional_tests.export_coverage import CoverageExporter
-from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
+from ci.jobs.scripts.functional_tests_results import (
+    FTResultsProcessor,
+    GLOBAL_TIME_LIMIT_EXIT_CODE,
+    MAX_FAILURES_EXIT_CODE,
+)
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -708,10 +717,13 @@ def main():
     elif is_targeted_check:
         rerun_count = 50
 
-    if is_flaky_check:
+    if is_targeted_check:
+        runner_options += " --long-test-runs-ratio 1"
+
+    if is_flaky_check or is_targeted_check:
         # Run no-parallel and no-flaky-check tests sequentially with fewer iterations.
         # Derived from rerun_count so the ratio stays stable as policy evolves.
-        runner_options += f" --sequential-test-runs {rerun_count // 2}"
+        runner_options += f" --sequential-test-runs {rerun_count if is_targeted_check else rerun_count // 2}"
 
     if (is_azure_storage or is_s3_storage) and is_encrypted_storage:
         config_installs_args += " --encrypted-storage"
@@ -859,49 +871,53 @@ def main():
                 status=Result.Status.SKIPPED, info="No tests to run"
             ).complete_job()
 
-    if is_targeted_check:
-        assert not args.test, "--test not supposed to be used for targeted check"
-        tests, results_with_info = targeter.get_all_relevant_tests_with_info()
-        results.append(results_with_info)
-
-        if not tests:
-            # early exit
-            Result.create_from(
-                status=Result.Status.SKIPPED,
-                info="No failed tests found from previous runs",
-            ).complete_job()
-
-    if is_selected_tests_run:
-        assert not args.test, "--test not supposed to be used for a selected tests run"
+    selection_manifest = None
+    selection_events = f"{temp_dir}/selection-events.jsonl"
+    selection_report = f"{temp_dir}/selection-execution.json"
+    if is_targeted_check or is_selected_tests_run:
+        assert not args.test, "--test cannot override a selection manifest"
         try:
-            tests, results_with_info = targeter.get_all_relevant_tests_with_info(
-                include_changed_tests=True
+            selection_manifest = load_selection(info)
+            tests = selection_manifest["tests"]
+            if "parallel" in test_options or "sequential" in test_options:
+                tests = filter_selected_tests_by_flavor(
+                    tests, keep_sequential="sequential" in test_options
+                )
+            Path(selection_events).write_text("")
+            Path(selection_report).write_text(
+                json.dumps(
+                    configuration_report(
+                        selection_manifest, tests, info.job_name, selection_events
+                    ),
+                    indent=2,
+                )
+                + "\n"
             )
-            results.append(results_with_info)
-        except Exception as e:
-            # Selecting the tests needs the pull request diff and the coverage
-            # database. Do not silently run a weaker, unbatched version of the
-            # former sanitizer configuration: its original shards and repeated
-            # newly modified tests cannot be reconstructed from this job. Fail
-            # the check so the selection service problem is visible and retried.
+            results.append(
+                Result(
+                    name="Fetch relevant tests",
+                    status=Result.Status.OK,
+                    info=f"Base selection: {len(selection_manifest['tests'])}; compatible flavor: {len(tests)}",
+                    files=[str(SELECTION_MANIFEST), selection_report],
+                )
+            )
+            runner_options += f" --selection-events {selection_events}"
+        except Exception as ex:
             Result.create_from(
-                status=Result.Status.ERROR,
-                info=f"Failed to select tests: {e}",
+                status=Result.Status.ERROR, info=f"Failed to load test selection: {ex}"
             ).complete_job()
-
-    if is_selected_tests_run:
-        if "parallel" in test_options or "sequential" in test_options:
-            tests = filter_selected_tests_by_flavor(
-                tests, keep_sequential="sequential" in test_options
-            )
-        print(f"[selected tests] {len(tests)} tests to run: {tests}")
-
         if not tests:
-            # early exit
             Result.create_from(
                 status=Result.Status.SKIPPED,
-                info="No tests selected for this change",
+                info="No compatible selected tests",
+                results=results,
+                files=[selection_report],
             ).complete_job()
+
+    if is_per_test_coverage:
+        Path(selection_events).write_text("")
+        runner_options += f" --selection-events {selection_events}"
+        debug_files.append(selection_events)
 
     stage = args.param or JobStages.INSTALL_CLICKHOUSE
     if stage:
@@ -1176,6 +1192,27 @@ def main():
             is_bugfix_validation=is_labeled_bugfix_validation,
             allow_no_tests=is_flaky_check or is_targeted_check or is_selected_tests_run,
         )
+
+        if selection_manifest is not None:
+            Path(selection_report).write_text(
+                json.dumps(
+                    configuration_report(
+                        selection_manifest,
+                        tests,
+                        info.job_name,
+                        selection_events,
+                        runner_exit_code,
+                        requested_repetitions=rerun_count,
+                        stop_reason={
+                            GLOBAL_TIME_LIMIT_EXIT_CODE: "time_limit",
+                            MAX_FAILURES_EXIT_CODE: "failure_limit",
+                        }.get(runner_exit_code),
+                    ),
+                    indent=2,
+                )
+                + "\n"
+            )
+            debug_files.extend([selection_events, selection_report])
 
         # Run additional build types for bugfix validation.
         # Exit early on first failure to avoid duplicate test names,
@@ -1481,9 +1518,13 @@ def main():
                     src=CH,
                     dest=cidb_cluster,
                     job_name=info.job_name,
+                    events_path=selection_events if is_per_test_coverage else None,
                 ).do(),
             )
         )
+        coverage_metadata = Path(temp_dir) / f"coverage-export-{batch_num}.json"
+        if coverage_metadata.exists():
+            results[-1].files.append(str(coverage_metadata))
         if results[-1].is_ok():
             reset_success = True
 

@@ -10,6 +10,7 @@
 import copy
 import enum
 import glob
+import hashlib
 
 # Not requests, to avoid requiring extra dependency.
 import http.client
@@ -4017,7 +4018,51 @@ class TestCase:
 
         return proc, total_time
 
+    def selection_event(self, args, event, **details):
+        path = getattr(args, "selection_events", None)
+        if not path:
+            return
+        settings = {
+            "settings": self.effective_settings,
+            "merge_tree_settings": self.effective_merge_tree_settings,
+        }
+        fingerprint = hashlib.sha256(
+            json.dumps(settings, sort_keys=True, default=str).encode()
+        ).hexdigest()
+        entry = {
+            "test": self.case,
+            "event": event,
+            "pid": os.getpid(),
+            "time": datetime.now().isoformat(),
+            "settings_fingerprint": fingerprint,
+            **details,
+        }
+        # One append syscall per event keeps concurrent worker records intact.
+        payload = (json.dumps(entry, default=str) + "\n").encode()
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+        try:
+            if os.write(fd, payload) != len(payload):
+                raise OSError("Incomplete selection event write")
+        finally:
+            os.close(fd)
+
     def run(self, args, suite, client_options):
+        self.selection_started = False
+        result = self.run_with_selection_events(args, suite, client_options)
+        self.selection_event(
+            args,
+            (
+                "filtered"
+                if not self.selection_started and result.status == TestStatus.SKIPPED
+                else "completed"
+            ),
+            status=result.status.value,
+            reason=str(result.reason),
+            duration=result.total_time,
+        )
+        return result
+
+    def run_with_selection_events(self, args, suite, client_options):
         start_time = datetime.now()
 
         try:
@@ -4058,11 +4103,14 @@ class TestCase:
             )
 
             client_options = self.add_effective_settings(client_options)
+            self.selection_event(args, "started")
+            self.selection_started = True
 
             if args.collect_per_test_coverage and BuildFlags.WITH_COVERAGE_DEPTH in args.build_flags:
                 try:
                     safe_case = self.case.replace("'", "\\'")
                     clickhouse_execute(args, f"SYSTEM SET COVERAGE TEST '{safe_case}'")
+                    self.selection_event(args, "coverage_armed")
                 except Exception as e:
                     return TestResult(
                         self.name,
@@ -6626,6 +6674,20 @@ ORDER BY (test_name, callee_offset)
                 "non_empty_file_regions means no coverage region resolved them"
             )
         print(f"Coverage self-test: coverage_log rows for _selftest = {selftest_rows} (OK)")
+        invalid_paths = (
+            clickhouse_execute(
+                args,
+                "SELECT groupUniqArray(5)(file) FROM system.coverage_log FINAL"
+                " WHERE test_name = '_selftest' AND (startsWith(file, '/')"
+                " OR startsWith(file, './') OR has(splitByChar('/', file), '..')"
+                " OR empty(file) OR position(file, ':') > 0)",
+            )
+            .decode()
+            .strip()
+        )
+        if invalid_paths != "[]":
+            raise RuntimeError(f"Coverage path contract failed: {invalid_paths}")
+
         # Validate that the coverage mapping parser produced no bogus line numbers.
         # line_end > 50000 or line_end < line_start indicate cursor-misalignment bugs
         # in the LLVM coverage region decoder (e.g. wrong kKindShift for BranchRegion).
@@ -6866,11 +6928,8 @@ ORDER BY (test_name, callee_offset)
         print("All tests have finished.")
 
     if args.collect_per_test_coverage and BuildFlags.WITH_COVERAGE_DEPTH in args.build_flags:
-        try:
-            # Flush the last test's coverage into system.coverage_log.
-            clickhouse_execute(args, "SYSTEM SET COVERAGE TEST ''")
-        except Exception as e:
-            print("Cannot flush final coverage: ", str(e))
+        # Flush the final attribution before validating/exporting the shard.
+        clickhouse_execute(args, "SYSTEM SET COVERAGE TEST ''")
         cov_rows = int(clickhouse_execute(args, "SELECT count() FROM system.coverage_log FINAL") or 0)
         cov_tests = int(clickhouse_execute(args, "SELECT uniq(test_name) FROM system.coverage_log FINAL") or 0)
         print(f"system.coverage_log: {cov_rows} rows, {cov_tests} distinct tests")
@@ -7223,6 +7282,10 @@ def parse_args():
         action="store_true",
         default=False,
         help="Disable MergeTree settings randomization",
+    )
+    parser.add_argument(
+        "--selection-events",
+        help="Append per-test execution and settings fingerprints to this JSONL file",
     )
     parser.add_argument(
         "--random-settings-diagnostics-dir",

@@ -1,6 +1,14 @@
 from praktika import Job
 from praktika.utils import Utils
 
+from ci.defs.functional_test_selection import (
+    require_selection,
+    rollout_targeted_jobs,
+    selection_variants,
+    targeted_matrix,
+)
+from ci.jobs.scripts.test_selection_config import SELECTION_CONFIG
+
 from ci.defs.defs import (
     LLVM_ARTIFACTS_LIST,
     LLVM_FT_NUM_BATCHES,
@@ -738,58 +746,6 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
     )
-    # Most sanitizer flavors of the functional tests for pull requests. They run only
-    # the tests selected for the change (`selected tests`, see
-    # `SELECTED_TESTS_OPTION` in `ci/jobs/functional_tests.py`) and replace the
-    # full-suite sanitizer jobs of `functional_tests_jobs`, which the master
-    # workflow keeps running in every flavor. What is left in a pull request is
-    # the full suite in the debug and plain binary flavors, plus the stress
-    # tests, which run the functional tests under every sanitizer with heavy
-    # concurrency and randomized settings and find more than a plain functional
-    # run does. See ClickHouse/ClickHouse#114725.
-    #
-    # The selection is a few hundred tests, so the batches of the full-suite jobs
-    # are collapsed into a single job per flavor. The runner labels and the
-    # timeout are kept as they are for the corresponding full-suite jobs: the
-    # test runner sizes its worker pool from the CPU count, and a sanitizer
-    # flavor that needs a large-memory runner for the full suite needs it for a
-    # subset as well. If test selection cannot be fetched, the job fails instead
-    # of silently running a weaker unbatched fallback configuration.
-    # The selection is computed from PR-local state (including failed tests
-    # from earlier jobs).
-    selected_ft_job_config = common_ft_job_config.copy()
-    stateless_tests_selected_pr_jobs = selected_ft_job_config.parametrize(
-        Job.ParamSet(
-            parameter="amd_asan_ubsan, distributed plan, parallel, selected tests",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_asan_ubsan, db disk, distributed plan, sequential, selected tests",
-            runs_on=RunnerLabels.AMD_SMALL_MEM,
-            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_tsan, parallel, selected tests",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.CH_AMD_TSAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_tsan, sequential, selected tests",
-            runs_on=RunnerLabels.AMD_SMALL,
-            requires=[ArtifactNames.CH_AMD_TSAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_tsan, s3 storage, parallel, selected tests",
-            runs_on=RunnerLabels.AMD_MEDIUM,
-            requires=[ArtifactNames.CH_AMD_TSAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_tsan, s3 storage, sequential, selected tests",
-            runs_on=RunnerLabels.AMD_SMALL_MEM,
-            requires=[ArtifactNames.CH_AMD_TSAN],
-        ),
-    )
     # --root/--privileged/--cgroupns=host is required for clickhouse-test --memory-limit
     #
     # Per-arch Bugfix Validation Check (functional tests).
@@ -1056,10 +1012,11 @@ class JobConfigs:
         *[
             Job.ParamSet(
                 parameter=f"{BuildTypes.PER_TEST_COVERAGE}, per_test_coverage, {batch}/{total_batches}",
+                provides=[ArtifactNames.COVERAGE_EXPORT_PREFIX + str(batch)],
                 runs_on=RunnerLabels.AMD_SMALL,
                 requires=[ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD],
             )
-            for total_batches in (8,)
+            for total_batches in (SELECTION_CONFIG.coverage_shards,)
             for batch in range(1, total_batches + 1)
         ]
     )
@@ -2112,4 +2069,62 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_DARWIN_PLAIN],
             provides=[ArtifactNames.CH_ARM_DARWIN_SIGNED],
         ),
+    )
+
+    # Every PR stateless environment is derived from these concrete configurations.
+    # The selected sanitizer variants collapse shards while retaining runner settings.
+    stateless_tests_selected_pr_jobs = require_selection(
+        selection_variants(
+            [
+                job
+                for job in functional_tests_jobs
+                if any(
+                    sanitizer in job.parameter for sanitizer in ("asan_ubsan", "tsan")
+                )
+            ],
+            "selected tests",
+        )
+    )
+    functional_tests_pr_jobs = [
+        job
+        for job in functional_tests_jobs
+        if not any(
+            sanitizer in job.parameter for sanitizer in ("asan_ubsan", "tsan", "msan")
+        )
+    ] + stateless_tests_selected_pr_jobs
+    stateless_tests_targeted_matrix, stateless_targeted_exemptions = targeted_matrix(
+        functional_tests_pr_jobs
+        + functional_tests_jobs_azure
+        + functional_test_llvm_coverage_jobs
+        + functional_test_excluded_from_llvm_job
+    )
+    # Preserve the original ARM ASan configuration as an additional environment.
+    stateless_tests_targeted_matrix += stateless_tests_targeted_pr_jobs
+    stateless_tests_targeted_pr_jobs = rollout_targeted_jobs(
+        stateless_tests_targeted_pr_jobs,
+        stateless_tests_targeted_matrix,
+    )
+    select_functional_tests = Job.Config(
+        name="Select functional tests",
+        runs_on=RunnerLabels.AMD_SMALL,
+        command="python3 -m ci.jobs.scripts.test_selection_smoke && python3 -m ci.jobs.select_functional_tests",
+        provides=[ArtifactNames.STATELESS_SELECTION],
+        run_in_docker="clickhouse/stateless-test+--network=host",
+        timeout=15 * 60,
+    )
+
+    # Randomized executions must remain independent even when the build is cached.
+    for job in functional_tests_jobs_coverage:
+        job.digest_config = None
+    check_coverage_health = Job.Config(
+        name="Coverage health",
+        runs_on=RunnerLabels.AMD_SMALL,
+        command="python3 -m ci.jobs.check_coverage_health",
+        always_run=True,
+        requires=[
+            ArtifactNames.COVERAGE_EXPORT_PREFIX + str(shard)
+            for shard in range(1, SELECTION_CONFIG.coverage_shards + 1)
+        ],
+        run_in_docker="clickhouse/stateless-test+--network=host",
+        timeout=5 * 60,
     )
