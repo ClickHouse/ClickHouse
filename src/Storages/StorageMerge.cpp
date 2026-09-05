@@ -792,12 +792,16 @@ static bool queryHasSubquerySets(const SelectQueryInfo & query_info)
 /// 04367_distributed_plan_merge_scatter_multishard; the second, materializing run of the
 /// transforms in `ReadFromMerge::buildPipeline` is fenced by `planContainsLogicalExchange`) —
 /// unless the query has subquery sets, whose plans a child fragment cannot carry anymore.
-static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(const ContextPtr & context, const SelectQueryInfo & query_info)
+static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(
+    const ContextPtr & context, const SelectQueryInfo & query_info, QueryPlan & child_plan)
 {
     QueryPlanOptimizationSettings optimization_settings(context);
     optimization_settings.enable_parallel_replicas = false;
     if (queryHasSubquerySets(query_info))
         optimization_settings.make_distributed_plan = false;
+    /// Include the fallback decision here before call to optimize
+    if (child_plan.isInitialized())
+        child_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
     return optimization_settings;
 }
 
@@ -826,7 +830,7 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
             child.plan.addStep(std::move(filter_step));
 
             /// Push down this newly added filter if possible
-            child.plan.optimize(getChildPlanOptimizationSettings(context, query_info));
+            child.plan.optimize(getChildPlanOptimizationSettings(context, query_info, child.plan));
         }
     }
 
@@ -1405,7 +1409,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
                 removeDelayedMaterializingCTEsStepFor(child.plan, outer_materialized_ctes);
 
-                child.plan.optimize(getChildPlanOptimizationSettings(modified_context, query_info));
+                child.plan.optimize(getChildPlanOptimizationSettings(modified_context, query_info, child.plan));
             }
 
             res.emplace_back(std::move(child));
@@ -1745,7 +1749,7 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
     /// this is the run that materializes the logical exchanges inserted into the child plan when
     /// it was optimized at creation. See `getChildPlanOptimizationSettings` for why a child plan
     /// referencing a subquery set must not be distributed.
-    auto optimization_settings = getChildPlanOptimizationSettings(context, query_info);
+    auto optimization_settings = getChildPlanOptimizationSettings(context, query_info, child.plan);
     /// All optimizations will be done at plans creation
     optimization_settings.optimize_plan = false;
     auto builder = child.plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));

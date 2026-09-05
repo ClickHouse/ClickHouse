@@ -314,6 +314,7 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
                 "make_distributed_plan": 1,
                 "distributed_plan_max_rows_to_broadcast": 0,
                 "optimize_trivial_count_query": 0,
+                "distributed_plan_fallback_to_local_execution": 0,
             },
         )
 

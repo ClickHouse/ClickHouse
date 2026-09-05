@@ -791,11 +791,6 @@ bool InterpreterExplainQuery::isExecutableAnalyze() const
     if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
         return false;
 
-    /// Distributed EXPLAIN ANALYZE is rejected before execution, so do not plan it here (e.g. while
-    /// charging quota in executeQuery). The quota is charged as for a generic query and the error follows.
-    if (getContext()->getSettingsRef()[Setting::make_distributed_plan])
-        return false;
-
     return true;
 }
 
@@ -828,6 +823,10 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
     if (planning_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), planning_context, inner_options);
+        /// Match execution: a query that falls back to local execution is analyzable, and the
+        /// decision must land on the interpreter context before it is exposed below —
+        /// `executeImpl` rejects `EXPLAIN ANALYZE` only when the plan stays distributed.
+        interpreter.applyDistributedPlanFallbackIfNeeded();
         result->context = interpreter.getContext();
         result->parallel_replicas_builder = interpreter.getQueryPlanWithParallelReplicasBuilder();
         /// Force planning so the effective ignore flags settle before we read them.
@@ -995,6 +994,11 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
+                /// Decide the distributed-to-local fallback the same way execution does, so the
+                /// explained plan and the interpreter context match a real run. Skipped without
+                /// `optimize`: the raw plan is shown and no distributed decision is ever made.
+                if (settings.optimize)
+                    interpreter.applyDistributedPlanFallbackIfNeeded();
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
             }
@@ -1050,6 +1054,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
                 {
                     InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
+                    /// Match execution: `buildQueryPipeline` below optimizes the plan, so the
+                    /// distributed-to-local fallback must be decided on the contexts first.
+                    interpreter.applyDistributedPlanFallbackIfNeeded();
                     context = interpreter.getContext();
                     plan = std::move(interpreter).extractQueryPlan();
                 }
@@ -1116,6 +1123,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, SelectQueryOptions());
+                /// Match execution: `buildQueryPipeline` below optimizes the plan, so the
+                /// distributed-to-local fallback must be decided on the contexts first.
+                interpreter.applyDistributedPlanFallbackIfNeeded();
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
             }
@@ -1182,12 +1192,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only SELECT is currently supported for EXPLAIN ANALYZE query");
 
-            /// Distributed query planning rewrites the plan into exchange/remote steps, which EXPLAIN ANALYZE cannot execute here.
-            if (query_context->getSettingsRef()[Setting::make_distributed_plan])
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "EXPLAIN ANALYZE doesn't support queries executed in distributed mode");
-
             /// Plan the inner SELECT. This is cached when ignoreQuota / ignoreLimits already triggered
             /// it during quota charging in executeQuery, so the inner query is never planned twice.
             /// getAnalyzedInnerQuery also validates the EXPLAIN ANALYZE settings (the same check that was
@@ -1196,6 +1200,16 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             /// rules as running that SELECT directly; the inner interpreter resolves the effective
             /// ignore_quota / ignore_limits during planning (e.g. exempt system tables such as `system.one`).
             auto & analyzed = getAnalyzedInnerQuery();
+
+            /// The inner interpreter has decided the distributed-to-local fallback on its context
+            /// (see `getAnalyzedInnerQuery`): a query that fell back is a plain local query and is
+            /// analyzable. Only a plan that stays distributed is rejected — its rewrite into
+            /// exchange/remote steps cannot be executed here. The old analyzer makes no fallback
+            /// decision, so its context keeps the raw setting and is rejected as before.
+            if (analyzed.context->getSettingsRef()[Setting::make_distributed_plan])
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "EXPLAIN ANALYZE doesn't support queries executed in distributed mode");
             QueryPlan plan = std::move(analyzed.plan);
             ContextPtr context = analyzed.context;
             auto parallel_replicas_builder = analyzed.parallel_replicas_builder;

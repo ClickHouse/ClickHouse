@@ -16,11 +16,6 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
 }
 
-namespace ErrorCodes
-{
-    extern const int SUPPORT_IS_DISABLED;
-}
-
 namespace
 {
 
@@ -34,7 +29,8 @@ String describeSet(const FutureSetFromSubquery & future_set)
 
 }
 
-void validateSetsForDistributedPlan(QueryPlan::Node & root)
+
+std::optional<PreformattedMessage> validateSetsForDistributedPlan(QueryPlan::Node & root)
 {
     std::vector<QueryPlan::Node *> stack;
     stack.push_back(&root);
@@ -50,9 +46,10 @@ void validateSetsForDistributedPlan(QueryPlan::Node & root)
             for (const auto & future_set : delayed->getSets())
             {
                 if (future_set && future_set->hasExternalTable())
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "make_distributed_plan does not support sets backed by an external table "
-                        "(`GLOBAL IN` / `GLOBAL JOIN`): IN-subquery {}", describeSet(*future_set));
+                    return PreformattedMessage::create(
+                        "make_distributed_plan does not support sets backed by an external table (`GLOBAL IN` / `GLOBAL JOIN`): "
+                        "IN-subquery {}",
+                        describeSet(*future_set));
             }
         }
 
@@ -63,6 +60,7 @@ void validateSetsForDistributedPlan(QueryPlan::Node & root)
             if (child_plan && child_plan->getRootNode())
                 stack.push_back(child_plan->getRootNode());
     }
+    return std::nullopt;
 }
 
 PreparedSets::Subqueries extractSetsForDistributedPlan(QueryPlan::Node *& root)
@@ -134,8 +132,12 @@ void convertSetSourceForDistributedPlan(QueryPlan & source_plan, const ContextPt
         std::make_unique<DistinctStep>(header, transfer_limits, 0, header->getNames(), /*pre_distinct_=*/false));
 
     QueryPlanOptimizationSettings optimization_settings(context);
+    /// An unsupported set source (e.g. `WITH TOTALS` inside the subquery) builds the set locally
+    /// on the initiator; the flipped settings also skip the conversion below.
+    source_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
     source_plan.optimize(optimization_settings);
-    source_plan.convertToDistributed(optimization_settings);
+    if (optimization_settings.make_distributed_plan)
+        source_plan.convertToDistributed(optimization_settings);
 }
 
 }

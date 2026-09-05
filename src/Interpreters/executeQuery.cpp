@@ -3202,14 +3202,19 @@ static BlockIO executeQueryImpl(
             auto plan = QueryPlan::makeSets(std::move(*query_plan), context);
 
             plan.resolveStorages(context);
-            plan.optimize(QueryPlanOptimizationSettings(context));
+
+            /// `optimize` and `buildQueryPipeline`, or the latter would still try to convert the
+            /// plan to a distributed one.
+            QueryPlanOptimizationSettings optimization_settings(context);
+            plan.applyDistributedPlanFallbackToLocal(optimization_settings);
+            plan.optimize(optimization_settings);
 
             WriteBufferFromOwnString buf;
             plan.explainPlan(buf, {.header=true, .actions=true});
             LOG_TRACE(getLogger("executeQuery"), "Deserialized Query Plan:\n{}", buf.str());
 
             auto pipeline = plan.buildQueryPipeline(
-                    QueryPlanOptimizationSettings(context),
+                    optimization_settings,
                     BuildQueryPipelineSettings(context),
                     /*do_optimize=*/ false);
 

@@ -16,6 +16,7 @@
 #include <optional>
 #include <unordered_map>
 #include <vector>
+
 #include <IO/WriteBufferFromString.h>
 
 namespace DB
@@ -140,10 +141,20 @@ public:
 
     void resolveStorages(const ContextPtr & context);
 
+    /// Optimizes the query. Make sure you have called applyDistributedPlanFallbackToLocal
+    /// or call buildQueryPipeline which does it inherently.
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
+
     /// Converts the original plan to distributed plan and replaces the original plan with a plan that
     /// contains a step that executes the distributed plan and a step that receives the result.
     void convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings);
+
+    /// The single decision function for `make_distributed_plan`. When this plan cannot be
+    /// distributed: throws under `distributed_plan_fallback_to_local_execution = 0`, otherwise
+    /// logs, flips `settings.make_distributed_plan` to false and returns true. The plan is
+    /// verified at most once and the outcome is recorded in `distributed_plan_decision`.
+    bool applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSettings & settings);
+
 
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
@@ -256,7 +267,19 @@ private:
     /// Cached serialized representation
     /// FIXME: temporary measure to avoid changing many methods to bypass serialized plan
     mutable std::unique_ptr<WriteBufferFromOwnString> serialized_plan;
+
+    enum class DistributedPlanDecision
+    {
+        Undecided,
+        Distributed,
+        FellBack,
+    };
+
+    /// The outcome of `applyDistributedPlanFallbackToLocal` for this plan. Later calls do not
+    /// re-verify the plan; they only re-apply the recorded outcome to the settings.
+    DistributedPlanDecision distributed_plan_decision = DistributedPlanDecision::Undecided;
 };
+
 
 /// This is a structure which contains a query plan and a list of sets.
 /// The reason is that StorageSet is specified by name,
