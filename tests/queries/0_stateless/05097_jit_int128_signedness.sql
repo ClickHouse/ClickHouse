@@ -38,8 +38,9 @@ FROM values('c0 UInt8', 7, 127, 230) ORDER BY c0
 SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0;
 
 -- Every operand below is a plain column, so `bitNot` has no compilable child and is never compiled
--- on its own: the carrier is the only node that can raise CompiledFunctionExecute. Each carrier is
--- compared against a control, so the row also holds where there is no embedded compiler.
+-- on its own: the carrier is the only node that can raise CompiledFunctionExecute. The control must
+-- be a compilable function that shares no `Impl` with any carrier: comparing against it keeps the
+-- row green where nothing compiles, and still reddens when only the carriers stop being compiled.
 SELECT least(bitNot(a), b)
 FROM values('a Int128, b Int128, sh UInt8, d Int64, e Int64', (7, 0, 3, 7, 0), (127, 0, 3, 127, 0), (230, 0, 3, 230, 0))
 SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05097_live_least' FORMAT Null;
@@ -60,7 +61,7 @@ SELECT avg2(bitNot(a), b)
 FROM values('a Int128, b Int128, sh UInt8, d Int64, e Int64', (7, 0, 3, 7, 0), (127, 0, 3, 127, 0), (230, 0, 3, 230, 0))
 SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05097_live_avg2' FORMAT Null;
 
-SELECT least(bitNot(d), e)
+SELECT plus(bitNot(d), e)
 FROM values('a Int128, b Int128, sh UInt8, d Int64, e Int64', (7, 0, 3, 7, 0), (127, 0, 3, 127, 0), (230, 0, 3, 230, 0))
 SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05097_live_control' FORMAT Null;
 
