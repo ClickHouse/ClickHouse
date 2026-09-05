@@ -1,0 +1,52 @@
+Test 1: serializedQuantiles with integers
+1
+Test 2: serializedQuantiles with Float64
+1
+Test 3: serializedQuantiles with UInt64
+1
+Test 4: mergeSerializedQuantiles basic
+1
+Test 5: mergeSerializedQuantiles multiple sketches
+1
+Test 6: mergeSerializedQuantiles with base64_encoded=0 (default, raw binary)
+1
+Test 7: mergeSerializedQuantiles with base64_encoded=1 (check for base64)
+1
+Test 8: percentileFromQuantiles p50 (median)
+1
+Test 9: percentileFromQuantiles p95
+1
+Test 10: percentileFromQuantiles p99
+1
+Test 11: Percentiles from merged sketch
+1	1
+Test 12: percentileFromQuantiles empty sketch
+1
+Test 13: Boundary percentiles (p0, p1)
+1	1
+Test 14: GROUP BY with serializedQuantiles
+0	1
+1	1
+2	1
+Test 15: Merge sketches from groups and get percentiles
+1
+Test 16: Handle NULL values
+1
+Test 17: Multiple percentiles from same sketch
+1	1	1
+Test 18: Negative numbers
+1
+Test 19: Floating point numbers
+1
+Test 20: Percentile accuracy check
+1	1
+Test 21: Merge sketches from different distributions
+1	1
+Test 22: Sketch size is bounded
+112	5408	1
+Test 23: Constant values
+1
+Test 24: Valid percentile range 0.01
+1
+Test 25: Valid percentile range 0.99
+1

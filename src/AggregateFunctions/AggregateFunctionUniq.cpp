@@ -483,6 +483,39 @@ FROM example_theta;
 
     factory.registerFunction("uniqTheta",
         {createAggregateFunctionUniq<AggregateFunctionUniqThetaData, AggregateFunctionUniqThetaDataForVariadic>, documentation_uniqTheta, properties});
+    /// uniqHLL documentation
+    FunctionDocumentation::Description description_uniqHLL = R"(
+Calculates the approximate number of different argument values, using the [Apache DataSketches HLL sketch](https://datasketches.apache.org/docs/HLL/HllSketches.html).
+
+Unlike [`uniqHLL12`](/sql-reference/aggregate-functions/reference/uniqhll12), this function uses the Apache DataSketches implementation of HyperLogLog,
+so its state is binary-compatible with HLL sketches produced by other DataSketches implementations (Java, Python, and others).
+    )";
+    FunctionDocumentation::Syntax syntax_uniqHLL = R"(
+uniqHLL(x)
+    )";
+    FunctionDocumentation::Arguments arguments_uniqHLL = {
+        {"x", "The value to count distinct occurrences of.", {"Date", "DateTime", "String", "(U)Int*", "Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_uniqHLL = {"Returns a UInt64-type number representing the approximate number of different argument values.", {"UInt64"}};
+    FunctionDocumentation::Examples examples_uniqHLL = {
+    {
+        "Basic usage",
+        R"(
+SELECT uniqHLL(number % 10) FROM numbers(1000);
+        )",
+        R"(
+┌─uniqHLL(modulo(number, 10))─┐
+│                          10 │
+└─────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_uniqHLL = {26, 1};
+    FunctionDocumentation::Category category_uniqHLL = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_uniqHLL = {description_uniqHLL, syntax_uniqHLL, arguments_uniqHLL, {}, returned_value_uniqHLL, examples_uniqHLL, introduced_in_uniqHLL, category_uniqHLL};
+
+    factory.registerFunction("uniqHLL",
+        {createAggregateFunctionUniq<AggregateFunctionUniqHLLData, AggregateFunctionUniqHLLDataForVariadic>, documentation_uniqHLL, properties});
 #endif
 
 }

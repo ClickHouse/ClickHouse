@@ -21,6 +21,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/ThetaSketchData.h>
+#include <AggregateFunctions/HLLSketchData.h>
 #include <AggregateFunctions/UniqExactSet.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 #include <AggregateFunctions/UniquesHashSet.h>
@@ -240,6 +241,28 @@ struct AggregateFunctionUniqThetaDataForVariadic : AggregateFunctionUniqThetaDat
     constexpr static bool argument_is_tuple = argument_is_tuple_;
 };
 
+struct AggregateFunctionUniqHLLData
+{
+    using Set = HLLSketchData<UInt64>;
+    Set set;
+
+    constexpr static bool is_able_to_parallelize_merge = false;
+    constexpr static bool is_parallelize_merge_prepare_needed = false;
+    constexpr static bool is_variadic = false;
+
+    static String getName() { return "uniqHLL"; }
+};
+
+template <bool is_exact_, bool argument_is_tuple_>
+struct AggregateFunctionUniqHLLDataForVariadic : AggregateFunctionUniqHLLData
+{
+    constexpr static bool is_able_to_parallelize_merge = false;
+    constexpr static bool is_parallelize_merge_prepare_needed = false;
+    constexpr static bool is_variadic = true;
+    constexpr static bool is_exact = is_exact_;
+    constexpr static bool argument_is_tuple = argument_is_tuple_;
+};
+
 #endif
 
 namespace detail
@@ -342,6 +365,14 @@ struct Adder
         {
             const auto & column = *columns[0];
             data.set.insertOriginal(column.getDataAt(row_num));
+        }
+        else if constexpr (std::is_same_v<Data, AggregateFunctionUniqHLLData>)
+        {
+            const auto & column = *columns[0];
+            if constexpr (std::is_same_v<T, std::string_view>)
+                data.set.insertOriginal(column.getDataAt(row_num));
+            else
+                data.set.insert(AggregateFunctionUniqTraits<T, ColumnType>::value(column, row_num));
         }
 #endif
         else

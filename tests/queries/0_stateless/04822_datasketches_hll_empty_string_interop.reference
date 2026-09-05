@@ -1,0 +1,8 @@
+empty strings leave the sketch empty
+1	0
+empty strings do not contribute to cardinality
+5
+sketch over mixed values equals sketch over the non-empty values only
+1
+uniqHLL follows the same contract
+0
