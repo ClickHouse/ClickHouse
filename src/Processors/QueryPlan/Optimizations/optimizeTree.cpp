@@ -239,6 +239,18 @@ void optimizeTreeSecondPass(
     };
 
     Stack stack;
+
+    /// Before index analysis, so the copied conjuncts take part in it, and before the runtime
+    /// filters, which would hide the source filters
+    bool predicates_were_propagated = false;
+    if (optimization_settings.propagate_predicate_across_join && optimization_settings.query_plan_optimize_primary_key)
+    {
+        traverseQueryPlan(stack, root, NoOp{}, [&](auto & frame_node)
+        {
+            predicates_were_propagated |= tryPropagatePredicateAcrossEquiJoin(&frame_node, nodes, extra_settings) > 0;
+        });
+    }
+
     stack.push_back({.node = &root});
 
     while (!stack.empty())
@@ -326,9 +338,10 @@ void optimizeTreeSecondPass(
                 convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
 
-    /// If join runtime filters were added re-run push down optimizations
-    /// to move newly added runtime filter as deep in the tree as possible
-    if (join_runtime_filters_were_added)
+    /// A new filter node has to be pushed down. Runtime filters are re-merged unconditionally as
+    /// before; a copied predicate alone is no reason to run a rewrite the user turned off
+    const bool rewrite_regardless_of_settings = join_runtime_filters_were_added;
+    if (join_runtime_filters_were_added || predicates_were_propagated)
     {
         traverseQueryPlan(stack, root,
             [&](auto & frame_node)
@@ -337,9 +350,12 @@ void optimizeTreeSecondPass(
                 while (true)
                 {
                     size_t changed_nodes = 0;
-                    changed_nodes += tryMergeExpressions(&frame_node, nodes, {});
-                    changed_nodes += tryMergeFilters(&frame_node, nodes, {});
-                    changed_nodes += tryPushDownFilter(&frame_node, nodes, {});
+                    if (rewrite_regardless_of_settings || optimization_settings.merge_expressions)
+                        changed_nodes += tryMergeExpressions(&frame_node, nodes, {});
+                    if (rewrite_regardless_of_settings || optimization_settings.merge_filters)
+                        changed_nodes += tryMergeFilters(&frame_node, nodes, {});
+                    if (rewrite_regardless_of_settings || optimization_settings.filter_push_down)
+                        changed_nodes += tryPushDownFilter(&frame_node, nodes, {});
 
                     if (!changed_nodes)
                         break;
@@ -347,7 +363,7 @@ void optimizeTreeSecondPass(
             });
 
         /// After the __applyFilter filters been fixed, do work to indicate index analysis again
-        if (optimization_settings.enable_join_runtime_filters_index_analysis)
+        if (join_runtime_filters_were_added && optimization_settings.enable_join_runtime_filters_index_analysis)
             traverseQueryPlan(stack, root,
                 [&](auto & frame_node) { registerLeftSideIndexAnalysisSecondPass(frame_node, optimization_settings); });
     }
@@ -764,10 +780,9 @@ void optimizeTreeSecondPass(
         }
     }
 
-    /// Lazy materialization and the post-lazy `tryMergeFilters` pass replace `FilterStep`s
-    /// without carrying over the QCC key that `updateQueryConditionCache` set earlier in
-    /// this pass. Re-walk the plan so the surviving main-branch `FilterStep` gets the key.
-    if (optimization_settings.use_query_condition_cache && lazy_materialization_applied)
+    /// The merges above rebuild `FilterStep`s and drop the QCC key, so re-walk to set it again
+    if (optimization_settings.use_query_condition_cache
+        && (join_runtime_filters_were_added || predicates_were_propagated || lazy_materialization_applied))
     {
         Stack qcc_stack;
         qcc_stack.push_back({.node = &root});
