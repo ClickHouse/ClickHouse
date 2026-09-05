@@ -2,10 +2,12 @@
 -- no-fasttest: needs the `s3_no_cache` storage policy (MinIO).
 
 -- `REPLACE PARTITION FROM` and `MOVE PARTITION TO TABLE` clone the source part with hardlinks and then
--- rewrite its `invalidated_system_columns.txt` for the clone. The rewrite must not retire the blob the
--- clone still shares with the source part, otherwise the source part becomes unreadable as soon as the
--- retired blobs are cleaned up. An uncached S3 disk is used so that the reads after the re-attach go to
--- the object storage.
+-- rewrite its `invalidated_system_columns.txt` for the clone. On a disk with local metadata the hardlink
+-- is the very same metadata file, so a rewrite that does not unlink it first goes through the shared
+-- file: it retires the blob the source part pointed to and leaves both parts referencing the clone's new
+-- blob with an inconsistent link count. The clone must get a blob of its own, and the source part must
+-- still load from the object storage afterwards. An uncached S3 disk is used so that the reads after the
+-- re-attach go to the object storage.
 
 DROP TABLE IF EXISTS src_05097;
 DROP TABLE IF EXISTS mid_05097;
@@ -24,6 +26,14 @@ INSERT INTO dst_05097 VALUES (1, 100);
 ALTER TABLE dst_05097 REPLACE PARTITION 1 FROM mid_05097;
 
 SYSTEM WAIT BLOBS CLEANUP 's3_no_cache';
+
+-- The clone and the source part must reference two different blobs.
+SELECT 'distinct blobs', count(DISTINCT remote_path)
+FROM system.remote_data_paths
+WHERE disk_name = 's3_no_cache'
+    AND local_path LIKE '%/invalidated_system_columns.txt'
+    AND (local_path LIKE concat('%', (SELECT toString(uuid) FROM system.tables WHERE database = currentDatabase() AND name = 'mid_05097'), '%')
+        OR local_path LIKE concat('%', (SELECT toString(uuid) FROM system.tables WHERE database = currentDatabase() AND name = 'dst_05097'), '%'));
 
 -- Reload the source part from the object storage.
 DETACH TABLE mid_05097;
