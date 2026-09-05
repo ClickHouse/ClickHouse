@@ -9,9 +9,11 @@
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -146,47 +148,68 @@ bool markSecurityBarriers(QueryPlan::Node * node)
     return marked;
 }
 
-/// An aggregation without `GROUP BY` collapses all rows into one, so for the purpose of
-/// `StorageView::canHideRows` it hides rows just like a filter does. Subqueries have their own
-/// scope: an aggregate inside one does not collapse the rows of the enclosing query.
-bool hasAggregatesOutsideSubqueries(const IAST & ast)
+/// The row-hiding carriers that live in expressions rather than in a clause of the `SELECT`:
+/// an aggregation without `GROUP BY` collapses all rows into one, and the `arrayJoin` function
+/// (with its case-insensitive alias `unnest`) is the expression-level twin of the `ARRAY JOIN`
+/// clause - it drops the rows whose array is empty and multiplies the rest, and it never shows
+/// up in `arrayJoinExpressionList`. For the purpose of `StorageView::canHideRows` both hide rows
+/// just like a filter does.
+///
+/// A SQL user-defined function may wrap either carrier: `CREATE FUNCTION f AS (a) -> arrayJoin(a)`.
+/// Both callers of `canHideRows` classify the stored view AST before SQL UDFs are expanded
+/// (`UserDefinedSQLFunctionVisitor` in `TreeRewriter`, `resolveFunction` on the analyzer path),
+/// so the bodies are inspected here, recursively, and any chain that cannot be followed - a
+/// recursive definition, an implausibly deep nesting, a body that is not a SQL lambda - fails
+/// closed. Subqueries have their own scope: a carrier inside one does not change the rows of the
+/// enclosing query, and `canHideRows` descends into `FROM` subqueries separately.
+bool hasRowHidingFunctionOutsideSubqueries(const IAST & ast, std::unordered_set<String> & udfs_in_progress, size_t depth)
 {
     if (const auto * function = ast.as<ASTFunction>())
+    {
         if (!function->isWindowFunction() && AggregateUtils::isAggregateFunction(*function))
             return true;
+
+        const auto name = Poco::toLower(function->name);
+        if (name == "arrayjoin" || name == "unnest")
+            return true;
+
+        if (auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function->name))
+        {
+            if (depth >= 16 || udfs_in_progress.contains(function->name))
+                return true;
+
+            const auto * create_function_query = user_defined_function->as<ASTCreateSQLFunctionQuery>();
+            if (!create_function_query || !create_function_query->function_core
+                || create_function_query->function_core->children.empty())
+                return true;
+
+            /// `function_core` is `lambda(tuple(args...), body)`; the body is the second element.
+            const auto & lambda_arguments = create_function_query->function_core->children.front()->children;
+            if (lambda_arguments.size() != 2 || !lambda_arguments[1])
+                return true;
+
+            udfs_in_progress.insert(function->name);
+            bool body_hides_rows = hasRowHidingFunctionOutsideSubqueries(*lambda_arguments[1], udfs_in_progress, depth + 1);
+            udfs_in_progress.erase(function->name);
+            if (body_hides_rows)
+                return true;
+        }
+    }
 
     for (const auto & child : ast.children)
     {
         if (child->as<ASTSubquery>() || child->as<ASTSelectQuery>())
             continue;
-        if (hasAggregatesOutsideSubqueries(*child))
+        if (hasRowHidingFunctionOutsideSubqueries(*child, udfs_in_progress, depth))
             return true;
     }
     return false;
 }
 
-/// The `arrayJoin` function is the expression-level twin of the `ARRAY JOIN` clause: it drops the
-/// rows whose array is empty and multiplies the rest. It never shows up in `arrayJoinExpressionList`,
-/// so a view carrying it must be recognized here. Subqueries are skipped: their own rows are not the
-/// rows the enclosing `SELECT` returns, and `canHideRows` descends into them separately.
-bool hasArrayJoinFunctionOutsideSubqueries(const IAST & ast)
+bool hasRowHidingFunctionOutsideSubqueries(const IAST & ast)
 {
-    if (const auto * function = ast.as<ASTFunction>())
-    {
-        const auto name = Poco::toLower(function->name);
-        /// `unnest` is a case-insensitive alias of `arrayJoin`.
-        if (name == "arrayjoin" || name == "unnest")
-            return true;
-    }
-
-    for (const auto & child : ast.children)
-    {
-        if (child->as<ASTSubquery>() || child->as<ASTSelectQuery>())
-            continue;
-        if (hasArrayJoinFunctionOutsideSubqueries(*child))
-            return true;
-    }
-    return false;
+    std::unordered_set<String> udfs_in_progress;
+    return hasRowHidingFunctionOutsideSubqueries(ast, udfs_in_progress, 0);
 }
 
 bool isNullableOrLcNullable(DataTypePtr type)
@@ -1022,9 +1045,9 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
 
     /// `ARRAY JOIN` drops rows with an empty array (and `LEFT ARRAY JOIN` is not worth
     /// distinguishing), an aggregation without `GROUP BY` collapses all rows into one, and the
-    /// `arrayJoin` function does what the clause does without appearing in the clause list.
-    if (select->arrayJoinExpressionList().first || hasAggregatesOutsideSubqueries(*select)
-        || hasArrayJoinFunctionOutsideSubqueries(*select))
+    /// `arrayJoin` function does what the clause does without appearing in the clause list -
+    /// possibly behind a SQL user-defined function that is expanded only later.
+    if (select->arrayJoinExpressionList().first || hasRowHidingFunctionOutsideSubqueries(*select))
         return true;
 
     const auto & tables = select->tables();

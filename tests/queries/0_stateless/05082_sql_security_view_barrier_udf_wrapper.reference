@@ -1,0 +1,14 @@
+invoker, analyzer:
+definer, analyzer:	198
+none, analyzer:	198
+nested udf definer, analyzer:	198
+definer, analyzer, inline views:	198
+nested udf definer, analyzer, inline views:	198
+invoker, legacy analyzer:
+definer, legacy analyzer:	198
+none, legacy analyzer:	198
+nested udf definer, legacy analyzer:	198
+definer results:	98	0	98
+plain udf definer kept as a table expression:	0
+sum udf definer kept as a table expression:	1
+sum udf definer result:	4950
