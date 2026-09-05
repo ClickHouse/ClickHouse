@@ -312,21 +312,24 @@ This makes settings like `string_serialization_version` effective.
 - `with_missing_columns` - Everything `with_types` records, plus a `missing_columns` field
 listing omitted columns and the type whose default represents their values.
 Required to enable `skip_empty_columns_on_insert`.
+- `with_subcolumns` - Everything `with_missing_columns` records, plus serialization information
+for named subcolumns, such as declared paths in `JSON`.
 
 During rolling upgrades, set this to `basic` so that new servers produce
 data parts compatible with old servers. After the upgrade completes,
-switch to `with_types` (or `with_missing_columns`) to enable the corresponding features.
+switch to `with_types`, `with_missing_columns`, or `with_subcolumns` to enable the corresponding features.
 )", 0) \
     DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "with_size_stream", R"(
 Controls the serialization format for top-level `String` columns.
 
-This setting is only effective when `serialization_info_version` is set to "with_types" or newer.
+This setting is only effective when `serialization_info_version` is set to `with_types` or newer.
 When set to `with_size_stream`, top-level `String` columns are serialized with a separate
 `.size` subcolumn storing string lengths, rather than inline. This allows real `.size`
 subcolumns and can improve compression efficiency.
 
 Nested `String` types (e.g., inside `Nullable`, `LowCardinality`, `Array`, or `Map`)
-are not affected, except when they appear in a `Tuple`.
+are not affected, except when they appear in a `Tuple` or a declared `JSON` path with
+`propagate_types_serialization_versions_to_nested_types = 1`.
 
 Possible values:
 

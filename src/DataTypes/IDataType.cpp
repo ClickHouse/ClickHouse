@@ -334,7 +334,10 @@ MutableSerializationInfoPtr IDataType::createSerializationInfo(const Serializati
 
 SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) const
 {
-    return getSerializationInfo(column, SerializationInfoSettings::enableAllSupportedSerializations());
+    auto settings = SerializationInfoSettings::enableAllSupportedSerializations();
+    if (hasSparseSerializationSubcolumns(settings))
+        settings.version = MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS;
+    return getSerializationInfo(column, settings);
 }
 
 SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const
@@ -372,7 +375,13 @@ SerializationPtr IDataType::wrapSerializationBasedOnKindStack(SerializationPtr s
 
 SerializationPtr IDataType::getSerialization(const SerializationInfo & info) const
 {
-    return wrapSerializationBasedOnKindStack(getSerialization(info.getSettings()), info.getKindStack(), info.getSettings());
+    return getSerialization(info, true);
+}
+
+SerializationPtr IDataType::getSerialization(const SerializationInfo & info, bool use_type_serialization_settings) const
+{
+    auto serialization = use_type_serialization_settings ? getSerialization(info.getSettings()) : getDefaultSerialization();
+    return wrapSerializationBasedOnKindStack(std::move(serialization), info.getKindStack(), info.getSettings());
 }
 
 SerializationPtr IDataType::getSerialization(const SerializationInfoSettings & settings) const

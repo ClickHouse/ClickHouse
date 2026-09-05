@@ -9,6 +9,8 @@
 namespace DB
 {
 
+class SerializationInfoObject;
+
 class DataTypeObject final : public IDataType
 {
 public:
@@ -43,6 +45,7 @@ public:
     TypeIndex getTypeId() const override { return TypeIndex::Object; }
 
     MutableColumnPtr createColumn() const override;
+    MutableColumnPtr createColumn(const ISerialization & serialization) const override;
 
     Field getDefault() const override { return Object(); }
 
@@ -52,6 +55,7 @@ public:
     bool isParametric() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
     bool supportsSparseSerialization() const override { return false; }
+    bool hasSparseSerializationSubcolumns(const SerializationInfoSettings & settings) const override;
     bool canBeInsideSparseColumns() const override { return false; }
     bool isComparable() const override { return true; }
     bool isComparableForEquality() const override { return true; }
@@ -68,6 +72,11 @@ public:
     std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
 
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
+    SerializationPtr getSerialization(const SerializationInfo & info) const override;
+    SerializationPtr getSerialization(const SerializationInfo & info, bool use_type_serialization_settings) const override;
+    MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const override;
+    SerializationInfoPtr getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const override;
+    using IDataType::getSerializationInfo;
 
     const SchemaFormat & getSchemaFormat() const { return schema_format; }
     String getSchemaFormatString() const;
@@ -95,6 +104,11 @@ public:
     static const DataTypePtr & getTypeOfSharedData();
 
 private:
+    SerializationPtr getSerializationImpl(
+        const SerializationInfoSettings & settings,
+        const SerializationInfoObject * serialization_info,
+        bool use_type_serialization_settings) const;
+
     /// Don't change these constants, it can break backward compatibility.
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR = 4;
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR = 2;

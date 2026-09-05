@@ -13242,12 +13242,11 @@ static void updateSerializationHintsForPart(const DataPartPtr & part, const Colu
         if (!new_hint)
             continue;
 
-        /// Structure may change after alter. Do not add info for such items.
-        /// Instead it will be updated on commit of the result part of alter.
-        if (part_columns.tryGetPhysical(name) != storage_columns.tryGetPhysical(name))
+        /// Structure may change after alter or differ because the part preserves older serialization settings.
+        /// Do not add info for such items. Instead it will be updated on commit of a compatible part.
+        if (part_columns.tryGetPhysical(name) != storage_columns.tryGetPhysical(name) || !new_hint->structureEquals(*info))
             continue;
 
-        chassert(new_hint->structureEquals(*info));
         if (remove)
             new_hint->remove(*info);
         else

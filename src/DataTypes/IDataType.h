@@ -132,12 +132,17 @@ public:
     /// TODO: support more types.
     virtual bool supportsSparseSerialization() const { return !haveSubtypes(); }
 
+    /// Whether serialization info should be collected for sparsifiable subcolumns
+    /// even though this type itself cannot use sparse serialization.
+    virtual bool hasSparseSerializationSubcolumns(const SerializationInfoSettings &) const { return false; }
+
     virtual bool canBeInsideSparseColumns() const { return supportsSparseSerialization(); }
 
     SerializationPtr getDefaultSerialization() const;
 
     /// Chooses serialization according to collected information about content of column.
     virtual SerializationPtr getSerialization(const SerializationInfo & info) const;
+    virtual SerializationPtr getSerialization(const SerializationInfo & info, bool use_type_serialization_settings) const;
 
     SerializationPtr getSerialization(const SerializationInfoSettings & settings) const;
 
@@ -170,7 +175,7 @@ public:
 
     /** Create empty column for corresponding type and serialization.
      */
-    MutableColumnPtr createColumn(const ISerialization & serialization) const;
+    virtual MutableColumnPtr createColumn(const ISerialization & serialization) const;
 
     /** Create ColumnConst for corresponding type, with specified size and value.
       */

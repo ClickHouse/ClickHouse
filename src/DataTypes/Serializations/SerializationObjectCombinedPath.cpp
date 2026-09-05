@@ -154,7 +154,7 @@ void SerializationObjectCombinedPath::deserializeBinaryBulkWithMultipleStreams(
         *literal_column, limit, settings, combined_state->literal_state, cache);
 
     /// Deserialize sub-object into a temporary column, then keep it as an immutable pointer (we only read it below).
-    auto mutable_sub_object_column = sub_object_type->createColumn();
+    auto mutable_sub_object_column = sub_object_type->createColumn(*sub_object_serialization);
     sub_object_serialization->deserializeBinaryBulkWithMultipleStreams(
         *mutable_sub_object_column, limit, settings, combined_state->sub_object_state, cache);
     ColumnPtr sub_object_column = std::move(mutable_sub_object_column);

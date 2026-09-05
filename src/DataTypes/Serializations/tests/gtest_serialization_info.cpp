@@ -1,9 +1,12 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <Columns/ColumnObject.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/Serializations/SerializationInfoObject.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -78,6 +81,7 @@ void expectMalformedKindFails([[maybe_unused]] const std::string & kind)
         DB::Exception);
 #endif
 }
+
 }
 
 TEST(SerializationInfoJSON, RoundTripDefault)
@@ -236,6 +240,126 @@ TEST(SerializationInfoByNameJSON, WriteJSONCanBeReadBack)
     EXPECT_TRUE(restored.getSettings().propagate_types_serialization_versions_to_nested_types);
     EXPECT_NE(restored.tryGet("string\"with\\escapes"), nullptr);
     EXPECT_NE(restored.tryGet("tuple"), nullptr);
+}
+
+TEST(SerializationInfoObject, EnabledOnlyForSubcolumnsVersion)
+{
+    auto json_type = DataTypeFactory::instance().get(
+        "JSON(n JSON(x String, max_dynamic_paths=0), y String, max_dynamic_paths=0)");
+    NamesAndTypesList columns{{"j", json_type}};
+
+    SerializationInfoSettings settings;
+    settings.ratio_of_defaults_for_sparse = 0.5;
+    settings.choose_kind = true;
+    settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+
+    SerializationInfoByName old_infos(columns, settings);
+    EXPECT_EQ(old_infos.tryGet("j"), nullptr);
+
+    settings.version = MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS;
+    SerializationInfoByName infos(columns, settings);
+    const auto * object_info = typeid_cast<const SerializationInfoObject *>(infos.tryGet("j").get());
+    ASSERT_NE(object_info, nullptr);
+    EXPECT_FALSE(object_info->getSettings().choose_kind);
+    const auto * nested_object_info
+        = typeid_cast<const SerializationInfoObject *>(object_info->getTypedPathInfo("n").get());
+    ASSERT_NE(nested_object_info, nullptr);
+    EXPECT_TRUE(nested_object_info->getTypedPathInfo("x")->getSettings().choose_kind);
+    EXPECT_TRUE(object_info->getTypedPathInfo("y")->getSettings().choose_kind);
+
+    WriteBufferFromOwnString out;
+    infos.writeJSON(out);
+    auto restored = SerializationInfoByName::readJSONFromString(columns, out.str());
+    EXPECT_EQ(restored.getVersion(), MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS);
+    EXPECT_NE(typeid_cast<const SerializationInfoObject *>(restored.tryGet("j").get()), nullptr);
+}
+
+TEST(SerializationInfoObject, CreateWithChangedTypedPaths)
+{
+    auto old_type = DataTypeFactory::instance().get("JSON(x String, y UInt64, max_dynamic_paths=0)");
+    auto new_type = DataTypeFactory::instance().get("JSON(x String, z UInt64, max_dynamic_paths=0)");
+
+    auto settings = defaultSettings();
+    settings.version = MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS;
+
+    auto old_info = old_type->createSerializationInfo(settings);
+    old_info->addDefaults(100);
+    auto new_info = old_info->createWithType(*old_type, *new_type, settings);
+    const auto * object_info = typeid_cast<const SerializationInfoObject *>(new_info.get());
+    ASSERT_NE(object_info, nullptr);
+
+    const auto sparse_kind = ISerialization::KindStack({ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE});
+    EXPECT_EQ(object_info->getTypedPathInfo("x")->getKindStack(), sparse_kind);
+    EXPECT_EQ(object_info->getTypedPathInfo("z")->getKindStack(), sparse_kind);
+    EXPECT_THROW(object_info->getTypedPathInfo("y"), DB::Exception);
+}
+
+TEST(SerializationInfoObject, AddAcrossNullableWrapper)
+{
+    auto object_type = DataTypeFactory::instance().get("JSON(x String, max_dynamic_paths=0)");
+    auto nullable_type = DataTypeFactory::instance().get("Nullable(JSON(x String, max_dynamic_paths=0))");
+    auto settings = defaultSettings();
+    settings.version = MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS;
+
+    auto object_info = object_type->createSerializationInfo(settings);
+    object_info->addDefaults(100);
+    auto nullable_info = nullable_type->createSerializationInfo(settings);
+    nullable_info->add(*object_info);
+
+    auto merged_object_info = object_type->createSerializationInfo(settings);
+    merged_object_info->add(*nullable_info);
+    const auto & typed_path_info
+        = assert_cast<const SerializationInfoObject &>(*merged_object_info).getTypedPathInfo("x");
+    EXPECT_EQ(typed_path_info->getData().num_rows, 100);
+    EXPECT_EQ(typed_path_info->getData().num_defaults, 100);
+}
+
+TEST(SerializationInfoObject, DoesNotScanDefaultsForOuterColumn)
+{
+    auto type = DataTypeFactory::instance().get("JSON(x String, max_dynamic_paths=0)");
+    auto settings = defaultSettings();
+    settings.version = MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS;
+
+    auto info = type->createSerializationInfo(settings);
+    auto column = type->createColumn();
+    type->insertDefaultInto(*column);
+    info->add(*column);
+
+    const auto * object_info = typeid_cast<const SerializationInfoObject *>(info.get());
+    ASSERT_NE(object_info, nullptr);
+    EXPECT_EQ(object_info->getData().num_rows, 1);
+    EXPECT_EQ(object_info->getData().num_defaults, 0);
+    EXPECT_EQ(object_info->getTypedPathInfo("x")->getData().num_defaults, 1);
+}
+
+TEST(SerializationInfoByName, DowngradesWithoutEligibleSubcolumns)
+{
+    SerializationInfoSettings settings;
+    settings.ratio_of_defaults_for_sparse = 0.5;
+    settings.choose_kind = true;
+    settings.version = MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS;
+
+    auto uint_type = DataTypeFactory::instance().get("UInt64");
+    EXPECT_EQ(
+        SerializationInfoByName(NamesAndTypesList{{"n", uint_type}}, settings).getVersion(),
+        MergeTreeSerializationInfoVersion::BASIC);
+
+    settings.string_serialization_version = MergeTreeStringSerializationVersion::WITH_SIZE_STREAM;
+    EXPECT_EQ(
+        SerializationInfoByName(NamesAndTypesList{{"n", uint_type}}, settings).getVersion(),
+        MergeTreeSerializationInfoVersion::WITH_TYPES);
+
+    settings.string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
+    auto ineligible_json = DataTypeFactory::instance().get(
+        "JSON(x JSON(max_dynamic_paths=0), max_dynamic_paths=0)");
+    EXPECT_EQ(
+        SerializationInfoByName(NamesAndTypesList{{"j", ineligible_json}}, settings).getVersion(),
+        MergeTreeSerializationInfoVersion::BASIC);
+
+    auto eligible_json = DataTypeFactory::instance().get("JSON(x String, max_dynamic_paths=0)");
+    SerializationInfoByName eligible_infos(NamesAndTypesList{{"j", eligible_json}}, settings);
+    EXPECT_EQ(eligible_infos.getVersion(), MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS);
+    EXPECT_NE(eligible_infos.tryGet("j"), nullptr);
 }
 
 TEST(SerializationInfoByNameJSON, MissingColumnsDoNotDowngradeConfiguredVersion)

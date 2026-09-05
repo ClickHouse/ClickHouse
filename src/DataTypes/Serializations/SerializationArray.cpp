@@ -45,6 +45,13 @@ SerializationPtr SerializationArray::create(const SerializationPtr & nested_)
     return ISerialization::pooled(getHash(nested_), [&] { return new SerializationArray(nested_); });
 }
 
+MutableColumnPtr SerializationArray::wrapColumnForDeserialization(MutableColumnPtr column) const
+{
+    const auto & array = assert_cast<const ColumnArray &>(*column);
+    return ColumnArray::create(
+        nested->wrapColumnForDeserialization(array.getData().cloneEmpty()), array.getOffsetsPtr()->cloneEmpty());
+}
+
 static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
 static constexpr size_t MAX_ARRAYS_SIZE = 1ULL << 40;
 

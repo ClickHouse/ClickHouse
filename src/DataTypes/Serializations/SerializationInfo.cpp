@@ -382,12 +382,23 @@ SerializationInfoByName::SerializationInfoByName(const SerializationInfo::Settin
 SerializationInfoByName::SerializationInfoByName(const NamesAndTypesList & columns, const SerializationInfo::Settings & settings_)
     : SerializationInfoByName(settings_)
 {
+    if (settings.version == MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS
+        && (settings.isAlwaysDefault()
+            || std::ranges::none_of(columns, [&](const auto & column)
+            {
+                return column.type->hasSparseSerializationSubcolumns(settings);
+            })))
+    {
+        settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+        settings.tryDowngradeToBasic();
+    }
+
     if (settings.isAlwaysDefault())
         return;
 
     for (const auto & column : columns)
     {
-        if (settings.canUseSparseSerialization(*column.type))
+        if (settings.shouldCollectSerializationInfo(*column.type))
             emplace(column.name, column.type->createSerializationInfo(settings));
     }
 }

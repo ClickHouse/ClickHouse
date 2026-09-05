@@ -220,9 +220,10 @@ ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
         const auto & outer_null_map_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
         /// The extracted subcolumn cannot be wrapped into Nullable, but if it can already represent NULL
         /// itself, mark rows that are NULL in the outer column as NULL in it.
-        if (canContainNull(*prev))
+        auto full_column = prev->convertToFullColumnIfSparse();
+        if (canContainNull(*full_column))
         {
-            auto mutable_column = IColumn::mutate(prev);
+            auto mutable_column = IColumn::mutate(std::move(full_column));
             applyParentNullMapToExtractedSubcolumn(*mutable_column, outer_null_map_data, 0, 0);
             return mutable_column;
         }

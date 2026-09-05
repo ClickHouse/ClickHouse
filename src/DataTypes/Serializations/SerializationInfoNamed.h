@@ -1,0 +1,43 @@
+#pragma once
+
+#include <Core/Names.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
+
+namespace DB
+{
+
+class SerializationInfoNamed : public SerializationInfo
+{
+public:
+    SerializationInfoNamed(MutableSerializationInfos elems_, Names names_, const Settings & settings_ = {});
+
+    bool hasCustomSerialization() const override;
+    bool structureEquals(const SerializationInfo & rhs) const override;
+
+    void add(const IColumn & column) override;
+    void add(const SerializationInfo & other) override;
+    void remove(const SerializationInfo & other) override;
+    void addDefaults(size_t length) override;
+    void replaceData(const SerializationInfo & other) override;
+
+    void serialializeKindStackBinary(WriteBuffer & out) const override;
+    void deserializeFromKindsBinary(ReadBuffer & in) override;
+
+    void toJSON(Poco::JSON::Object & object) const override;
+    void fromJSON(const Poco::JSON::Object & object) override;
+
+    const MutableSerializationInfoPtr & getElementInfo(size_t i) const { return elems[i]; }
+    const MutableSerializationInfoPtr & getElementInfo(const String & name) const;
+
+protected:
+    void writeJSONFields(WriteBuffer & out, const String * name) const override;
+    MutableSerializationInfos cloneElements() const;
+
+    MutableSerializationInfos elems;
+    Names names;
+
+    using NameToElem = std::unordered_map<String, MutableSerializationInfoPtr>;
+    NameToElem name_to_elem;
+};
+
+}

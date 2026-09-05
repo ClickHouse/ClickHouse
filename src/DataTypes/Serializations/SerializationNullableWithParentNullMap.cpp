@@ -135,8 +135,9 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleSt
     /// therefore not shared with the substreams cache. Apply the destructive parent null map to that private
     /// copy (for a promoted non-nullable LowCardinality this also promotes it to `LowCardinality(Nullable(T))`),
     /// then append the result, leaving the published `range_column` untouched.
-    auto extracted = range_column->cloneEmpty();
-    extracted->insertRangeFrom(*range_column, 0, new_rows);
+    auto full_range_column = range_column->convertToFullColumnIfSparse();
+    auto extracted = full_range_column->cloneEmpty();
+    extracted->insertRangeFrom(*full_range_column, 0, new_rows);
     applyParentNullMapToExtractedSubcolumn(*extracted, parent_null_map_data, /*column_offset=*/ 0, parent_offset);
     column.insertRangeFrom(*extracted, 0, extracted->size());
 }
