@@ -1,0 +1,7 @@
+SUPPORT_IS_DISABLED
+INVALID_SETTING_VALUE
+SET works with the dialect disabled
+1
+NOT_IMPLEMENTED
+valid queries: OK
+invalid queries: OK

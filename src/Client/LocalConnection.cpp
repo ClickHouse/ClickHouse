@@ -30,6 +30,8 @@
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
+#include <Parsers/LogsQL/ParserLogsQLQuery.h>
+#include <Parsers/LogsQL/parseLogsQLQuery.h>
 
 namespace ProfileEvents
 {
@@ -63,6 +65,11 @@ namespace Setting
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsBool allow_experimental_logsql_dialect;
+    extern const SettingsString logsql_database;
+    extern const SettingsString logsql_table;
+    extern const SettingsString logsql_time_column;
+    extern const SettingsString logsql_message_column;
 }
 
 namespace ErrorCodes
@@ -241,6 +248,11 @@ void LocalConnection::sendQuery(
     state->promql_database = query_context->getSettingsRef()[Setting::promql_database];
     state->promql_table = query_context->getSettingsRef()[Setting::promql_table];
     state->promql_evaluation_time = Field{query_context->getSettingsRef()[Setting::promql_evaluation_time]};
+    state->logsql_database = query_context->getSettingsRef()[Setting::logsql_database];
+    state->logsql_table = query_context->getSettingsRef()[Setting::logsql_table];
+    state->logsql_time_column = query_context->getSettingsRef()[Setting::logsql_time_column];
+    state->logsql_message_column = query_context->getSettingsRef()[Setting::logsql_message_column];
+    state->allow_experimental_logsql_dialect = query_context->getSettingsRef()[Setting::allow_experimental_logsql_dialect];
     state->json_ast_max_depth = query_context->getSettingsRef()[Setting::max_ast_depth];
     state->json_ast_max_elements = query_context->getSettingsRef()[Setting::max_ast_elements];
     state->query_scope_holder = QueryScope::create(query_context);
@@ -342,18 +354,34 @@ void LocalConnection::sendQuery(
                 parser = std::make_unique<ParserPRQLQuery>(state->max_query_size, state->max_parser_depth, state->max_parser_backtracks);
             else if (dialect == Dialect::promql)
                 parser = std::make_unique<ParserPrometheusQuery>(state->promql_database, state->promql_table, state->promql_evaluation_time);
+            else if (dialect == Dialect::logsql)
+                parser = std::make_unique<ParserLogsQLQuery>(
+                    state->logsql_database, state->logsql_table,
+                    state->logsql_time_column, state->logsql_message_column,
+                    begin, end, state->allow_experimental_logsql_dialect, state->max_parser_depth,
+                    state->max_query_size);
             else
                 parser = std::make_unique<ParserQuery>(end, state->allow_settings_after_format_in_insert, state->implicit_select);
 
-            parsed_query = parseQueryAndMovePosition(
-                *parser,
-                begin,
-                end,
-                "",
-                /*allow_multi_statements*/ false,
-                state->max_query_size,
-                state->max_parser_depth,
-                state->max_parser_backtracks);
+            if (dialect == Dialect::logsql)
+                parsed_query = parseLogsQLQueryAndMovePosition(
+                    *parser,
+                    begin,
+                    end,
+                    /*allow_multi_statements*/ false,
+                    state->max_query_size,
+                    state->max_parser_depth,
+                    state->max_parser_backtracks);
+            else
+                parsed_query = parseQueryAndMovePosition(
+                    *parser,
+                    begin,
+                    end,
+                    "",
+                    /*allow_multi_statements*/ false,
+                    state->max_query_size,
+                    state->max_parser_depth,
+                    state->max_parser_backtracks);
         }
 
         if (const auto * insert = parsed_query->as<ASTInsertQuery>())

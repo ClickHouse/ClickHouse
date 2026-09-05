@@ -490,7 +490,7 @@ xargs < "$STYLE_TMPDIR/all_excluded" rg -n '\bassert[[:space:]]*\(' |
 # parser of SQL text at all: it maps Poco JSON exceptions to BAD_ARGUMENTS at the boundary, and
 # nothing in it is on the standalone parser's call graph.
 find $ROOT_PATH/src/Parsers \( -name '*.h' -or -name '*.cpp' \) |
-    grep -vP '/(tests|examples|fuzzers)/|/(ASTFromJSON|ASTJSONReadHelpers)\.(h|cpp)$' |
+    grep -vP '/(tests|examples|fuzzers|LogsQL)/|/(ASTFromJSON|ASTJSONReadHelpers)\.(h|cpp)$' |
     xargs rg -n '\bcatch[[:space:]]*\(' |
     grep . &&
     echo "Do not catch exceptions in src/Parsers: a parser that does not match should return false. See check 19 in ci/jobs/scripts/check_style/check_cpp.sh"
