@@ -1,0 +1,22 @@
+999888
+123
+Unknown option specified: no_such_server_setting
+Option must not be given more than once: max_thread_pool_size
+50
+OK: --co resolves
+OK: --lo resolves
+1
+1
+information
+OK: logger.level is applied
+1
+777
+1
+concurrent_threads_soft_limit_num	7
+dns_max_consecutive_failures	42
+http_connections_soft_limit	111
+load_marks_threadpool_pool_size	13
+logger.level	information
+uncompressed_cache_size	1048576
+1
+1

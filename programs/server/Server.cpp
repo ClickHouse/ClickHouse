@@ -548,6 +548,79 @@ namespace ProfileEvents
 
 namespace fs = std::filesystem;
 
+namespace
+{
+
+/// `Poco::Util::OptionSet` resolves a long option by any unique prefix, so before the server settings
+/// were registered as command-line options, `--config` (used by the systemd unit and by
+/// `clickhouse restart`), `--co`, `--lo`, ... all resolved to the built-in option they abbreviate.
+/// Registering hundreds of additional options makes most of these abbreviations ambiguous, which stops
+/// the server from starting (`AmbiguousOptionException`). Refusing to register the settings that collide
+/// with such an abbreviation is not an option either: even a single letter can be a unique prefix of a
+/// built-in option (`d` of `daemon`, `h` of `help`, `u` of `umask`, `v` of `version`), so this would make
+/// whole families of settings - `distributed_*`, `http_*`, `logger_*`, `user_*`, ... - unavailable on the
+/// command line, which is exactly what this feature is about.
+///
+/// Instead, rewrite every abbreviation that used to resolve to a built-in option into the full name of
+/// that option, before the command line is processed. The previously accepted spellings keep their
+/// previous meaning, and every setting can be registered under its own name. An argument that does not
+/// resolve to exactly one built-in option is left alone: it either names a server setting, or it was
+/// already unknown or ambiguous before.
+std::vector<std::string> expandBuiltinOptionAbbreviations(
+    const std::vector<std::string> & arguments, const Poco::Util::OptionSet & builtin_options)
+{
+    std::vector<std::string> result;
+    result.reserve(arguments.size());
+
+    bool options_ended = false;
+    for (const auto & argument : arguments)
+    {
+        if (options_ended || !argument.starts_with("--") || argument == "--")
+        {
+            options_ended = options_ended || argument == "--";
+            result.push_back(argument);
+            continue;
+        }
+
+        /// `Poco::Util::Option` matches the option name up to the first `:` or `=`, case-insensitively,
+        /// and prefers a full match over a partial one - the resolution below mirrors `OptionSet::getOption`.
+        std::string option = argument.substr(std::string_view("--").size());
+
+        const Poco::Util::Option * resolved = nullptr;
+        bool ambiguous = false;
+        for (const auto & builtin : builtin_options)
+        {
+            if (builtin.matchesFull(option))
+            {
+                resolved = &builtin;
+                ambiguous = false;
+                break;
+            }
+            if (builtin.matchesPartial(option))
+            {
+                if (resolved)
+                    ambiguous = true;
+                else
+                    resolved = &builtin;
+            }
+        }
+
+        if (!resolved || ambiguous)
+        {
+            result.push_back(argument);
+            continue;
+        }
+
+        size_t value_position = option.find_first_of(":=");
+        std::string value = value_position == std::string::npos ? "" : option.substr(value_position);
+        result.push_back("--" + resolved->fullName() + value);
+    }
+
+    return result;
+}
+
+}
+
 int mainEntryClickHouseServer(int argc, char ** argv);
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
@@ -570,9 +643,21 @@ int mainEntryClickHouseServer(int argc, char ** argv)
             app.shouldSetupWatchdog(argv[0]);
     }
 
+    /// The abbreviations of the built-in options have to be resolved before `Poco::Util::Application`
+    /// processes the command line, because by then the option set also contains the server settings.
+    Poco::Util::OptionSet builtin_options;
+    app.defineBuiltinOptions(builtin_options);
+    std::vector<std::string> arguments
+        = expandBuiltinOptionAbbreviations(std::vector<std::string>(argv, argv + argc), builtin_options);
+
+    std::vector<char *> expanded_argv;
+    expanded_argv.reserve(arguments.size());
+    for (auto & argument : arguments)
+        expanded_argv.push_back(argument.data());
+
     try
     {
-        return app.run(argc, argv);
+        return app.run(argc, expanded_argv.data());
     }
     catch (...)
     {
@@ -806,6 +891,12 @@ int Server::run()
 void Server::initialize(Poco::Util::Application & self)
 {
     ConfigProcessor::registerEmbeddedConfig("config.xml", std::string_view(reinterpret_cast<const char *>(resource_embedded_xml), std::size(resource_embedded_xml)));
+
+    /// The command-line values of the settings backed by a nested config key have to be mirrored into that key
+    /// before the configuration file is loaded and before the loggers are built, because the components reading
+    /// the raw configuration do not go through `ServerSettings`.
+    ServerSettings::mirrorCommandLineToConfigPaths(argv(), config());
+
     BaseDaemon::initialize(self);
     logger().information("starting up");
 
@@ -820,7 +911,7 @@ std::string Server::getDefaultCorePath() const
     return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH), original_working_directory) + "cores";
 }
 
-void Server::defineOptions(Poco::Util::OptionSet & options)
+void Server::defineBuiltinOptions(Poco::Util::OptionSet & options)
 {
     options.addOption(
         Poco::Util::Option("help", "h", "show help and exit")
@@ -833,6 +924,13 @@ void Server::defineOptions(Poco::Util::OptionSet & options)
             .repeatable(false)
             .binding("version"));
     BaseDaemon::defineOptions(options);
+}
+
+void Server::defineOptions(Poco::Util::OptionSet & options)
+{
+    defineBuiltinOptions(options);
+
+    ServerSettings::addToProgramOptions(options);
 }
 
 
