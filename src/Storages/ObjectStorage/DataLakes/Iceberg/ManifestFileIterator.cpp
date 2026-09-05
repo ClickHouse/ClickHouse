@@ -173,9 +173,9 @@ namespace
         if (!left || !right)
             return std::nullopt;
 
-        /// A pair inverted as declared means the manifest's statistics are untrustworthy, so no range
-        /// derived from them is safe to prune on. Dropping them is therefore right where swapping or
-        /// clamping would prune on a range the manifest never asserted.
+        /// An inverted pair is dropped rather than repaired, for the reason spelled out at the guard for
+        /// ordinary columns below. Returning nothing here leaves the caller's fallback range, which
+        /// bounds every value the file can hold, a materialized one from an earlier write included.
         if (accurateLess(*right, *left))
         {
             LOG_WARNING(
