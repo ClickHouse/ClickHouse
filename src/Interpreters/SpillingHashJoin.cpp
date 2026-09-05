@@ -160,10 +160,32 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     return hash_join->addBlockToJoin(block, check_limits);
 }
 
-ISpillable * SpillingHashJoin::getSpillable()
+ProcessorMemoryStats SpillingHashJoin::getMemoryStats() const
 {
-    std::shared_lock lock(switch_mutex);
-    return grace_join ? grace_join->getSpillable() : nullptr;
+    if (state.load(std::memory_order_acquire) != State::COLLECTING)
+        return grace_join ? grace_join->getMemoryStats() : ProcessorMemoryStats{};
+
+    ProcessorMemoryStats res;
+    res.spillable_memory_bytes = concurrent_join ? concurrent_join->getTotalByteCount() : hash_join->getTotalByteCount();
+    /// The released blocks stay alive while the grace join re-inserts them.
+    res.need_reserved_memory_bytes = res.spillable_memory_bytes;
+    return res;
+}
+
+size_t SpillingHashJoin::spill(size_t at_least_bytes)
+{
+    size_t freed = 0;
+    if (state.load(std::memory_order_acquire) == State::COLLECTING)
+    {
+        size_t before = getTotalByteCount();
+        switchToGraceHashJoin();
+        size_t after = getTotalByteCount();
+        freed = before > after ? before - after : 0;
+    }
+
+    if (freed < at_least_bytes && grace_join)
+        freed += grace_join->spill(at_least_bytes - freed);
+    return freed;
 }
 
 void SpillingHashJoin::switchToGraceHashJoin()
@@ -220,7 +242,7 @@ void SpillingHashJoin::switchToGraceHashJoin()
     ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
     BlocksList right_blocks = hash_join->releaseJoinedBlocks(/*restructure=*/false);
 
-    chosen_join = std::make_shared<GraceHashJoin>(
+    grace_join = std::make_shared<GraceHashJoin>(
         initial_num_buckets,
         max_num_buckets,
         table_join,
@@ -229,6 +251,7 @@ void SpillingHashJoin::switchToGraceHashJoin()
         tmp_data,
         any_take_last_row,
         max_bytes_before_external_join);
+    chosen_join = grace_join;
 
     chosen_join->initialize(*left_sample_block);
 
