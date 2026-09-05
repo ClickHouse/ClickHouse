@@ -452,7 +452,13 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements]);
 
-    size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
+    /// Use the metadata reconciled with keeper (see `syncWithKeeper`), not the raw engine settings,
+    /// so that the number of streaming tasks matches the per-task thread split in `streamToViews`
+    /// and the value reported by `system.s3_queue_settings`.
+    const auto & synced_table_metadata = temp_metadata->getTableMetadata();
+    size_t task_count = synced_table_metadata.parallel_inserts
+        ? synced_table_metadata.processing_threads_num.load()
+        : 1;
     for (size_t i = 0; i < task_count; ++i)
     {
         auto task = getContext()->getSchedulePool()->createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
@@ -1046,7 +1052,12 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         auto processing_progress = std::make_shared<ProcessingProgress>();
         for (size_t i = 0; i < threads; ++i)
         {
-            size_t processor_id = i * (streaming_tasks_index + 1);
+            /// Processor ids must be globally unique across all (streaming task, source) pairs,
+            /// because all tasks share a single file iterator whose bucket ownership is keyed by
+            /// processor id. With `parallel_inserts` there are `processing_threads_num` tasks each
+            /// with one source (threads == 1), so the previous `i * (streaming_tasks_index + 1)`
+            /// collapsed every task to processor id 0 and serialized bucket processing.
+            size_t processor_id = streaming_tasks_index * threads + i;
             auto source = createSource(
                 processor_id,
                 read_from_format_info,

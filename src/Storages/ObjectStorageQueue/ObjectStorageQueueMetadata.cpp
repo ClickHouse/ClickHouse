@@ -399,6 +399,14 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                         "Will do nothing", value);
                 continue;
             }
+            if (table_metadata.parallel_inserts)
+            {
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Changing `processing_threads_num` is not allowed when `parallel_inserts` is enabled, "
+                    "because it determines the number of streaming tasks created at table startup. "
+                    "Recreate the table with a new `keeper_path` instead");
+            }
             new_table_metadata.processing_threads_num = value;
         }
         else if (change.name == "loading_retries")

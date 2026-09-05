@@ -380,3 +380,68 @@ def test_batch_set_processing_failure_does_not_crash(started_cluster):
         DROP TABLE IF EXISTS {table_name};
         """
         )
+
+        
+@pytest.mark.parametrize("parallel_inserts", [0, 1])
+def test_parallel_inserts_setting_persisted(started_cluster, parallel_inserts):
+    """Ensure `parallel_inserts` is carried into the table metadata, reported by
+    system.s3_queue_settings, and persisted in keeper across a restart.
+
+    Regression test: the setting was declared in ObjectStorageQueueTableMetadata but
+    never initialized from the engine settings, serialized to keeper, or parsed back,
+    so system.s3_queue_settings always reported `false` regardless of the CREATE value.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_parallel_inserts_setting_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 20
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "parallel_inserts": parallel_inserts,
+            "s3queue_processing_threads_num": 4,
+            "buckets": 4,
+        },
+    )
+
+    def get_setting():
+        return node.query(
+            f"SELECT value FROM system.s3_queue_settings "
+            f"WHERE table = '{table_name}' AND name = 'parallel_inserts'"
+        ).strip()
+
+    expected = "true" if parallel_inserts else "false"
+
+    # Before the fix this always returned `false`.
+    assert get_setting() == expected
+
+    # The value must survive a restart, i.e. it is serialized to and parsed from keeper.
+    node.restart_clickhouse()
+    run_with_retry(lambda x: x == expected, get_setting)
+
+    # Sanity: the queue still processes all files with the setting enabled.
+    generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    def get_count():
+        return int(node.query(f"select count() from {dst_table_name}"))
+
+    run_with_retry(lambda x: x == files_to_generate, get_count)
+
+    node.query(
+        f"""
+    DROP TABLE {dst_table_name};
+    DROP TABLE {table_name};
+    """
+    )

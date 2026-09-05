@@ -27,6 +27,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
     extern const ObjectStorageQueueSettingsUInt64 loading_retries;
     extern const ObjectStorageQueueSettingsUInt64 processing_threads_num;
+    extern const ObjectStorageQueueSettingsBool parallel_inserts;
     extern const ObjectStorageQueueSettingsUInt64 tracked_files_limit;
     extern const ObjectStorageQueueSettingsUInt64 tracked_file_ttl_sec;
 
@@ -72,6 +73,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
               : engine_settings[ObjectStorageQueueSetting::partitioning_mode].toString())
     , partition_regex(engine_settings[ObjectStorageQueueSetting::partition_regex])
     , partition_component(engine_settings[ObjectStorageQueueSetting::partition_component])
+    , parallel_inserts(engine_settings[ObjectStorageQueueSetting::parallel_inserts])
     , after_processing(engine_settings[ObjectStorageQueueSetting::after_processing])
     , loading_retries(engine_settings[ObjectStorageQueueSetting::loading_retries])
     , tracked_files_limit(engine_settings[ObjectStorageQueueSetting::tracked_files_limit])
@@ -204,6 +206,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , partitioning_mode(getOrDefault<String>(json, "partitioning_mode", "", "none"))
     , partition_regex(getOrDefault<String>(json, "partition_regex", "", ""))
     , partition_component(getOrDefault<String>(json, "partition_component", "", ""))
+    , parallel_inserts(false)
     , after_processing(actionFromString(json->getValue<String>("after_processing")))
     , loading_retries(getOrDefault(json, "loading_retries", "", 10ULL))
     , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1ULL))
