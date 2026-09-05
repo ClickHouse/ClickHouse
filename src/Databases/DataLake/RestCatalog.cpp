@@ -73,6 +73,8 @@ namespace DB::Setting
 namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
+    extern const char rest_catalog_create_namespace_http_error[];
+    extern const char rest_catalog_skip_namespace_existence_check[];
 }
 
 namespace ProfileEvents
@@ -1754,7 +1756,13 @@ bool RestCatalog::getTableMetadataImpl(
     return true;
 }
 
-void RestCatalog::sendRequest(const CatalogState & catalog_state, const String & endpoint, Poco::JSON::Object::Ptr request_body, const String & method, bool ignore_result) const
+void RestCatalog::sendRequest(
+    const CatalogState & catalog_state,
+    const String & endpoint,
+    Poco::JSON::Object::Ptr request_body,
+    const String & method,
+    bool ignore_result,
+    std::unordered_set<Poco::Net::HTTPResponse::HTTPStatus> custom_non_retryable_errors) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     if (request_body)
@@ -1793,6 +1801,7 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
         /// chunked transfer encoding on catalog commits with HTTP 500 and an empty body.
         .withOutCallbackFixedContentLength(body_str.size())
         .withSkipNotFound(false)
+        .withCustomNonRetryableError(std::move(custom_non_retryable_errors))
         .create(credentials);
 
     String response_str;
@@ -1812,7 +1821,19 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
         = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name)).generic_string();
     try
     {
-        sendRequest(*state_snapshot, check_endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ true);
+        /// Lets a test reach the "create" request below for a namespace that is already there,
+        /// which is otherwise only possible by losing a race against a concurrent creator.
+        fiu_do_on(DB::FailPoints::rest_catalog_skip_namespace_existence_check,
+        {
+            throw DB::HTTPException(
+                DB::ErrorCodes::FAULT_INJECTED,
+                check_endpoint,
+                Poco::Net::HTTPResponse::HTTP_NOT_FOUND,
+                "Injecting fault when checking namespace existence",
+                "");
+        });
+
+        sendRequest(*state_snapshot, check_endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ true, {});
         return;
     }
     catch (const DB::HTTPException & e)
@@ -1837,13 +1858,34 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
 
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+        fiu_do_on(DB::FailPoints::rest_catalog_create_namespace_http_error,
+        {
+            throw DB::HTTPException(
+                DB::ErrorCodes::FAULT_INJECTED,
+                endpoint,
+                Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR,
+                "Injecting fault when creating namespace",
+                "");
+        });
+
+        sendRequest(
+            *state_snapshot,
+            endpoint,
+            request_body,
+            Poco::Net::HTTPRequest::HTTP_POST,
+            /*ignore_result=*/ false,
+            {Poco::Net::HTTPResponse::HTTP_CONFLICT});
     }
     catch (const DB::HTTPException & e)
     {
-        /// Lost the race to a concurrent creator.
+        /// `HTTP_CONFLICT` is how the REST catalog reports that the namespace is already there,
+        /// which is exactly the outcome this method asks for, so it is the only consumed error.
+        /// Any other failure means the namespace may not exist and must not be hidden behind
+        /// whatever the subsequent "create table" request happens to answer.
         if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
             throw;
+
+        LOG_DEBUG(log, "Namespace '{}' already exists, skipping creation", namespace_name);
     }
 }
 
@@ -1881,7 +1923,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, {});
     }
     catch (const DB::HTTPException & ex)
     {
@@ -1948,7 +1990,7 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
 
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, {});
     }
     catch (const DB::HTTPException & ex)
     {
@@ -2022,7 +2064,7 @@ bool RestCatalog::updateSchema(
 
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, {});
     }
     catch (const DB::HTTPException & ex)
     {
@@ -2040,7 +2082,7 @@ void RestCatalog::dropTable(const String & namespace_name, const String & table_
     Poco::JSON::Object::Ptr request_body = nullptr;
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true, {});
     }
     catch (const DB::HTTPException & ex)
     {

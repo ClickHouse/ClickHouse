@@ -107,6 +107,7 @@ private:
     std::map<String, String> response_headers; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     HTTPHeaderEntries http_header_entries;
+    std::unordered_set<Poco::Net::HTTPResponse::HTTPStatus> custom_non_retryable_errors; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     std::function<void(size_t)> next_callback;
 
     size_t offset_from_begin_pos = 0;
@@ -170,7 +171,8 @@ private:
         HTTPHeaderEntries http_header_entries_,
         RedirectCallback redirect_callback_,
         bool delay_initialization,
-        std::optional<HTTPFileInfo> file_info_);
+        std::optional<HTTPFileInfo> file_info_,
+        std::unordered_set<Poco::Net::HTTPResponse::HTTPStatus> custom_non_retryable_errors_); // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 public:
     bool nextImpl() override;
@@ -229,6 +231,7 @@ class BuilderRWBufferFromHTTP
     bool http_skip_not_found_url = false;
     HTTPHeaderEntries http_header_entries{};
     bool delay_initialization = true;
+    std::unordered_set<Poco::Net::HTTPResponse::HTTPStatus> custom_non_retryable_errors{}; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 public:
     explicit BuilderRWBufferFromHTTP(Poco::URI uri_)
@@ -259,6 +262,7 @@ public:
     setterMember(withExternalBuf, use_external_buffer)
     setterMember(withDelayInit, delay_initialization)
     setterMember(withSkipNotFound, http_skip_not_found_url)
+    setterMember(withCustomNonRetryableError, custom_non_retryable_errors)
 #undef setterMember
 /// NOLINTEND(bugprone-macro-parentheses)
 

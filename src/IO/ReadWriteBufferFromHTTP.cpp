@@ -196,7 +196,8 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     HTTPHeaderEntries http_header_entries_,
     RedirectCallback redirect_callback_,
     bool delay_initialization,
-    std::optional<HTTPFileInfo> file_info_)
+    std::optional<HTTPFileInfo> file_info_,
+    std::unordered_set<Poco::Net::HTTPResponse::HTTPStatus> custom_non_retryable_errors_) // STYLE_CHECK_ALLOW_STD_CONTAINERS
     : SeekableReadBuffer(nullptr, 0)
     , connection_group(connection_group_)
     , initial_uri(uri_)
@@ -216,6 +217,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     , redirect_callback(std::move(redirect_callback_))
     , redirects(0)
     , http_header_entries {std::move(http_header_entries_)}
+    , custom_non_retryable_errors(std::move(custom_non_retryable_errors_))
     , file_info(file_info_)
     , log(getLogger("ReadWriteBufferFromHTTP"))
 {
@@ -342,7 +344,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         }
         catch (HTTPException & e)
         {
-            if (!isRetriableHTTPError(e.getHTTPStatus()))
+            if (!isRetriableHTTPError(e.getHTTPStatus()) || custom_non_retryable_errors.contains(e.getHTTPStatus()))
                 is_retriable = false;
 
             error_message = e.displayText();
@@ -866,7 +868,8 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
         header_entries,
         redirect_callback,
         delay_initialization,
-        /*file_info_=*/ std::nullopt));
+        /*file_info_=*/ std::nullopt,
+        custom_non_retryable_errors));
     return ptr;
 }
 

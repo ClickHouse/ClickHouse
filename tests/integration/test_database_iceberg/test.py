@@ -1157,6 +1157,172 @@ def test_create(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
+def test_create_tables_under_same_namespace(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_tables_under_same_namespace_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+    table_names = [f"{test_ref}_table_{i}" for i in range(10)]
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # Create every table with its own query id so the per-query ProfileEvents can
+    # be inspected below. The first CREATE creates the namespace; the other nine
+    # observe it during the REST catalog's namespace lookup.
+    create_query_ids = []
+    for i, table_name in enumerate(table_names):
+        query_id = f"{test_ref}_create_{i}"
+        create_query_ids.append(query_id)
+        node.query(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String) "
+            f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', "
+            f"'{minio_access_key}', '{minio_secret_key}')",
+            settings={
+                "allow_experimental_database_iceberg": 1,
+                "write_full_path_in_iceberg_metadata": 1,
+            },
+            query_id=query_id,
+        )
+
+    catalog = load_catalog_impl(started_cluster)
+    tables = catalog.list_tables(root_namespace)
+    listed_table_names = sorted([t[1] for t in tables])
+    assert listed_table_names == sorted(table_names), f"Expected {sorted(table_names)}, got {listed_table_names}"
+    assert len(tables) == 10
+    node.query("SYSTEM FLUSH LOGS")
+    # The first CREATE needs one additional request to create the namespace.
+    # The following CREATEs must not spend `http_max_tries` attempts on an
+    # already-existing namespace, so their request counts stay close to the
+    # first CREATE's count.
+    max_tries = int(
+        node.query("SELECT value FROM system.settings WHERE name = 'http_max_tries'")
+    )
+    requests_sent = [
+        int(
+            node.query(
+                f"SELECT ProfileEvents['ReadWriteBufferFromHTTPRequestsSent'] "
+                f"FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            )
+        )
+        for query_id in create_query_ids
+    ]
+    assert requests_sent[0] > 0, (
+        f"expected the HTTP requests to the REST catalog to be attributed to the CREATE query, "
+        f"got {requests_sent}"
+    )
+    assert max(requests_sent) - min(requests_sent) < max_tries - 1, (
+        f"the 409 'namespace already exists' response is being retried instead of being treated "
+        f"as non-retriable: per-CREATE ReadWriteBufferFromHTTPRequestsSent counts {requests_sent} "
+        f"vary by at least http_max_tries-1={max_tries - 1}"
+    )
+
+
+def test_create_namespace_conflict_is_not_retried(started_cluster):
+    """The `409 Conflict` answer to "create namespace" must be consumed after a single attempt.
+
+    `createNamespaceIfNotExists` looks the namespace up first and returns early when it is
+    there, so on a spec-compliant catalog the conflicting "create" request only happens when
+    a concurrent creator wins the race. The failpoint below skips that lookup, which is a
+    deterministic stand-in for losing the race, and makes every `CREATE TABLE` after the
+    first one hit the real `409`.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_namespace_conflict_is_not_retried_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    def create_table(table_name, query_id):
+        node.query(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String) "
+            f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', "
+            f"'{minio_access_key}', '{minio_secret_key}')",
+            settings={
+                "allow_experimental_database_iceberg": 1,
+                "write_full_path_in_iceberg_metadata": 1,
+            },
+            query_id=query_id,
+        )
+
+    # Creates the namespace, then a control table whose namespace lookup succeeds.
+    create_table(f"{test_ref}_table_0", f"{test_ref}_create_0")
+    create_table(f"{test_ref}_table_1", f"{test_ref}_control")
+
+    node.query("SYSTEM ENABLE FAILPOINT rest_catalog_skip_namespace_existence_check")
+    try:
+        # The namespace lookup is skipped, so this goes straight to `POST /namespaces` for a
+        # namespace that already exists. The CREATE only succeeds if the `409` is consumed.
+        create_table(f"{test_ref}_table_2", f"{test_ref}_conflict")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT rest_catalog_skip_namespace_existence_check")
+
+    catalog = load_catalog_impl(started_cluster)
+    listed_table_names = sorted([t[1] for t in catalog.list_tables(root_namespace)])
+    assert listed_table_names == [f"{test_ref}_table_{i}" for i in range(3)], listed_table_names
+
+    node.query("SYSTEM FLUSH LOGS")
+    max_tries = int(
+        node.query("SELECT value FROM system.settings WHERE name = 'http_max_tries'")
+    )
+
+    def requests_sent(query_id):
+        return int(
+            node.query(
+                f"SELECT ProfileEvents['ReadWriteBufferFromHTTPRequestsSent'] "
+                f"FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            )
+        )
+
+    control_requests = requests_sent(f"{test_ref}_control")
+    conflict_requests = requests_sent(f"{test_ref}_conflict")
+    assert control_requests > 0, (
+        "expected the HTTP requests to the REST catalog to be attributed to the CREATE query"
+    )
+    # Both CREATEs send exactly one namespace request: the control one a `GET` that answers
+    # `200`, the other a `POST` that answers `409`. Retrying the `409` would add
+    # `http_max_tries - 1` requests on top.
+    assert conflict_requests - control_requests < max_tries - 1, (
+        f"the 409 'namespace already exists' response is being retried instead of being treated "
+        f"as non-retriable: {conflict_requests} requests with the conflicting namespace creation "
+        f"against {control_requests} without it, http_max_tries={max_tries}"
+    )
+
+
+def test_create_table_namespace_creation_error(started_cluster):
+    """An unexpected failure of the "create namespace" request must abort CREATE TABLE.
+
+    Only `HTTP 409 Conflict` means "the namespace is already there"; every other error
+    leaves it unknown whether the namespace exists, so it must not be swallowed.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_table_namespace_creation_error_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query("SYSTEM ENABLE FAILPOINT rest_catalog_create_namespace_http_error")
+    try:
+        error = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String) "
+            f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', "
+            f"'{minio_access_key}', '{minio_secret_key}')",
+            settings={
+                "allow_experimental_database_iceberg": 1,
+                "write_full_path_in_iceberg_metadata": 1,
+            },
+        )
+        assert "Injecting fault when creating namespace" in error, error
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT rest_catalog_create_namespace_http_error")
+
+    # The namespace was not created behind the user's back.
+    existing = [name for namespace in list_namespaces(started_cluster)["namespaces"] for name in namespace]
+    assert root_namespace not in existing
+
+
 def test_create_gzip_metadata(started_cluster):
     # Catalog-backed CREATE TABLE from ClickHouse with gzip metadata
     # compression exercises IcebergMetadata::createInitial and the
