@@ -1,5 +1,7 @@
 #include <Interpreters/QueryOracleChecker.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -968,6 +970,32 @@ void scanAggregatesSafe(const ASTPtr & ast, SafeAggregateScan & out)
         if (func->isWindowFunction())
             out.window_functions.push_back(ast);
     }
+
+    /// `SELECT * APPLY any` (or `APPLY x -> any(x)`) aggregates every expanded
+    /// column, but the aggregate is not an `ASTFunction` in the AST: the
+    /// transformer keeps a bare function name (or a lambda that is not among its
+    /// children). Missing it routes an aggregating query into the non-aggregate
+    /// oracles, where a partition over an empty WHERE still yields the one row
+    /// every aggregate returns on no input — a false mismatch. Record the
+    /// transformer itself as an aggregate: `hasAggregates` then reports it, and
+    /// `checkTLPAggregate` rejects it because it is not a rewritable function.
+    if (const auto * apply = ast->as<ASTColumnsApplyTransformer>())
+    {
+        if (apply->lambda)
+        {
+            SafeAggregateScan lambda_scan;
+            scanAggregatesSafe(apply->lambda, lambda_scan);
+            if (!lambda_scan.aggregates.empty())
+                out.aggregates.push_back(ast);
+            out.window_functions.insert(
+                out.window_functions.end(), lambda_scan.window_functions.begin(), lambda_scan.window_functions.end());
+        }
+        else if (!apply->func_name.empty() && AggregateFunctionFactory::instance().isAggregateFunctionName(apply->func_name))
+        {
+            out.aggregates.push_back(ast);
+        }
+    }
+
     for (const auto & child : ast->children)
         scanAggregatesSafe(child, out);
 }

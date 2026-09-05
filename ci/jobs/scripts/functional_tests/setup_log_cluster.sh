@@ -20,9 +20,11 @@ CLICKHOUSE_CI_LOGS_CLUSTER=${CLICKHOUSE_CI_LOGS_CLUSTER:-system_logs_export}
 # port. The `xargs` lines below run in another process and cannot take the
 # array, they expand ${LOG_EXPORT_SERVER_PORT:+...} instead.
 LOG_EXPORT_SERVER_PORT=${LOG_EXPORT_SERVER_PORT:-}
-LOCAL_ARGS=()
+# The export harness is plumbing, not a fuzz target: a server-side fuzzed CREATE is renamed
+# but keeps a materialized view's TO target, so a clone would keep feeding the real sender.
+LOCAL_ARGS=(--ast_fuzzer_runs 0)
 if [[ -n "$LOG_EXPORT_SERVER_PORT" ]]; then
-    LOCAL_ARGS=(--port "$LOG_EXPORT_SERVER_PORT")
+    LOCAL_ARGS+=(--port "$LOG_EXPORT_SERVER_PORT")
 fi
 function __set_connection_args()
 {
