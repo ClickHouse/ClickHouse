@@ -218,7 +218,7 @@ struct TimeSlotsImpl
 };
 
 
-class FunctionTimeSlots final : public IFunction
+class FunctionTimeSlots : public IFunction
 {
 public:
     static constexpr auto name = "timeSlots";
@@ -271,18 +271,11 @@ public:
 
         auto start_time_scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type).getScale();
         auto duration_scale = assert_cast<const DataTypeDecimal64 &>(*arguments[1].type).getScale();
-        auto result_scale = std::max(start_time_scale, duration_scale);
-        /// The optional Size argument also participates in value rescaling (executeImpl computes
-        /// values at max(start, duration, size)), so it must be reflected in the declared scale,
-        /// otherwise a Size with the largest scale yields values exposed at a smaller declared scale
-        /// (wrong timestamps). This honors the documented "highest scale among all arguments".
-        if (arguments.size() == 3)
-            result_scale = std::max(result_scale, assert_cast<const DataTypeDecimal64 &>(*arguments[2].type).getScale());
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime64>(
-            result_scale, extractTimeZoneNameFromFunctionArguments(arguments, 3, 0, false)));
+            std::max(start_time_scale, duration_scale), extractTimeZoneNameFromFunctionArguments(arguments, 3, 0, false)));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (WhichDataType(arguments[0].type).isDateTime())
         {
@@ -303,15 +296,13 @@ public:
             const auto * durations = checkAndGetColumn<ColumnDateTime>(arguments[1].column.get());
             const auto * const_durations = checkAndGetColumnConst<ColumnDateTime>(arguments[1].column.get());
 
-            auto res_values_column = ColumnUInt32::create();
-            auto res_offsets_column = ColumnArray::ColumnOffsets::create();
-            ColumnUInt32::Container & res_values = res_values_column->getData();
-            ColumnArray::Offsets & res_offsets = res_offsets_column->getData();
+            auto res = ColumnArray::create(ColumnUInt32::create());
+            ColumnUInt32::Container & res_values = typeid_cast<ColumnUInt32 &>(res->getData()).getData();
 
             if (dt_starts && durations)
             {
-                TimeSlotsImpl::vectorVector(dt_starts->getData(), durations->getData(), time_slot_size, res_values, res_offsets, input_rows_count);
-                return ColumnArray::create(std::move(res_values_column), std::move(res_offsets_column));
+                TimeSlotsImpl::vectorVector(dt_starts->getData(), durations->getData(), time_slot_size, res_values, res->getOffsets(), input_rows_count);
+                return res;
             }
             if (dt_starts && const_durations)
             {
@@ -320,9 +311,9 @@ public:
                     const_durations->getValue<UInt32>(),
                     time_slot_size,
                     res_values,
-                    res_offsets,
+                    res->getOffsets(),
                     input_rows_count);
-                return ColumnArray::create(std::move(res_values_column), std::move(res_offsets_column));
+                return res;
             }
             if (dt_const_starts && durations)
             {
@@ -331,14 +322,14 @@ public:
                     durations->getData(),
                     time_slot_size,
                     res_values,
-                    res_offsets,
+                    res->getOffsets(),
                     input_rows_count);
-                return ColumnArray::create(std::move(res_values_column), std::move(res_offsets_column));
+                return res;
             }
         }
         else
         {
-            chassert(WhichDataType(arguments[0].type).isDateTime64());
+            assert(WhichDataType(arguments[0].type).isDateTime64());
             Decimal64 time_slot_size = Decimal64(1800);
             UInt16 time_slot_scale = 0;
             if (arguments.size() == 3)
@@ -361,19 +352,8 @@ public:
             const auto start_time_scale = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get())->getScale();
             const auto duration_scale = assert_cast<const DataTypeDecimal64 *>(arguments[1].type.get())->getScale();
 
-            /// The result element scale is max(start, duration, size) as declared by
-            /// getReturnTypeImpl (and the scale TimeSlotsImpl computes values at). Read it back from
-            /// result_type so the column object always carries the scale of its declared type;
-            /// building at start_time_scale alone left a scale-N values column labelled DateTime64(M)
-            /// when duration_scale or time_slot_scale exceeded start_time_scale.
-            const auto result_scale = assert_cast<const DataTypeDateTime64 &>(
-                *assert_cast<const DataTypeArray &>(*result_type).getNestedType()).getScale();
-
-            auto res_values_column = DataTypeDateTime64(result_scale).createColumn();
-            auto res_offsets_column = ColumnArray::ColumnOffsets::create();
-            DataTypeDateTime64::ColumnType::Container & res_values
-                = typeid_cast<DataTypeDateTime64::ColumnType &>(*res_values_column).getData();
-            ColumnArray::Offsets & res_offsets = res_offsets_column->getData();
+            auto res = ColumnArray::create(DataTypeDateTime64(start_time_scale).createColumn());
+            DataTypeDateTime64::ColumnType::Container & res_values = typeid_cast<DataTypeDateTime64::ColumnType &>(res->getData()).getData();
 
             if (starts && durations)
             {
@@ -382,12 +362,12 @@ public:
                     durations->getData(),
                     time_slot_size,
                     res_values,
-                    res_offsets,
+                    res->getOffsets(),
                     static_cast<UInt16>(start_time_scale),
                     static_cast<UInt16>(duration_scale),
                     time_slot_scale,
                     input_rows_count);
-                return ColumnArray::create(std::move(res_values_column), std::move(res_offsets_column));
+                return res;
             }
             if (starts && const_durations)
             {
@@ -396,12 +376,12 @@ public:
                     const_durations->getValue<Decimal64>(),
                     time_slot_size,
                     res_values,
-                    res_offsets,
+                    res->getOffsets(),
                     static_cast<UInt16>(start_time_scale),
                     static_cast<UInt16>(duration_scale),
                     time_slot_scale,
                     input_rows_count);
-                return ColumnArray::create(std::move(res_values_column), std::move(res_offsets_column));
+                return res;
             }
             if (const_starts && durations)
             {
@@ -410,12 +390,12 @@ public:
                     durations->getData(),
                     time_slot_size,
                     res_values,
-                    res_offsets,
+                    res->getOffsets(),
                     static_cast<UInt16>(start_time_scale),
                     static_cast<UInt16>(duration_scale),
                     time_slot_scale,
                     input_rows_count);
-                return ColumnArray::create(std::move(res_values_column), std::move(res_offsets_column));
+                return res;
             }
         }
 

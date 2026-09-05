@@ -2,7 +2,6 @@
 
 #if USE_FUZZING_MODE
 
-#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -15,7 +14,7 @@ namespace DB
 namespace
 {
 
-class FunctionGetFuzzerData final : public IFunction
+class FunctionGetFuzzerData : public IFunction
 {
     inline static String fuzz_data;
 

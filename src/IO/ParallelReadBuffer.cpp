@@ -97,8 +97,8 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
     if (!working_buffer.empty() && static_cast<size_t>(offset) >= current_position - working_buffer.size() && offset < current_position)
     {
         pos = working_buffer.end() - (current_position - offset);
-        chassert(pos >= working_buffer.begin());
-        chassert(pos <= working_buffer.end());
+        assert(pos >= working_buffer.begin());
+        assert(pos <= working_buffer.end());
 
         return offset;
     }
@@ -165,7 +165,7 @@ off_t ParallelReadBuffer::getPosition()
 void ParallelReadBuffer::handleEmergencyStop()
 {
     // this can only be called from the main thread when there is an exception
-    chassert(background_exception);
+    assert(background_exception);
     std::rethrow_exception(background_exception);
 }
 

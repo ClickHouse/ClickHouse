@@ -5,6 +5,7 @@
 
 #include <IO/ReadBuffer.h>
 #include <Functions/geometryConverters.h>
+#include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <IO/WriteBuffer.h>
 
@@ -16,7 +17,6 @@ enum class WKBGeometry : UInt32
     Point = 1,
     LineString = 2,
     Polygon = 3,
-    MultiPoint = 4,
     MultiLineString = 5,
     MultiPolygon = 6
 };
@@ -26,16 +26,10 @@ using GeometricObject = std::variant<
     LineString<CartesianPoint>,
     MultiLineString<CartesianPoint>,
     Polygon<CartesianPoint>,
-    MultiPolygon<CartesianPoint>,
-    MultiPoint<CartesianPoint>>;
-
-/// Hard limit on WKB element counts that cannot be overridden by settings.
-static constexpr UInt32 MAX_WKB_GEOMETRY_ELEMENTS_HARD_LIMIT = 100'000'000;
+    MultiPolygon<CartesianPoint>>;
 
 /// Documentation about WKB format: https://libgeos.org/specifications/wkb/
-/// max_element_count limits the number of points/rings/polygons per geometry element.
-/// Use 0 for the hard-coded limit (100 million).
-GeometricObject parseWKBFormat(ReadBuffer & in_buffer, UInt32 max_element_count = 0);
+GeometricObject parseWKBFormat(ReadBuffer & in_buffer);
 
 struct IWKBTransform
 {
@@ -65,14 +59,6 @@ struct WKBPolygonTransform : public IWKBTransform
 {
     static constexpr const char * name = "Polygon";
     static constexpr WKBGeometry geometry_type = WKBGeometry::Polygon;
-
-    String dumpObject(const Field & geo_object) override;
-};
-
-struct WKBMultiPointTransform : public IWKBTransform
-{
-    static constexpr const char * name = "MultiPoint";
-    static constexpr WKBGeometry geometry_type = WKBGeometry::MultiPoint;
 
     String dumpObject(const Field & geo_object) override;
 };

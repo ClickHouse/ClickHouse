@@ -1,16 +1,10 @@
 import dataclasses
-import datetime
 import glob
 import hashlib
 import json
 import os
 import re
-import shlex
-import site
-import shutil
-import tempfile
 import sys
-import textwrap
 import traceback
 from pathlib import Path
 
@@ -18,172 +12,36 @@ from ._environment import _Environment
 from .artifact import Artifact
 from .cidb import CIDB
 from .digest import Digest
-from .docker import (  # noqa: F401  - re-exported: the pull policy moved to docker.py
-    _IMAGE_PULL_RETRIES,
-    _IMAGE_PULL_RETRY_ERRORS,
-    _IMAGE_PULL_TIMEOUT_S,
-    Docker,
-)
 from .event import EventFeed
 from .gh import GH
-from .gh_auth import GHAuth
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
-from .host_metrics import HostMetricsCollector
 from .info import Info
 from .native_jobs import _check_and_link_open_issues, _is_praktika_job
 from .result import Result, ResultInfo
 from .runtime import RunConfig
 from .s3 import S3
 from .settings import Settings
-from .usage import ComputeUsage, PipelineUtilization, StorageUsage
+from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
-from .workflow import Workflow
 
-_WRAP_WIDTH = 160
-_TIMESTAMP_INDENT = len(
-    datetime.datetime(2000, 1, 1).strftime("[%Y-%m-%d %H:%M:%S] ")
-)
+_GH_authenticated = False
 
 
-def _job_python_env() -> dict:
-    env = os.environ.copy()
+def _GH_Auth(workflow):
+    global _GH_authenticated
+    if _GH_authenticated:
+        return
+    if not Settings.USE_CUSTOM_GH_AUTH:
+        return
+    from .gh_auth import GHAuth
 
-    # Keep the runtime environment ahead of the checkout. Jobs reference their
-    # config as ``ci.*`` modules, so only the repo root ("."; the parent of the
-    # ``ci`` package) belongs on PYTHONPATH — NOT "./ci". Putting "./ci" on the
-    # path makes a bare ``import praktika`` resolve to the repo's vendored
-    # ``ci/praktika`` copy (often stale) instead of the installed package. This
-    # matches the GH Actions path (see yaml_generator: ``export PYTHONPATH=.``).
-    site_paths = []
-    if hasattr(site, "getsitepackages"):
-        site_paths.extend(site.getsitepackages())
-    if hasattr(site, "getusersitepackages"):
-        site_paths.append(site.getusersitepackages())
+    if not Shell.check(f"gh auth status", verbose=True):
+        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
+        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
+        GHAuth.auth(app_id=app_id, app_key=pem)
+    _GH_authenticated = True
 
-    pythonpath_entries = []
-    for entry in site_paths:
-        if entry and entry not in pythonpath_entries:
-            pythonpath_entries.append(entry)
-
-    if "." not in pythonpath_entries:
-        pythonpath_entries.append(".")
-
-    for entry in (env.get("PYTHONPATH") or "").split(os.pathsep):
-        if not entry:
-            continue
-        if entry not in pythonpath_entries:
-            pythonpath_entries.append(entry)
-    env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
-    env["PYTHONSAFEPATH"] = "1"
-    return env
-
-
-def _praktika_package_dir() -> str:
-    # Use the installed package location, not the checkout root. In a
-    # production runner this points at the system path that contains the
-    # praktika package the host is actually using.
-    return str(Path(__file__).resolve().parent)
-
-
-def _staged_praktika_package_dir() -> str:
-    package_dir = Path(_praktika_package_dir())
-    stage_root = Path("/private/tmp") if sys.platform == "darwin" else Path(tempfile.gettempdir())
-    stage_root = stage_root / "praktika-docker-packages"
-    stage_root.mkdir(parents=True, exist_ok=True)
-
-    # Keep the staged path stable per installed package location and a coarse
-    # content freshness signal so repeated job runs reuse the same mirror.
-    package_stat = package_dir.stat()
-    cache_key = hashlib.sha1(
-        f"{package_dir.resolve().as_posix()}:{package_stat.st_mtime_ns}".encode()
-    ).hexdigest()[:16]
-    staged_site_packages = stage_root / f"site-packages-{cache_key}"
-    staged_package = staged_site_packages / "praktika"
-    if not staged_package.exists():
-        staged_site_packages.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(package_dir, staged_package)
-    return str(staged_site_packages)
-
-
-def _should_post_commit_status(workflow):
-    return workflow.engine != Workflow.Engine.PRAKTIKA
-
-
-class _TimestampedStream:
-    """Prepends a [YYYY-MM-DD HH:MM:SS] timestamp to each output line."""
-
-    def __init__(self, stream):
-        self._stream = stream
-        self._at_line_start = True
-
-    def write(self, data):
-        if not data:
-            return
-        parts = data.split("\n")
-        for i, part in enumerate(parts):
-            is_last = i == len(parts) - 1
-            if self._at_line_start and part:
-                ts = datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S] ")
-                self._stream.write(ts + part)
-            elif part:
-                self._stream.write(part)
-            if not is_last:
-                self._stream.write("\n")
-                self._at_line_start = True
-            else:
-                self._at_line_start = not part
-
-    def flush(self):
-        self._stream.flush()
-
-    def __getattr__(self, name):
-        return getattr(self._stream, name)
-
-
-class _TeeStream:
-    """Writes to a terminal stream (with line wrapping) and a log file (without wrapping)."""
-
-    def __init__(self, terminal, log, subsequent_indent=0):
-        self._terminal = terminal
-        self._log = log
-        self._subsequent_indent = " " * subsequent_indent
-        self._at_line_start = True
-
-    def write(self, data):
-        if not data:
-            return
-        self._log.write(data)
-        parts = data.split("\n")
-        for i, part in enumerate(parts):
-            is_last = i == len(parts) - 1
-            if self._at_line_start and part:
-                self._terminal.write(
-                    textwrap.fill(
-                        part,
-                        width=_WRAP_WIDTH,
-                        subsequent_indent=self._subsequent_indent,
-                        break_long_words=False,
-                        break_on_hyphens=False,
-                        expand_tabs=False,
-                        replace_whitespace=False,
-                        drop_whitespace=False,
-                    )
-                )
-            elif part:
-                self._terminal.write(part)
-            if not is_last:
-                self._terminal.write("\n")
-                self._at_line_start = True
-            else:
-                self._at_line_start = not part
-
-    def flush(self):
-        self._terminal.flush()
-        self._log.flush()
-
-    def __getattr__(self, name):
-        return getattr(self._terminal, name)
 
 class Runner:
     @staticmethod
@@ -211,14 +69,18 @@ class Runner:
             cache_artifacts={},
             cache_jobs={},
             filtered_jobs={},
-            submodule_cache_hash="",
             custom_data={},
         )
         # Extract repository name from git remote (format: owner/repo)
         repo_url = Shell.get_output("git config --get remote.origin.url")
         repo_name = ""
         if repo_url:
-            repo_name = GH._repo_name_from_git_remote_url(repo_url)
+            # Handle both HTTPS and SSH formats
+            # HTTPS: https://github.com/owner/repo.git
+            # SSH: git@github.com:owner/repo.git
+            match = re.search(r"[:/]([^/]+/[^/]+?)(\.git)?$", repo_url)
+            if match:
+                repo_name = match.group(1)
 
         _Environment(
             WORKFLOW_NAME=workflow.name,
@@ -246,18 +108,7 @@ class Runner:
             PR_LABELS=[],
             EVENT_TIME="",
             WORKFLOW_CONFIG=workflow_config,
-            # Mirror _setup_env: a job body may read its own configuration (e.g. to
-            # derive an output filename from `provides`), which is None here otherwise.
-            JOB_CONFIG=job,
         ).dump()
-
-        if pr and pr > 0:
-            changed_files = GH.get_changed_files()
-            if changed_files is not None:
-                print(f"Storing {len(changed_files)} changed files in JOB_KV_DATA")
-                Info().store_kv_data("changed_files", changed_files)
-            else:
-                print("WARNING: Failed to fetch changed files for PR")
 
         Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
 
@@ -289,7 +140,6 @@ class Runner:
         else:
             print("Read GH Environment from workflow data")
             env = _Environment.from_workflow_data()
-        env.JOB_KV_DATA_BASE_KEYS = list(env.JOB_KV_DATA.keys())
         env.JOB_NAME = job.name
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
@@ -299,14 +149,9 @@ class Runner:
 
         return 0
 
-    def _pre_run(self, workflow, job, local_job_run=False):
+    def _pre_run(self, workflow, job, local_run=False):
         if job.name == Settings.CI_CONFIG_JOB_NAME:
             GH.print_actions_debug_info()
-        dirty = Shell.get_output("git status --short", verbose=False) or ""
-        if dirty:
-            print(f"NOTE: Dirty repo state before job start:\n{dirty}")
-        else:
-            print("NOTE: Repo state is clean before job start")
         env = _Environment.get()
 
         result = Result(
@@ -320,7 +165,7 @@ class Runner:
             )
         result.dump()
 
-        if not local_job_run:
+        if not local_run:
             if workflow.enable_report and job.name != Settings.CI_CONFIG_JOB_NAME:
                 print("Update Job and Workflow Report")
                 HtmlRunnerHooks.pre_run(workflow, job)
@@ -328,9 +173,9 @@ class Runner:
         if job.requires and not _is_praktika_job(job.name):
             print("Download required artifacts")
             required_artifacts = []
-            job_names_with_provides = {
-                j.name for j in workflow.jobs if j.provides
-            }
+            # praktika service jobs do not require any of artifacts and excluded in if to not upload "hacky" artifact report.
+            #  this artifact is created to replace legacy build_report and maintain seamless transition to praktika
+            #  once there is no need for this "hacky" artifact report - second condition in "if" can be removed
             for requires_artifact_name in job.requires:
                 for artifact in workflow.artifacts:
                     if (
@@ -338,11 +183,14 @@ class Runner:
                         and artifact.type == Artifact.Type.S3
                     ):
                         required_artifacts.append(artifact)
-                        break
                 else:
-                    if requires_artifact_name in job_names_with_provides:
+                    if (
+                        requires_artifact_name
+                        in [job.name for job in workflow.jobs if job.provides]
+                        and Settings.ENABLE_ARTIFACTS_REPORT
+                    ):
                         print(
-                            f"Artifact report for [{requires_artifact_name}] will be downloaded"
+                            f"Artifact report for [{requires_artifact_name}] will be uploaded"
                         )
                         required_artifacts.append(
                             Artifact.Config(
@@ -376,147 +224,27 @@ class Runner:
                     recursive = False
                     include_pattern = ""
                     if "*" in artifact_path:
-                        s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/"
+                        s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/"
                         recursive = True
                         include_pattern = Path(artifact_path).name
                         assert "*" in include_pattern
                     else:
-                        s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact_path).name}"
+                        s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact_path).name}"
                     S3.copy_file_from_s3(
                         s3_path=s3_path,
                         local_path=Settings.INPUT_DIR,
                         recursive=recursive,
                         include_pattern=include_pattern,
+                        # Job report (phony artifact) is required only for a few jobs, introduced for seamless migration from legacy CI.
+                        # Copying it may fail if the dependency job was skipped due to a user's workflow filter hook.
+                        # We choose to ignore these errors, but a better solution would be to remove these types of artifacts or implement a consistent way of working with them. TODO.
+                        no_strict=artifact.is_phony(),
                     )
 
                     if artifact.compress_zst:
                         Utils.decompress_file(Path(Settings.INPUT_DIR) / artifact_path)
 
-        if not local_job_run and job.needs_submodules and Settings.ENABLE_SUBMODULE_CACHE:
-            self._restore_submodule_cache()
-
         return 0
-
-    @staticmethod
-    def _restore_submodule_cache():
-        try:
-            wf_config = RunConfig.from_workflow_data()
-            cache_hash = wf_config.submodule_cache_hash
-            if not cache_hash:
-                print("NOTE: No submodule cache hash in workflow config, skipping restore")
-                return
-            s3_path = f"{Settings.CACHE_S3_PATH}/submodules/{cache_hash}.tar.zst"
-            local_archive = f"{Settings.TEMP_DIR}/submodules_{cache_hash}.tar.zst"
-            print(f"Restoring submodule cache: {s3_path}")
-            S3.copy_file_from_s3(s3_path=s3_path, local_path=local_archive, no_strict=True)
-            if Path(local_archive).exists():
-                if Shell.check(
-                    f"zstd -d {local_archive} --stdout | tar -xf - -C .",
-                    verbose=True,
-                ):
-                    Shell.check(f"rm -f {local_archive}")
-                    print("Submodule cache restored successfully")
-                else:
-                    print("WARNING: Submodule cache extraction failed, cleaning up")
-                    Shell.check("rm -rf .git/modules")
-                    Shell.check(f"rm -f {local_archive}")
-            else:
-                print("WARNING: Submodule cache download failed, will clone from GitHub")
-        except Exception as e:
-            print(f"WARNING: Submodule cache restore failed: {e}, will clone from GitHub")
-            traceback.print_exc()
-
-    # Signature left when the host docker daemon dies mid-run: the daemon
-    # connection is canceled while the main test container is still running, so
-    # the container returns exit 125 and the job is truncated with all
-    # already-executed tests OK. This is a runner-host infra event, so the job
-    # should be re-run on a fresh runner rather than reddening the merge check.
-    #
-    # Require the cancellation-specific conjunction, NOT any single fragment: a
-    # deterministic docker-connectivity regression such as
-    # "Cannot connect to the Docker daemon at unix:///var/run/docker.sock" also
-    # exits 125 and leaves the result unfinished, but is a real regression that
-    # must surface rather than being retried forever. Both markers together only
-    # appear when a live container's daemon connection is torn down mid-run.
-    _DOCKER_DAEMON_DEATH_LOG_SIGNATURES = (
-        "Error waiting for container: Canceled",
-        "grpc: the client connection is closing",
-    )
-
-    @classmethod
-    def _is_docker_daemon_death(cls, exit_code, log_tail):
-        if exit_code != 125 or not log_tail:
-            return False
-        return all(sig in log_tail for sig in cls._DOCKER_DAEMON_DEATH_LOG_SIGNATURES)
-
-    @classmethod
-    def _label_infra_on_docker_daemon_death(
-        cls, result, exit_code, log_tail, timeout_exceeded
-    ):
-        """Label a truncated daemon-death run infra. Returns True if labeled."""
-        if timeout_exceeded or not cls._is_docker_daemon_death(exit_code, log_tail):
-            return False
-        print(
-            "NOTE: job truncated by a docker daemon failure - "
-            "labeling as infrastructure error for auto-retry"
-        )
-        # Append the bare label string, not the dict set_label() would store:
-        # retry_infra_failures.yml matches with `any(. == "infra")`, which only
-        # sees a plain string. The other readers (_label_name, json.html
-        # normalizeLabels, gh.py) already accept the string form.
-        labels = result.ext.setdefault("labels", [])
-        if Result.Label.INFRA not in labels:
-            labels.append(Result.Label.INFRA)
-        return True
-
-    @classmethod
-    def _finalize_job_result(
-        cls, job, process, exit_code, host_metrics, enable_exit_code_result=False
-    ):
-        """Read the job result, classify a failed run, and persist it."""
-        result = Result.from_fs(job.name)
-        if host_metrics:
-            result.add_ext_key_value("metrics", host_metrics)
-            # Flag over/under-utilized runners, but not for skipped jobs -
-            # they did no real work, so their metrics are meaningless.
-            if not result.is_skipped():
-                for label, hint in HostMetricsCollector.classify(host_metrics):
-                    result.set_label(label, hint=hint)
-        if exit_code != 0:
-            if not result.is_completed():
-                if not process.timeout_exceeded and enable_exit_code_result:
-                    # Simple mode: the workflow opted out of an explicit Result,
-                    # so a clean non-zero exit is a job-level FAIL, not an
-                    # infra-level ERROR/KILLED. Timeouts still classify as ERROR.
-                    info = f"Job exited with code [{exit_code}]"
-                    print(f"NOTE: {info}")
-                    result.set_status(Result.Status.FAIL).set_info(info)
-                else:
-                    if process.timeout_exceeded:
-                        print(
-                            f"WARNING: Job timed out: [{job.name}], timeout [{job.timeout}], exit code [{exit_code}]"
-                        )
-                        result.add_error(ResultInfo.TIMEOUT)
-                    elif result.is_running():
-                        info = f"Job killed, exit code [{exit_code}]"
-                        print(f"ERROR: {info}")
-                        result.add_error(info)
-                    else:
-                        info = (
-                            f"Invalid status [{result.status}] for exit code [{exit_code}]"
-                        )
-                        print(f"ERROR: {info}")
-                        result.add_error(info)
-                    result.set_status(Result.Status.ERROR)
-                    latest_log = process.get_latest_log(max_lines=20)
-                    result.set_info(latest_log)
-                    # Must run before the dump below, or the label never reaches the
-                    # result JSON that retry_infra_failures.yml reads.
-                    cls._label_infra_on_docker_daemon_death(
-                        result, exit_code, latest_log, process.timeout_exceeded
-                    )
-        result.dump()
-        return result
 
     def _run(
         self,
@@ -558,14 +286,9 @@ class Runner:
                 )
 
         if job.enable_gh_auth:
-            if not GHAuth.auth(workflow, no_strict=True):
-                Utils.raise_with_error("GH auth failed - required by job")
+            _GH_Auth(workflow=workflow)
 
-        print("INFO: disk status before running a job:")
-        Shell.run("df -h")
-        timeout_shell_cleanup = job.timeout_shell_cleanup
         if job.run_in_docker and not no_docker:
-            Shell.run("docker system df")
             job.run_in_docker, docker_settings = (
                 job.run_in_docker.split("+")[0],
                 job.run_in_docker.split("+")[1:],
@@ -601,8 +324,9 @@ class Runner:
                     (Path(current_dir).resolve().as_posix() + ":" + job.name).encode()
                 ).hexdigest()[:12]
             )
-            if not timeout_shell_cleanup:
-                timeout_shell_cleanup = f"docker rm -f {container_name}"
+            if not job.timeout_shell_cleanup:
+                job.timeout_shell_cleanup = f"docker rm -f {container_name}"
+            workdir = f"--workdir={current_dir}"
             for setting in settings:
                 if setting.startswith("--volume"):
                     volume = setting.removeprefix("--volume=").split(":")[0]
@@ -615,6 +339,7 @@ class Runner:
                     print(
                         f"NOTE: Job [{job.name}] use custom workdir - praktika won't control workdir"
                     )
+                    workdir = ""
             if Shell.check(
                 f"docker ps --format '{{{{.Names}}}}' | grep -qx {container_name}",
                 verbose=False,
@@ -649,50 +374,11 @@ class Runner:
             for p_ in [path, path_1]:
                 if p_ and Path(p_).exists() and p_.startswith("/"):
                     extra_mounts += f" --volume {p_}:{p_}"
-
-            # PRAKTIKA_HOST_WORKDIR overrides the host-side path used in
-            # --volume for the checkout mount. Two main use cases:
-            #   1. Point the mount at an arbitrary host directory.
-            #   2. Docker-in-Docker: the inner Docker daemon needs the real
-            #      host path (not the outer container's CWD) so the job
-            #      container can see the host checkout and ci/ tree.
-            # When unset, defaults to the current directory.
-            staged_package_dir = _staged_praktika_package_dir()
-            host_dir = os.environ.get("PRAKTIKA_HOST_WORKDIR", "./")
-            host_dir_q = shlex.quote(host_dir)
-            package_dir_q = shlex.quote(staged_package_dir)
-            current_dir_q = shlex.quote(current_dir)
-            # PYTHONPATH must carry BOTH: the staged Praktika package dir (so a
-            # bare `import praktika` resolves to the installed copy, not the
-            # repo's vendored ci/praktika) AND the checkout root (so the repo's
-            # own `ci.*` modules are importable). Staged dir first so Praktika
-            # always wins; the checkout root is the container workdir mount.
-            container_pythonpath_q = shlex.quote(
-                f"{staged_package_dir}:{current_dir}"
-            )
-
-            # Rewrite relative host paths in user-supplied --volume settings
-            # so that they resolve correctly when PRAKTIKA_HOST_WORKDIR is set
-            # (e.g. in Docker-in-Docker scenarios).
-            if host_dir != "./":
-                rewritten_settings = []
-                for s in settings:
-                    if s.startswith("--volume="):
-                        vol_arg = s.removeprefix("--volume=")
-                        src, sep, rest = vol_arg.partition(":")
-                        if src == ".":
-                            src = host_dir.rstrip("/")
-                        elif src.startswith("./"):
-                            src = host_dir.rstrip("/") + src[1:]
-                        s = f"--volume={src}{sep}{rest}"
-                    rewritten_settings.append(s)
-                settings = rewritten_settings
-
-            local_env_flag = f"--env-file {self.LOCAL_ENV_FILE}" if Path(self.LOCAL_ENV_FILE).exists() else ""
-            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONSAFEPATH=1 -e PYTHONPATH={container_pythonpath_q} {local_env_flag} --volume {host_dir_q}:{current_dir_q} --volume {package_dir_q}:{package_dir_q} {extra_mounts} {gh_mount} --workdir={current_dir_q} {' '.join(settings)} {docker} {job.command}"
+            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
-        job_env = _job_python_env()
+            python_path = os.getenv("PYTHONPATH", ":")
+            os.environ["PYTHONPATH"] = f".:{python_path}"
 
         if param:
             print(f"Custom --param [{param}] will be passed to job's script")
@@ -704,8 +390,8 @@ class Runner:
             print(f"Custom --count [{count}] will be passed to job's script")
             cmd += f" --count {count}"
         if debug:
-            print("Custom --debug will be passed to job's script")
-            cmd += " --debug"
+            print(f"Custom --debug will be passed to job's script")
+            cmd += f" --debug"
         if path:
             print(f"Custom --path [{path}] will be passed to job's script")
             cmd += f" --path {path}"
@@ -717,110 +403,110 @@ class Runner:
             cmd += f" --workers {workers}"
         print(f"--- Run command [{cmd}]")
 
-        if job.run_in_docker and not no_docker:
-            # Retry the pull `docker run` would otherwise do implicitly and only once.
-            # Bounded per attempt: job.timeout only starts with TeePopen below. Guarded:
-            # a present image needs no registry. Non-fatal: local-only images have no pull.
-            if not Shell.check(f"docker image inspect {docker}", verbose=False):
+        # Clean up stale experimental result file before starting the subprocess.
+        # This must happen before TeePopen.__enter__ which sleeps 1s after spawning
+        # the process — if the subprocess completes during that sleep (common for
+        # fast native jobs like Finish Workflow in backport PRs), deleting the file
+        # afterwards would remove the subprocess's own output, causing a spurious
+        # "Job killed or terminated" error.
+        if Path((Result.experimental_file_name_static())).exists():
+            Path(Result.experimental_file_name_static()).unlink()
 
-                def _warn_pull_retried(matched, attempt, attempts):
-                    # `env` is this frame's object and nothing dumps it after this
-                    # point, so the message survives. Info() would read a second
-                    # copy from disk, which a later stale dump can silently drop.
-                    env.add_workflow_warning(
-                        f"Job image pull failed with [{matched}] and was retried "
-                        f"({attempt}/{attempts}): {docker}"
+        with TeePopen(
+            cmd,
+            timeout=job.timeout,
+            preserve_stdio=preserve_stdio,
+            timeout_shell_cleanup=job.timeout_shell_cleanup,
+        ) as process:
+            start_time = Utils.timestamp()
+
+            exit_code = process.wait()
+
+            if Path(Result.experimental_file_name_static()).exists():
+                result = Result.experimental_from_fs(job.name)
+                if not result.start_time:
+                    print(
+                        "WARNING: no start_time set by the job - set job start_time/duration"
                     )
+                    result.start_time = start_time
+                    result.dump()
 
-                Docker.pull_image(docker, on_retry=_warn_pull_retried)
+            result = Result.from_fs(job.name)
+            if exit_code != 0:
+                if not result.is_completed():
+                    if process.timeout_exceeded:
+                        print(
+                            f"WARNING: Job timed out: [{job.name}], timeout [{job.timeout}], exit code [{exit_code}]"
+                        )
+                        info = ResultInfo.TIMEOUT
+                    elif result.is_running():
+                        info = f"ERROR: Job killed, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]."
+                        print(info)
+                    else:
+                        info = f"ERROR: Invalid status [{result.status}] for exit code [{exit_code}]  - switch to [{Result.Status.ERROR}]"
+                        print(info)
+                    result.set_status(Result.Status.ERROR)
+                    result.set_info(info)
+                    result.set_info("---").set_info(
+                        process.get_latest_log(max_lines=20)
+                    ).set_info("---")
+            result.dump()
 
-        # Sample whole-VM CPU/RAM usage in the background for the duration of the
-        # job (see HostMetricsCollector). Runs on the host, so metrics cover the
-        # whole VM even when the job itself runs inside Docker.
-        host_metrics_collector = HostMetricsCollector().start()
-        try:
-            with TeePopen(
-                cmd,
-                env=job_env,
-                timeout=job.timeout,
-                preserve_stdio=preserve_stdio,
-                timeout_shell_cleanup=timeout_shell_cleanup,
-            ) as process:
-                Utils.timestamp()
-
-                exit_code = process.wait()
-                host_metrics = host_metrics_collector.stop()
-
-                # When running Docker containers as root (non-rootless mode), any files
-                # created by the job will be owned by root.  Fix ownership here, before
-                # reading the result file or writing the host-side result, so that the
-                # host user can open them without a PermissionError.
-                if job.run_in_docker and not no_docker and from_root:
-                    print("--- Fixing file ownership after running docker as root")
-                    uid = os.getuid()
-                    gid = os.getgid()
-                    chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
-                    Shell.run(chown_cmd)
-
-                self._finalize_job_result(
-                    job,
-                    process,
-                    exit_code,
-                    host_metrics,
-                    workflow.enable_exit_code_result,
-                )
-        finally:
-            # Idempotent: a no-op if stop() already ran above; guarantees the
-            # sampling thread is always joined even if TeePopen raised.
-            host_metrics_collector.stop()
+        # When running Docker containers as root (non-rootless mode), any files created
+        # by the job will be owned by root. This causes issues when:
+        # 1. Files need to be read/compressed/uploaded by subsequent steps
+        # 2. Root-owned files remain in the repository working directory
+        # The ownership fix below ensures all root-owned files are changed to the current user
+        if job.run_in_docker and not no_docker and from_root:
+            print(f"--- Fixing file ownership after running docker as root")
+            # Get host user's UID and GID (not from inside the container)
+            uid = os.getuid()
+            gid = os.getgid()
+            chown_cmd = f"docker run --rm --user root --volume ./:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
+            Shell.run(chown_cmd)
 
         return exit_code
 
-    def _get_result_object(
-        self, job, setup_env_exit_code, prerun_exit_code, run_exit_code,
-        enable_exit_code_result=False,
-    ) -> Result:
+    def _post_run(
+        self, workflow, job, setup_env_exit_code, prerun_exit_code, run_exit_code
+    ):
+        info_errors = []
+        env = _Environment.get()
         result_exist = Result.exist(job.name)
+        is_ok = True
 
         if setup_env_exit_code != 0:
-            print(f"ERROR: {ResultInfo.SETUP_ENV_JOB_FAILED}")
+            info = f"ERROR: {ResultInfo.SETUP_ENV_JOB_FAILED}"
+            print(info)
+            # set Result with error and logs
             Result(
                 name=job.name,
                 status=Result.Status.ERROR,
                 start_time=Utils.timestamp(),
                 duration=0.0,
-            ).add_error(ResultInfo.SETUP_ENV_JOB_FAILED).dump()
+                info=info,
+            ).dump()
         elif prerun_exit_code != 0:
-            print(f"ERROR: {ResultInfo.PRE_JOB_FAILED}")
+            info = ResultInfo.PRE_JOB_FAILED
+            print(info)
+            # set Result with error and logs
             Result(
                 name=job.name,
                 status=Result.Status.ERROR,
                 start_time=Utils.timestamp(),
                 duration=0.0,
-            ).add_error(ResultInfo.PRE_JOB_FAILED).dump()
+                info=info,
+            ).dump()
         elif not result_exist:
-            if enable_exit_code_result:
-                status = Result.Status.OK if run_exit_code == 0 else Result.Status.FAIL
-                print(
-                    f"NOTE: no Result on disk; synthesizing [{status}] from exit code [{run_exit_code}]"
-                )
-                synthesized = Result(
-                    name=job.name,
-                    start_time=Utils.timestamp(),
-                    duration=None,
-                    status=status,
-                )
-                if run_exit_code != 0:
-                    synthesized.set_info(f"Job exited with code [{run_exit_code}]")
-                synthesized.dump()
-            else:
-                print(f"ERROR: {ResultInfo.NOT_FOUND_IMPOSSIBLE}")
-                Result(
-                    name=job.name,
-                    start_time=Utils.timestamp(),
-                    duration=None,
-                    status=Result.Status.ERROR,
-                ).add_error(ResultInfo.NOT_FOUND_IMPOSSIBLE).dump()
+            info = f"ERROR: {ResultInfo.NOT_FOUND_IMPOSSIBLE}"
+            print(info)
+            Result(
+                name=job.name,
+                start_time=Utils.timestamp(),
+                duration=None,
+                status=Result.Status.ERROR,
+                info=ResultInfo.NOT_FOUND_IMPOSSIBLE,
+            ).dump()
 
         try:
             result = Result.from_fs(job.name)
@@ -833,18 +519,9 @@ class Runner:
             ).dump()
 
         if not result.is_completed():
-            if enable_exit_code_result:
-                status = Result.Status.OK if run_exit_code == 0 else Result.Status.FAIL
-                print(
-                    f"NOTE: Result not finalized by job; synthesizing [{status}] from exit code [{run_exit_code}]"
-                )
-                result.set_status(status)
-                if run_exit_code != 0:
-                    result.set_info(f"Job exited with code [{run_exit_code}]")
-                result.dump()
-            else:
-                print(f"ERROR: {ResultInfo.KILLED}")
-                result.add_error(ResultInfo.KILLED).set_status(Result.Status.ERROR).dump()
+            info = f"ERROR: {ResultInfo.KILLED}"
+            print(info)
+            result.set_info(info).set_status(Result.Status.ERROR).dump()
 
         if result.is_error() and result.get_on_error_hook():
             print(f"--- Run on_error_hook [{result.get_on_error_hook()}]")
@@ -852,62 +529,37 @@ class Runner:
             Shell.check(result.get_on_error_hook(), verbose=True)
 
         result.update_duration()
-        result.set_files([Settings.RUN_LOG], strict=False)
-        if job.force_success and not result.is_ok():
-            print("NOTE: Job has force_success=True - overriding status to OK")
-            result.set_status(Result.Status.OK)
-        return result
+        result.set_files([Settings.RUN_LOG])
 
-    @staticmethod
-    def _pipeline_status(result) -> str:
-        """The GH Actions `pipeline_status` output for a finished job.
-
-        These are GH Actions output values matched by workflow YAML conditions,
-        not Result.Status values - they must stay lowercase "success"/"failure".
-        A "failure" skips the job's whole transitive downstream closure.
-        `hook_html` decides whether to mark dependees `DROPPED` from the same
-        flag and must reach the same verdict as this function.
-        """
-        if not result.is_ok() and not result.do_not_block_pipeline_on_failure():
-            return "failure"
-        return "success"
-
-    @staticmethod
-    def _pipeline_job_counts(job_results) -> dict:
-        """Break the pipeline's jobs down by status for CIDB attributes.
-
-        ``run`` counts jobs that actually ran (neither skipped nor dropped).
-        """
-        return {
-            "total": len(job_results),
-            "run": sum(
-                1 for j in job_results if not (j.is_skipped() or j.is_dropped())
-            ),
-            "success": sum(1 for j in job_results if j.is_success()),
-            "failed": sum(1 for j in job_results if j.is_failure() or j.is_error()),
-            "skipped": sum(1 for j in job_results if j.is_skipped()),
-            "dropped": sum(1 for j in job_results if j.is_dropped()),
-        }
-
-    @staticmethod
-    def _skip_missing_optional_artifact(artifact, artifact_path) -> bool:
-        """Whether a providing artifact that matched no file may be skipped."""
-        if artifact.optional:
-            print(
-                f"WARNING: optional artifact [{artifact.name}:{artifact_path}] "
-                f"produced no file - skipping upload"
+        if job.post_hooks:
+            sw_ = Utils.Stopwatch()
+            results_ = []
+            for check in job.post_hooks:
+                if callable(check):
+                    name = check.__name__
+                else:
+                    name = str(check)
+                results_.append(Result.from_commands_run(name=name, command=check))
+            result.results.append(
+                Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
             )
-            return True
-        return False
-
-    def _post_run(
-        self, result, workflow, job, run_exit_code,
-    ) -> bool:
-        env = _Environment.get()
-        is_ok = True
 
         is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
         is_initial_job = job.name == Settings.CI_CONFIG_JOB_NAME
+
+        # run after post hooks as they might modify workflow kv data
+        job_outputs = env.JOB_KV_DATA
+        print(f"Job's output: [{list(job_outputs.keys())}]")
+        if is_initial_job:
+            output = dataclasses.asdict(env)
+            output["pipeline_status"] = "success"
+        else:
+            output = job_outputs
+        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
+            print(
+                f"data={json.dumps(output)}",
+                file=f,
+            )
 
         if run_exit_code == 0 or result.do_not_block_pipeline_on_failure():
             providing_artifacts = []
@@ -922,13 +574,7 @@ class Runner:
             if providing_artifacts:
                 print(f"Job provides s3 artifacts [{providing_artifacts}]")
                 artifact_links = []
-                s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{env.get_s3_prefix()}/{Utils.normalize_string(env.JOB_NAME)}"
-                # Every object uploaded to the artifact bucket must carry a
-                # "retention" tag: S3 lifecycle filters cannot match "objects
-                # without a tag", so untagged objects would be covered by no
-                # rule. Default to short retention; per-artifact tags (e.g.
-                # retention=long) override on the "retention" key.
-                default_tags = {"retention": "default"}
+                s3_path = f"{Settings.S3_ARTIFACT_PATH}/{env.get_s3_prefix()}/{Utils.normalize_string(env.JOB_NAME)}"
                 for artifact in providing_artifacts:
                     if artifact.compress_zst:
                         if isinstance(artifact.path, (tuple, list)):
@@ -948,92 +594,60 @@ class Runner:
                         artifact_paths = [artifact.path]
                     for artifact_path in artifact_paths:
                         try:
-                            matched = glob.glob(artifact_path)
-                            if not matched:
-                                if self._skip_missing_optional_artifact(
-                                    artifact, artifact_path
-                                ):
-                                    continue
-                                raise FileNotFoundError(
-                                    f"Artifact {artifact_path} not found"
-                                )
-                            Shell.check(f"ls -l {artifact_path}", verbose=True)
-                            tags = {**default_tags, **(artifact.ext.get("tags") or {})}
-                            for file_path in matched:
+                            assert Shell.check(
+                                f"ls -l {artifact_path}", verbose=True
+                            ), f"Artifact {artifact_path} not found"
+                            for file_path in glob.glob(artifact_path):
                                 link = S3.copy_file_to_s3(
                                     s3_path=s3_path,
                                     local_path=file_path,
-                                    tags=tags,
+                                    tags=artifact.ext.get("tags"),
                                 )
                                 result.set_link(link)
                                 artifact_links.append(link)
                         except Exception as e:
-                            error = f"Failed to upload artifact [{artifact.name}:{artifact_path}], ex [{e}]"
-                            print(f"ERROR: {error}")
-                            env.add_workflow_error(error)
+                            error = f"ERROR: Failed to upload artifact [{artifact.name}:{artifact_path}], ex [{e}]"
+                            print(error)
+                            info_errors.append(error)
                             result.set_status(Result.Status.ERROR)
                             is_ok = False
-                if artifact_links:
+                if Settings.ENABLE_ARTIFACTS_REPORT and artifact_links:
                     artifact_report = {"build_urls": artifact_links}
                     print(
-                        f"Artifact report will be uploaded: [{artifact_report}]"
+                        f"Artifact report enabled and will be uploaded: [{artifact_report}]"
                     )
                     artifact_report_file = f"{Settings.TEMP_DIR}/artifact_report_{Utils.normalize_string(env.JOB_NAME)}.json"
                     with open(artifact_report_file, "w", encoding="utf-8") as f:
                         json.dump(artifact_report, f)
                     link = S3.copy_file_to_s3(
-                        s3_path=s3_path,
-                        local_path=artifact_report_file,
-                        tags=default_tags,
+                        s3_path=s3_path, local_path=artifact_report_file
                     )
                     result.set_link(link)
 
-        # run after post hooks as they might modify workflow kv data
-        base_keys = set(env.JOB_KV_DATA_BASE_KEYS or [])
-        job_outputs = {
-            k: v for k, v in env.JOB_KV_DATA.items() if k not in base_keys
-        }
-        print(f"Job's output: [{list(job_outputs.keys())}]")
-        if is_initial_job:
-            output = dataclasses.asdict(env)
-            output["pipeline_status"] = "success"
-            output["PR_BODY"] = ""
-            output["PR_TITLE"] = ""
-            output["COMMIT_MESSAGE"] = ""
-            output["JOB_KV_DATA"] = Utils.to_base64(json.dumps(env.JOB_KV_DATA))
-        else:
-            output = job_outputs
-        # JOB_OUTPUT_STREAM is GitHub Actions' $GITHUB_OUTPUT; it is empty in
-        # praktika-native (SQS) mode. Only write it when set, otherwise open("")
-        # raises FileNotFoundError and fails the job in _post_run.
-        if env.JOB_OUTPUT_STREAM:
-            with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
-                print(
-                    f"data={json.dumps(output)}",
-                    file=f,
-                )
-
         ci_db = None
-        if workflow.enable_cidb and not Settings.SECRET_CI_DB_CONNECTION:
-            # Clear, non-fatal message instead of a cryptic
-            # "Failed to find secret []" from get_secret("").
-            print(
-                "NOTE: CIDB is enabled but Settings.SECRET_CI_DB_CONNECTION is "
-                "not set — skipping CIDB insert."
-            )
-        elif workflow.enable_cidb:
+        if workflow.enable_cidb:
             print("Insert results to CIDB")
             try:
-                conn_secret = workflow.get_secret(Settings.SECRET_CI_DB_CONNECTION)
-                assert conn_secret
-                ci_db = CIDB.from_connection_secret(conn_secret.get_value()).insert(
-                    result, result_name_for_cidb=job.result_name_for_cidb
+                url_secret = workflow.get_secret(Settings.SECRET_CI_DB_URL)
+                user_secret = workflow.get_secret(Settings.SECRET_CI_DB_USER)
+                passwd_secret = workflow.get_secret(Settings.SECRET_CI_DB_PASSWORD)
+                assert url_secret and user_secret and passwd_secret
+                # request all secret at once to avoid rate limiting
+                url, user, pwd = (
+                    url_secret.join_with(user_secret)
+                    .join_with(passwd_secret)
+                    .get_value()
                 )
+                ci_db = CIDB(
+                    url=url,
+                    user=user,
+                    passwd=pwd,
+                ).insert(result, result_name_for_cidb=job.result_name_for_cidb)
             except Exception as ex:
                 traceback.print_exc()
-                error = f"Failed to insert data into CI DB, exception [{ex}]"
-                print(f"ERROR: {error}")
-                env.add_workflow_error(error)
+                error = f"ERROR: Failed to insert data into CI DB, exception [{ex}]"
+                print(error)
+                info_errors.append(error)
 
             try:
                 test_cases_result = result.get_sub_result_by_name(
@@ -1042,9 +656,9 @@ class Runner:
                 if test_cases_result and not test_cases_result.is_ok() and ci_db:
                     for test_case_result in test_cases_result.results:
                         if not test_case_result.is_ok():
-                            test_case_result.set_label(
-                                Result.Label.CIDB,
-                                link=ci_db.get_link_to_test_case_statistics(
+                            test_case_result.set_clickable_label(
+                                "cidb",
+                                ci_db.get_link_to_test_case_statistics(
                                     test_case_result.name,
                                     failure_patterns=Settings.TEST_FAILURE_PATTERNS,
                                     test_output=test_case_result.info,
@@ -1059,10 +673,11 @@ class Runner:
                             )
                     result.dump()
             except Exception as ex:
-                traceback.print_exc()
-                error = f"Failed to set CIDB label for test cases, exception [{ex}]"
-                print(f"ERROR: {error}")
-                env.add_workflow_error(error)
+                if not info_errors:
+                    traceback.print_exc()
+                    error = f"ERROR: Failed to set clickable label for test cases, exception [{ex}]"
+                    print(error)
+                    info_errors.append(error)
 
         if env.TRACEBACKS:
             result.set_info("===\n" + "---\n".join(env.TRACEBACKS))
@@ -1070,12 +685,12 @@ class Runner:
 
         # always in the end
         if workflow.enable_cache:
-            print("Run CI cache hook")
+            print(f"Run CI cache hook")
             if result.is_ok():
                 CacheRunnerHooks.post_run(workflow, job)
 
         if workflow.enable_open_issues_check:
-            # should be done before HtmlRunnerHooks.post_run(workflow, job)
+            # should be done before HtmlRunnerHooks.post_run(workflow, job, info_errors)
             #   to upload updated job and workflow results to S3
             try:
                 if is_final_job:
@@ -1088,67 +703,49 @@ class Runner:
                 print(f"ERROR: failed to check open issues: {e}")
                 traceback.print_exc()
                 if is_final_job:
-                    env.add_workflow_error(ResultInfo.OPEN_ISSUES_CHECK_ERROR)
+                    env.add_info(ResultInfo.OPEN_ISSUES_CHECK_ERROR)
+
+        # Always run report generation at the end to finalize workflow status with latest job result
+        if workflow.enable_report:
+            print(f"Run html report hook")
+            status_updated = HtmlRunnerHooks.post_run(workflow, job, info_errors)
+            if status_updated:
+                print(f"Update GH commit status [{result.name}]: [{status_updated}]")
+                _GH_Auth(workflow)
+                GH.post_commit_status(
+                    name=workflow.name,
+                    status=GH.convert_to_gh_status(status_updated),
+                    description="",
+                    url=Info().get_report_url(latest=False),
+                )
+
+            workflow_result = Result.from_fs(workflow.name)
+            if is_final_job and ci_db:
+                # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
+                workflow_storage_usage = StorageUsage.from_dict(
+                    workflow_result.ext.get("storage_usage", {})
+                )
+                workflow_compute_usage = ComputeUsage.from_dict(
+                    workflow_result.ext.get("compute_usage", {})
+                )
+                if workflow_storage_usage:
+                    print(
+                        "NOTE: storage_usage is found in workflow Result - insert into CIDB"
+                    )
+                    ci_db.insert_storage_usage(workflow_storage_usage)
+                if workflow_compute_usage:
+                    print(
+                        "NOTE: compute_usage is found in workflow Result - insert into CIDB"
+                    )
+                    ci_db.insert_compute_usage(workflow_compute_usage)
 
         info = Info()
         report_url = info.get_job_report_url(latest=False)
 
-        if _should_post_commit_status(workflow) and (
-            workflow.enable_commit_status_on_failure
-            and not result.is_ok()
-            or job.enable_commit_status
-        ):
-            if GHAuth.auth(workflow, no_strict=True):
-                if not GH.post_commit_status(
-                    name=job.name,
-                    status=result.status,
-                    description=result.info.splitlines()[0] if result.info else "",
-                    url=report_url,
-                ):
-                    env.add_workflow_error(
-                        "Failed to post GH commit status for the job"
-                    )
-                    print("ERROR: Failed to post commit status for the job")
-
-        # Always run report generation at the end to finalize workflow status with latest job result
-        if workflow.enable_report:
-            print("Run html report hook")
-            status_updated = HtmlRunnerHooks.post_run(workflow, job)
-            if status_updated and _should_post_commit_status(workflow):
-                print(f"Update GH commit status [{result.name}]: [{status_updated}]")
-                if GHAuth.auth(workflow, no_strict=True):
-                    GH.post_commit_status(
-                        name=workflow.name,
-                        status=status_updated,
-                        description="",
-                        url=Info().get_report_url(latest=False),
-                    )
-
-            workflow_result = Result.from_fs(workflow.name)
-            if is_final_job and ci_db:
-                # run after HtmlRunnerHooks.post_run(), when the workflow Result
-                # has up-to-date storage/compute/pipeline-utilization data. All
-                # three are written as a single workflow-level summary row into
-                # the `attributes` JSON column.
-                ci_db.insert_workflow_usage(
-                    pipeline_utilization=PipelineUtilization.from_dict(
-                        workflow_result.ext.get("pipeline_utilization", {})
-                    ),
-                    storage_usage=StorageUsage.from_dict(
-                        workflow_result.ext.get("storage_usage", {})
-                    ),
-                    compute_usage=ComputeUsage.from_dict(
-                        workflow_result.ext.get("compute_usage", {})
-                    ),
-                    job_counts=self._pipeline_job_counts(workflow_result.results),
-                    start_time=workflow_result.start_time,
-                    duration_s=workflow_result.update_duration().duration,
-                    workflow_status=workflow_result.status,
-                )
-
         if workflow.enable_gh_summary_comment and (
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
-        ) and GHAuth.auth(workflow, no_strict=True):
+        ):
+            _GH_Auth(workflow)
             workflow_result = Result.from_fs(workflow.name)
             try:
                 summary_body = GH.ResultSummaryForGH.from_result(
@@ -1158,10 +755,23 @@ class Runner:
                     comment_tags_and_bodies={"summary": summary_body},
                     only_update=True,
                 ):
-                    print("ERROR: failed to post CI summary")
+                    print(f"ERROR: failed to post CI summary")
             except Exception as e:
                 print(f"ERROR: failed to post CI summary, ex: {e}")
                 traceback.print_exc()
+
+        if (
+            workflow.enable_commit_status_on_failure and not result.is_ok()
+        ) or job.enable_commit_status:
+            _GH_Auth(workflow)
+            if not GH.post_commit_status(
+                name=job.name,
+                status=result.status,
+                description=result.info.splitlines()[0] if result.info else "",
+                url=report_url,
+            ):
+                env.add_info("Failed to post GH commit status for the job")
+                print(f"ERROR: Failed to post commit status for the job")
 
         if workflow.enable_report:
             # to make it visible in GH Actions annotations
@@ -1173,7 +783,7 @@ class Runner:
             and workflow.is_event_pull_request()
         ):
             try:
-                GHAuth.auth(workflow, no_strict=True)
+                _GH_Auth(workflow)
                 workflow_result = Result.from_fs(workflow.name)
                 if workflow_result.is_ok():
                     if not GH.merge_pr():
@@ -1187,14 +797,18 @@ class Runner:
                 traceback.print_exc()
 
         # finally, set the status flag for GH Actions
-        pipeline_status = self._pipeline_status(result)
-        # Empty in praktika-native mode (see the JOB_OUTPUT_STREAM note above).
-        if env.JOB_OUTPUT_STREAM:
-            with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
-                print(
-                    f"pipeline_status={pipeline_status}",
-                    file=f,
-                )
+        pipeline_status = Result.Status.SUCCESS
+        if not result.is_ok():
+            if result.is_failure() and result.do_not_block_pipeline_on_failure():
+                # job explicitly says to not block ci even though result is failure
+                pass
+            else:
+                pipeline_status = Result.Status.FAILED
+        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
+            print(
+                f"pipeline_status={pipeline_status}",
+                file=f,
+            )
 
         # Send Slack notifications after workflow status is finalized by HtmlRunnerHooks.post_run()
         if workflow.enable_slack_feed and (
@@ -1222,63 +836,14 @@ class Runner:
                     traceback.print_exc()
                     print(f"ERROR: failed to notify Slack users: {e}")
 
-        dirty = Shell.get_output("git status --short", verbose=False) or ""
-        if dirty:
-            print(f"NOTE: Dirty repo state after job:\n{dirty}")
-        else:
-            print("NOTE: Repo state is clean after job")
-
         return is_ok
-
-    LOCAL_ENV_FILE = "ci/local.env"
-
-    @classmethod
-    def _load_local_env(cls):
-        """Load environment variables from a gitignored local env file (KEY=VALUE format)."""
-        try:
-            with open(cls.LOCAL_ENV_FILE) as f:
-                for line in f:
-                    line = line.strip()
-                    if not line or line.startswith("#"):
-                        continue
-                    if "=" in line:
-                        key, _, value = line.partition("=")
-                        os.environ[key.strip()] = value.strip()
-        except FileNotFoundError:
-            pass
-
-    @staticmethod
-    def _parse_workflow_inputs(workflow_input):
-        """Parse comma-separated `name=value` pairs from --workflow-input.
-
-        Splits on `,` then on the first `=`, so values may themselves contain
-        `=`. Whitespace around names and values is stripped. Entries without
-        an `=` are skipped with a warning.
-        """
-        inputs = {}
-        for pair in workflow_input.split(","):
-            if "=" in pair:
-                name, _, value = pair.partition("=")
-                name = name.strip()
-                if not name:
-                    print(
-                        f"WARNING: Skipping --workflow-input entry [{pair}] with empty name"
-                    )
-                    continue
-                inputs[name] = value.strip()
-            else:
-                print(
-                    f"WARNING: Skipping malformed --workflow-input entry [{pair}] (expected name=value)"
-                )
-        return inputs
 
     def run(
         self,
         workflow,
         job,
         docker="",
-        local_job_run=False,
-        local_orchestrator_run=False,
+        local_run=False,
         no_docker=False,
         param=None,
         test="",
@@ -1290,122 +855,13 @@ class Runner:
         path="",
         path_1="",
         workers=None,
-        timestamp=False,
-        workflow_input=None,
     ):
-        """Execute one job — public entry. Tees stdout/stderr to
-        ``Settings.RUN_LOG`` so every engine (GHA, orchestrator) gets the
-        same job log file without having to wire up the redirect itself.
-        """
-        log_dir = os.path.dirname(Settings.RUN_LOG)
-        if log_dir:
-            os.makedirs(log_dir, exist_ok=True)
-        original_stdout = sys.stdout
-        original_stderr = sys.stderr
-        log_file = open(Settings.RUN_LOG, "w", buffering=1)
-        try:
-            tee = _TeeStream(
-                original_stdout,
-                log_file,
-                subsequent_indent=_TIMESTAMP_INDENT if timestamp else 0,
-            )
-            sys.stdout = _TimestampedStream(tee) if timestamp else tee
-            sys.stderr = sys.stdout
-            return self._run_one(
-                workflow=workflow,
-                job=job,
-                docker=docker,
-                local_job_run=local_job_run,
-                local_orchestrator_run=local_orchestrator_run,
-                no_docker=no_docker,
-                param=param,
-                test=test,
-                pr=pr,
-                sha=sha,
-                branch=branch,
-                count=count,
-                debug=debug,
-                path=path,
-                path_1=path_1,
-                workers=workers,
-                workflow_input=workflow_input,
-            )
-        finally:
-            sys.stdout = original_stdout
-            sys.stderr = original_stderr
-            log_file.close()
-
-    def _run_one(
-        self,
-        workflow,
-        job,
-        docker="",
-        local_job_run=False,
-        local_orchestrator_run=False,
-        no_docker=False,
-        param=None,
-        test="",
-        pr=None,
-        sha=None,
-        branch=None,
-        count=None,
-        debug=False,
-        path="",
-        path_1="",
-        workers=None,
-        workflow_input=None,
-    ):
-        """Execute one job.
-
-        Three modes, controlled by the two ``local_*`` flags:
-
-          * ``local_job_run=True`` — `praktika run` dev sandbox used by
-            project (job) developers. Generates a dummy local environment
-            and runs the job command. Skips hooks, skips pre/post-run
-            scaffolding entirely. Artifact download stays available via
-            the legacy ``--pr/--branch + --sha`` escape hatch.
-          * ``local_orchestrator_run=True`` — orchestrator-dispatched local
-            run for CI developers in this project. Full pipeline against
-            the local-fs S3 backend: pre-run, post-run, hooks, artifact
-            upload/download, the lot.
-          * both False — real CI (GitHub Actions or orchestrator on EC2).
-            Full pipeline.
-
-        The two local flags are mutually exclusive.
-        """
-        assert not (
-            local_job_run and local_orchestrator_run
-        ), "local_job_run and local_orchestrator_run are mutually exclusive"
-
-        self._load_local_env()
-
-        if workflow_input:
-            inputs = self._parse_workflow_inputs(workflow_input)
-            Info.set_workflow_inputs(inputs)
-            print(f"Workflow inputs set: {inputs}")
-        elif local_job_run or local_orchestrator_run:
-            # No --workflow-input given — clear any stale file from a previous
-            # local run so Info.get_workflow_input_value does not return old
-            # values. In CI the YAML-generated heredoc has already written the
-            # real dispatch inputs before Runner.run is invoked.
-            Info.set_workflow_inputs({})
-
         res = True
-        post_res = True
-        result = None
         setup_env_code = -10
         prerun_code = -10
         run_code = -10
 
-        if local_orchestrator_run:
-            # Orchestrator (CI or local) has already dumped environment.json;
-            # nothing to do here.
-            setup_env_code = 0
-        elif local_job_run:
-            self.generate_local_run_environment(
-                workflow, job, pr=pr, sha=sha, branch=branch
-            )
-        else:
+        if res and not local_run:
             print(
                 f"\n\n=== Setup env script [{job.name}], workflow [{workflow.name}] ==="
             )
@@ -1421,16 +877,17 @@ class Runner:
                 print(f"ERROR: Setup env script failed with exception [{e}]")
                 traceback.print_exc()
                 Info().store_traceback()
-            print("=== Setup env finished ===\n\n")
+            print(f"=== Setup env finished ===\n\n")
+        else:
+            self.generate_local_run_environment(
+                workflow, job, pr=pr, sha=sha, branch=branch
+            )
 
-        # Pre-run dumps the running Result and pulls required artifacts from S3.
-        # The dev-sandbox path skips it unless the user passed the legacy
-        # ``--pr/--branch + --sha`` escape hatch to wire up artifact download.
-        if res and (not local_job_run or ((pr or branch) and sha)):
+        if res and (not local_run or ((pr or branch) and sha)):
             res = False
             print(f"=== Pre run script [{job.name}], workflow [{workflow.name}] ===")
             try:
-                prerun_code = self._pre_run(workflow, job, local_job_run=local_job_run)
+                prerun_code = self._pre_run(workflow, job, local_run=local_run)
                 res = prerun_code == 0
                 if not res:
                     print(f"ERROR: Pre-run failed with exit code [{prerun_code}]")
@@ -1438,33 +895,7 @@ class Runner:
                 print(f"ERROR: Pre-run script failed with exception [{e}]")
                 traceback.print_exc()
                 Info().store_traceback()
-            print("=== Pre run finished ===\n\n")
-
-        prehook_result = None
-        if res and not local_job_run and job.pre_hooks:
-            print(f"=== Pre-hooks [{job.name}], workflow [{workflow.name}] ===")
-            sw_ = Utils.Stopwatch()
-            results_ = []
-            for check in job.pre_hooks:
-                if callable(check):
-                    name = check.__name__
-                else:
-                    name = str(check)
-                # Run hooks with the job python env so PYTHONPATH carries the
-                # checkout root ("."), letting hooks import the repo's `ci.*`
-                # modules (they otherwise inherit an env without it and fail
-                # with ModuleNotFoundError: No module named 'ci').
-                results_.append(
-                    Result.from_commands_run(
-                        name=name, command=check, env=_job_python_env()
-                    )
-                )
-            prehook_result = Result.create_from(
-                name="Pre Hooks",
-                results=results_,
-                stopwatch=sw_,
-                with_info_from_results=True,
-            )
+            print(f"=== Pre run finished ===\n\n")
 
         if res:
             print(f"=== Run script [{job.name}], workflow [{workflow.name}] ===")
@@ -1499,57 +930,15 @@ class Runner:
                     f"Job got terminated with an error, exit code [{run_code}]"
                 ).dump()
 
-            print("=== Run script finished ===\n\n")
+            print(f"=== Run script finished ===\n\n")
 
-        # Post-run wraps up the Result, runs job post_hooks, and uploads
-        # provides=[...] artifacts so downstream jobs can consume them. Only
-        # the dev-sandbox path opts out — orchestrator-local and CI both need
-        # the full hand-off.
-        if not local_job_run:
-            result = self._get_result_object(
-                job, setup_env_code, prerun_code, run_code,
-                enable_exit_code_result=workflow.enable_exit_code_result,
-            )
-
-            if prehook_result:
-                result.results.append(prehook_result)
-            if job.post_hooks:
-                print(f"=== Post hooks [{job.name}], workflow [{workflow.name}] ===")
-                sw_ = Utils.Stopwatch()
-                results_ = []
-                for check in job.post_hooks:
-                    if callable(check):
-                        name = check.__name__
-                    else:
-                        name = str(check)
-                    # Run hooks with the job python env so PYTHONPATH carries the
-                    # checkout root ("."), letting hooks import the repo's `ci.*`
-                    # modules (they otherwise inherit an env without it and fail
-                    # with ModuleNotFoundError: No module named 'ci').
-                    results_.append(
-                        Result.from_commands_run(
-                            name=name, command=check, env=_job_python_env()
-                        )
-                    )
-                result.results.append(
-                    Result.create_from(
-                        name="Post Hooks",
-                        results=results_,
-                        stopwatch=sw_,
-                        with_info_from_results=True,
-                    )
-                )
-                print("=== Post hooks finished ===")
-
+        if not local_run:
             print(f"=== Post run script [{job.name}], workflow [{workflow.name}] ===")
             post_res = self._post_run(
-                result, workflow, job, run_code
+                workflow, job, setup_env_code, prerun_code, run_code
             )
-            print("=== Post run script finished ===")
+            res = res and post_res
+            print(f"=== Post run script finished ===")
 
-        # After the post hooks, so the numbers describe the disk the next job inherits.
-        print("INFO: disk status after running a job:")
-        Shell.run("df -h")
-
-        if not post_res or result is None or (not result.is_ok() and not job.force_success):
+        if not res:
             sys.exit(1)

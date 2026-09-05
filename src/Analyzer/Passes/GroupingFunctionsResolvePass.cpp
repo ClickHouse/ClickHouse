@@ -1,16 +1,10 @@
 #include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnsNumber.h>
-
 #include <Core/ColumnNumbers.h>
 #include <Core/Settings.h>
 
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
-
-#include <Functions/FunctionFactory.h>
+#include <Functions/grouping.h>
+#include <Functions/IFunctionAdaptors.h>
 
 #include <Interpreters/Context.h>
 
@@ -19,7 +13,6 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/ValidationUtils.h>
 
 #include <ranges>
@@ -45,7 +38,7 @@ struct GroupByKeyComparator
 {
     GroupByKeyComparator(QueryTreeNodePtr node_) /// NOLINT
         : node(std::move(node_))
-        , hash(node->getTreeHash({.compare_aliases = false}))
+        , hash(node->getTreeHash({.compare_aliases = false, .compare_types = true}))
     {}
 
     bool operator==(const GroupByKeyComparator & other) const { return hash == other.hash && compareGroupByKeys(node, other.node); }
@@ -111,85 +104,55 @@ public:
             arguments_indexes.push_back(it->second);
         }
 
+        FunctionOverloadResolverPtr grouping_function_resolver;
+        bool add_grouping_set_column = false;
+
         bool force_grouping_standard_compatibility = getSettings()[Setting::force_grouping_standard_compatibility];
         size_t aggregation_keys_size = aggregation_key_to_index.size();
-
-        /// The specialization keeps its parameters in trailing constant arguments, and the
-        /// registered `groupingFor*` resolvers rebuild the function from them (see
-        /// `GroupingSpecializationResolver`). This way a serialized query plan can carry the
-        /// function: a peer re-resolves it from the name and the arguments alone.
-        String specialization_name;
-        QueryTreeNodes state_arguments;
-
-        auto indexes_data = ColumnUInt64::create();
-        indexes_data->getData().assign(arguments_indexes.begin(), arguments_indexes.end());
-        auto indexes_column = ColumnArray::create(
-            std::move(indexes_data), ColumnArray::ColumnOffsets::create(1, arguments_indexes.size()));
-        state_arguments.push_back(std::make_shared<ConstantNode>(
-            ColumnConst::create(std::move(indexes_column), 1),
-            std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())));
 
         switch (group_by_kind)
         {
             case GroupByKind::ORDINARY:
             {
-                specialization_name = "__groupingOrdinary";
+                auto grouping_ordinary_function
+                    = std::make_shared<FunctionGroupingOrdinary>(arguments_indexes, force_grouping_standard_compatibility);
+                grouping_function_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_ordinary_function));
                 break;
             }
             case GroupByKind::ROLLUP:
             {
-                specialization_name = "__groupingForRollup";
-                state_arguments.push_back(std::make_shared<ConstantNode>(
-                    ColumnConst::create(ColumnUInt64::create(1, aggregation_keys_size), 1),
-                    std::make_shared<DataTypeUInt64>()));
+                auto grouping_rollup_function = std::make_shared<FunctionGroupingForRollup>(
+                    arguments_indexes, aggregation_keys_size, force_grouping_standard_compatibility);
+                grouping_function_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_rollup_function));
+                add_grouping_set_column = true;
                 break;
             }
             case GroupByKind::CUBE:
             {
-                specialization_name = "__groupingForCube";
-                state_arguments.push_back(std::make_shared<ConstantNode>(
-                    ColumnConst::create(ColumnUInt64::create(1, aggregation_keys_size), 1),
-                    std::make_shared<DataTypeUInt64>()));
+                auto grouping_cube_function = std::make_shared<FunctionGroupingForCube>(
+                    arguments_indexes, aggregation_keys_size, force_grouping_standard_compatibility);
+                grouping_function_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_cube_function));
+                add_grouping_set_column = true;
                 break;
             }
             case GroupByKind::GROUPING_SETS:
             {
-                specialization_name = "__groupingForGroupingSets";
-                auto sets_data = ColumnUInt64::create();
-                auto sets_offsets = ColumnArray::ColumnOffsets::create();
-                UInt64 indexes_total = 0;
-                for (const auto & grouping_set : grouping_sets_keys_indexes)
-                {
-                    for (const auto index : grouping_set)
-                        sets_data->getData().push_back(index);
-                    indexes_total += grouping_set.size();
-                    sets_offsets->getData().push_back(indexes_total);
-                }
-                auto sets_column = ColumnArray::create(
-                    ColumnArray::create(std::move(sets_data), std::move(sets_offsets)),
-                    ColumnArray::ColumnOffsets::create(1, grouping_sets_keys_indexes.size()));
-                state_arguments.push_back(std::make_shared<ConstantNode>(
-                    ColumnConst::create(std::move(sets_column), 1),
-                    std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()))));
+                auto grouping_grouping_sets_function = std::make_shared<FunctionGroupingForGroupingSets>(
+                    arguments_indexes, grouping_sets_keys_indexes, force_grouping_standard_compatibility);
+                grouping_function_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_grouping_sets_function));
+                add_grouping_set_column = true;
                 break;
             }
         }
 
-        state_arguments.push_back(std::make_shared<ConstantNode>(
-            ColumnConst::create(ColumnUInt8::create(1, force_grouping_standard_compatibility), 1),
-            std::make_shared<DataTypeUInt8>()));
-
-        if (group_by_kind != GroupByKind::ORDINARY)
+        if (add_grouping_set_column)
         {
-            TableExpressionNodeWeakPtr column_source;
+            QueryTreeNodeWeakPtr column_source;
             auto grouping_set_column = NameAndTypePair{"__grouping_set", std::make_shared<DataTypeUInt64>()};
             auto grouping_set_argument_column = std::make_shared<ColumnNode>(std::move(grouping_set_column), std::move(column_source));
             function_arguments.insert(function_arguments.begin(), std::move(grouping_set_argument_column));
         }
 
-        function_arguments.insert(function_arguments.end(), state_arguments.begin(), state_arguments.end());
-
-        auto grouping_function_resolver = FunctionFactory::instance().get(specialization_name, getContext());
         function_node->resolveAsFunction(grouping_function_resolver->build(function_node->getArgumentColumns()));
     }
 

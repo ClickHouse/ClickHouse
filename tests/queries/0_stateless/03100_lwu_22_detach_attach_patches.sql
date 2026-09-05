@@ -11,18 +11,14 @@ ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_lwu_on_fly/', '1')
 ORDER BY a PARTITION BY id
 SETTINGS
     enable_block_number_column = 1,
-    enable_block_offset_column = 1,
-    merge_selecting_sleep_ms = 100,
-    max_merge_selecting_sleep_ms = 200;
+    enable_block_offset_column = 1;
 
 CREATE TABLE t_detach_attach_patches_dst AS t_detach_attach_patches
 ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_lwu_on_fly_dst/', '1')
 ORDER BY a PARTITION BY id
 SETTINGS
     enable_block_number_column = 1,
-    enable_block_offset_column = 1,
-    merge_selecting_sleep_ms = 100,
-    max_merge_selecting_sleep_ms = 200;
+    enable_block_offset_column = 1;
 
 SET apply_patch_parts = 1;
 SET mutations_sync = 2;

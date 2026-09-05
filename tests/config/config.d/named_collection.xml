@@ -1,12 +1,4 @@
 <clickhouse>
-    <macros>
-        <empty></empty>
-    </macros>
-    <!-- Global NATS credentials are a legacy fallback for tables whose destination is defined in SQL. -->
-    <nats>
-        <user>global_user</user>
-        <password>global_password</password>
-    </nats>
     <named_collections>
         <remote1>
             <host>127.0.0.2</host>
@@ -57,54 +49,5 @@
             <url>http://127.0.0.1:8123?query=select+1</url>
             <format>RawBLOB</format>
         </url_override2>
-        <!-- `nats_credential_file` is accepted only from a collection defined here,
-             see 04891_nats_credential_file_path_restriction. Nothing listens on the port:
-             the tests expect the validation to pass and the connection attempt to fail. -->
-        <nats_config_credentials>
-            <nats_url>127.0.0.1:1</nats_url>
-            <nats_subjects>subject</nats_subjects>
-            <nats_format>JSONEachRow</nats_format>
-            <nats_startup_connect_tries>1</nats_startup_connect_tries>
-            <nats_reconnect_wait>1</nats_reconnect_wait>
-            <nats_credential_file>/var/nats.creds</nats_credential_file>
-        </nats_config_credentials>
-        <!-- The same with the credentials locked by the operator: a query cannot replace them
-             through `nats_credentials` either. -->
-        <nats_config_locked_credentials>
-            <nats_url>127.0.0.1:1</nats_url>
-            <nats_subjects>subject</nats_subjects>
-            <nats_format>JSONEachRow</nats_format>
-            <nats_startup_connect_tries>1</nats_startup_connect_tries>
-            <nats_reconnect_wait>1</nats_reconnect_wait>
-            <nats_credential_file overridable="false">/var/nats.creds</nats_credential_file>
-        </nats_config_locked_credentials>
-        <!-- A collection without credentials: an empty `nats_credentials` has nothing to drop there. -->
-        <nats_config_no_credentials>
-            <nats_url>127.0.0.1:1</nats_url>
-            <nats_subjects>subject</nats_subjects>
-            <nats_format>JSONEachRow</nats_format>
-            <nats_startup_connect_tries>1</nats_startup_connect_tries>
-            <nats_reconnect_wait>1</nats_reconnect_wait>
-        </nats_config_no_credentials>
-        <!-- Basic credentials configured by the operator must stay paired with this destination. -->
-        <nats_config_basic_credentials>
-            <nats_url>127.0.0.1:1</nats_url>
-            <nats_subjects>subject</nats_subjects>
-            <nats_format>JSONEachRow</nats_format>
-            <nats_startup_connect_tries>1</nats_startup_connect_tries>
-            <nats_reconnect_wait>1</nats_reconnect_wait>
-            <nats_username>operator</nats_username>
-            <nats_password>secret</nats_password>
-        </nats_config_basic_credentials>
-        <!-- Basic credentials locked by the operator reject query-side replacement and clearing. -->
-        <nats_config_locked_basic_credentials>
-            <nats_url>127.0.0.1:1</nats_url>
-            <nats_subjects>subject</nats_subjects>
-            <nats_format>JSONEachRow</nats_format>
-            <nats_startup_connect_tries>1</nats_startup_connect_tries>
-            <nats_reconnect_wait>1</nats_reconnect_wait>
-            <nats_username overridable="false">operator</nats_username>
-            <nats_password overridable="false">secret</nats_password>
-        </nats_config_locked_basic_credentials>
     </named_collections>
 </clickhouse>

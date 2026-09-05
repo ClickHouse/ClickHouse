@@ -1,12 +1,9 @@
 #include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/LimitTransform.h>
-#include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Port.h>
-#include <Core/Defines.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 
@@ -43,22 +40,6 @@ LimitStep::LimitStep(
 
 void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    /// WITH TIES compares adjacent rows under `description`, so it needs a single ordered
-    /// stream. The input may arrive as several already-sorted streams (e.g. an in-order read
-    /// over multiple parts) with no merge above, so merge them here first.
-    if (with_ties && pipeline.getNumStreams() > 1)
-    {
-        auto merge = std::make_shared<MergingSortedTransform>(
-            pipeline.getSharedHeader(),
-            pipeline.getNumStreams(),
-            description,
-            DEFAULT_BLOCK_SIZE,
-            /*max_block_size_bytes=*/ 0,
-            /*max_dynamic_subcolumns=*/ std::nullopt,
-            SortingQueueStrategy::Batch);
-        pipeline.addTransform(std::move(merge));
-    }
-
     auto transform = std::make_shared<LimitTransform>(
         pipeline.getSharedHeader(),
         limit,
@@ -68,8 +49,6 @@ void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQu
         with_ties,
         description,
         dataflow_cache_updater);
-    if (is_shard_limit)
-        transform->markAsShardLimit();
     pipeline.addTransform(std::move(transform));
 }
 
@@ -125,14 +104,14 @@ void LimitStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
 {
-    UInt8 flags = 0;
+    UInt8 flags;
     readIntBinary(flags, ctx.in);
 
     bool always_read_till_end = bool(flags & 1);
     bool with_ties = bool(flags & 2);
 
-    UInt64 limit = 0;
-    UInt64 offset = 0;
+    UInt64 limit;
+    UInt64 offset;
 
     readVarUInt(limit, ctx.in);
     readVarUInt(offset, ctx.in);
@@ -144,12 +123,6 @@ QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
     return std::make_unique<LimitStep>(ctx.input_headers.front(), limit, offset, always_read_till_end, with_ties, std::move(description));
 }
 
-QueryPlanStepPtr LimitStep::clone() const
-{
-    return std::make_unique<LimitStep>(*this);
-}
-
-void registerLimitStep(QueryPlanStepRegistry & registry);
 void registerLimitStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Limit", LimitStep::deserialize);
