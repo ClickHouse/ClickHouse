@@ -304,6 +304,9 @@ private:
     void insertIntoBloomFilter(ColumnPtr values);
     void switchToBloomFilter();
 
+    /// Marks the filter as passing everything and frees the keys collected so far.
+    void disable();
+
     /// Disables bloom filter if it is likely to have bad selectivity
     void checkBloomFilterWorthiness();
 
