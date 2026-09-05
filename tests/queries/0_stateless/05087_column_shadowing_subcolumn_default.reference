@@ -1,0 +1,26 @@
+an explicit default in the parts that predate the column
+[0]	7
+[1,2]	7
+[3]	7
+and after a merge stores it
+[0]	7
+[1,2]	7
+[3]	7
+the array is still the array
+4
+the implicit default of the type
+[10,20,30]	0
+a nested column and a column added after it
+1	[1,2]	['a','b']	5
+2	[3]	['c']	5
+3	[4]	['d']	9
+1	2
+2	1
+3	1
+a nested column with its own offsets
+1	[1,2]	['a','b']	5
+2	[3]	['c']	5
+3	[4]	['d']	9
+1	2
+2	1
+3	1
