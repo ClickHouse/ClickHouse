@@ -2992,6 +2992,13 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & ar
                 if (cur.node->type == ActionType::INPUT && array_joined_columns_set.contains(cur.node->result_name))
                     depend_on_array_join = true;
 
+                /// `ARRAY JOIN` multiplies the rows, so an expression that is not deterministic within the
+                /// query is drawn once per source row when it is evaluated below it, instead of once per
+                /// expanded row. Keep such an expression on the side of the `ARRAY JOIN` where it was written.
+                if (cur.node->type == ActionType::FUNCTION && cur.node->function_base
+                    && (!cur.node->function_base->isDeterministicInScopeOfQuery() || cur.node->function_base->isStateful()))
+                    depend_on_array_join = true;
+
                 for (const auto * child : cur.node->children)
                 {
                     if (!split_nodes.contains(child))
