@@ -23,6 +23,12 @@ A plan:
 Cherry-pick stage:
     - From time to time the cherry-pick fails, if it was done manually. In the
     case we check if it's even needed, and mark the release as done somehow.
+    - A cherry-pick PR that conflicts is retried on every run against the
+    current release branch (`ReleaseBranch._retry_cherrypick`). Conflicts are
+    very often caused by a prerequisite backport that has not landed yet, and
+    both branches of the cherry-pick PR are frozen at the moment the conflict
+    was found, so once the prerequisite arrives the PR heals itself instead of
+    waiting for someone to close it and let the bot start over.
 
 The cross-repo synchronization is described in the KB article:
 https://github.com/ClickHouse/internal-knowledge-base/issues/452
@@ -31,6 +37,7 @@ https://github.com/ClickHouse/internal-knowledge-base/issues/452
 import argparse
 import logging
 import os
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from subprocess import CalledProcessError
@@ -119,6 +126,14 @@ Otherwise, if you do not want to backport them, then just close this pull-reques
 
 The check results does not matter at this step - you can safely ignore them.
 
+### Before you resolve anything
+
+Conflicts are often caused by a prerequisite change that has not been backported \
+yet, rather than by a real divergence. The bot re-tries this cherry-pick against \
+the release branch on every run, so if that is the case here it will merge itself \
+as soon as the prerequisite lands, and you will see a comment saying so. Manual \
+resolution is only needed while the conflict persists.
+
 ### Troubleshooting
 
 #### If the conflicts were resolved in a wrong way
@@ -140,6 +155,11 @@ close it.
 """
     PR_SOURCE_DESCRIPTION = ""
     REMOTE = ""
+    # GitHub recomputes a PR's `mergeable` asynchronously after a push and
+    # reports None meanwhile. `_retry_cherrypick` waits this long for it so the
+    # same run can finish the healed cherry-pick instead of the next one.
+    MERGEABLE_POLL_ATTEMPTS = 3
+    MERGEABLE_POLL_SECONDS = 5
 
     @property
     def pr_source(self) -> str:
@@ -240,7 +260,7 @@ close it.
         return prs
 
     def process(  # pylint: disable=too-many-return-statements
-        self, dry_run: bool
+        self, dry_run: bool, retried: bool = False
     ) -> None:
         if self.backported:
             return
@@ -289,6 +309,15 @@ close it.
             self.cherrypick_pr.number,
             self.pr.number,
         )
+        if not retried and self._retry_cherrypick(dry_run):
+            # The branches were rebuilt against the current release branch and
+            # the merge is clean now, so re-enter to take the ordinary merge and
+            # `create_backport` path above. `retried` bounds this to one extra
+            # pass, for the case where GitHub has not recomputed `mergeable` yet.
+            return self.process(dry_run, retried=True)
+        if self.backported:
+            # The retry found the release branch already carries the changes
+            return
         # Assign to engineer if not already assigned (only for PRs with conflicts)
         if not self.cherrypick_pr.assignees:
             if dry_run:
@@ -301,10 +330,17 @@ close it.
                 self.cherrypick_pr.update()
         self.ping_cherry_pick_assignees(dry_run)
 
-    def create_cherrypick(self):
-        # First, create backport branch:
-        # Checkout release branch with discarding every change
-        git_runner(f"{GIT_PREFIX} checkout -f {self.name}")
+    def _prepare_backport_branch(self, base: str = "") -> None:
+        """
+        Reset `backport_branch` to `base` (the release branch by default) plus an
+        empty merge of the original PR's first parent.
+
+        The `-s ours` merge applies nothing; it only makes that first parent an
+        ancestor, so that merging the PR's merge commit into this branch reduces
+        to a cherry-pick of the PR's own diff.
+        """
+        # Checkout the base with discarding every change
+        git_runner(f"{GIT_PREFIX} checkout -f {base or self.name}")
         # Create or reset backport branch
         git_runner(f"{GIT_PREFIX} checkout -B {self.backport_branch}")
         # Merge all changes from PR's the first parent commit w/o applying anything
@@ -312,33 +348,39 @@ close it.
         first_parent = git_runner(f"git rev-parse {self.pr.merge_commit_sha}^1")
         git_runner(f"{GIT_PREFIX} merge -s ours --no-edit {first_parent}")
 
-        # Second step, create cherrypick branch
+    def _try_merge_backport_into_cherrypick(self) -> bool:
+        """
+        Reset `cherrypick_branch` to the PR's merge commit, merge
+        `backport_branch` into it and report whether it applied cleanly.
+
+        The rename limit is raised so git does not silently disable rename
+        detection on large diffs (files renamed between the release branch and
+        master would otherwise show up as spurious conflicts).
+
+        Clean: `cherrypick_branch` now holds the fully resolved tree. Conflict:
+        `merge --abort` restores `cherrypick_branch` to the PR's merge commit.
+        """
         git_runner(
             f"{GIT_PREFIX} checkout --no-track -B "
             f"{self.cherrypick_branch} {self.pr.merge_commit_sha}"
         )
-
-        # Merge backport_branch into cherrypick_branch locally to find out
-        # whether the cherry-pick applies cleanly. The rename limit is raised
-        # so git does not silently disable rename detection on large diffs
-        # (files renamed between the release branch and master would otherwise
-        # show up as spurious conflicts).
-        #
-        # - No conflicts: cherrypick_branch now holds the fully resolved tree,
-        #   so the backport PR can be created directly from it and the
-        #   intermediate cherry-pick PR is skipped (see
-        #   create_backport_from_resolved_tree).
-        # - Conflicts: `merge --abort` restores cherrypick_branch to
-        #   pr.merge_commit_sha and we fall back to opening a cherry-pick PR
-        #   for manual resolution by the assigned engineer.
-        merged_cleanly = False
         try:
             git_runner(
                 f"{GIT_PREFIX} -c merge.renameLimit=999999 "
                 f"merge --no-ff --no-edit {self.backport_branch}"
             )
-            merged_cleanly = True
+            return True
         except CalledProcessError:
+            # Read the unmerged paths before aborting: they name what a human
+            # would have to resolve, and they are the input for spotting a
+            # missing prerequisite backport
+            logging.info(
+                "Cherry-pick of #%s to %s conflicts on: %s",
+                self.pr.number,
+                self.name,
+                ", ".join(git_runner("git diff --name-only --diff-filter=U").split())
+                or "unknown paths",
+            )
             try:
                 git_runner(f"{GIT_PREFIX} merge --abort")
             except CalledProcessError:
@@ -348,18 +390,27 @@ close it.
                 # git command in this checkout. Clean it up so subsequent
                 # PRs in the same run are not poisoned.
                 recover_git_state()
+            return False
 
-        if merged_cleanly:
-            # If the merge produced no tree change vs backport_branch, the PR
-            # is effectively already backported to the release branch - either
-            # "Already up to date" (no merge commit at all) or an empty merge
-            # commit whose resolution collapsed onto backport_branch's tree
-            # (e.g. the PR was manually applied with equivalent content). In
-            # either case, skip creating an empty PR.
-            if not git_runner(
-                f"{GIT_PREFIX} diff --name-only "
-                f"{self.backport_branch} {self.cherrypick_branch}"
-            ):
+    def _cherrypick_is_empty(self) -> bool:
+        """
+        Whether the resolved cherry-pick changes nothing versus the backport
+        branch, meaning the release branch already carries these changes: either
+        "Already up to date" (no merge commit at all) or an empty merge commit
+        whose resolution collapsed onto the backport branch's tree (e.g. the PR
+        was applied by hand with equivalent content).
+        """
+        return not git_runner(
+            f"{GIT_PREFIX} diff --name-only "
+            f"{self.backport_branch} {self.cherrypick_branch}"
+        )
+
+    def create_cherrypick(self):
+        self._prepare_backport_branch()
+
+        if self._try_merge_backport_into_cherrypick():
+            # Nothing to open a PR for
+            if self._cherrypick_is_empty():
                 logging.info(
                     "Release branch %s already contain changes from %s",
                     self.name,
@@ -396,6 +447,168 @@ close it.
         # Do not assign yet - will assign only if there are conflicts
         # update cherrypick PR to get the state for PR.mergable
         self.cherrypick_pr.update()
+
+    def _retry_cherrypick(self, dry_run: bool) -> bool:
+        """
+        Re-try a conflicting cherry-pick against the current release branch, and
+        report whether it now applies cleanly.
+
+        Both branches of a cherry-pick PR are frozen at the moment the conflict
+        was found: the base is the release branch head from back then. A conflict
+        is very often caused by a prerequisite backport that had not landed yet,
+        and when it does land the base still lacks it, so GitHub keeps reporting
+        `CONFLICTING` indefinitely. Recovering meant a human closing the PR,
+        deleting its branch and unlabelling the original just to make the bot
+        start over.
+
+        Rebuild both branches against the current release branch head instead. If
+        the merge is clean now, force-push them so the PR becomes mergeable and
+        the caller's existing merge and `create_backport` path takes over.
+        """
+        assert self.cherrypick_pr is not None
+        remote_release = f"{self.REMOTE}/{self.name}"
+        remote_backport = f"{self.REMOTE}/{self.backport_branch}"
+        remote_cherrypick = f"{self.REMOTE}/{self.cherrypick_branch}"
+        # Forced refspecs: the bot force-pushes both of these branches, so a
+        # non-forced fetch can leave stale remote-tracking refs behind
+        git_runner(
+            f"{GIT_PREFIX} fetch {self.REMOTE} "
+            + " ".join(
+                f"+refs/heads/{branch}:refs/remotes/{self.REMOTE}/{branch}"
+                for branch in (self.name, self.backport_branch, self.cherrypick_branch)
+            )
+        )
+
+        # The retry force-pushes the cherry-pick branch, so it must never
+        # overwrite a partial resolution somebody is working on. An untouched
+        # head is the only condition strictly required for that.
+        head = git_runner(f"git rev-parse {remote_cherrypick}")
+        if head != self.pr.merge_commit_sha:
+            logging.info(
+                "Retry of cherry-pick PR #%s skipped: its head is %s, not the "
+                "original merge commit %s, so it was resolved by hand",
+                self.cherrypick_pr.number,
+                head,
+                self.pr.merge_commit_sha,
+            )
+            return False
+
+        # Belt and braces: the base must still be the merge commit this script
+        # generates, i.e. a release branch commit merged with the original PR's
+        # first parent. Anything else was hand-edited.
+        first_parent = git_runner(f"git rev-parse {self.pr.merge_commit_sha}^1")
+        base_parents = git_runner(f"git rev-parse {remote_backport}^@").split()
+        if len(base_parents) != 2 or base_parents[1] != first_parent:
+            logging.info(
+                "Retry of cherry-pick PR #%s skipped: its base %s is not a "
+                "generated merge of the release branch with %s",
+                self.cherrypick_pr.number,
+                remote_backport,
+                first_parent,
+            )
+            return False
+        if not Shell.check(
+            f"git merge-base --is-ancestor {base_parents[0]} {remote_release}",
+            verbose=True,
+        ):
+            logging.info(
+                "Retry of cherry-pick PR #%s skipped: its base is not built on %s",
+                self.cherrypick_pr.number,
+                self.name,
+            )
+            return False
+
+        # Nothing new to merge against, so the outcome cannot have changed. This
+        # is the common case and it costs no merge attempt and no API call.
+        release_head = git_runner(f"git rev-parse {remote_release}")
+        if release_head == base_parents[0]:
+            logging.info(
+                "Retry of cherry-pick PR #%s skipped: %s is unchanged at %s since "
+                "the conflict was found",
+                self.cherrypick_pr.number,
+                self.name,
+                release_head,
+            )
+            return False
+
+        logging.info(
+            "%s moved from %s to %s since cherry-pick PR #%s was created, "
+            "re-trying the merge",
+            self.name,
+            base_parents[0],
+            release_head,
+            self.cherrypick_pr.number,
+        )
+        self._prepare_backport_branch(remote_release)
+        if not self._try_merge_backport_into_cherrypick():
+            logging.info(
+                "Cherry-pick PR #%s still conflicts against %s at %s",
+                self.cherrypick_pr.number,
+                self.name,
+                release_head,
+            )
+            return False
+
+        if self._cherrypick_is_empty():
+            # The prerequisite that landed was the change itself, applied by
+            # some other route. Same conclusion as in `create_cherrypick`, and
+            # the PR has nothing left to do.
+            logging.info(
+                "Release branch %s already contain changes from %s",
+                self.name,
+                self.pr.number,
+            )
+            self._backported = True
+            if dry_run:
+                logging.info(
+                    "DRY RUN: would close cherry-pick PR #%s, %s already has the "
+                    "changes",
+                    self.cherrypick_pr.number,
+                    self.name,
+                )
+                return False
+            self.cherrypick_pr.create_issue_comment(
+                f"`{self.name}` already contains these changes, closing."
+            )
+            self.cherrypick_pr.edit(state="closed")
+            return False
+
+        if dry_run:
+            logging.info(
+                "DRY RUN: would refresh the branches of cherry-pick PR #%s "
+                "against %s and let the bot merge it",
+                self.cherrypick_pr.number,
+                release_head,
+            )
+            return False
+
+        for branch in (self.cherrypick_branch, self.backport_branch):
+            git_runner(f"{GIT_PREFIX} push -f {self.REMOTE} {branch}:{branch}")
+        self.cherrypick_pr.create_issue_comment(
+            f"The `{self.name}` branch moved since this cherry-pick was created "
+            f"(now at {release_head[:12]}). Re-tried the merge against it and it "
+            "applies cleanly, so the bot is proceeding without manual resolution."
+        )
+        logging.info(
+            "Cherry-pick PR #%s merges cleanly now, branches pushed",
+            self.cherrypick_pr.number,
+        )
+
+        # GitHub recomputes `mergeable` asynchronously and reports None while it
+        # does. Give it a few chances so this run can finish the job; if it is
+        # still None, the next run merges the PR instead.
+        for attempt in range(1, self.MERGEABLE_POLL_ATTEMPTS + 1):
+            self.cherrypick_pr.update()
+            if self.cherrypick_pr.mergeable is not None:
+                break
+            logging.info(
+                "GitHub has not recomputed `mergeable` for #%s yet (attempt %s/%s)",
+                self.cherrypick_pr.number,
+                attempt,
+                self.MERGEABLE_POLL_ATTEMPTS,
+            )
+            time.sleep(self.MERGEABLE_POLL_SECONDS)
+        return True
 
     def create_backport(self):
         assert self.cherrypick_pr is not None
