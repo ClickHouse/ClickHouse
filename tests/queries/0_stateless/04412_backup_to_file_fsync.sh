@@ -104,14 +104,11 @@ echo -e "nested dir_sync - flat dir_sync = 2:\t$(( $(dir_sync_of "$qid_nested") 
 # it without having fsynced its parent yet. Two backups sharing one intermediate directory must
 # therefore fsync the same number of directories - the second must not stop at the shared ancestor.
 # This holds by construction now that the walk does not sample what already exists.
-qid_shared1="${CLICKHOUSE_TEST_UNIQUE_NAME}_shared1"
-qid_shared2="${CLICKHOUSE_TEST_UNIQUE_NAME}_shared2"
 for i in 1 2; do
-    eval "qid=\$qid_shared$i"
-    $CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" --query_id "$qid" \
+    $CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" --query_id "${CLICKHOUSE_TEST_UNIQUE_NAME}_shared$i" \
         -q "BACKUP TABLE t TO File('${CLICKHOUSE_TEST_UNIQUE_NAME}_shared/b$i') SETTINGS fsync_backup_files = 1"
 done
-echo -e "shared ancestor synced by both:\t$(( $(dir_sync_of "$qid_shared2") == $(dir_sync_of "$qid_shared1") ))"
+echo -e "shared ancestor synced by both:\t$(( $(dir_sync_of "${CLICKHOUSE_TEST_UNIQUE_NAME}_shared2") == $(dir_sync_of "${CLICKHOUSE_TEST_UNIQUE_NAME}_shared1") ))"
 
 # The plain Disk assertion above is only a lower bound, so it also holds if the writer recorded the
 # destination root alone and never descended to the directories actually holding the files. Each part
