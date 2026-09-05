@@ -119,8 +119,11 @@ private:
     /// Converts the "*MergeTree" table engine to "Replicated*MergeTree" or "Shared*MergeTree" if the corresponding settings are enabled.
     void convertTableEngineForCloud(ASTStorage & table_engine, TableProperties & properties) const;
 #endif
-    /// Inserts data in created table if it's CREATE ... SELECT
-    BlockIO fillTableIfNeeded(const ASTCreateQuery & create, bool skip_target_insert_access_check = false);
+    /// Inserts data in created table if it's CREATE ... SELECT (or attaches the source partitions if it's
+    /// CREATE ... CLONE AS). `published_table_name`, when not empty, is the user-visible name the table
+    /// being filled will be published under: the table itself carries the internal `_tmp_replace_*` name of
+    /// `doCreateOrReplaceTable`, so the fill is authorized against `published_table_name` instead.
+    BlockIO fillTableIfNeeded(const ASTCreateQuery & create, const String & published_table_name = {});
 
     /// Whether this CREATE MATERIALIZED VIEW ... POPULATE should be populated atomically: the feature
     /// setting is enabled and the query is an immediate INSERT SELECT into a non-window, non-clone view.

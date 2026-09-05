@@ -1,5 +1,7 @@
 #include <Interpreters/QueryOracleChecker.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -81,6 +83,11 @@ const std::unordered_set<String> non_deterministic_functions = {
     "now", "now64", "today", "yesterday",
     "rowNumberInBlock", "blockNumber", "blockSize",
     "runningDifference", "runningDifferenceStartingWithFirstValue",
+    /// `neighbor` and `runningAccumulate` read across rows in physical block
+    /// order (offset neighbours / a running state), so any rewrite that reorders,
+    /// repartitions or reblocks the input (TLP partitions, NoREC, DQP setting
+    /// toggles, multi-thread reads) changes their per-row output legitimately.
+    "neighbor", "runningAccumulate",
     "currentDatabase", "queryID", "serverUUID",
     "getSetting", "fuzzBits", "throwIf",
     /// `indexHint` filters at granule granularity: the rows that survive it
@@ -963,6 +970,32 @@ void scanAggregatesSafe(const ASTPtr & ast, SafeAggregateScan & out)
         if (func->isWindowFunction())
             out.window_functions.push_back(ast);
     }
+
+    /// `SELECT * APPLY any` (or `APPLY x -> any(x)`) aggregates every expanded
+    /// column, but the aggregate is not an `ASTFunction` in the AST: the
+    /// transformer keeps a bare function name (or a lambda that is not among its
+    /// children). Missing it routes an aggregating query into the non-aggregate
+    /// oracles, where a partition over an empty WHERE still yields the one row
+    /// every aggregate returns on no input — a false mismatch. Record the
+    /// transformer itself as an aggregate: `hasAggregates` then reports it, and
+    /// `checkTLPAggregate` rejects it because it is not a rewritable function.
+    if (const auto * apply = ast->as<ASTColumnsApplyTransformer>())
+    {
+        if (apply->lambda)
+        {
+            SafeAggregateScan lambda_scan;
+            scanAggregatesSafe(apply->lambda, lambda_scan);
+            if (!lambda_scan.aggregates.empty())
+                out.aggregates.push_back(ast);
+            out.window_functions.insert(
+                out.window_functions.end(), lambda_scan.window_functions.begin(), lambda_scan.window_functions.end());
+        }
+        else if (!apply->func_name.empty() && AggregateFunctionFactory::instance().isAggregateFunctionName(apply->func_name))
+        {
+            out.aggregates.push_back(ast);
+        }
+    }
+
     for (const auto & child : ast->children)
         scanAggregatesSafe(child, out);
 }
@@ -2553,162 +2586,49 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
 
     bool any_check_performed = false;
 
+    /// Run one oracle under a uniform guard: its own mismatch
+    /// (`AST_FUZZER_ORACLE_MISMATCH`) propagates and is annotated with the
+    /// reproduction settings by the outer handler below; any other execution
+    /// error means the rewrite was not comparable on this query (e.g. a
+    /// function the rewrite cannot analyse), so it is swallowed and the
+    /// remaining oracles still run. `name` reproduces the per-oracle log wording.
+    auto run_oracle = [&](std::string_view name, auto && check_fn)
+    {
+        try
+        {
+            if (check_fn())
+                any_check_performed = true;
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                throw;
+            LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, e.message());
+        }
+        catch (...)
+        {
+            LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, getCurrentExceptionMessage(false));
+        }
+    };
+
     try
     {
-
-    /// TLP WHERE oracle
-    try
-    {
-        if (checkTLPWhere(*select, context))
-            any_check_performed = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-            throw;
-        LOG_TRACE(logger, "TLP WHERE oracle execution error (skipping): {}", e.message());
-    }
-    catch (...)
-    {
-        LOG_TRACE(logger, "TLP WHERE oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
-    }
-
-    /// NoREC oracle
-    try
-    {
-        if (checkNoREC(*select, context))
-            any_check_performed = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-            throw;
-        LOG_TRACE(logger, "NoREC oracle execution error (skipping): {}", e.message());
-    }
-    catch (...)
-    {
-        LOG_TRACE(logger, "NoREC oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
-    }
-
-    /// TLP Aggregate oracle (uses State/Merge combinators for any aggregate)
-    try
-    {
-        if (checkTLPAggregate(*select, context))
-            any_check_performed = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-            throw;
-        LOG_TRACE(logger, "TLP Aggregate oracle execution error (skipping): {}", e.message());
-    }
-    catch (...)
-    {
-        LOG_TRACE(logger, "TLP Aggregate oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
-    }
-
-    /// TLP DISTINCT oracle (uses UNION DISTINCT instead of UNION ALL)
-    try
-    {
-        if (checkTLPDistinct(*select, context))
-            any_check_performed = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-            throw;
-        LOG_TRACE(logger, "TLP DISTINCT oracle execution error (skipping): {}", e.message());
-    }
-    catch (...)
-    {
-        LOG_TRACE(logger, "TLP DISTINCT oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
-    }
-
-    /// TLP GROUP BY oracle (set comparison for non-aggregate GROUP BY)
-    try
-    {
-        if (checkTLPGroupBy(*select, context))
-            any_check_performed = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-            throw;
-        LOG_TRACE(logger, "TLP GROUP BY oracle execution error (skipping): {}", e.message());
-    }
-    catch (...)
-    {
-        LOG_TRACE(logger, "TLP GROUP BY oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
-    }
-
-    /// TLP HAVING oracle (partitions on HAVING instead of WHERE)
-    try
-    {
-        if (checkTLPHaving(*select, context))
-            any_check_performed = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-            throw;
-        LOG_TRACE(logger, "TLP HAVING oracle execution error (skipping): {}", e.message());
-    }
-    catch (...)
-    {
-        LOG_TRACE(logger, "TLP HAVING oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
-    }
-
-    /// DQP oracle (differential query plans — same query, different optimizer settings)
-    try
-    {
-        if (checkDQP(*select, context))
-            any_check_performed = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-            throw;
-        LOG_TRACE(logger, "DQP oracle execution error (skipping): {}", e.message());
-    }
-    catch (...)
-    {
-        LOG_TRACE(logger, "DQP oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
-    }
-
-    /// Identity WHERE oracle (rewrites WHERE into equivalent forms — NOT(NOT p), p AND 1, p OR 0)
-    try
-    {
-        if (checkIdentityWhere(*select, context))
-            any_check_performed = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-            throw;
-        LOG_TRACE(logger, "Identity WHERE oracle execution error (skipping): {}", e.message());
-    }
-    catch (...)
-    {
-        LOG_TRACE(logger, "Identity WHERE oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
-    }
-
-    /// Subquery wrap oracle (wraps original as subquery and verifies identical result)
-    try
-    {
-        if (checkSubqueryWrap(*select, context))
-            any_check_performed = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-            throw;
-        LOG_TRACE(logger, "Subquery wrap oracle execution error (skipping): {}", e.message());
-    }
-    catch (...)
-    {
-        LOG_TRACE(logger, "Subquery wrap oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
-    }
-
+        run_oracle("TLP WHERE", [&] { return checkTLPWhere(*select, context); });
+        run_oracle("NoREC", [&] { return checkNoREC(*select, context); });
+        /// TLP Aggregate oracle (uses State/Merge combinators for any aggregate).
+        run_oracle("TLP Aggregate", [&] { return checkTLPAggregate(*select, context); });
+        /// TLP DISTINCT oracle (uses UNION DISTINCT instead of UNION ALL).
+        run_oracle("TLP DISTINCT", [&] { return checkTLPDistinct(*select, context); });
+        /// TLP GROUP BY oracle (set comparison for non-aggregate GROUP BY).
+        run_oracle("TLP GROUP BY", [&] { return checkTLPGroupBy(*select, context); });
+        /// TLP HAVING oracle (partitions on HAVING instead of WHERE).
+        run_oracle("TLP HAVING", [&] { return checkTLPHaving(*select, context); });
+        /// DQP oracle (differential query plans — same query, different optimizer settings).
+        run_oracle("DQP", [&] { return checkDQP(*select, context); });
+        /// Identity WHERE oracle (rewrites WHERE into equivalent forms — NOT(NOT p), p AND 1, p OR 0).
+        run_oracle("Identity WHERE", [&] { return checkIdentityWhere(*select, context); });
+        /// Subquery wrap oracle (wraps original as subquery and verifies identical result).
+        run_oracle("Subquery wrap", [&] { return checkSubqueryWrap(*select, context); });
     }
     catch (Exception & e)
     {

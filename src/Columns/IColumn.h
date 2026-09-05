@@ -407,9 +407,6 @@ public:
     /// Note that it needs to deal with user input
     virtual void deserializeAndInsertFromArena(ReadBuffer & in, const SerializationSettings * settings) = 0;
 
-    /// Skip previously serialized value that was serialized using IColumn::serializeValueIntoArena method.
-    virtual void skipSerializedInArena(ReadBuffer & in) const = 0;
-
     /// Update state of hash function with value of n-th element.
     /// On subsequent calls of this method for sequence of column values of arbitrary types,
     ///  passed bytes to hash must identify sequence of values unambiguously.
@@ -727,6 +724,10 @@ public:
 
     /// Returns number of values in column, that are equal to default value of column.
     [[nodiscard]] virtual UInt64 getNumberOfDefaultRows() const = 0;
+
+    /// Returns true if every value in the column is the type-default value.
+    /// Optimized for early exit and may use bulk memory checks for fixed-size types.
+    [[nodiscard]] virtual bool hasOnlyTypeDefaults() const = 0;
 
     /// Returns indices of values in column, that not equal to default value of column.
     virtual void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const = 0;
@@ -1081,6 +1082,9 @@ private:
 
     /// Devirtualize isDefaultAt.
     UInt64 getNumberOfDefaultRows() const override;
+
+    /// Devirtualize isDefaultAt — early-exit loop.
+    bool hasOnlyTypeDefaults() const override;
 
     /// Devirtualize isDefaultAt.
     void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override;

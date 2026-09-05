@@ -165,13 +165,14 @@ namespace
         void performSinglepartUpload()
         {
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
-            auto read_buffer = create_read_buffer();
+            /// `offset` is non-zero for incremental backups, where only the tail of the file is uploaded.
+            LimitSeekableReadBuffer read_buffer(create_read_buffer(), offset, total_size);
 
             PODArray<char> memory;
             {
                 memory.resize(total_size);
                 WriteBufferFromVector<PODArray<char>> wb(memory);
-                copyData(*read_buffer, wb, total_size);
+                copyData(read_buffer, wb, total_size);
             }
 
             Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), total_size);
@@ -379,7 +380,6 @@ void copyAzureBlobStorageFile(
     std::shared_ptr<const AzureBlobStorage::ContainerClient> dest_client,
     const String & src_container_for_logging,
     const String & src_blob,
-    size_t offset,
     size_t size,
     const String & dest_container_for_logging,
     const String & dest_blob,
@@ -484,7 +484,7 @@ void copyAzureBlobStorageFile(
                 src_client, src_blob, read_settings, settings->max_single_read_retries, settings->max_single_download_retries);
         };
 
-        UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, blob_storage_log, log};
+        UploadHelper helper{create_read_buffer, dest_client, /* offset= */ 0, size, dest_container_for_logging, dest_blob, settings, schedule, blob_storage_log, log};
         helper.performCopy();
     }
 }
