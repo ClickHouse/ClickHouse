@@ -19,6 +19,7 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitByStep.h>
@@ -45,6 +46,43 @@ namespace DB::ErrorCodes
 
 namespace DB::QueryPlanOptimizations
 {
+
+/// A predicate evaluated once per branch rather than once above a row-dropping step must be
+/// deterministic within the query, or each branch selects different rows.
+static bool filterIsDeterministicInScopeOfQuery(const FilterStep & filter)
+{
+    for (const auto & node : filter.getExpression().getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base
+            && !node.function_base->isDeterministicInScopeOfQuery())
+            return false;
+    }
+    return true;
+}
+
+/// The branch input column this DAG output carries through, renamed through alias nodes only, or null
+/// if the output is a computed value rather than an input.
+static const ActionsDAG::Node * resolvePassThroughInput(const ActionsDAG::Node * node)
+{
+    while (node && node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.empty() ? nullptr : node->children.front();
+    return node && node->type == ActionsDAG::ActionType::INPUT ? node : nullptr;
+}
+
+/// True if the subplan rooted at `node` contains a step that emits a totals port
+/// (WITH TOTALS / CUBE / ROLLUP).
+static bool subplanEmitsTotals(const QueryPlan::Node * node)
+{
+    if (!node || !node->step)
+        return false;
+    const auto & name = node->step->getName();
+    if (name == "TotalsHaving" || name == "Cube" || name == "Rollup")
+        return true;
+    for (const auto * child : node->children)
+        if (subplanEmitsTotals(child))
+            return true;
+    return false;
+}
 
 /// Assert that `node->children` has at least `child_num` elements
 static void checkChildrenSize(QueryPlan::Node * node, size_t child_num)
@@ -1398,6 +1436,100 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         ///       - Filter - Something
         /// Union - Filter - Something
         ///       - Filter - Something
+
+        return 3;
+    }
+
+    if (auto * intersect_or_except = typeid_cast<IntersectOrExceptStep *>(child.get()))
+    {
+        /// IntersectOrExcept does not change the header and its branches are positionally aligned,
+        /// so a filter above it can be cloned into every branch, exactly as for UnionStep.
+        ///
+        /// TODO(#117559): a pushed-down filter also runs on branch rows the set operation removes,
+        /// so a predicate that throws on some values raises there instead of returning rows.
+        if (!filterIsDeterministicInScopeOfQuery(*filter))
+            return 0;
+
+        /// A pushed-down filter can leave a branch main port constant-folded while its totals port
+        /// stays full, and a downstream Main-only transform then aborts on the mismatch.
+        for (const auto * branch : child_node->children)
+            if (subplanEmitsTotals(branch))
+                return 0;
+
+        /// Forcing the filter's output header onto a branch whose input header is not the output one
+        /// would reinstate a constness that branch does not emit, as for UnionStep.
+        const auto & set_key_header = *intersect_or_except->getOutputHeader();
+        for (const auto & input_header : child->getInputHeaders())
+            if (!blocksHaveEqualStructure(*input_header, set_key_header))
+                return 0;
+
+        /// IntersectOrExcept compares whole rows positionally: its entire header is the set key, and
+        /// the pushed filter's output header becomes the new one. Dropping a set-key column coarsens
+        /// the comparison; projecting them all away (e.g. a count() parent) computes the set over zero
+        /// columns and aborts on num_srcs > 0. Consistent renaming or reordering is harmless, so only
+        /// the column count and positional types must be preserved.
+        auto expected_output = filter->getOutputHeader();
+        if (expected_output->columns() != set_key_header.columns())
+            return 0;
+        for (size_t i = 0; i < set_key_header.columns(); ++i)
+        {
+            if (!expected_output->getByPosition(i).type->equals(*set_key_header.getByPosition(i).type))
+                return 0;
+        }
+
+        /// The same width and types are not enough: the new set key must be a permutation of the
+        /// original, so every column resolves to a branch input and each input is used exactly once.
+        std::unordered_map<std::string_view, const ActionsDAG::Node *> output_by_name;
+        for (const auto * out : filter->getExpression().getOutputs())
+            output_by_name.emplace(out->result_name, out);
+
+        std::unordered_set<const ActionsDAG::Node *> used_inputs;
+        for (const auto & col : *expected_output)
+        {
+            auto it = output_by_name.find(col.name);
+            if (it == output_by_name.end())
+                return 0;
+            const auto * input = resolvePassThroughInput(it->second);
+            if (!input || !used_inputs.emplace(input).second)
+                return 0;
+        }
+
+        auto input_headers = child->getInputHeaders();
+
+        for (auto & input_header : input_headers)
+            input_header = expected_output;
+
+        ///                          - Something
+        /// Filter - IntersectExcept - Something
+        ///                          - Something
+
+        child = std::make_unique<IntersectOrExceptStep>(
+            input_headers, intersect_or_except->getOperator(), intersect_or_except->getMaxThreads());
+
+        std::swap(parent, child);
+        std::swap(parent_node->children, child_node->children);
+        std::swap(parent_node->children.front(), child_node->children.front());
+
+        ///                - Filter - Something
+        /// IntersectExcept - Something
+        ///                - Something
+
+        for (size_t i = 1; i < parent_node->children.size(); ++i)
+        {
+            auto & filter_node = nodes.emplace_back();
+            filter_node.children.push_back(parent_node->children[i]);
+            parent_node->children[i] = &filter_node;
+
+            filter_node.step = std::make_unique<FilterStep>(
+                filter_node.children.front()->step->getOutputHeader(),
+                filter->getExpression().clone(),
+                filter->getFilterColumnName(),
+                filter->removesFilterColumn());
+        }
+
+        ///                - Filter - Something
+        /// IntersectExcept - Filter - Something
+        ///                - Filter - Something
 
         return 3;
     }
