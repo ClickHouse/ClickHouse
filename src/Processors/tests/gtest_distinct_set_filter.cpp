@@ -15,6 +15,12 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
 #include <Common/assert_cast.h>
+#include <Common/Exception.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int SET_SIZE_LIMIT_EXCEEDED;
+}
 
 using namespace DB;
 
@@ -432,6 +438,53 @@ TEST(DistinctSetFilterSemantics, ByteLimitSeesTheLowCardinalityBitmaps)
 
     DistinctSetFilter lc_filter(lc_header, {}, limits);
     EXPECT_ANY_THROW(lc_filter.filter(Chunk(Columns{makeLowCardinalityColumnWithLargeDictionary(lc_type, dictionary_size, 3)}, 3)));
+}
+
+TEST(DistinctSetFilterSemantics, DuplicateKeysEnforceByteLimit)
+{
+    auto type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    const Block header = {ColumnWithTypeAndName(type, "k")};
+    const size_t dictionary_size = 200000;
+
+    for (const bool require_extractable_keys : {false, true})
+    {
+        SCOPED_TRACE(require_extractable_keys);
+        for (const auto overflow_mode : {OverflowMode::THROW, OverflowMode::BREAK})
+        {
+            SCOPED_TRACE(static_cast<int>(overflow_mode));
+            const SizeLimits limits(/*max_rows=*/ 0, /*max_bytes=*/ dictionary_size / 2, overflow_mode);
+            DistinctSetFilter filter(header, {}, limits, /*skip_null_keys_=*/ false, require_extractable_keys);
+            const auto small_dictionary = makeLowCardinalityColumnWithLargeDictionary(type, 3, 3);
+
+            ASSERT_EQ(filter.filter(Chunk({small_dictionary}, 3)).getNumRows(), 3);
+            auto larger_dictionary = makeLowCardinalityColumnWithLargeDictionary(type, 100, 3);
+            EXPECT_FALSE(filter.filter(Chunk({larger_dictionary}, 3)).hasRows());
+            EXPECT_FALSE(filter.isLimitReached());
+            ASSERT_LT(filter.getTotalByteCount(), limits.max_bytes);
+
+            /// A new dictionary retains a bitmap even when its rows contain only previously seen keys.
+            auto duplicates = makeLowCardinalityColumnWithLargeDictionary(type, dictionary_size, 3);
+            if (overflow_mode == OverflowMode::THROW)
+            {
+                try
+                {
+                    filter.filter(Chunk({duplicates}, 3));
+                    ADD_FAILURE() << "Expected the dictionary bitmap to exceed the byte limit";
+                }
+                catch (const Exception & exception)
+                {
+                    EXPECT_EQ(exception.code(), ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+                }
+            }
+            else
+            {
+                EXPECT_FALSE(filter.filter(Chunk({duplicates}, 3)).hasRows());
+                EXPECT_TRUE(filter.isLimitReached());
+            }
+            EXPECT_EQ(filter.getTotalRowCount(), 3);
+            EXPECT_GT(filter.getTotalByteCount(), limits.max_bytes);
+        }
+    }
 }
 
 TEST(DistinctSetFilterExtraction, SerializedKeysOnRequest)

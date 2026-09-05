@@ -542,16 +542,16 @@ Chunk DistinctSetFilter::filter(Chunk chunk)
     const auto new_set_size = data->getTotalRowCount();
     const size_t num_selected = new_set_size - old_set_size;
 
-    /// There isn't any new record in the chunk.
-    if (num_selected == 0)
-        return {};
-
+    /// A `LowCardinality` dictionary can grow the retained bitmap memory without adding new keys.
     /// With the 'throw' overflow mode `check` throws; with 'break' it returns false: the limit is
     /// recorded (see isLimitReached), but the new rows of the current chunk are still returned - their
     /// keys are already in the set, and 'break' means return a partial result as if the source data
     /// ran out, not discard it.
     if (!set_size_limits.check(new_set_size, getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
         limit_reached = true;
+
+    if (num_selected == 0)
+        return {};
 
     /// When every row is a new distinct value, the columns are kept unchanged, without copying.
     if (num_selected != num_rows)
