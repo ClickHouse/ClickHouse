@@ -1110,7 +1110,8 @@ class BackportPRs:
 
         # One GraphQL request per 50 branches, instead of a REST request each
         backport_prs = self.gh.get_pull_states_by_head_refs(
-            self._repo_name, sorted(branches)
+            self._repo_name,
+            {branch: branches[branch][0] for branch in sorted(branches)},
         )
         stranded = [branch for branch in sorted(branches) if not backport_prs[branch]]
         logging.info(
@@ -1129,7 +1130,7 @@ class BackportPRs:
         # not run or did not survive.
         cherrypick_prs = self.gh.get_pull_states_by_head_refs(
             self._repo_name,
-            [ReleaseBranch.cp_branch(*branches[branch]) for branch in stranded],
+            {ReleaseBranch.cp_branch(*branches[branch]): branch for branch in stranded},
         )
         # original PR number -> release branches it is stranded on
         to_recover: Dict[int, List[str]] = {}

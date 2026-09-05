@@ -394,40 +394,72 @@ class GitHub(github.Github):
         return result
 
     def get_pull_states_by_head_refs(
-        self, repo_name: str, head_refs: List[str]
+        self, repo_name: str, head_refs: Dict[str, str]
     ) -> Dict[str, List[Tuple[int, str]]]:
-        """For each head branch name, return `(number, state)` of every PR opened
-        from it, batching many head refs per GraphQL request.
+        """Return `(number, state)` for PRs from this repository's head refs.
 
-        `state` is GitHub's `PullRequestState`: `OPEN`, `CLOSED` or `MERGED`.
-        This is the general form of `get_backport_merge_commits`, which answers
-        only "was a PR from this branch merged", and it replaces one REST
-        `get_pulls(head=...)` request per branch.
-
-        A branch with no PR at all maps to an empty list, so every requested ref
-        is present in the result and callers need no `.get` with a default.
+        `head_refs` maps each head branch to its expected base branch. Fork PRs
+        are excluded, and every connection is fully paginated. A successful empty
+        connection maps to an empty list; incomplete responses raise.
         """
         owner, name = repo_name.split("/")
         result: Dict[str, List[Tuple[int, str]]] = {ref: [] for ref in head_refs}
+        pending: Dict[str, Optional[str]] = {ref: None for ref in head_refs}
         batch_size = 50
-        for start in range(0, len(head_refs), batch_size):
-            batch = head_refs[start : start + batch_size]
-            aliases = " ".join(
-                f'b{i}: pullRequests(headRefName: "{head}", first: 10) '
-                "{ nodes { number state } }"
-                for i, head in enumerate(batch)
-            )
-            gql = (
-                "query($owner:String!, $name:String!) {"
-                f"  repository(owner:$owner, name:$name) {{ {aliases} }}"
-                "}"
-            )
-            repository = self._graphql(
-                gql, {"owner": owner, "name": name}, allow_partial=False
-            )["repository"]
+        while pending:
+            batch = list(pending)[:batch_size]
+            parameters = ["$owner:String!", "$name:String!"]
+            variables: Dict[str, Optional[str]] = {"owner": owner, "name": name}
+            aliases = []
             for i, head in enumerate(batch):
-                node = repository[f"b{i}"]
-                result[head] = [(pr["number"], pr["state"]) for pr in node["nodes"]]
+                parameters.extend(
+                    [f"$head{i}:String!", f"$base{i}:String!", f"$after{i}:String"]
+                )
+                variables.update(
+                    {
+                        f"head{i}": head,
+                        f"base{i}": head_refs[head],
+                        f"after{i}": pending[head],
+                    }
+                )
+                aliases.append(
+                    f"b{i}: pullRequests(headRefName:$head{i}, baseRefName:$base{i}, "
+                    f"first:100, after:$after{i}) {{ "
+                    "nodes { number state headRepository { id } } "
+                    "pageInfo { hasNextPage endCursor } }"
+                )
+            gql = (
+                f"query({', '.join(parameters)}) {{ "
+                "repository(owner:$owner, name:$name) { id "
+                + " ".join(aliases)
+                + " } }"
+            )
+            repository = self._graphql(gql, variables, allow_partial=False)[
+                "repository"
+            ]
+            for i, head in enumerate(batch):
+                connection = repository[f"b{i}"]
+                for pr in connection["nodes"]:
+                    # A deleted fork has no head repository and cannot own one
+                    # of the automation refs being reconciled here.
+                    head_repository = pr["headRepository"]
+                    if (
+                        head_repository is not None
+                        and head_repository["id"] == repository["id"]
+                    ):
+                        result[head].append((pr["number"], pr["state"]))
+                page = connection["pageInfo"]
+                if page["hasNextPage"]:
+                    cursor = page["endCursor"]
+                    if not cursor or cursor == pending[head]:
+                        raise GithubException(
+                            200,
+                            f"PR lookup pagination did not advance for {head}",
+                            None,
+                        )
+                    pending[head] = cursor
+                else:
+                    del pending[head]
         return result
 
     def sleep_on_rate_limit(self) -> None:
