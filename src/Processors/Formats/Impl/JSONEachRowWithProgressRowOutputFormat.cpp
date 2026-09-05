@@ -142,7 +142,30 @@ void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory)
 
 ## Description {#description}
 
-Differs from [`JSONEachRow`](/reference/formats/JSON/JSONEachRow)/[`JSONStringsEachRow`](/reference/formats/JSON/JSONStringsEachRow) in that ClickHouse will also yield progress information as JSON values.
+Differs from [`JSONEachRow`](/reference/formats/JSON/JSONEachRow)/[`JSONStringsEachRow`](/reference/formats/JSON/JSONStringsEachRow) in that ClickHouse streams each event as a separate JSON object and also yields progress information.
+
+The related `JSONStringsEachRowWithProgress` format uses the same top-level object kinds; field values are serialized as strings.
+
+The compact siblings `JSONCompactEachRowWithProgress` and `JSONCompactStringsEachRowWithProgress` share the same stream-object kinds and progress/`LIMIT`/exception caveats; their `row` / `totals` / `min` / `max` payloads are value arrays instead of named objects.
+
+## Stream objects {#stream-objects}
+
+Each line of the response is one JSON object. Clients should dispatch on the top-level key:
+
+| Top-level key | When it appears | Shape |
+|---------------|-----------------|-------|
+| `meta` | Once, before the first `row` (a `progress` object may be emitted before it) | `{"meta":[{"name":...,"type":...}, ...]}` — column names and types |
+| `row` | Once per result row | `{"row":{...}}` — column values for that row |
+| `progress` | Periodically while the query runs | `{"progress":{...}}` — counters such as `read_rows`, `read_bytes`, `total_rows_to_read` |
+| `totals` | When totals are present | `{"totals":{...}}` — totals row values |
+| `min` / `max` | When extremes are present | `{"min":{...}}` / `{"max":{...}}` — extreme row values |
+| `rows_before_limit_at_least` | When the query contains `LIMIT` | `{"rows_before_limit_at_least":N}` — lower estimate of rows there would have been without `LIMIT` (not proof that rows were dropped) |
+| `rows_before_aggregation` | When the query performs aggregation and the `rows_before_aggregation` counter is enabled | `{"rows_before_aggregation":N}` |
+| `exception` | When the query fails, on the HTTP path with `http_write_exception_in_output_format=1` | `{"exception":"..."}` — error text as a **top-level string**, not nested under `row` |
+
+The `rows_before_limit_at_least` object is emitted when the query contains `LIMIT`, even if the limit did not drop any rows. It is a lower estimate of the number of rows there would have been without `LIMIT` (same meaning as in `JSON`); clients must not treat it as proof that rows were dropped.
+
+`meta` is emitted once before the first `row`, but a `progress` object can arrive before `meta`. The top-level `exception` object is emitted on the HTTP path only when `http_write_exception_in_output_format=1`; otherwise the error surfaces through the transport. When emitted it is a separate top-level object, not nested under `row`.
 
 ## Example usage {#example-usage}
 
@@ -160,14 +183,19 @@ Differs from [`JSONEachRow`](/reference/formats/JSON/JSONEachRow)/[`JSONStringsE
         .description = R"DOCS_MD(
 ## Description {#description}
 
-Differs from `JSONEachRow`/`JSONStringsEachRow` in that ClickHouse will also yield progress information as JSON values.
+Differs from `JSONEachRow`/`JSONStringsEachRow` in that ClickHouse streams each event as a separate JSON object and also yields progress information.
+
+All field values are serialized as strings (including complex types): for example `arr` is emitted as `"arr":"[0,1]"`, not as a nested JSON array. Scalars are likewise stringified (`"num":"42"`).
+
+The top-level object kinds match [`JSONEachRowWithProgress`](/reference/formats/JSON/JSONEachRowWithProgress) (`meta`, `row`, `progress`, `totals`/`min`/`max`, `rows_before_limit_at_least`, `rows_before_aggregation`, and top-level `exception`). Follow that page for the full stream contract: a `progress` object may arrive before `meta`; `rows_before_limit_at_least` is a lower estimate when the query contains `LIMIT` (not proof rows were dropped); `exception` is only written on the HTTP path with `http_write_exception_in_output_format=1`.
 
 ## Example usage {#example-usage}
 
 ```json
-{"row":{"num":42,"str":"hello","arr":[0,1]}}
-{"row":{"num":43,"str":"hello","arr":[0,1,2]}}
-{"row":{"num":44,"str":"hello","arr":[0,1,2,3]}}
+{"meta":[{"name":"num","type":"UInt8"},{"name":"str","type":"String"},{"name":"arr","type":"Array(UInt8)"}]}
+{"row":{"num":"42","str":"hello","arr":"[0,1]"}}
+{"row":{"num":"43","str":"hello","arr":"[0,1,2]"}}
+{"row":{"num":"44","str":"hello","arr":"[0,1,2,3]"}}
 {"progress":{"read_rows":"3","read_bytes":"24","written_rows":"0","written_bytes":"0","total_rows_to_read":"3"}}
 ```
 
