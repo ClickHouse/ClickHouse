@@ -1461,14 +1461,34 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageBackupSecretArguments()
         {
             const auto argument_function = function->arguments->at(i)->getFunction();
             if (argument_function && argument_function->name() == "equals")
-                continue;
+            {
+                /// A key this rule cannot read hides which credential the override carries.
+                if (argument_function->arguments && argument_function->arguments->size() == 2
+                    && tryGetStringFromArgument(*argument_function->arguments->at(0), nullptr))
+                    continue;
+                maskEveryArgument();
+                return;
+            }
             if (++filenames > 1 || !function->arguments->at(i)->tryGetLiteralText(nullptr))
             {
                 maskEveryArgument();
                 return;
             }
         }
-        /// The collection holds the credentials, so only an override written here can carry one.
+        /// The collection holds the credentials, so only an override written here can carry one. An
+        /// override this rule cannot read may hold either one, and hiding a connection string replaces
+        /// the whole argument, which cannot be combined with hiding `account_key`: fail closed on both.
+        for (const auto & key : {"connection_string", "storage_account_url"})
+        {
+            String value;
+            if (findNamedArgument(&value, key, 1) < 0)
+                continue;
+            if (value.empty() || (!value.starts_with("http") && findNamedArgument(nullptr, "account_key", 1) >= 0))
+            {
+                maskEveryArgument();
+                return;
+            }
+        }
         if (maskAzureConnectionString(-1, /* argument_is_named= */ true, 1))
             return;
         findSecretNamedArgument("account_key", 1);

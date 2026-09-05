@@ -270,6 +270,37 @@ BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('DefaultEndpointsProtocol=htt
                  'cont', 'visible_04510_dir/b.zip'); -- { serverError BAD_ARGUMENTS }
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/acct', 'visible_04510_cont', 'visible_04510_dir/b.zip'); -- { serverError BAD_ARGUMENTS }
 
+-- A named collection can be overridden per statement, and the destination evaluates those overrides as
+-- constant expressions. An override this rule cannot read may hold either credential, and hiding a
+-- connection string replaces the whole argument, which cannot be combined with hiding account_key, so
+-- both shapes hide the locator whole. The last three statements are the controls: a connection string
+-- alone still hides only its AccountKey, account_key alone is hidden by itself, and an account url
+-- override does not take the replacement path, so it stays visible next to a hidden account_key.
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 connection_string = concat('DefaultEndpointsProtocol=https;AccountName=a;AccountKey=',
+                 'SEKRIT_AZNCEXPR')); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 connection_string = 'DefaultEndpointsProtocol=https;AccountName=a;AccountKey=c2VrcmV0Cg==;',
+                 account_key = 'SEKRIT_AZNCBOTH'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 storage_account_url = concat('https://a.blob.core.windows.net/c?sig=',
+                 'SEKRIT_AZNCURLEXPR')); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 connection_string = 'DefaultEndpointsProtocol=https;AccountName=visible_04510_acct;AccountKey=SEKRIT_AZNCCS==;'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 account_key = 'SEKRIT_AZNCKEY'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 storage_account_url = 'http://localhost:11111/visible_04510_url',
+                 account_key = 'SEKRIT_AZNCURLKEY'); -- { serverError BAD_ARGUMENTS }
+
+-- An override key can be an expression too, and one this rule cannot read hides which credential the
+-- value is: both the computed key and a malformed override hide the locator whole, as the S3 form above
+-- already does for a key it cannot read.
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 concat('account_', 'key') = 'SEKRIT_AZNCKEYEXPR'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 equals('account_key', 'SEKRIT_AZNCEQ3', 'surplus')); -- { serverError BAD_ARGUMENTS }
+
 -- Backup database engine reconstructs the nested S3 destination; extra_credentials must be masked.
 CREATE DATABASE db_04510_ec ENGINE = Backup('', S3('url_dbec', 'ak', 'SEKRIT_SAK',
                  extra_credentials(external_id = 'SEKRIT_EID'))); -- { serverError BAD_ARGUMENTS }

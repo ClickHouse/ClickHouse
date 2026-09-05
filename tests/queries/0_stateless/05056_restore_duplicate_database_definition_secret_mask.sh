@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-encrypted-storage
 # Tag no-fasttest: requires the S3 endpoint
+# Tag no-encrypted-storage: a backup from an encrypted disk restores only to an encrypted disk, so the restored Backup database gets no parts.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
