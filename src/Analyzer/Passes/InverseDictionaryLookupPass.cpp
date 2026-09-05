@@ -1,4 +1,5 @@
 #include <optional>
+#include <unordered_map>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -104,33 +105,46 @@ bool isSafePassThroughQuery(const QueryNode & query_node)
     return join_tree_node_type == QueryTreeNodeType::TABLE || join_tree_node_type == QueryTreeNodeType::QUERY;
 }
 
-QueryTreeNodePtr tryResolveViewInnerQueryForInspection(const TableNode & table_node, const ContextPtr & context)
+/// Resolving a view's inner query (buildQueryTree + full QueryAnalyzer::resolve) is expensive, and
+/// enterImpl below is invoked once per allowed comparison node, so the same view can be inspected
+/// many times over for a single outer query (e.g. `WHERE a = 1 AND b = 2 AND c = 3`). Memoize by
+/// TableNode identity, including negative results, so each view is resolved at most once per query.
+using ViewInspectionCache = std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr>;
+
+QueryTreeNodePtr
+tryResolveViewInnerQueryForInspection(const TableNode & table_node, const ContextPtr & context, ViewInspectionCache & cache)
 {
+    if (auto it = cache.find(&table_node); it != cache.end())
+        return it->second;
+
+    QueryTreeNodePtr result;
+
     const auto & storage = table_node.getStorage();
     const auto * view = typeid_cast<const StorageView *>(storage.get());
-    if (!view || view->isParameterizedView() || table_node.hasTableExpressionModifiers())
-        return nullptr;
-
-    try
+    if (view && !view->isParameterizedView() && !table_node.hasTableExpressionModifiers())
     {
-        const auto & storage_snapshot = table_node.getStorageSnapshot();
-        auto view_context = StorageView::getViewSubqueryContext(context, storage_snapshot);
+        try
+        {
+            const auto & storage_snapshot = table_node.getStorageSnapshot();
+            auto view_context = StorageView::getViewSubqueryContext(context, storage_snapshot);
 
-        ASTPtr view_ast = storage_snapshot->metadata->getSelectQuery().inner_query->clone();
-        QueryTreeNodePtr view_query_tree = buildQueryTree(view_ast, view_context);
+            ASTPtr view_ast = storage_snapshot->metadata->getSelectQuery().inner_query->clone();
+            QueryTreeNodePtr view_query_tree = buildQueryTree(view_ast, view_context);
 
-        QueryAnalyzer view_analyzer(/*only_analyze_=*/true);
-        view_analyzer.resolve(view_query_tree, {}, view_context);
+            QueryAnalyzer view_analyzer(/*only_analyze_=*/true);
+            view_analyzer.resolve(view_query_tree, {}, view_context);
 
-        if (view_query_tree->as<QueryNode>())
-            return view_query_tree;
+            if (view_query_tree->as<QueryNode>())
+                result = view_query_tree;
+        }
+        catch (const Exception &)
+        {
+            result = nullptr;
+        }
     }
-    catch (const Exception &)
-    {
-        return nullptr;
-    }
 
-    return nullptr;
+    cache.emplace(&table_node, result);
+    return result;
 }
 
 struct ColumnDefinition
@@ -139,7 +153,8 @@ struct ColumnDefinition
     QueryNodePtr source_query_node;
 };
 
-std::optional<ColumnDefinition> tryResolveColumnDefinition(const ColumnNode & column_node, const ContextPtr & context)
+std::optional<ColumnDefinition>
+tryResolveColumnDefinition(const ColumnNode & column_node, const ContextPtr & context, ViewInspectionCache & cache)
 {
     auto column_source = column_node.getColumnSourceOrNull();
     if (!column_source)
@@ -153,7 +168,7 @@ std::optional<ColumnDefinition> tryResolveColumnDefinition(const ColumnNode & co
     }
     else if (auto * table_node = column_source->as<TableNode>())
     {
-        auto resolved = tryResolveViewInnerQueryForInspection(*table_node, context);
+        auto resolved = tryResolveViewInnerQueryForInspection(*table_node, context, cache);
         if (!resolved)
             return std::nullopt;
         source_query_node = std::static_pointer_cast<QueryNode>(resolved);
@@ -180,7 +195,8 @@ std::optional<ColumnDefinition> tryResolveColumnDefinition(const ColumnNode & co
     return std::nullopt;
 }
 
-std::optional<DictGetFunctionInfo> tryParseDictFunctionCall(const QueryTreeNodePtr & node, const ContextPtr & context)
+std::optional<DictGetFunctionInfo>
+tryParseDictFunctionCall(const QueryTreeNodePtr & node, const ContextPtr & context, ViewInspectionCache & cache)
 {
     const auto * function_node = node->as<FunctionNode>();
 
@@ -190,11 +206,11 @@ std::optional<DictGetFunctionInfo> tryParseDictFunctionCall(const QueryTreeNodeP
         if (!column_node)
             return std::nullopt;
 
-        auto column_definition = tryResolveColumnDefinition(*column_node, context);
+        auto column_definition = tryResolveColumnDefinition(*column_node, context, cache);
         if (!column_definition)
             return std::nullopt;
 
-        auto info = tryParseDictFunctionCall(column_definition->defining_expression, context);
+        auto info = tryParseDictFunctionCall(column_definition->defining_expression, context, cache);
         if (!info)
             return std::nullopt;
 
@@ -469,7 +485,7 @@ public:
 
         if (arguments[1]->as<ConstantNode>())
         {
-            if (auto info_lhs = tryParseDictFunctionCall(arguments[0], getContext()))
+            if (auto info_lhs = tryParseDictFunctionCall(arguments[0], getContext(), view_inspection_cache))
             {
                 dict_side = Side::LHS;
                 dictget_function_info = std::move(*info_lhs);
@@ -478,7 +494,7 @@ public:
 
         if (dict_side == Side::NONE && arguments[0]->as<ConstantNode>())
         {
-            if (auto info_rhs = tryParseDictFunctionCall(arguments[1], getContext()))
+            if (auto info_rhs = tryParseDictFunctionCall(arguments[1], getContext(), view_inspection_cache))
             {
                 dict_side = Side::RHS;
                 dictget_function_info = std::move(*info_rhs);
@@ -757,6 +773,9 @@ private:
     }
 
     std::optional<bool> create_temporary_table_granted;
+
+    /// Scoped to this visitor instance, i.e. one outer query: see tryResolveViewInnerQueryForInspection.
+    ViewInspectionCache view_inspection_cache;
 };
 
 }
