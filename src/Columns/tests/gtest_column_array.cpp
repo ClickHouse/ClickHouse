@@ -41,7 +41,7 @@ ColumnArray::MutablePtr createArray(std::vector<UInt64> data_values, std::vector
 ColumnArray::MutablePtr createDynamicArrayWithEmptyFirstRow()
 {
     auto data = ColumnDynamic::create();
-    data->insert(Field(UInt64(42)));
+    data->insert(Field(UInt64(1) << 40));
 
     auto offsets = ColumnArray::ColumnOffsets::create();
     offsets->insertValue(0);
