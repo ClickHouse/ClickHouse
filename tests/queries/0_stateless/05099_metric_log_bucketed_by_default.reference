@@ -1,0 +1,5 @@
+metrics	1
+with_buckets	128	constant
+CurrentMetric_Query	Int64	ALIAS	1	1
+ProfileEvent_Query	UInt64	ALIAS	1	1
+1	1

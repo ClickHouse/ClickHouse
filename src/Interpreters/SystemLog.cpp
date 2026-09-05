@@ -123,6 +123,12 @@ void flushAsyncTextLogsIfPossible()
         base_daemon->get().flushTextLogs();
 }
 
+/// The default schema of `system.metric_log`; see `docs/reference/system-tables/metric_log.mdx`.
+/// `bucketed` keeps every metric in a single `Map` column with the bucketed serialization,
+/// which is why the table has a few columns instead of thousands, while the per-metric
+/// `ALIAS` columns keep it query-compatible with the older `wide` schema.
+constexpr auto DEFAULT_METRIC_LOG_SCHEMA_TYPE = "bucketed";
+
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
@@ -290,7 +296,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
     if constexpr (std::is_same_v<TSystemLog, MetricLog>)
     {
-        auto schema = config.getString(config_prefix + ".schema_type", "wide");
+        auto schema = config.getString(config_prefix + ".schema_type", DEFAULT_METRIC_LOG_SCHEMA_TYPE);
         if (schema == "wide")
             return std::make_shared<TSystemLog>(context, log_settings);
 
@@ -301,7 +307,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
     }
     else if constexpr (std::is_same_v<TSystemLog, TransposedMetricLog>)
     {
-        auto schema = config.getString(config_prefix + ".schema_type", "wide");
+        auto schema = config.getString(config_prefix + ".schema_type", DEFAULT_METRIC_LOG_SCHEMA_TYPE);
         if (schema == "transposed" || schema == "transposed_with_wide_view" /* compatibility */)
             return std::make_shared<TSystemLog>(context, log_settings);
 
@@ -309,7 +315,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
     }
     else if constexpr (std::is_same_v<TSystemLog, BucketedMetricLog>)
     {
-        auto schema = config.getString(config_prefix + ".schema_type", "wide");
+        auto schema = config.getString(config_prefix + ".schema_type", DEFAULT_METRIC_LOG_SCHEMA_TYPE);
         if (schema == "bucketed")
             return std::make_shared<TSystemLog>(context, log_settings);
 
@@ -366,7 +372,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
 
     if (metric_log == nullptr && config.has("metric_log"))
     {
-        auto schema = config.getString("metric_log.schema_type", "wide");
+        auto schema = config.getString("metric_log.schema_type", DEFAULT_METRIC_LOG_SCHEMA_TYPE);
         if (schema == "transposed" || schema == "transposed_with_wide_view" /* compatibility */)
             transposed_metric_log = createSystemLog<TransposedMetricLog>(
                 global_context, "system", "metric_log", config, "metric_log", TransposedMetricLog::DESCRIPTION);

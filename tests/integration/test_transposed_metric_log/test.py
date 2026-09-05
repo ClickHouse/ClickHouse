@@ -55,7 +55,7 @@ def start_cluster():
         cluster.shutdown()
 
 def test_table_rotation(start_cluster):
-    # default wide mode
+    # the `wide` schema, requested explicitly by the config (the default is `bucketed`)
     node1.query("SYSTEM FLUSH LOGS")
     assert int(node1.query("select count() from system.metric_log").strip()) > 0
     assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log")
@@ -82,7 +82,7 @@ def test_table_rotation(start_cluster):
 
 
 def test_bucketed_schema(start_cluster):
-    # default wide mode
+    # the `wide` schema, requested explicitly by the config (the default is `bucketed`)
     node2.query("SYSTEM FLUSH LOGS")
     assert int(node2.query("select count() from system.metric_log").strip()) > 0
     assert "ProfileEvent_Query" in node2.query("SHOW CREATE TABLE system.metric_log")
@@ -103,6 +103,8 @@ def test_bucketed_schema(start_cluster):
     assert "max_buckets_in_map = 128" in create_query
     assert "map_buckets_strategy = 'constant'" in create_query
     assert "ALIAS metrics['ProfileEvent_Query']" in create_query
+    # The alias columns carry the documentation of the metric, as the `wide` schema does
+    assert "COMMENT 'Number of queries to be interpreted" in create_query
 
     assert int(node2.query("select count() from system.metric_log").strip()) > 0
     assert int(node2.query("select max(length(metrics)) from system.metric_log").strip()) > 0
