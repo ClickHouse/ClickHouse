@@ -478,7 +478,6 @@ test_consistant_parts_after_move_partition/test.py	78876
 test_query_runner/test.py	77992
 test_dictionaries_dependency_xml/test.py	77866
 test_s3_credentials_hardening/test.py	77079
-test_catboost_evaluate/test.py	76772
 test_client_auto_secure_port/test.py	76656
 test_keeper_force_recovery/test.py	75310
 test_file_schema_inference_cache/test.py	75203

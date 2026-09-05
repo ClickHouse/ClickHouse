@@ -420,8 +420,12 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
         if (isInnerTable(target_kind))
         {
             auto inner_table_id = getTargetTableID(target_kind, local_context);
+            /// `propagate_metadata_transaction` is false because the transaction can only be consumed once, so the DDL worker
+            /// commits it after all the inner tables are truncated. If the server dies in between, the entry is executed
+            /// again, which is safe: TRUNCATE is idempotent.
             InterpreterDropQuery::executeDropQuery(
-                ASTDropQuery::Kind::Truncate, getContext(), local_context, inner_table_id, /* sync= */ true);
+                ASTDropQuery::Kind::Truncate, getContext(), local_context, inner_table_id, /* sync= */ true,
+                /* ignore_sync_setting= */ false, /* need_ddl_guard= */ false, /* propagate_metadata_transaction= */ false);
         }
     }
 }

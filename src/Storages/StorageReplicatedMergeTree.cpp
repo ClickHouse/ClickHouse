@@ -7855,7 +7855,9 @@ void StorageReplicatedMergeTree::waitForLogEntryToBeProcessedIfNecessary(const R
                             "most likely because the replica was shut down.", error_context, entry.znode_name);
         }
     }
-    else if (query_context->getSettingsRef()[Setting::alter_sync] == 2)
+    /// Value 3 (wait only for active replicas) is a `SharedMergeTree` mode that `ReplicatedMergeTree`
+    /// does not have; here it waits for all replicas, like value 2.
+    else if (query_context->getSettingsRef()[Setting::alter_sync] == 2 || query_context->getSettingsRef()[Setting::alter_sync] == 3)
     {
         waitForAllReplicasToProcessLogEntry(zookeeper_path, entry, wait_for_inactive_timeout, watch_events, error_context);
     }
@@ -8699,7 +8701,9 @@ void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t 
     /// we have to wait
     auto zookeeper = getZooKeeper();
     Strings replicas;
-    if (mutations_sync == 2) /// wait for all replicas
+    /// Value 3 (wait only for active replicas) is a `SharedMergeTree` mode that `ReplicatedMergeTree`
+    /// does not have; here it waits for all replicas, like value 2.
+    if (mutations_sync == 2 || mutations_sync == 3) /// wait for all replicas
     {
         replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
         /// This replica should be first, to ensure that the mutation will be loaded into memory
