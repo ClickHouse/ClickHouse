@@ -272,9 +272,8 @@ bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 }
 
 
-bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool parseProjectionDeclarationBody(IParser::Pos & pos, Expected & expected, const String & name, ASTPtr & node)
 {
-    ParserIdentifier name_p;
     ParserProjectionSelectQuery query_p;
     ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
@@ -284,14 +283,10 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserExpressionWithOptionalArguments type_p;
     ParserNotEmptyExpressionList expression_list_p(/* allow_alias_without_as_keyword */ false);
     ParserKeyword s_with_settings(Keyword::WITH_SETTINGS);
-    ASTPtr name;
     ASTPtr query;
     ASTPtr index;
     ASTPtr type;
     ASTPtr with_settings;
-
-    if (!name_p.parse(pos, name, expected))
-        return false;
 
     if (s_lparen.ignore(pos, expected))
     {
@@ -330,7 +325,7 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     }
 
     auto projection = make_intrusive<ASTProjectionDeclaration>();
-    projection->name = name->as<ASTIdentifier &>().name();
+    projection->name = name;
     if (query)
         projection->set(projection->query, query);
     if (index)
@@ -342,6 +337,15 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     node = projection;
 
     return true;
+}
+
+bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier name_p;
+    ASTPtr name;
+    if (!name_p.parse(pos, name, expected))
+        return false;
+    return parseProjectionDeclarationBody(pos, expected, name->as<ASTIdentifier &>().name(), node);
 }
 
 bool ParserForeignKeyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -2966,7 +2970,7 @@ ENGINE = MergeTree ORDER BY x;
 The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`enable_adaptive_codec_selection`](/reference/settings/merge-tree-settings) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), each block is written with whichever codec would compress it smallest, chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type.
 
 <Note>
-Specialized codecs are currently chosen for integers up to 64 bits, enums, dates and times, `Decimal32`/`Decimal64`, `IPv4`, and `Float32`/`Float64`. Other columns select between the default codec and `NONE`.
+Specialized codecs are currently chosen for integers up to 64 bits, enums, dates and times, `Decimal32`/`Decimal64`, `IPv4`, and `Float32`/`Float64`. Other columns select between the default codec and `NONE` for their values.
 </Note>
 
 A block is never larger than the default codec would make it, and incompressible data is stored raw (compressing it would produce a slightly larger file that is slower to read). The work happens in the background, on merges and mutations, where the data is recompressed anyway. Insert speed is unaffected. Queries often get faster: less data is fetched from disk, every block a query reads must be decompressed first, and specialized codecs decompress faster than the default `LZ4`. Each block records the codec it was written with, so reading requires no setting, and the feature can be switched off at any time with all data remaining readable.

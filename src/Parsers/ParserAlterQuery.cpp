@@ -1367,7 +1367,7 @@ For other `ALTER` queries which only modify the metadata, you can use the [alter
 You can specify how long (in seconds) to wait for inactive replicas to execute all `ALTER` queries with the [replication_wait_for_inactive_replica_timeout](/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) setting.
 
 <Note>
-For all `ALTER` queries, if `alter_sync = 2` and some replicas are not active for more than the time, specified in the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
+For all `ALTER` queries, if `alter_sync = 2`, or `alter_sync = 3` on `ReplicatedMergeTree`, and some replicas are not active for more than the time, specified in the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
 </Note>
 
 ### Concurrent `ALTER` assignment on one table {#concurrent-alter-assignment-on-one-table}
@@ -2333,6 +2333,8 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
 The command changes the [sorting key](/reference/engines/table-engines/mergetree-family/mergetree) of the table to `new_expression` (an expression or a tuple of expressions). Primary key remains the same.
 
 The command is lightweight in a sense that it only changes metadata. To keep the property that data part rows are ordered by the sorting key expression you cannot add expressions containing existing columns to the sorting key (only columns added by the `ADD COLUMN` command in the same `ALTER` query, without default column value).
+
+For the same reason you cannot change the sort direction (`ASC` or `DESC`) of a sorting key column that `new_expression` keeps: the existing parts stay physically sorted in the direction the column had when they were written, and no regular data part records that direction. To use a different direction, create a new table with the desired `ORDER BY` and copy the data into it with `INSERT ... SELECT`.
 
 <Note>
 It only works for tables in the [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) family (including [replicated](/reference/engines/table-engines/mergetree-family/replication) tables).
