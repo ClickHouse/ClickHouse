@@ -25,13 +25,24 @@ struct OvercommitTrackerForTest : BaseTracker
         tracker = candidate;
     }
 
+    /// Ready once a query has been picked, which is the point from which a release can no longer be
+    /// missed: the picking thread holds `overcommit_m` from here until it enters the wait.
+    std::future<void> getSelectionFuture() { return query_selected.get_future(); }
+
 protected:
     void pickQueryToExcludeImpl() override
     {
         BaseTracker::picked_tracker = tracker;
+        /// One-shot: `reset` lets a tracker be picked again, and a second `set_value` would throw.
+        if (!selection_signalled.exchange(true))
+            query_selected.set_value();
     }
 
     MemoryTracker * tracker = nullptr;
+
+private:
+    std::promise<void> query_selected;
+    std::atomic<bool> selection_signalled = false;
 };
 
 using UserOvercommitTrackerForTest = OvercommitTrackerForTest<UserOvercommitTracker>;
@@ -491,12 +502,14 @@ static void out_of_range_waiting_time_test(UInt64 waiting_time)
 
     MemoryTracker waiting;
     waiting.setOvercommitWaitingTime(waiting_time);
+    auto query_selected = overcommit_tracker.getSelectionFuture();
     auto wait_result = std::async(std::launch::async, [&]
     {
         return overcommit_tracker.needToStopQuery(&waiting, 100);
     });
 
-    EXPECT_EQ(wait_result.wait_for(1000ms), std::future_status::timeout);
+    query_selected.wait();
+    EXPECT_EQ(wait_result.wait_for(100ms), std::future_status::timeout);
 
     overcommit_tracker.onQueryStop(&picked);
     EXPECT_EQ(wait_result.get(), OvercommitResult::NOT_ENOUGH_FREED);
