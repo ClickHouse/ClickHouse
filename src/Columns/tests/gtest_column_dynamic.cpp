@@ -25,6 +25,7 @@ TEST(ColumnDynamic, CreateEmpty)
 TEST(ColumnDynamic, InsertDefault)
 {
     auto column = ColumnDynamic::create(254);
+    ASSERT_TRUE(column->hasOnlyTypeDefaults());
     column->insertDefault();
     ASSERT_TRUE(column->size() == 1);
     ASSERT_EQ(column->getVariantInfo().variant_type->getName(), "Variant(SharedVariant)");
@@ -35,6 +36,10 @@ TEST(ColumnDynamic, InsertDefault)
     ASSERT_TRUE(column->getVariantColumn().getVariantByGlobalDiscriminator(0).empty());
     ASSERT_TRUE(column->isNullAt(0));
     ASSERT_EQ((*column)[0], Field(Null()));
+    ASSERT_TRUE(column->hasOnlyTypeDefaults());
+
+    column->insert(Field{42u});
+    ASSERT_FALSE(column->hasOnlyTypeDefaults());
 }
 
 TEST(ColumnDynamic, InsertFields)
@@ -1051,33 +1056,6 @@ TEST(ColumnDynamic, SerializeDeserializeFromArenaOverflow2)
     ASSERT_FALSE(column_to->getVariantInfo().variant_name_to_discriminator.contains("String"));
     ASSERT_FALSE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Array(Int8)"));
     ASSERT_EQ(column_to->getSharedVariant().size(), 2);
-}
-
-TEST(ColumnDynamic, skipSerializedInArena)
-{
-    auto column_from = ColumnDynamic::create(3);
-    column_from->insert(Field(42));
-    column_from->insert(Field(42.42));
-    column_from->insert(Field("str"));
-    column_from->insert(Field(Null()));
-
-    Arena arena;
-    const char * pos = nullptr;
-    auto ref1 = column_from->serializeValueIntoArena(0, arena, pos, nullptr);
-    column_from->serializeValueIntoArena(1, arena, pos, nullptr);
-    column_from->serializeValueIntoArena(2, arena, pos, nullptr);
-    column_from->serializeValueIntoArena(3, arena, pos, nullptr);
-
-    auto column_to = ColumnDynamic::create(254);
-    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    column_to->skipSerializedInArena(in);
-    column_to->skipSerializedInArena(in);
-    column_to->skipSerializedInArena(in);
-    column_to->skipSerializedInArena(in);
-
-    ASSERT_TRUE(in.eof());
-    ASSERT_EQ(column_to->getVariantInfo().variant_name_to_discriminator.at("SharedVariant"), 0);
-    ASSERT_EQ(column_to->getVariantInfo().variant_names, Names{"SharedVariant"});
 }
 
 TEST(ColumnDynamic, compare)

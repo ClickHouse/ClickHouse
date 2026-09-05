@@ -107,7 +107,7 @@ The embedded SQL console lets you query your ClickHouse data without leaving Fab
 
 ### Saved queries {#saved-queries}
 
-Save any query with a name to reuse it later. Saved queries are stored with the item, so everyone in the workspace works from the same set.
+Save any query with a name to reuse it later. In public preview, saved queries are personal to each user; shared saved queries for collaboration are on the roadmap.
 
 ### Go further with ClickHouse SQL {#go-further-with-clickhouse-sql}
 
@@ -260,6 +260,36 @@ The ClickHouse workload is in public preview. The limitations below are the curr
 * **Removing or downgrading a user in Fabric does not revoke their ClickHouse access.** Because roles are only applied when a user opens a ClickHouse item, a user who is removed from the workspace or downgraded may retain their existing access on the ClickHouse Cloud side, and if they never open the item again that change never propagates at all. To revoke access immediately and reliably, remove the user from the organization in the ClickHouse Cloud console.
 * **Workspace-level access.** Everyone in the workspace can use its ClickHouse items. Granular, per-table permission sync from OneLake is currently not supported.
 * **Console SSO requires an email on your Entra profile.** ClickHouse Cloud users need an email address; if your Microsoft Entra profile has none set, signing in to the Cloud console will fail.
+
+## Troubleshooting {#troubleshooting}
+
+### Email verification fails when opening a ClickHouse item {#email-verification-fails}
+
+**Error codes:** `email_not_found`, `email_domain_unverified`
+
+**Cause:** Provisioning a ClickHouse user requires an email address from a verified domain on the Microsoft Entra account. Member accounts always qualify, including those in personal or test tenants that only have the default `.onmicrosoft.com` domain. These errors almost always mean you are signed in as a **guest (B2B) account**:
+
+- `email_not_found` — your guest profile in this tenant has no email address set.
+- `email_domain_unverified` — your email belongs to your home tenant, which is not a
+  verified domain in the tenant you are using Fabric in.
+
+**Resolution:** Use a member account of the tenant, or contact your Fabric administrator to confirm your Microsoft Entra profile has an email address on one of the tenant's verified domains. See [Managing custom domain names in Microsoft Entra ID](https://learn.microsoft.com/en-us/entra/identity/users/domains-manage).
+
+### Cannot sign in to the ClickHouse Cloud console {#cannot-sign-in-to-the-clickhouse-cloud-console}
+
+**Cause:** ClickHouse Cloud users require an email address. Sign-in from the workload fails if the Entra profile has no email set, and first-time console sign-in sends a verification code, so the address must have a real inbox. Default `.onmicrosoft.com` addresses often have no mailbox. The in-Fabric experience is unaffected; this only gates **Open in ClickHouse Cloud** and marketplace checkout.
+
+**Resolution:** Contact your Fabric administrator to add an email address with an active inbox to your Microsoft Entra profile, then retry.
+
+### Access denied when opening an item {#access-denied-when-opening-an-item}
+
+**Error code:** `item_access_denied`
+
+**Cause:** The signed-in user does not have access to the Fabric item, or a recent workspace role change has not been applied yet.
+
+**Resolution:** Confirm you are a member of the workspace with the right role. Role changes take effect the next time you open a ClickHouse item.
+
+
 
 ## Reference {#reference}
 

@@ -31,6 +31,9 @@ public:
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return any_take_last_row; }
 
+    /// Every result class walks the probe block by ascending row index.
+    bool preservesLeftBlockOrder() const override { return true; }
+
     bool isCloneSupported() const override
     {
         return getTotals().empty() && total_rows_to_join == 0;

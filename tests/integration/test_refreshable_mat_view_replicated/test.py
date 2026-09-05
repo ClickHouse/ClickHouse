@@ -34,7 +34,7 @@ node2 = cluster.add_instance(
 nodes = [node, node2]
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
         cluster.start()
