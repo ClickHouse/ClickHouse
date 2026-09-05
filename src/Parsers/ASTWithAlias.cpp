@@ -56,12 +56,8 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
         {
             ostr.write('(');
             frame.need_parens = false;
-            /// The `(` we just emitted already isolates this `expr AS alias` from any
-            /// enclosing function-argument list, so a descendant IN operator must not add
-            /// its own isolating parens on top. Clear `current_function` (mirroring
-            /// `decideParensEmission`), otherwise `f(... IN ... AS a ...)` formats as
-            /// `((... IN ...) AS a)` first, but the re-parse marks the IN `parenthesized`
-            /// and the second format drops the inner parens -> `Inconsistent AST formatting`.
+            /// The `(` just emitted already isolates this `expr AS alias` from an enclosing
+            /// function-argument list, so a descendant IN must not add isolating parens of its own.
             frame.current_function = nullptr;
             frame.list_element_index = 0;
         }
