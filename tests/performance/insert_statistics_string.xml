@@ -1,0 +1,164 @@
+<test>
+    <!-- The no-statistics baselines and per-statistic benchmarks use separate
+         target tables so measured queries do not share state. -->
+    <settings>
+        <allow_statistics>1</allow_statistics>
+        <allow_suspicious_low_cardinality_types>1</allow_suspicious_low_cardinality_types>
+        <max_insert_threads>1</max_insert_threads>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>statistic</name>
+            <values>
+                <value>basic</value>
+                <value>countmin</value>
+                <value>uniq</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE t_statistics_low_cardinality_string_src(
+            c1 UInt64,
+            c2 String,
+            c3 LowCardinality(String),
+            c4 FixedString(16),
+            c5 LowCardinality(FixedString(16)))
+        ENGINE = Memory;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_statistics_string_regular_none(
+            c1 UInt64,
+            c2 String)
+        ENGINE = MergeTree ORDER BY c1 SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_statistics_string_low_cardinality_none(
+            c1 UInt64,
+            c2 LowCardinality(String))
+        ENGINE = MergeTree ORDER BY c1 SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_statistics_fixed_string_regular_none(
+            c1 UInt64,
+            c2 FixedString(16))
+        ENGINE = MergeTree ORDER BY c1 SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_statistics_fixed_string_low_cardinality_none(
+            c1 UInt64,
+            c2 LowCardinality(FixedString(16)))
+        ENGINE = MergeTree ORDER BY c1 SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_statistics_string_regular_{statistic}(
+            c1 UInt64,
+            c2 String STATISTICS({statistic}))
+        ENGINE = MergeTree ORDER BY c1 SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_statistics_string_low_cardinality_{statistic}(
+            c1 UInt64,
+            c2 LowCardinality(String) STATISTICS({statistic}))
+        ENGINE = MergeTree ORDER BY c1 SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_statistics_fixed_string_regular_{statistic}(
+            c1 UInt64,
+            c2 FixedString(16) STATISTICS({statistic}))
+        ENGINE = MergeTree ORDER BY c1 SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_statistics_fixed_string_low_cardinality_{statistic}(
+            c1 UInt64,
+            c2 LowCardinality(FixedString(16)) STATISTICS({statistic}))
+        ENGINE = MergeTree ORDER BY c1 SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0;
+    </create_query>
+
+    <fill_query>
+        INSERT INTO t_statistics_low_cardinality_string_src
+        SELECT
+            number,
+            toString(number % 100000),
+            toString(number % 100000),
+            toFixedString(leftPad(toString(number % 100000), 16, '0'), 16),
+            toFixedString(leftPad(toString(number % 100000), 16, '0'), 16)
+        FROM numbers(1000000)
+    </fill_query>
+
+    <fill_query>SYSTEM STOP MERGES t_statistics_string_regular_none</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_statistics_string_low_cardinality_none</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_statistics_fixed_string_regular_none</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_statistics_fixed_string_low_cardinality_none</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_statistics_string_regular_{statistic}</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_statistics_string_low_cardinality_{statistic}</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_statistics_fixed_string_regular_{statistic}</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_statistics_fixed_string_low_cardinality_{statistic}</fill_query>
+
+    <query>
+        INSERT INTO t_statistics_string_regular_none
+        SELECT c1, c2 FROM t_statistics_low_cardinality_string_src
+        SETTINGS materialize_statistics_on_insert = 1
+    </query>
+
+    <query>
+        INSERT INTO t_statistics_string_low_cardinality_none
+        SELECT c1, c3 FROM t_statistics_low_cardinality_string_src
+        SETTINGS materialize_statistics_on_insert = 1
+    </query>
+
+    <query>
+        INSERT INTO t_statistics_fixed_string_regular_none
+        SELECT c1, c4 FROM t_statistics_low_cardinality_string_src
+        SETTINGS materialize_statistics_on_insert = 1
+    </query>
+
+    <query>
+        INSERT INTO t_statistics_fixed_string_low_cardinality_none
+        SELECT c1, c5 FROM t_statistics_low_cardinality_string_src
+        SETTINGS materialize_statistics_on_insert = 1
+    </query>
+
+    <query>
+        INSERT INTO t_statistics_string_regular_{statistic}
+        SELECT c1, c2 FROM t_statistics_low_cardinality_string_src
+        SETTINGS materialize_statistics_on_insert = 1
+    </query>
+
+    <query>
+        INSERT INTO t_statistics_string_low_cardinality_{statistic}
+        SELECT c1, c3 FROM t_statistics_low_cardinality_string_src
+        SETTINGS materialize_statistics_on_insert = 1
+    </query>
+
+    <query>
+        INSERT INTO t_statistics_fixed_string_regular_{statistic}
+        SELECT c1, c4 FROM t_statistics_low_cardinality_string_src
+        SETTINGS materialize_statistics_on_insert = 1
+    </query>
+
+    <query>
+        INSERT INTO t_statistics_fixed_string_low_cardinality_{statistic}
+        SELECT c1, c5 FROM t_statistics_low_cardinality_string_src
+        SETTINGS materialize_statistics_on_insert = 1
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS t_statistics_string_regular_none</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_statistics_string_low_cardinality_none</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_statistics_fixed_string_regular_none</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_statistics_fixed_string_low_cardinality_none</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_statistics_string_regular_{statistic}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_statistics_string_low_cardinality_{statistic}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_statistics_fixed_string_regular_{statistic}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_statistics_fixed_string_low_cardinality_{statistic}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_statistics_low_cardinality_string_src</drop_query>
+</test>
