@@ -359,17 +359,34 @@ UInt64 hashTypedValue(
     bool is_float,
     const IColumn & column,
     size_t row,
-    WriteBufferFromOwnString & value)
+    WriteBufferFromOwnString & value,
+    const FormatSettings & format_settings)
 {
     value.restart();
+    static constexpr std::string_view namespace_name = "jsonbf_v1";
+    writeBinaryLittleEndian(static_cast<UInt64>(namespace_name.size()), value);
+    writeString(namespace_name, value);
+    writeBinary(static_cast<UInt8>(role), value);
+    writeBinary(static_cast<UInt8>(JSONBloomDomain::Typed), value);
+    writeBinaryLittleEndian(static_cast<UInt64>(path.size()), value);
+    writeString(path, value);
+    writeBinaryLittleEndian(static_cast<UInt64>(type_name.size()), value);
+    writeString(type_name, value);
+    const size_t value_size_offset = value.count();
+    writeBinaryLittleEndian(UInt64(0), value);
     if (is_float && column.getFloat64(row) == 0)
     {
         const auto zero = type.createColumnConst(1, Field(0.0))->convertToFullColumnIfConst();
-        serialization.serializeBinary(*zero, 0, value, {});
+        serialization.serializeBinary(*zero, 0, value, format_settings);
     }
     else
-        serialization.serializeBinary(column, row, value, {});
-    return hashToken(path, role, JSONBloomDomain::Typed, type_name, value.stringView());
+        serialization.serializeBinary(column, row, value, format_settings);
+    UInt64 value_size = value.count() - value_size_offset - sizeof(UInt64);
+    transformEndianness<std::endian::little>(value_size);
+    const auto token = value.stringView();
+    /// Serialization can grow the buffer, so locate the size field after writing the value.
+    memcpy(value.position() - token.size() + value_size_offset, &value_size, sizeof(value_size));
+    return XXH_INLINE_XXH3_64bits(token.data(), token.size());
 }
 
 const std::vector<DataTypePtr> & getDynamicScalarTypes();
@@ -388,22 +405,36 @@ String appendPath(std::string_view prefix, std::string_view suffix)
     return Nested::concatenateName(String(prefix), String(suffix));
 }
 
-String appendMapKey(std::string_view path, const DataTypePtr & key_type, const IColumn & key_column, size_t row)
+std::string_view appendMapKey(
+    std::string_view path,
+    const ISerialization & serialization,
+    std::string_view type_name,
+    const IColumn & key_column,
+    size_t row,
+    WriteBufferFromOwnString & encoded_key,
+    WriteBufferFromOwnString & result,
+    const FormatSettings & format_settings)
 {
-    WriteBufferFromOwnString encoded_key;
-    key_type->getDefaultSerialization()->serializeBinary(key_column, row, encoded_key, {});
+    encoded_key.restart();
+    serialization.serializeBinary(key_column, row, encoded_key, format_settings);
 
-    WriteBufferFromOwnString result;
+    result.restart();
     writeString(path, result);
     writeChar('\0', result);
     writeChar('M', result);
-    const String & type_name = key_type->getName();
     writeBinaryLittleEndian(static_cast<UInt64>(type_name.size()), result);
     writeString(type_name, result);
-    const String & key = encoded_key.str();
+    const auto key = encoded_key.stringView();
     writeBinaryLittleEndian(static_cast<UInt64>(key.size()), result);
     writeString(key, result);
-    return result.str();
+    return result.stringView();
+}
+
+String appendMapKey(std::string_view path, const DataTypePtr & key_type, const IColumn & key_column, size_t row)
+{
+    WriteBufferFromOwnString encoded_key;
+    WriteBufferFromOwnString result;
+    return String(appendMapKey(path, *key_type->getDefaultSerialization(), key_type->getName(), key_column, row, encoded_key, result, {}));
 }
 
 class JSONBloomExtractor
@@ -431,6 +462,30 @@ private:
         bool has_dynamic_structure = false;
         bool is_dynamic_complex = false;
         bool is_known_dynamic_scalar = false;
+    };
+
+    struct PathInfo
+    {
+        String relative_path;
+        String logical_path;
+        String hash_path;
+        DataTypePtr type;
+        ColumnPtr owned_column;
+        const IColumn * column = nullptr;
+        const TypeInfo * type_info = nullptr;
+        std::vector<const TypeInfo *> dynamic_type_infos;
+        bool is_dynamic = false;
+        bool should_visit = false;
+        bool should_index = false;
+        bool has_json_path_descendants = false;
+    };
+
+    struct ObjectPlan
+    {
+        String hash_prefix;
+        String logical_prefix;
+        VectorWithMemoryTracking<PathInfo> paths;
+        const DataTypeObject * type = nullptr;
     };
 
     const TypeInfo & getTypeInfo(const DataTypePtr & type, SerializationPtr serialization = {})
@@ -462,109 +517,97 @@ private:
         size_t start_row,
         size_t num_rows)
     {
-        struct PathInfo
+        auto prepare_paths = [&]
         {
-            String logical_path;
-            String hash_path;
-            DataTypePtr type;
-            ColumnPtr owned_column;
-            const IColumn * column = nullptr;
-            const TypeInfo * type_info = nullptr;
-            std::vector<const TypeInfo *> dynamic_type_infos;
-            bool is_dynamic = false;
-            bool should_visit = false;
-            bool should_index = false;
-            bool has_json_path_descendants = false;
-        };
+            const auto & typed_path_types = type_object.getTypedPaths();
+            const auto & typed_path_columns = column_object.getTypedPaths();
+            const auto & dynamic_path_columns = column_object.getDynamicPaths();
+            VectorWithMemoryTracking<PathInfo> paths;
+            paths.reserve(typed_path_types.size() + dynamic_path_columns.size());
 
-        const auto & typed_path_types = type_object.getTypedPaths();
-        const auto & typed_path_columns = column_object.getTypedPaths();
-        const auto & dynamic_path_columns = column_object.getDynamicPaths();
-        VectorWithMemoryTracking<PathInfo> paths;
-        paths.reserve(typed_path_types.size() + dynamic_path_columns.size());
+            auto initialize_dynamic_type_infos = [&](PathInfo & entry)
+            {
+                const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*entry.column);
+                const auto & variant_type = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type);
+                entry.dynamic_type_infos.reserve(variant_type.getVariants().size());
+                for (const auto & variant : variant_type.getVariants())
+                    entry.dynamic_type_infos.push_back(&getTypeInfo(variant));
+            };
 
-        auto initialize_dynamic_type_infos = [&](PathInfo & entry)
-        {
-            const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*entry.column);
-            const auto & variant_type = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type);
-            entry.dynamic_type_infos.reserve(variant_type.getVariants().size());
-            for (const auto & variant : variant_type.getVariants())
-                entry.dynamic_type_infos.push_back(&getTypeInfo(variant));
-        };
+            for (const auto & [path, type] : typed_path_types)
+            {
+                const auto & column = typed_path_columns.at(path);
+                const auto full_type = recursiveRemoveLowCardinality(type);
+                const auto full_column = recursiveRemoveLowCardinality(column);
+                const auto value_type = removeNullableOrLowCardinalityNullable(full_type);
+                const bool is_dynamic = DB::isDynamic(value_type);
+                auto logical_path = appendPath(logical_prefix, path);
+                auto hash_path = appendPath(hash_prefix, path);
+                const bool should_visit = path_matcher.shouldVisit(logical_path);
+                const bool should_index = path_matcher.shouldIndex(logical_path);
+                const auto & type_info = getTypeInfo(value_type);
+                paths.push_back(
+                    {path,
+                     std::move(logical_path),
+                     std::move(hash_path),
+                     full_type,
+                     full_column,
+                     full_column.get(),
+                     &type_info,
+                     {},
+                     is_dynamic,
+                     should_visit,
+                     should_index,
+                     type_info.has_json_path_descendants});
+                if (is_dynamic)
+                    initialize_dynamic_type_infos(paths.back());
+            }
 
-        for (const auto & [path, type] : typed_path_types)
-        {
-            const auto & column = typed_path_columns.at(path);
-            const auto full_type = recursiveRemoveLowCardinality(type);
-            const auto full_column = recursiveRemoveLowCardinality(column);
-            const auto value_type = removeNullableOrLowCardinalityNullable(full_type);
-            const bool is_dynamic = DB::isDynamic(value_type);
-            auto logical_path = appendPath(logical_prefix, path);
-            auto hash_path = appendPath(hash_prefix, path);
-            const bool should_visit = path_matcher.shouldVisit(logical_path);
-            const bool should_index = path_matcher.shouldIndex(logical_path);
-            const auto & type_info = getTypeInfo(value_type);
-            paths.push_back(
-                {std::move(logical_path),
-                 std::move(hash_path),
-                 full_type,
-                 full_column,
-                 full_column.get(),
-                 &type_info,
-                 {},
-                 is_dynamic,
-                 should_visit,
-                 should_index,
-                 type_info.has_json_path_descendants});
-            if (is_dynamic)
+            for (const auto & [path, column] : dynamic_path_columns)
+            {
+                auto logical_path = appendPath(logical_prefix, path);
+                auto hash_path = appendPath(hash_prefix, path);
+                const bool should_visit = path_matcher.shouldVisit(logical_path);
+                const bool should_index = path_matcher.shouldIndex(logical_path);
+                paths.push_back(
+                    {path,
+                     std::move(logical_path),
+                     std::move(hash_path),
+                     nullptr,
+                     column,
+                     column.get(),
+                     nullptr,
+                     {},
+                     true,
+                     should_visit,
+                     should_index,
+                     false});
                 initialize_dynamic_type_infos(paths.back());
-        }
+            }
 
-        for (const auto & [path, column] : dynamic_path_columns)
+            return paths;
+        };
+
+        ObjectPlan temporary_plan;
+        /// Shared values are deserialized into mutable temporary columns whose paths can change between rows.
+        auto & plan = shared_value_depth ? temporary_plan : object_plans[&column_object];
+        if (plan.type != &type_object || plan.logical_prefix != logical_prefix)
         {
-            auto logical_path = appendPath(logical_prefix, path);
-            auto hash_path = appendPath(hash_prefix, path);
-            const bool should_visit = path_matcher.shouldVisit(logical_path);
-            const bool should_index = path_matcher.shouldIndex(logical_path);
-            paths.push_back(
-                {std::move(logical_path),
-                 std::move(hash_path),
-                 nullptr,
-                 column,
-                 column.get(),
-                 nullptr,
-                 {},
-                 true,
-                 should_visit,
-                 should_index,
-                 false});
-            initialize_dynamic_type_infos(paths.back());
+            plan.hash_prefix = hash_prefix;
+            plan.logical_prefix = logical_prefix;
+            plan.paths = prepare_paths();
+            plan.type = &type_object;
         }
-
-        UnorderedMapWithMemoryTracking<String, SerializationPtr> object_serializations_cache;
-        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> shared_columns_cache;
+        else if (plan.hash_prefix != hash_prefix)
+        {
+            for (auto & path : plan.paths)
+                path.hash_path = appendPath(hash_prefix, path.relative_path);
+            plan.hash_prefix = hash_prefix;
+        }
+        auto & paths = plan.paths;
 
         const auto & shared_data_offsets = column_object.getSharedDataOffsets();
         const auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
-        const FormatSettings format_settings;
-
-        auto emit_shared = [&](std::string_view hash_path, std::string_view logical_path, bool should_index, std::string_view value_data)
-        {
-            ReadBufferFromMemory buffer(value_data);
-            auto [type, serialization] = decodeJSONDataType(buffer, object_serializations_cache);
-            const auto & type_info = getTypeInfo(type, serialization);
-            if (type_info.which.isNothing())
-                return;
-
-            auto [column_it, inserted] = shared_columns_cache.try_emplace(type_info.name);
-            if (inserted)
-                column_it->second = type->createColumn();
-
-            auto & temporary_column = *column_it->second;
-            serialization->deserializeBinary(temporary_column, buffer, format_settings);
-            emitValue(hash_path, logical_path, role, type, temporary_column, 0, true, type_info, should_index);
-            temporary_column.popBack(1);
-        };
 
         auto emit_path = [&](PathInfo & entry, size_t row)
         {
@@ -586,8 +629,8 @@ private:
 
             if (discriminator == dynamic_column.getSharedVariantDiscriminator())
             {
-                emit_shared(
-                    entry.hash_path, entry.logical_path, entry.should_index, dynamic_column.getSharedVariant().getDataAt(variant_row));
+                emitSharedValue(
+                    entry.hash_path, entry.logical_path, role, entry.should_index, dynamic_column.getSharedVariant().getDataAt(variant_row));
                 return;
             }
 
@@ -619,13 +662,39 @@ private:
                 const auto logical_path = appendPath(logical_prefix, path);
                 if (!path_matcher.shouldVisit(logical_path))
                     continue;
-                emit_shared(
+                emitSharedValue(
                     appendPath(hash_prefix, path),
                     logical_path,
+                    role,
                     path_matcher.shouldIndex(logical_path),
                     shared_data_values->getDataAt(shared_index));
             }
         }
+    }
+
+    void emitSharedValue(
+        std::string_view hash_path,
+        std::string_view logical_path,
+        JSONBloomRole role,
+        bool should_index,
+        std::string_view value_data)
+    {
+        ReadBufferFromMemory buffer(value_data);
+        auto [type, serialization] = decodeJSONDataType(buffer, serializations_cache);
+        const auto & type_info = getTypeInfo(type, serialization);
+        if (type_info.which.isNothing())
+            return;
+
+        auto & available_columns = shared_columns_cache[type_info.name];
+        auto column = available_columns.empty() ? type->createColumn() : std::move(available_columns.back());
+        if (!available_columns.empty())
+            available_columns.pop_back();
+        serialization->deserializeBinary(*column, buffer, format_settings);
+        ++shared_value_depth;
+        emitValue(hash_path, logical_path, role, type, *column, 0, true, type_info, should_index);
+        --shared_value_depth;
+        column->popBack(1);
+        available_columns.push_back(std::move(column));
     }
 
     void emitDynamic(
@@ -645,13 +714,7 @@ private:
 
         if (discriminator == dynamic_column.getSharedVariantDiscriminator())
         {
-            ReadBufferFromMemory buffer(dynamic_column.getSharedVariant().getDataAt(variant_row));
-            auto [type, serialization] = decodeJSONDataType(buffer, serializations_cache);
-            const auto & type_info = getTypeInfo(type, serialization);
-
-            auto column = type->createColumn();
-            serialization->deserializeBinary(*column, buffer, {});
-            emitValue(hash_path, logical_path, role, type, *column, 0, true, type_info, should_index);
+            emitSharedValue(hash_path, logical_path, role, should_index, dynamic_column.getSharedVariant().getDataAt(variant_row));
             return;
         }
 
@@ -725,10 +788,14 @@ private:
         const size_t begin = offsets[static_cast<ssize_t>(row) - 1];
         const size_t end = offsets[row];
         const auto & value_type_info = getTypeInfo(removeJSONBloomWrappers(value_type));
+        const auto key_type_name = key_type->getName();
+        const auto key_serialization = key_type->getDefaultSerialization();
+        WriteBufferFromOwnString encoded_key;
+        WriteBufferFromOwnString key_path;
 
         for (size_t element = begin; element != end; ++element)
             emitValue(
-                appendMapKey(hash_path, key_type, *full_keys, element),
+                appendMapKey(hash_path, *key_serialization, key_type_name, *full_keys, element, encoded_key, key_path, format_settings),
                 logical_path,
                 JSONBloomRole::MapValue,
                 value_type,
@@ -786,7 +853,7 @@ private:
             hashes.insert(unsupportedDynamicTypeHash(path, role));
 
         hashes.insert(hashTypedValue(
-            path, role, *type, *type_info.serialization, type_info.name, type_info.which.isFloat(), column, row, value_buffer));
+            path, role, *type, *type_info.serialization, type_info.name, type_info.which.isFloat(), column, row, value_buffer, format_settings));
     }
 
     void emitValue(
@@ -863,8 +930,12 @@ private:
     HashSet<UInt64> & hashes;
     const JSONBloomPathMatcher & path_matcher;
     UnorderedMapWithMemoryTracking<String, SerializationPtr> serializations_cache;
+    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<MutableColumnPtr>> shared_columns_cache;
     UnorderedMapWithMemoryTracking<const IDataType *, TypeInfo> type_infos;
+    UnorderedMapWithMemoryTracking<const ColumnObject *, ObjectPlan> object_plans;
+    size_t shared_value_depth = 0;
     WriteBufferFromOwnString value_buffer;
+    const FormatSettings format_settings;
 };
 
 bool hashMatchesFilter(const BloomFilterPtr & bloom_filter, UInt64 hash, size_t hash_functions)
@@ -1220,7 +1291,7 @@ bool appendTypedProbe(
     const String type_name = target_type->getName();
     WriteBufferFromOwnString value_buffer;
     hashes.push_back(hashTypedValue(
-        path, role, *target_type, *serialization, type_name, WhichDataType(target_type).isFloat(), *column, 0, value_buffer));
+        path, role, *target_type, *serialization, type_name, WhichDataType(target_type).isFloat(), *column, 0, value_buffer, {}));
     return true;
 }
 
