@@ -474,7 +474,7 @@ You can use the [alter_sync](/reference/settings/session-settings/alter#alter_sy
 You can specify how long (in seconds) to wait for inactive replicas to execute `TRUNCATE` queries with the [replication_wait_for_inactive_replica_timeout](/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) setting.
 
 <Note>
-If the `alter_sync` is set to `2` and some replicas are not active for more than the time, specified by the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
+If the `alter_sync` is set to `2`, or to `3` on `ReplicatedMergeTree`, and some replicas are not active for more than the time, specified by the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
 </Note>
 
 The `TRUNCATE TABLE` query is **not supported** for the following table engines:
