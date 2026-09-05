@@ -152,6 +152,40 @@ enum class DateRoundingInterval : UInt8
     ISOYear,
 };
 
+/** The preimage endpoints below are UTC seconds, and `optimize_time_filter_with_preimage` renders them
+  * as untyped literals that the comparison re-parses against the column type. An endpoint the column
+  * type cannot represent saturates on that re-parse - `Date` clamps to `2149-06-06`, `DateTime` to
+  * `2106-02-07 06:28:15` - or throws `DECIMAL_OVERFLOW` for `DateTime64`. The rewrite compares
+  * strictly against the *exclusive* upper endpoint, so a saturated endpoint lands on a real, storable
+  * value and the boundary rows flip: `toYear(d) = 2149` loses `2149-06-06`, `toYear(d) != 2149`
+  * returns it as a phantom, and `toYear(d) >= 2150` returns rows no row can satisfy. Decline instead.
+  */
+inline bool civilTimePreimageFitsColumnType(const IDataType & type, Int64 start_time, Int64 end_time)
+{
+    static constexpr Int64 seconds_per_day = 86400;
+
+    if (isDate(type))
+        return start_time >= 0 && end_time <= Int64(DATE_LUT_MAX_DAY_NUM) * seconds_per_day;
+
+    /// `Date32` spans `0000-01-01` to `9999-12-31`, wider than every preimage this can produce.
+    if (isDate32(type))
+        return start_time >= Int64(DATE_LUT_MIN_EXTEND_DAY_NUM) * seconds_per_day
+            && end_time <= Int64(DATE_LUT_MAX_EXTEND_DAY_NUM) * seconds_per_day;
+
+    if (isDateTime(type))
+        return start_time >= 0 && end_time <= Int64(std::numeric_limits<UInt32>::max());
+
+    if (const auto * date_time64_type = checkAndGetDataType<DataTypeDateTime64>(&type))
+    {
+        /// The whole seconds the scaled `Int64` tick count can still hold.
+        const Int64 max_seconds
+            = std::numeric_limits<Int64>::max() / DecimalUtils::scaleMultiplier<Int64>(date_time64_type->getScale());
+        return start_time >= -max_seconds && end_time <= max_seconds;
+    }
+
+    return false;
+}
+
 /// A `DateTime` without an explicit time zone keeps the one captured when the type was created, but
 /// literals compared against such a column are parsed in the session one.
 inline const DateLUTImpl & preimageParseTimeZone(const DataTypeDateTime & type)
@@ -1826,7 +1860,12 @@ struct ToYearImpl
         auto end_time = date_lut.addYears(start_time, 1);
 
         if (isDateOrDate32(type) || isDateTime(type) || isDateTime64(type))
+        {
+            if (!civilTimePreimageFitsColumnType(type, start_time, end_time))
+                return nullptr;
+
             return std::make_shared<FieldInterval>(Field(start_time), Field(end_time));
+        }
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
@@ -2879,7 +2918,12 @@ struct ToYYYYMMImpl
         auto end_time = date_lut.addMonths(start_time, 1);
 
         if (isDateOrDate32(type) || isDateTime(type) || isDateTime64(type))
+        {
+            if (!civilTimePreimageFitsColumnType(type, start_time, end_time))
+                return nullptr;
+
             return std::make_shared<FieldInterval>(Field(start_time), Field(end_time));
+        }
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",

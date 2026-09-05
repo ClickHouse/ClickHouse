@@ -1,0 +1,30 @@
+3
+3
+1
+1
+0
+0
+4
+4
+2
+2
+2
+DateTime at its maximum
+3
+3
+0
+2
+DateTime64 no longer throws
+2
+2
+2
+1
+the rewrite still applies away from the type maximum
+3
+3
+1
+0
+Date32 spans the whole representable range
+2
+2
+1
