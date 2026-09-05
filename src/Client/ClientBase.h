@@ -24,6 +24,7 @@
 #include <atomic>
 #include <filesystem>
 #include <functional>
+#include <iostream>
 #include <optional>
 #include <string_view>
 #include <string>
@@ -283,6 +284,17 @@ private:
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
     bool receiveEndOfQueryForInsert();
     void cancelQuery();
+
+    /// Print an interactive message (a line to output_stream) through the bounded best-effort
+    /// path of std_out, so a terminal that stopped draining cannot hang the client on an
+    /// out-of-band print - see the definition.
+    void printMessageBestEffort(std::string_view message);
+
+    /// Print an interactive cancellation diagnostic (e.g. "Query was cancelled.") without risking
+    /// a hang when the sink of output_stream is itself the stuck terminal the cancellation is
+    /// fighting with - see the definition.
+    void printCancellationMessage(std::string_view message);
+
     bool sendCancel(std::exception_ptr exception_ptr = nullptr);
 
     void onProgress(const Progress & value);
@@ -304,11 +316,25 @@ private:
     void sendExternalTables(ASTPtr parsed_query);
 
     void initOutputFormat(const Block & block, ASTPtr parsed_query);
-    void initLogsOutputStream();
+    /// Returns false when the log sink is unavailable because the interruptible open of an explicit
+    /// --server_logs_file was abandoned on Ctrl+C; the caller then skips the diagnostics, but the
+    /// query keeps going - this sink is not the result of the query.
+    /// `wait_for_sink = false` makes acquiring an explicit --server_logs_file fail-close: the open
+    /// becomes a plain availability check that never waits for a FIFO reader. It must be used from
+    /// every call site that runs with the interrupt handler stopped (the post-query epilogue),
+    /// where a wait could not be abandoned by a Ctrl+C and would hang the client forever.
+    bool initLogsOutputStream(bool wait_for_sink = true);
+
+    /// Arm an output sink with the pair of predicates that keep it responsive to Ctrl+C, see
+    /// WriteBufferFromFileDescriptor::setCancellationHook.
+    void armResponsiveOutput(WriteBufferFromFileDescriptor & buf);
+
+    bool outputCancelledWhileRunning() const;
+    bool outputInterruptedWhileRunning() const;
 
     String getPrompt() const;
 
-    void resetOutput();
+    void resetOutput(std::optional<Int32> signals_before_teardown = {});
 
     void updateSuggest(const ASTPtr & ast);
 
@@ -338,24 +364,139 @@ protected:
     public:
         /// Store how much interrupt signals can be before stopping the query
         /// by default stop after the first interrupt signal.
-        void start(Int32 signals_before_stop = 1) { exit_after_signals.store(signals_before_stop); }
+        void start(Int32 signals_before_stop = 1)
+        {
+            state.store(pack(signals_before_stop, 0));
+        }
 
-        /// Set value not greater then 0 to mark the query as stopped.
-        void stop() { exit_after_signals.store(0); }
+        /// Disarm the handler: the query is no longer in flight.
+        void stop()
+        {
+            state.store(NOT_RUNNING);
+        }
+
+        /// Return true while the handler is armed for an in-flight query, i.e. between start() and
+        /// stop().
+        bool isRunning() const { return state.load() != NOT_RUNNING; }
 
         /// Return true if the query was stopped.
         /// Query was stopped if it received at least "signals_before_stop" interrupt signals.
-        bool tryStop() { return exit_after_signals.fetch_sub(1) <= 0; }
-        bool cancelled() { return exit_after_signals.load() <= 0; }
+        /// A disarmed handler also reports the query as stopped.
+        bool cancelled() const
+        {
+            const Int64 current = state.load();
+            return current == NOT_RUNNING || receivedSignals(current) >= signalsBeforeStop(current);
+        }
+
+        /// Return true only for a genuine Ctrl+C on an in-flight query: the handler is armed and
+        /// it has received enough interrupt signals. This is what the output cancellation hooks
+        /// use to tell a real cancellation apart from a handler that has merely been stopped
+        /// during query teardown - where cancelled() also becomes true, see ClientBase::resetOutput.
+        /// The armed flag and the signal count live in a single atomic, so a concurrent reader (the
+        /// parallel-formatting collector) always observes one coherent state and can never mistake
+        /// a handler being stopped for a cancellation, which would discard already-produced output.
+        bool cancelledWhileRunning() const
+        {
+            const Int64 current = state.load();
+            return current != NOT_RUNNING && receivedSignals(current) >= signalsBeforeStop(current);
+        }
+
+        /// Return true as soon as an in-flight query has received at least one interrupt signal,
+        /// even when it is not cancelled yet because more signals are expected
+        /// (`partial_result_on_first_cancel`). This is what tells a blocked `open()` or `write()` on
+        /// a stuck output sink to give up: control has to return to receiveResult() for the first
+        /// Ctrl+C to be turned into the stage-one `Cancel` sent to the server, otherwise that
+        /// setting would silently do nothing on exactly the paths this handling is about. Only the
+        /// *discarding* of already buffered bytes waits for cancelledWhileRunning(), so a sink that
+        /// still accepts data keeps receiving the partial result.
+        bool interruptedWhileRunning() const
+        {
+            const Int64 current = state.load();
+            return current != NOT_RUNNING && receivedSignals(current) > 0;
+        }
+
+        /// How many interrupt signals the in-flight query has received so far; 0 for a disarmed
+        /// handler. Used to take a baseline before query teardown starts, see
+        /// cancelledOrInterruptedSince().
+        Int32 receivedSignalCount() const
+        {
+            const Int64 current = state.load();
+            return current == NOT_RUNNING ? 0 : static_cast<Int32>(receivedSignals(current));
+        }
+
+        /// The latch predicate of query teardown: true when the in-flight query is fully cancelled,
+        /// or when it has received a new interrupt signal since `signals_before_teardown` of them
+        /// were counted. Once the receive loop is gone there is no stage-one `Cancel` left to send
+        /// to the server, so any *fresh* signal has to stop the teardown right away instead of
+        /// waiting for the full signal budget - the responsive write path already gives up on the
+        /// first one (see interruptedWhileRunning), and requiring a second Ctrl+C to leave e.g. a
+        /// stuck pager wait would contradict that. Signals counted *before* teardown are
+        /// deliberately not latched here: with `partial_result_on_first_cancel` the first one only
+        /// requested the partial result, which was received and formatted normally, so its output
+        /// must still be published and shown in the pager.
+        /// A single load, so a concurrent reader can never stitch together a stopped handler and a
+        /// signal count, see cancelledWhileRunning().
+        bool cancelledOrInterruptedSince(Int32 signals_before_teardown) const
+        {
+            const Int64 current = state.load();
+            if (current == NOT_RUNNING)
+                return false;
+            const Int64 received = receivedSignals(current);
+            return received >= signalsBeforeStop(current) || received > signals_before_teardown;
+        }
+
+        /// Account for one interrupt signal. Called from a signal handler, hence only lock-free
+        /// atomic operations. Returns true when the query has already been cancelled by earlier
+        /// signals (the caller then makes the client exit abruptly); a disarmed handler is left
+        /// alone and also reports the query as stopped.
+        bool tryStop()
+        {
+            Int64 current = state.load();
+            while (true)
+            {
+                if (current == NOT_RUNNING)
+                    return true;
+                const Int64 received = receivedSignals(current);
+                if (received >= signalsBeforeStop(current))
+                    return true;
+                if (state.compare_exchange_weak(current, pack(signalsBeforeStop(current), received + 1)))
+                    return false;
+            }
+        }
 
         /// Return how much interrupt signals remain before stop.
-        Int32 cancelled_status() { return exit_after_signals.load(); }
+        Int32 cancelled_status() const
+        {
+            const Int64 current = state.load();
+            return current == NOT_RUNNING ? 0 : static_cast<Int32>(signalsBeforeStop(current) - receivedSignals(current));
+        }
 
     private:
-        std::atomic<Int32> exit_after_signals = 0;
+        /// The state of a disarmed handler. Distinct from every armed value, whose high half is the
+        /// (positive) number of signals needed to stop the query.
+        static constexpr Int64 NOT_RUNNING = -1;
+
+        /// An armed state packs how many interrupt signals stop the query and how many have been
+        /// received so far into a single atomic, so that a concurrent reader (the parallel
+        /// formatting collector) always observes one coherent state and can never mistake a handler
+        /// being stopped for a cancellation, which would discard already-produced output.
+        static constexpr Int64 pack(Int64 signals_before_stop, Int64 received_signals)
+        {
+            return (signals_before_stop << 32) | received_signals;
+        }
+        static constexpr Int64 signalsBeforeStop(Int64 packed) { return packed >> 32; }
+        static constexpr Int64 receivedSignals(Int64 packed) { return packed & 0xFFFFFFFF; }
+
+        std::atomic<Int64> state = NOT_RUNNING;
+        static_assert(std::atomic<Int64>::is_always_lock_free);
     };
 
     QueryInterruptHandler query_interrupt_handler;
+
+    /// Once result processing reaches teardown, only interrupt signals received after this
+    /// baseline may abandon an output flush. This lets a stage-one interrupt request a partial
+    /// result without truncating its footer. It is read by parallel-formatting worker threads.
+    std::atomic<Int32> output_teardown_signal_baseline = -1;
 
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
@@ -462,12 +603,24 @@ protected:
 
     /// The user can specify to redirect query output to a file.
     std::unique_ptr<WriteBuffer> out_file_buf;
+    /// The stdout buffer used by `INTO OUTFILE ... AND STDOUT` (wrapped inside out_file_buf).
+    /// Kept separately so its cancellation hook remains valid during teardown, exactly like
+    /// std_out's.
+    std::shared_ptr<WriteBufferFromFileDescriptor> select_into_file_and_stdout_buf;
     std::shared_ptr<IOutputFormat> output_format;
 
     /// The user could specify special file for server logs (stderr by default)
     std::unique_ptr<WriteBuffer> out_logs_buf;
     String server_logs_file;
     std::unique_ptr<InternalTextLogs> logs_out_stream;
+
+    /// The terminal-facing WriteBufferFromFileDescriptor that logs_out_stream flushes through: the
+    /// dedicated stderr buffer (out_logs_buf) by default, or std_out in --server_logs_file=- mode.
+    /// Tracked so the server-log / profile-events flushes can be kept responsive to cancellation on a
+    /// stuck terminal, like the result-set (std_out) and progress (tty_buf) paths. Null when server
+    /// logs go to a real file, which never blocks on write. Points into out_logs_buf / std_out and is
+    /// cleared in resetOutput() before out_logs_buf is reset.
+    WriteBufferFromFileDescriptor * logs_out_terminal_buf = nullptr;
 
     /// /dev/tty if accessible or std::cerr - for progress bar.
     /// But running embedded into server, we write the progress to given tty file dexcriptor.

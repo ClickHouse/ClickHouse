@@ -73,11 +73,14 @@
 #include <IO/Ask.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ForkWriteBuffer.h>
+#include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferDecorator.h>
+#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromOStream.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
@@ -100,6 +103,11 @@
 #include <Storages/SelectQueryInfo.h>
 #include <TableFunctions/ITableFunction.h>
 
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+#include <cerrno>
 #include <filesystem>
 #include <iostream>
 #include <limits>
@@ -118,6 +126,7 @@
 #include <Common/config_version.h>
 #include <Common/XDGBaseDirectories.h>
 #include <base/find_symbols.h>
+#include <base/sleep.h>
 
 
 namespace fs = std::filesystem;
@@ -191,6 +200,8 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_FILE;
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 }
@@ -466,7 +477,7 @@ ClientBase::ClientBase(
     , cmd_merge_tree_settings(std::make_unique<MergeTreeSettings>())
     , std_in(std::make_unique<ReadBufferFromFileDescriptor>(in_fd_))
     , std_out(std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(out_fd_))
-    , progress_indication(output_stream_, in_fd_, err_fd_)
+    , progress_indication(in_fd_, err_fd_)
     , progress_table(in_fd_, err_fd_)
     , input_stream(input_stream_)
     , output_stream(output_stream_)
@@ -813,16 +824,21 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     /// Restore progress bar and progress table after data block.
     if (need_render_progress && tty_buf)
     {
-        if (select_into_file && !select_into_file_and_stdout)
-            error_stream << "\r";
         std::unique_lock lock(tty_mutex);
+        /// Route the carriage return through tty_buf (the bounded, cancellable progress path) instead
+        /// of a plain blocking error_stream write: for an interactive SELECT ... INTO OUTFILE (without
+        /// AND STDOUT) tty_buf is the same terminal, so a stuck terminal could otherwise hang the
+        /// client here on the first Ctrl+C, before the responsive writeProgress() is even reached. See
+        /// #22426.
+        if (select_into_file && !select_into_file_and_stdout)
+            writeChar('\r', *tty_buf);
         progress_indication.writeProgress(*tty_buf, lock);
     }
     if (need_render_progress_table && tty_buf && !cancelled)
     {
-        if (!need_render_progress && select_into_file && !select_into_file_and_stdout)
-            error_stream << "\r";
         std::unique_lock lock(tty_mutex);
+        if (!need_render_progress && select_into_file && !select_into_file_and_stdout)
+            writeChar('\r', *tty_buf);
         progress_table.writeTable(*tty_buf, lock, progress_table_toggle_on.load(), progress_table_toggle_enabled, false);
     }
 }
@@ -830,7 +846,11 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
 
 void ClientBase::onLogData(Block & block)
 {
-    initLogsOutputStream();
+    /// The log sink can be unavailable when its open was interrupted by a `Ctrl+C`; drop the
+    /// diagnostics rather than the query - see `initLogsOutputStream`.
+    if (!initLogsOutputStream())
+        return;
+
     if (need_render_progress && tty_buf)
     {
         std::unique_lock lock(tty_mutex);
@@ -920,6 +940,138 @@ void ClientBase::onProfileInfo(const ProfileInfo & profile_info)
 }
 
 
+namespace
+{
+
+/// Open a client output sink (the `INTO OUTFILE` target, an explicit `--server_logs_file`) in a way
+/// that a `Ctrl+C` can interrupt.
+///
+/// A blocking special file - most notably a FIFO opened for writing while no reader is attached -
+/// parks `open(O_WRONLY)` until a reader appears. Doing that inside the `WriteBufferFromFile`
+/// constructor would happen before any cancellation hook can be installed on the resulting
+/// descriptor, so the first `Ctrl+C` would appear to do nothing and the client would stay stuck.
+///
+/// Instead, open with `O_NONBLOCK`: for a reader-less FIFO that fails immediately with `ENXIO`,
+/// which lets us wait for the sink in an interruptible loop rather than inside the kernel. The
+/// waiting semantics of a blocking `open` are preserved (a FIFO target still waits for its reader),
+/// only now the wait is abandoned as soon as the query is interrupted - already on the first signal,
+/// even with `partial_result_on_first_cancel`. For every other target -
+/// including a regular file - the very first `open` succeeds and the loop is not entered at all.
+///
+/// Returns -1 when the wait was abandoned because the query was interrupted. What that means is left
+/// to the caller: for the primary `INTO OUTFILE` sink it is a cancellation, because there is nothing
+/// to deliver into a sink that could not be opened; for an auxiliary sink such as `--server_logs_file`
+/// it only means that this sink is unavailable, and the query itself must keep going - otherwise the
+/// first signal of a `partial_result_on_first_cancel` query would become a hard client-side cancel.
+/// An empty `is_interrupted` turns the call into a plain availability check: nothing would ever be
+/// able to abandon the wait, so a FIFO without a reader is reported as unavailable immediately.
+///
+/// `O_NONBLOCK` is cleared afterwards so that writes keep their usual semantics;
+/// `WriteBufferFromFileDescriptor::setCancellationHook` arranges responsive writes on its own.
+int openFileCancellable(const String & file_name, int flags, const std::function<bool()> & is_interrupted)
+{
+    while (true)
+    {
+        int fd = ::open(file_name.c_str(), flags | O_CLOEXEC | O_NONBLOCK, 0666);
+
+        if (fd == -1)
+        {
+            /// `ENXIO` is also how an unattached character device reports that it cannot be opened,
+            /// and a blocking `open` would have failed there instead of waiting - so only a FIFO is
+            /// worth retrying.
+            const int open_errno = errno;
+
+            struct stat file_stat{};
+            const bool wait_for_reader
+                = open_errno == ENXIO && ::stat(file_name.c_str(), &file_stat) == 0 && S_ISFIFO(file_stat.st_mode);
+
+            if (!wait_for_reader)
+            {
+                errno = open_errno;
+                ErrnoException::throwFromPath(
+                    open_errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE,
+                    file_name,
+                    "Cannot open file {}",
+                    file_name);
+            }
+
+            /// An empty predicate means the caller cannot wait at all (nothing could ever abandon
+            /// the wait, e.g. after the interrupt handler has been stopped): report the sink as
+            /// unavailable right away instead of retrying forever.
+            if (!is_interrupted || is_interrupted())
+                return -1;
+
+            /// Nothing to poll on here: the descriptor does not exist yet, so waiting for a reader
+            /// to show up is inherently a retry loop. The interval only bounds the reaction time to
+            /// `Ctrl+C`; it does not guard any race.
+            sleepForMilliseconds(20);
+            continue;
+        }
+
+        int file_status_flags = ::fcntl(fd, F_GETFL, 0);
+        if (file_status_flags == -1 || ::fcntl(fd, F_SETFL, file_status_flags & ~O_NONBLOCK) == -1)
+        {
+            int saved_errno = errno;
+            [[maybe_unused]] int err = ::close(fd);
+            chassert(!(err && errno == EBADF));
+            errno = saved_errno;
+            ErrnoException::throwFromPath(
+                ErrorCodes::CANNOT_OPEN_FILE, file_name, "Cannot reset the non-blocking mode for file {}", file_name);
+        }
+
+        return fd;
+    }
+}
+
+/// Whether writes into this descriptor can block indefinitely, i.e. whether the sink needs the
+/// lossy best-effort discipline at all. A regular file (or a block device) always accepts the data
+/// and reports real errors such as `ENOSPC`, so it must stay on the ordinary throwing path: silently
+/// dropping the tail of a diagnostic file the user explicitly asked for would hide the error.
+/// Terminals, FIFOs, sockets and character devices, on the other hand, can park a write forever.
+bool isBlockingCapableSink(int fd)
+{
+    struct stat file_stat{};
+    if (::fstat(fd, &file_stat) != 0)
+        return true;
+    return !S_ISREG(file_stat.st_mode) && !S_ISBLK(file_stat.st_mode);
+}
+
+}
+
+
+void ClientBase::armResponsiveOutput(WriteBufferFromFileDescriptor & buf)
+{
+    /// Two predicates, both keyed on the interrupt handler being armed for an in-flight query, so
+    /// that a handler merely stopped during teardown is never mistaken for a cancellation (which
+    /// would discard already-produced output, see resetOutput):
+    /// - already-buffered bytes are discarded only once the query is genuinely cancelled;
+    /// - a write that finds the sink with no room gives up as soon as the first interrupt signal
+    ///   arrives, so that even with `partial_result_on_first_cancel` a stuck sink cannot keep the
+    ///   client from reacting to the first Ctrl+C.
+    buf.setCancellationHook(
+        [this]() { return outputCancelledWhileRunning(); },
+        [this]() { return outputInterruptedWhileRunning(); });
+}
+
+
+bool ClientBase::outputCancelledWhileRunning() const
+{
+    const Int32 signals_before_teardown = output_teardown_signal_baseline.load();
+    if (signals_before_teardown >= 0)
+        return query_interrupt_handler.cancelledOrInterruptedSince(signals_before_teardown);
+    return query_interrupt_handler.cancelledWhileRunning();
+}
+
+
+bool ClientBase::outputInterruptedWhileRunning() const
+{
+    const Int32 signals_before_teardown = output_teardown_signal_baseline.load();
+    if (signals_before_teardown >= 0)
+        return query_interrupt_handler.cancelledOrInterruptedSince(signals_before_teardown);
+    return query_interrupt_handler.interruptedWhileRunning();
+}
+
+
 void ClientBase::initOutputFormat(const Block & block, ASTPtr parsed_query)
 try
 {
@@ -946,6 +1098,15 @@ try
             config.terminate_in_destructor_strategy.termination_signal = SIGTERM;
             pager_cmd = ShellCommand::execute(config);
             underlying_buf = &pager_cmd->in;
+
+            /// With `--pager` the result set is written through the pager's stdin pipe rather than
+            /// through `std_out`, so install the cancellation hook here too. Otherwise a stuck or
+            /// slow pager could fill its stdin pipe and the first Ctrl+C would appear to have no
+            /// effect. The `cancelledWhileRunning()` guard keeps this hook honest for its whole lifetime: once
+            /// the interrupt handler is stopped during teardown, cancelled() becomes unconditionally
+            /// true, so without the guard the final flush in resetOutput() would discard
+            /// already-produced output on an exception path (where the query was never cancelled).
+            armResponsiveOutput(pager_cmd->in);
         }
         else
         {
@@ -1023,19 +1184,87 @@ try
 
                 chassert(out_file_buf.get() == nullptr);
 
-                out_file_buf = wrapWriteBufferWithCompressionMethod(
-                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags),
-                    compression_method,
-                    static_cast<int>(compression_level),
-                    /*zstd_window_log=*/ 0,
-                    client_context->getSettingsRef()[Setting::snappy_mode]
-                );
+                /// Acquire the descriptor before handing it over to `WriteBufferFromFile`, so that a
+                /// sink whose `open()` blocks (a reader-less FIFO) does not park the client where no
+                /// cancellation hook exists yet. See `openFileCancellable`.
+                int out_file_fd = openFileCancellable(
+                    out_file, flags, [this]() { return query_interrupt_handler.interruptedWhileRunning(); });
 
-                if (query_with_output->isIntoOutfileWithStdout())
+                if (out_file_fd == -1)
                 {
-                    select_into_file_and_stdout = true;
-                    out_file_buf = std::make_unique<ForkWriteBuffer>(ForkWriteBuffer::WriteBufferPtrs{std::move(out_file_buf),
-                        std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd)});
+                    /// `AND STDOUT` retains a deliverable result sink. Do not turn the interrupted
+                    /// outfile open into a local format error: with `partial_result_on_first_cancel`
+                    /// the first signal must still reach the server and its partial result must be
+                    /// printed to stdout.
+                    if (query_with_output->isIntoOutfileWithStdout())
+                    {
+                        select_into_file = false;
+                    }
+                    else
+                    {
+                        /// The result set has nowhere to go, so this is a cancellation of the query
+                        /// itself - including with `partial_result_on_first_cancel`, where the partial
+                        /// result would have been written to this very sink.
+                        throw Exception(
+                            ErrorCodes::QUERY_WAS_CANCELLED,
+                            "Query was cancelled while waiting for {} to be opened for writing",
+                            out_file);
+                    }
+                }
+
+                if (out_file_fd != -1)
+                {
+                    /// The constructor below takes ownership and resets `out_file_fd` to -1; this only
+                    /// covers the case when it throws before doing so.
+                    SCOPE_EXIT({
+                        if (out_file_fd != -1)
+                        {
+                            [[maybe_unused]] int err = ::close(out_file_fd);
+                            chassert(!(err && errno == EBADF));
+                        }
+                    });
+
+                    auto out_file_write_buf = std::make_unique<WriteBufferFromFile>(out_file_fd, out_file, DBMS_DEFAULT_BUFFER_SIZE);
+
+                /// Keep the primary `INTO OUTFILE` sink responsive to cancellation, just like the
+                /// `std_out` result-set path and the `AND STDOUT` mirror below. A non-regular target
+                /// (a FIFO, character device or socket path) can block in `write()` the same way a
+                /// stuck terminal does, so without a hook the first `Ctrl+C` would not promptly abort
+                /// the output. For a regular file `setCancellationHook` is a no-op (`fstat` marks it
+                /// as non-blocking), so nothing is dropped and the complete file is preserved. The
+                /// `cancelledWhileRunning()` guard keeps the final flush in `resetOutput()` from discarding
+                /// already-produced output on an exception path, where the query was never cancelled.
+                    armResponsiveOutput(*out_file_write_buf);
+
+                    out_file_buf = wrapWriteBufferWithCompressionMethod(
+                        std::move(out_file_write_buf),
+                        compression_method,
+                        static_cast<int>(compression_level),
+                        /*zstd_window_log=*/ 0,
+                        client_context->getSettingsRef()[Setting::snappy_mode]
+                    );
+
+                    if (query_with_output->isIntoOutfileWithStdout())
+                    {
+                        select_into_file_and_stdout = true;
+
+                    /// In `INTO OUTFILE ... AND STDOUT` mode the result is written to this separate
+                    /// stdout buffer rather than through `std_out`, so install the same cancellation
+                    /// hook here. Otherwise Ctrl+C would not promptly abort the output when the
+                    /// stdout sink (e.g. a slow terminal) is blocked. The `cancelledWhileRunning()` guard keeps
+                    /// the hook honest for its whole lifetime: once the interrupt handler is stopped
+                    /// during teardown, cancelled() becomes unconditionally true, so without the
+                    /// guard the final flush in resetOutput() would discard already-produced output
+                    /// on an exception path (where the query was never cancelled).
+                    auto stdout_buf = std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd);
+                    armResponsiveOutput(*stdout_buf);
+
+                    /// Keep a handle so resetOutput() can re-point the hook before finalizing it.
+                    select_into_file_and_stdout_buf = stdout_buf;
+
+                        out_file_buf = std::make_unique<ForkWriteBuffer>(
+                            ForkWriteBuffer::WriteBufferPtrs{std::move(out_file_buf), std::move(stdout_buf)});
+                    }
                 }
 
                 // We are writing to file, so default format is the same as in non-interactive mode.
@@ -1172,7 +1401,7 @@ catch (...)
 }
 
 
-void ClientBase::initLogsOutputStream()
+bool ClientBase::initLogsOutputStream(bool wait_for_sink)
 {
     if (!logs_out_stream)
     {
@@ -1183,8 +1412,16 @@ void ClientBase::initLogsOutputStream()
         {
             if (server_logs_file.empty())
             {
-                /// Use stderr by default
-                out_logs_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stderr_fd);
+                /// Use stderr by default.
+                /// The owning member is assigned first and the raw pointer is taken from it: taking
+                /// the pointer out of a local `unique_ptr` that is then moved into the member is
+                /// flagged by clang 24 (`-Wlifetime-safety-use-after-scope-moved`, seen only in the
+                /// wasm64 build). The downcast is `static_cast` to the exact type that was created -
+                /// `assert_cast` compares typeid for an exact match and rejects the derived
+                /// `AutoCanceledWriteBuffer` wrapper.
+                using StderrLogsBuffer = AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>;
+                out_logs_buf = std::make_unique<StderrLogsBuffer>(stderr_fd);
+                logs_out_terminal_buf = static_cast<StderrLogsBuffer *>(out_logs_buf.get());
                 wb = out_logs_buf.get();
                 color_logs = stderr_is_a_tty;
             }
@@ -1192,18 +1429,81 @@ void ClientBase::initLogsOutputStream()
             {
                 /// Use stdout if --server_logs_file=- specified
                 wb = std_out.get();
+                logs_out_terminal_buf = std_out.get();
                 color_logs = stdout_is_a_tty;
             }
             else
             {
-                out_logs_buf
-                    = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+                /// The user-specified path is not necessarily a regular file: it can be a FIFO,
+                /// character device or socket, which can block in write() just like a terminal, and
+                /// a reader-less FIFO blocks already in open(). So acquire the descriptor with the
+                /// interruptible open (this runs from onLogData / onProfileEvents, i.e. with the
+                /// interrupt handler armed for the query) and track the buffer as the terminal-facing
+                /// sink so it is armed on the responsive path below; for a regular file both are a
+                /// no-op (the open succeeds at once and fstat marks the sink as non-blocking).
+                /// `wait_for_sink` is false when this runs after the query, with the interrupt
+                /// handler already stopped: no signal could abandon the wait there, so the open is
+                /// reduced to an availability check and the diagnostics are dropped if the sink is
+                /// not ready - it must never hang the client once the result has been delivered.
+                std::function<bool()> is_interrupted;
+                if (wait_for_sink)
+                    is_interrupted = [this]() { return query_interrupt_handler.interruptedWhileRunning(); };
+
+                int logs_fd = openFileCancellable(server_logs_file, O_WRONLY | O_APPEND | O_CREAT, is_interrupted);
+
+                /// This sink is auxiliary: the server logs and profile events are diagnostics, not the
+                /// result of the query. Interrupting its open must therefore not throw - the packet
+                /// handlers this runs from are called from `receiveResult`, and an exception here would
+                /// escape before the stage-one `Cancel` is sent, turning the first `Ctrl+C` of a
+                /// `partial_result_on_first_cancel` query into a hard client-side cancellation instead
+                /// of a request for the partial result. Report the sink as unavailable instead; the
+                /// caller skips the diagnostics and lets the query reach its normal cancellation path.
+                if (logs_fd == -1)
+                    return false;
+
+                /// The constructor below takes ownership and resets `logs_fd` to -1; this only
+                /// covers the case when it throws before doing so.
+                SCOPE_EXIT({
+                    if (logs_fd != -1)
+                    {
+                        [[maybe_unused]] int err = ::close(logs_fd);
+                        chassert(!(err && errno == EBADF));
+                    }
+                });
+
+                /// Only a sink that can actually block is treated as terminal-facing: an ordinary
+                /// file must keep the plain throwing write path, so that a real write error
+                /// (`ENOSPC`, `EIO`) surfaces instead of being swallowed by the lossy best-effort
+                /// discipline that the responsive hook and the epilogue budget apply.
+                const bool sink_can_block = isBlockingCapableSink(logs_fd);
+
+                /// See the note above on why the member is assigned first and downcast with
+                /// `static_cast`.
+                using FileLogsBuffer = AutoCanceledWriteBuffer<WriteBufferFromFile>;
+                out_logs_buf = std::make_unique<FileLogsBuffer>(logs_fd, server_logs_file, DBMS_DEFAULT_BUFFER_SIZE);
+                if (sink_can_block)
+                    logs_out_terminal_buf = static_cast<FileLogsBuffer *>(out_logs_buf.get());
                 wb = out_logs_buf.get();
             }
         }
 
         logs_out_stream = std::make_unique<InternalTextLogs>(*wb, color_logs);
+
+        /// Keep the server-log / profile-events output responsive to cancellation on a stuck terminal,
+        /// like the result-set (std_out) and progress (tty_buf) paths: onLogData / onProfileEvents
+        /// flush this stream while the query runs, and in the default case it is a separate
+        /// WriteBufferFromFileDescriptor on stderr - typically the same terminal as the progress
+        /// output - so without a hook the first Ctrl+C could still hang in a log/profile-events flush.
+        /// In --server_logs_file=- mode the sink is std_out, which is already armed for the query (and
+        /// whose hook resetOutput() re-points during teardown), so it must not be re-armed from here.
+        /// An explicit --server_logs_file=<path> naming a sink that can block (a FIFO, a character
+        /// device, a socket) is armed here as well so it stays interruptible; a regular file is not
+        /// tracked at all, because it cannot block and its write errors must not be swallowed.
+        if (server_logs_file != "-" && logs_out_terminal_buf)
+            armResponsiveOutput(*logs_out_terminal_buf);
     }
+
+    return true;
 }
 
 void ClientBase::adjustSettings(ContextMutablePtr context)
@@ -1769,10 +2069,62 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             query_interrupt_handler.start(signals_before_stop);
             SCOPE_EXIT({ query_interrupt_handler.stop(); });
 
+            /// Abort writing the result set to the output promptly when the query is cancelled.
+            /// Without this, a write to a slow or stuck sink (e.g. a slow terminal) blocks the
+            /// client, so the first Ctrl+C appears to have no effect until the whole block is
+            /// written. The hook lets the output buffer stop waiting and discard the rest. The
+            /// `cancelledWhileRunning()` guard keeps it honest for its whole lifetime: once the interrupt handler
+            /// is stopped during teardown, cancelled() becomes unconditionally true, so without the
+            /// guard the output_format->finalize() flush in resetOutput() (which runs before the hook
+            /// can be safely re-pointed - that has to wait until the parallel-formatting collector
+            /// reading the hook is joined) would discard already-produced output on an exception path
+            /// where the query was never cancelled. It is finally cleared in resetOutput() after that
+            /// collector has been joined, so the hook is never mutated while that thread reads it.
+            armResponsiveOutput(*std_out);
+
+            /// The progress indication renders to the terminal through `tty_buf`, so those writes
+            /// must stay responsive to cancellation as well: on a terminal that stopped draining,
+            /// the first Ctrl+C would otherwise hang in a progress-bar write, or in the progress
+            /// clear that precedes every output flush (see initOutputFormat), instead of
+            /// cancelling the query. Once cancellation is requested, further progress rendering is
+            /// discarded - it is decorative and nothing is reading the stuck terminal anyway. The
+            /// hook shares std_out's lifetime discipline: re-pointed and finally cleared in
+            /// resetOutput().
+            if (tty_buf)
+                armResponsiveOutput(*tty_buf);
+
             /// Allow cancellation during query analysis (e.g. scalar subqueries).
             /// For TCP connections this is handled by receivePacketsExpectCancel;
             /// for local connections this callback checks the signal handler flag.
             connection->setCancelCallback([this]() { return query_interrupt_handler.cancelled(); });
+
+            /// A non-`LocalFormatError` from receiveResult() otherwise unwinds out of this scope
+            /// and disarms query_interrupt_handler before processParsedSingleQuery() performs its
+            /// outer resetOutput(). Keep the handler armed for that reset: it may still have to
+            /// flush a format footer through a slow terminal, pager, or `INTO OUTFILE ... AND
+            /// STDOUT` sink, and its cancellation hooks are what make that flush interruptible.
+            /// The normal EndOfStream path already calls resetOutput() itself.
+            auto receiveResultAndResetOutputOnException = [&]
+            {
+                try
+                {
+                    receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
+                }
+                catch (...)
+                {
+                    try
+                    {
+                        resetOutput();
+                    }
+                    catch (...)
+                    {
+                        /// Ok: preserve the exception from receiveResult(). resetOutput() records
+                        /// its own output error in client_exception when appropriate.
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                    }
+                    throw;
+                }
+            };
 
             try
             {
@@ -1803,15 +2155,30 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                     cleanupTempFile(parsed_query, out_file);
 
                 // We still want to attempt to process whatever we already received or can receive (socket receive buffer can be not empty)
-                receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
+                receiveResultAndResetOutputOnException();
+
+                /// receiveResult() can return without an EndOfStream when the connection has
+                /// already been torn down. Flush while the handler is still armed before
+                /// propagating the original network exception.
+                resetOutput();
                 throw;
             }
 
-            receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
+            receiveResultAndResetOutputOnException();
 
+            /// The teardown flushes in resetOutput() honor a late Ctrl+C (discarding the rest of
+            /// the pending output) and latch it into `cancelled` there, while the output can still
+            /// be affected. Do not sample the interrupt handler again here: the teardown has
+            /// already finished, so a signal arriving at this point cannot touch any output, and
+            /// treating it as a cancellation would only send the fully written temporary file of
+            /// `INTO OUTFILE ... TRUNCATE` below into cleanupTempFile, silently discarding a
+            /// successful result without even printing "Query was cancelled.".
             if (!out_file_if_truncated.empty())
             {
-                if (have_error)
+                /// Replace the target file only on success. On an error the result is incomplete,
+                /// and on a cancellation the write hooks may have discarded a part of the output,
+                /// so the temporary file can be torn - do not publish it over the existing target.
+                if (have_error || cancelled)
                     cleanupTempFile(parsed_query, out_file);
                 else
                     performAtomicRename(parsed_query, out_file_if_truncated);
@@ -1826,7 +2193,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             /// Retry when the server said "Client should retry" and no rows
             /// has been received yet.
-            if (processed_rows_from_blocks == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && --retries_left)
+            if (!cancelled && processed_rows_from_blocks == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && --retries_left)
             {
                 error_stream << "Got a transient error from the server, will"
                         << " retry (" << retries_left << " retries left)";
@@ -1921,11 +2288,20 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
             if (!receiveAndProcessPacket(parsed_query, cancelled))
                 break;
         }
-        catch (const LocalFormatError &)
+        catch (const LocalFormatError & e)
         {
             /// Remember the first exception.
             if (!local_format_error)
                 local_format_error = std::current_exception();
+
+            /// Failing to open the primary INTO OUTFILE sink after an interrupt is a hard local
+            /// cancellation. In particular, with partial_result_on_first_cancel the first signal
+            /// would otherwise only send the stage-one Cancel and onEndOfStream() would still run
+            /// the success epilogue despite there being no result sink left to receive that partial
+            /// result.
+            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
+                cancelled = true;
+
             sendCancel(std::current_exception());
         }
     }
@@ -1934,7 +2310,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
         std::rethrow_exception(local_format_error);
 
     if (cancelled && is_interactive && !cancelled_printed.exchange(true))
-        output_stream << "Query was cancelled." << std::endl;
+        printCancellationMessage("Query was cancelled.");
 }
 
 
@@ -2043,6 +2419,30 @@ void ClientBase::onEndOfStream()
     /// losing its temporary tables, current database and session settings.
     connection_needs_resynchronization = false;
 
+    /// resetOutput() must distinguish an interrupt received while the EndOfStream teardown is
+    /// flushing its footer from an earlier partial-result interrupt. Take this before the first
+    /// teardown write: output_format->finalize() below runs before resetOutput() and can itself
+    /// block on a pager or stdout sink.
+    const Int32 signals_before_teardown = query_interrupt_handler.receivedSignalCount();
+    output_teardown_signal_baseline.store(signals_before_teardown);
+
+    /// The progress display is decorative, unlike the result footer below. If a stage-one
+    /// interrupt was already received, do not let clearing a stuck interactive terminal hold up
+    /// the cancellation just to preserve a progress escape sequence.
+    const bool bound_progress_clear = tty_buf && query_interrupt_handler.interruptedWhileRunning();
+    if (bound_progress_clear)
+    {
+        std::unique_lock lock(tty_mutex);
+        tty_buf->setBestEffortFlushBudget(1000);
+    }
+    SCOPE_EXIT({
+        if (bound_progress_clear)
+        {
+            std::unique_lock lock(tty_mutex);
+            tty_buf->setBestEffortFlushBudget(std::nullopt);
+        }
+    });
+
     if (need_render_progress && tty_buf)
     {
         std::unique_lock lock(tty_mutex);
@@ -2074,14 +2474,22 @@ void ClientBase::onEndOfStream()
         }
     }
 
-    resetOutput();
+    resetOutput(signals_before_teardown);
 
     if (is_interactive)
     {
         if (cancelled && !cancelled_printed.exchange(true))
-            output_stream << "Query was cancelled." << std::endl;
+            printCancellationMessage("Query was cancelled.");
         else if (!written_first_block)
-            output_stream << "Ok." << std::endl;
+        {
+            /// A query that produced no result blocks (an `INSERT`, a DDL statement, an empty
+            /// `SELECT`) still prints its success epilogue to the interactive terminal - which
+            /// may be exactly what is stuck, with the query already finished and the receive
+            /// loop (the code that observes a Ctrl+C) already gone. A plain blocking write here
+            /// would then hang the client on its very last line of output, so route it through
+            /// the same bounded best-effort path as the cancellation diagnostics.
+            printMessageBestEffort("Ok.");
+        }
     }
 }
 
@@ -2156,11 +2564,13 @@ void ClientBase::onProfileEvents(Block & block)
         if (profile_events.print || getClientConfiguration().getBool("print-profile-events", false))
         {
             profile_events.delay_ms = getClientConfiguration().getUInt64("profile-events-delay-ms", 0);
-            if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
+            /// When the log sink is unavailable - its open was interrupted by a `Ctrl+C`, see
+            /// `initLogsOutputStream` - keep accumulating the events instead of printing them, so
+            /// nothing is lost if the sink becomes available again before the query ends.
+            if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms && initLogsOutputStream())
             {
                 /// We need to restart the watch each time we flushed these events
                 profile_events.watch.restart();
-                initLogsOutputStream();
                 if (need_render_progress && tty_buf)
                 {
                     std::unique_lock lock(tty_mutex);
@@ -2171,7 +2581,19 @@ void ClientBase::onProfileEvents(Block & block)
                     std::unique_lock lock(tty_mutex);
                     progress_table.clearTableOutput(*tty_buf, lock);
                 }
-                logs_out_stream->writeProfileEvents(block);
+                /// The accumulator may hold events deferred while the sink was unavailable (or
+                /// while the delay had not elapsed): merge the current packet into it and print
+                /// the whole accumulator, so a recovered sink emits the deferred events instead
+                /// of silently dropping them.
+                if (!profile_events.last_block.empty())
+                {
+                    incrementProfileEventsBlock(profile_events.last_block, block);
+                    logs_out_stream->writeProfileEvents(profile_events.last_block);
+                }
+                else
+                {
+                    logs_out_stream->writeProfileEvents(block);
+                }
                 logs_out_stream->flush();
 
                 profile_events.last_block = {};
@@ -2186,8 +2608,56 @@ void ClientBase::onProfileEvents(Block & block)
 
 
 /// Flush all buffers.
-void ClientBase::resetOutput()
+void ClientBase::resetOutput(std::optional<Int32> signals_before_teardown)
 {
+    /// Capture the fallback baseline before *any* teardown write. Some exceptional callers enter
+    /// here without an explicit baseline, and both the progress clear below and formatter
+    /// finalization can block on an output sink. A Ctrl+C in that window must be treated as a
+    /// teardown cancellation rather than folded into the baseline.
+    const Int32 teardown_signal_baseline = signals_before_teardown.value_or(query_interrupt_handler.receivedSignalCount());
+    output_teardown_signal_baseline.store(teardown_signal_baseline);
+    SCOPE_EXIT({ output_teardown_signal_baseline.store(-1); });
+
+    /// When resetOutput() runs as the outer teardown in processParsedSingleQuery(), the interrupt
+    /// handler is already stopped (its SCOPE_EXIT in processOrdinaryQuery()/processInsertQuery()
+    /// fires when those return, before this call) and the per-query cancellation hook on tty_buf has
+    /// already been cleared by the inner resetOutput(). The decorative progress writes to tty_buf
+    /// below (the clearTableOutput() here and the progress-clearing callback reached from
+    /// std_out_wrapper->finalize()) would then use a plain blocking write and could hang the client
+    /// on a stuck terminal, with the first Ctrl+C no longer honored (it can only force an abrupt
+    /// exit once the handler is stopped). These writes are purely decorative, so bound them with a
+    /// best-effort budget - as cancelQuery() does for its clears: they still erase the progress
+    /// indication on a live terminal and are dropped after a short wait on a stuck one. Only tty_buf
+    /// is budgeted; the real output through std_out (including the format footer) keeps its
+    /// responsive cancellation hook, so nothing already produced is lost. The armed in-query path
+    /// The same treatment is needed while the handler is still armed but a stage-one interrupt
+    /// has already been counted before this teardown started - the exceptional teardown paths
+    /// (onReceiveExceptionFromServer() and the receiveResult() cleanup catch) reach here in
+    /// exactly that state with `partial_result_on_first_cancel`. The baseline taken above
+    /// deliberately does not latch that earlier signal (the partial result it asked for still has
+    /// to be published through std_out), so the responsive hook on tty_buf stays quiet for it and
+    /// a stuck terminal could hold the decorative clears until a second Ctrl+C. onEndOfStream()
+    /// bounds its own progress clear for this very reason; there is nothing to lose here either,
+    /// because tty_buf only ever carries the progress indication, never result data.
+    const bool bound_teardown_tty_writes
+        = tty_buf && (!query_interrupt_handler.isRunning() || query_interrupt_handler.interruptedWhileRunning());
+    /// onEndOfStream() may have installed a budget already and still needs it after this call
+    /// returns, so restore the previous value instead of dropping the budget outright.
+    std::optional<UInt64> previous_tty_flush_budget;
+    if (bound_teardown_tty_writes)
+    {
+        std::unique_lock lock(tty_mutex);
+        previous_tty_flush_budget = tty_buf->getBestEffortFlushBudget();
+        tty_buf->setBestEffortFlushBudget(1000);
+    }
+    SCOPE_EXIT({
+        if (bound_teardown_tty_writes)
+        {
+            std::unique_lock lock(tty_mutex);
+            tty_buf->setBestEffortFlushBudget(previous_tty_flush_budget);
+        }
+    });
+
     if (need_render_progress_table && tty_buf)
     {
         std::unique_lock lock(tty_mutex);
@@ -2196,6 +2666,13 @@ void ClientBase::resetOutput()
 
     /// Order is important: format, compression, file
 
+    /// This finalize() flushes any pending formatted bytes through std_out / the pager / the
+    /// `INTO OUTFILE ... AND STDOUT` stdout buffer, all of which still carry the live cancellation
+    /// hook installed for the query (it cannot be re-pointed yet: the parallel-formatting collector
+    /// that also reads it is only joined by this very finalize()/the reset() below, and re-pointing
+    /// it while that thread reads it would be a data race). On an exception path the interrupt
+    /// handler is already stopped, so the hook must not treat that as a cancellation and discard the
+    /// already-produced output - that is exactly what the hook's cancelledWhileRunning() guard ensures.
     try
     {
         if (output_format)
@@ -2215,6 +2692,18 @@ void ClientBase::resetOutput()
 
     output_format.reset();
     pending_progress.reset();
+
+    /// The cancellation-hook predicates read output_teardown_signal_baseline, which was recorded
+    /// before output_format->finalize() above. Thus an earlier stage-one interrupt cannot abort a
+    /// footer or another teardown flush, while a fresh Ctrl+C remains responsive. Keeping the same
+    /// hook object is also necessary until output_format.reset() joins the parallel formatter.
+    SCOPE_EXIT({
+        if (std_out)
+            std_out->setCancellationHook({});
+        if (tty_buf)
+            tty_buf->setCancellationHook({});
+        select_into_file_and_stdout_buf.reset();
+    });
 
     /// out_file_buf wraps std_out_wrapper (via a raw pointer), so it must be finalized
     /// first to flush remaining data (e.g. the gzip footer) into std_out_wrapper.
@@ -2238,14 +2727,48 @@ void ClientBase::resetOutput()
 
     logs_out_stream.reset();
 
+    /// Drop the tracked terminal-facing log sink before the buffer it points into is destroyed; the
+    /// next initLogsOutputStream() (including the trailing profile-events flush) re-establishes it.
+    logs_out_terminal_buf = nullptr;
+
     out_logs_buf.reset();
+
+    /// A Ctrl+C that arrived during the teardown flushes above (or during the format finalize
+    /// preceding them) was honored by the write hooks - the rest of the pending output was
+    /// discarded - but it never became query state: the receive loop that promotes an interrupt
+    /// into `cancelled` via cancelQuery() has already finished by the time these flushes run.
+    /// Promote it here, before the later logic consults `cancelled`. Otherwise the pager wait
+    /// below would block as if nothing was cancelled, processOrdinaryQuery() would publish a
+    /// partially flushed `INTO OUTFILE ... TRUNCATE` target as a success, and the
+    /// "Query was cancelled." message would not be printed.
+    /// A signal received *during* the teardown counts even when it does not exhaust the signal
+    /// budget: the responsive write path already gave up on it, and no stage-one `Cancel` can be
+    /// sent from here anymore, so waiting for a second Ctrl+C would leave the client stuck.
+    if (!cancelled && query_interrupt_handler.cancelledOrInterruptedSince(teardown_signal_baseline))
+        cancelled = true;
 
     if (pager_cmd)
     {
         pager_cmd->in.close();
-        /// The process will terminated in destructor anyway (due to terminate_in_destructor_strategy.terminate_in_destructor=true)
-        if (!cancelled)
-            pager_cmd->wait();
+
+        /// Wait for the pager to finish by polling, not with the blocking ShellCommand::wait():
+        /// that call sits in waitpid() and retries on EINTR (see ShellCommand::tryWaitImpl), so a
+        /// first Ctrl+C arriving once the wait has started would not be observed until a second
+        /// signal or an external kill. Between the non-blocking checks, sample the live interrupt
+        /// state and latch it into `cancelled`, which also stops the wait - the pager process
+        /// itself is then terminated by the ShellCommand destructor (see
+        /// terminate_in_destructor_strategy). A Ctrl+C that raced in before this loop is caught by
+        /// its first iteration, so no separate pre-wait re-check is needed.
+        while (!cancelled && !pager_cmd->waitIfProccesTerminated())
+        {
+            if (query_interrupt_handler.cancelledOrInterruptedSince(teardown_signal_baseline))
+            {
+                cancelled = true;
+                break;
+            }
+
+            sleepForMilliseconds(50);
+        }
 
         if (SIG_ERR == signal(SIGPIPE, SIG_DFL))
             throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
@@ -2368,6 +2891,25 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
 
     query_interrupt_handler.start();
     SCOPE_EXIT({ query_interrupt_handler.stop(); });
+
+    /// Arm the cancellation hook on `std_out` as well, even though an INSERT streams no result set
+    /// through it: the interactive `Cancelling query.` / `Query was cancelled.` diagnostics are
+    /// written best-effort through `std_out` (see printCancellationMessage), and on a terminal that
+    /// bounded write is only guaranteed not to block when `std_out` holds its private non-blocking
+    /// descriptor - which is created the first time a cancellation hook is installed on it (see
+    /// WriteBufferFromFileDescriptor::setCancellationHook). Without arming it here, the very first
+    /// interactive INSERT into a terminal that stopped draining would have no such descriptor yet,
+    /// so the diagnostic would fall back to the blocking tty path and could re-hang the first
+    /// Ctrl+C - exactly the stuck-terminal case the PR fixes for SELECT. The hook shares the same
+    /// lifetime discipline as in processOrdinaryQuery: it goes inert once query_interrupt_handler is
+    /// stopped and is finally cleared by the next resetOutput().
+    if (std_out)
+        armResponsiveOutput(*std_out);
+
+    /// Progress for an INSERT (e.g. reading an INFILE) is rendered through `tty_buf` as well -
+    /// keep it responsive to cancellation, for the same reason as in processOrdinaryQuery.
+    if (tty_buf)
+        armResponsiveOutput(*tty_buf);
 
     /// `query` may have been rewritten from JSON to SQL above; pin the transport dialect to match
     /// before sending so the server parses it the same way the client did.
@@ -2793,13 +3335,22 @@ bool ClientBase::sendCancel(std::exception_ptr exception_ptr)
 {
     if (!connection->isConnected())
     {
-        error_stream << "Cannot send Cancel due to connection is lost";
+        /// This is a `stderr` diagnostic and must stay on `stderr`: routing it to `std_out` would
+        /// mix it into the result data stream of a batch client or an `INTO OUTFILE ... AND STDOUT`
+        /// query. But it still must not be a raw blocking `error_stream <<` write: `sendCancel` runs
+        /// at the very start of `cancelQuery` (the first Ctrl+C), and on the default interactive
+        /// client `stderr` is the same PTY as the stuck output sink, so a plain blocking write here
+        /// could park that first Ctrl+C before cancellation is latched. Use a bounded best-effort
+        /// write to `stderr` instead: on a live sink it appears immediately, on a stuck one it is
+        /// dropped after a short wait (nothing is reading that sink anyway).
+        String message = "Cannot send Cancel due to connection is lost";
         if (exception_ptr)
-        {
-            error_stream << ": ";
-            error_stream << getExceptionMessage(exception_ptr, /*with_stacktrace=*/ true);
-        }
-        error_stream << '\n';
+            message += ": " + getExceptionMessage(exception_ptr, /*with_stacktrace=*/ true);
+        message += '\n';
+
+        WriteBufferFromFileDescriptor stderr_buf(stderr_fd);
+        stderr_buf.writeBestEffort(message, /*timeout_ms*/ 1000);
+        stderr_buf.finalize();
         return false;
     }
     else
@@ -2809,25 +3360,60 @@ bool ClientBase::sendCancel(std::exception_ptr exception_ptr)
     }
 }
 
+void ClientBase::printMessageBestEffort(std::string_view message)
+{
+    /// `std_out` always wraps the same descriptor `output_stream` writes to - the constructor
+    /// takes them as a single paired (fd, stream) argument, for both the standalone client
+    /// (`STDOUT_FILENO`/`std::cout`) and `ClientEmbedded` (the pty/pipe descriptor and its
+    /// matching stream) - so the message is always routed through the best-effort bounded path:
+    /// on a live sink it appears immediately, on a stuck one it is dropped after a short wait,
+    /// since nothing is reading that sink anyway.
+    if (std_out)
+    {
+        /// Every interactive print to output_stream ends with std::endl, so this flush is normally
+        /// a no-op; it keeps the output ordered if anything is still buffered there.
+        output_stream.flush();
+        std_out->writeBestEffort(String(message) + '\n', /*timeout_ms*/ 1000);
+        return;
+    }
+
+    output_stream << message << std::endl;
+}
+
+void ClientBase::printCancellationMessage(std::string_view message)
+{
+    /// These diagnostics accompany a Ctrl+C, when the output sink may be exactly what is stuck
+    /// (e.g. a terminal that stopped draining - the very case the cancellation hook on `std_out`
+    /// handles, see #22426): an ordinary blocking write of the diagnostic to that sink would then
+    /// hang the client right after the result-set write was successfully aborted.
+    printMessageBestEffort(message);
+}
+
 void ClientBase::cancelQuery()
 {
     sendCancel();
 
     stopKeystrokeInterceptorIfExists();
 
-    if (need_render_progress && tty_buf)
+    /// Clear the progress indication with bounded writes: the terminal may be exactly what is
+    /// stuck (see printCancellationMessage), and these clears run after cancellation has been
+    /// requested, so tty_buf's cancellation hook would discard them outright. A bounded
+    /// best-effort write still erases the progress bar/table on a live terminal - so the
+    /// "Cancelling query." diagnostic below lands on a clean line - and is dropped after a short
+    /// wait on a stuck one.
+    if ((need_render_progress || need_render_progress_table) && tty_buf)
     {
         std::unique_lock lock(tty_mutex);
-        progress_indication.clearProgressOutput(*tty_buf, lock);
-    }
-    if (need_render_progress_table && tty_buf)
-    {
-        std::unique_lock lock(tty_mutex);
-        progress_table.clearTableOutput(*tty_buf, lock);
+        tty_buf->setBestEffortFlushBudget(1000);
+        SCOPE_EXIT({ tty_buf->setBestEffortFlushBudget(std::nullopt); });
+        if (need_render_progress)
+            progress_indication.clearProgressOutput(*tty_buf, lock);
+        if (need_render_progress_table)
+            progress_table.clearTableOutput(*tty_buf, lock);
     }
 
     if (is_interactive)
-        output_stream << "Cancelling query." << std::endl;
+        printCancellationMessage("Cancelling query.");
 
     cancelled = true;
 }
@@ -2884,6 +3470,10 @@ void ClientBase::processParsedSingleQuery(
     progress_indication.resetProgress();
     progress_table.resetTable();
     profile_events.watch.restart();
+    /// The trailing flush at the end of this function clears the accumulator on both of its
+    /// paths, but an exception escaping the query can skip it - do not let a stale block from
+    /// the failed query be printed under this one.
+    profile_events.last_block = {};
 
     {
         /// Temporarily apply query settings to context.
@@ -3057,23 +3647,63 @@ void ClientBase::processParsedSingleQuery(
         }
     }
 
-    /// Always print last block (if it was not printed already)
+    /// The trailing progress/profile-events rendering below runs after the interrupt handler has
+    /// been stopped by the settings-block teardown above, so tty_buf no longer has a live
+    /// cancellation hook. Bound its decorative writes (clearing the progress indication/table and
+    /// the final progress table) with a best-effort budget so a stuck terminal cannot hang the
+    /// client here - the same discipline resetOutput() and cancelQuery() use.
+    if (tty_buf)
+    {
+        std::unique_lock lock(tty_mutex);
+        tty_buf->setBestEffortFlushBudget(1000);
+    }
+    SCOPE_EXIT({
+        if (tty_buf)
+        {
+            std::unique_lock lock(tty_mutex);
+            tty_buf->setBestEffortFlushBudget(std::nullopt);
+        }
+    });
+
+    /// Always print last block (if it was not printed already).
+    /// The interrupt handler is stopped by now, so a wait for the sink could not be abandoned by a
+    /// Ctrl+C: acquire it fail-close (`wait_for_sink = false`). Otherwise an explicit
+    /// `--server_logs_file` naming a FIFO that never got a reader - the events were deferred into
+    /// `last_block` because of `profile-events-delay-ms`, or an earlier open reported the sink as
+    /// unavailable - would retry forever and hang the client after the result is already delivered.
+    /// These are diagnostics, so dropping them is the right trade here.
     if (!profile_events.last_block.empty())
     {
-        initLogsOutputStream();
-        if (need_render_progress && tty_buf)
+        if (initLogsOutputStream(/*wait_for_sink=*/false))
         {
-            std::unique_lock lock(tty_mutex);
-            progress_indication.clearProgressOutput(*tty_buf, lock);
+            if (need_render_progress && tty_buf)
+            {
+                std::unique_lock lock(tty_mutex);
+                progress_indication.clearProgressOutput(*tty_buf, lock);
+            }
+            if (need_render_progress_table && tty_buf)
+            {
+                std::unique_lock lock(tty_mutex);
+                progress_table.clearTableOutput(*tty_buf, lock);
+            }
+            /// The interrupt handler is already stopped here, so the log stream's cancellation hook
+            /// (armed in initLogsOutputStream) is inert; and in --server_logs_file=- mode this flush hits
+            /// std_out after resetOutput() already cleared its hook. Bound this trailing flush to the
+            /// terminal-facing log sink with a best-effort budget so a stuck terminal cannot hang the
+            /// client here - the same discipline tty_buf uses just above.
+            if (logs_out_terminal_buf)
+                logs_out_terminal_buf->setBestEffortFlushBudget(1000);
+            SCOPE_EXIT({
+                if (logs_out_terminal_buf)
+                    logs_out_terminal_buf->setBestEffortFlushBudget(std::nullopt);
+            });
+            logs_out_stream->writeProfileEvents(profile_events.last_block);
+            logs_out_stream->flush();
         }
-        if (need_render_progress_table && tty_buf)
-        {
-            std::unique_lock lock(tty_mutex);
-            progress_table.clearTableOutput(*tty_buf, lock);
-        }
-        logs_out_stream->writeProfileEvents(profile_events.last_block);
-        logs_out_stream->flush();
 
+        /// Whether the deferred events were flushed above or the sink stayed unavailable and they
+        /// were intentionally dropped (fail-close), the accumulator must not outlive its query:
+        /// a block inherited by the next query would attribute this query's counters to it.
         profile_events.last_block = {};
     }
 
@@ -3081,11 +3711,33 @@ void ClientBase::processParsedSingleQuery(
 
     if (is_interactive)
     {
-        output_stream << std::endl;
+        /// This final summary is printed to the same terminal that may still be stuck after a
+        /// Ctrl+C (the very case this feature addresses, #22426): the interrupt handler is already
+        /// stopped here, so a plain blocking iostream flush of the summary could re-hang the client
+        /// in the epilogue, right after the result-set write was made interruptible. Build it in
+        /// memory and flush it through std_out's bounded best-effort path (as printCancellationMessage
+        /// does) - it appears immediately on a live terminal and is dropped after a short wait on a
+        /// stuck one. std_out wraps the same descriptor output_stream writes to, and by now std_out's
+        /// buffer is already flushed (the inner resetOutput() ran before this epilogue), so this does
+        /// not reorder against any pending formatted output. The decorative final progress table goes
+        /// through tty_buf, already budgeted above.
+        /// The elapsed time is printed with fixed 3-decimal precision to match the
+        /// `std::fixed << std::setprecision(3)` the clients set on output_stream at startup.
+        WriteBufferFromOwnString summary;
+        summary << "\n";
         if (!server_exception || processed_rows != 0)
-            output_stream << processed_rows << " row" << (processed_rows == 1 ? "" : "s") << " in set. ";
-        output_stream << "Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
-        progress_indication.writeFinalProgress();
+            summary << processed_rows << " row" << (processed_rows == 1 ? "" : "s") << " in set. ";
+        summary << "Elapsed: " << fmt::format("{:.3f}", progress_indication.elapsedSeconds()) << " sec. ";
+        progress_indication.writeFinalProgress(summary);
+
+        if (std_out)
+        {
+            output_stream.flush();
+            std_out->writeBestEffort(summary.str(), /*timeout_ms*/ 1000);
+        }
+        else
+            output_stream << summary.str();
+
         bool toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
         bool show_progress_table = !toggle_enabled || progress_table_toggle_on;
         if (need_render_progress_table && show_progress_table)
@@ -3093,13 +3745,26 @@ void ClientBase::processParsedSingleQuery(
             std::unique_lock lock(tty_mutex);
             progress_table.writeFinalTable(*tty_buf, lock);
         }
-        output_stream << std::endl << std::endl;
+
+        if (std_out)
+            std_out->writeBestEffort("\n\n", /*timeout_ms*/ 1000);
+        else
+            output_stream << std::endl << std::endl;
     }
-    else
+    /// The remaining post-query diagnostics go to the same stdout/stderr that may still be a stuck
+    /// terminal after a Ctrl+C (the interrupt handler is already stopped here, like for the summary
+    /// above), so none of them may be a plain blocking iostream write: that could re-hang the client
+    /// in the epilogue right after the result-set write was made interruptible. Collect the
+    /// stderr-side ones into one string and emit it below with a single bounded best-effort write.
+    /// The elapsed time is printed with fixed 3-decimal precision to match the
+    /// `std::fixed << std::setprecision(3)` the clients set on error_stream at startup.
+    String stderr_epilogue;
+
+    if (!is_interactive)
     {
         const auto & config = getClientConfiguration();
         if (config.getBool("print-time-to-stderr", false))
-            error_stream << progress_indication.elapsedSeconds() << "\n";
+            stderr_epilogue += fmt::format("{:.3f}\n", progress_indication.elapsedSeconds());
 
         const auto & print_memory_mode = config.getString("print-memory-to-stderr", "");
         /// The value may come from the client config file (e.g. `<print-memory-to-stderr>`), which is
@@ -3107,14 +3772,20 @@ void ClientBase::processParsedSingleQuery(
         assertMemoryUsageMode(print_memory_mode);
         auto peak_memory_usage = std::max<Int64>(progress_indication.getMemoryUsage().peak, 0);
         if (print_memory_mode == "default")
-            error_stream << peak_memory_usage << "\n";
+            stderr_epilogue += fmt::format("{}\n", peak_memory_usage);
         else if (print_memory_mode == "readable")
-            error_stream << formatReadableSizeWithBinarySuffix(peak_memory_usage) << "\n";
+            stderr_epilogue += formatReadableSizeWithBinarySuffix(peak_memory_usage) + "\n";
     }
 
     if (!is_interactive && getClientConfiguration().getBool("print-num-processed-rows", false))
     {
-        output_stream << "Processed rows: " << processed_rows << "\n";
+        if (std_out)
+        {
+            output_stream.flush();
+            std_out->writeBestEffort(fmt::format("Processed rows: {}\n", processed_rows), /*timeout_ms*/ 1000);
+        }
+        else
+            output_stream << "Processed rows: " << processed_rows << "\n";
     }
 
     /// Optional ASCII `BEL` chime when a query finishes after running for at least
@@ -3141,8 +3812,17 @@ void ClientBase::processParsedSingleQuery(
         && stderr_is_a_tty
         && progress_indication.clientElapsedSeconds() >= static_cast<double>(chime_threshold_seconds))
     {
-        error_stream << '\x07';
+        stderr_epilogue += '\x07';
+    }
+
+    if (!stderr_epilogue.empty())
+    {
+        /// Every write to error_stream ends with an explicit "\n" or flush, so this flush is
+        /// normally a no-op; it keeps the output ordered if anything is still buffered there.
         error_stream.flush();
+        WriteBufferFromFileDescriptor stderr_buf(stderr_fd);
+        stderr_buf.writeBestEffort(stderr_epilogue, /*timeout_ms*/ 1000);
+        stderr_buf.finalize();
     }
 }
 
