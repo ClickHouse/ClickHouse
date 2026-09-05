@@ -130,8 +130,10 @@ $CLICKHOUSE_CLIENT -q "select '<6: refreshed>', * from rmv_a;"
 query_no_scheduling "select '<7: refreshed>', status, last_success_time, next_refresh_time from refreshes"
 
 # Create a dependent view, refresh it once.
+# A distributed cache write stalls a full receive timeout before retrying, and the retry envelope
+# can outlast the bounded waits below, so rmv_b's refresh commit is kept off that path.
 $CLICKHOUSE_CLIENT -q "
-    create materialized view rmv_b refresh every 2 year depends on rmv_a (y Int32) engine MergeTree order by y empty as select x*10 as y from rmv_a;
+    create materialized view rmv_b refresh every 2 year depends on rmv_a (y Int32) engine MergeTree order by y empty as select x*10 as y from rmv_a settings force_write_through_distributed_cache = 0;
     show create rmv_b;
     system test view rmv_b set fake time '2052-11-11 11:11:11';
     system refresh view rmv_b;
@@ -185,6 +187,13 @@ $CLICKHOUSE_CLIENT -q "
 wait_for "select status, last_refresh_time from refreshes where view = 'rmv_b' -- $LINENO" == 'Scheduled 2062-03-03 03:03:03'
 query_no_scheduling "select '<18: removed dependency>', view, status, last_success_time, last_refresh_time, next_refresh_time from refreshes where view = 'rmv_b'"
 $CLICKHOUSE_CLIENT -q "show create rmv_b;"
+# The pin is only useful if the refresh actually runs with it, which SHOW CREATE cannot show.
+$CLICKHOUSE_CLIENT -q "
+    system flush logs query_log;
+    select '<19: pin reached the refresh>', groupUniqArray(Settings['force_write_through_distributed_cache'])
+    from system.query_log
+    where event_date >= yesterday() and current_database = currentDatabase()
+      and log_comment like 'refresh of %.rmv_b%' and query_kind = 'Insert' and type = 'QueryFinish';"
 
 # Can't use the same time unit multiple times.
 $CLICKHOUSE_CLIENT -q "
