@@ -12,6 +12,8 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -326,6 +328,105 @@ QueryPipelineBuilderPtr DelayedCreatingSetsStep::updatePipeline(QueryPipelineBui
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
         "Cannot build pipeline in DelayedCreatingSets. This step should be optimized out.");
+}
+
+void forEachSubquerySet(const QueryPlan * root, const std::function<bool(FutureSetFromSubquery &)> & visit)
+{
+    if (!root || !root->getRootNode())
+        return;
+
+    std::vector<QueryPlan::Node *> stack{root->getRootNode()};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+
+        if (auto * delayed = typeid_cast<DelayedCreatingSetsStep *>(node->step.get()))
+        {
+            for (const auto & future_set : delayed->getSets())
+            {
+                if (!future_set)
+                    continue;
+                if (visit(*future_set))
+                    forEachSubquerySet(future_set->getQueryPlan(), visit);
+            }
+        }
+        else if (auto * read_from_local = typeid_cast<ReadFromLocalParallelReplicaStep *>(node->step.get()))
+        {
+            forEachSubquerySet(read_from_local->getQueryPlan(), visit);
+        }
+
+        /// Deliberately NOT descending into `node->step->getChildPlans()`, unlike the other plan-wide
+        /// walks (`hasCorrelatedExpressions`, `DistributedPlanSets`). No set is missed by stopping
+        /// here, for a different reason per carrier.
+        ///
+        /// `ReadFromMerge` and `LazyReadReplacingFinalStep` build their child plans when asked for
+        /// them rather than handing them out, and paying for that here loses more than the sharing
+        /// wins: on `SELECT ... WHERE key IN (SELECT ... FROM <merge table>)` under automatic parallel
+        /// replicas it made the nested subquery run one extra time rather than one time fewer. Both
+        /// are also unsupported for dataflow statistics collection, which keeps the whole optimization
+        /// off the plan they appear in.
+        ///
+        /// `JoinStepLogicalLookup` is cheap to ask, but its child plan cannot hold a set at all: the
+        /// step is built only for a right side whose `useful_sets` is empty (see `PlannerJoinTree`),
+        /// and a set on that side is exactly what makes it non-empty.
+        for (auto * child : node->children)
+            stack.push_back(child);
+    }
+}
+
+/// Note that on the single-node plan this only ever reaches the sets held directly by a
+/// `DelayedCreatingSetsStep`, never the ones a nested `IN` keeps below them: by the time automatic
+/// parallel replicas runs, every set here has been through `FutureSetFromSubquery::build`, which moves
+/// the source plan out, so `getQueryPlan` returns null and the recursion stops (measured for both
+/// values of `use_index_for_in_with_subqueries`, with the `IN` on an indexed and on a plain column).
+/// A nested set is therefore not shareable through any walk - it exists only inside a plan that no
+/// longer hangs off the set. The recursion still pays off on the probe plan in `reuseBuiltSets`, which
+/// runs before that plan is optimized and so still has its source plans.
+BuiltSetsByHashPtr collectBuiltSets(const QueryPlan & plan)
+{
+    auto built = std::make_shared<BuiltSetsByHash>();
+    forEachSubquerySet(
+        &plan,
+        [&](FutureSetFromSubquery & future_set)
+        {
+            const auto & set_and_key = future_set.getSetAndKey();
+            /// Sets without explicit elements are shared too. `buildOrderedSetInplace` returns such a set
+            /// as-is, so the probe plan cannot build elements from its own source and its selectivity
+            /// analysis for that `IN` falls back to a default estimate. That is cheaper than the
+            /// alternative: withholding the set makes the probe re-execute the subquery just to plan a
+            /// candidate that is often discarded, and the accepted plan gets the built set anyway from
+            /// `moveSetsFromLocalPlanToReplicasPlan`.
+            if (set_and_key && set_and_key->set && set_and_key->set->isCreated())
+                built->sets.emplace(future_set.getHash(), set_and_key);
+            return true;
+        });
+    return built;
+}
+
+void reuseBuiltSets(QueryPlan & plan, const BuiltSetsByHashPtr & built)
+{
+    if (!built || built->sets.empty())
+        return;
+
+    forEachSubquerySet(
+        &plan,
+        [&](FutureSetFromSubquery & future_set)
+        {
+            const auto & set_and_key = future_set.getSetAndKey();
+            if (set_and_key && set_and_key->set && set_and_key->set->isCreated())
+                return false;
+
+            if (auto it = built->sets.find(future_set.getHash()); it != built->sets.end())
+            {
+                future_set.replaceSetAndKey(it->second);
+                return false;
+            }
+
+            /// Not adopted, so this set still builds from its own source plan, and the sets nested in
+            /// that plan are live too.
+            return true;
+        });
 }
 
 }

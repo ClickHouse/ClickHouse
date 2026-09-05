@@ -284,6 +284,19 @@ APT_MIRROR_ERRORS = [
     "Unable to fetch some archives",
     # `apt-get update` could not refresh the package lists
     "Some index files failed to download",
+    # `apt-get update` treats a suite whose `InRelease` the mirror withheld as a
+    # warning (`W: Failed to fetch ... 503`, `W: Some index files failed to
+    # download`) and carries on with whatever suites it did get, so it exits 0 and
+    # the `E:` lands on the `apt-get install` that follows: with `jammy`,
+    # `jammy-updates` and `jammy-security` gone, nothing is left to provide the
+    # packages, or only a candidate whose dependencies live in a missing suite. On
+    # the pristine base image these Dockerfiles start from, a package Ubuntu ships
+    # that has no candidate or unmet dependencies can only mean the index apt
+    # resolved against is a partial one, i.e. the mirror. Measured on 2026-09-05,
+    # when every arm64 keeper image build on the fleet reded this way and no build
+    # ever reached Canonical.
+    "has no installation candidate",
+    "Unable to correct problems, you have held broken packages",
 ]
 
 
