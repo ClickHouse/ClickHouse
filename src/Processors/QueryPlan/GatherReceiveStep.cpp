@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Processors/QueryPlan/ParallelMergingSortedMaterialization.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
@@ -13,6 +14,7 @@
 #include <Core/SortDescription.h>
 #include <Core/Defines.h>
 
+#include <algorithm>
 #include <optional>
 
 
@@ -33,6 +35,15 @@ void GatherReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     if (maintain_sort_description && pipeline.getNumStreams() > 1)
     {
+        const size_t materialization_threads = std::min({
+            settings.max_parallel_ordered_merge_materialization_threads,
+            settings.max_threads,
+            pipeline.getNumThreads()});
+        const bool defer_materialization = materialization_threads > 1;
+        MergingSortedTransformStatsPtr parallel_materialization_stats;
+        if (defer_materialization)
+            parallel_materialization_stats = std::make_shared<MergingSortedTransformStats>(materialization_threads);
+
         pipeline.addTransform(
             std::make_shared<MergingSortedTransform>(
                 output_header,
@@ -46,7 +57,21 @@ void GatherReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, cons
                 /* always_read_till_end */ false,
                 /* rows_sources_write_buf */ nullptr,
                 /* filter_column_name */ std::nullopt,
-                /* blocks_are_granules_size */ false));
+                /* blocks_are_granules_size */ false,
+                /* apply_virtual_row_conversions */ true,
+                /* virtual_row_prefetch_window */ 0,
+                /* have_all_inputs */ true,
+                defer_materialization,
+                parallel_materialization_stats));
+
+        if (defer_materialization)
+        {
+            addParallelMergingSortedMaterialization(
+                pipeline,
+                materialization_threads,
+                DEFAULT_BLOCK_SIZE,
+                parallel_materialization_stats);
+        }
     }
 }
 

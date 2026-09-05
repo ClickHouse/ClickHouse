@@ -538,6 +538,7 @@
     \
     M(MergesRejectedByMemoryLimit, "Number of background merges rejected due to memory limit", ValueType::Number) \
     M(MergingSortedMilliseconds, "Total time spent while merging sorted columns", ValueType::Milliseconds) \
+    M(MergingSortedMaterializationMilliseconds, "Total busy time spent materializing output columns after merging sorted streams, summed across parallel workers", ValueType::Milliseconds) \
     M(AggregatingSortedMilliseconds, "Total time spent while aggregating sorted columns", ValueType::Milliseconds) \
     M(CoalescingSortedMilliseconds, "Total time spent while coalescing sorted columns", ValueType::Milliseconds) \
     M(CollapsingSortedMilliseconds, "Total time spent while collapsing sorted columns", ValueType::Milliseconds) \

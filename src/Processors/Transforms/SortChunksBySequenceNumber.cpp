@@ -122,32 +122,21 @@ bool SortChunksBySequenceNumber::tryPushChunk()
 {
     auto & output = outputs.front();
 
-    bool can_peak_next = false;
-    Int64 min_snum = std::numeric_limits<Int64>::max();
-    size_t min_snum_idx = 0;
     for (size_t i = 0; i < num_inputs; ++i)
     {
-        if (is_input_finished[i] && chunk_snums[i] == -1)
+        if (chunk_snums[i] != next_chunk_snum)
             continue;
 
-        if (chunk_snums[i] == -1)
-            return false;
-
-        can_peak_next = true;
-        if (chunk_snums[i] < min_snum)
-        {
-            min_snum = chunk_snums[i];
-            min_snum_idx = i;
-        }
+        /// Sequence numbers are assigned before the input is split between workers,
+        /// so the next consecutive chunk can be emitted without waiting for every
+        /// worker to produce another chunk.
+        output.push(std::move(chunks[i]));
+        chunk_snums[i] = -1;
+        ++next_chunk_snum;
+        return true;
     }
 
-    if (!can_peak_next)
-        return false;
-
-    auto & chunk = chunks[min_snum_idx];
-    output.push(std::move(chunk));
-    chunk_snums[min_snum_idx] = -1;
-    return true;
+    return false;
 }
 
 void SortChunksBySequenceNumber::addChunk(Chunk chunk, size_t input)

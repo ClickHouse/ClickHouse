@@ -108,7 +108,10 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// the version, so a mixed-version cluster fails at plan time instead of at runtime.
 /// Version 14 registers the `IntersectOrExcept` step, so a plan with `INTERSECT` or `EXCEPT`
 /// can be shipped under `make_distributed_plan`.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 14;
+/// Version 15 registers the `max_parallel_ordered_merge_materialization_threads` plan setting.
+/// It is written only towards peers at this version or above because older peers reject unknown
+/// query-plan setting names.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 15;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -134,6 +137,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORD
 /// set on the merge step synthesized by the Cascades aggregation pushdown. Gated on both sides so a
 /// mixed-version cluster fails at plan time.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION = 13;
+/// First query-plan serialization version that knows the
+/// `max_parallel_ordered_merge_materialization_threads` plan setting name.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_ORDERED_MERGE_MATERIALIZATION = 15;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
