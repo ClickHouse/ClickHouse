@@ -1,0 +1,155 @@
+---
+slug: /use-cases/observability/clickstack/integration-partners/telflo
+title: 'Sending OpenTelemetry to ClickStack with Telflo'
+sidebarTitle: 'Telflo'
+description: 'Build and roll out OpenTelemetry Collector configurations that send telemetry to ClickStack or write it straight into ClickHouse, with Telflo managing the collector fleet'
+doc_type: 'guide'
+keywords: ['Telflo', 'OTEL', 'ClickStack', 'OpenTelemetry', 'collector management', 'fleet management', 'ClickHouse exporter']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+import { PartnerBadge } from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge/>
+
+<Info>
+**TL;DR**
+
+This guide shows you how to send telemetry to ClickStack from OpenTelemetry Collectors managed by Telflo. You'll learn how to:
+
+- Build a collector configuration in Telflo's visual editor
+- Send the telemetry to ClickStack over OTLP, or write it straight into ClickHouse
+- Publish a version and roll it out to a fleet of collectors
+- Confirm the telemetry lands in ClickStack or in your ClickHouse tables
+
+Time required: 15-20 minutes
+</Info>
+
+{/* vale off */}
+## What is Telflo? {#what-is-telflo}
+{/* vale on */}
+
+Telflo is a vendor-neutral control plane for OpenTelemetry Collector configuration: you build a configuration in a visual editor, publish it as a version, and roll it out to a fleet of collectors. It manages standard upstream OpenTelemetry collector builds, with no Telflo-specific distribution and no proprietary agent, so collectors your teams already run stay on the same build.
+
+Telflo is also accessible outside the browser, through a command-line interface and an MCP server that connects it to whatever model you work in. Pair that with the [ClickStack MCP server](/clickstack/mcp) and the same agent that queries your telemetry can fix the pipeline that produced it.
+
+{/* vale off */}
+## Why Telflo + ClickStack? {#why-telflo-clickstack}
+{/* vale on */}
+
+ClickStack ingests OpenTelemetry data at very high volumes and keeps it queryable at scale. What remains is the collector fleet that feeds it. Telflo provides:
+
+- A visual pipeline builder that generates standard collector YAML and validates it as you edit
+- Configurations tested against sample telemetry before rollout
+- Versioned rollouts with rollback to any published version
+
+<Tip>
+**Key takeaways**
+
+- **ClickStack handles extreme ingestion volumes, storage, and fast analytical queries**
+- **Telflo keeps the collectors feeding ClickStack correct: built visually, published as versions, rolled out under version control**
+</Tip>
+
+## Prerequisites {#prerequisites}
+
+- ClickStack running: [Open Source ClickStack](/clickstack/getting-started/oss) or [Managed ClickStack](/clickstack/getting-started/managed)
+- Telflo account ([create an account at telflo.com](https://telflo.com))
+- Somewhere for the collectors to run: a VM or a Kubernetes cluster
+- **Sending to ClickStack**: your ClickStack OTLP endpoint (`4318` for HTTP, `4317` for gRPC) and your ingestion API key, found in HyperDX under **Team Settings → API Keys** ([view docs here for reference](/clickstack/ingesting-data/opentelemetry#sending-otel-data))
+- **Sending to ClickHouse**: your ClickHouse endpoint (port `8443` for ClickHouse Cloud), a database for the [ClickStack tables](/clickstack/ingesting-data/schemas), and a user that can create and write to them (see [Creating an ingestion user](/clickstack/ingesting-data/collector#creating-an-ingestion-user))
+- Network connectivity from the collectors to whichever of the two you chose
+
+{/* vale off */}
+## Integrate ClickStack with Telflo {#integrate-telflo-clickstack}
+{/* vale on */}
+
+<Steps>
+<Step title="Build a collector configuration" id="build-configuration">
+
+1. Sign in to Telflo. On the **Configurations** list, click **New Configuration**, then **Blank configuration**.
+2. In **Name Your Configuration**, enter a name and click **Create**.
+3. Add receivers: drag one from the palette onto the canvas for each kind of telemetry you collect.
+4. Add processors: **Memory Limiter** and **Batch**, plus any others you need to shape data before it leaves the collector. See the [full list of processors Telflo supports](https://docs.telflo.com/docs/build/components#processors).
+</Step>
+<Step title="Add the exporter" id="add-exporter">
+
+Both paths use the same editor, the same publish step, and the same fleet; only the exporter differs. Choose **Sending to ClickStack** if your collectors ship OTLP to a ClickStack OTLP endpoint, or **Sending to ClickHouse** if you run ClickHouse and query it with your own tools.
+
+<Tabs>
+<Tab title="Sending to ClickStack">
+
+1. Drag the **OTLP/HTTP** exporter onto the canvas.
+2. Set **Endpoint** to your ClickStack OTLP HTTP endpoint, for example `http://clickstack.example.com:4318`.
+3. Under **HTTP Headers**, click **Add header**, then enter `authorization` as the **Header name** and `${env:CLICKSTACK_INGESTION_KEY}` as the **Header value**. Telflo asks for the value when you install the collectors, so the key is never stored in the configuration.
+
+For gRPC, use the **OTLP** exporter on port `4317` with the same header under **gRPC Metadata Headers**.
+
+</Tab>
+<Tab title="Sending to ClickHouse">
+
+1. Drag the **ClickHouse** exporter onto the canvas.
+2. Fill in **Endpoint** (for example `https://clickhouse.example.com:8443`), **Database**, and **Username**, pointing **Database** at the database the ClickStack tables live in.
+3. Set **Password** to `${env:CLICKHOUSE_PASSWORD}`. Telflo asks for the value when you install the collectors, so the credential is never stored in the configuration.
+4. Under **Schema & Tables**, leave **Create Schema on Startup** on the first time you send telemetry to a ClickHouse instance and the exporter creates the tables. Turn it off once they exist.
+
+Keep **Batch** upstream of the exporter: ClickHouse performs best with batched inserts.
+
+</Tab>
+</Tabs>
+
+Draw edges from the receivers through the processors to the exporter, one pipeline per signal. The status row reports **config valid** or the number of errors to fix, and the **YAML** tab shows the generated configuration.
+
+<Image img="/images/clickstack/telflo/telflo-configuration.webp" alt="A collector pipeline in the Telflo editor with the ClickHouse exporter configured" size="lg"/>
+
+Before you roll anything out, you can run sample telemetry through the configuration and check what comes out the other end — see [testing in Telflo](https://docs.telflo.com/docs/testing/overview). Alternatively, you can describe what you're trying to do and the Telflo AI assistant — opened with the **AI** button in the toolbar — builds, validates, and tests the configuration for you.
+</Step>
+<Step title="Publish a version" id="publish-version">
+
+Click **Publish** in the toolbar. Published versions are read-only; to keep iterating, click **Create New Version**.
+</Step>
+<Step title="Create a fleet and roll out" id="deploy-collectors">
+
+1. Go to **Fleet**, click **New Fleet**, and choose where your collectors run, on VMs or in Kubernetes. Enter a **Name** and click **Create fleet**.
+2. On the fleet's **Deploy Groups** tab, click **Assign** on the **Default** group and choose your published configuration and version.
+3. Click **Install** on the group and enter a value for each environment variable your configuration references; Telflo adds them to the install command. Run that command where the collectors should run, [following Telflo's installation instructions](https://docs.telflo.com/docs/fleet-management/install-collectors). It carries the fleet's install token along with your value, so treat it as sensitive.
+4. On the **Collectors** tab, collectors report **Pending pickup**, then **Applying**, then **In sync**.
+
+To roll out a change, publish a new version and assign it to the group; to roll back, assign a previously deployed version.
+
+<Image img="/images/clickstack/telflo/telflo-fleet.webp" alt="A Telflo fleet with every collector in sync after a rollout" size="lg"/>
+</Step>
+<Step title="Verify telemetry" id="verify-telemetry">
+
+If you sent the data to ClickStack, open HyperDX and search for one of your services in the **Search** view; use **Chart Explorer** for metrics. If you wrote to ClickHouse, the telemetry lands in the ClickStack tables in the database you pointed the exporter at.
+
+If nothing arrives, check the fleet's **Collectors** tab: **Apply failed** means the collector rejected the configuration, and **Stale** means it has stopped checking in.
+</Step>
+</Steps>
+
+## Advanced configuration {#advanced-configuration}
+
+### Fan-out routing {#fan-out-routing}
+
+The same telemetry can go to ClickStack for long-term storage, to another platform during a migration, and to a SIEM for security analysis at once. Add the exporters on the canvas and connect them to the pipelines that should feed them, or start from a prebuilt pipeline in [Telflo's flow library](https://telflo.com/flows).
+
+### Compression and performance {#compression-and-performance}
+
+- **OTLP/HTTP and OTLP exporters**: keep **Compression** at gzip.
+- **ClickHouse exporter**: keep **Async Insert** on, leave **Compression** at lz4, and add a **Batch** processor upstream. See [Optimizing inserts](/clickstack/ingesting-data/collector#optimizing-inserts).
+
+## Next steps {#next-steps}
+
+- **Build dashboards**: create visualizations in HyperDX for logs, metrics, and traces
+- **Set up alerts**: configure alerts in ClickStack for critical conditions
+- **Refine with the AI assistant**: ask it to adjust a pipeline or propose tests
+- **Coming from another vendor**: [flows](https://telflo.com/flows) cover the cutover, replacing the agents already on your fleet and dual-shipping to both backends while you compare them
+
+## Read more {#read-more}
+
+- [Telflo documentation](https://docs.telflo.com/docs)
+- [Quickstart: from empty canvas to a deployed collector](https://docs.telflo.com/docs/getting-started/quickstart)
+- [Testing collector configurations](https://docs.telflo.com/docs/testing/overview)
+- [Fleet management in Telflo](https://docs.telflo.com/docs/fleet-management/overview)
+- [Installing collectors](https://docs.telflo.com/docs/fleet-management/install-collectors)
+- [Ingesting with OpenTelemetry](/clickstack/ingesting-data/opentelemetry)
+- [ClickStack table schemas](/clickstack/ingesting-data/schemas)
