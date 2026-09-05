@@ -260,7 +260,7 @@ WebAssembly does not distinguish between signed and unsigned arguments, but rath
 This ABI is experimental and subject to change in future releases.
 </Note>
 
-Processes entire blocks at once using a (de)serialization through WASM memory. Supports any argument and return types.
+Processes entire blocks at once using a (de)serialization through WASM memory. Supports the argument and return types that the chosen `serialization_format` can encode: the default `MsgPack` has no encoding for `Dynamic`, `Variant` or `JSON` / `Object` values, so a signature declaring one of those - including nested inside another type - needs a format that does, such as `JSONEachRow` or a text format like `CSV`.
 
 Data is exchanged through buffers in WASM memory. A buffer is an 8-byte structure holding a pointer to the data and the size of the data (two little-endian `u32` values). Buffers are passed by handle — a pointer to this structure, not to the data itself. The guest code must export two functions to create and destroy these buffers.
 
@@ -272,7 +272,9 @@ For each input block, ClickHouse:
 4. Reads the result buffer: it must contain exactly one column with exactly the same number of rows, serialized in the same format. For formats with named fields, such as `JSONEachRow`, the result column must be named `result`.
 5. Calls `clickhouse_destroy_buffer` on both the input buffer (if any) and the result buffer handles. The guest code must not free the result buffer itself, and must not return the input handle as the result — it would then be destroyed twice.
 
-The function is invoked once per input block: a large query is split into several blocks by the query pipeline (the maximum number of rows per call can additionally be capped with the `webassembly_udf_max_input_block_size` setting), so the row count passed on each call is the size of that block, not of the whole query.
+The function is invoked once per input block: a large query is split into several blocks by the query pipeline, so the row count passed on each call is the size of that block, not of the whole query.
+
+A pipeline block can still be too wide for the module's linear memory, so `webassembly_udf_max_input_block_size` controls how it is divided further. Its default, `0`, hands the decision to `webassembly_udf_input_split_memory_ratio`, which is non-zero by default and splits each block dynamically: ClickHouse measures the serialized size of the rows and starts a new call before the input would grow past that fraction of the guest's linear memory, so the row count varies with the data. A non-zero `webassembly_udf_max_input_block_size` replaces dynamic splitting with a fixed cap of that many rows per call, regardless of how large the rows are. Setting `webassembly_udf_input_split_memory_ratio` to `0` sets no part of the memory aside for a call's input and so restores the earlier behaviour, in which `webassembly_udf_max_input_block_size = 0` passes the whole pipeline block in one call; a module written against that contract can also get it back by setting `compatibility` to a version before 26.9. Splitting stops at one row per call, so it cannot help with a row that is on its own too large for the module's linear memory: such a row is passed alone and fails inside the guest's allocator. Either way the number of rows in a call is passed to the guest as the second `i32` argument, so a module must read it rather than assume a block size.
 
 <Note>
 The exact bytes inside the buffers are defined by the chosen format, and the guest code must decode and encode them itself. In particular, for `String` values:
@@ -500,7 +502,9 @@ The following query-level settings control WebAssembly UDF execution:
 
 - `webassembly_udf_max_memory` — Memory limit in bytes per WebAssembly UDF instance.
 
-- `webassembly_udf_max_input_block_size` — Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 to process all rows at once.
+- `webassembly_udf_max_input_block_size` — Maximum number of rows passed to a WebAssembly UDF in a single block. A non-zero value caps the rows per call and applies to every ABI. Set to 0 to let `webassembly_udf_input_split_memory_ratio` decide how the block is divided, which it does for `ABI BUFFERED_V1` alone. For `ROW_DIRECT` and `ASSEMBLYSCRIPT`, whose calls carry no serialized input block, 0 leaves the pipeline block whole.
+
+- `webassembly_udf_input_split_memory_ratio` — The fraction of the linear memory the module declares it starts with that one call's input may occupy when a block of an `ABI BUFFERED_V1` function is split dynamically; a module declared as `memory 0 N` starts with no pages, so for it the fraction is taken of the reachable ceiling instead. The declared initial size is used rather than the current one because the current size moves with `memory.grow`, never shrinks, and belongs to a pooled instance, so a batch sized against it would depend on which instance a worker picked up. Default: `0.5`, leaving the other half of the memory to the guest's own working set beside the input buffer. Must be at least 0 and at most 1. The margin below 1 is what makes the batching safe: the guest's own data, stack and allocator share that memory and are invisible to the host, so a ratio close to 1 can still fail inside the guest's allocator. Set it to 0, or set `compatibility` to a version before 26.9, to turn dynamic splitting off: the whole pipeline block is then passed in one call, as earlier versions did. A non-zero value sizes the batches only when `webassembly_udf_max_input_block_size` is 0. A batch is never taken below a single row, so a row whose own serialized size is past the budget is passed on its own and, if it is too large for the module's linear memory, fails inside the guest's allocator. It is read only for `ABI BUFFERED_V1`: `ROW_DIRECT` passes its arguments as WebAssembly values and `ASSEMBLYSCRIPT` builds one object per row, so a call of theirs carries no serialized input block to split, and neither reads `serialization_format`.
 
 - `webassembly_udf_max_instances` — Maximum number of WebAssembly UDF instances that can run in parallel per function.
 

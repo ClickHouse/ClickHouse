@@ -1,0 +1,9 @@
+a Dynamic argument is dispatched to the declared type
+[1]
+a Variant argument is dispatched the same way
+[1]
+a null row answers NULL without reaching the guest
+\N
+and a mixed block keeps one result per row
+\N
+[1]

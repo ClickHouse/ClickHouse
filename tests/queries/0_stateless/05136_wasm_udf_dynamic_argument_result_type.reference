@@ -1,0 +1,10 @@
+a declared argument type is answered by the declared result type
+UInt32
+a Dynamic argument keeps that result type, made nullable for the null such a row may hold
+Nullable(UInt32)	1
+and a null row still answers NULL without reaching the guest
+\N
+a result type that cannot be inside Nullable keeps the Dynamic result, null included
+Dynamic	\N
+a result type that is already Nullable carries the null itself and is not nested
+Nullable(UInt32)	1	\N

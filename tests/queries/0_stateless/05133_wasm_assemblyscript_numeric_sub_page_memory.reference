@@ -1,0 +1,4 @@
+a cap below one page is refused by the instantiation, not by a guest allocation
+1
+and the same function runs with a cap that holds its page
+3

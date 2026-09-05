@@ -363,6 +363,29 @@ public:
         return *kind;
     }
 
+    /// A `String` is handed over as a pointer into guest memory, with the payload allocated there
+    /// through `__new` and read back with `readStringInto`. A numeric-only signature crosses the
+    /// boundary as WebAssembly values alone and never touches the memory.
+    ///
+    /// This answers whether the input crosses through linear memory, not whether the module owns
+    /// any: an AssemblyScript module always declares a memory and its start function may use it.
+    /// A numeric-only signature under a cap too small for that memory is therefore refused by the
+    /// instantiation, which names the module's own requirement, rather than by the preflight that
+    /// guards an input this function never places there.
+    bool requiresGuestLinearMemory() const override
+    {
+        if (result_type && typeid_cast<const DataTypeString *>(result_type.get()))
+            return true;
+        for (const auto & argument : arguments)
+            if (argument && typeid_cast<const DataTypeString *>(argument.get()))
+                return true;
+        return false;
+    }
+
+    /// A row's `String` arguments become separate AssemblyScript objects, built one row at a time
+    /// by `createString`; no block is serialized and `serialization_format` is never read.
+    bool serializesInputBlockToGuestMemory() const override { return false; }
+
     void checkSignature() const
     {
         checkFunction(AssemblyScriptRuntime::newFunctionDeclaration());
