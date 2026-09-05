@@ -251,6 +251,11 @@ private:
     friend class MergeTreeMergePredicate;
     friend struct PlainCommittingBlockHolder;
 
+    /// `user_initiated` means the merge was explicitly requested by a user query (OPTIMIZE): such a merge
+    /// reserves its memory unconditionally instead of being rejected by the merge memory reservation gate.
+    /// `deduplicate` / `cleanup` are the corresponding OPTIMIZE flags: they do not affect which parts are
+    /// selected, but a deduplicating / cleanup merge rebuilds projections even when some source parts are
+    /// missing them, and the merge memory reservation must price those rebuilds.
     std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> selectPartsToMerge(
         const StorageMetadataPtr & metadata_snapshot,
         bool aggressive,
@@ -259,7 +264,10 @@ private:
         TableLockHolder & table_lock_holder,
         std::unique_lock<std::mutex> & lock,
         const MergeTreeTransactionPtr & txn,
-        bool optimize_skip_merged_partitions = false);
+        bool optimize_skip_merged_partitions = false,
+        bool user_initiated = false,
+        bool deduplicate = false,
+        bool cleanup = false);
 
     MergeMutateSelectedEntryPtr selectPartsToMutate(
         const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & disable_reason,
@@ -487,6 +495,14 @@ private:
     PartMutationBackoffPolicy mutation_backoff_policy;
 
     MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;
+
+    /// The body of getMutationsSnapshot for callers that already hold currently_processing_in_background_mutex
+    /// (getMutationsSnapshot itself takes it, so calling it under the mutex would deadlock). The patch parts,
+    /// which the public method fetches before taking the mutex, are passed in by the caller.
+    MutationsSnapshotPtr getMutationsSnapshotUnlocked(
+        const IMutationsSnapshot::Params & params,
+        DataPartsVector patch_parts,
+        std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock) const;
 };
 
 }

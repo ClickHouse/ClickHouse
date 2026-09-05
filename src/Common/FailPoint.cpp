@@ -112,6 +112,8 @@ static struct InitFiu
     REGULAR(distributed_cache_wait_gap_buffered_on_seek) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
+    PAUSEABLE(plain_merge_task_pause_before_prepare) \
+    PAUSEABLE(rmt_merge_task_pause_after_reserve) \
     PAUSEABLE(file_segment_pause_before_write) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
@@ -130,6 +132,7 @@ static struct InitFiu
     REGULAR(smt_dont_merge_first_part) \
     REGULAR(smt_mutate_only_second_part) \
     REGULAR(smt_sleep_in_schedule_data_processing_job) \
+    REGULAR(merge_memory_reservation_gate_closed) \
     REGULAR(smt_simulate_part_removed_during_load) \
     REGULAR(cache_warmer_stall) \
     REGULAR(file_cache_dynamic_resize_fail_to_evict) \

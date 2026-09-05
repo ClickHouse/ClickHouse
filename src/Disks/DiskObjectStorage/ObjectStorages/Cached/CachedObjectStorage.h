@@ -112,6 +112,11 @@ public:
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
+    MultipartUploadMemory getWriteBufferMemory(const WriteSettings & write_settings) const override
+    {
+        return object_storage->getWriteBufferMemory(write_settings);
+    }
+
     bool supportsObjectGenerationComparison() const override { return object_storage->supportsObjectGenerationComparison(); }
 
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }

@@ -6320,13 +6320,18 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
 }
 
 MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
-    size_t bytes_uncompressed, size_t rows_count, UInt32 part_level, ProjectionDescriptionRawPtr projection) const
+    size_t bytes_uncompressed,
+    size_t rows_count,
+    UInt32 part_level,
+    ProjectionDescriptionRawPtr projection,
+    const MergeTreeSettingsPtr & base_settings) const
 {
     using PartType = MergeTreeDataPartType;
     using PartStorageType = MergeTreeDataPartStorageType;
 
     String out_reason;
-    const auto settings = getSettings(projection ? &projection->settings_changes : nullptr);
+    const auto * settings_changes = projection ? &projection->settings_changes : nullptr;
+    const auto settings = base_settings ? applySettingsChanges(base_settings, settings_changes) : getSettings(settings_changes);
     if (!canUsePolymorphicParts(*settings, out_reason))
         return {PartType::Wide, PartStorageType::Full};
 
@@ -10364,6 +10369,7 @@ void MergeTreeData::optimizeDryRun(
     auto merge_task = merger_mutator.mergePartsToTemporaryPart(
         future_part,
         metadata_snapshot,
+        getSettings(),
         merge_list_entry.get(),
         /*projection_merge_list_element=*/ {},
         table_lock,
@@ -13361,16 +13367,20 @@ MergeTreeData::PartsSnapshotInfo MergeTreeData::getPartsSnapshotInfo(const DataP
 
 MergeTreeSettingsPtr MergeTreeData::getSettings(const SettingsChanges * settings_changes) const
 {
-    auto data_settings = storage_settings.get();
+    return applySettingsChanges(storage_settings.get(), settings_changes);
+}
 
+MergeTreeSettingsPtr MergeTreeData::applySettingsChanges(
+    const MergeTreeSettingsPtr & base_settings, const SettingsChanges * settings_changes) const
+{
     if (settings_changes && !settings_changes->empty())
     {
-        auto new_data_settings = std::make_shared<MergeTreeSettings>(*data_settings);
+        auto new_data_settings = std::make_shared<MergeTreeSettings>(*base_settings);
         new_data_settings->applyChanges(*settings_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
         return new_data_settings;
     }
 
-    return data_settings;
+    return base_settings;
 }
 
 StorageMetadataHandle MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const

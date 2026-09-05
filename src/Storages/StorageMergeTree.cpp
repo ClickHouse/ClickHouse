@@ -13,6 +13,8 @@
 #include <Core/UUID.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
+#include <Disks/IVolume.h>
+#include <Disks/StoragePolicy.h>
 #include <Disks/supportWritingWithAppend.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/copyData.h>
@@ -95,6 +97,7 @@ namespace FailPoints
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_pause_before_register_mutation[];
     extern const char mt_alter_throw_in_durable_rollback[];
+    extern const char merge_memory_reservation_gate_closed[];
 }
 
 namespace Setting
@@ -1633,7 +1636,10 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     TableLockHolder & /* table_lock_holder */,
     std::unique_lock<std::mutex> & lock,
     const MergeTreeTransactionPtr & txn,
-    bool optimize_skip_merged_partitions)
+    bool optimize_skip_merged_partitions,
+    bool user_initiated,
+    bool deduplicate,
+    bool cleanup)
 {
     /// Merges are disabled for UNIQUE KEY tables: a background merge can outdate
     /// a DELETE's target part between part-resolution and marker publish (the
@@ -1653,12 +1659,22 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
     const auto is_background_memory_usage_ok = []() -> std::expected<void, PreformattedMessage>
     {
+        /// Simulate a background admission gate saturated by reservations of running merges, so that a test
+        /// can deterministically verify that a user-initiated OPTIMIZE still bypasses it.
+        fiu_do_on(FailPoints::merge_memory_reservation_gate_closed,
+        {
+            ProfileEvents::increment(ProfileEvents::MergesRejectedByMemoryLimit);
+            return std::unexpected(PreformattedMessage::create("Background tasks memory gate is closed (failpoint)"));
+        });
+
         if (canEnqueueBackgroundTask())
             return {};
 
         ProfileEvents::increment(ProfileEvents::MergesRejectedByMemoryLimit);
-        return std::unexpected(PreformattedMessage::create("Current background tasks memory usage ({}) is more than the limit ({})",
+        return std::unexpected(PreformattedMessage::create(
+                "Current background tasks memory usage ({}) or the memory reserved by scheduled background tasks ({}) is more than the limit ({})",
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.get()),
+                formatReadableSizeWithBinarySuffix(getReservedMergeMemory()),
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit())));
     };
 
@@ -1714,11 +1730,18 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
     const auto select_without_hint = [&]() -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
     {
-        if (auto check_memory_result = is_background_memory_usage_ok(); !check_memory_result.has_value())
-            return std::unexpected(SelectMergeFailure{
-                .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-                .explanation = std::move(check_memory_result.error()),
-            });
+        /// A user-initiated merge (OPTIMIZE) must never be silently skipped by the background admission
+        /// gate: it reserves memory unconditionally in construct_merge_select_entry. Only background merge
+        /// selection is throttled here, so that reservations of running merges cannot block an explicit
+        /// OPTIMIZE once they have saturated merges_mutations_memory_usage_soft_limit.
+        if (!user_initiated)
+        {
+            if (auto check_memory_result = is_background_memory_usage_ok(); !check_memory_result.has_value())
+                return std::unexpected(SelectMergeFailure{
+                    .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                    .explanation = std::move(check_memory_result.error()),
+                });
+        }
 
         UInt64 max_source_parts_bytes_for_merge = CompactionStatistics::getMaxSourcePartsBytesForMerge(*this);
         UInt64 max_result_part_rows = CompactionStatistics::getMaxResultPartRowsCount(*this);
@@ -1756,25 +1779,31 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             auto timeout = saturatedMilliseconds((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations].totalMilliseconds());
             auto timeout_ms = timeout.count();
 
-            if (auto memory_check = is_background_memory_usage_ok(); !memory_check.has_value())
+            /// A user-initiated merge (OPTIMIZE) reserves memory unconditionally below, so it must not be
+            /// gated (or made to wait) on the background admission check here - otherwise reservations of
+            /// running merges that have saturated the soft limit would silently turn OPTIMIZE into a no-op.
+            if (!user_initiated)
             {
-                constexpr auto poll_interval = std::chrono::seconds(1);
-                Int64 attempts = timeout / poll_interval;
-                bool ok = false;
-                for (Int64 i = 0; i < attempts; ++i)
+                if (auto memory_check = is_background_memory_usage_ok(); !memory_check.has_value())
                 {
-                    std::this_thread::sleep_for(poll_interval);
-                    if (memory_check = is_background_memory_usage_ok(); memory_check.has_value())
+                    constexpr auto poll_interval = std::chrono::seconds(1);
+                    Int64 attempts = timeout / poll_interval;
+                    bool ok = false;
+                    for (Int64 i = 0; i < attempts; ++i)
                     {
-                        ok = true;
-                        break;
+                        std::this_thread::sleep_for(poll_interval);
+                        if (memory_check = is_background_memory_usage_ok(); memory_check.has_value())
+                        {
+                            ok = true;
+                            break;
+                        }
                     }
+                    if (!ok)
+                        return std::unexpected(SelectMergeFailure{
+                            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                            .explanation = std::move(memory_check.error()),
+                        });
                 }
-                if (!ok)
-                    return std::unexpected(SelectMergeFailure{
-                        .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-                        .explanation = std::move(memory_check.error()),
-                    });
             }
 
             auto select_result = merger_mutator.selectAllPartsToMergeWithinPartition(
@@ -1817,10 +1846,226 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
         try
         {
+            /// Reserve memory for the merge's input/output IO buffers up front, so that scheduling
+            /// many merges at once (for example right after a mutation produces many parts) cannot
+            /// oversubscribe memory once all of them start allocating buffers.
+            /// The destination disk is not chosen yet (CurrentlyMergingPartsTagger does that below), and
+            /// the admission check must not under-price a merge whose result MAY land on object storage:
+            /// TTL move rules and multi-volume storage policies can pick a remote destination even when
+            /// every source part is local, and the disk-corrected reservation below happens only after the
+            /// merge is committed to run. Selections of different tables are serialized only by each
+            /// table's own mutex, so with a cheaper local-source admission guess several tables could pass
+            /// tryReserve concurrently and then all upgrade themselves to the real remote estimate,
+            /// pushing the reserved total past the soft limit - exactly the remote-writer burst the
+            /// reservation exists to prevent. Admit against the worst case over the disks this merge can
+            /// actually be given (see the candidate destinations below): remote whenever any of them is
+            /// remote, sized by the largest multipart write buffers among those remote disks (a zero
+            /// ceiling - every reachable remote disk is e.g. HDFS without multipart buffers - correctly
+            /// degrades to the local per-stream estimate). The tagger's actual disk choice below then only keeps or lowers the reservation.
+            /// The MergeTree settings the merge runs with: read ONCE here and carried to the task through
+            /// the selected entry, so the merge (MergeTask reads them for max_compress_block_size, the
+            /// projection decisions, the vertical-merge rules, ...) cannot observe a different value than
+            /// this estimate priced. A concurrent ALTER ... MODIFY SETTING would otherwise change them
+            /// between this selection and the moment a queued merge finally constructs its MergeTask - the
+            /// same selection-vs-execution drift already pinned for the context and for time_of_merge.
+            const MergeTreeSettingsPtr data_settings = getSettings();
+
+            /// Whether the merge runs with CLEANUP. A user-initiated merge (OPTIMIZE ... CLEANUP) passes it
+            /// in; a background merge is selected with cleanup = false, and whether it really runs as a
+            /// ReplacingMergeTree cleanup merge is decided only by the scheduler - historically AFTER
+            /// selection, from the live settings (scheduleDataProcessingJob). A cleanup merge removes
+            /// deleted rows, so it is a row-reducing merge that rebuilds projections; pricing it as an
+            /// ordinary merge would under-reserve exactly the merges min_age_to_force_merge_* schedules in
+            /// bulk. Derive it here instead, from future_part->final and the same settings snapshot the
+            /// estimate uses (the very condition the scheduler applied), and carry it to the scheduler
+            /// through the selected entry - which also pins it against a concurrent ALTER ... MODIFY
+            /// SETTING between selection and scheduling, the same selection-vs-execution drift already
+            /// pinned for the context, the settings and time_of_merge.
+            const bool merge_with_cleanup = user_initiated
+                ? cleanup
+                : (future_part->final
+                   && (*data_settings)[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup]
+                   && (*data_settings)[MergeTreeSetting::enable_replacing_merge_with_cleanup_for_min_age_to_force_merge]
+                   && (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds]
+                   && (*data_settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only]);
+
+            /// Estimate the reservation against the same context the merge will actually run under: a copy of
+            /// the background context with the merge query settings applied. A non-default background_profile
+            /// can raise the read/upload buffer sizes above the storage/global settings, and the reservation
+            /// must reflect what the merge will use. The context is carried to the task through the selected
+            /// entry (MergePlainMergeTreeTask runs the merge with it), so a merge that waits in the background
+            /// queue cannot pick up different settings than this estimate priced - the same
+            /// selection-vs-execution pinning as time_of_merge below.
+            auto merge_context = Context::createCopy(getContext()->getBackgroundContext());
+            merge_context->makeQueryContextForMerge(*data_settings);
+
+            /// Whether a multipart writer may upload its parts in parallel comes from the write settings of
+            /// the merge's own context (unlike the multipart sizes, which come from the disk configuration):
+            /// without a parallel upload scheduler the writer uploads inline and holds far fewer buffers.
+            const auto merge_write_settings = merge_context->getWriteSettings();
+
+            /// The timestamp the merge runs with (MergeTask's time_of_merge): captured once here and
+            /// carried to the task through the selected entry, so the merge evaluates its TTL boundaries
+            /// against the same clock this estimate priced them with.
+            const time_t time_of_merge = std::time(nullptr);
+
+            /// The disks this merge can actually land on. CurrentlyMergingPartsTagger reserves either on the
+            /// destination of a move TTL rule, or - through balancedReservation /
+            /// tryReserveSpacePreferringTTLRules - on a volume no earlier than the last volume any source
+            /// part sits on: both take the source parts' max volume index as the min volume index of
+            /// StoragePolicy::reserve / getVolume. Earlier volumes of the policy are therefore impossible
+            /// destinations, and letting one of them mark the output as remote - or contribute its multipart
+            /// ceiling - would reject merges for upload memory that can never be allocated. A move TTL adds
+            /// only the destination selected for these source parts at this captured timestamp: the tagger
+            /// reserves its destination immediately, so a future TTL rule cannot change this queued merge's
+            /// disk later.
+            const auto storage_policy = getStoragePolicy();
+            size_t min_reachable_volume_index = 0;
+            for (const auto & part : future_part->parts)
+            {
+                const auto volume_index = storage_policy->tryGetVolumeIndexByDiskName(part->getDataPartStorage().getDiskName());
+                if (!volume_index)
+                {
+                    /// A part on a disk that is no longer part of the policy: keep the reachable set at its
+                    /// widest instead of guessing, which can only over-price this guess.
+                    min_reachable_volume_index = 0;
+                    break;
+                }
+                min_reachable_volume_index = std::max(min_reachable_volume_index, *volume_index);
+            }
+
+            Disks candidate_destination_disks;
+            const auto & policy_volumes = storage_policy->getVolumes();
+            for (size_t volume_index = min_reachable_volume_index; volume_index < policy_volumes.size(); ++volume_index)
+            {
+                const auto & volume_disks = policy_volumes[volume_index]->getDisks();
+                candidate_destination_disks.insert(candidate_destination_disks.end(), volume_disks.begin(), volume_disks.end());
+            }
+
+            IMergeTreeDataPart::TTLInfos ttl_infos;
+            for (const auto & part : future_part->parts)
+                ttl_infos.update(part->ttl_infos);
+            if (const auto move_ttl = selectTTLDescriptionForTTLInfos(
+                    metadata_snapshot->getMoveTTLs(), ttl_infos.moves_ttl, time_of_merge, true))
+            {
+                const auto destination = getDestinationForMoveTTL(*move_ttl);
+                if (destination)
+                {
+                    if (destination->isVolume())
+                    {
+                        const auto & volume_disks = std::static_pointer_cast<IVolume>(destination)->getDisks();
+                        candidate_destination_disks.insert(candidate_destination_disks.end(), volume_disks.begin(), volume_disks.end());
+                    }
+                    else if (destination->isDisk())
+                        candidate_destination_disks.push_back(std::static_pointer_cast<IDisk>(destination));
+                }
+            }
+
+            bool output_may_be_on_remote_disk = false;
+            std::vector<CompactionStatistics::DiskWriteBufferMemory> admission_write_buffer_memories;
+            for (const auto & disk : candidate_destination_disks)
+            {
+                /// A read-only disk can never be the merge's destination: the disk-space reservation below
+                /// (CurrentlyMergingPartsTagger) goes through StoragePolicy::reserve / VolumeJBOD, which
+                /// skip read-only volumes and disks. Such a disk still belongs to a reachable volume (a
+                /// policy mixing a writable local disk with a read-only object-storage one is legitimate), and
+                /// letting it mark the output as remote - or contribute its multipart ceiling - would
+                /// reject merges for upload memory on a destination that is impossible to pick.
+                if (disk->isReadOnly() || !disk->isRemote())
+                    continue;
+                output_may_be_on_remote_disk = true;
+                const auto disk_write_buffer_memory = CompactionStatistics::getDiskWriteBufferMemory(disk, merge_write_settings);
+                admission_write_buffer_memories.push_back(disk_write_buffer_memory);
+            }
+
+            /// Snapshot of the pending mutations for the source parts, built with the same parameters
+            /// MergeTask builds its own: the estimate must observe the same pending RENAME COLUMN
+            /// mutations the merge will apply on-fly, or a not-yet-materialized rename target would be
+            /// priced as expired while the merge reads and rewrites it (see the pending-rename handling
+            /// in estimateNeededMemoryForMerge). currently_processing_in_background_mutex is held here,
+            /// so the snapshot is taken through the unlocked variant.
+            const auto parts_info = MergeTreeData::getPartsSnapshotInfo(future_part->parts);
+            const MergeTreeData::IMutationsSnapshot::Params mutations_params
+            {
+                .metadata_version = metadata_snapshot->getMetadataVersion(),
+                .min_part_metadata_version = parts_info.min_metadata_version,
+                .min_part_data_versions = nullptr,
+                .max_mutation_versions = nullptr,
+                .need_data_mutations = false,
+                .need_alter_mutations = !future_part->patch_parts.empty(),
+                .need_patch_parts = false,
+                .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+            };
+            const auto mutations_snapshot = getMutationsSnapshotUnlocked(mutations_params, /*patch_parts=*/ {}, lock);
+
+            const UInt64 needed_memory = CompactionStatistics::estimateNeededMemoryForMerge(
+                *future_part, metadata_snapshot, merge_context, *data_settings, mutations_snapshot, time_of_merge,
+                output_may_be_on_remote_disk, admission_write_buffer_memories, deduplicate, merge_with_cleanup);
+
+            std::optional<MergeMemoryReservation> memory_reservation;
+            if (user_initiated)
+            {
+                /// The user explicitly requested this merge (OPTIMIZE), so it must not be silently
+                /// skipped by the reservation gate: reserve unconditionally. The reservation still
+                /// throttles selection of background merges via canEnqueueBackgroundTask.
+                memory_reservation = MergeMemoryReservation::reserve(needed_memory);
+            }
+            else
+            {
+                memory_reservation = MergeMemoryReservation::tryReserve(needed_memory);
+                if (!memory_reservation)
+                {
+                    if (isTTLMergeType(future_part->merge_type))
+                        getContext()->getMergeList().cancelMergeWithTTL();
+
+                    ProfileEvents::increment(ProfileEvents::MergesRejectedByMemoryLimit);
+                    return std::unexpected(SelectMergeFailure{
+                        .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                        .explanation = PreformattedMessage::create(
+                            "Not enough memory to reserve for the merge (need {}, already reserved by running merges {}, limit {})",
+                            formatReadableSizeWithBinarySuffix(needed_memory),
+                            formatReadableSizeWithBinarySuffix(getReservedMergeMemory()),
+                            formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit())),
+                    });
+                }
+            }
+
             uint64_t needed_disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts, true);
             auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, needed_disk_space, *this, metadata_snapshot, false);
 
-            return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
+            /// The tagger has now chosen the actual destination disk. Redo the reservation with that disk's
+            /// own write buffer sizes whenever the output is on a remote disk (its multipart upload sizing
+            /// can be smaller than the worst case over the policy's remote disks the admission used - or
+            /// absent: a remote disk like HDFS has no multipart upload buffers and gets the local
+            /// per-stream estimate) or when the admission priced a possible remote destination the tagger
+            /// did not pick (a local destination re-estimates at the local price). Since the admission
+            /// check already used the worst case over the disks this table can write to, this correction
+            /// only keeps or lowers the reservation; the merge is already committed to run at this point,
+            /// so reserve unconditionally (as the replicated path does) - the corrected reservation still
+            /// throttles selection of further merges. The swap must be atomic (`replace`, not a fresh
+            /// `reserve` moved over the old value): concurrent selectors would otherwise observe the
+            /// transient `old + new` total and spuriously reject merges that fit.
+            const DiskPtr actual_disk = tagger->reserved_space->getDisk();
+            const bool actual_output_on_remote_disk = actual_disk->isRemote();
+            if (actual_output_on_remote_disk || actual_output_on_remote_disk != output_may_be_on_remote_disk)
+            {
+                memory_reservation = MergeMemoryReservation::replace(
+                    std::move(*memory_reservation),
+                    CompactionStatistics::estimateNeededMemoryForMerge(
+                        *future_part, metadata_snapshot, merge_context, *data_settings, mutations_snapshot, time_of_merge,
+                        actual_output_on_remote_disk,
+                        {CompactionStatistics::getDiskWriteBufferMemory(actual_disk, merge_write_settings)},
+                        deduplicate, merge_with_cleanup));
+            }
+
+            tagger->memory_reservation = std::move(*memory_reservation);
+
+            auto selected_entry = std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
+            selected_entry->time_of_merge = time_of_merge;
+            selected_entry->merge_context = merge_context;
+            selected_entry->data_settings = data_settings;
+            selected_entry->cleanup = merge_with_cleanup;
+            return selected_entry;
         }
         catch (...)
         {
@@ -1873,7 +2118,10 @@ bool StorageMergeTree::merge(
             table_lock_holder,
             lock,
             txn,
-            optimize_skip_merged_partitions);
+            optimize_skip_merged_partitions,
+            /*user_initiated=*/true,
+            deduplicate,
+            cleanup);
     }();
 
     if (merge_select_result.has_value())
@@ -2220,11 +2468,13 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         if (is_cancelled(merge_entry))
             return false;
 
-        bool cleanup = merge_entry->future_part->final
-            && (*getSettings())[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup]
-            && (*getSettings())[MergeTreeSetting::enable_replacing_merge_with_cleanup_for_min_age_to_force_merge]
-            && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_seconds]
-            && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_on_partition_only];
+        /// Whether this background merge runs with CLEANUP was decided at selection time
+        /// (selectPartsToMerge derives it from future_part->final and the min_age_to_force_merge_* /
+        /// replacing-merge-with-cleanup settings) and carried on the entry: the up-front memory
+        /// reservation priced the merge with that value - a cleanup merge reduces rows and rebuilds
+        /// projections - so re-deriving it here from the live settings could run a merge the reservation
+        /// priced as an ordinary one as a cleanup merge.
+        const bool cleanup = merge_entry->cleanup;
 
         auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, /* deduplicate */ false, Names{}, cleanup, merge_entry, shared_lock, common_assignee_trigger);
         task->setCurrentTransaction(std::move(transaction_for_merge), std::move(txn));
@@ -3850,13 +4100,21 @@ NameSet StorageMergeTree::MutationsSnapshot::getAllUpdatedColumns() const
 MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const IMutationsSnapshot::Params & params) const
 {
     DataPartsVector patch_parts;
-    MutationCounters mutations_snapshot_counters;
-    MutationsSnapshot::MutationsByVersion mutations_snapshot;
-
     if (params.need_patch_parts)
         patch_parts = getPatchPartsVectorForInternalUsage();
 
-    std::lock_guard lock(currently_processing_in_background_mutex);
+    std::unique_lock lock(currently_processing_in_background_mutex);
+    return getMutationsSnapshotUnlocked(params, std::move(patch_parts), lock);
+}
+
+MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshotUnlocked(
+    const IMutationsSnapshot::Params & params,
+    DataPartsVector patch_parts,
+    std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
+{
+    MutationCounters mutations_snapshot_counters;
+    MutationsSnapshot::MutationsByVersion mutations_snapshot;
+
     if (!params.need_data_mutations && !params.need_alter_mutations && mutation_counters.num_metadata <= 0)
         return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
 

@@ -1107,7 +1107,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         /*blocks_are_granules_size=*/false,
         context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr),
-        /*try_adaptive_codec=*/ false);
+        /*try_adaptive_codec=*/ false,
+        context);
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
@@ -1189,7 +1190,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     const ProjectionDescription & projection,
     MergeTreeIndices indices,
     bool merge_is_needed,
-    bool try_adaptive_codec)
+    bool try_adaptive_codec,
+    ContextPtr context,
+    const MergeTreeSettingsPtr & base_data_settings)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     const auto & metadata_snapshot = projection.metadata;
@@ -1199,11 +1202,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     size_t expected_size = block.bytes();
     // just check if there is enough space on parent volume
     MergeTreeData::reserveSpace(expected_size, parent_part->getDataPartStorage());
-    part_type = data.choosePartFormat(expected_size, block.rows(), parent_part->info.level, &projection).part_type;
+    part_type = data.choosePartFormat(expected_size, block.rows(), parent_part->info.level, &projection, base_data_settings).part_type;
 
     auto new_data_part = parent_part->getProjectionPartBuilder(part_name, &projection, PartDirIntent::CreateFresh, is_temp).withPartType(part_type).build();
     auto projection_part_storage = new_data_part->getDataPartStoragePtr();
-    auto data_settings = data.getSettings(&projection.settings_changes);
+    auto data_settings = base_data_settings ? data.applySettingsChanges(base_data_settings, &projection.settings_changes)
+                                            : data.getSettings(&projection.settings_changes);
 
     if (is_temp)
         projection_part_storage->beginTransaction();
@@ -1306,9 +1310,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
-        data.getContext()->getWriteSettings(),
+        context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr),
-        try_adaptive_codec);
+        try_adaptive_codec,
+        context);
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
@@ -1349,7 +1354,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         projection,
         std::move(indices),
         merge_is_needed,
-        /*try_adaptive_codec=*/ false);
+        /*try_adaptive_codec=*/ false,
+        context,
+        /*base_data_settings=*/ {});
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
@@ -1360,9 +1367,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,
     size_t block_num,
-    ContextPtr context)
+    ContextPtr context,
+    const MergeTreeSettingsPtr & base_data_settings)
 {
-    const auto & table_settings = data.getSettings();
+    /// The frozen selection-time snapshot when the caller is a merge (see the declaration), the live
+    /// table settings otherwise (a MATERIALIZE PROJECTION mutation).
+    const auto table_settings = base_data_settings ? base_data_settings : data.getSettings();
     auto indices = collectSkipIndicesToMaterialize(
         projection.metadata,
         (*table_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge],
@@ -1380,7 +1390,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         projection,
         std::move(indices),
         /*merge_is_needed=*/ true,
-        /*try_adaptive_codec=*/ true);
+        /*try_adaptive_codec=*/ true,
+        context,
+        base_data_settings);
 
     new_part->part->temp_projection_block_number = block_num;
     return new_part;

@@ -80,7 +80,11 @@ bool MergeProjectionPartsTask::executeStep()
         ++block_num;
         auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
         MergeTreeData::DataPartsVector const_selected_parts(selected_parts.begin(), selected_parts.end());
-        projection_future_part->assign(std::move(const_selected_parts), /*patch_parts_=*/ {}, &projection);
+        /// The read-back merge's part format is decided from the same frozen settings snapshot the merge
+        /// that produced these temporary parts priced its reservation against (see below), so a concurrent
+        /// ALTER ... MODIFY SETTING of the wide-part thresholds cannot turn the read-back part Wide behind
+        /// the reservation's back.
+        projection_future_part->assign(std::move(const_selected_parts), /*patch_parts_=*/ {}, &projection, base_data_settings);
         projection_future_part->name = fmt::format("{}_{}", projection.name, ++block_num);
         projection_future_part->part_info = {"all", 0, 0, 0};
 
@@ -100,9 +104,13 @@ bool MergeProjectionPartsTask::executeStep()
             child_merge_list_element->parent_progress = &parent_merge_list_element->current_projection_progress;
         }
 
+        /// The read-back merge of the temporary projection parts runs with the same frozen table settings
+        /// snapshot as the merge that produced them (the nested MergeTask applies the projection's own
+        /// WITH SETTINGS on top), so it cannot pick up a concurrent ALTER ... MODIFY SETTING either.
         auto tmp_part_merge_task = mutator->mergePartsToTemporaryPart(
             projection_future_part,
             projection.metadata,
+            base_data_settings,
             merge_entry,
             std::move(child_merge_list_element),
             *table_lock_holder,

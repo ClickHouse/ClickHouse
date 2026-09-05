@@ -15,6 +15,7 @@
 #include <IO/copyData.h>
 
 #include <Core/Types.h>
+#include <Common/BufferAllocationPolicy.h>
 #include <Common/Exception.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/ObjectStorageKeyGenerator.h>
@@ -404,6 +405,21 @@ public:
     virtual bool isReadOnly() const { return false; }
 
     virtual bool supportParallelWrite() const { return false; }
+
+    /// The maximum amount of memory a single write buffer to this storage can hold at once. A background
+    /// merge writes one such buffer per output column stream and reserves memory for them up front (see
+    /// MergeMemoryReservation / CompactionStatistics::estimateNeededMemoryForMerge). For object storage this
+    /// is the multipart upload buffer ceiling derived from this storage's own request settings: background
+    /// writes take their multipart sizes from the disk configuration, not from the query/session settings, so
+    /// the estimate must read them from here rather than from the merge context. Returns 0 when the storage
+    /// does not buffer writes in memory in a settings-dependent size (the estimator then falls back to the
+    /// global defaults), and MultipartUploadMemory::UNLIMITED when no finite ceiling exists because the
+    /// storage allows unlimited in-flight upload parts. The returned allocation policy is also used to
+    /// avoid reserving a multipart tier that the estimated output volume cannot reach.
+    /// `write_settings` are the settings the writer will be created with: unlike the multipart sizes, whether
+    /// part uploads may run in parallel comes from them (see `writeObject`), and a writer without a parallel
+    /// upload scheduler cannot keep several detached buffers alive at once (getEffectiveMaxInflightParts).
+    virtual MultipartUploadMemory getWriteBufferMemory(const WriteSettings & /*write_settings*/) const { return {}; }
 
     /// Whether a fetched `ObjectMetadata` is guaranteed to carry at least one comparable generation
     /// token — a non-empty `etag`, a known size, or a known modification time — so that two fetches

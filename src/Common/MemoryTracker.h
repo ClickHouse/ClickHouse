@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <optional>
 #include <type_traits>
 #include <base/types.h>
 #include <Common/AllocationTrace.h>
@@ -344,5 +345,96 @@ static_assert(std::alignment_of_v<MemoryTracker> == DB::CH_CACHE_LINE_SIZE);
 extern MemoryTracker total_memory_tracker;
 extern MemoryTracker background_memory_tracker;
 bool isTotalMemoryTrackerInitialized();
+
+/// Proactive memory reservation for background merges.
+///
+/// `background_memory_tracker` measures memory that background tasks have *already* allocated, so the
+/// `canEnqueueBackgroundTask` gate is reactive: at the moment many merges are scheduled (for example
+/// right after a mutation produces many parts) their IO buffers are not allocated yet, all of them pass
+/// the gate, and only then grow their memory and collide. To avoid this, a merge estimates the memory
+/// of its input/output IO buffers up front and reserves it here at start; the reservation is released
+/// when the merge finishes. The gate consults both the actual usage and this reservation.
+///
+/// Returns the currently reserved amount (bytes) for background merges.
+Int64 getReservedMergeMemory();
+
+/// Account `bytes` as reserved. Used by `MergeMemoryReservation`. The true total is kept in a
+/// 128-bit accumulator, so concurrent huge reservations can never overflow it, and each release
+/// subtracts exactly what the matching reservation added — the published (clamped) counter stays
+/// saturated for as long as any huge reservation is alive, whatever the release order.
+/// Returns `bytes`, which is what must be passed to `releaseMergeMemory`.
+Int64 reserveMergeMemory(Int64 bytes);
+void releaseMergeMemory(Int64 bytes);
+
+/// RAII holder of a merge memory reservation. Releases the reservation on destruction.
+/// Construct via one of the static factories. Move-only.
+class MergeMemoryReservation
+{
+public:
+    MergeMemoryReservation() = default;
+
+    MergeMemoryReservation(MergeMemoryReservation && other) noexcept
+        : bytes(other.bytes), active(other.active)
+    {
+        other.active = false;
+    }
+
+    MergeMemoryReservation & operator=(MergeMemoryReservation && other) noexcept
+    {
+        if (this != &other)
+        {
+            release();
+            bytes = other.bytes;
+            active = other.active;
+            other.active = false;
+        }
+        return *this;
+    }
+
+    MergeMemoryReservation(const MergeMemoryReservation &) = delete;
+    MergeMemoryReservation & operator=(const MergeMemoryReservation &) = delete;
+
+    ~MergeMemoryReservation() { release(); }
+
+    /// Both factories take the estimate as UInt64 because CompactionStatistics::estimateNeededMemoryForMerge
+    /// saturates to the UInt64 maximum when a bound is unlimited (e.g. an object storage multipart upload
+    /// ceiling with no inflight cap); the conversion to the Int64 reservation counter saturates at the
+    /// Int64 maximum instead of wrapping negative (which would loosen the gate as the estimate grows).
+
+    /// Reserve `bytes` only if it fits within the merges/mutations memory soft limit
+    /// (a single merge larger than the limit is always allowed, so progress is never blocked).
+    /// Returns an empty optional if the reservation would exceed the limit.
+    static std::optional<MergeMemoryReservation> tryReserve(UInt64 bytes);
+
+    /// Reserve `bytes` unconditionally (used where the operation is already committed to run,
+    /// so that the reservation still contributes to the gate for other, not-yet-started merges).
+    static MergeMemoryReservation reserve(UInt64 bytes);
+
+    /// Replace `old` with an unconditional reservation of `bytes`, releasing the old amount and
+    /// reserving the new one in a single critical section. The correction paths (the actual-disk
+    /// re-pricing in StorageMergeTree::selectPartsToMerge, the task-start re-pricing in
+    /// MergePlainMergeTreeTask::prepare) must use this instead of `reservation = reserve(bytes)`:
+    /// there the right-hand side increments the global counter before the move assignment releases
+    /// the old value, and another selector's tryReserve can observe the transient `old + new` total
+    /// and reject a merge that fits the corrected reservation.
+    static MergeMemoryReservation replace(MergeMemoryReservation && old, UInt64 bytes);
+
+    Int64 getBytes() const { return bytes; }
+
+private:
+    explicit MergeMemoryReservation(Int64 bytes_) : bytes(bytes_), active(true) {}
+
+    void release()
+    {
+        if (active)
+        {
+            releaseMergeMemory(bytes);
+            active = false;
+        }
+    }
+
+    Int64 bytes = 0;
+    bool active = false;
+};
 
 bool canEnqueueBackgroundTask();

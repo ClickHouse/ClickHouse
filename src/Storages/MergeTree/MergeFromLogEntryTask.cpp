@@ -41,6 +41,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char rmt_merge_task_sleep_in_prepare[];
+    extern const char rmt_merge_task_pause_after_reserve[];
 }
 
 namespace ErrorCodes
@@ -263,6 +264,14 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     /// It will live until the whole task is being destroyed
     table_lock_holder = storage.lockForShare(RWLockImpl::NO_QUERY, (*storage_settings_ptr)[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
 
+    /// The MergeTree settings the merge will run with, frozen once here - under the table share lock the
+    /// merge itself holds - and used for everything the merge does: its context (makeQueryContextForMerge),
+    /// its up-front memory reservation, and MergeTask's own writer decisions. Reading them again later, as
+    /// MergeTask does by default, would let a concurrent ALTER ... MODIFY SETTING (a replicated
+    /// ALTER_METADATA entry executed on this replica) change `max_compress_block_size`, the projection
+    /// decisions or the vertical-merge rules after this reservation priced the merge.
+    const auto merge_data_settings = storage.getSettings();
+
     auto future_merged_part = std::make_shared<FutureMergedMutatedPart>();
     future_merged_part->assign(parts, patch_parts, entry.new_part_format);
 
@@ -353,15 +362,58 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         }
     }
 
+    /// Build the merge context up front - a copy of the background context with the merge query settings
+    /// applied - so the reservation below is estimated against the exact read/upload buffer sizes the merge
+    /// will actually run with. A non-default background_profile can raise max_read_buffer_size_* or the
+    /// object-storage multipart sizes above the storage/global settings, and the reservation must reflect it.
+    task_context = Context::createCopy(storage.getContext()->getBackgroundContext());
+    task_context->makeQueryContextForMerge(*merge_data_settings);
+    task_context->setCurrentQueryId(getQueryId());
+
+    /// Reserve memory for the merge's input/output IO buffers up front (see MergeMemoryReservation).
+    /// This replica is already committed to running this merge locally, so reserve unconditionally;
+    /// the reservation still throttles selection of further merges via canEnqueueBackgroundTask.
+    /// The destination disk is already chosen here, so size the write buffers from that disk's own
+    /// multipart upload settings (a background writer ignores the query/session settings); a zero ceiling
+    /// means the disk - local, or remote like HDFS - has no multipart upload buffers and the local
+    /// per-stream estimate applies.
+    const DiskPtr output_disk = reserved_space->getDisk();
+    /// Snapshot of the pending mutations for the source parts, built with the same parameters MergeTask
+    /// builds its own: the estimate must observe the same pending RENAME COLUMN mutations the merge will
+    /// apply on-fly, or a not-yet-materialized rename target would be priced as expired while the merge
+    /// reads and rewrites it (see the pending-rename handling in estimateNeededMemoryForMerge).
+    const auto parts_info = MergeTreeData::getPartsSnapshotInfo(future_merged_part->parts);
+    const MergeTreeData::IMutationsSnapshot::Params mutations_params
+    {
+        .metadata_version = metadata_snapshot->getMetadataVersion(),
+        .min_part_metadata_version = parts_info.min_metadata_version,
+        .min_part_data_versions = nullptr,
+        .max_mutation_versions = nullptr,
+        .need_data_mutations = false,
+        .need_alter_mutations = !future_merged_part->patch_parts.empty(),
+        .need_patch_parts = false,
+        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+    };
+    const auto mutations_snapshot = storage.getMutationsSnapshot(mutations_params);
+    /// The merge below runs with entry.create_time as its time_of_merge, so the TTL trigger of
+    /// merge_may_reduce_rows is priced against that same clock - never against a fresher one that could
+    /// disagree with the merge about whether a TTL boundary has passed.
+    memory_reservation = MergeMemoryReservation::reserve(
+        CompactionStatistics::estimateNeededMemoryForMerge(
+            *future_merged_part, metadata_snapshot, task_context, *merge_data_settings, mutations_snapshot, entry.create_time,
+            output_disk->isRemote(), {CompactionStatistics::getDiskWriteBufferMemory(output_disk, task_context->getWriteSettings())},
+            entry.deduplicate, entry.cleanup));
+
+    /// Holds the task right after the reservation above, so a test can observe the reserved amount
+    /// (the MergesMutationsMemoryReservation metric) while a replicated merge is committed to run
+    /// but has not started executing yet.
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_merge_task_pause_after_reserve);
+
     /// Account TTL merge
     if (isTTLMergeType(future_merged_part->merge_type))
         storage.getContext()->getMergeList().bookMergeWithTTL();
 
     auto table_id = storage.getStorageID();
-
-    task_context = Context::createCopy(storage.getContext()->getBackgroundContext());
-    task_context->makeQueryContextForMerge(*storage.getSettings());
-    task_context->setCurrentQueryId(getQueryId());
 
     /// Add merge to list
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
@@ -378,11 +430,12 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
             future_merged_part,
             metadata_snapshot,
+            merge_data_settings,
             merge_mutate_entry.get(),
             {} /* projection_merge_list_element */,
             table_lock_holder,
             entry.create_time,
-            storage.getContext(),
+            task_context,
             reserved_space,
             entry.deduplicate,
             entry.deduplicate_by_columns,

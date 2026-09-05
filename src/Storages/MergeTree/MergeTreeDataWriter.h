@@ -116,14 +116,21 @@ public:
         bool merge_is_needed,
         ContextPtr context);
 
-    /// For mutation: MATERIALIZE PROJECTION.
+    /// For mutation: MATERIALIZE PROJECTION, and for rebuilding a projection during a merge.
+    /// `base_data_settings`, when set, replaces the live table settings: a merge freezes the settings it
+    /// runs with at selection time (when it prices its memory reservation), and the projection writer must
+    /// observe the same snapshot - a concurrent `ALTER ... MODIFY SETTING` of `max_compress_block_size`,
+    /// the wide-part thresholds or `materialize_skip_indexes_on_merge` would otherwise make this writer
+    /// allocate buffers the reservation did not price. The projection's own `WITH SETTINGS` are applied on
+    /// top of that snapshot, exactly as they are applied to the live settings.
     static MergeTreeTemporaryPartPtr writeTempProjectionPart(
         const MergeTreeData & data,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
         size_t block_num,
-        ContextPtr context);
+        ContextPtr context,
+        const MergeTreeSettingsPtr & base_data_settings = {});
 
     static Block mergeBlock(
         Block && block,
@@ -151,7 +158,9 @@ private:
         const ProjectionDescription & projection,
         MergeTreeIndices indices,
         bool merge_is_needed,
-        bool try_adaptive_codec);
+        bool try_adaptive_codec,
+        ContextPtr context,
+        const MergeTreeSettingsPtr & base_data_settings);
 
     MergeTreeData & data;
     LoggerPtr log;

@@ -438,6 +438,8 @@ The maximum memory consumption of the server is further restricted by setting `m
 Sets the limit on how much RAM is allowed to use for performing merge and mutation operations.
 If ClickHouse reaches the limit set, it won't schedule any new background merge or mutation operations but will continue to execute already scheduled tasks.
 
+The limit is enforced in two ways. First, reactively: a new merge or mutation is not scheduled when the memory already used by running background tasks reaches the limit. Second, proactively: every merge estimates the memory of its input and output IO buffers (the number of input column streams times the read buffer size plus the number of output column streams times the write buffer size, accounting for the larger, double-buffered object storage write buffers) and reserves it at start. The reservation is released when the merge finishes. This prevents oversubscribing memory when many merges are scheduled at the same time - for example right after a mutation produces many parts - and only then grow their memory usage and collide. A single merge whose estimate exceeds the whole limit is always allowed to proceed alone, so progress is never blocked.
+
 :::note
 A value of `0` means unlimited.
 :::
