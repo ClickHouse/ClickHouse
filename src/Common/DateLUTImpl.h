@@ -1305,6 +1305,12 @@ public:
             return toFirstDayNumOfWeek(v);
         }
 
+        /// Out of LUT range the day number must be clamped before any arithmetic, otherwise the subtraction below
+        /// overflows a signed day number. day_of_week % 7 maps Sunday (7) to 0, since the week starts on Sunday here.
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+                return dayNumOfDayIndex(outOfRangeDayIndex(v) - (outOfRangeValues(v).day_of_week % 7));
+
         const auto day_of_week = toDayOfWeek(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
             return (day_of_week != 7) ? DayNum(static_cast<UInt16>(saturateMinus(v, day_of_week))) : toDayNum(v);
@@ -1321,6 +1327,12 @@ public:
         {
             return toLastDayNumOfWeek(v);
         }
+
+        /// Out of LUT range the day number must be clamped before any arithmetic, otherwise `v += 6` below
+        /// overflows a signed day number. day_of_week % 7 maps Sunday (7) to 0, since the week starts on Sunday here.
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+                return dayNumOfDayIndex(outOfRangeDayIndex(v) + 6 - (outOfRangeValues(v).day_of_week % 7));
 
         const auto day_of_week = toDayOfWeek(v);
         v += 6;
