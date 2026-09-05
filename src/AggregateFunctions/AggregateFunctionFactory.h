@@ -33,6 +33,7 @@ class ASTFunction;
  * For example, in quantileWeighted(0.9)(x, weight), 0.9 is "parameter" and x, weight are "arguments".
  */
 using AggregateFunctionCreator = std::function<AggregateFunctionPtr(const String &, const DataTypes &, const Array &, const Settings *)>;
+using AggregateFunctionExecutionAvailabilityCheck = std::function<void(const String &, const Settings *)>;
 
 struct AggregateFunctionWithProperties
 {
@@ -42,6 +43,14 @@ struct AggregateFunctionWithProperties
     AggregateFunctionCreator window_creator;
     FunctionDocumentation documentation;
     AggregateFunctionProperties properties;
+    /// Optional properties for window_creator when the aggregate and OVER forms have different semantics.
+    std::optional<AggregateFunctionProperties> window_properties;
+    /// Optional execution check for the normal aggregate creator. Data-type reconstruction skips it.
+    AggregateFunctionExecutionAvailabilityCheck execution_availability_check;
+    /// Aggregate functions embedded in data types normally inherit the current query settings.
+    /// Functions with query-only approximations can disable that behavior so persisted merges
+    /// are constructed with their exact defaults.
+    bool use_query_settings_for_data_type_reconstruction = true;
 
     AggregateFunctionWithProperties() = default;
     AggregateFunctionWithProperties(const AggregateFunctionWithProperties &) = default;
@@ -49,8 +58,21 @@ struct AggregateFunctionWithProperties
 
     template <typename Creator>
     requires (!std::is_same_v<Creator, AggregateFunctionWithProperties>)
-    AggregateFunctionWithProperties(Creator creator_, FunctionDocumentation documentation_, AggregateFunctionProperties properties_ = {}, AggregateFunctionCreator window_creator_ = {}) /// NOLINT
-        : creator(std::forward<Creator>(creator_)), window_creator(std::move(window_creator_)), documentation(std::move(documentation_)), properties(std::move(properties_))
+    AggregateFunctionWithProperties(
+        Creator creator_,
+        FunctionDocumentation documentation_,
+        AggregateFunctionProperties properties_ = {},
+        AggregateFunctionCreator window_creator_ = {},
+        std::optional<AggregateFunctionProperties> window_properties_ = {},
+        AggregateFunctionExecutionAvailabilityCheck execution_availability_check_ = {},
+        bool use_query_settings_for_data_type_reconstruction_ = true) /// NOLINT
+        : creator(std::forward<Creator>(creator_))
+        , window_creator(std::move(window_creator_))
+        , documentation(std::move(documentation_))
+        , properties(std::move(properties_))
+        , window_properties(std::move(window_properties_))
+        , execution_availability_check(std::move(execution_availability_check_))
+        , use_query_settings_for_data_type_reconstruction(use_query_settings_for_data_type_reconstruction_)
     {
     }
 };
@@ -92,14 +114,39 @@ public:
         AggregateFunctionProperties & out_properties,
         AggregateFunctionStateVariant state_variant = AggregateFunctionStateVariant::Aggregation) const;
 
+    /// Reconstruct an aggregate function embedded in a data type without applying
+    /// execution-availability checks. Fresh DDL is validated after the complete schema is built.
+    AggregateFunctionPtr getForDataType(
+        const String & name,
+        NullsAction action,
+        const DataTypes & argument_types,
+        const Array & parameters,
+        AggregateFunctionProperties & out_properties) const;
+
+    /// True when this aggregate function, or the base function beneath its
+    /// combinator suffixes, has an execution-availability check.
+    bool hasExecutionAvailabilityCheck(const String & name) const;
+
     /// Get properties if the aggregate function exists.
-    std::optional<AggregateFunctionProperties> tryGetProperties(String name, NullsAction action) const;
+    std::optional<AggregateFunctionProperties> tryGetProperties(
+        String name,
+        NullsAction action,
+        AggregateFunctionStateVariant state_variant = AggregateFunctionStateVariant::Aggregation) const;
 
     bool isAggregateFunctionName(const String & name) const;
 
     FunctionDocumentation getDocumentation(const String & name) const;
 
 private:
+    AggregateFunctionPtr getWithSettingsMode(
+        const String & name,
+        NullsAction action,
+        const DataTypes & argument_types,
+        const Array & parameters,
+        AggregateFunctionProperties & out_properties,
+        AggregateFunctionStateVariant state_variant,
+        bool is_data_type_reconstruction) const;
+
     AggregateFunctionPtr getImpl(
         const String & name,
         NullsAction action,
@@ -107,7 +154,8 @@ private:
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
         bool has_null_arguments,
-        AggregateFunctionStateVariant state_variant) const;
+        AggregateFunctionStateVariant state_variant,
+        bool is_data_type_reconstruction) const;
 
     using AggregateFunctions = std::unordered_map<String, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     using ActionMap = NameToNameMap;

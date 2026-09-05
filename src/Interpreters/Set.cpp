@@ -11,6 +11,7 @@
 #include <Columns/ColumnDecimal.h>
 
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -197,7 +198,12 @@ bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
     Columns cols;
     cols.reserve(columns.size());
     for (const auto & column : columns)
+    {
+        validateExponentialTimeDecayingFloat64Column(
+            *column.column, column.type, "IN set construction");
+
         cols.emplace_back(column.column);
+    }
     return insertFromColumns(cols);
 }
 
@@ -241,6 +247,9 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
     {
         holder.materialized_columns.emplace_back(recursiveRemoveLowCardinality(columns.at(i)->convertToFullIfWrapped()));
         holder.key_columns.emplace_back(holder.materialized_columns.back().get());
+
+        validateExponentialTimeDecayingFloat64Column(
+            *holder.materialized_columns.back(), data_types[i], "IN set construction");
     }
 
     size_t rows = columns.at(0)->size();
@@ -480,6 +489,9 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         ColumnWithTypeAndName column_to_cast
             = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
 
+        assertExponentialTimeDecayingFloat64TypesCompatible(
+            column_before_cast.type, data_types[i], "IN");
+
         /// Since we have optional support for Nullable(Tuple), if `data_types[i]` is `Tuple(...)` type, then
         /// we will enter the `castColumnAccurateOrNull` path; however, it can lead to casted column type
         /// becomes `Tuple(Nullable(...), Nullable(...))` which will create problems during matching keys in Set.
@@ -534,6 +546,11 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         {
             processDateTime64Column(column_to_cast, result, null_map_holder, null_map);
         }
+
+        const auto & validation_type = containsExponentialTimeDecayingFloat64(column_before_cast.type)
+            ? column_before_cast.type
+            : data_types[i];
+        validateExponentialTimeDecayingFloat64Column(*result, validation_type, "IN set probe");
 
         // Append the result to materialized columns
         materialized_columns.emplace_back(std::move(result));

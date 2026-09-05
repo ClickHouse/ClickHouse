@@ -2,6 +2,7 @@
 
 #include <Analyzer/FunctionNode.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeString.h>
@@ -2384,8 +2385,14 @@ ActionsDAG ActionsDAG::makeConvertingActions(
                     res_elem.name);
         }
 
-        /// Add CAST function to convert into result type if needed.
-        if (!res_elem.type->equals(*dst_node->result_type))
+        /// Add CAST function to convert into result type if needed. A layout-compatible
+        /// Tuple still needs a cast to the experimental decaying type so its validator runs.
+        const bool equal_types = res_elem.type->equals(*dst_node->result_type);
+        const bool requires_experimental_time_decay_validation
+            = equal_types
+            && res_elem.type->getName() != dst_node->result_type->getName()
+            && containsExponentialTimeDecayingFloat64(res_elem.type);
+        if (!equal_types || requires_experimental_time_decay_validation)
         {
             auto string_type = std::make_shared<DataTypeString>();
             auto type_name = res_elem.type->getName();

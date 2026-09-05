@@ -85,6 +85,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_quantized_codec", false, false, "New setting to enable the experimental `Quantized` compression codec individually, without the `allow_experimental_codecs`."},
             {"enable_sz3_codec", false, false, "New setting to enable the experimental `SZ3` compression codec individually, without the `allow_experimental_codecs`."},
             {"enable_zxc_codec", false, false, "New setting to enable the experimental `ZXC` compression codec individually, without the `allow_experimental_codecs`."},
+            {"allow_experimental_time_decay_aggregate_functions", false, false, "New setting to enable the experimental mergeable exponential time-decay aggregate functions and value type; disabled by default."},
+            {"exponential_time_decay_aggregate_function_calculation_budget", 0.0, 0.0, "New opt-in approximate calculation budget for indexed exponential time-decay values; disabled by default."},
             {"resumable_backup_from_snapshot", false, false, "New experimental setting to enable resumable `BACKUP FROM SNAPSHOT`."},
             {"framing_output_format", "None", "None", "New setting to select a framing format that multiplexes data, totals, extremes, progress, logs, and profile events packets in a single output stream over HTTP."},
             {"output_format_image_time_multiplier_seconds", 1, 1, "New setting controlling the numerator of the time unit of the `t` column, which makes image output formats such as `PNG` produce an animation."},

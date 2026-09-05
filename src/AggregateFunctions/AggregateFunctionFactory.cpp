@@ -91,6 +91,35 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     AggregateFunctionProperties & out_properties,
     AggregateFunctionStateVariant state_variant) const
 {
+    return getWithSettingsMode(name, action, argument_types, parameters, out_properties, state_variant, false);
+}
+
+AggregateFunctionPtr AggregateFunctionFactory::getForDataType(
+    const String & name,
+    NullsAction action,
+    const DataTypes & argument_types,
+    const Array & parameters,
+    AggregateFunctionProperties & out_properties) const
+{
+    return getWithSettingsMode(
+        name,
+        action,
+        argument_types,
+        parameters,
+        out_properties,
+        AggregateFunctionStateVariant::Aggregation,
+        true);
+}
+
+AggregateFunctionPtr AggregateFunctionFactory::getWithSettingsMode(
+    const String & name,
+    NullsAction action,
+    const DataTypes & argument_types,
+    const Array & parameters,
+    AggregateFunctionProperties & out_properties,
+    AggregateFunctionStateVariant state_variant,
+    bool is_data_type_reconstruction) const
+{
     /// This to prevent costly string manipulation in parsing the aggregate function combinators.
     /// Example: avgArrayArrayArrayArray...(1000 times)...Array
     if (name.size() > MAX_AGGREGATE_FUNCTION_NAME_LENGTH)
@@ -102,7 +131,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     /// Window functions are not real aggregate functions. Applying combinators doesn't make sense for them,
     /// they must handle the nullability themselves.
     /// Aggregate functions such as any_value_respect_nulls are considered window functions in that sense
-    auto properties = tryGetProperties(name, action);
+    auto properties = tryGetProperties(name, action, state_variant);
     bool is_window_function = properties.has_value() && properties->is_window_function;
     if (!is_window_function && std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
         [](const auto & type) { return type->isNullable(); }))
@@ -118,7 +147,15 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         bool has_null_arguments = std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
             [](const auto & type) { return type->onlyNull(); });
 
-        AggregateFunctionPtr nested_function = getImpl(name, action, nested_types, nested_parameters, out_properties, has_null_arguments, state_variant);
+        AggregateFunctionPtr nested_function = getImpl(
+            name,
+            action,
+            nested_types,
+            nested_parameters,
+            out_properties,
+            has_null_arguments,
+            state_variant,
+            is_data_type_reconstruction);
 
         // Pure window functions are not real aggregate functions. Applying
         // combinators doesn't make sense for them, they must handle the
@@ -129,7 +166,15 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
             return combinator->transformAggregateFunction(nested_function, out_properties, types_without_low_cardinality, parameters);
     }
 
-    auto with_original_arguments = getImpl(name, action, types_without_low_cardinality, parameters, out_properties, false, state_variant);
+    auto with_original_arguments = getImpl(
+        name,
+        action,
+        types_without_low_cardinality,
+        parameters,
+        out_properties,
+        false,
+        state_variant,
+        is_data_type_reconstruction);
 
     if (!with_original_arguments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory returned nullptr");
@@ -225,6 +270,30 @@ std::optional<String> AggregateFunctionFactory::getAssociatedNameUnderCombinator
 }
 
 
+bool AggregateFunctionFactory::hasExecutionAvailabilityCheck(const String & name_param) const
+{
+    String name = getAliasToOrName(name_param);
+
+    if (auto it = aggregate_functions.find(name); it != aggregate_functions.end())
+        return static_cast<bool>(it->second.execution_availability_check);
+
+    const String case_insensitive_name = Poco::toLower(name);
+    if (auto it = case_insensitive_aggregate_functions.find(case_insensitive_name);
+        it != case_insensitive_aggregate_functions.end())
+        return static_cast<bool>(it->second.execution_availability_check);
+
+    if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
+    {
+        const String & suffix = combinator->getName();
+        String nested_name = name.substr(0, name.size() - suffix.size());
+        if (!nested_name.empty())
+            return hasExecutionAvailabilityCheck(nested_name);
+    }
+
+    return false;
+}
+
+
 AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     const String & name_param,
     NullsAction action,
@@ -232,7 +301,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     const Array & parameters,
     AggregateFunctionProperties & out_properties,
     bool has_null_arguments,
-    AggregateFunctionStateVariant state_variant) const
+    AggregateFunctionStateVariant state_variant,
+    bool is_data_type_reconstruction) const
 {
     String name = getAliasToOrName(name_param);
     String case_insensitive_name;
@@ -265,7 +335,9 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         if (opt)
             found = *opt;
 
-        out_properties = found.properties;
+        out_properties = state_variant == AggregateFunctionStateVariant::Window && found.window_properties
+            ? *found.window_properties
+            : found.properties;
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(
                 Context::QueryLogFactories::AggregateFunction, is_case_insensitive ? case_insensitive_name : name);
@@ -274,13 +346,21 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         if (!out_properties.returns_default_when_only_null && has_null_arguments)
             return nullptr;
 
-        const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
+        const bool use_query_settings
+            = !is_data_type_reconstruction || found.use_query_settings_for_data_type_reconstruction;
+        const Settings * settings = query_context && use_query_settings
+            ? &query_context->getSettingsRef()
+            : nullptr;
 
         AggregateFunctionPtr function;
         if (state_variant == AggregateFunctionStateVariant::Window && found.window_creator)
             function = found.window_creator(name, argument_types, parameters, settings);
         else
+        {
+            if (!is_data_type_reconstruction && found.execution_availability_check)
+                found.execution_availability_check(name, settings);
             function = found.creator(name, argument_types, parameters, settings);
+        }
 
         /// Invariant: For any aggregation function IAggregateFunction::getParameters() should return exactly
         /// the parameters used to create the aggregation function. Aggregation functions are not allowed to change
@@ -343,7 +423,14 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             VectorWithMemoryTracking<AggregateFunctionPtr> nested_functions;
             nested_functions.reserve(nested_arguments_list.size());
             for (const auto & nested_arguments : nested_arguments_list)
-                nested_functions.push_back(get(nested_name, action, nested_arguments, nested_parameters, out_properties, state_variant));
+                nested_functions.push_back(getWithSettingsMode(
+                    nested_name,
+                    action,
+                    nested_arguments,
+                    nested_parameters,
+                    out_properties,
+                    state_variant,
+                    is_data_type_reconstruction));
 
             /// A `-State` round-trip reconstructs every element from this one shared name, so it must be
             /// the action-adjusted base aggregate name, not one element's instantiation (which can collapse
@@ -356,7 +443,14 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         {
             DataTypes nested_types = combinator->transformArguments(argument_types);
 
-            AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant);
+            AggregateFunctionPtr nested_function = getWithSettingsMode(
+                nested_name,
+                action,
+                nested_types,
+                nested_parameters,
+                out_properties,
+                state_variant,
+                is_data_type_reconstruction);
             combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
         }
 
@@ -378,7 +472,10 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}{}", name, extra_info);
 }
 
-std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetProperties(String name, NullsAction action) const
+std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetProperties(
+    String name,
+    NullsAction action,
+    AggregateFunctionStateVariant state_variant) const
 {
     if (name.size() > MAX_AGGREGATE_FUNCTION_NAME_LENGTH)
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too long name of aggregate function, maximum: {}", MAX_AGGREGATE_FUNCTION_NAME_LENGTH);
@@ -410,7 +507,10 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
         {
             auto opt = getAssociatedFunctionByNullsAction(is_case_insensitive ? lower_case_name : name, action);
             if (opt)
-                return opt->properties;
+                found = *opt;
+
+            if (state_variant == AggregateFunctionStateVariant::Window && found.window_properties)
+                return found.window_properties;
             return found.properties;
         }
 

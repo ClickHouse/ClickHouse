@@ -45,6 +45,8 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/QueryParameterVisitor.h>
 #include <Parsers/parseQuery.h>
 
 #include <Storages/MaterializedView/RefreshSet.h>
@@ -107,6 +109,7 @@
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
 
 
 namespace CurrentMetrics
@@ -997,7 +1000,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (create.select)
     {
         if (create.isParameterizedView())
+        {
+            validateTableStructure(create, properties);
             return properties;
+        }
 
         if (create.aliases_list)
         {
@@ -1169,13 +1175,27 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
     const auto & settings = getContext()->getSettingsRef();
 
-    /// If it's not attach and not materialized view to existing table,
-    /// we need to validate data types (check for experimental or suspicious types).
-    if (!create.attach && !create.is_materialized_view)
+    /// User-supplied CREATE and full ATTACH definitions must validate data types.
+    /// Short ATTACH and internal metadata loading must remain available for recovery.
+    if (!internal && !create.attach_short_syntax)
     {
-        DataTypeValidationSettings validation_settings(settings);
+        DataTypeValidationSettings validation_settings
+            = create.is_materialized_view || create.isParameterizedView()
+            ? DataTypeValidationSettings::forExperimentalTimeDecay(settings)
+            : DataTypeValidationSettings(settings);
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
             validateDataType(name_and_type_pair.type, validation_settings);
+
+        if (create.isParameterizedView())
+        {
+            for (const auto & [name, type_name] : analyzeReceiveQueryParamsWithType(create.select))
+            {
+                /// Identifier is a query-parameter kind, not a data type.
+                if (type_name == "Identifier")
+                    continue;
+                validateDataType(DataTypeFactory::instance().get(type_name), validation_settings);
+            }
+        }
     }
 }
 

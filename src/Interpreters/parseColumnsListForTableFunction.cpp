@@ -1,9 +1,12 @@
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/Context.h>
@@ -19,6 +22,7 @@ namespace Setting
 {
     extern const SettingsBool enable_time_time64_type;
     extern const SettingsBool allow_experimental_nullable_tuple_type;
+    extern const SettingsBool allow_experimental_time_decay_aggregate_functions;
     extern const SettingsBool allow_suspicious_fixed_string_types;
     extern const SettingsBool allow_suspicious_low_cardinality_types;
     extern const SettingsBool allow_suspicious_variant_types;
@@ -43,7 +47,19 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
     , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
     , enable_time_time64_type(settings[Setting::enable_time_time64_type])
     , allow_experimental_nullable_tuple_type(settings[Setting::allow_experimental_nullable_tuple_type])
+    , allow_experimental_time_decay_aggregate_functions(settings[Setting::allow_experimental_time_decay_aggregate_functions])
 {
+}
+
+DataTypeValidationSettings DataTypeValidationSettings::forExperimentalTimeDecay(const DB::Settings & settings)
+{
+    DataTypeValidationSettings result(settings);
+    /// Materialized and parameterized views historically allow these suspicious types.
+    /// Preserve only those exemptions while keeping every other type gate from Settings.
+    result.allow_suspicious_low_cardinality_types = true;
+    result.allow_suspicious_fixed_string_types = true;
+    result.allow_suspicious_variant_types = true;
+    return result;
 }
 
 
@@ -51,6 +67,22 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
 {
     auto validate_callback = [&](const IDataType & data_type)
     {
+        if (!settings.allow_experimental_time_decay_aggregate_functions)
+        {
+            bool is_experimental_time_decay_type = isExponentialTimeDecayingFloat64(data_type);
+            if (const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(&data_type))
+                is_experimental_time_decay_type
+                    |= AggregateFunctionFactory::instance().hasExecutionAvailabilityCheck(
+                        aggregate_function_type->getFunctionName());
+
+            if (is_experimental_time_decay_type)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create column with type '{}' because exponential time decay aggregate functions are experimental. "
+                    "Set setting allow_experimental_time_decay_aggregate_functions = 1 in order to allow them",
+                    data_type.getName());
+        }
+
         if (!settings.allow_suspicious_low_cardinality_types)
         {
             if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(&data_type))
