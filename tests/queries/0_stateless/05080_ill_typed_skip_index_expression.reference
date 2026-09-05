@@ -1,0 +1,15 @@
+A CREATE TABLE declaring an index expression that cannot be evaluated
+B ALTER TABLE ADD INDEX declaring one
+2
+E an ALTER whose own effect makes an existing index unevaluable
+2
+C1 index over a column
+2
+C2 index over a comparison against a literal of the column type
+2
+C3 index over arithmetic
+2
+C4 index over a wrapped type
+2
+F an expression a merge would not dry-run either is left alone
+1

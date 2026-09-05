@@ -1,0 +1,17 @@
+D1 a table already carrying such an index still attaches
+ok
+D2 an unrelated ALTER on it is still allowed
+ok
+D3 a new index the ALTER declares itself is still rejected
+1
+D4 a well-typed new index on the same table is accepted
+ok
+i0
+i2
+D5 dropping it repairs the table
+ok
+merge ok
+2
+D6 redeclaring the index under its own name is not inherited
+1
+ok
